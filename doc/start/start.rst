@@ -22,7 +22,7 @@ You need to have the following software packages installed on your system:
 Download Dragon
 ===================
 
-Please inquire with Peter Mendygral (pete.mendygral@hpe.com) to obtain the distribution.
+Please go to http://github.com/dragonhpc/dragon to clone or download the distribution.
 
 Install Dragon
 ===================
