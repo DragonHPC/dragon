@@ -1,0 +1,31 @@
+﻿dragon.infrastructure.channel\_desc
+===================================
+
+.. automodule:: dragon.infrastructure.channel_desc
+   :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      ChannelDescriptor
+      ChannelOptions
+   
+   
+
+   
+   
+   
+
+
+

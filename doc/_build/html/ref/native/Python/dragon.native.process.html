@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.native.process &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/clipboard.min.js"></script>
+        <script src="../../../_static/copybutton.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="dragon.native.process_group" href="dragon.native.process_group.html" />
+    <link rel="prev" title="dragon.native.machine" href="dragon.native.machine.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../../ref.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../index.html">Dragon Native</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="../index.html#reference-by-language">Reference by Language</a><ul class="current">
+<li class="toctree-l4 current"><a class="reference internal" href="index.html">Python Language Bindings</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../index.html#specification-by-language">Specification by Language</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../index.html#architecture">Architecture</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../client/index.html">Dragon GS Client</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../inf/index.html">Dragon Infrastructure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../core/index.html">Dragon Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../mpbridge/index.html">MPBridge</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../../ref.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Dragon Native</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Python Language Bindings</a></li>
+      <li class="breadcrumb-item active">dragon.native.process</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/ref/native/Python/dragon.native.process.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-dragon.native.process">
+<span id="dragon-native-process"></span><h1>dragon.native.process<a class="headerlink" href="#module-dragon.native.process" title="Permalink to this heading"></a></h1>
+<p>The Dragon native process object provides process management across one or
+multiple distributed systems. <code class="code docutils literal notranslate"><span class="pre">TemplateProcess</span></code> can hold a blueprint for a process
+that can be used to generate many similar processes.</p>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.native.process.current" title="dragon.native.process.current"><code class="xref py py-obj docutils literal notranslate"><span class="pre">current</span></code></a>()</p></td>
+<td><p>Get the PythonProcess object of the current process.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Popen</span></code></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.native.process.Process" title="dragon.native.process.Process"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Process</span></code></a></p></td>
+<td><p>This object describes a process managed by the Dragon runtime.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.native.process.TemplateProcess" title="dragon.native.process.TemplateProcess"><code class="xref py py-obj docutils literal notranslate"><span class="pre">TemplateProcess</span></code></a></p></td>
+<td><p>This class provides a template for a Dragon process.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process.TemplateProcess">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">TemplateProcess</span></span><a class="headerlink" href="#dragon.native.process.TemplateProcess" title="Permalink to this definition"></a></dt>
+<dd><p>This class provides a template for a Dragon process.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.TemplateProcess.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">tuple</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cwd</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'.'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdin</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stderr</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.native.process.TemplateProcess.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Generic Dragon process template object defining a process based on a
+binary executable or a Python callable.</p>
+<p>If the target is a callable, define the Python process executing the
+callable.
+If the target is a string, assume it’s the filename of a binary to be
+started.  If the target file is not found, the object tries to resolve
+the command via the PATH environment variable. If that fails, it assumes
+the file is in the current working directory.</p>
+<p>This template cannot be started, but it can be used to create many
+similar processes like this:</p>
+<dl class="simple">
+<dt><a href="#id1"><span class="problematic" id="id2">``</span></a><a href="#id3"><span class="problematic" id="id4">`</span></a>Python</dt><dd><p>t = TemplateProcess(myfunc)
+p1 = Process.from_template(t, ident=”NewProcess1”)
+p2 = Process.from_template(t, ident=”NewProcess2”)</p>
+</dd>
+</dl>
+<p><a href="#id5"><span class="problematic" id="id6">``</span></a><a href="#id7"><span class="problematic" id="id8">`</span></a></p>
+<p>The template stores the absolute path of the target if the target is an executable.
+If the target is a Python function, the template stores the Python executable in
+its <code class="code docutils literal notranslate"><span class="pre">target</span></code> attribute, the command line parameters in its <code class="code docutils literal notranslate"><span class="pre">args</span></code> attribute and
+the Python data in its <code class="code docutils literal notranslate"><span class="pre">argdata</span></code> attribute. To obtain the original attributes in
+Python use</p>
+<dl class="simple">
+<dt><a href="#id9"><span class="problematic" id="id10">``</span></a><a href="#id11"><span class="problematic" id="id12">`</span></a>Python</dt><dd><p>target, args, kwargs = p.get_original_python_parameters()</p>
+</dd>
+</dl>
+<p><a href="#id13"><span class="problematic" id="id14">``</span></a><a href="#id15"><span class="problematic" id="id16">`</span></a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<em>str</em><em> or </em><em>callable</em>) – The binary or Python callable to execute.</p></li>
+<li><p><strong>args</strong> (<em>tuple</em><em>, </em><em>optional</em>) – arguments to pass to the binary or callable, defaults to None</p></li>
+<li><p><strong>kwargs</strong> (<em>tuple</em><em>, </em><em>optional</em>) – keyword arguments to pass to the Python callable, defaults to None</p></li>
+<li><p><strong>cwd</strong> (<em>str</em><em>, </em><em>optional</em>) – current working directory, defaults to “.”</p></li>
+<li><p><strong>env</strong> (<em>dict</em><em>, </em><em>optional</em>) – environment variables to pass to the process environment, defaults to None</p></li>
+<li><p><strong>stdin</strong> (<em>int</em><em>, </em><em>optional</em>) – Stdin file handling. Valid values are PIPE and None.</p></li>
+<li><p><strong>stdout</strong> (<em>int</em><em>, </em><em>optional</em>) – Stdout file handling. Valid values are PIPE, STDOUT and None.</p></li>
+<li><p><strong>stderr</strong> (<em>int</em><em>, </em><em>optional</em>) – Stderr file handling. Valid values are PIPE, STDOUT and None.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.TemplateProcess.get_original_python_parameters">
+<span class="sig-name descname"><span class="pre">get_original_python_parameters</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">callable</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">tuple</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#dragon.native.process.TemplateProcess.get_original_python_parameters" title="Permalink to this definition"></a></dt>
+<dd><p>Return the original parameters of a Python process from the object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>function, args and kwargs of the templated process</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>tuple[callable, tuple, dict]</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process.Process">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Process</span></span><a class="headerlink" href="#dragon.native.process.Process" title="Permalink to this definition"></a></dt>
+<dd><p>This object describes a process managed by the Dragon runtime.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.Process.__new__">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">__new__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">cls</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.native.process.Process.__new__" title="Permalink to this definition"></a></dt>
+<dd><p>Prevent users from subclassing <code class="code docutils literal notranslate"><span class="pre">Process</span></code>.
+:raises NotImplementedError: If a subclass of <code class="code docutils literal notranslate"><span class="pre">Process</span></code> is being instantiated
+:return: A Process object
+:rtype: Process</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.Process.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">target</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">tuple</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">kwargs</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">cwd</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">'.'</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">dict</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ident</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_pmi_enabled</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdin</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stderr</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.native.process.Process.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Generic Dragon process object executing a binary executable or a
+Python callable.</p>
+<p>Processes are named and can be looked up by specifying the <code class="code docutils literal notranslate"><span class="pre">ident</span></code>
+keyword: <code class="code docutils literal notranslate"><span class="pre">Process(None,</span> <span class="pre">ident=&quot;Apple&quot;)</span></code></p>
+<p>If the target is a callable, start a new Python process executing the
+callable.  The class uses cloudpickle to transfer the callable to the
+child process. See the cloudpickle documentation for possible
+limitations.</p>
+<p>If the target is a string, assume it’s the filename of a binary to be
+started.  If the target file is not found, the object tries to resolve
+the command via the PATH environment variable. If that fails, it assumes
+the file is in the current working directory.</p>
+<p>The Process class should not be subclassed, because the Dragon runtime
+only holds on to attributes of the Process super class, breaking the name
+lookup.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>target</strong> (<em>str</em><em> or </em><em>callable</em>) – The binary or Python callable to execute.</p></li>
+<li><p><strong>args</strong> (<em>tuple</em><em>, </em><em>optional</em>) – arguments to pass to the binary or callable, defaults to None</p></li>
+<li><p><strong>kwargs</strong> (<em>tuple</em><em>, </em><em>optional</em>) – keyword arguments to pass to the Python callable, defaults to None</p></li>
+<li><p><strong>cwd</strong> (<em>str</em><em>, </em><em>optional</em>) – current working directory, defaults to “.”</p></li>
+<li><p><strong>env</strong> (<em>dict</em><em>, </em><em>optional</em>) – environment variables to pass to the process environment, defaults to None</p></li>
+<li><p><strong>ident</strong> (<em>int</em><em> or </em><em>str</em>) – unique id or name of this process</p></li>
+<li><p><strong>stdin</strong> (<em>int</em><em>, </em><em>optional</em>) – Stdin file handling. Valid values are PIPE and None.</p></li>
+<li><p><strong>stdout</strong> (<em>int</em><em>, </em><em>optional</em>) – Stdout file handling. Valid values are PIPE, STDOUT and None.</p></li>
+<li><p><strong>stderr</strong> (<em>int</em><em>, </em><em>optional</em>) – Stderr file handling. Valid values are PIPE, STDOUT and None.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.Process.from_template">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_template</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">template</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process.TemplateProcess" title="dragon.native.process.TemplateProcess"><span class="pre">TemplateProcess</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">ident</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">_pmi_enabled</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">object</span></span></span><a class="headerlink" href="#dragon.native.process.Process.from_template" title="Permalink to this definition"></a></dt>
+<dd><p>A classmethod that creates a new process object from a template.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>template</strong> (<a class="reference internal" href="#dragon.native.process.TemplateProcess" title="dragon.native.process.TemplateProcess"><em>TemplateProcess</em></a>) – the template to base the process on</p></li>
+<li><p><strong>ident</strong> (<em>str</em><em>, </em><em>optional</em>) – intended name of the process, defaults to None</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The new process object</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>dragon.native.Process</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.Process.start">
+<span class="sig-name descname"><span class="pre">start</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process.Process.start" title="Permalink to this definition"></a></dt>
+<dd><p>Start the process represented by the underlying process object.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process.Process.is_alive">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">is_alive</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">bool</span></em><a class="headerlink" href="#dragon.native.process.Process.is_alive" title="Permalink to this definition"></a></dt>
+<dd><p>Check if the process is still running</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>True if the process is running, False otherwise</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.Process.join">
+<span class="sig-name descname"><span class="pre">join</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#dragon.native.process.Process.join" title="Permalink to this definition"></a></dt>
+<dd><p>Wait for the process to finish.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>timeout</strong> (<em>float</em><em>, </em><em>optional</em>) – timeout in seconds, defaults to None</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>exit code of the process, None if timeout occurs</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>ProcessError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.Process.terminate">
+<span class="sig-name descname"><span class="pre">terminate</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process.Process.terminate" title="Permalink to this definition"></a></dt>
+<dd><p>Send SIGTERM signal to the process, terminating it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>NoneType</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.Process.kill">
+<span class="sig-name descname"><span class="pre">kill</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process.Process.kill" title="Permalink to this definition"></a></dt>
+<dd><p>Send SIGKILL signal to the process, killing it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>NoneType</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process.Process.puid">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">puid</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#dragon.native.process.Process.puid" title="Permalink to this definition"></a></dt>
+<dd><p>Process puid. Globally unique</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process.Process.node">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">node</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#dragon.native.process.Process.node" title="Permalink to this definition"></a></dt>
+<dd><p>Return the unique host id of the node the process is running on.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>huid of host node.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process.Process.returncode">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">returncode</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#dragon.native.process.Process.returncode" title="Permalink to this definition"></a></dt>
+<dd><p>When the process has terminated, return exit code. None otherwise.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.Process.children">
+<span class="sig-name descname"><span class="pre">children</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">object</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#dragon.native.process.Process.children" title="Permalink to this definition"></a></dt>
+<dd><p>Find all active children of the current process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>a list of p_uids of active children of the current process</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>list(int)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process.Process.parent">
+<span class="sig-name descname"><span class="pre">parent</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">object</span></span></span><a class="headerlink" href="#dragon.native.process.Process.parent" title="Permalink to this definition"></a></dt>
+<dd><p>Get the process object of the parent process.
+:returns: The puid or the parent of the current process
+:return type: int</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.native.process.current">
+<span class="sig-name descname"><span class="pre">current</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#dragon.native.process.Process" title="dragon.native.process.Process"><span class="pre">Process</span></a></span></span><a class="headerlink" href="#dragon.native.process.current" title="Permalink to this definition"></a></dt>
+<dd><p>Get the PythonProcess object of the current process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The current puid</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="dragon.native.machine.html" class="btn btn-neutral float-left" title="dragon.native.machine" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="dragon.native.process_group.html" class="btn btn-neutral float-right" title="dragon.native.process_group" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

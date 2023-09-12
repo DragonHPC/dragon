@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Logging &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Services" href="../services/services.html" />
+    <link rel="prev" title="Infrastructure Bootstrapping" href="bootstrapping.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="infrastructure.html">Infrastructure</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="architecture.html">Infrastructure Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="messages_api.html">Infrastructure Messages</a></li>
+<li class="toctree-l2"><a class="reference internal" href="processes.html">Process Creation and Interaction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="conventional_ids.html">Conventional IDs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="single_node_deployment.html">Single Node Deployment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="multi_node_deployment.html">Multi Node Deployment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bootstrapping.html">Infrastructure Bootstrapping</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Logging</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#general-design">General Design</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#frontend-services">Frontend Services</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#backend-services">Backend Services</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#formatting">Formatting</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#module-dragon.dlogging.util">Module Classes and functions</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.LoggingValue"><code class="docutils literal notranslate"><span class="pre">LoggingValue</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.DragonLoggingServices"><code class="docutils literal notranslate"><span class="pre">DragonLoggingServices</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.DragonFEFilter"><code class="docutils literal notranslate"><span class="pre">DragonFEFilter</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.DragonLoggingHandler"><code class="docutils literal notranslate"><span class="pre">DragonLoggingHandler</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.setup_logging"><code class="docutils literal notranslate"><span class="pre">setup_logging()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.setup_FE_logging"><code class="docutils literal notranslate"><span class="pre">setup_FE_logging()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.close_FE_logging"><code class="docutils literal notranslate"><span class="pre">close_FE_logging()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.setup_dragon_logging"><code class="docutils literal notranslate"><span class="pre">setup_dragon_logging()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.detach_from_dragon_handler"><code class="docutils literal notranslate"><span class="pre">detach_from_dragon_handler()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.util.setup_BE_logging"><code class="docutils literal notranslate"><span class="pre">setup_BE_logging()</span></code></a></li>
+<li class="toctree-l4"><a class="reference internal" href="#dragon.dlogging.logger.DragonLogger"><code class="docutils literal notranslate"><span class="pre">DragonLogger</span></code></a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="infrastructure.html">Infrastructure</a></li>
+      <li class="breadcrumb-item active">Logging</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/infrastructure/logging.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="logging">
+<span id="id1"></span><h1>Logging<a class="headerlink" href="#logging" title="Permalink to this heading"></a></h1>
+<p>Overview of the structure, classes, and functions that enable orderly logging
+of Dragon’s multiple backend components.</p>
+<section id="general-design">
+<h2>General Design<a class="headerlink" href="#general-design" title="Permalink to this heading"></a></h2>
+<p>The goal of the infrastructure is to make all service logging easy to parse with
+grep or similar command line tools and get information out that actually makes sense.
+With that target in mind, the goals are:</p>
+<ul class="simple">
+<li><p>Get all logging messages from all backend services to the frontend’s file system
+and/or stderr</p></li>
+<li><p>Make it easy to see what service and and host/IP/port the logging message was
+generated from</p></li>
+<li><p>Make sure timestamps are actually meaningful</p></li>
+<li><p>Keep it simple for other devs to plug into their infrastructure and not
+irreparably break already existing logging infrastructure.</p></li>
+<li><p>Stick to Python’s logging module as much as possible</p></li>
+</ul>
+</section>
+<section id="frontend-services">
+<h2>Frontend Services<a class="headerlink" href="#frontend-services" title="Permalink to this heading"></a></h2>
+<p>The MRNet frontend service is the ultimate destination for all the logging messages
+created by backend services.</p>
+<p>Those messages are received via the MRNet server’s callback function that also provides
+all the other infrastructure related messages unrelated to logging. In order to avoid clobbering
+infrastructure messages, the <code class="xref py py-func docutils literal notranslate"><span class="pre">dragon.launcher.util.logging_queue_monitor()</span></code> decorator
+pulls any messages received from the callback and puts them in a separate queue so
+the MRNet server can write them to log as infrastructure requests allow. All the messages
+received by the frontend server must be an instance of
+<a class="reference internal" href="../ref/inf/dragon.infrastructure.messages.html#dragon.infrastructure.messages.LoggingMsgList" title="dragon.infrastructure.messages.LoggingMsgList"><code class="xref py py-class docutils literal notranslate"><span class="pre">dragon.infrastructure.messages.LoggingMsgList</span></code></a></p>
+<p>In order to keep management of all the messages sane and easily parsible, the launcher
+frontend has a separate Python log for each service. Each log is referenced by names defined as
+attributes of <a class="reference internal" href="#dragon.dlogging.util.DragonLoggingServices" title="dragon.dlogging.util.DragonLoggingServices"><code class="xref py py-class docutils literal notranslate"><span class="pre">dragon.dlogging.util.DragonLoggingServices</span></code></a>. Each message is
+consequently logged under the scope of the service it came from. Many children can
+be created from this parent log, but they should belong to a given parent (ie: service log)</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-number">Listing 28 </span><span class="caption-text">This is essentially what dragon.dlogging.util.log_FE_msg_list() performs</span><a class="headerlink" href="#id2" title="Permalink to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">from</span> <span class="nn">dragon.dlogging.util</span> <span class="kn">import</span> <span class="n">DragonLoggingServices</span>
+
+<span class="c1"># Log a global services messages</span>
+<span class="n">log</span> <span class="o">=</span> <span class="n">logging</span><span class="o">.</span><span class="n">getLogger</span><span class="p">(</span><span class="n">DragonLoggingServices</span><span class="o">.</span><span class="n">GS</span><span class="p">)</span>
+<span class="n">log</span><span class="o">.</span><span class="n">log</span><span class="p">(</span><span class="n">level</span><span class="p">,</span> <span class="n">log_msg</span><span class="p">,</span> <span class="n">extra</span><span class="o">=</span><span class="n">dict_of_extra_record_attributed</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="backend-services">
+<h2>Backend Services<a class="headerlink" href="#backend-services" title="Permalink to this heading"></a></h2>
+<p>During bring-up, the MRNet server backend creates a <code class="xref py py-class docutils literal notranslate"><span class="pre">DragonLogger</span></code> instance and
+passes its serialized descriptor to all backend services on the same node as it:
+global services (for primary node), local services, transport agent, and the launcher
+backend.</p>
+<p>All the listed services then connect to the MRNet server’s <code class="xref py py-class docutils literal notranslate"><span class="pre">DragonLogger</span></code> instance
+by attaching to it. All the services’ log messages are passed through a :py:class:DragonLogginerHandler
+that simply put them int the MRNet backend’s <code class="xref py py-class docutils literal notranslate"><span class="pre">DragonLogger</span></code> channel queue. Timestamps are
+generated when a given service emits its message, not when the MRNet backend plucks it from the queue.
+That way log messages reflect the time they were emitted by the given backend service.</p>
+<div class="literal-block-wrapper docutils container" id="id3">
+<div class="code-block-caption"><span class="caption-number">Listing 29 </span><span class="caption-text">Launcher backend attaching to a logging channel and logging</span><a class="headerlink" href="#id3" title="Permalink to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span> <span class="nn">logging</span>
+<span class="kn">import</span> <span class="nn">dragon.dlogging.util</span> <span class="k">as</span> <span class="nn">dlog</span>
+
+<span class="n">dlog</span><span class="o">.</span><span class="n">setup_BE_logging</span><span class="p">(</span><span class="n">service</span><span class="o">=</span><span class="n">dlog</span><span class="o">.</span><span class="n">DragonLoggingServices</span><span class="o">.</span><span class="n">LA_BE</span><span class="p">,</span> <span class="n">logger_sdesc</span><span class="o">=</span><span class="n">logger_sdesc</span><span class="p">,</span> <span class="n">level</span><span class="o">=</span><span class="n">level</span><span class="p">)</span>
+<span class="n">log</span><span class="o">.</span><span class="n">info</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;start in pid </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">getpid</span><span class="p">()</span><span class="si">}</span><span class="s1">, pgid </span><span class="si">{</span><span class="n">os</span><span class="o">.</span><span class="n">getpgid</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+</section>
+<section id="formatting">
+<h2>Formatting<a class="headerlink" href="#formatting" title="Permalink to this heading"></a></h2>
+<p>Log entries posted by the launcher frontend contain hostname, service, and function name
+the log entry came from:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="mi">2022</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">28</span> <span class="mi">13</span><span class="p">:</span><span class="mi">07</span><span class="p">:</span><span class="mi">49</span><span class="p">,</span><span class="mi">988</span> <span class="n">INFO</span>     <span class="n">LA_BE</span><span class="o">.</span><span class="n">get_host_info</span> <span class="p">(</span><span class="n">pinoak0202</span><span class="p">)</span> <span class="p">::</span> <span class="n">sockets</span> <span class="n">returned</span> <span class="n">ip_addr</span> <span class="mf">172.23.0.11</span> <span class="k">for</span> <span class="n">pinoak0202</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">28</span> <span class="mi">13</span><span class="p">:</span><span class="mi">07</span><span class="p">:</span><span class="mi">49</span><span class="p">,</span><span class="mi">988</span> <span class="n">INFO</span>     <span class="n">LA_BE</span><span class="o">.</span><span class="n">get_host_info</span> <span class="p">(</span><span class="n">pinoak0202</span><span class="p">)</span> <span class="p">::</span> <span class="n">primary_hostname</span> <span class="o">=</span> <span class="n">pinoak0201</span> <span class="o">|</span> <span class="n">hostname</span> <span class="o">=</span> <span class="n">pinoak0202</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">28</span> <span class="mi">13</span><span class="p">:</span><span class="mi">07</span><span class="p">:</span><span class="mi">49</span><span class="p">,</span><span class="mi">988</span> <span class="n">INFO</span>     <span class="n">LA_BE</span><span class="o">.</span><span class="n">get_host_info</span> <span class="p">(</span><span class="n">pinoak0202</span><span class="p">)</span> <span class="p">::</span> <span class="n">primary</span> <span class="n">node</span> <span class="n">status</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">28</span> <span class="mi">13</span><span class="p">:</span><span class="mi">07</span><span class="p">:</span><span class="mi">49</span><span class="p">,</span><span class="mi">988</span> <span class="n">INFO</span>     <span class="n">LA_BE</span><span class="o">.</span><span class="n">main</span> <span class="p">(</span><span class="n">pinoak0202</span><span class="p">)</span> <span class="p">::</span> <span class="n">sent</span> <span class="n">BENodeIdxSH</span><span class="p">(</span><span class="n">node_idx</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span> <span class="o">-</span> <span class="n">m2</span><span class="mf">.1</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">28</span> <span class="mi">13</span><span class="p">:</span><span class="mi">07</span><span class="p">:</span><span class="mi">50</span><span class="p">,</span><span class="mi">006</span> <span class="n">DEBUG</span>    <span class="n">LS</span><span class="o">.</span><span class="n">multinode</span> <span class="p">(</span><span class="n">pinoak0202</span><span class="p">)</span> <span class="p">::</span> <span class="n">dragon</span> <span class="n">logging</span> <span class="n">initiated</span> <span class="n">on</span> <span class="n">pid</span><span class="o">=</span><span class="mi">17735</span>
+<span class="mi">2022</span><span class="o">-</span><span class="mi">07</span><span class="o">-</span><span class="mi">28</span> <span class="mi">13</span><span class="p">:</span><span class="mi">07</span><span class="p">:</span><span class="mi">50</span><span class="p">,</span><span class="mi">006</span> <span class="n">INFO</span>     <span class="n">LS</span><span class="o">.</span><span class="n">multinode</span> <span class="p">(</span><span class="n">pinoak0202</span><span class="p">)</span> <span class="p">::</span> <span class="n">got</span> <span class="n">BENodeIdxSH</span> <span class="p">(</span><span class="nb">id</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">ip</span><span class="o">=</span><span class="mf">172.23.0.11</span><span class="p">,</span> <span class="n">host</span><span class="o">=</span><span class="n">pinoak0202</span><span class="p">,</span> <span class="n">primmary</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span> <span class="o">-</span> <span class="n">m2</span><span class="mf">.1</span>
+</pre></div>
+</div>
+</section>
+<section id="module-dragon.dlogging.util">
+<span id="module-classes-and-functions"></span><h2>Module Classes and functions<a class="headerlink" href="#module-dragon.dlogging.util" title="Permalink to this heading"></a></h2>
+<p>Logging setup for Dragon runtime infrastructure</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.dlogging.util.LoggingValue">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">LoggingValue</span></span><a class="headerlink" href="#dragon.dlogging.util.LoggingValue" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.util.LoggingValue.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">option_strings</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">dest</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nargs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">const</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">default</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">type</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">choices</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">required</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">help</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">metavar</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.util.LoggingValue.__init__" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.dlogging.util.DragonLoggingServices">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonLoggingServices</span></span><a class="headerlink" href="#dragon.dlogging.util.DragonLoggingServices" title="Permalink to this definition"></a></dt>
+<dd><p>Enumerator for logging names of backend services</p>
+<dl class="simple">
+<dt>Attributes:</dt><dd><dl class="field-list simple">
+<dt class="field-odd">LA_FE</dt>
+<dd class="field-odd"><p>‘LA_FE’</p>
+</dd>
+<dt class="field-even">LA_BE</dt>
+<dd class="field-even"><p>‘LA_BE’</p>
+</dd>
+<dt class="field-odd">GS</dt>
+<dd class="field-odd"><p>‘GS’</p>
+</dd>
+<dt class="field-even">TA</dt>
+<dd class="field-even"><p>‘TA’</p>
+</dd>
+<dt class="field-odd">ON</dt>
+<dd class="field-odd"><p>‘ON’</p>
+</dd>
+<dt class="field-even">LS</dt>
+<dd class="field-even"><p>‘LS’</p>
+</dd>
+<dt class="field-odd">TEST</dt>
+<dd class="field-odd"><p>‘TEST’</p>
+</dd>
+<dt class="field-even">PERF</dt>
+<dd class="field-even"><p>‘PERF’</p>
+</dd>
+</dl>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.dlogging.util.DragonFEFilter">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonFEFilter</span></span><a class="headerlink" href="#dragon.dlogging.util.DragonFEFilter" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.util.DragonFEFilter.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.dlogging.util.DragonFEFilter.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Create logging filter to add record attributes to FE logger</p>
+<p>Adds hostname, IP address, port, and service name to all FE logging
+entries. These are needed to satisfy the <code class="docutils literal notranslate"><span class="pre">dragon.dlogging.util.default_FE_fmt</span></code>
+format string</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.util.DragonFEFilter.filter">
+<span class="sig-name descname"><span class="pre">filter</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">record</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">LogRecord</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#dragon.dlogging.util.DragonFEFilter.filter" title="Permalink to this definition"></a></dt>
+<dd><p>Filter out BE messages and let through all FE messages while defining record attributes</p>
+<dl class="simple">
+<dt>Args:</dt><dd><p>record (logging.LogRecord): record that will be populated</p>
+</dd>
+<dt>Returns:</dt><dd><p>bool: Log message if True. Don’t if False</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.dlogging.util.DragonLoggingHandler">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonLoggingHandler</span></span><a class="headerlink" href="#dragon.dlogging.util.DragonLoggingHandler" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.util.DragonLoggingHandler.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">serialized_log_descr</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="../ref/core/Cython/utils.html#id10" title="dragon.utils.B64"><span class="pre">B64</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">mpool</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="../ref/core/Cython/managed_memory.html#dragon.managed_memory.MemoryPool" title="dragon.managed_memory.MemoryPool"><span class="pre">MemoryPool</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hostname</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ip_address</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">service</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dragon.dlogging.util.DragonLoggingServices" title="dragon.dlogging.util.DragonLoggingServices"><span class="pre">DragonLoggingServices</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.dlogging.util.DragonLoggingHandler.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Logging handler to enable python logging to be sent to the Dragon Logging channel on BE</p>
+<p>Ultimately a <code class="code docutils literal notranslate"><span class="pre">logging.StreamHandler</span></code> that sends stream output to <code class="docutils literal notranslate"><span class="pre">/dev/null</span></code> and also
+emits log records into a  <a class="reference internal" href="messages_api.html#loggingmsg"><span class="std std-ref">dragon.infrastructure.messages.LoggingMsg</span></a> object that
+is serialized into a <a class="reference internal" href="../ref/inf/logging.html#dragon.dlogging.logger.DragonLogger" title="dragon.dlogging.logger.DragonLogger"><code class="xref py py-class docutils literal notranslate"><span class="pre">dragon.dlogging.logger.DragonLogger</span></code></a></p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>serialized_log_descr</strong> (<a class="reference internal" href="../ref/core/Cython/utils.html#id10" title="dragon.utils.B64"><em>B64</em></a>) – serialized descriptor from
+<a class="reference internal" href="../ref/inf/logging.html#dragon.dlogging.logger.DragonLogger" title="dragon.dlogging.logger.DragonLogger"><code class="xref py py-class docutils literal notranslate"><span class="pre">dragon.dlogging.logger.DragonLogger</span></code></a></p></li>
+<li><p><strong>mpool</strong> (<a class="reference internal" href="../components/managed_memory/cy_managedmemory.html#MemoryPool" title="MemoryPool"><em>MemoryPool</em></a><em>, </em><em>optional</em>) – Memory pool to use for attaching to logging channel, defaults to None</p></li>
+<li><p><strong>hostname</strong> (<em>str</em><em>, </em><em>optional</em>) – hostname of logging service, defaults to None</p></li>
+<li><p><strong>ip_address</strong> (<em>str</em><em>, </em><em>optional</em>) – IP address of logging service, defaults to None</p></li>
+<li><p><strong>port</strong> (<em>str</em><em>, </em><em>optional</em>) – Port of logging service, defaults to None</p></li>
+<li><p><strong>service</strong> (<em>Union</em><em>[</em><a class="reference internal" href="#dragon.dlogging.util.DragonLoggingServices" title="dragon.dlogging.util.DragonLoggingServices"><em>DragonLoggingServices</em></a><em>, </em><em>str</em><em>]</em><em>, </em><em>optional</em>) – Name of logging service. Acceptable names are defined
+in <a class="reference internal" href="#dragon.dlogging.util.DragonLoggingServices" title="dragon.dlogging.util.DragonLoggingServices"><code class="xref py py-class docutils literal notranslate"><span class="pre">DragonLoggingServices</span></code></a></p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.util.DragonLoggingHandler.emit">
+<span class="sig-name descname"><span class="pre">emit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">record</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">LogRecord</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.dlogging.util.DragonLoggingHandler.emit" title="Permalink to this definition"></a></dt>
+<dd><p>Emit a dragon.insfrauction.messages.LoggingMsg message</p>
+<dl class="simple">
+<dt>Args:</dt><dd><p>record (logging.LogRecord): Record populated by classes format method</p>
+</dd>
+<dt>Raises:</dt><dd><p>err: DragonLoggingError if message could not be emitted into logging channel</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.dlogging.util.setup_logging">
+<span class="sig-name descname"><span class="pre">setup_logging</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">basename</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">basedir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">level</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_console</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.util.setup_logging" title="Permalink to this definition"></a></dt>
+<dd><p>Original dragon logging function to configure root logger.</p>
+<dl>
+<dt>Args:</dt><dd><p>basename (str, optional): Logging file basename. Date and time will be appended. Defaults to ‘dragon’. Defaults to None.</p>
+<p>basedir (str, optional): Directory to save log file to os.getcwd(). Defaults to None.</p>
+<p>level (int, optional): Logging level. Defaults to logging.INFO.</p>
+<p>force (bool, optional): Remove any handlers attached to the root logger. Defaults to False.</p>
+<p>add_console (bool, optional): Enable loggng to stderr. Defaults to False.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.dlogging.util.setup_FE_logging">
+<span class="sig-name descname"><span class="pre">setup_FE_logging</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">log_device_level_map</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">dict</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">{}</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">basename</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">basedir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">force</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">add_console</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">test_BE_dir</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">multi_node_mode</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#dragon.dlogging.util.setup_FE_logging" title="Permalink to this definition"></a></dt>
+<dd><p>Set-up launcher frontend logging infrastructure. Will log to file.</p>
+<p>Configures the individual service loggers the FE will use to log all messages
+sent to it from the backend services of the MRNet overlay and creates the FileHandler
+they will all write to</p>
+<dl>
+<dt>Args:</dt><dd><p>basename (str, optional): Logging file basename. Date and time will be appended. Defaults to ‘dragon’.</p>
+<p>basedir (str, optional): Directory to save log file to. Defaults to pwd</p>
+<p>force (bool, optional): Remove all existing handlers from root logger. Defaults to False.</p>
+<p>add_console (bool, optional): Turn on logging to stderr. Defaults to False.</p>
+<p>test_BE_dir (str, optional): Directory to save backend log files to. Used for testing. Defaults to None.</p>
+<p>multi_node_mode (bool, optional): Enable multi-node filtering and formatting.</p>
+</dd>
+<dt>Returns:</dt><dd><p>int: logging level</p>
+<p>str: full path and filename of logging file</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.dlogging.util.close_FE_logging">
+<span class="sig-name descname"><span class="pre">close_FE_logging</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.util.close_FE_logging" title="Permalink to this definition"></a></dt>
+<dd><p>Close individual service loggers used for logging on frontend</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.dlogging.util.setup_dragon_logging">
+<span class="sig-name descname"><span class="pre">setup_dragon_logging</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">node_index</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../ref/inf/logging.html#dragon.dlogging.logger.DragonLogger" title="dragon.dlogging.logger.DragonLogger"><span class="pre">DragonLogger</span></a></span></span><a class="headerlink" href="#dragon.dlogging.util.setup_dragon_logging" title="Permalink to this definition"></a></dt>
+<dd><p>Create a <a class="reference internal" href="../ref/inf/logging.html#dragon.dlogging.logger.DragonLogger" title="dragon.dlogging.logger.DragonLogger"><code class="xref py py-class docutils literal notranslate"><span class="pre">dragon.dlogging.logger.DragonLogger</span></code></a> instance</p>
+<dl class="simple">
+<dt>Args:</dt><dd><p>node_index (int): node index logger is being created on</p>
+</dd>
+<dt>Returns:</dt><dd><p>DragonLogger: created DragonLogger instance</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.dlogging.util.detach_from_dragon_handler">
+<span class="sig-name descname"><span class="pre">detach_from_dragon_handler</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">service</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dragon.dlogging.util.DragonLoggingServices" title="dragon.dlogging.util.DragonLoggingServices"><span class="pre">DragonLoggingServices</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.util.detach_from_dragon_handler" title="Permalink to this definition"></a></dt>
+<dd><p>Detach logger from dragon handler</p>
+<p>This only needs to be called for processes that will outlive the
+MRNet backend service, which “owns” the logging memory pool
+and relevant backend infrastructure</p>
+<dl class="simple">
+<dt>Args:</dt><dd><p>service (str): logging service, options defined in <a class="reference internal" href="#dragon.dlogging.util.DragonLoggingServices" title="dragon.dlogging.util.DragonLoggingServices"><code class="xref py py-class docutils literal notranslate"><span class="pre">DragonLoggingServices</span></code></a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.dlogging.util.setup_BE_logging">
+<span class="sig-name descname"><span class="pre">setup_BE_logging</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">service</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Union</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="#dragon.dlogging.util.DragonLoggingServices" title="dragon.dlogging.util.DragonLoggingServices"><span class="pre">DragonLoggingServices</span></a><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">logger_sdesc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="../ref/core/Cython/utils.html#id10" title="dragon.utils.B64"><span class="pre">B64</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mpool</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><a class="reference internal" href="../ref/core/Cython/managed_memory.html#dragon.managed_memory.MemoryPool" title="dragon.managed_memory.MemoryPool"><span class="pre">MemoryPool</span></a><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">hostname</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ip_address</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">port</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fname</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">Tuple</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">,</span></span><span class="w"> </span><span class="pre">str</span><span class="p"><span class="pre">]</span></span></span></span><a class="headerlink" href="#dragon.dlogging.util.setup_BE_logging" title="Permalink to this definition"></a></dt>
+<dd><p>Configure backend logging for requested backend service</p>
+<p>Create a handler using the <a class="reference internal" href="../ref/inf/logging.html#dragon.dlogging.logger.DragonLogger" title="dragon.dlogging.logger.DragonLogger"><code class="xref py py-class docutils literal notranslate"><span class="pre">dragon.dlogging.logger.DragonLogger</span></code></a> serialized
+descriptor and add it to the given service’s logger
+:param service: logging service, options defined in <a class="reference internal" href="#dragon.dlogging.util.DragonLoggingServices" title="dragon.dlogging.util.DragonLoggingServices"><code class="xref py py-class docutils literal notranslate"><span class="pre">DragonLoggingServices</span></code></a>
+:type service: Union[DragonLoggingServices, str]
+:param logger_sdesc: serialized logging descriptor, defaults to None
+:type logger_sdesc: B64, optional
+:param mpool: memory pool to use for attaching to channel, defaults to None
+:type mpool: MemoryPool, optional
+:param hostname:  Hostname of logging service, defaults to None
+:type hostname: str, optional
+:param ip_address: IP address of logging service, defaults to None
+:type ip_address: str, optional
+:param port: Port of logging service, defaults to None
+:type port: str, optional
+:param fname: Filename for file logging, defaults to None
+:type fname: str, optional
+:return: logging level, filename logging will be saved to
+:rtype: Tuple[int, str]</p>
+</dd></dl>
+
+<span class="target" id="module-dragon.dlogging.logger"></span><dl class="py class">
+<dt class="sig sig-object py" id="dragon.dlogging.logger.DragonLogger">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonLogger</span></span><a class="headerlink" href="#dragon.dlogging.logger.DragonLogger" title="Permalink to this definition"></a></dt>
+<dd><p>Python interface to C-level Dragon logging infrastructure</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.logger.DragonLogger.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.logger.DragonLogger.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Create a DragonLogger instance for send/recv of infrastructure logs</p>
+<dl>
+<dt>Args:</dt><dd><p>mpool (MemoryPool): memory pool dedicated to logging infrastructure messages</p>
+<p>lattrs (NULL, optional): Logging attributes. <em>Not implemented</em></p>
+<dl class="simple">
+<dt>uid (default: 0): Unique ID to use for the logger.</dt><dd><p>If default is provided a semi-random value will be used
+starting at BASE_LOG_CUID (see facts.py)</p>
+</dd>
+<dt>mode (dragonLoggingMode, default: FIRST): What mode to run the logger in.</dt><dd><p>DRAGON_LOGGING_LOSSLESS - Block and wait on a full channel until a message can be inserted
+DRAGON_LOGGING_FIRST - Drop message on a full channel
+DRAGON_LOGGING_LAST - Remove oldest message to insert newest on a full channel !!! NOT IMPLEMENTED !!!</p>
+</dd>
+</dl>
+</dd>
+<dt>Raises:</dt><dd><p>RuntimeError: Input memory pool was None</p>
+<p>DragonLoggingError: Logging was not successfully initialized</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.logger.DragonLogger.__new__">
+<span class="sig-name descname"><span class="pre">__new__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.logger.DragonLogger.__new__" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.logger.DragonLogger.attach">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">attach</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">serialized_bytes</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bytes</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mpool</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="../ref/inf/logging.html#dragon.dlogging.logger.DragonLogger" title="dragon.dlogging.logger.DragonLogger"><span class="pre">DragonLogger</span></a></span></span><a class="headerlink" href="#dragon.dlogging.logger.DragonLogger.attach" title="Permalink to this definition"></a></dt>
+<dd><p>Attach to a logging channel given a serialized descriptor</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>serialized_bytes</strong> (<em>bytes</em>) – serialized logging channel descriptor</p></li>
+<li><p><strong>mpool</strong> (<a class="reference internal" href="../components/managed_memory/cy_managedmemory.html#MemoryPool" title="MemoryPool"><em>MemoryPool</em></a><em>, </em><em>optional</em>) – memory pool to construct messages from. If None, tries
+to use the pool associated with the channel, defaults to None</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><code class="code docutils literal notranslate"><span class="pre">DragonLogger</span></code> instance attached to given channel backed by option mpool</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="../ref/inf/logging.html#dragon.dlogging.logger.DragonLogger" title="dragon.dlogging.logger.DragonLogger">DragonLogger</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.logger.DragonLogger.destroy">
+<span class="sig-name descname"><span class="pre">destroy</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">destroy_pool</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.logger.DragonLogger.destroy" title="Permalink to this definition"></a></dt>
+<dd><p>Destroy the DragonLogger object and its underlying memory pool</p>
+<p>Should only be called when it is known that no other processes or
+services will be writing to it</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>destroy_pool</strong> (<em>bool</em><em>, </em><em>optional</em>) – whether to destroy memory pool support the logging channel, defaults to True</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><a class="reference internal" href="../ref/inf/logging.html#dragon.dlogging.logger.DragonLoggingError" title="dragon.dlogging.logger.DragonLoggingError"><strong>DragonLoggingError</strong></a> – unable to destroy the logging object as requested</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.logger.DragonLogger.get">
+<span class="sig-name descname"><span class="pre">get</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">priority</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">20</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.logger.DragonLogger.get" title="Permalink to this definition"></a></dt>
+<dd><p>Get a message out of logging channel queue of level <code class="docutils literal notranslate"><span class="pre">priority</span></code></p>
+<dl class="simple">
+<dt>Args:</dt><dd><p>priority (int): level the return message should at minimum be (eg: logging.INFO)
+timeout (int, float): maximum time in seconds to wait for a message</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.logger.DragonLogger.num_logs">
+<span class="sig-name descname"><span class="pre">num_logs</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.logger.DragonLogger.num_logs" title="Permalink to this definition"></a></dt>
+<dd><p>Get number of logs in queue</p>
+<dl class="simple">
+<dt>Returns:</dt><dd><p>int: number of logs currently in channel queue</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.logger.DragonLogger.put">
+<span class="sig-name descname"><span class="pre">put</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">msg</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">str</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">priority</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">20</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.logger.DragonLogger.put" title="Permalink to this definition"></a></dt>
+<dd><p>Put a logging message into the logging channel queue</p>
+<dl>
+<dt>Args:</dt><dd><p>msg (str)</p>
+<p>priority (int): logging level with values matching those in Python’s logging module (eg: logging.INFO)</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.dlogging.logger.DragonLogger.serialize">
+<span class="sig-name descname"><span class="pre">serialize</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.dlogging.logger.DragonLogger.serialize" title="Permalink to this definition"></a></dt>
+<dd><p>Return a serialized descriptor of the logging channel</p>
+<p>For an already created logger, return its serialized descriptor so
+other services can attach to it</p>
+<dl class="simple">
+<dt>Returns:</dt><dd><p>bytes: serialized descriptor</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="bootstrapping.html" class="btn btn-neutral float-left" title="Infrastructure Bootstrapping" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../services/services.html" class="btn btn-neutral float-right" title="Services" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

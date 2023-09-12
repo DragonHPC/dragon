@@ -1,0 +1,96 @@
+﻿dragon.infrastructure.facts
+===========================
+
+.. automodule:: dragon.infrastructure.facts
+   :members:
+
+   
+   
+   .. rubric:: Module Attributes
+
+   .. autosummary::
+   
+      GS_INPUT_CUID
+      LAUNCHER_PUID
+      GS_PUID
+      FIRST_PUID
+      FIRST_TRANSPORT_PUID
+      RANGE_TRANSPORT_PUID
+      BASE_PMOD_LAUNCH_CUID
+      RANGE_PMOD_LAUNCH_CUID
+      BASE_USER_MANAGED_CUID
+      RANGE_USER_MANAGED_CUID
+      BASE_TA_CUID
+      RANGE_TA_CUID
+      BASE_SHEP_CUID
+      RANGE_SHEP_CUID
+      BASE_BE_CUID
+      RANGE_BE_CUID
+      BASE_GW_CUID
+      RANGE_GW_CUID
+      BASE_LOG_CUID
+      RANGE_LOG_CUID
+      BASE_BE_GW_CUID
+      RANGE_BE_GW_CUID
+      BASE_BE_LOCAL_CUID
+      RANGE_BE_LOCAL_CUID
+      BASE_BE_FE_CUID
+      RANGE_BE_FE_CUID
+      FIRST_CUID
+      FIRST_BE_MUID
+      RANGE_BE_MUID
+      FE_OVERLAY_TRANSPORT_AGENT_MUID
+      FIRST_LOGGING_MUID
+      FIRST_DEFAULT_MUID
+      FIRST_MUID
+      FIRST_GUID
+      FRONTEND_HOSTID
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      be_fe_cuid_from_hostid
+      be_gw_cuid_from_hostid
+      be_local_cuid_in_from_hostid
+      be_local_cuid_out_from_hostid
+      be_pool_muid_from_hostid
+      default_pool_muid_from_index
+      env_name
+      gw_cuid_from_index
+      index_from_default_pool_muid
+      index_from_infrastructure_pool_muid
+      index_from_shepherd_cuid
+      infrastructure_pool_muid_from_index
+      is_default_pool
+      is_pre_defined_pool
+      is_transport_puid
+      launcher_cuid_from_index
+      logging_pool_muid_from_index
+      pmod_launch_cuid_from_jobinfo
+      shepherd_cuid_from_index
+      transport_cuid_from_index
+      transport_puid_from_index
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      TransportAgentOptions
+   
+   
+
+   
+   
+   
+
+
+

@@ -1,0 +1,44 @@
+﻿dragon.infrastructure.connection
+================================
+
+.. automodule:: dragon.infrastructure.connection
+   :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      Client
+      Pipe
+      get_next_ctr
+      make_uniq_chan_names
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      Address
+      CUID
+      Connection
+      ConnectionOptions
+      Listener
+      PipeOptions
+   
+   
+
+   
+   
+   
+
+
+

@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.mpbridge.synchronize &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/clipboard.min.js"></script>
+        <script src="../../_static/copybutton.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="dragon.mpbridge.util" href="dragon.mpbridge.util.html" />
+    <link rel="prev" title="dragon.mpbridge.sharedctypes" href="dragon.mpbridge.sharedctypes.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../ref.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../native/index.html">Dragon Native</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../client/index.html">Dragon GS Client</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../inf/index.html">Dragon Infrastructure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../core/index.html">Dragon Core</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html">MPBridge</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="index.html#python-reference">Python Reference</a><ul class="current">
+<li class="toctree-l4 current"><a class="reference internal" href="dragon.mpbridge.html">dragon.mpbridge</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="index.html#architecture">Architecture</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../ref.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="index.html">MPBridge</a></li>
+          <li class="breadcrumb-item"><a href="dragon.mpbridge.html">dragon.mpbridge</a></li>
+      <li class="breadcrumb-item active">dragon.mpbridge.synchronize</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/ref/mpbridge/dragon.mpbridge.synchronize.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-dragon.mpbridge.synchronize">
+<span id="dragon-mpbridge-synchronize"></span><h1>dragon.mpbridge.synchronize<a class="headerlink" href="#module-dragon.mpbridge.synchronize" title="Permalink to this heading"></a></h1>
+<p>Dragon’s replacements for the synchronization primitives in Multiprocessing.  
+Except for <code class="code docutils literal notranslate"><span class="pre">Condition</span></code>, all components are based on <code class="code docutils literal notranslate"><span class="pre">dragon.native</span></code> component
+and are implemented over one or more dragon channels.  <code class="code docutils literal notranslate"><span class="pre">Lock</span></code> is patched with a
+dummy <code class="code docutils literal notranslate"><span class="pre">_SemLock</span></code> class, so <code class="code docutils literal notranslate"><span class="pre">Condition</span></code> works out of the box.</p>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Barrier</span></code>(parties[, action, timeout, ctx, ...])</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">BoundedSemaphore</span></code>(value[, ctx, use_base_impl])</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Condition</span></code>(lock[, ctx, use_base_impl])</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Event</span></code>([ctx, use_base_impl])</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Lock</span></code>([ctx, use_base_impl])</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">RLock</span></code>([ctx, use_base_impl])</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Semaphore</span></code>(value[, ctx, use_base_impl])</p></td>
+<td><p></p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.mpbridge.synchronize.AugmentedDragonNativeLock" title="dragon.mpbridge.synchronize.AugmentedDragonNativeLock"><code class="xref py py-obj docutils literal notranslate"><span class="pre">AugmentedDragonNativeLock</span></code></a></p></td>
+<td><p>Augment the Dragon Native Lock so it can be used by Python Multiprocessing</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.mpbridge.synchronize.BaseImplBarrier" title="dragon.mpbridge.synchronize.BaseImplBarrier"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BaseImplBarrier</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">BaseImplBoundedSemaphore</span></code></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">BaseImplCondition</span></code></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">BaseImplEvent</span></code></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">BaseImplLock</span></code></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">BaseImplRLock</span></code></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">BaseImplSemaphore</span></code></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.mpbridge.synchronize.DragonBarrier" title="dragon.mpbridge.synchronize.DragonBarrier"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DragonBarrier</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.mpbridge.synchronize.DragonBoundedSemaphore" title="dragon.mpbridge.synchronize.DragonBoundedSemaphore"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DragonBoundedSemaphore</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.mpbridge.synchronize.DragonCondition" title="dragon.mpbridge.synchronize.DragonCondition"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DragonCondition</span></code></a></p></td>
+<td><p>Dragons replacement for the Multiprocessing Condition removes all references to _semlock and the test for assert_spawning.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.mpbridge.synchronize.DragonEvent" title="dragon.mpbridge.synchronize.DragonEvent"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DragonEvent</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.mpbridge.synchronize.DragonLock" title="dragon.mpbridge.synchronize.DragonLock"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DragonLock</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.mpbridge.synchronize.DragonRLock" title="dragon.mpbridge.synchronize.DragonRLock"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DragonRLock</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.mpbridge.synchronize.DragonSemaphore" title="dragon.mpbridge.synchronize.DragonSemaphore"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DragonSemaphore</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.AugmentedDragonNativeLock">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">AugmentedDragonNativeLock</span></span><a class="headerlink" href="#dragon.mpbridge.synchronize.AugmentedDragonNativeLock" title="Permalink to this definition"></a></dt>
+<dd><p>Augment the Dragon Native Lock so it can be used by Python Multiprocessing</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.AugmentedDragonNativeLock.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.mpbridge.synchronize.AugmentedDragonNativeLock.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Initialize the lock object</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>m_uid</strong> (<em>int</em><em>, </em><em>optional</em>) – memory pool to create the channel in, defaults to _DEF_MUID</p></li>
+<li><p><strong>recursive</strong> (<em>bool</em><em>, </em><em>optional</em>) – if the Lock should be recursive, defaults to False</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonLock">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonLock</span></span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonLock" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonLock.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonLock.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Initialize the lock object</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>m_uid</strong> (<em>int</em><em>, </em><em>optional</em>) – memory pool to create the channel in, defaults to _DEF_MUID</p></li>
+<li><p><strong>recursive</strong> (<em>bool</em><em>, </em><em>optional</em>) – if the Lock should be recursive, defaults to False</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonRLock">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonRLock</span></span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonRLock" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonRLock.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonRLock.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Initialize the lock object</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>m_uid</strong> (<em>int</em><em>, </em><em>optional</em>) – memory pool to create the channel in, defaults to _DEF_MUID</p></li>
+<li><p><strong>recursive</strong> (<em>bool</em><em>, </em><em>optional</em>) – if the Lock should be recursive, defaults to False</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonCondition">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonCondition</span></span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonCondition" title="Permalink to this definition"></a></dt>
+<dd><p>Dragons replacement for the Multiprocessing Condition removes
+all references to _semlock and the test for assert_spawning.
+The _semlock interface is mapped onto Dragon’s native Lock
+implementation.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonSemaphore">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonSemaphore</span></span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonSemaphore" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonSemaphore.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonSemaphore.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Create a Semaphore object that can be shared across Dragon processes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>value</strong> (<em>int</em><em>, </em><em>optional</em>) – initial value for the counter, defaults to 1</p></li>
+<li><p><strong>m_uid</strong> (<em>int</em><em>, </em><em>optional</em>) – dragon managed memory pool id to use, defaults to the standard pool.</p></li>
+<li><p><strong>bounded</strong> (<em>bool</em><em>, </em><em>optional</em>) – set if the value of the Semaphore cannot exceed its initial value, defaults to False</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonBoundedSemaphore">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonBoundedSemaphore</span></span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonBoundedSemaphore" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonBoundedSemaphore.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonBoundedSemaphore.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Create a Semaphore object that can be shared across Dragon processes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>value</strong> (<em>int</em><em>, </em><em>optional</em>) – initial value for the counter, defaults to 1</p></li>
+<li><p><strong>m_uid</strong> (<em>int</em><em>, </em><em>optional</em>) – dragon managed memory pool id to use, defaults to the standard pool.</p></li>
+<li><p><strong>bounded</strong> (<em>bool</em><em>, </em><em>optional</em>) – set if the value of the Semaphore cannot exceed its initial value, defaults to False</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonEvent">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonEvent</span></span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonEvent" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonEvent.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonEvent.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Initialize an event object
+:param m_uid: memory pool to create the channel in, defaults to _DEF_MUID
+:type m_uid: int, optional</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonBarrier">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonBarrier</span></span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonBarrier" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonBarrier.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">parties</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">action</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">callable</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ctx</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonBarrier.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Initialize a barrier object
+:param parties: number of parties for the barrier to act upon
+:type parties: int, optional, &gt; 2
+:param action: class that the barrier calls upon
+:type callable: optional
+:param timeout: timeout for barrier
+:type timeout: float, optional
+:param m_uid: memory pool to create the channel in, defaults to _DEF_MUID
+:type m_uid: int, optional</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.DragonBarrier.wait">
+<span class="sig-name descname"><span class="pre">wait</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.mpbridge.synchronize.DragonBarrier.wait" title="Permalink to this definition"></a></dt>
+<dd><p>When all the processes party to the barrier have called wait, they are
+all released simultaneously.  The timeout for wait takes precedence over
+constructor.
+:param timeout: timeout for barrier
+:type timeout: float, optional
+:rtype: None</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.BaseImplBarrier">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">BaseImplBarrier</span></span><a class="headerlink" href="#dragon.mpbridge.synchronize.BaseImplBarrier" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.mpbridge.synchronize.BaseImplBarrier.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">**</span></span><span class="n"><span class="pre">kwargs</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.mpbridge.synchronize.BaseImplBarrier.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Create a barrier, initialised to ‘parties’ threads.</p>
+<p>‘action’ is a callable which, when supplied, will be called by one of
+the threads after they have all entered the barrier and just prior to
+releasing them all. If a ‘timeout’ is provided, it is used as the
+default for all subsequent ‘wait()’ calls.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="dragon.mpbridge.sharedctypes.html" class="btn btn-neutral float-left" title="dragon.mpbridge.sharedctypes" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="dragon.mpbridge.util.html" class="btn btn-neutral float-right" title="dragon.mpbridge.util" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

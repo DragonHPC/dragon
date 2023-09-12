@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="804px" preserveAspectRatio="none" style="width:1497px;height:804px;background:#FFFFFF;" version="1.1" viewBox="0 0 1497 804" width="1497px" zoomAndPan="magnify"><defs/><g><!--MD5=[3f187adb52bf36092d1ab8adb3b1e5c5]
+cluster LNode--><polygon fill="#FFFFFF" points="799,16,809,6,1019,6,1019,207,1009,217,799,217,799,16" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="1009" x2="1019" y1="16" y2="6"/><line style="stroke:#000000;stroke-width:1.5;" x1="799" x2="1009" y1="16" y2="16"/><line style="stroke:#000000;stroke-width:1.5;" x1="1009" x2="1009" y1="16" y2="217"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="144" x="833" y="31.9951">Login / Head Node</text><!--MD5=[ddbc083b73f8a8180966341636e2a4b3]
+cluster PNode--><polygon fill="#FFFFFF" points="16,276,26,266,703,266,703,787.5,693,797.5,16,797.5,16,276" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="693" x2="703" y1="276" y2="266"/><line style="stroke:#000000;stroke-width:1.5;" x1="16" x2="693" y1="276" y2="276"/><line style="stroke:#000000;stroke-width:1.5;" x1="693" x2="693" y1="276" y2="797.5"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="182" x="264.5" y="291.9951">Primary Compute Node</text><!--MD5=[98b6eba47d3e42f9764f8b8d1d887f55]
+cluster CNode--><polygon fill="#FFFFFF" points="963,276,973,266,1480,266,1480,787.5,1470,797.5,963,797.5,963,276" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="1470" x2="1480" y1="276" y2="266"/><line style="stroke:#000000;stroke-width:1.5;" x1="963" x2="1470" y1="276" y2="276"/><line style="stroke:#000000;stroke-width:1.5;" x1="1470" x2="1470" y1="276" y2="797.5"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="117" x="1159" y="291.9951">Compute Node</text><!--MD5=[82af1dee43a4b33a77487333ec09e8d2]
+entity LF--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="161" x="828.5" y="46"/><polygon fill="#F8F8F8" points="972.5,51,972.5,65,984.5,65,984.5,57,978.5,51,972.5,51" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="978.5" x2="978.5" y1="51" y2="57"/><line style="stroke:#000000;stroke-width:1.5;" x1="984.5" x2="978.5" y1="57" y2="57"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="131" x="838.5" y="71.9951">Launcher Frontend</text><!--MD5=[fe8bdee779d8478228189f7e917ab520]
+entity ONFE--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="147" x="835.5" y="162"/><polygon fill="#F8F8F8" points="965.5,167,965.5,181,977.5,181,977.5,173,971.5,167,965.5,167" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="971.5" x2="971.5" y1="167" y2="173"/><line style="stroke:#000000;stroke-width:1.5;" x1="977.5" x2="971.5" y1="173" y2="173"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="117" x="845.5" y="187.9951">Overlay Frontend</text><!--MD5=[8ec78d80be05abfdf3165d070de529be]
+entity ONBE0--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="145" x="538.5" y="306"/><polygon fill="#F8F8F8" points="666.5,311,666.5,325,678.5,325,678.5,317,672.5,311,666.5,311" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="672.5" x2="672.5" y1="311" y2="317"/><line style="stroke:#000000;stroke-width:1.5;" x1="678.5" x2="672.5" y1="317" y2="317"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="115" x="548.5" y="331.9951">Overlay Backend</text><!--MD5=[c0297b12816e513b5ba568cf8e128d02]
+entity LB0--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="159" x="528.5" y="422.5"/><polygon fill="#F8F8F8" points="670.5,427.5,670.5,441.5,682.5,441.5,682.5,433.5,676.5,427.5,670.5,427.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="676.5" x2="676.5" y1="427.5" y2="433.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="682.5" x2="676.5" y1="433.5" y2="433.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="129" x="538.5" y="448.4951">Launcher Backend</text><!--MD5=[66223a172ae9ceac77f27ebc9b631536]
+entity GS--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="135" x="514.5" y="540.5"/><polygon fill="#F8F8F8" points="632.5,545.5,632.5,559.5,644.5,559.5,644.5,551.5,638.5,545.5,632.5,545.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="638.5" x2="638.5" y1="545.5" y2="551.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="644.5" x2="638.5" y1="551.5" y2="551.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="105" x="524.5" y="566.4951">Global Services</text><!--MD5=[7433f0281a8f49c9601775bfa33b7ed9]
+entity TS0--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="151" x="403.5" y="742.5"/><polygon fill="#F8F8F8" points="537.5,747.5,537.5,761.5,549.5,761.5,549.5,753.5,543.5,747.5,537.5,747.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="543.5" x2="543.5" y1="747.5" y2="753.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="549.5" x2="543.5" y1="753.5" y2="753.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="121" x="413.5" y="768.4951">Transport Service</text><!--MD5=[323729eb51112251171bdb7a682e5830]
+entity CH0--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="191" x="383.5" y="642.5"/><polygon fill="#F8F8F8" points="557.5,647.5,557.5,661.5,569.5,661.5,569.5,653.5,563.5,647.5,557.5,647.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="563.5" x2="563.5" y1="647.5" y2="653.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="569.5" x2="563.5" y1="653.5" y2="653.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="161" x="393.5" y="668.4951">Infrastructure Channels</text><!--MD5=[5e6486e23aaa9b3184b6a6bf7c8f1c19]
+entity UCH0--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="131" x="171.5" y="642.5"/><polygon fill="#F8F8F8" points="285.5,647.5,285.5,661.5,297.5,661.5,297.5,653.5,291.5,647.5,285.5,647.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="291.5" x2="291.5" y1="647.5" y2="653.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="297.5" x2="291.5" y1="653.5" y2="653.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="101" x="181.5" y="668.4951">User Channels</text><!--MD5=[f6b1197c731ddfceaf2e5cad3bcd9957]
+entity LS0--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="127" x="352.5" y="540.5"/><polygon fill="#F8F8F8" points="462.5,545.5,462.5,559.5,474.5,559.5,474.5,551.5,468.5,545.5,462.5,545.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="468.5" x2="468.5" y1="545.5" y2="551.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="474.5" x2="468.5" y1="551.5" y2="551.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="97" x="362.5" y="566.4951">Local Services</text><!--MD5=[95b0993fa77e730145c7e8a861d9d421]
+entity APP0--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="141" x="56.5" y="540.5"/><polygon fill="#F8F8F8" points="180.5,545.5,180.5,559.5,192.5,559.5,192.5,551.5,186.5,545.5,180.5,545.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="186.5" x2="186.5" y1="545.5" y2="551.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="192.5" x2="186.5" y1="551.5" y2="551.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="111" x="66.5" y="566.4951">User Application</text><!--MD5=[7567b824e6994199f1bea5b33f0342ea]
+entity ONBE1--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="145" x="1135.5" y="306"/><polygon fill="#F8F8F8" points="1263.5,311,1263.5,325,1275.5,325,1275.5,317,1269.5,311,1263.5,311" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="1269.5" x2="1269.5" y1="311" y2="317"/><line style="stroke:#000000;stroke-width:1.5;" x1="1275.5" x2="1269.5" y1="317" y2="317"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="115" x="1145.5" y="331.9951">Overlay Backend</text><!--MD5=[79e95563e47b772975a3065ce8cf5d51]
+entity LB1--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="159" x="1167.5" y="422.5"/><polygon fill="#F8F8F8" points="1309.5,427.5,1309.5,441.5,1321.5,441.5,1321.5,433.5,1315.5,427.5,1309.5,427.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="1315.5" x2="1315.5" y1="427.5" y2="433.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="1321.5" x2="1315.5" y1="433.5" y2="433.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="129" x="1177.5" y="448.4951">Launcher Backend</text><!--MD5=[643299104605e8d78eff005bc1d26b9b]
+entity TS1--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="151" x="998.5" y="742.5"/><polygon fill="#F8F8F8" points="1132.5,747.5,1132.5,761.5,1144.5,761.5,1144.5,753.5,1138.5,747.5,1132.5,747.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="1138.5" x2="1138.5" y1="747.5" y2="753.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="1144.5" x2="1138.5" y1="753.5" y2="753.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="121" x="1008.5" y="768.4951">Transport Service</text><!--MD5=[fde0f96fa59572daa0e90d5f230257ab]
+entity CH1--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="191" x="1220.5" y="642.5"/><polygon fill="#F8F8F8" points="1394.5,647.5,1394.5,661.5,1406.5,661.5,1406.5,653.5,1400.5,647.5,1394.5,647.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="1400.5" x2="1400.5" y1="647.5" y2="653.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="1406.5" x2="1400.5" y1="653.5" y2="653.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="161" x="1230.5" y="668.4951">Infrastructure Channels</text><!--MD5=[650bba2b069e3431cfaa42e0eead3a29]
+entity UCH1--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="131" x="1008.5" y="642.5"/><polygon fill="#F8F8F8" points="1122.5,647.5,1122.5,661.5,1134.5,661.5,1134.5,653.5,1128.5,647.5,1122.5,647.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="1128.5" x2="1128.5" y1="647.5" y2="653.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="1134.5" x2="1128.5" y1="653.5" y2="653.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="101" x="1018.5" y="668.4951">User Channels</text><!--MD5=[d89ff5e5473effcb2ca0afc68f850061]
+entity LS1--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="127" x="1299.5" y="540.5"/><polygon fill="#F8F8F8" points="1409.5,545.5,1409.5,559.5,1421.5,559.5,1421.5,551.5,1415.5,545.5,1409.5,545.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="1415.5" x2="1415.5" y1="545.5" y2="551.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="1421.5" x2="1415.5" y1="551.5" y2="551.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="97" x="1309.5" y="566.4951">Local Services</text><!--MD5=[3e917c29e06a230dfb8f05155b9aaa91]
+entity APP1--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="141" x="1003.5" y="540.5"/><polygon fill="#F8F8F8" points="1127.5,545.5,1127.5,559.5,1139.5,559.5,1139.5,551.5,1133.5,545.5,1127.5,545.5" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="1133.5" x2="1133.5" y1="545.5" y2="551.5"/><line style="stroke:#000000;stroke-width:1.5;" x1="1139.5" x2="1133.5" y1="551.5" y2="551.5"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="111" x="1013.5" y="566.4951">User Application</text><path d="M719.5,305.5 L719.5,345.7656 L946.5,345.7656 L946.5,315.5 L936.5,305.5 L719.5,305.5 " fill="#EBEBEB" style="stroke:#383838;stroke-width:1.0;"/><path d="M936.5,305.5 L936.5,315.5 L946.5,315.5 L936.5,305.5 " fill="#EBEBEB" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="206" x="725.5" y="322.5669">Launched via Workload Manager</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="154" x="725.5" y="337.6997">from Launcher Frontend</text><!--MD5=[15fc8de13b7cea5149326b8d9e43f003]
+link LF to ONFE--><path d="M909,85.07 C909,106.27 909,140.74 909,161.94 " fill="none" id="LF-ONFE" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="57" x="910" y="128.0669">channels</text><!--MD5=[ecc1da2f7a41844a876d435c3ae8ce50]
+link ONFE to ONBE0--><path d="M858.1,201.07 C796.81,223.42 702,258 702,258 C702,258 663.27,286.3 636.35,305.98 " fill="none" id="ONFE-ONBE0" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="103" x="769" y="246.0669">OverlayNet Tree</text><!--MD5=[db9626fe5ecd236ad5cb232935b528b6]
+link ONFE to ONBE1--><path d="M948.09,201.06 C1005.39,228.28 1111.59,278.71 1168.9,305.93 " fill="none" id="ONFE-ONBE1" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="103" x="1050" y="246.0669">OverlayNet Tree</text><!--MD5=[9a41b6ad0024448f161e05ef7fa4b48a]
+link ONBE0 to LB0--><path d="M610.51,345.15 C609.95,366.44 609.05,401.07 608.49,422.36 " fill="none" id="ONBE0-LB0" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="57" x="611" y="388.5669">channels</text><!--MD5=[07ac65418bf146f139a5e01f04be1153]
+link ONBE1 to LB1--><path d="M1214.35,345.15 C1221.61,366.44 1233.4,401.07 1240.65,422.36 " fill="none" id="ONBE1-LB1" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="57" x="1230" y="388.5669">channels</text><!--MD5=[4a49378402c1a6ccfde9ac70bed424e2]
+link TS1 to TS0--><path d="M998.4,762 C884.2,762 668.9,762 554.66,762 " fill="none" id="TS1-TS0" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="111" x="721" y="755.0669">HPC Interconnect</text><!--MD5=[4bbce169bdb17699e98c49e567080bbe]
+link LB1 to LS1--><path d="M1265.64,461.64 C1287.28,483.28 1322.78,518.78 1344.41,540.41 " fill="none" id="LB1-LS1" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="76" x="1312" y="504.5669">stdin/stdout</text><!--MD5=[0265e40f89a2a91e678c8de0e9505725]
+link LB1 to CH1--><path d="M1304.56,461.61 C1346.87,475.29 1397,491.5 1397,491.5 C1397,491.5 1443,516.5 1443,516.5 C1443,516.5 1443,603.5 1443,603.5 C1443,603.5 1394.01,625.68 1356.88,642.49 " fill="none" id="LB1-CH1" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[8f4699773e0eaad4dd06d9573103a641]
+link LS1 to CH1--><path d="M1354.16,579.81 C1345.76,597.69 1333.19,624.42 1324.8,642.28 " fill="none" id="LS1-CH1" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[748b70c4036924ebfb6291d539e74fb6]
+link APP1 to CH1--><path d="M1118.95,579.57 C1162.28,597.48 1227.49,624.43 1270.88,642.36 " fill="none" id="APP1-CH1" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[b70d04dadcfdda41642ced22f48eeea7]
+link APP1 to UCH1--><path d="M1074,579.81 C1074,597.69 1074,624.42 1074,642.28 " fill="none" id="APP1-UCH1" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[6da3205d41d11c577ad44531f304ad5a]
+link APP1 to LS1--><path d="M1144.7,560 C1191.99,560 1253.7,560 1299.43,560 " fill="none" id="APP1-LS1" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="118" x="1163" y="553.0669">stdin/stdout/stderr</text><!--MD5=[4b1e5804d94caa44a9cfd93198166bd6]
+link CH1 to TS1--><path d="M1270.2,681.55 C1227.17,698.97 1163.13,724.91 1120.03,742.36 " fill="none" id="CH1-TS1" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[f78e09015e015fae1238beea96c19cb9]
+link UCH1 to TS1--><path d="M1074,681.9 C1074,699.36 1074,725.16 1074,742.49 " fill="none" id="UCH1-TS1" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[a9de33557d5da47a7a586edcd042fc51]
+link LB0 to LS0--><path d="M576.46,461.55 C539.43,483.32 483,516.5 483,516.5 C483,516.5 463.25,529.03 445.19,540.48 " fill="none" id="LB0-LS0" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="76" x="525" y="504.5669">stdin/stdout</text><!--MD5=[244b9489d0aa0b77a20f673148cda8fe]
+link LB0 to CH0--><path d="M622.89,461.55 C640.37,483.32 667,516.5 667,516.5 C667,516.5 667,603.5 667,603.5 C667,603.5 594.48,625.68 539.52,642.49 " fill="none" id="LB0-CH0" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[b4721de192f6d6f982ddf25ebf9c638c]
+link LS0 to CH0--><path d="M427.85,579.81 C439.11,597.69 455.96,624.42 467.2,642.28 " fill="none" id="LS0-CH0" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[469ec79c7d5954023d25c3c52b810fcd]
+link APP0 to CH0--><path d="M192.38,579.57 C255.51,597.51 350.56,624.51 413.67,642.44 " fill="none" id="APP0-CH0" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[01d0cc3a44b32f79b0fda9bc62086830]
+link APP0 to UCH0--><path d="M147.43,579.57 C167.07,597.42 196.58,624.26 216.3,642.19 " fill="none" id="APP0-UCH0" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[573f867da7a9896dc0d6ad9611077a30]
+link APP0 to LS0--><path d="M197.7,560 C244.99,560 306.7,560 352.43,560 " fill="none" id="APP0-LS0" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="118" x="216" y="553.0669">stdin/stdout/stderr</text><!--MD5=[0677b4e6b31f68b37acd27c6246edf18]
+link GS to CH0--><path d="M562.63,579.81 C544.21,597.69 516.67,624.42 498.29,642.28 " fill="none" id="GS-CH0" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[be77e0fadd05a491dd0e51ffd4b2cfa3]
+link CH0 to TS0--><path d="M479,681.9 C479,699.36 479,725.16 479,742.49 " fill="none" id="CH0-TS0" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[46856c716c3d196ef11b627de12bdefe]
+link UCH0 to TS0--><path d="M282.8,681.55 C325.83,698.97 389.87,724.91 432.97,742.36 " fill="none" id="UCH0-TS0" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[3603a0caed6714b7188709e6fb7d5c05]
+link WLM to LB0--><path d="M795.59,345.54 C753.61,366.9 685.94,401.34 644.38,422.49 " fill="none" id="WLM-LB0" style="stroke:#383838;stroke-width:1.0;stroke-dasharray:7.0,7.0;"/><!--MD5=[18e3917ef61e4e2ee6c44680156eceec]
+link WLM to LB1--><path d="M901.83,345.54 C979.08,366.9 1103.59,401.34 1180.07,422.49 " fill="none" id="WLM-LB1" style="stroke:#383838;stroke-width:1.0;stroke-dasharray:7.0,7.0;"/><!--MD5=[3b8f33174c814c9fe0461666afa34a2d]
+@startuml
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+skinparam linetype polyline
+
+node "Login / Head Node" as LNode {
+    artifact "Launcher Frontend" as LF
+    artifact "Overlay Frontend" as ONFE
+}
+
+node "Primary Compute Node" as PNode {
+
+    artifact "Overlay Backend" as ONBE0
+    artifact "Launcher Backend" as LB0
+    artifact "Global Services" as GS
+    artifact "Transport Service" as TS0
+    together {
+        artifact "Local Services" as LS0
+        artifact "User Application" as APP0
+    }
+    artifact "Infrastructure Channels" as CH0
+    artifact "User Channels" as UCH0
+}
+
+node "Compute Node" as CNode {
+
+    artifact "Overlay Backend" as ONBE1
+    artifact "Launcher Backend" as LB1
+    artifact "Transport Service" as TS1
+    together {
+    artifact "Local Services" as LS1
+    artifact "User Application" as APP1
+    }
+    artifact "Infrastructure Channels" as CH1
+    artifact "User Channels" as UCH1
+}
+
+note as WLM
+   Launched via Workload Manager
+   from Launcher Frontend
+end note
+
+LF - - ONFE : channels
+ONFE -down- ONBE0 : OverlayNet Tree
+ONFE -down- ONBE1 : OverlayNet Tree
+ONBE0 - - LB0 : channels
+ONBE1 - - LB1 : channels
+
+TS0 - - -l- - - TS1 : HPC Interconnect
+
+LB1 - - LS1 : "stdin/stdout"
+LB1 - - CH1
+LS1 - - CH1
+APP1 - - CH1
+APP1 - - UCH1
+APP1 -r-  LS1 : "stdin/stdout/stderr"
+CH1 -d- TS1
+UCH1 -d- TS1
+
+LB0 - - LS0 : "stdin/stdout"
+LB0 - - CH0
+LS0 - - CH0
+APP0 - - CH0
+APP0 - - UCH0
+APP0 -r-  LS0 : "stdin/stdout/stderr"
+GS - - CH0
+CH0 -d- TS0
+UCH0 -d- TS0
+
+WLM .. LB0
+WLM .. LB1
+
+@enduml
+
+PlantUML version 1.2022.1(Tue Feb 01 18:19:58 GMT 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

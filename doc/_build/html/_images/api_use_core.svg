@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="675px" preserveAspectRatio="none" style="width:472px;height:675px;background:#FFFFFF;" version="1.1" viewBox="0 0 472 675" width="472px" zoomAndPan="magnify"><defs/><g><text fill="#000000" font-family="sans-serif" font-size="18" lengthAdjust="spacing" textLength="252" x="103.75" y="16.708">Dragon Advanced Use Cases</text><!--MD5=[d11b6d13f46cf020bed9e2209a6c03fb]
+cluster Dragon--><rect fill="#FFFFFF" height="543" style="stroke:#000000;stroke-width:1.5;" width="376" x="90.5" y="126.9531"/><rect fill="#FFFFFF" height="10" style="stroke:#000000;stroke-width:1.5;" width="15" x="446.5" y="131.9531"/><rect fill="#FFFFFF" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="444.5" y="133.9531"/><rect fill="#FFFFFF" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="444.5" y="137.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="57" x="250" y="152.9482">Dragon</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="58" x="79.5" y="105.6514">Core API</text><rect fill="#383838" height="12" style="stroke:#F8F8F8;stroke-width:1.5;" width="12" x="102.5" y="120.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="155" x="252" y="105.6514">Unmanaged Native API</text><rect fill="#383838" height="12" style="stroke:#F8F8F8;stroke-width:1.5;" width="12" x="323.5" y="120.9531"/><!--MD5=[0c68d1b33ad519054c137d2afcc53802]
+entity DNE--><rect fill="#F8F8F8" height="62.5938" style="stroke:#383838;stroke-width:1.5;" width="140" x="201.5" y="286.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="321.5" y="291.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="319.5" y="293.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="319.5" y="297.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="42" x="216.5" y="319.9482">Native</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="216.5" y="336.2451">user extention</text><!--MD5=[0d038453eee180b13a52de866e455b12]
+entity DCLIENT--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="103" x="310" y="455.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="393" y="460.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="391" y="462.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="391" y="466.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="63" x="325" y="488.9482">GS Client</text><!--MD5=[1e5199da65c04a6b54a4e4966e9a2a5e]
+entity DINF--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="132" x="213.5" y="531.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="325.5" y="536.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="323.5" y="538.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="323.5" y="542.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="92" x="228.5" y="564.9482">Infrastructure</text><!--MD5=[96455c52d7d0cd09ff2b0435bb19d35f]
+entity DCORE--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="73" x="192" y="607.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="245" y="612.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="243" y="614.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="243" y="618.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="33" x="207" y="640.9482">Core</text><!--MD5=[521ac576674c71971e6540e01ff239a9]
+entity DSERVICE--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="98" x="176.5" y="455.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="254.5" y="460.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="252.5" y="462.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="252.5" y="466.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="58" x="191.5" y="488.9482">Services</text><!--MD5=[ef6bfdb2308d5eb7eaa7c25e13b5c383]
+entity DNATIVE--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="82" x="168.5" y="379.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="230.5" y="384.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="228.5" y="386.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="228.5" y="390.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="42" x="183.5" y="412.9482">Native</text><!--MD5=[bd3c995c94a9b025400694def230dffc]
+entity UPDC--><rect fill="#F8F8F8" height="62.5938" style="stroke:#383838;stroke-width:1.5;" width="185" x="7" y="27.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="172" y="32.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="170" y="34.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="170" y="38.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="145" x="22" y="60.9482">User library extention</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="118" x="22" y="77.2451">with Dragon core</text><!--MD5=[8116ecdbac55251ca55220ea0a3ef2f5]
+entity UN--><rect fill="#F8F8F8" height="62.5938" style="stroke:#383838;stroke-width:1.5;" width="223" x="227" y="27.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="430" y="32.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="428" y="34.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="428" y="38.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="126" x="242" y="60.9482">User program with</text><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="183" x="242" y="77.2451">unmanaged Dragon native</text><!--MD5=[1ac1b26f9b27782ae3ba6eae90220a58]
+reverse link DCORE to core_api--><path d="M186.84,638.9531 C186.84,638.9531 108.5,638.9531 108.5,638.9531 C108.5,638.9531 108.5,190.8231 108.5,133.0631 " fill="none" id="DCORE-backto-core_api" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="191.84,638.9531,182.84,634.9531,186.84,638.9531,182.84,642.9531,191.84,638.9531" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[5c11b09066bcf2fac26e77da5cd88a69]
+reverse link DNATIVE to native_api--><path d="M193.25,374.6731 C193.25,374.6731 193.25,209.9531 193.25,209.9531 C193.25,209.9531 329.5,209.9531 329.5,209.9531 C329.5,209.9531 329.5,152.4931 329.5,133.1931 " fill="none" id="DNATIVE-backto-native_api" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="193.25,379.6731,197.25,370.6731,193.25,374.6731,189.25,370.6731,193.25,379.6731" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[f4dc796cc6919bf7dc9770dbd53b507a]
+link DNE to DCLIENT--><path d="M331,350.1631 C331,350.1631 331,450.6331 331,450.6331 " fill="none" id="DNE-to-DCLIENT" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="331,455.6331,335,446.6331,331,450.6331,327,446.6331,331,455.6331" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[cfa78539151d22f7e565f181d6849e18]
+link DNE to DCORE--><path d="M292.25,350.3431 C292.25,406.4531 292.25,516.9531 292.25,516.9531 C292.25,516.9531 206.33,516.9531 206.33,516.9531 C206.33,516.9531 206.33,602.8831 206.33,602.8831 " fill="none" id="DNE-to-DCORE" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="206.33,607.8831,210.33,598.8831,206.33,602.8831,202.33,598.8831,206.33,607.8831" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[2df8e60f64c3802b6a8789d27f09df3e]
+link DNE to DNATIVE--><path d="M226,350.4031 C226,350.4031 226,374.9131 226,374.9131 " fill="none" id="DNE-to-DNATIVE" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="226,379.9131,230,370.9131,226,374.9131,222,370.9131,226,379.9131" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[6aa8edad3e94476f7068eebb2eaea57e]
+link DNATIVE to DCORE--><path d="M172.5,426.1831 C172.5,482.9231 172.5,623.9531 172.5,623.9531 C172.5,623.9531 186.77,623.9531 186.77,623.9531 " fill="none" id="DNATIVE-to-DCORE" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="191.77,623.9531,182.77,619.9531,186.77,623.9531,182.77,627.9531,191.77,623.9531" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[3cac70d4024ad3ab213fda729c97252b]
+link DNATIVE to DCLIENT--><path d="M250.52,402.9531 C282.14,402.9531 320.5,402.9531 320.5,402.9531 C320.5,402.9531 320.5,450.7331 320.5,450.7331 " fill="none" id="DNATIVE-to-DCLIENT" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="320.5,455.7331,324.5,446.7331,320.5,450.7331,316.5,446.7331,320.5,455.7331" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[222571255456b41e8f54baa0ee8c4799]
+link DSERVICE to DINF--><path d="M244,502.1731 C244,502.1731 244,526.8831 244,526.8831 " fill="none" id="DSERVICE-to-DINF" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="244,531.8831,248,522.8831,244,526.8831,240,522.8831,244,531.8831" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[de2eeb189f23bcd65466cc915940721d]
+link DSERVICE to DCORE--><path d="M199.17,502.0431 C199.17,502.0431 199.17,602.6531 199.17,602.6531 " fill="none" id="DSERVICE-to-DCORE" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="199.17,607.6531,203.17,598.6531,199.17,602.6531,195.17,598.6531,199.17,607.6531" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[8d30ba3b975b52ef267ad1283c47043a]
+link DCLIENT to DINF--><path d="M327.75,502.1731 C327.75,502.1731 327.75,526.8831 327.75,526.8831 " fill="none" id="DCLIENT-to-DINF" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="327.75,531.8831,331.75,522.8831,327.75,526.8831,323.75,522.8831,327.75,531.8831" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[9a9fd55b698c701d7d80baf72255896c]
+link DCLIENT to DCORE--><path d="M379.25,502.0431 C379.25,544.5631 379.25,630.9531 379.25,630.9531 C379.25,630.9531 270.38,630.9531 270.38,630.9531 " fill="none" id="DCLIENT-to-DCORE" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="265.38,630.9531,274.38,634.9531,270.38,630.9531,274.38,626.9531,265.38,630.9531" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[3779bf9aab18cfcb5bc6f4f8af024989]
+link DINF to DCORE--><path d="M239.25,578.1731 C239.25,578.1731 239.25,602.8831 239.25,602.8831 " fill="none" id="DINF-to-DCORE" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="239.25,607.8831,243.25,598.8831,239.25,602.8831,235.25,598.8831,239.25,607.8831" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[f598c0a72686005e29eda53d6e17abab]
+link UPDC to core_api--><path d="M108.5,91.2231 C108.5,91.2231 108.5,115.7731 108.5,115.7731 " fill="none" id="UPDC-to-core_api" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="108.5,120.7731,112.5,111.7731,108.5,115.7731,104.5,111.7731,108.5,120.7731" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[1e695b0d071873e79993575b02da3bf0]
+link UN to native_api--><path d="M329.5,91.2231 C329.5,91.2231 329.5,115.7731 329.5,115.7731 " fill="none" id="UN-to-native_api" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="329.5,120.7731,333.5,111.7731,329.5,115.7731,325.5,111.7731,329.5,120.7731" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[0faba19e1811e65a2a285b2802360a2a]
+@startuml
+
+title "Dragon Advanced Use Cases"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+skinparam linetype ortho
+' skinparam linetype polyline
+' skinparam nodesep 30
+skinparam ranksep 30
+
+[User library extention\nwith Dragon core] as UPDC
+[User program with \nunmanaged Dragon native] as UN
+
+component "Dragon" {
+
+    portin "Core API" as core_api
+    portin "Unmanaged Native API" as native_api
+
+    [Native\nuser extention] as DNE
+    [GS Client] as DCLIENT
+    [Infrastructure] as DINF
+    [Core] as DCORE
+    [Services] as DSERVICE
+    [Native] as DNATIVE
+    
+    ' DCLIENT <- - client_api
+    ' DINF <- - inf_api
+    DCORE <- - core_api
+    DNATIVE <- - native_api
+    
+    DNE - -> DCLIENT
+    DNE - -> DCORE
+    DNE - -> DNATIVE
+
+    DNATIVE - -> DCORE
+    DNATIVE - -> DCLIENT
+    DSERVICE - -> DINF
+    DSERVICE - -> DCORE
+    DCLIENT - -> DINF
+    DCLIENT - -> DCORE
+    DINF - -> DCORE
+}
+
+UPDC -d-> core_api
+UN -d-> native_api
+
+'in case we want to hide components
+hide $hidden
+@enduml
+
+@startuml
+
+title "Dragon Advanced Use Cases"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+skinparam linetype ortho
+skinparam ranksep 30
+
+[User library extention\nwith Dragon core] as UPDC
+[User program with \nunmanaged Dragon native] as UN
+
+component "Dragon" {
+
+    portin "Core API" as core_api
+    portin "Unmanaged Native API" as native_api
+
+    [Native\nuser extention] as DNE
+    [GS Client] as DCLIENT
+    [Infrastructure] as DINF
+    [Core] as DCORE
+    [Services] as DSERVICE
+    [Native] as DNATIVE
+    
+    DCORE <- - core_api
+    DNATIVE <- - native_api
+    
+    DNE - -> DCLIENT
+    DNE - -> DCORE
+    DNE - -> DNATIVE
+
+    DNATIVE - -> DCORE
+    DNATIVE - -> DCLIENT
+    DSERVICE - -> DINF
+    DSERVICE - -> DCORE
+    DCLIENT - -> DINF
+    DCLIENT - -> DCORE
+    DINF - -> DCORE
+}
+
+UPDC -d-> core_api
+UN -d-> native_api
+
+hide $hidden
+@enduml
+
+PlantUML version 1.2022.1(Tue Feb 01 18:19:58 GMT 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

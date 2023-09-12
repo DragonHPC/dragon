@@ -1,0 +1,38 @@
+﻿dragon.globalservices.node
+==========================
+
+.. automodule:: dragon.globalservices.node
+   :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      get_list
+      query
+      query_total_cpus
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Exceptions
+
+   .. autosummary::
+   
+      DragonNodeError
+   
+   
+
+
+

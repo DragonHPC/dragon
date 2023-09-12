@@ -1,0 +1,42 @@
+﻿dragon.globalservices.group
+===========================
+
+.. automodule:: dragon.globalservices.group
+   :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      add_to
+      create
+      create_add_to
+      destroy
+      destroy_remove_from
+      kill
+      remove_from
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Exceptions
+
+   .. autosummary::
+   
+      GroupError
+   
+   
+
+
+

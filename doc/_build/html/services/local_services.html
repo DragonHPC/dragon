@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Local Services &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Low-level Components" href="../components/components.html" />
+    <link rel="prev" title="Global Services" href="global_services.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="services.html">Services</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="launcher.html">Launcher</a></li>
+<li class="toctree-l2"><a class="reference internal" href="global_services.html">Global Services</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Local Services</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#architecture">Architecture</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#asyncio">AsyncIO</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#task-types">Task Types</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#process-management">Process Management</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#the-local-services-global-services-integration">The Local Services/Global Services Integration</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#channel-allocation">Channel Allocation</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="services.html">Services</a></li>
+      <li class="breadcrumb-item active">Local Services</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/services/local_services.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="local-services">
+<span id="shepherd-design"></span><span id="localservices"></span><h1>Local Services<a class="headerlink" href="#local-services" title="Permalink to this heading"></a></h1>
+<p>Local Services is one component of the Dragon run-time <a class="reference internal" href="services.html#services"><span class="std std-ref">Services</span></a>. Together with <a class="reference internal" href="global_services.html#globalservices"><span class="std std-ref">Global Services</span></a>, the
+Shepherd provides services for creating and running processes.</p>
+<p>It also provides services for the creation and deletion of channels for interprocess communication and
+synchronization. Local Services is primarily responsible for run-time services that are on-node while Global
+Services is responsible for services that must span across nodes on a distributed system.</p>
+<p>Local Services manages shared memory that is used on-node for communication through <span class="xref std std-ref">channels</span>.  Each of
+the Dragon services uses a channel for communication to and from other services.</p>
+<p>Local Services runs on every node and has responsibility for managing resources on that particular node.  This
+keeps other parts of the runtime from needing to interact directly with operating system resources, and
+provides a single point of contact. The set of services provided by Local Services is identical in the
+ulti-node and single-node cases. The details of these services are provided below.</p>
+<p>Local Services has responsibility for:</p>
+<ul class="simple">
+<li><p>orchestrating the Dragon run-time startup on a node</p></li>
+<li><p>creating a shared memory segment for use in interprocess
+communication</p></li>
+<li><p>allocating memory in that segment for channel structures and
+communication between processes</p></li>
+<li><p>launching new processes</p></li>
+<li><p>forwarding output from user processes on stdout/stderr file descriptors to the
+launcher</p></li>
+<li><p>forwarding input from the launcher to the stdin of user processes.</p></li>
+<li><p>creating Channels from the shared memory segment for other parts of the Dragon run-time
+and potentially for other user level processes.</p></li>
+</ul>
+<section id="architecture">
+<h2>Architecture<a class="headerlink" href="#architecture" title="Permalink to this heading"></a></h2>
+<figure class="align-default" id="id1">
+<img alt="../_images/shepherd.svg" src="../_images/shepherd.svg" /><figcaption>
+<p><span class="caption-number">Fig. 38 </span><span class="caption-text"><strong>Figure 1: Internal Shepherd Structure</strong></span><a class="headerlink" href="#id1" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<figure class="align-default" id="id2">
+<img alt="services/images/shepherdstructure.png" src="services/images/shepherdstructure.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 39 </span><span class="caption-text"><strong>Figure 2: Internal Shepherd Structure</strong></span><a class="headerlink" href="#id2" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<p>Local Services runs as a separate process that receives its work through a channel. After bringup of the Dragon
+run-time services, Local Services receives messages through the <a class="reference internal" href="../infrastructure/messages_api.html#messages"><span class="std std-ref">Infrastructure Messages</span></a> from this channel, processes
+them, and responds to requesters. The handling of these requests is done asynchronously, meaning that
+fullfilling a request may require other interactions with other parts of the Dragon run-time while handling
+other requests. Local Services maintains state information about the progress of each request as necessary.</p>
+<p><strong>FIXME: SH needs a better description and the diagram needs to be fixed.</strong></p>
+<section id="asyncio">
+<h3>AsyncIO<a class="headerlink" href="#asyncio" title="Permalink to this heading"></a></h3>
+<p>Local Services is written as an AsyncIO application using Python. AsyncIO is a
+<em>newer</em> API within Python where <em>tasks</em> are executed <em>concurrently</em>. With
+Python, processes are single-threaded, meaning they cannot run more than one thread of execution concurrently
+due to the Global Interpreter Lock or <em>GIL</em>.  However, with AsyncIO, multi-tasking is accomplished in a
+cooperative multi-tasking environment. With cooperative multi-tasking, one task must give up control to allow
+another to run.</p>
+<p>AsyncIO accomplishes cooperative multi-tasking through what are called
+<em>awaitables</em>. Awaitables are typically I/O operations. However, other
+operations, including <em>sleep</em>, can also be awaited. The design of AsyncIO is well thought out given that the
+programmer is really making use of time on the CPU that would otherwise be wasted waiting for some
+asynchronous I/O operation to complete synchronously.</p>
+<p>AsyncIO Python applications have a loop that the user does not program that is the scheduler of AsyncIO tasks.
+Local Services then is a collection of <em>tasks</em> that are submitted to the AsyncIO loop for scheduling.</p>
+</section>
+<section id="task-types">
+<span id="tasktypes"></span><h3>Task Types<a class="headerlink" href="#task-types" title="Permalink to this heading"></a></h3>
+<p>Local Services categorizes these <em>tasks</em> into the following categories based on the <em>TaskType</em> enumeration found
+in the Process Manager <em>manager.py</em> source code.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><em>sys</em> - System tasks that are created in support of Local Services and include the task that receives</p></li>
+<li><p>messages from Local Services’s main queue.</p></li>
+<li><p><em>process</em> - A process task monitors for the exit of a managed process by executing a <em>wait</em> on the
+process.</p></li>
+<li><p><em>stdin</em> - Each managed process gets its own <em>stdin</em> task when there is available standard input to write
+to the process. These tasks come and go as input becomes available.</p></li>
+<li><p><em>stdout</em> - Each managed process gets a <em>stdout</em> task that monitors for standard output
+from the managed process.</p></li>
+<li><p><em>stderr</em> - Each managed process gets a <em>stderr</em> task that monitors for standard error output
+from the managed process.</p></li>
+</ul>
+</div></blockquote>
+<p>Local Services primarily consists of two classes, a <em>Shepherd</em> class, in
+<em>server.py</em> and a <em>ProcessManager</em> class, as previously stated in <em>manager.py</em> .
+The <em>Shepherd</em> class relies on the <em>ProcessManager</em> to manage user processes.  This involves creating <em>tasks</em>
+to capture the standard output and standard error from those processes. The actual user process, running its
+own code, runs in a separate process. While Python does not support multi-threading, it does support creating
+separate processes.</p>
+<p>In addition to the user process tasks, the <em>Shepherd</em> creates a <em>sys</em> task (i.e.  system task) for receiving
+messages from its channel. Other system tasks are also possible, but currently the only system task is the one
+for receiving messages from Local Services’s channel.</p>
+<p>Local Services processes incoming messages on the main receive channel and routes them to an appropriate handler
+in the Local Services class. The Process Manager is called on to handle anything related to user processes. The
+Shepherd’s run method is called during startup and the AsyncIO scheduler is executed by calling the Process
+Manager’s <em>run_tasks</em> method, which in turn calls the AsyncIO loop’s
+<em>run_until_complete</em> method. This method completes when one of the tasks
+completes its execution.</p>
+</section>
+</section>
+<section id="process-management">
+<h2>Process Management<a class="headerlink" href="#process-management" title="Permalink to this heading"></a></h2>
+<figure class="align-default" id="id3">
+<img alt="services/images/processstates.png" src="services/images/processstates.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 40 </span><span class="caption-text"><strong>Figure 8: Process State Transition Diagram</strong></span><a class="headerlink" href="#id3" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<p>Managed processes are created by Local Services in response to the
+<a class="reference internal" href="../infrastructure/messages_api.html#shprocesscreate"><span class="std std-ref">SHProcessCreate</span></a> message. The following fields are part
+of the managed process creation message.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><em>exe</em> - The executable of the process</p></li>
+<li><p><em>args</em> - a list of argument strings to be provided to the process</p></li>
+<li><p><em>env</em> - a dictionary of strings mapped to strings representing the environment variables that should be
+appended to the current environment for a process. Variables in <em>env</em> will override anything in the
+previously defined environment.</p></li>
+<li><p><em>rundir</em> - The current working directory for the process. If an empty string is provided, then the
+default <em>cwd</em> (current working directory) is used.</p></li>
+<li><p><em>t_p_uid</em> - the target process identifier used to identify the process to the Dragon run-time services.
+This must be unique for all executing managed processes.</p></li>
+</ul>
+</div></blockquote>
+<p>Additionally, there are a few common fields within the message.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p><em>tag</em> - a unique identifier that is provided as the <em>ref</em> on a creation confirmation response.</p></li>
+<li><p><em>p_uid</em> - the requesting process id</p></li>
+<li><p><em>r_c_uid</em> - the return channel id for sending confirmation of this process creation.</p></li>
+</ul>
+</div></blockquote>
+<p>Internally to Local Services, when a <a class="reference internal" href="../infrastructure/messages_api.html#shprocesscreate"><span class="std std-ref">SHProcessCreate</span></a> message is received, it creates a
+Process object to hold state information about the managed process including its state of init, running,
+complete. Internally, when a managed process is created, three separate channels may be specified to receive
+notifications about output on both standard output and standard error and about the termination of the
+process. As implemented, when a user-defined managed process is created, the Launcher/Backend channel receives
+all notifications about output on standard output and error, while the Global Services channel is used for
+notification of the termination of the process.</p>
+<figure class="align-default" id="id4">
+<img alt="services/images/managedservices.png" src="services/images/managedservices.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 41 </span><span class="caption-text"><strong>Figure 9: Managed Process services provided by Local Services</strong></span><a class="headerlink" href="#id4" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<p>Initially the managed process is in the <em>init</em> state and an AsyncIO <em>process</em> task (see <a class="reference internal" href="#tasktypes"><span class="std std-ref">Task Types</span></a>) is created that will run to create the process and move it to the <em>run</em> state. Once the task is
+confirmed to have started, the <em>_handle_started_procs</em> internal function in the Process Manager (i.e.
+<em>manager.py</em>) is called. This function creates three AsyncIO tasks to manage the process termination and its
+standard output and error streams.</p>
+<p>A stdin AsyncIO task, for writing standard input, is created when there is standard input available as
+supplied by the <a class="reference internal" href="../infrastructure/messages_api.html#shfwdinput"><span class="std std-ref">SHFwdInput</span></a> message. When the standard input has been written, the task
+terminates.  Additionally, if more input comes in on a subsequent <a class="reference internal" href="../infrastructure/messages_api.html#shfwdinput"><span class="std std-ref">SHFwdInput</span></a> message
+before the first input was written, the input task will combine the input from the first message with the
+second and write it all at once. If no process exists, Local Services responds with the <a class="reference internal" href="../infrastructure/messages_api.html#shfwdinputerr"><span class="std std-ref">SHFwdInputErr</span></a> message. Otherwise no response is sent. When the input has been written to the managed
+process, the stdin AsyncIO task exits. If more input is written later, a new AsyncIO stdin task is created.</p>
+<p>Two AsyncIO tasks manage the output created by the process and forward it on as needed, one for standard
+output and one for standard error. These tasks continue to run as long as the process runs. All output coming
+from a managed program is forwarded on to the Launcher/Backend through the Backend/Launcher channel in an
+<a class="reference internal" href="../infrastructure/messages_api.html#shfwdoutput"><span class="std std-ref">SHFwdOutput</span></a> message. Output from a managed process is forwarded in chunks up to 5000
+characters long. If more than 5000 characters are printed to the stream, they will be packaged in separate
+messages. It might be that at a future point we’ll decide on a different size for tuning and/or we may make
+this size configurable on a process by process basis when the process is created.</p>
+<p>At completion of a managed process the ProcessManager is notified of the process exit by executing a <em>wait</em> on
+the process. This results in a <a class="reference internal" href="../infrastructure/messages_api.html#shprocessexit"><span class="std std-ref">SHProcessExit</span></a> message being sent to the Global Services
+to confirm the exit of process. At this point the process is moved into the <em>complete</em> state. Local Services
+then runs to clean up the process by cancelling any of the outstanding tasks for monitoring input and output
+on the task. Once cleanup has occurred, the process is deleted from Local Services.</p>
+</section>
+<section id="the-local-services-global-services-integration">
+<h2>The Local Services/Global Services Integration<a class="headerlink" href="#the-local-services-global-services-integration" title="Permalink to this heading"></a></h2>
+<figure class="align-default" id="id5">
+<img alt="services/images/gsmonitor.png" src="services/images/gsmonitor.png" />
+<figcaption>
+<p><span class="caption-number">Fig. 42 </span><span class="caption-text"><strong>Figure 10: The Global Services Monitor</strong></span><a class="headerlink" href="#id5" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<p>During startup, Local Services creates <a class="reference internal" href="global_services.html#globalservices"><span class="std std-ref">Global Services</span></a> like a managed process on the node designated as
+the <em>PRIMARY_INDEX</em> in the Dragon Runtime launch parameters (see <a class="reference internal" href="../infrastructure/processes.html#launchparameters"><span class="std std-ref">Launch Parameters</span></a>) from the perspective
+of the <a class="reference internal" href="#localservices"><span class="std std-ref">Local Services</span></a>. All managed processes have their two output streams, stdout and stderr, monitored for
+any output by Local Services. This includes Global Services. In addition, managed processes are also monitored
+for process exit, as described in the last section. When any of these conditions occur, Local Services notifies
+other entities by sending one of the messages <a class="reference internal" href="../infrastructure/messages_api.html#shfwdoutput"><span class="std std-ref">SHFwdOutput</span></a> or <a class="reference internal" href="../infrastructure/messages_api.html#shprocessexit"><span class="std std-ref">SHProcessExit</span></a> to a queue on the system. Usually this queue is simply a wrap of a channel as presented in
+the last section. In this case, however, the queue is not a wrap of a channel, but simply an internal
+structure for sending and receiving messages.</p>
+<p>At the other end of this internal queue sits the GSMonitor which acts as the receiving entity for any
+<a class="reference internal" href="../infrastructure/messages_api.html#shfwdoutput"><span class="std std-ref">SHFwdOutput</span></a> or <a class="reference internal" href="../infrastructure/messages_api.html#shprocessexit"><span class="std std-ref">SHProcessExit</span></a> messages related to Global Services.
+The GSMonitor object is run as an AsyncIO task and monitors the internal queue for any messages coming from
+the managed Global Services. As an AsyncIO task, it sits quietly, waiting for available input on this internal
+queue.</p>
+<p>Since Global Services is run as a managed process, any output from Global Services is wrapped up in a
+<a class="reference internal" href="../infrastructure/messages_api.html#shfwdoutput"><span class="std std-ref">SHFwdOutput</span></a> message by Local Services and forwarded on to the receiving entity, in this
+case the GSMonitor’s queue. Normally, the output from Global Services is a serialized <a class="reference internal" href="../infrastructure/messages_api.html#gshalted"><span class="std std-ref">GSHalted</span></a> message. Local Services wraps this serialized <a class="reference internal" href="../infrastructure/messages_api.html#gshalted"><span class="std std-ref">GSHalted</span></a> message into the data field
+of a <a class="reference internal" href="../infrastructure/messages_api.html#shfwdoutput"><span class="std std-ref">SHFwdOutput</span></a> message and forwards it to the GSMonitor’s queue. The GSMonitor unwraps
+that <a class="reference internal" href="../infrastructure/messages_api.html#shfwdoutput"><span class="std std-ref">SHFwdOutput</span></a> message by taking the data field of the forwarded output and forwarding
+that data as a message to Local Services which in turn takes the appropriate action for that message. The
+GSMonitor sees messages from Global Services as a message inside a message. Again, the <a class="reference internal" href="../infrastructure/messages_api.html#shfwdoutput"><span class="std std-ref">SHFwdOutput</span></a> wrap of the Global Services message is created by Local Services when it detects output from a
+managed process. The role of the GSMonitor is to unwrap that message and forward it to Local Services’s main
+queue.</p>
+<p>Global Services is expected to send one of two messages through its standard output. It should either send the
+<a class="reference internal" href="../infrastructure/messages_api.html#gshalted"><span class="std std-ref">GSHalted</span></a> message or it should send the <a class="reference internal" href="../infrastructure/messages_api.html#abnormaltermination"><span class="std std-ref">Abnormal Termination</span></a>
+message. When the GSMonitor receives any message from Global Services, it is forwarded on to Local Services’s
+main queue for processing. If the GSMonitor receives text on stdout or stderr from Global Services that is not
+a valid message the GSMonitor still forwards that to Local Services’s main queue and Local Services in turn
+recognizes that this is a bad message format and begins abnormal end processing.  Abnormally ending creates
+log entries to document the problem and brings down the Dragon run-time system quickly.</p>
+<p>Anything written by Global Services to standard output or standard error that is not a valid message would
+likely be a traceback or some other text indicating a failure in Global Services. By treating this like a
+message (a bad format message), Local Services will log the message and abnormally end. In that way, the failure
+gets logged before terminating. If a traceback is present in the text written to one of these two streams, it
+will be logged for further identification of the problem.</p>
+<p>Finally, if the GSMonitor is notified that Global Services exited, then it will initiate an
+AbnormalTermination message to Local Services to bring it down with appropriate logging as to the reason.</p>
+<p>In all of these cases, once the GSMonitor has detected either a message, text, or just termination of Global
+Services, the GSMonitor task exits. Once a normal termination or abnormal termination of the Global Services
+has been detected, the lifetime of the GSMonitor is at its end.</p>
+<section id="channel-allocation">
+<h3>Channel Allocation<a class="headerlink" href="#channel-allocation" title="Permalink to this heading"></a></h3>
+<p>Upon startup Local Services creates a MemoryPool for using in creating Channels.  Local Services creates two
+channels, one for its own receive queue and one for the Global Services. Other services and/or user-level
+programs may also the request creation of Channels. In particular, the Dragon version of multiprocesing
+creates and uses many channels in its implementation. TBD</p>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="global_services.html" class="btn btn-neutral float-left" title="Global Services" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../components/components.html" class="btn btn-neutral float-right" title="Low-level Components" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Getting Started &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Users Guide" href="../uguide/uguide.html" />
+    <link rel="prev" title="Welcome to Project Dragon!" href="../index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Getting Started</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#prerequisites">Prerequisites</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#download-dragon">Download Dragon</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#install-dragon">Install Dragon</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#running-dragon">Running Dragon</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#single-node-dragon">Single-node Dragon</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#multi-node-dragon">Multi-node Dragon</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="#what-s-next">What’s Next?</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+      <li class="breadcrumb-item active">Getting Started</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/start/start.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="getting-started">
+<span id="gettingstarted"></span><h1>Getting Started<a class="headerlink" href="#getting-started" title="Permalink to this heading"></a></h1>
+<p>Welcome to Dragon!</p>
+<p>Dragon is a distributed environment for developing high-performance tools,
+libraries, and applications at scale. Here we will walk you through downloading and
+installing the Dragon runtime environment and run a first program with it.</p>
+<section id="prerequisites">
+<h2>Prerequisites<a class="headerlink" href="#prerequisites" title="Permalink to this heading"></a></h2>
+<p>You need to have the following software packages installed on your system:</p>
+<ul class="simple">
+<li><p>Python 3.9 (e.g., module load cray-python)</p></li>
+<li><p>GCC 9 or later</p></li>
+<li><p>Slurm or PBS+PALS (for multi-node Dragon)</p></li>
+</ul>
+</section>
+<section id="download-dragon">
+<h2>Download Dragon<a class="headerlink" href="#download-dragon" title="Permalink to this heading"></a></h2>
+<p>Please inquire with Peter Mendygral (<a class="reference external" href="mailto:pete&#46;mendygral&#37;&#52;&#48;hpe&#46;com">pete<span>&#46;</span>mendygral<span>&#64;</span>hpe<span>&#46;</span>com</a>) to obtain the distribution.</p>
+</section>
+<section id="install-dragon">
+<h2>Install Dragon<a class="headerlink" href="#install-dragon" title="Permalink to this heading"></a></h2>
+<p>Before you can run programs using Dragon, you must set up the run-time for your
+environment. You must have Python 3.9 installed and it must be in your path
+somewhere. A common choice is to use a Python virtual environment, which can be initialized
+from a base Python 3.9+ with:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">python3 -m venv --clear _env</span>
+<span class="go">. _env/bin/activate</span>
+</pre></div>
+</div>
+<p>The untarred distribution file contains several subdirectories. All provided commands
+are relative to the directory that contains the README.md.</p>
+<ul class="simple">
+<li><p>The <code class="code docutils literal notranslate"><span class="pre">dragon-*.whl</span></code> file must be pip3 installed once for your environment.</p></li>
+</ul>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">pip3 install --force-reinstall dragon-0.61-cp39-cp39-linux_x86_64.whl</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>Check and possibly update that <code class="code docutils literal notranslate"><span class="pre">$PATH</span></code> is has the location of pip installed
+console scripts, such as ~/.local/bin if you’re not using a virtual environment.</p></li>
+</ul>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">export PATH=~/.local/bin:${PATH}</span>
+</pre></div>
+</div>
+<ul class="simple">
+<li><p>You must set up the environment by loading the dragon module as follows.</p></li>
+</ul>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">module use [/path to dragon-0.61]/modulefiles</span>
+<span class="go">module load dragon</span>
+</pre></div>
+</div>
+<p>If you intend to use Dragon on your own Linux VM or an image that you
+personally installed, you may need to enable module commands by adding the
+following command to your ~/.bashrc or other login script.</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">source /usr/share/modules/init/bash</span>
+</pre></div>
+</div>
+<p>If you use a different shell, look in the <code class="code docutils literal notranslate"><span class="pre">init</span></code> directory for a script for
+your shell.</p>
+<p>You have completed the prerequisites for running Dragon with multiprocessing programs.</p>
+</section>
+<section id="running-dragon">
+<h2>Running Dragon<a class="headerlink" href="#running-dragon" title="Permalink to this heading"></a></h2>
+<section id="single-node-dragon">
+<h3>Single-node Dragon<a class="headerlink" href="#single-node-dragon" title="Permalink to this heading"></a></h3>
+<p>These set of steps show you how to run a parallel “Hello World” application using
+Python multiprocssing with Dragon.</p>
+<p>This demo program will print a string of the form <code class="code docutils literal notranslate"><span class="pre">&quot;Hello</span> <span class="pre">World</span> <span class="pre">from</span> <span class="pre">$PROCESSID</span>
+<span class="pre">with</span> <span class="pre">payload=$RUNNING_INT&quot;</span></code> using every cpu on your system. So beware if you’re
+on a supercomputer and in an allocation, your console will be flooded.</p>
+<p>Create a file <code class="code docutils literal notranslate"><span class="pre">hello_world.py</span></code> containing:</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-number">Listing 1 </span><span class="caption-text"><strong>Hello World in Python multiprocessing with Dragon</strong></span><a class="headerlink" href="#id1" title="Permalink to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span> <span class="kn">import</span> <span class="nn">dragon</span>
+<span class="linenos"> 2</span> <span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="linenos"> 3</span> <span class="kn">import</span> <span class="nn">time</span>
+<span class="linenos"> 4</span>
+<span class="linenos"> 5</span>
+<span class="linenos"> 6</span> <span class="k">def</span> <span class="nf">hello</span><span class="p">(</span><span class="n">payload</span><span class="p">):</span>
+<span class="linenos"> 7</span>
+<span class="linenos"> 8</span>     <span class="n">p</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">current_process</span><span class="p">()</span>
+<span class="linenos"> 9</span>
+<span class="linenos">10</span>     <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Hello World from </span><span class="si">{</span><span class="n">p</span><span class="o">.</span><span class="n">pid</span><span class="si">}</span><span class="s2"> with payload=</span><span class="si">{</span><span class="n">payload</span><span class="si">}</span><span class="s2"> &quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">11</span>     <span class="n">time</span><span class="o">.</span><span class="n">sleep</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="c1"># force all cpus to show up</span>
+<span class="linenos">12</span>
+<span class="linenos">13</span>
+<span class="linenos">14</span> <span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">15</span>
+<span class="linenos">16</span>     <span class="n">mp</span><span class="o">.</span><span class="n">set_start_method</span><span class="p">(</span><span class="s2">&quot;dragon&quot;</span><span class="p">)</span>
+<span class="linenos">17</span>
+<span class="linenos">18</span>     <span class="n">cpu_count</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">cpu_count</span><span class="p">()</span>
+<span class="linenos">19</span>     <span class="k">with</span> <span class="n">mp</span><span class="o">.</span><span class="n">Pool</span><span class="p">(</span><span class="n">cpu_count</span><span class="p">)</span> <span class="k">as</span> <span class="n">pool</span><span class="p">:</span>
+<span class="linenos">20</span>         <span class="n">result</span> <span class="o">=</span> <span class="n">pool</span><span class="o">.</span><span class="n">map</span><span class="p">(</span><span class="n">hello</span><span class="p">,</span> <span class="nb">range</span><span class="p">(</span><span class="n">cpu_count</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+<p>and run it by executing <code class="code docutils literal notranslate"><span class="pre">dragon</span> <span class="pre">hello_world.py</span></code>. This will result in an output like this:</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="go">dir &gt;$dragon hello_world.py</span>
+<span class="go">Hello World from 4294967302 with payload=0</span>
+<span class="go">Hello World from 4294967301 with payload=1</span>
+<span class="go">Hello World from 4294967303 with payload=2</span>
+<span class="go">Hello World from 4294967300 with payload=3</span>
+<span class="go">+++ head proc exited, code 0</span>
+</pre></div>
+</div>
+</section>
+<section id="multi-node-dragon">
+<h3>Multi-node Dragon<a class="headerlink" href="#multi-node-dragon" title="Permalink to this heading"></a></h3>
+<p>This same example can be run across multiple nodes without any modification. The
+only requirement is that you have an allocation of nodes (obtained with <code class="code docutils literal notranslate"><span class="pre">salloc</span></code>
+or <code class="code docutils literal notranslate"><span class="pre">qsub</span></code> on a system with the Slurm workload manager) and then execute <code class="code docutils literal notranslate"><span class="pre">dragon</span></code>
+within that allocation. Dragon will launch across all nodes in the allocation by
+default, giving you access to all processor cores on every node. If you don’t
+have Slurm installed on your system, there are other means of running Dragon
+multi-node as well. For more details see <a class="reference internal" href="../uguide/running_dragon.html#running-dragon-on-a-multi-node-system"><span class="std std-ref">Running Dragon on a Multi-Node System</span></a> .</p>
+</section>
+</section>
+<section id="what-s-next">
+<h2>What’s Next?<a class="headerlink" href="#what-s-next" title="Permalink to this heading"></a></h2>
+<p>Congratulations, you’ve run your first parallel program with Dragon.</p>
+<p>But what have you actually done? Dragon implements Python’s standard interface
+for parallel programming called <a class="reference external" href="https://docs.python.org/3/library/multiprocssing.html">multiprocssing</a> to run a custom function
+(<code class="code docutils literal notranslate"><span class="pre">hello</span></code>) on a collection of processes using the <code class="code docutils literal notranslate"><span class="pre">Pool</span></code> abstraction.
+multiprocssing is itself used by many standard Python packages like <a class="reference external" href="https://pandas.pydata.org/docs/">Pandas</a>,
+<a class="reference external" href="https://joblib.readthedocs.io/en/latest/">Joblib</a> and <a class="reference external" href="https://numpy.org/doc/">NumPy</a>. By adding two lines (1 and 16), this program enabled the
+Dragon implementation of multiprocessing and made it scale to distributed
+supercomputers. If your program uses standard packages like <a class="reference external" href="https://pandas.pydata.org/docs/">Pandas</a>, these two
+lines of code are all that’s needed to enable existing libraries that depend on
+multiprocssing and your Python multiprocssing programs to run across multiple
+nodes and allow them to scale to very large systems.</p>
+<ul class="simple">
+<li><p>Dragon also includes native objects synchronization and communication objects
+that interoperate across lanaguages including C and Python. Check out the
+<a class="reference internal" href="../pguide/pguide.html#programming-guide"><span class="std std-ref">Programming Guide</span></a> for <a class="reference internal" href="../ref/native/index.html#dragon-native"><span class="std std-ref">Dragon Native</span></a>.</p></li>
+<li><p>Learn by example with Dragon’s <span class="xref std std-ref">cbook/cbook:Solution Cook Book</span>.</p></li>
+<li><p>Dive into Dragon’s details with the <a class="reference internal" href="../ref/ref.html#api-reference"><span class="std std-ref">API Reference</span></a>.</p></li>
+</ul>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../index.html" class="btn btn-neutral float-left" title="Welcome to Project Dragon!" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../uguide/uguide.html" class="btn btn-neutral float-right" title="Users Guide" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

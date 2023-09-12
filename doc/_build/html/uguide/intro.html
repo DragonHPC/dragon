@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Introduction &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Running Dragon" href="running_dragon.html" />
+    <link rel="prev" title="Users Guide" href="uguide.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="uguide.html">Users Guide</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Introduction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="running_dragon.html">Running Dragon</a></li>
+<li class="toctree-l2"><a class="reference internal" href="resource_model.html">The Dragon HPC Resource Model</a></li>
+<li class="toctree-l2"><a class="reference internal" href="glossary.html">Glossary</a></li>
+<li class="toctree-l2"><a class="reference internal" href="issues.html">Known Issues</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="uguide.html">Users Guide</a></li>
+      <li class="breadcrumb-item active">Introduction</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/uguide/intro.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="introduction">
+<h1>Introduction<a class="headerlink" href="#introduction" title="Permalink to this heading"></a></h1>
+<p>This document is intended for programmers who want to understand the Dragon
+run-time services and use them in their programs. Dragon includes a set of
+services that provide the ability to write programs in a distributed environment
+without regard for where processes run or how they communicate and synchronize
+between <a class="reference internal" href="glossary.html#term-Node"><span class="xref std std-term">nodes</span></a>. However, Dragon still gives you the power to make decisions about
+where your data resides and gives you the power to place parts of your
+distributed program close to your data. In addition, Dragon takes full advantage
+of shared memory on a node when it is possible. The power of Dragon lies in the
+fact that you can take full advantage of process/data affinity when you are
+ready, without having to rewrite your code. And Dragon’s services work
+independently of where processes and Dragon resources are placed.</p>
+<figure class="align-center" id="id2">
+<a class="reference internal image-reference" href="../_images/overview_queue_doc.jpg"><img alt="../_images/overview_queue_doc.jpg" src="../_images/overview_queue_doc.jpg" style="width: 549.0px; height: 455.25px;" /></a>
+<figcaption>
+<p><span class="caption-number">Fig. 2 </span><span class="caption-text"><strong>Figure 1: Dragon Object Location Transparency</strong></span><a class="headerlink" href="#id2" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<p>Dragon provides synchronization and communication <a class="reference internal" href="glossary.html#term-Dragon-Object"><span class="xref std std-term">objects</span></a>
+as well as process management to a parallel distributed program. And it manages
+doing this with complete <a class="reference internal" href="glossary.html#term-Transparency"><span class="xref std std-term">transparency</span></a> to the application.
+While the placement of data, <a class="reference internal" href="glossary.html#term-Dragon-Object"><span class="xref std std-term">Dragon objects</span></a>, and
+processes may be controlled by the application, it is not required.  And, the
+communication between nodes that is required to make all this work is done
+automatically by the Dragon run-time services. In figure 1 above you should
+notice that Process A is running on a different node than the queue it is
+receiving from. At the same time, both A and B are sharing a queue on-node.
+Process D is sending to a queue off-node. The <a class="reference internal" href="glossary.html#term-Transparency"><span class="xref std std-term">transparency</span></a>
+provided by Dragon means that the code in all these processes is identical. The
+code to receive off a remotely located queue is exactly the same as the code to
+receive off a locally located queue. The services provided by Dragon are
+completely transparent to the user’s program. The same is true of locks in the
+diagram.  Lock placement does not affect user code. The code to acquire a lock
+on a remote node is exactly the same as the code to acquire a lock locally.</p>
+<p>This work was inspired by the need to build a multi-node
+<a class="reference external" href="https://docs.python.org/3/library/multiprocessing.html">Python Multiprocessing</a>
+implementation. The standard Python Multiprocessing implementation was not a multi-node
+implementation. There are currently many libraries that rely on Python’s
+multiprocessing library, but to scale further and handle larger problems, a
+multi-node implementation of the library is needed.</p>
+<p>While Dragon provides a multi-node implementation of Python multiprocessing it
+is much more than that. It was designed from the ground-up to support programs
+written in multiple languages including Python, C, C++, and Fortran. Programs
+written in these languages can use Dragon to communicate between processes. For
+example, if one part of your application is written in C and another in Fortran,
+the two processes can communicate via a Dragon
+<a class="reference internal" href="glossary.html#term-Managed-Object"><span class="xref std std-term">managed queue object</span></a>. Dragon provides cross-language
+support of its synchronization and communication objects so code written in one
+language may communicate and synchronize via Dragon objects with programs
+written in other languages. Dragon provides multi-lingual support of
+applications within its run-time services and API.</p>
+<p>Programmers looking for a place to start should likely start with
+<a class="reference external" href="https://docs.python.org/3/library/multiprocessing.html">Python Multiprocessing</a> .
+This API is supported by Dragon with a few minor exceptions.
+Differences between the original and Dragon version of multiprocessing are
+provided <a class="reference internal" href="../pguide/dragon_multiprocessing.html#multiprocessing-with-dragon"><span class="std std-ref">here</span></a>.
+Using Python multiprocessing has advantages like process management and high level
+communication and synchronization objects like Python multiprocessing’s
+Connection object, Queue, Value, and Lock.</p>
+<p>For the programmer who wants to dive deeper into the Dragon run-time services
+and what they offer, the <a class="reference internal" href="../ref/native/index.html#dragon-native"><span class="std std-ref">Dragon Native</span></a> API provides more control and multi-language interoperability. It also
+requires more management by the programmer. The <a class="reference internal" href="../pguide/pguide.html#programming-guide"><span class="std std-ref">Programming Guide</span></a> in the next section provides recipes and examples for using Dragon’s API
+directly (in lieu of using Python multiprocessing) in C, C++, Fortran, and
+Python. The Dragon API provides all the details of the API for each of these
+languages. The good news for programmers is that there is no additional
+infrastructure that you have to design to expand beyond one node. Dragon does
+that for you. Happy Programming!</p>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="uguide.html" class="btn btn-neutral float-left" title="Users Guide" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="running_dragon.html" class="btn btn-neutral float-right" title="Running Dragon" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

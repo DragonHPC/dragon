@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="504px" preserveAspectRatio="none" style="width:1109px;height:504px;background:#FFFFFF;" version="1.1" viewBox="0 0 1109 504" width="1109px" zoomAndPan="magnify"><defs/><g><text fill="#000000" font-family="sans-serif" font-size="18" lengthAdjust="spacing" textLength="199" x="448.5" y="16.708">Dragon Domain Model</text><!--MD5=[ae5547a7d46077527e453fc74b3d1318]
+entity Distributed System--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="171" x="930.5" y="345.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="1081.5" y="350.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="1079.5" y="352.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="1079.5" y="356.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="131" x="945.5" y="378.9482">Distributed System</text><!--MD5=[ed3747ad05e6730ca3536a40b62ba942]
+entity Node--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="77" x="775.5" y="451.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="832.5" y="456.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="830.5" y="458.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="830.5" y="462.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="37" x="790.5" y="484.9482">Node</text><!--MD5=[3be831036070c9a033490f5ba26ff869]
+entity Federated Systems--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="174" x="929" y="239.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="1083" y="244.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="1081" y="246.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="1081" y="250.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="134" x="944" y="272.9482">Federated Systems</text><!--MD5=[5edefaf97bd079882055a27ac773b19d]
+entity System Resource--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="162" x="532" y="345.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="674" y="350.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="672" y="352.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="672" y="356.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="122" x="547" y="378.9482">System Resource</text><!--MD5=[ae2650e36e5daa1cdacf4d4f07aa6c02]
+entity Dragon Object--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="140" x="545" y="239.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="665" y="244.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="663" y="246.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="663" y="250.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="100" x="560" y="272.9482">Dragon Object</text><!--MD5=[a473b20b5f0794e5884b5184ae3c1915]
+entity Managed Object--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="153" x="341.5" y="133.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="474.5" y="138.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="472.5" y="140.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="472.5" y="144.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="113" x="356.5" y="166.9482">Managed Object</text><!--MD5=[7d83d43321e67c589082df74b66d21e4]
+entity Unmanaged Object--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="173" x="529.5" y="133.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="682.5" y="138.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="680.5" y="140.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="680.5" y="144.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="133" x="544.5" y="166.9482">Unmanaged Object</text><!--MD5=[d8f5db7b912b7bc6922cdca4838b35fb]
+entity Refcounted Object--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="170" x="7" y="27.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="157" y="32.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="155" y="34.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="155" y="38.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="130" x="22" y="60.9482">Refcounted Object</text><!--MD5=[f7ad69384bc0dab3b8cb0535768af86e]
+entity Object Name--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="129" x="212.5" y="27.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="321.5" y="32.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="319.5" y="34.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="319.5" y="38.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="89" x="227.5" y="60.9482">Object Name</text><!--MD5=[6094a80c71f038ca606bde82a206fef2]
+entity Object UID--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="113" x="376.5" y="27.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="469.5" y="32.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="467.5" y="34.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="467.5" y="38.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="73" x="391.5" y="60.9482">Object UID</text><!--MD5=[2a26d960026cd425d5072ab699b14bd7]
+entity Serialized Descriptor--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="182" x="525" y="27.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="687" y="32.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="685" y="34.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="685" y="38.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="142" x="540" y="60.9482">Serialized Descriptor</text><!--MD5=[d6f643e81638d7a350313020cb9bfb63]
+entity Directed Graph--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="145" x="738.5" y="133.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="863.5" y="138.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="861.5" y="140.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="861.5" y="144.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="105" x="753.5" y="166.9482">Directed Graph</text><!--MD5=[3d98c10aaffad8527997a6440f7568c6]
+entity Workflow--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="102" x="760" y="239.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="842" y="244.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="840" y="246.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="840" y="250.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="62" x="775" y="272.9482">Workflow</text><!--MD5=[df2defdcd84338b5f7438202859f4e03]
+entity Federated System--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="166" x="729" y="345.9531"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="875" y="350.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="873" y="352.9531"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="873" y="356.9531"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="126" x="744" y="378.9482">Federated System</text><!--MD5=[d27e494908bec42730f575d8f00a3f75]
+reverse link Distributed System to Node--><path d="M1016,404.9531 C1016,404.9531 1016,474.9531 1016,474.9531 C1016,474.9531 911.65,474.9531 852.95,474.9531 " fill="none" id="Distributed System-backto-Node" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="none" points="1016,391.9531,1012,397.9531,1016,403.9531,1020,397.9531,1016,391.9531" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="23" x="860.3598" y="470.9064">1..*</text><!--MD5=[06a6a0049fae65936134f09edea79668]
+reverse link Federated Systems to Distributed System--><path d="M1016,298.9531 C1016,298.9531 1016,345.6331 1016,345.6331 " fill="none" id="Federated Systems-backto-Distributed System" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="none" points="1016,285.9531,1012,291.9531,1016,297.9531,1020,291.9531,1016,285.9531" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="23" x="990.0531" y="334.7814">1..*</text><!--MD5=[2036895ab9f7522235e47bfec3d2f9a5]
+link System Resource to Node--><path d="M613,391.9531 C613,423.1331 613,474.9531 613,474.9531 C613,474.9531 762.25,474.9531 762.25,474.9531 " fill="none" id="System Resource-to-Node" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="none" points="775.25,474.9531,769.25,470.9531,763.25,474.9531,769.25,478.9531,775.25,474.9531" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="24" x="743.5023" y="470.9064">1..1</text><!--MD5=[0cbf0e31faa7c7ad8e384463da1a35d4]
+link Dragon Object to System Resource--><path d="M615,285.9531 C615,285.9531 615,340.6331 615,340.6331 " fill="none" id="Dragon Object-to-System Resource" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="615,345.6331,619,336.6331,615,340.6331,611,336.6331,615,345.6331" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="60" x="554" y="309.36">abstracts</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="23" x="589.5656" y="334.7814">1..*</text><!--MD5=[aa41b9d8f3e55cb881e95ad60983632d]
+link Managed Object to Dragon Object--><path d="M418,179.9531 C418,211.1331 418,262.9531 418,262.9531 C418,262.9531 524.99,262.9531 524.99,262.9531 " fill="none" id="Managed Object-to-Dragon Object" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="none" points="524.99,255.9531,544.99,262.9531,524.99,269.9531,524.99,255.9531" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[1b4917c04e9fe2ecd1507977bb33d145]
+link Unmanaged Object to Dragon Object--><path d="M615,179.9531 C615,179.9531 615,219.6331 615,219.6331 " fill="none" id="Unmanaged Object-to-Dragon Object" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="none" points="622,219.6331,615,239.6331,608,219.6331,622,219.6331" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[ab922e9fccd48e933c3f98afd9c9fd43]
+link Refcounted Object to Managed Object--><path d="M92,73.9531 C92,105.1331 92,156.9531 92,156.9531 C92,156.9531 321.16,156.9531 321.16,156.9531 " fill="none" id="Refcounted Object-to-Managed Object" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="none" points="321.16,149.9531,341.16,156.9531,321.16,163.9531,321.16,149.9531" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[35a7245546bd63e436e8c3631932cca5]
+link Object Name to Managed Object--><path d="M341.61,50.9531 C351.77,50.9531 359,50.9531 359,50.9531 C359,50.9531 359,128.9531 359,128.9531 " fill="none" id="Object Name-to-Managed Object" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="359,133.9531,363,124.9531,359,128.9531,355,124.9531,359,133.9531" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="53" x="301" y="94.32">uniquely</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="57" x="301" y="109.4528">identifies</text><!--MD5=[6ba004d682ee81e23fe23c59c6b75e1b]
+link Object UID to Managed Object--><path d="M433,73.9531 C433,73.9531 433,128.6331 433,128.6331 " fill="none" id="Object UID-to-Managed Object" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="433,133.6331,437,124.6331,433,128.6331,429,124.6331,433,133.6331" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="53" x="375" y="114.36">uniquely</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="57" x="375" y="129.4928">identifies</text><!--MD5=[77ff8b3bc959b2f02833f701595329dc]
+link Serialized Descriptor to Managed Object--><path d="M524.97,50.9531 C515.78,50.9531 509.75,50.9531 509.75,50.9531 C509.75,50.9531 509.75,156.9531 509.75,156.9531 C509.75,156.9531 499.6,156.9531 499.6,156.9531 " fill="none" id="Serialized Descriptor-to-Managed Object" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="494.6,156.9531,503.6,160.9531,499.6,156.9531,503.6,152.9531,494.6,156.9531" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="53" x="451.75" y="114.48">uniquely</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="57" x="451.75" y="129.6128">identifies</text><!--MD5=[77004c3696cd907f2b83523aa48b8f87]
+link Serialized Descriptor to Unmanaged Object--><path d="M616,73.9531 C616,73.9531 616,128.6331 616,128.6331 " fill="none" id="Serialized Descriptor-to-Unmanaged Object" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="616,133.6331,620,124.6331,616,128.6331,612,124.6331,616,133.6331" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="53" x="558" y="114.36">uniquely</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="57" x="558" y="129.4928">identifies</text><!--MD5=[1788374b347c3e80415451a7e6c96ece]
+link Directed Graph to Workflow--><path d="M811,179.9531 C811,179.9531 811,234.6331 811,234.6331 " fill="none" id="Directed Graph-to-Workflow" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="811,239.6331,815,230.6331,811,234.6331,807,230.6331,811,239.6331" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="60" x="750" y="203.36">abstracts</text><!--MD5=[8d27333157260fc9b5189a08de011036]
+link Directed Graph to Dragon Object--><path d="M749.25,179.9531 C749.25,211.1331 749.25,262.9531 749.25,262.9531 C749.25,262.9531 705.27,262.9531 705.27,262.9531 " fill="none" id="Directed Graph-to-Dragon Object" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="none" points="705.27,269.9531,685.27,262.9531,705.27,255.9531,705.27,269.9531" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[19a6ab6f415f1786151526ddc3b17455]
+link Workflow to Federated System--><path d="M811,285.9531 C811,285.9531 811,340.6331 811,340.6331 " fill="none" id="Workflow-to-Federated System" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="811,345.6331,815,336.6331,811,340.6331,807,336.6331,811,345.6331" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="48" x="762" y="309.36">runs on</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="24" x="783.6688" y="334.7814">1..1</text><!--MD5=[9bb0efb81038d6146a4f1504c41da748]
+@startuml
+
+title "Dragon Domain Model"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+skinparam linetype ortho
+' skinparam linetype polyline
+' skinparam nodesep 30
+' skinparam ranksep 40
+
+[Distributed System] o- - "1..*" [Node]
+[Federated Systems] o- - "1..*" [Distributed System]
+[System Resource] - -o " 1..1" [Node]
+[Dragon Object] - -> "1..*" [System Resource] : abstracts
+
+[Managed Object] - -|> [Dragon Object]
+[Unmanaged Object] - -|> [Dragon Object]
+[Refcounted Object] - -|> [Managed Object]
+
+[Object Name] - -> [Managed Object] : uniquely \nidentifies
+[Object UID] - -> [Managed Object] : uniquely \nidentifies
+[Serialized Descriptor] - -> [Managed Object] : uniquely \nidentifies
+[Serialized Descriptor] - -> [Unmanaged Object] : uniquely \nidentifies
+[Directed Graph] - -> [Workflow] : abstracts
+[Directed Graph] - -|> [Dragon Object]
+[Workflow] - -> "1..1" [Federated System] : runs on
+
+'in case we want to hide components
+hide $hidden
+@enduml
+
+@startuml
+
+title "Dragon Domain Model"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+skinparam linetype ortho
+
+[Distributed System] o- - "1..*" [Node]
+[Federated Systems] o- - "1..*" [Distributed System]
+[System Resource] - -o " 1..1" [Node]
+[Dragon Object] - -> "1..*" [System Resource] : abstracts
+
+[Managed Object] - -|> [Dragon Object]
+[Unmanaged Object] - -|> [Dragon Object]
+[Refcounted Object] - -|> [Managed Object]
+
+[Object Name] - -> [Managed Object] : uniquely \nidentifies
+[Object UID] - -> [Managed Object] : uniquely \nidentifies
+[Serialized Descriptor] - -> [Managed Object] : uniquely \nidentifies
+[Serialized Descriptor] - -> [Unmanaged Object] : uniquely \nidentifies
+[Directed Graph] - -> [Workflow] : abstracts
+[Directed Graph] - -|> [Dragon Object]
+[Workflow] - -> "1..1" [Federated System] : runs on
+
+hide $hidden
+@enduml
+
+PlantUML version 1.2022.1(Tue Feb 01 18:19:58 GMT 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Process Creation and Interaction &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Conventional IDs" href="conventional_ids.html" />
+    <link rel="prev" title="Infrastructure Messages" href="messages_api.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="infrastructure.html">Infrastructure</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="architecture.html">Infrastructure Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="messages_api.html">Infrastructure Messages</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Process Creation and Interaction</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#launch-parameters">Launch Parameters</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#providing-parameters">Providing parameters</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#accessing-parameters">Accessing parameters</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#parameter-organization">Parameter organization</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#list-of-parameters">List of parameters</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#activity-diagram">Activity Diagram</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#activity-description">Activity Description</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="conventional_ids.html">Conventional IDs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="single_node_deployment.html">Single Node Deployment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="multi_node_deployment.html">Multi Node Deployment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bootstrapping.html">Infrastructure Bootstrapping</a></li>
+<li class="toctree-l2"><a class="reference internal" href="logging.html">Logging</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="infrastructure.html">Infrastructure</a></li>
+      <li class="breadcrumb-item active">Process Creation and Interaction</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/infrastructure/processes.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="process-creation-and-interaction">
+<span id="processcreationandinteraction"></span><h1>Process Creation and Interaction<a class="headerlink" href="#process-creation-and-interaction" title="Permalink to this heading"></a></h1>
+<p>Here we describe the creation and interaction of managed POSIX processes by the Dragon runtime
+<a class="reference internal" href="infrastructure.html#infrastructure"><span class="std std-ref">Infrastructure</span></a> <a class="reference internal" href="../services/services.html#services"><span class="std std-ref">Services</span></a>.</p>
+<section id="launch-parameters">
+<span id="launchparameters"></span><h2>Launch Parameters<a class="headerlink" href="#launch-parameters" title="Permalink to this heading"></a></h2>
+<p>The Dragon runtime has a number of parameters that may be a constant or determined at job launch time.  These
+need to be accessed in a mutually coherent way by a number of different runtime components:</p>
+<blockquote>
+<div><ul class="simple">
+<li><dl class="simple">
+<dt><a class="reference internal" href="../services/launcher.html#launcher"><span class="std std-ref">Launcher</span></a></dt><dd><ul>
+<li><p>on login node</p></li>
+<li><p>Source of some parameters, such as number of back end nodes</p></li>
+</ul>
+</dd>
+</dl>
+</li>
+<li><p><span class="xref std std-ref">MRNet</span> Backend, one per node</p></li>
+<li><p><a class="reference internal" href="../services/local_services.html#localservices"><span class="std std-ref">Local Services</span></a>, one per node</p></li>
+<li><p><span class="xref std std-ref">TransportAgent</span>, one per node</p></li>
+<li><p><a class="reference internal" href="../services/global_services.html#globalservices"><span class="std std-ref">Global Services</span></a> head process (plus any more it may launch)</p></li>
+<li><p>managed user processes</p></li>
+</ul>
+</div></blockquote>
+<p>Here we specify how these parameters are to be supplied, and what their names and types are.  For now, these
+parameters are viewed as potentially changing between separate user launches but are immutable from the point
+of view of the lifetime of any one component process.  They may not necessarily all be identical across
+processes.</p>
+<section id="providing-parameters">
+<h3>Providing parameters<a class="headerlink" href="#providing-parameters" title="Permalink to this heading"></a></h3>
+<p>For the time being, parameters will be provided to launched components as <em>POSIX environment variables</em>. This
+may change to another scheme in the future.</p>
+<p>Each parameter listed below, when provided as an environment variable, will have the string <code class="docutils literal notranslate"><span class="pre">DRAGON_</span></code>
+prepended to its name.</p>
+</section>
+<section id="accessing-parameters">
+<span id="accessing-parms"></span><h3>Accessing parameters<a class="headerlink" href="#accessing-parameters" title="Permalink to this heading"></a></h3>
+<p>All code that uses parameters will do this through a defined interface and not through hard-coding them or
+directly accessing wherever they happen to be sourced from.  This lets us change policy if need be as to where
+these things ultimately come from.</p>
+<p>Parameters are accessed in Python through the <code class="docutils literal notranslate"><span class="pre">dragon.infrastructure.parameters</span></code> module which defines the
+LaunchParameters object.</p>
+<p>This module contains <code class="docutils literal notranslate"><span class="pre">dragon.infrastructure.parameters.this_process</span></code> singleton instance which should be the
+only way other Python code interacts with the launch parameters.</p>
+<p>This object is initialized, from the environment, when the parameters module is imported into a process and is
+meant to contain immutable data. Changes to the this_process object’s attributes do not change the process’s
+actual environment.  Instead, the this_process object has a method that returns the environment variable name
+and value for each parameter in a dictionary as strings.  In this way one can collect the environment
+variables that need to be set when starting a new process.</p>
+<p>The <code class="docutils literal notranslate"><span class="pre">LaunchParameters</span></code> object can be instantiated separately from the this_process singleton. One may do a
+deep copy on the this_process variable, adjust what needs adjusting in the copy by changing the members
+directly, then ask the object to produce a dictionary of environment variables.  If these variables are set
+for a new process, the corresponding <code class="docutils literal notranslate"><span class="pre">this_process</span></code> singleton object will match with what has been prepared.</p>
+<p><strong>FIXME</strong>: proper API documentation and cross links <strong>FIXME</strong>: define C interface for this stuff</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>the keys will be (at some level) strings, but they should not
+be mentioned all over the code, but only as const char* defined
+in one place.</p></li>
+<li><p>could be as simple as initializing a struct.</p></li>
+</ul>
+</div></blockquote>
+</section>
+<section id="parameter-organization">
+<h3>Parameter organization<a class="headerlink" href="#parameter-organization" title="Permalink to this heading"></a></h3>
+<p>The general structure of parameters is as key-value pairs, where the key is name of the parameter.</p>
+<section id="types">
+<h4>Types<a class="headerlink" href="#types" title="Permalink to this heading"></a></h4>
+<p>Parameter values can have integer or string type.</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>Everything will be in utf-8 encoding.</p></li>
+<li><p>parameter names will be legal C99 identifiers</p></li>
+<li><dl class="simple">
+<dt>Integer parameters will be provided in base 10</dt><dd><ul>
+<li><p>with no leading, trailing, or interstitial spaces</p></li>
+<li><p>e.g. as the “%d” C99 printf format specifier</p></li>
+</ul>
+</dd>
+</dl>
+</li>
+</ul>
+</div></blockquote>
+<p>Parameters that for some reason need richer typing than integer and string will be provided as JSON encoded
+strings.</p>
+<p>We will avoid having floating point parameters by defining units as part of the parameter - that is, instead
+of a floating point number of seconds, an integer number of Planck time units.</p>
+<p>Individual parameters may have their own range restrictions beyond the basic type and these should be checked
+up front if possible when building the interface object.</p>
+<p>For instance, an integer may be expected to be a nonnegative integer, or less than another integer.</p>
+</section>
+</section>
+<section id="list-of-parameters">
+<span id="parameters"></span><h3>List of parameters<a class="headerlink" href="#list-of-parameters" title="Permalink to this heading"></a></h3>
+<p>This list may be added to in the future. These values include values needed for bootstrapping the Dragon
+services during startup and these environment variables also contain values needed by user processes that are
+executing under the supervision of the Dragon runtime services.</p>
+<p><strong>FIXME Add source and sink of these variables to improve clarity</strong></p>
+<table class="docutils align-default">
+<colgroup>
+<col style="width: 24%" />
+<col style="width: 19%" />
+<col style="width: 57%" />
+</colgroup>
+<thead>
+<tr class="row-odd"><th class="head"><p>Name</p></th>
+<th class="head"><p>Type</p></th>
+<th class="head"><p>Description</p></th>
+</tr>
+</thead>
+<tbody>
+<tr class="row-even"><td><p>MODE</p></td>
+<td><p>string</p></td>
+<td><p>set to ‘hsta’ if it is a
+multi-node run.
+Otherwise it is
+set to ‘single’. Used during
+bootstrapping.</p></td>
+</tr>
+<tr class="row-odd"><td><p>ALLOC_SZ</p></td>
+<td><p>integer &gt;0</p></td>
+<td><p>number back end nodes in allocation.</p></td>
+</tr>
+<tr class="row-even"><td><p>INDEX</p></td>
+<td><p>integer &gt;=0</p></td>
+<td><p>which node in the allocation this
+process is on</p></td>
+</tr>
+<tr class="row-odd"><td><p>PRIMARY_INDEX</p></td>
+<td><p>integer &gt;=0</p></td>
+<td><p>which node in the allocation is
+designated as the primary node.
+Global services runs on the primary
+node.</p></td>
+</tr>
+<tr class="row-even"><td><p>DEFAULT_PD</p></td>
+<td><p>string</p></td>
+<td><p>default local pool descriptor for
+process allocations on behalf of the
+Dragon runtime services (base64).</p></td>
+</tr>
+<tr class="row-odd"><td><p>INF_PD</p></td>
+<td><p>string</p></td>
+<td><p>infrastructure local pool desc. Used
+strictly by Dragon services (base64).</p></td>
+</tr>
+<tr class="row-even"><td><p>LOCAL_SHEP_CD</p></td>
+<td><p>string</p></td>
+<td><p>channel descriptor (base64) for the
+local Shepherd’s main queue.</p></td>
+</tr>
+<tr class="row-odd"><td><p>LOCAL_BE_CD</p></td>
+<td><p>string</p></td>
+<td><p>channel descriptor (base64) for the
+launcher’s backend main queue.</p></td>
+</tr>
+<tr class="row-even"><td><p>GS_RET_CD</p></td>
+<td><p>string</p></td>
+<td><p>channel descriptor (base64) for GS
+responses to this process from GS API
+calls.</p></td>
+</tr>
+<tr class="row-odd"><td><p>SHEP_RET_CD</p></td>
+<td><p>string</p></td>
+<td><p>channel descriptor (base64) for Shep
+responses to this process from
+Shepherd API calls.</p></td>
+</tr>
+<tr class="row-even"><td><p>GS_CD</p></td>
+<td><p>string</p></td>
+<td><p>channel descriptor (base64) for the
+Global Services’ main recv queue.</p></td>
+</tr>
+<tr class="row-odd"><td><p>GS_MAX_MSGS</p></td>
+<td><p>integer</p></td>
+<td><p>The maximum number of allowed msgs
+in the main Global Services channel.</p></td>
+</tr>
+<tr class="row-even"><td><p>SH_MAX_MSGS</p></td>
+<td><p>integer</p></td>
+<td><p>The maximum number of allowed msgs
+in the main Shepherd channel.</p></td>
+</tr>
+<tr class="row-odd"><td><p>DEFAULT_SEG_SZ</p></td>
+<td><p>integer &gt;0</p></td>
+<td><p>size of the default shared memory
+segment. Used during bootstrapping.</p></td>
+</tr>
+<tr class="row-even"><td><p>INF_SEG_SZ</p></td>
+<td><p>integer &gt;0</p></td>
+<td><p>size of the infrastructure shared
+memory segment. For bootstrapping.</p></td>
+</tr>
+<tr class="row-odd"><td><p>TEST</p></td>
+<td><p>integer &gt;=0</p></td>
+<td><p>as bool; indicates ‘test mode’ to
+bypass some initializations</p></td>
+</tr>
+<tr class="row-even"><td><p>DEBUG</p></td>
+<td><p>integer &gt;=0</p></td>
+<td><p>integers greater than 0 indicate
+increased levels of logging for debug
+purposes. 0 indicates no logging.
+This is a placeholder for now.</p></td>
+</tr>
+<tr class="row-odd"><td><p>MY_PUID</p></td>
+<td><p>integer &gt;0</p></td>
+<td><p>process uid for this process</p></td>
+</tr>
+</tbody>
+</table>
+</section>
+</section>
+<section id="activity-diagram">
+<h2>Activity Diagram<a class="headerlink" href="#activity-diagram" title="Permalink to this heading"></a></h2>
+<p>Following is a flow diagram showing the interaction between components during process launch, output and input
+handling, signaling, and process termination. The text below the figure gives additional details on the
+activities during this interaction. The <em>a1</em> through <em>a6</em> are denoted in figure 1 and the numbered list below
+further describes those activities.</p>
+<figure class="align-default" id="id1">
+<a class="reference internal image-reference" href="../_images/launchproc.srms1.png"><img alt="../_images/launchproc.srms1.png" src="../_images/launchproc.srms1.png" style="width: 847.5px; height: 1336.5px;" /></a>
+<figcaption>
+<p><span class="caption-number">Fig. 22 </span><span class="caption-text"><strong>Figure 1: Launcher Component Interaction during Process Interaction</strong></span><a class="headerlink" href="#id1" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<section id="activity-description">
+<h3>Activity Description<a class="headerlink" href="#activity-description" title="Permalink to this heading"></a></h3>
+<ol class="arabic simple">
+<li><p>Starting with <em>a1</em> a process is launched by the user. During process launch a
+<a class="reference internal" href="messages_api.html#gsprocesscreate"><span class="std std-ref">GSProcessCreate</span></a> message is created by the Launcher and
+forwarded to Global Services through its pipe connection either to MRNet, or in
+the case of single-node launch, directly to the Backend. The p_uid field of the
+<a class="reference internal" href="messages_api.html#gsprocesscreate"><span class="std std-ref">GSProcessCreate</span></a> message is set to 0 to indicate it is
+the head process. The r_c_uid field is set to the channel id of the Backend.</p></li>
+<li><p>When output is created by a process, as shown at <em>a2</em>, the output is detected by
+the Shepherd which creates an SHFwdOutput message and sends it directly to the
+Backend component. The Backend forwards these messages to the Launcher through
+the MRNet (if multi-node) or directly to the launcher (if single-node).</p></li>
+<li><p>At <em>a3</em> the user sends input on standard in to the Launcher. The Launcher
+waits for available input on stdin and reacts by creating an <a class="reference internal" href="messages_api.html#shfwdinput"><span class="std std-ref">SHFwdInput</span></a> message and sends it to the Backend on the primary node which in
+turn forwards it on to the Shepherd. The Shepherd then sends that same input
+into stdin of the head process.</p></li>
+<li><p>Activity <em>a4</em> demonstrates what happens when a signal is detected. The
+Launcher monitors signals that occur while it is running. During process
+execution, the Launcher continues to run, accepting input and signals. When a
+signal occurs, the signal is forwarded in the same manner, this time through
+Global Services, then the Shepherd, to signal the head process. Note that the
+Shepherd sends the <a class="reference internal" href="messages_api.html#shprocessexit"><span class="std std-ref">SHProcessExit</span></a> in response to the kill
+request. It is not acknowledging that it exited in this case. Simply that the
+signal was sent to the process. Then Global Services acknowledges the signal
+was sent through the <a class="reference internal" href="messages_api.html#gsprocesskillresponse"><span class="std std-ref">GSProcessKillResponse</span></a>
+message. Again, this does not mean that the process exited or otherwise
+terminated. It simply indicates the signal was received or provides an error
+code indicating what went wrong. For instance, if the process had already
+terminated before the signal message was received by Global Services or the
+Shepherd then an appropriate response code will be set. See the
+<a class="reference internal" href="messages_api.html#gsprocesskillresponse"><span class="std std-ref">GSProcessKillResponse</span></a> message for possible
+return codes to the Launcher.</p></li>
+<li><p>At <em>a5</em>, after the process is created, the launcher may request notification
+of exit by
+sending the <a class="reference internal" href="messages_api.html#gsprocessjoin"><span class="std std-ref">GSProcessJoin</span></a> message.</p></li>
+<li><p>When the process exits, as indicated starting at <em>a6</em>, the Shepherd detects
+the process is exiting and sends the <a class="reference internal" href="messages_api.html#shprocessexit"><span class="std std-ref">SHProcessExit</span></a> to
+Global Services which recognizes this was the head process and then
+sends the <a class="reference internal" href="messages_api.html#gsprocessjoinresponse"><span class="std std-ref">GSProcessJoinResponse</span></a> message. This message is forwarded on
+to the Launcher through the Backend. If the user then exits the launcher command processor
+using the <em>exit</em> command and no
+other messages needed processing, it initiates teardown of the infrastructure
+as shown in <a class="reference internal" href="single_node_deployment.html#singlenodeteardown"><span class="std std-ref">Single Node Teardown</span></a> or <a class="reference internal" href="multi_node_deployment.html#multinodeteardown"><span class="std std-ref">Multi Node Teardown</span></a>.</p></li>
+</ol>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="messages_api.html" class="btn btn-neutral float-left" title="Infrastructure Messages" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="conventional_ids.html" class="btn btn-neutral float-right" title="Conventional IDs" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

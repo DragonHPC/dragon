@@ -1,0 +1,48 @@
+﻿dragon.native.pool
+==================
+
+.. automodule:: dragon.native.pool
+   :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      mapstar
+      rebuild_exc
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      ApplyResult
+      AsyncResult
+      ExceptionWithTraceback
+      MapResult
+      Pool
+   
+   
+
+   
+   
+   .. rubric:: Exceptions
+
+   .. autosummary::
+   
+      MaybeEncodingError
+      RemoteTraceback
+   
+   
+
+
+

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="340px" preserveAspectRatio="none" style="width:428px;height:340px;background:#FFFFFF;" version="1.1" viewBox="0 0 428 340" width="428px" zoomAndPan="magnify"><defs/><g><!--MD5=[ad9f95680869dd252f19eb46e9a93cb1]
+cluster Primary Compute Node--><polygon fill="#FFFFFF" points="16,16,26,6,406,6,406,323,396,333,16,333,16,16" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="396" x2="406" y1="16" y2="6"/><line style="stroke:#000000;stroke-width:1.5;" x1="16" x2="396" y1="16" y2="16"/><line style="stroke:#000000;stroke-width:1.5;" x1="396" x2="396" y1="16" y2="333"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="182" x="116" y="31.9951">Primary Compute Node</text><!--MD5=[c44746e9563f1ca9ad68b29400fb9fb3]
+entity LA--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="94" x="88" y="46"/><polygon fill="#F8F8F8" points="165,51,165,65,177,65,177,57,171,51,165,51" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="171" x2="171" y1="51" y2="57"/><line style="stroke:#000000;stroke-width:1.5;" x1="177" x2="171" y1="57" y2="57"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="64" x="98" y="71.9951">Launcher</text><!--MD5=[66223a172ae9ceac77f27ebc9b631536]
+entity GS--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="135" x="32.5" y="278"/><polygon fill="#F8F8F8" points="150.5,283,150.5,297,162.5,297,162.5,289,156.5,283,150.5,283" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="156.5" x2="156.5" y1="283" y2="289"/><line style="stroke:#000000;stroke-width:1.5;" x1="162.5" x2="156.5" y1="289" y2="289"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="105" x="42.5" y="303.9951">Global Services</text><!--MD5=[37c6688db026a1258583cb16b1e42d17]
+entity SH--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="98" x="278" y="162"/><polygon fill="#F8F8F8" points="359,167,359,181,371,181,371,173,365,167,359,167" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="365" x2="365" y1="167" y2="173"/><line style="stroke:#000000;stroke-width:1.5;" x1="371" x2="365" y1="173" y2="173"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="68" x="288" y="187.9951">Shepherd</text><!--MD5=[0de3afc3b27e03e3f38d37c4c0980b4c]
+entity UP--><rect fill="#F8F8F8" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="124" x="208" y="278"/><polygon fill="#F8F8F8" points="315,283,315,297,327,297,327,289,321,283,315,283" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="321" x2="321" y1="283" y2="289"/><line style="stroke:#000000;stroke-width:1.5;" x1="327" x2="321" y1="289" y2="289"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="94" x="218" y="303.9951">User Program</text><!--MD5=[d5995756ed2313e49d46fe3fddf450d7]
+link LA to SH--><path d="M166.28,85.07 C201.98,106.27 260.04,140.74 295.74,161.94 " fill="none" id="LA-SH" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="115" x="243" y="128.0669">Launcher Channel</text><!--MD5=[5873ed46849de9ca3a42791e82634985]
+link LA to GS--><path d="M125.12,85.37 C110.55,113.2 85,162 85,162 C85,162 85,201 85,201 C85,201 92.67,249.8 97.04,277.63 " fill="none" id="LA-GS" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="174" x="86" y="186.0669">Launcher Backend Channel</text><!--MD5=[52ab5db8c82a9180a6aeb64f5e473b35]
+link SH to UP--><path d="M317.72,201.07 C307.12,222.27 289.88,256.74 279.28,277.94 " fill="none" id="SH-UP" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="118" x="302" y="244.0669">stdin/stdout/stderr</text><!--MD5=[0e9b151a5812e7845f39e5cb12a47d04]
+link SH to GS--><path d="M277.79,194.68 C219.73,209.04 131,231 131,231 C131,231 117.97,258.54 108.8,277.91 " fill="none" id="SH-GS" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="154" x="132" y="244.0669">Global Services Channel</text><!--MD5=[9f28e0a008bd21d979ece1ca71f94fa0]
+@startuml
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+skinparam linetype polyline
+
+
+node "Primary Compute Node" {
+    artifact "Launcher" as LA
+    artifact "Global Services" as GS
+    artifact "Shepherd" as SH
+    ' artifact "Transport Service" as TS
+    artifact "User Program" as UP
+}
+
+LA - - SH : Launcher Channel
+LA - - GS:  Launcher Backend Channel
+SH - - UP: stdin/stdout/stderr
+SH - - GS: Global Services Channel
+
+
+@enduml
+
+@startuml
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+skinparam linetype polyline
+
+
+node "Primary Compute Node" {
+    artifact "Launcher" as LA
+    artifact "Global Services" as GS
+    artifact "Shepherd" as SH
+    artifact "User Program" as UP
+}
+
+LA - - SH : Launcher Channel
+LA - - GS:  Launcher Backend Channel
+SH - - UP: stdin/stdout/stderr
+SH - - GS: Global Services Channel
+
+
+@enduml
+
+PlantUML version 1.2022.1(Tue Feb 01 18:19:58 GMT 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

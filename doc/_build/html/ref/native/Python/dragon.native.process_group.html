@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.native.process_group &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/clipboard.min.js"></script>
+        <script src="../../../_static/copybutton.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="dragon.native.queue" href="dragon.native.queue.html" />
+    <link rel="prev" title="dragon.native.process" href="dragon.native.process.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../../ref.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../index.html">Dragon Native</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="../index.html#reference-by-language">Reference by Language</a><ul class="current">
+<li class="toctree-l4 current"><a class="reference internal" href="index.html">Python Language Bindings</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../index.html#specification-by-language">Specification by Language</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../index.html#architecture">Architecture</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../client/index.html">Dragon GS Client</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../inf/index.html">Dragon Infrastructure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../core/index.html">Dragon Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../mpbridge/index.html">MPBridge</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../../ref.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Dragon Native</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Python Language Bindings</a></li>
+      <li class="breadcrumb-item active">dragon.native.process_group</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/ref/native/Python/dragon.native.process_group.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-dragon.native.process_group">
+<span id="dragon-native-process-group"></span><h1>dragon.native.process_group<a class="headerlink" href="#module-dragon.native.process_group" title="Permalink to this heading"></a></h1>
+<p>The Dragon native class for managing the life-cycle of a group of Dragon processes.</p>
+<p>The intent is for the class to be agnostic about what the processes are doing,
+it only maintains their lifecycle.</p>
+<p>This file implements a client API class and a Manager process handling all
+groups on the node. The manager holds a list of GroupContext classes and gets
+signals from the client classes using a queue. The group of processes undergoes
+state transitions depending on the signals the client send to the manager.</p>
+<p>Due to transparency constraints the manager cannot send information back to the client.
+Instead we are using shared state</p>
+<p>The underlying state machine looks like this:</p>
+<a class="reference internal image-reference" href="../../../_images/dragon_worker_pool.svg"><img alt="../../../_images/dragon_worker_pool.svg" height="688" src="../../../_images/dragon_worker_pool.svg" width="948" /></a>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><code class="xref py py-obj docutils literal notranslate"><span class="pre">BaseState</span></code></a></p></td>
+<td><p>This class declares methods that all concrete State classes should implement and also provides a backreference to the Context object, associated with the State.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.native.process_group.Error" title="dragon.native.process_group.Error"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Error</span></code></a></p></td>
+<td><p>This is the fallback state if an issue with the group occurs.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.native.process_group.GroupContext" title="dragon.native.process_group.GroupContext"><code class="xref py py-obj docutils literal notranslate"><span class="pre">GroupContext</span></code></a></p></td>
+<td><p>The Context defines the group interface for the manager and the client.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.native.process_group.Idle" title="dragon.native.process_group.Idle"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Idle</span></code></a></p></td>
+<td><p>This state kills existing processes and does nothing otherwise.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.native.process_group.Maintain" title="dragon.native.process_group.Maintain"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Maintain</span></code></a></p></td>
+<td><p>This state starts missing processes and restarts processes that are not alive anymore.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Manager</span></code></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.native.process_group.PGSignals" title="dragon.native.process_group.PGSignals"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PGSignals</span></code></a></p></td>
+<td><p>An enumeration.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.native.process_group.ProcessGroup" title="dragon.native.process_group.ProcessGroup"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ProcessGroup</span></code></a></p></td>
+<td><p>Robustly manage the lifecycle of a group of Dragon processes using Dragon Global Services.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.native.process_group.Running" title="dragon.native.process_group.Running"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Running</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.native.process_group.Stop" title="dragon.native.process_group.Stop"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Stop</span></code></a></p></td>
+<td><p>Stops all processes of the group and removes the group from the Manager.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Exceptions</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.native.process_group.DragonProcessGroupAbnormalExit" title="dragon.native.process_group.DragonProcessGroupAbnormalExit"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DragonProcessGroupAbnormalExit</span></code></a></p></td>
+<td><p>Exception raised by the Dragon Pool Workers implementation</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.native.process_group.DragonProcessGroupError" title="dragon.native.process_group.DragonProcessGroupError"><code class="xref py py-obj docutils literal notranslate"><span class="pre">DragonProcessGroupError</span></code></a></p></td>
+<td><p>Exceptions raised by the Dragon Pool Workers implementation</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py exception">
+<dt class="sig sig-object py" id="dragon.native.process_group.DragonProcessGroupError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonProcessGroupError</span></span><a class="headerlink" href="#dragon.native.process_group.DragonProcessGroupError" title="Permalink to this definition"></a></dt>
+<dd><p>Exceptions raised by the Dragon Pool Workers implementation</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="dragon.native.process_group.DragonProcessGroupAbnormalExit">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">DragonProcessGroupAbnormalExit</span></span><a class="headerlink" href="#dragon.native.process_group.DragonProcessGroupAbnormalExit" title="Permalink to this definition"></a></dt>
+<dd><p>Exception raised by the Dragon Pool Workers implementation</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process_group.PGSignals">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">PGSignals</span></span><a class="headerlink" href="#dragon.native.process_group.PGSignals" title="Permalink to this definition"></a></dt>
+<dd><p>An enumeration.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process_group.BaseState">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">BaseState</span></span><a class="headerlink" href="#dragon.native.process_group.BaseState" title="Permalink to this definition"></a></dt>
+<dd><p>This class declares methods that all concrete State classes should
+implement and also provides a backreference to the Context object,
+associated with the State. This backreference can be used by States to
+transition the Context to another State.
+It also defines common methods and data structures to all states.</p>
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process_group.BaseState.context">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">context</span></span><a class="headerlink" href="#dragon.native.process_group.BaseState.context" title="Permalink to this definition"></a></dt>
+<dd><p>Link back to it’s own context.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The group context holding this state</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><a class="reference internal" href="#dragon.native.process_group.GroupContext" title="dragon.native.process_group.GroupContext">GroupContext</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.BaseState.run">
+<em class="property"><span class="pre">abstract</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prior_state</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.PGSignals" title="dragon.native.process_group.PGSignals"><span class="pre">PGSignals</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">sig_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.BaseState.run" title="Permalink to this definition"></a></dt>
+<dd><p>This method runs the state it is a part of on the context.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process_group.Error">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Error</span></span><a class="headerlink" href="#dragon.native.process_group.Error" title="Permalink to this definition"></a></dt>
+<dd><p>This is the fallback state if an issue with the group occurs.
+The state of the processes is undefined here.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.Error.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prior_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><span class="pre">BaseState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.PGSignals" title="dragon.native.process_group.PGSignals"><span class="pre">PGSignals</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">sig_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.Error.run" title="Permalink to this definition"></a></dt>
+<dd><p>This method runs the state it is a part of on the context.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process_group.Idle">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Idle</span></span><a class="headerlink" href="#dragon.native.process_group.Idle" title="Permalink to this definition"></a></dt>
+<dd><p>This state kills existing processes and does nothing otherwise.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.Idle.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prior_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><span class="pre">BaseState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.PGSignals" title="dragon.native.process_group.PGSignals"><span class="pre">PGSignals</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">sig_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.Idle.run" title="Permalink to this definition"></a></dt>
+<dd><p>The idle state just does nothing except making sure all processes are gone.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process_group.Maintain">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Maintain</span></span><a class="headerlink" href="#dragon.native.process_group.Maintain" title="Permalink to this definition"></a></dt>
+<dd><p>This state starts missing processes and restarts processes that are not
+alive anymore.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p><a class="reference internal" href="#dragon.native.process_group.DragonProcessGroupError" title="dragon.native.process_group.DragonProcessGroupError"><strong>DragonProcessGroupError</strong></a> – If one of the processes could not be (re)started.</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.Maintain.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prior_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><span class="pre">BaseState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.PGSignals" title="dragon.native.process_group.PGSignals"><span class="pre">PGSignals</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">sig_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.Maintain.run" title="Permalink to this definition"></a></dt>
+<dd><p>This method runs the state it is a part of on the context.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process_group.Running">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Running</span></span><a class="headerlink" href="#dragon.native.process_group.Running" title="Permalink to this definition"></a></dt>
+<dd><dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.Running.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prior_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><span class="pre">BaseState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">pgsignal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.PGSignals" title="dragon.native.process_group.PGSignals"><span class="pre">PGSignals</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">sig_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.Running.run" title="Permalink to this definition"></a></dt>
+<dd><p>This method runs the state it is a part of on the context.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process_group.Stop">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Stop</span></span><a class="headerlink" href="#dragon.native.process_group.Stop" title="Permalink to this definition"></a></dt>
+<dd><p>Stops all processes of the group and removes the group from the Manager. The
+group cannot be restarted anymore.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.Stop.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prior_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><span class="pre">BaseState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.PGSignals" title="dragon.native.process_group.PGSignals"><span class="pre">PGSignals</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">sig_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.Stop.run" title="Permalink to this definition"></a></dt>
+<dd><p>This method runs the state it is a part of on the context.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">GroupContext</span></span><a class="headerlink" href="#dragon.native.process_group.GroupContext" title="Permalink to this definition"></a></dt>
+<dd><p>The Context defines the group interface for the manager and the client.
+In particular, it handles signals and state changes. It maintains a
+reference to an instance of a State subclass, which represents the current
+state of the group of processes.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">templates</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">tuple</span><span class="p"><span class="pre">]</span></span></span></em>, <em class="sig-param"><span class="n"><span class="pre">nproc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">restart</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ignore_error_on_exit</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pmi_enabled</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">walltime</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">float</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">policy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Policy</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.GroupContext.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>This class represents a group of processes and exposes an interface
+to the Manager to handle signals and state transitions.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>templates</strong> (<em>list</em><em>[</em><em>tuple</em><em>(</em><em>int</em><em>, </em><a class="reference internal" href="dragon.native.process.html#dragon.native.process.TemplateProcess" title="dragon.native.process.TemplateProcess"><em>dragon.native.process.TemplateProcess</em></a><em>)</em><em>,</em><em>]</em>) – a list of tuples where each tuple contains a replication factor <code class="code docutils literal notranslate"><span class="pre">n</span></code> and a Dragon TemplateProcess object specifing the properties of the process to start. The processes can hold the same or different attributes in any way and will be numbered in order.</p></li>
+<li><p><strong>nproc</strong> (<em>int</em>) – total number of processes that belong to the ProcessGroup</p></li>
+<li><p><strong>restart</strong> (<em>bool</em>) – wether to restart processes that exited prematurely, defaults to True</p></li>
+<li><p><strong>ignore_error_on_exit</strong> (<em>bool</em>) – whether to ignore errors when the group exists, defaults to False</p></li>
+<li><p><strong>pmi_enabled</strong> (<em>bool</em>) – wether to instruct Dragon to enable MPI support, defaults to False</p></li>
+<li><p><strong>walltime</strong> (<em>float</em>) – time in seconds to run processes before killing them.</p></li>
+<li><p><strong>policy</strong> (<em>dragon.infrastructure.policy.Policy</em>) – determines the placement of the group resources</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.handle_signal">
+<span class="sig-name descname"><span class="pre">handle_signal</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.PGSignals" title="dragon.native.process_group.PGSignals"><span class="pre">PGSignals</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">tuple</span></span></span><a class="headerlink" href="#dragon.native.process_group.GroupContext.handle_signal" title="Permalink to this definition"></a></dt>
+<dd><p>This method takes a signal, checks if the signal is allowed, given
+the current state, and returns the new state.
+If the walltime is up, it overwrites the signal with kill.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>signal</strong> (<em>Signal</em>) – The signal to consider</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>target state</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState">BaseState</a></p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><strong>RuntimeError</strong> – raised, if the transition is not allowed</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.transition_to">
+<span class="sig-name descname"><span class="pre">transition_to</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">new_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><span class="pre">BaseState</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><span class="pre">BaseState</span></a></span></span><a class="headerlink" href="#dragon.native.process_group.GroupContext.transition_to" title="Permalink to this definition"></a></dt>
+<dd><p>Transition the context to a new state. This does NOT run
+the new state or updates the status.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>new_state</strong> (<a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><em>BaseState</em></a>) – state to transition to</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>previous state</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState">BaseState</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.current_state">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">current_state</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><span class="pre">BaseState</span></a></em><a class="headerlink" href="#dragon.native.process_group.GroupContext.current_state" title="Permalink to this definition"></a></dt>
+<dd><p>Return the current state object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>the state</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState">BaseState</a></p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.run">
+<span class="sig-name descname"><span class="pre">run</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">prior_state</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><span class="pre">BaseState</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="#dragon.native.process_group.PGSignals" title="dragon.native.process_group.PGSignals"><span class="pre">PGSignals</span></a></span></em>, <em class="sig-param"><span class="n"><span class="pre">sig_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.native.process_group.GroupContext.run" title="Permalink to this definition"></a></dt>
+<dd><p>Execute the current (!) state in self._state.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>prior_state</strong> (<a class="reference internal" href="#dragon.native.process_group.BaseState" title="dragon.native.process_group.BaseState"><em>BaseState</em></a>) – prior state</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.get_next_sig_id">
+<span class="sig-name descname"><span class="pre">get_next_sig_id</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#dragon.native.process_group.GroupContext.get_next_sig_id" title="Permalink to this definition"></a></dt>
+<dd><p>Obtain the next unique signal ID for this group context</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>next signal id</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.status">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">status</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><a class="headerlink" href="#dragon.native.process_group.GroupContext.status" title="Permalink to this definition"></a></dt>
+<dd><p>The current status of the Group.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>state name</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.puids">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">puids</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#dragon.native.process_group.GroupContext.puids" title="Permalink to this definition"></a></dt>
+<dd><p>The puids maintained by the GroupContext.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>A list of puids if the process is started or None if not.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>list[int or None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.last_completed_signal">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">last_completed_signal</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">int</span></em><a class="headerlink" href="#dragon.native.process_group.GroupContext.last_completed_signal" title="Permalink to this definition"></a></dt>
+<dd><p>Return the ID of the last successfully completed signal.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>the signal id</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>int</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.GroupContext.update_status">
+<span class="sig-name descname"><span class="pre">update_status</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">compl_sig_id</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.native.process_group.GroupContext.update_status" title="Permalink to this definition"></a></dt>
+<dd><p>update the global status of this context.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>compl_sig_id</strong> (<em>int</em>) – signal just completed. If None, reuse the last value from the queue.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ProcessGroup</span></span><a class="headerlink" href="#dragon.native.process_group.ProcessGroup" title="Permalink to this definition"></a></dt>
+<dd><p>Robustly manage the lifecycle of a group of Dragon processes using Dragon Global Services.</p>
+<p>This is really a state machine of the underlying processes. We should always
+be able to “ask” the manager process for the state of the group and send it a
+signal to make a state transition.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">restart</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ignore_error_on_exit</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pmi_enabled</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">walltime</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">policy</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">Policy</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.native.process_group.ProcessGroup.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Instantiate a number of Dragon processes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>restart</strong> (<em>bool</em>) – if True, restart worker processes that exit unexpectedly and suppress any errors from them, defaults to True.</p></li>
+<li><p><strong>ignore_error_on_exit</strong> (<em>bool</em>) – If to ignore errors coming from processes when they exit from Join state.</p></li>
+<li><p><strong>flags</strong> (<em>Worker.Flags</em>) – optional flags that affect the handling of a worker process.</p></li>
+<li><p><strong>pmi_enabled</strong> (<em>Bool</em>) – Instruct the runtime to setup the environment so that the binary can use MPI for inter-process communication.</p></li>
+<li><p><strong>walltime</strong> (<em>float</em>) – Time in seconds until the processes in the group get killed</p></li>
+<li><p><strong>policy</strong> (<em>dragon.infrastructure.policy.Policy</em>) – determines the placement of the processes</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup.add_process">
+<span class="sig-name descname"><span class="pre">add_process</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">nproc</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">template</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><a class="reference internal" href="dragon.native.process.html#dragon.native.process.TemplateProcess" title="dragon.native.process.TemplateProcess"><span class="pre">TemplateProcess</span></a></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.ProcessGroup.add_process" title="Permalink to this definition"></a></dt>
+<dd><p>Add processes to the ProcessGroup.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>template</strong> (<a class="reference internal" href="dragon.native.process.html#dragon.native.process.TemplateProcess" title="dragon.native.process.TemplateProcess"><em>dragon.native.process.TemplateProcess</em></a>) – single template processes, i.e. unstarted process objects</p></li>
+<li><p><strong>nproc</strong> (<em>int</em>) – number of Dragon processes to start that follow the provided template</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup.init">
+<span class="sig-name descname"><span class="pre">init</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.ProcessGroup.init" title="Permalink to this definition"></a></dt>
+<dd><p>Initialize the GroupContext and Manager.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup.start">
+<span class="sig-name descname"><span class="pre">start</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.ProcessGroup.start" title="Permalink to this definition"></a></dt>
+<dd><p>Starts up all processes according to the templates. If <code class="code docutils literal notranslate"><span class="pre">restart</span> <span class="pre">==</span>
+<span class="pre">False</span></code>, transition to ‘Running’, otherwise transition to ‘Maintain’.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup.join">
+<span class="sig-name descname"><span class="pre">join</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.ProcessGroup.join" title="Permalink to this definition"></a></dt>
+<dd><p>Wait for all processes to complete and the group to transition to
+Idle state. If the group status is ‘Maintain’, transition to ‘Running’.</p>
+<p>Raises TimeoutError, if the timeout occurred.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>timeout</strong> (<em>float</em>) – Timeout in seconds, optional defaults to None</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>True if the timeout occured, False otherwise</p>
+</dd>
+<dt class="field-odd">Retype</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup.kill">
+<span class="sig-name descname"><span class="pre">kill</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">signal</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Signals</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">Signals.SIGKILL</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.ProcessGroup.kill" title="Permalink to this definition"></a></dt>
+<dd><p>Send a signal to each process of the process group.</p>
+<p>The signals SIGKILL and SIGTERM have the following side effects:</p>
+<ul class="simple">
+<li><p>If the signal is SIGKILL, the group will transition to ‘Idle’. It can then be reused.</p></li>
+<li><p>If the group status is ‘Maintain’, SIGTERM will transition it to ‘Running’.</p></li>
+<li><p>If the group status is ‘Error’, SIGTERM will raise a <code class="code docutils literal notranslate"><span class="pre">DragonProcessGroupError</span></code>.</p></li>
+</ul>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>signal</strong> (<em>signal.Signals</em><em>, </em><em>optional</em>) – the signal to send, defaults to signal.SIGKILL</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup.stop">
+<span class="sig-name descname"><span class="pre">stop</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.process_group.ProcessGroup.stop" title="Permalink to this definition"></a></dt>
+<dd><p>Forcibly terminate all workers by sending <code class="code docutils literal notranslate"><span class="pre">SIGKILL</span></code> from any state,
+transition to <code class="code docutils literal notranslate"><span class="pre">Stop</span></code>. This also removes the group from the manager process
+and marks the end of the group life-cycle.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup.puids">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">puids</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">list</span><span class="p"><span class="pre">[</span></span><span class="pre">int</span><span class="p"><span class="pre">]</span></span></em><a class="headerlink" href="#dragon.native.process_group.ProcessGroup.puids" title="Permalink to this definition"></a></dt>
+<dd><p>Return the puids of the processes contained in this group.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>a list of puids</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>list[int or None]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.native.process_group.ProcessGroup.status">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">status</span></span><em class="property"><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="pre">str</span></em><a class="headerlink" href="#dragon.native.process_group.ProcessGroup.status" title="Permalink to this definition"></a></dt>
+<dd><p>Get the current status of the process group handled by this instance.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>current status of the group</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>str</p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="dragon.native.process.html" class="btn btn-neutral float-left" title="dragon.native.process" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="dragon.native.queue.html" class="btn btn-neutral float-right" title="dragon.native.queue" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

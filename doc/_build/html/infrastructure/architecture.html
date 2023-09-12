@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Infrastructure Architecture &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Infrastructure Messages" href="messages_api.html" />
+    <link rel="prev" title="Infrastructure" href="infrastructure.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="infrastructure.html">Infrastructure</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Infrastructure Architecture</a></li>
+<li class="toctree-l2"><a class="reference internal" href="messages_api.html">Infrastructure Messages</a></li>
+<li class="toctree-l2"><a class="reference internal" href="processes.html">Process Creation and Interaction</a></li>
+<li class="toctree-l2"><a class="reference internal" href="conventional_ids.html">Conventional IDs</a></li>
+<li class="toctree-l2"><a class="reference internal" href="single_node_deployment.html">Single Node Deployment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="multi_node_deployment.html">Multi Node Deployment</a></li>
+<li class="toctree-l2"><a class="reference internal" href="bootstrapping.html">Infrastructure Bootstrapping</a></li>
+<li class="toctree-l2"><a class="reference internal" href="logging.html">Logging</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="infrastructure.html">Infrastructure</a></li>
+      <li class="breadcrumb-item active">Infrastructure Architecture</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/infrastructure/architecture.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="infrastructure-architecture">
+<span id="infrastructurearchitecture"></span><h1>Infrastructure Architecture<a class="headerlink" href="#infrastructure-architecture" title="Permalink to this heading"></a></h1>
+<p><strong>FIXME: This should not be about Python Multiprocessing</strong></p>
+<p>Dragon applications whether deployed on single node or multi node, require runtime communication and global
+namespace services that are managed by separate processes from user code. Fundamentally, the purpose of these
+services is to manage, in user space, operations that the legacy implementation of Python multiprocessing
+relies on the operating system to do, usually in the form of file descriptors, which is not scalable and does
+not work in a distributed system. While very portable across time and operating system implementations, a file
+descriptor based approach doesn’t offer the best performance and scalability.</p>
+<figure class="align-default" id="id1">
+<img alt="../_images/infrastructure.svg" src="../_images/infrastructure.svg" /><figcaption>
+<p><span class="caption-number">Fig. 21 </span><span class="caption-text"><strong>Figure 1: Dragon Runtime Architecture in a multi-node deployment</strong></span><a class="headerlink" href="#id1" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<p>There are various actors involved in the Dragon runtime, they are shown in figure 1.  Although they will be
+specified in more detail in other documents, we list them here and summarize their function. Whenever
+necessary, the user program is called <code class="docutils literal notranslate"><span class="pre">my.py</span></code> and is started from the command line by invoking the
+<a class="reference internal" href="../services/launcher.html#launcher"><span class="std std-ref">Launcher</span></a> with <code class="docutils literal notranslate"><span class="pre">dragon</span> <span class="pre">my.py</span></code>.  In particular, no preliminary interaction with the system’s workload
+manager (if present) is required.</p>
+<p><strong>Dragon API</strong></p>
+<p>User Programs always interact with Dragon using the <span class="xref std std-ref">DragonNative</span> component and its API. The
+<span class="xref std std-ref">mpbridge</span> implementation of multiprocessing encapsulates the Dragon Native API and provides higher
+level abstractions built on top of the Dragon Native API calls. The user may choose to interact solely with
+multiprocessing or may choose to use multiprocessing and the Dragon Native API in concert with one another.</p>
+<p>The Dragon Run-Time <a class="reference internal" href="../services/services.html#services"><span class="std std-ref">Services</span></a> consist of the following top-level components:</p>
+<p><strong>Launcher</strong></p>
+<p>The <a class="reference internal" href="../services/launcher.html#launcher"><span class="std std-ref">Launcher</span></a> service is the <code class="docutils literal notranslate"><span class="pre">dragon</span></code> executable that brings up the other pieces of the runtime from
+nothing and arranges for the user program (e.g. <code class="docutils literal notranslate"><span class="pre">my.py</span></code>) to start executing. It consists of a frontend and
+backend component.  The backend communicates with the frontend to provide all the functionality of the
+<a class="reference internal" href="../services/launcher.html#launcher"><span class="std std-ref">Launcher</span></a> on compute-nodes. In particular, it routes traffic the node local <a class="reference internal" href="../services/local_services.html#localservices"><span class="std std-ref">Local Services</span></a> process may
+have to the frontend and connects traffic that the launcher frontend may have to <span class="xref std std-ref">Channels</span>. In the
+single-node case, the launcher frontend and backend talk directly to each other. In the multi-node case, they
+use <span class="xref std std-ref">MRNet</span> to communicate. See <a class="reference internal" href="multi_node_deployment.html#multinodedeployment"><span class="std std-ref">Multi Node Deployment</span></a> and <a class="reference internal" href="single_node_deployment.html#singlenodedeployment"><span class="std std-ref">Single Node Deployment</span></a> for more
+details on the deployment process.</p>
+<p><strong>Local Services</strong></p>
+<p>The <a class="reference internal" href="../services/local_services.html#localservices"><span class="std std-ref">Local Services</span></a> process is the direct parent of all managed processes as well as some of the
+infrastructure processes.</p>
+<p>Local Services’ responsibilities include:</p>
+<blockquote>
+<div><ul class="simple">
+<li><p>creating a named shared memory pools (default and infrastructure pool) for interprocess communication during bringup</p></li>
+<li><p>instantiating infrastructure channels in that segment.</p></li>
+<li><p>starting managed and unmanaged processes on its node</p></li>
+<li><p>aggregating, filtering, and forwarding stdout and stderr from the processes it has started ultimately back to the launcher</p></li>
+<li><p>propagating messages to a process’s stdin from a channel</p></li>
+</ul>
+</div></blockquote>
+<p>In the single node case, there is exactly one shepherd. In a multi node case, there is exactly one shepherd
+process per node. See <a class="reference internal" href="processes.html#processcreationandinteraction"><span class="std std-ref">Process Creation and Interaction</span></a> for more details on process creation.</p>
+<p><strong>Global Services</strong></p>
+<p><a class="reference internal" href="../services/global_services.html#globalservices"><span class="std std-ref">Global Services</span></a> maintains a global namespace and tracks the state of global objects in a Dragon program,
+which include managed processes and channels.  This is done on the Python level using the API <strong>FIXME: add
+link</strong> – but fundamentally this is a message based service and can be interacted with by non Python programs.
+Global Services will ultimately be distributed over a hierarchy of service processes each with responsibility
+for some of the channels and user processes, but here is discussed as though it is a single process. In multi
+node cases there is no inherent relationship between the number of processes providing Global Services and
+nodes - the number that are required will depend to some degree on the overall scale and nature of the user’s
+application.</p>
+<p><strong>Transport Agent</strong></p>
+<p>The <span class="xref std std-ref">TransportAgent</span> is a process that is present, one per node, on all
+multi-node Dragon runtimes.  It attaches to the shared memory segment created by the <a class="reference internal" href="../services/local_services.html#localservices"><span class="std std-ref">Local Services</span></a> and
+routes messages destined to other nodes to the counterpart transport agent on that node using a lower level communication
+mechanism such as MPI or libfabric. There are many reasons (<strong>FIXME: Which ones ? Link to introduction for
+design decisions ?</strong>) why this is necessary instead of accessing this lower level mechanism directly from user
+python processes - particularly that these libraries don’t easily support dynamic process creation and
+deletion. It also has the responsibility of exposing any special system wide synchronization constructs (such
+as a barrier) to the runtime, typically a special type of channel. There is no transport agent in single node
+deployments.</p>
+<p><strong>Communication Pathways</strong></p>
+<p><strong>FIXME</strong>: This could use some more refinement.</p>
+<p>There are various <span class="xref std std-ref">CommunicationComponents</span> that need to be setup to get the Dragon runtime going.</p>
+<p><span class="xref std std-ref">Channels</span> are the main mechanism to unify on-node and off-node communication of Dragon processes in the
+runtime. Dragon services communicate with each other using the <a class="reference internal" href="messages_api.html#messages"><span class="std std-ref">Infrastructure Messages</span></a> API through special
+infrastructure <span class="xref std std-ref">Channels</span>. There is always at least one infrastructure channel per service present and
+except for bringup and teardown of the runtime, all communication between services runs through
+channels.</p>
+<p>During <a class="reference internal" href="single_node_deployment.html#singlenodebringup"><span class="std std-ref">Single Node Bringup</span></a> or <a class="reference internal" href="multi_node_deployment.html#multinodebringup"><span class="std std-ref">Multi Node Bringup</span></a>, the <a class="reference internal" href="../services/local_services.html#localservices"><span class="std std-ref">Local Services</span></a> allocates a segment of
+_POSIXSharedMemory to hold <a class="reference internal" href="../components/managed_memory/managed_memory.html#managedmemory"><span class="std std-ref">Managed Memory</span></a>. It then allocates a dedicated infrastructure managed memory
+pool and creates all infrastructure <span class="xref std std-ref">Channels</span> into it. Every channel is then represented by a serialised
+descriptor that contains enough information about the channel, the managed memory allocation for the channel,
+and the managed memory pool. Every process can use the serialized descriptor to attach to and use the channel.</p>
+<p>This effectively implements shared on-node shared memory for Dragon managed and un-managed processes.</p>
+<p><span class="xref std std-ref">MRNet</span>, a tree-based software overlay network, is an open source project out of the University of
+Madison, WI.  The <a class="reference internal" href="../services/launcher.html#launcher"><span class="std std-ref">Launcher</span></a> uses its broadcast and reduce features service during
+<a class="reference internal" href="multi_node_deployment.html#multinodebringup"><span class="std std-ref">Multi Node Bringup</span></a> and <a class="reference internal" href="multi_node_deployment.html#multinodeteardown"><span class="std std-ref">Multi Node Teardown</span></a>.</p>
+<p>The stdin, stdout and stderr pipes of managed processes are captured by the <a class="reference internal" href="../services/local_services.html#localservices"><span class="std std-ref">Local Services</span></a>. Some
+<a class="reference internal" href="bootstrapping.html#infrastructurebootstrapping"><span class="std std-ref">Infrastructure Bootstrapping</span></a> may in some cases involve information passed through the process’s stdin
+and stdout - this can remove some restrictions on the size of command lines and give a conventional way to
+handshake startup processing.</p>
+<p><strong>Conventional IDs</strong></p>
+<p>The Dragon infrastructure uses <a class="reference internal" href="conventional_ids.html#p-uid"><span class="std std-ref">Process ID</span></a> (<code class="docutils literal notranslate"><span class="pre">p_uid</span></code>), <a class="reference internal" href="conventional_ids.html#c-uid"><span class="std std-ref">Channel ID</span></a> (<code class="docutils literal notranslate"><span class="pre">c_uid</span></code>), and <a class="reference internal" href="conventional_ids.html#m-uid"><span class="std std-ref">Memory Pool ID</span></a>
+(<code class="docutils literal notranslate"><span class="pre">m_uid</span></code>) to uniquely identify processes, channels, and memory pools in the runtime system. See
+<a class="reference internal" href="conventional_ids.html#conventionalids"><span class="std std-ref">Conventional IDs</span></a> for more details.</p>
+<p><strong>Dragon Process Creation and Interaction</strong></p>
+<p>Dragon infrastructure <a class="reference internal" href="../services/services.html#services"><span class="std std-ref">Services</span></a> are so-called <strong>unmanaged</strong> processes - namely, runtime support
+processes that are not managed by the <a class="reference internal" href="../services/global_services.html#globalservices"><span class="std std-ref">Global Services</span></a> process. The category of <strong>managed</strong> processes
+covers those that are created as a result of the code the user runs. This could be because the user creates a
+process explicitly (such as instantiating a <code class="docutils literal notranslate"><span class="pre">multiprocessing.Process</span></code>), implicitly (such as instantiating a
+<code class="docutils literal notranslate"><span class="pre">multiprocessing.Pool</span></code>), or as a result of creating a managed data structure for higher level communication.
+Managed processes are always started by the Shepherd (see <a class="reference internal" href="processes.html#processcreationandinteraction"><span class="std std-ref">Process Creation and Interaction</span></a>) and are handed
+a set of <a class="reference internal" href="processes.html#launchparameters"><span class="std std-ref">Launch Parameters</span></a> as environment variables to define the Dragon environment.</p>
+<p><strong>Low-level Components</strong></p>
+<p>All Dragon processes (managed and unmanaged) are <a class="reference external" href="https://pubs.opengroup.org/onlinepubs/9699919799.2018edition/">POSIX</a> live processes using Dragon’s
+<a class="reference internal" href="../components/managed_memory/managed_memory.html#managedmemory"><span class="std std-ref">Managed Memory</span></a> API to share thread-safe memory allocations. During an allocation of managed memory from
+a memory pool, an <em>opaque memory handle</em> (descriptor) is created by the runtime and handed to the calling
+process. It can then be shared with any other Dragon process to <em>attach</em> to the memory pool and use the
+underlying object (e.g. channel). The runtime takes care of proper address translation between processes by
+storing only the offset from shared memory base pointer. Thread-safety of underlying the memory object is
+ensured by using Dragons <span class="xref std std-ref">Locks</span>.</p>
+<p>The Dragon infrastructure uses the following <a class="reference internal" href="../components/components.html#components"><span class="std std-ref">Low-level Components</span></a>:</p>
+<ol class="arabic simple">
+<li><p><span class="xref std std-ref">Locks</span>: High performance locks to protect <a class="reference internal" href="../components/managed_memory/managed_memory.html#managedmemory"><span class="std std-ref">Managed Memory</span></a> pools.</p></li>
+<li><p><a class="reference internal" href="../components/managed_memory/managed_memory.html#managedmemory"><span class="std std-ref">Managed Memory</span></a>: Thread-safe memory pools holding their own state so they can be shared among processes using opaque handles.</p></li>
+<li><p><a class="reference internal" href="../components/unordered_map.html#unorderedmap"><span class="std std-ref">Unordered Map</span></a>: A hash table implementation in <a class="reference internal" href="../components/managed_memory/managed_memory.html#managedmemory"><span class="std std-ref">Managed Memory</span></a>.</p></li>
+<li><p><a class="reference internal" href="../components/broadcast.html#broadcast"><span class="std std-ref">Broadcast Component</span></a>: Any to many broadcaster to trigger events for a collection of processes flexibly.</p></li>
+</ol>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="infrastructure.html" class="btn btn-neutral float-left" title="Infrastructure" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="messages_api.html" class="btn btn-neutral float-right" title="Infrastructure Messages" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

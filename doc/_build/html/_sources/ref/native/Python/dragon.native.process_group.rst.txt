@@ -1,0 +1,46 @@
+﻿dragon.native.process\_group
+============================
+
+.. automodule:: dragon.native.process_group
+   :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      BaseState
+      Error
+      GroupContext
+      Idle
+      Maintain
+      Manager
+      PGSignals
+      ProcessGroup
+      Running
+      Stop
+   
+   
+
+   
+   
+   .. rubric:: Exceptions
+
+   .. autosummary::
+   
+      DragonProcessGroupAbnormalExit
+      DragonProcessGroupError
+   
+   
+
+
+

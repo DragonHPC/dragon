@@ -1,0 +1,31 @@
+﻿dragon.infrastructure.pool\_desc
+================================
+
+.. automodule:: dragon.infrastructure.pool_desc
+   :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      PoolDescriptor
+      PoolOptions
+   
+   
+
+   
+   
+   
+
+
+

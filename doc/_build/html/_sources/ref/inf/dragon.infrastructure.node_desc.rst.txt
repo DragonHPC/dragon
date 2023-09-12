@@ -1,0 +1,30 @@
+﻿dragon.infrastructure.node\_desc
+================================
+
+.. automodule:: dragon.infrastructure.node_desc
+   :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      NodeDescriptor
+   
+   
+
+   
+   
+   
+
+
+

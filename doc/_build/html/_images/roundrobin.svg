@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="477px" preserveAspectRatio="none" style="width:911px;height:477px;background:#FFFFFF;" version="1.1" viewBox="0 0 911 477" width="911px" zoomAndPan="magnify"><defs><filter height="300%" id="f1ei8yd34uk83p" width="300%" x="-1" y="-1"><feGaussianBlur result="blurOut" stdDeviation="2.0"/><feColorMatrix in="blurOut" result="blurOut2" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .4 0"/><feOffset dx="4.0" dy="4.0" in="blurOut2" result="blurOut3"/><feBlend in="SourceGraphic" in2="blurOut3" mode="normal"/></filter></defs><g><!--MD5=[3f187adb52bf36092d1ab8adb3b1e5c5]
+cluster LNode--><polygon fill="#FFFFFF" filter="url(#f1ei8yd34uk83p)" points="16,16,26,6,894,6,894,213,884,223,16,223,16,16" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="884" x2="894" y1="16" y2="6"/><line style="stroke:#000000;stroke-width:1.5;" x1="16" x2="884" y1="16" y2="16"/><line style="stroke:#000000;stroke-width:1.5;" x1="884" x2="884" y1="16" y2="223"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="248" x="327" y="31.9951">Login Node or Local Head Node</text><!--MD5=[af7813cf9ade55987839b715f9ec1bda]
+cluster UP--><rect fill="#FFFFFF" filter="url(#f1ei8yd34uk83p)" height="145" style="stroke:#000000;stroke-width:1.5;" width="830" x="40" y="54"/><rect fill="#FFFFFF" height="10" style="stroke:#000000;stroke-width:1.5;" width="15" x="850" y="59"/><rect fill="#FFFFFF" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="848" y="61"/><rect fill="#FFFFFF" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="848" y="65"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="129" x="390.5" y="79.9951">Dragon Program</text><!--MD5=[363610904059154aeb733c12d2036d97]
+cluster C1--><polygon fill="#FFFFFF" filter="url(#f1ei8yd34uk83p)" points="318,385,328,375,584,375,584,460,574,470,318,470,318,385" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="574" x2="584" y1="385" y2="375"/><line style="stroke:#000000;stroke-width:1.5;" x1="318" x2="574" y1="385" y2="385"/><line style="stroke:#000000;stroke-width:1.5;" x1="574" x2="574" y1="385" y2="470"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="132" x="381" y="400.9951">Compute Node 1</text><!--MD5=[69d2ca6f3aa78fde555b0d46135c58f8]
+cluster C2--><polygon fill="#FFFFFF" filter="url(#f1ei8yd34uk83p)" points="221,257,231,247,429,247,429,332,419,342,221,342,221,257" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="419" x2="429" y1="257" y2="247"/><line style="stroke:#000000;stroke-width:1.5;" x1="221" x2="419" y1="257" y2="257"/><line style="stroke:#000000;stroke-width:1.5;" x1="419" x2="419" y1="257" y2="342"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="132" x="255" y="272.9951">Compute Node 2</text><!--MD5=[65956f89131447c59da77f43db0a26e9]
+cluster C3--><polygon fill="#FFFFFF" filter="url(#f1ei8yd34uk83p)" points="467,257,477,247,675,247,675,332,665,342,467,342,467,257" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="665" x2="675" y1="257" y2="247"/><line style="stroke:#000000;stroke-width:1.5;" x1="467" x2="665" y1="257" y2="257"/><line style="stroke:#000000;stroke-width:1.5;" x1="665" x2="665" y1="257" y2="342"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="132" x="501" y="272.9951">Compute Node 3</text><!--MD5=[6d00027bdaafcaa072820dae8941aab4]
+entity PO1--><rect fill="#90EE90" filter="url(#f1ei8yd34uk83p)" height="46.2969" style="stroke:#000000;stroke-width:1.5;" width="156" x="80" y="113"/><rect fill="#90EE90" height="10" style="stroke:#000000;stroke-width:1.5;" width="15" x="216" y="118"/><rect fill="#90EE90" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="214" y="120"/><rect fill="#90EE90" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="214" y="124"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="116" x="95" y="145.9951">Process object 1</text><!--MD5=[5fabba4a3d429f76247cbff58c6413f3]
+entity PO2--><rect fill="#F0F8FF" filter="url(#f1ei8yd34uk83p)" height="46.2969" style="stroke:#000000;stroke-width:1.5;" width="156" x="271" y="113"/><rect fill="#F0F8FF" height="10" style="stroke:#000000;stroke-width:1.5;" width="15" x="407" y="118"/><rect fill="#F0F8FF" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="405" y="120"/><rect fill="#F0F8FF" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="405" y="124"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="116" x="286" y="145.9951">Process object 2</text><!--MD5=[54b7e5340ef1a0aa2527f9fe8133695f]
+entity PO3--><rect fill="#FFA500" filter="url(#f1ei8yd34uk83p)" height="46.2969" style="stroke:#000000;stroke-width:1.5;" width="156" x="483" y="113"/><rect fill="#FFA500" height="10" style="stroke:#000000;stroke-width:1.5;" width="15" x="619" y="118"/><rect fill="#FFA500" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="617" y="120"/><rect fill="#FFA500" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="617" y="124"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="116" x="498" y="145.9951">Process object 3</text><!--MD5=[b7f224381eb67247fdb3eb0019575fc2]
+entity PO4--><rect fill="#FFFF00" filter="url(#f1ei8yd34uk83p)" height="46.2969" style="stroke:#000000;stroke-width:1.5;" width="156" x="674" y="113"/><rect fill="#FFFF00" height="10" style="stroke:#000000;stroke-width:1.5;" width="15" x="810" y="118"/><rect fill="#FFFF00" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="808" y="120"/><rect fill="#FFFF00" height="2" style="stroke:#000000;stroke-width:1.5;" width="4" x="808" y="124"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="116" x="689" y="145.9951">Process object 4</text><!--MD5=[a24ab22cd0721cba63912cb1a2e0552a]
+entity P1--><rect fill="#90EE90" filter="url(#f1ei8yd34uk83p)" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="99" x="334.5" y="415"/><polygon fill="#90EE90" points="416.5,420,416.5,434,428.5,434,428.5,426,422.5,420,416.5,420" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="422.5" x2="422.5" y1="420" y2="426"/><line style="stroke:#000000;stroke-width:1.5;" x1="428.5" x2="422.5" y1="426" y2="426"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="69" x="344.5" y="440.9951">Process 1</text><!--MD5=[d2748a5c4de8c760fa6b1c475e1f3d6e]
+entity P4--><rect fill="#FFFF00" filter="url(#f1ei8yd34uk83p)" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="99" x="468.5" y="415"/><polygon fill="#FFFF00" points="550.5,420,550.5,434,562.5,434,562.5,426,556.5,420,550.5,420" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="556.5" x2="556.5" y1="420" y2="426"/><line style="stroke:#000000;stroke-width:1.5;" x1="562.5" x2="556.5" y1="426" y2="426"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="69" x="478.5" y="440.9951">Process 4</text><!--MD5=[363690bfff83d946e49026b48e74bf54]
+entity P2--><rect fill="#F0F8FF" filter="url(#f1ei8yd34uk83p)" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="99" x="299.5" y="287"/><polygon fill="#F0F8FF" points="381.5,292,381.5,306,393.5,306,393.5,298,387.5,292,381.5,292" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="387.5" x2="387.5" y1="292" y2="298"/><line style="stroke:#000000;stroke-width:1.5;" x1="393.5" x2="387.5" y1="298" y2="298"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="69" x="309.5" y="312.9951">Process 2</text><!--MD5=[47a5e7479422b5a6b23a6cd00dae509e]
+entity P3--><rect fill="#FFA500" filter="url(#f1ei8yd34uk83p)" height="39.2969" style="stroke:#000000;stroke-width:1.5;" width="99" x="511.5" y="287"/><polygon fill="#FFA500" points="593.5,292,593.5,306,605.5,306,605.5,298,599.5,292,593.5,292" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="599.5" x2="599.5" y1="292" y2="298"/><line style="stroke:#000000;stroke-width:1.5;" x1="605.5" x2="599.5" y1="298" y2="298"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="69" x="521.5" y="312.9951">Process 3</text><!--MD5=[dfe3d7842bf6758e9a602f0561ff5db0]
+link PO1 to PO2--><!--MD5=[17603171a210df3ef74658d67d3b0756]
+link PO2 to PO3--><!--MD5=[404616a4c46cda020764d0438a4dcd07]
+link PO3 to PO4--><!--MD5=[8ad6d3898e0470d5598dcd4e64a83e1f]
+link PO1 to P1--><path d="M158,159.46 C158,229.95 158,435 158,435 C158,435 329.4,435 329.4,435 " fill="none" id="PO1-to-P1" style="stroke:#000000;stroke-width:1.0;"/><polygon fill="#000000" points="334.4,435,325.4,431,329.4,435,325.4,439,334.4,435" style="stroke:#000000;stroke-width:1.0;"/><!--MD5=[03f7bae4672f105f43e060ca846c0b86]
+link PO2 to P2--><path d="M349,159.35 C349,159.35 349,281.87 349,281.87 " fill="none" id="PO2-to-P2" style="stroke:#000000;stroke-width:1.0;"/><polygon fill="#000000" points="349,286.87,353,277.87,349,281.87,345,277.87,349,286.87" style="stroke:#000000;stroke-width:1.0;"/><!--MD5=[0b69309b29cbbd90ce4a4d5a0a28b347]
+link PO3 to P3--><path d="M561,159.35 C561,159.35 561,281.87 561,281.87 " fill="none" id="PO3-to-P3" style="stroke:#000000;stroke-width:1.0;"/><polygon fill="#000000" points="561,286.87,565,277.87,561,281.87,557,277.87,561,286.87" style="stroke:#000000;stroke-width:1.0;"/><!--MD5=[84a6a96d32333ff4d6f459582aaf3606]
+link PO4 to P4--><path d="M752,159.46 C752,229.95 752,435 752,435 C752,435 572.63,435 572.63,435 " fill="none" id="PO4-to-P4" style="stroke:#000000;stroke-width:1.0;"/><polygon fill="#000000" points="567.63,435,576.63,439,572.63,435,576.63,431,567.63,435" style="stroke:#000000;stroke-width:1.0;"/><!--MD5=[5482172889870df60590a6b02a7ad6a4]
+@startuml
+
+' title "Round Robin Deployment"
+
+skinparam componentStyle uml2
+' skinparam shadowing false
+' skinparam monochrome true
+
+skinparam linetype ortho
+' skinparam linetype polyline
+' skinparam nodesep 30
+skinparam ranksep 30
+
+node "Login Node or Local Head Node" as LNode {
+
+    component "Dragon Program" as UP {
+        together { 
+            component "Process object 1" as PO1 #lightgreen;line:black
+            component "Process object 2" as PO2 #aliceblue;line:black
+        }
+        together {
+            component "Process object 3" as PO3 #orange;line:black
+            component "Process object 4" as PO4 #yellow;line:black
+        }
+
+        PO1 -[hidden]right- PO2
+        PO2 -[hidden]right- PO3
+        PO3 -[hidden]right- PO4
+    }
+}
+
+node "Compute Node 1" as C1 {
+    artifact "Process 1" as P1 #lightgreen 
+    artifact "Process 4" as P4 #yellow
+}
+
+node "Compute Node 2" as C2 {
+    artifact "Process 2" as P2 #aliceblue
+}
+
+node "Compute Node 3" as C3 {
+    artifact "Process 3" as P3 #orange
+}
+
+PO1 - -[#black]- -> P1
+PO2 -[#black]-> P2
+PO3 -[#black]-> P3
+PO4 - -[#black]- -> P4
+
+@enduml
+
+@startuml
+
+
+skinparam componentStyle uml2
+
+skinparam linetype ortho
+skinparam ranksep 30
+
+node "Login Node or Local Head Node" as LNode {
+
+    component "Dragon Program" as UP {
+        together { 
+            component "Process object 1" as PO1 #lightgreen;line:black
+            component "Process object 2" as PO2 #aliceblue;line:black
+        }
+        together {
+            component "Process object 3" as PO3 #orange;line:black
+            component "Process object 4" as PO4 #yellow;line:black
+        }
+
+        PO1 -[hidden]right- PO2
+        PO2 -[hidden]right- PO3
+        PO3 -[hidden]right- PO4
+    }
+}
+
+node "Compute Node 1" as C1 {
+    artifact "Process 1" as P1 #lightgreen 
+    artifact "Process 4" as P4 #yellow
+}
+
+node "Compute Node 2" as C2 {
+    artifact "Process 2" as P2 #aliceblue
+}
+
+node "Compute Node 3" as C3 {
+    artifact "Process 3" as P3 #orange
+}
+
+PO1 - -[#black]- -> P1
+PO2 -[#black]-> P2
+PO3 -[#black]-> P3
+PO4 - -[#black]- -> P4
+
+@enduml
+
+PlantUML version 1.2022.1(Tue Feb 01 18:19:58 GMT 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

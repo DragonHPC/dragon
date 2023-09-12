@@ -1,0 +1,39 @@
+﻿dragon.globalservices.pool
+==========================
+
+.. automodule:: dragon.globalservices.pool
+   :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      create
+      destroy
+      get_list
+      query
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Exceptions
+
+   .. autosummary::
+   
+      PoolError
+   
+   
+
+
+

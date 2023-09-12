@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>How To Use The C Channels API &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Creating and Using a Queue in Dragon Native" href="dragon_native_queue.html" />
+    <link rel="prev" title="Calculating π using parallel Monte Carlo" href="dragon_native_pi.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="cbook.html">Solution Cookbook</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#multiprocessing-with-dragon">Multiprocessing with Dragon</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="cbook.html#dragon-native">Dragon Native</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="dragon_native_pi.html">Calculating π using parallel Monte Carlo</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">How To Use The C Channels API</a></li>
+<li class="toctree-l3"><a class="reference internal" href="dragon_native_queue.html">Creating and Using a Queue in Dragon Native</a></li>
+<li class="toctree-l3"><a class="reference internal" href="dragon_mpi_workflow.html">An example MPI workflow using Dragon ProcessGroup</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-data-preview">Dragon Data (Preview)</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="cbook.html">Solution Cookbook</a></li>
+      <li class="breadcrumb-item active">How To Use The C Channels API</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/cbook/c_channels_demo.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="how-to-use-the-c-channels-api">
+<span id="channels-example"></span><h1>How To Use The C Channels API<a class="headerlink" href="#how-to-use-the-c-channels-api" title="Permalink to this heading"></a></h1>
+<p>The main purpose of this example is to demonstrate how you can program directly
+to the channels API in the C language. However, there is some bootstrap code that is
+written in Python to get everything started. The Python program bootstraps a C
+example of using the Channels API. The Python code given here shows how the
+program is started in the usage function in <a class="reference internal" href="#ring-bootstrap"><span class="std std-numref">Listing 16</span></a>. A simple
+run is given in <a class="reference internal" href="#ring-sample-run"><span class="std std-numref">Listing 15</span></a>. The program starts up a specified
+number of ring processes, potentially on different nodes of a multi-node
+allocation. Each ring process runs a specified number of iterations of passing a
+message around the ring. The final ring process receives a message from the
+previous ring process and forwards it back to the beginning of the ring to be
+sent around atain. The program reports the average time it takes to forward the
+message from once ring process to the next in the ring.</p>
+<div class="literal-block-wrapper docutils container" id="ring-sample-run">
+<div class="code-block-caption"><span class="caption-number">Listing 15 </span><span class="caption-text">A Sample Run of the Ring Demo</span><a class="headerlink" href="#ring-sample-run" title="Permalink to this code"></a></div>
+<div class="highlight-shell notranslate"><div class="highlight"><pre><span></span><span class="o">(</span>_env<span class="o">)</span> root ➜ .../examples/dragon_core $ dragon ring.py <span class="m">2</span> <span class="m">100</span>
+Ring proc exited...
+Ring proc exited...
+Test Passed.
+The average <span class="nb">time</span> per message transfer was <span class="m">12</span>.092739925719798 microseconds.
+Main proc exiting...
++++ head proc exited, code <span class="m">0</span>
+<span class="o">(</span>_env<span class="o">)</span> root ➜ .../hpc-pe-dragon-dragon/examples/dragon_core $
+</pre></div>
+</div>
+</div>
+<p>The bootstrap code shown in <a class="reference internal" href="#ring-bootstrap"><span class="std std-numref">Listing 16</span></a> demonstrates how a process
+can be started on each node of an allocation or cluster. The default placement
+strategy of round-robin means that each process is started on a different node.
+The <em>start_ringproc</em> function then uses
+<a class="reference external" href="https://docs.python.org/3/library/subprocess.html">subprocess.Popen</a>
+to start a second process on
+the node. The standard output from <em>ringproc</em> is the serialized descriptor of a
+channel that the <em>ringproc</em> instance will send messages to. That serialized
+descriptor is fed back to the main program’s process to be provided as the
+receive channel for the next process in the ring of processes.</p>
+<p>The design of this bootstrap program allows for the program to be started with as
+many processes and iterations as desired. So all or some subset of nodes may be
+used from a cluster or allocation. Or you can start more processes than nodes
+that are available in the cluster/allocation and the ring will simply overlap
+some nodes using the round-robin placement of processes.</p>
+<p>The bootstrap application sends the message around the ring the number of
+<em>iteration</em> times and it times that total time and computes the average time it
+takes for a message transfer between channels. Note that the send channel for
+each <em>ringproc</em> co-exists on the same node as the <em>ringproc</em> process instance. So
+not only are the <em>ringprocs</em> distributed across nodes, but their send channels
+for the ring have a similar distribution across nodes.</p>
+<div class="literal-block-wrapper docutils container" id="ring-bootstrap">
+<div class="code-block-caption"><span class="caption-number">Listing 16 </span><span class="caption-text">Ring Demo Bootstrap Code</span><a class="headerlink" href="#ring-bootstrap" title="Permalink to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kn">import</span> <span class="nn">dragon</span>
+<span class="linenos"> 2</span><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="linenos"> 3</span><span class="kn">import</span> <span class="nn">subprocess</span>
+<span class="linenos"> 4</span><span class="kn">import</span> <span class="nn">sys</span>
+<span class="linenos"> 5</span><span class="kn">import</span> <span class="nn">dragon.channels</span> <span class="k">as</span> <span class="nn">dch</span>
+<span class="linenos"> 6</span><span class="kn">import</span> <span class="nn">dragon.managed_memory</span> <span class="k">as</span> <span class="nn">dm</span>
+<span class="linenos"> 7</span><span class="kn">import</span> <span class="nn">dragon.infrastructure.parameters</span> <span class="k">as</span> <span class="nn">dp</span>
+<span class="linenos"> 8</span><span class="kn">import</span> <span class="nn">dragon.infrastructure.facts</span> <span class="k">as</span> <span class="nn">df</span>
+<span class="linenos"> 9</span><span class="kn">import</span> <span class="nn">dragon.utils</span> <span class="k">as</span> <span class="nn">du</span>
+<span class="linenos">10</span><span class="kn">import</span> <span class="nn">time</span>
+<span class="linenos">11</span>
+<span class="linenos">12</span><span class="k">def</span> <span class="nf">start_ringproc</span><span class="p">(</span><span class="n">iterations</span><span class="p">,</span> <span class="n">cuid</span><span class="p">,</span> <span class="n">receive_from_channel_sdesc</span><span class="p">,</span> <span class="n">ret_queue</span><span class="p">):</span>
+<span class="linenos">13</span>    <span class="n">proc</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">([</span><span class="s1">&#39;ringproc&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">iterations</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">cuid</span><span class="p">),</span> <span class="n">receive_from_channel_sdesc</span><span class="p">],</span> <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">)</span>
+<span class="linenos">14</span>    <span class="n">send_to_channel_sdesc</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+<span class="linenos">15</span>    <span class="k">while</span> <span class="nb">len</span><span class="p">(</span><span class="n">send_to_channel_sdesc</span><span class="o">.</span><span class="n">strip</span><span class="p">())</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<span class="linenos">16</span>        <span class="n">send_to_channel_sdesc</span> <span class="o">=</span> <span class="n">proc</span><span class="o">.</span><span class="n">stdout</span><span class="o">.</span><span class="n">readline</span><span class="p">()</span>
+<span class="linenos">17</span>    <span class="n">ret_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">send_to_channel_sdesc</span><span class="p">)</span>
+<span class="linenos">18</span>    <span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+<span class="linenos">19</span>    <span class="k">if</span> <span class="n">proc</span><span class="o">.</span><span class="n">returncode</span> <span class="o">!=</span> <span class="mi">0</span><span class="p">:</span>
+<span class="linenos">20</span>        <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;*******Proc exited with rc=&#39;</span><span class="p">,</span> <span class="n">proc</span><span class="o">.</span><span class="n">returncode</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">21</span>
+<span class="linenos">22</span><span class="k">def</span> <span class="nf">usage</span><span class="p">():</span>
+<span class="linenos">23</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;usage: dragon ring.py &lt;num_procs&gt; &lt;iterations&gt;&#39;</span><span class="p">)</span>
+<span class="linenos">24</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;    &lt;num_procs&gt; is the number of processes to start, one per node.&#39;</span><span class="p">)</span>
+<span class="linenos">25</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;    &lt;iterations&gt; is the number of times each process forwards a message&#39;</span><span class="p">)</span>
+<span class="linenos">26</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;                to the next node.&#39;</span><span class="p">)</span>
+<span class="linenos">27</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;    The program creates a ring across the user specified number of&#39;</span><span class="p">)</span>
+<span class="linenos">28</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;    nodes and sends a message around a ring of nodes. The num_procs&#39;</span><span class="p">)</span>
+<span class="linenos">29</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;    and iterations must be greater than 0.&#39;</span><span class="p">)</span>
+<span class="linenos">30</span>    <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="linenos">31</span>
+<span class="linenos">32</span><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+<span class="linenos">33</span>    <span class="k">try</span><span class="p">:</span>
+<span class="linenos">34</span>        <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">)</span> <span class="o">!=</span> <span class="mi">3</span><span class="p">:</span>
+<span class="linenos">35</span>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">()</span>
+<span class="linenos">36</span>
+<span class="linenos">37</span>        <span class="n">mp</span><span class="o">.</span><span class="n">set_start_method</span><span class="p">(</span><span class="s1">&#39;dragon&#39;</span><span class="p">)</span>
+<span class="linenos">38</span>        <span class="n">ring_size</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+<span class="linenos">39</span>        <span class="n">iterations</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+<span class="linenos">40</span>        <span class="k">if</span> <span class="n">iterations</span> <span class="o">&lt;=</span> <span class="mi">0</span> <span class="ow">or</span> <span class="n">ring_size</span> <span class="o">&lt;=</span> <span class="mi">0</span><span class="p">:</span>
+<span class="linenos">41</span>            <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">()</span>
+<span class="linenos">42</span>    <span class="k">except</span><span class="p">:</span>
+<span class="linenos">43</span>        <span class="n">usage</span><span class="p">()</span>
+<span class="linenos">44</span>
+<span class="linenos">45</span>    <span class="n">pool</span> <span class="o">=</span> <span class="n">dm</span><span class="o">.</span><span class="n">MemoryPool</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="n">du</span><span class="o">.</span><span class="n">B64</span><span class="o">.</span><span class="n">str_to_bytes</span><span class="p">(</span><span class="n">dp</span><span class="o">.</span><span class="n">this_process</span><span class="o">.</span><span class="n">default_pd</span><span class="p">))</span>
+<span class="linenos">46</span>    <span class="n">origin_channel</span> <span class="o">=</span> <span class="n">dch</span><span class="o">.</span><span class="n">Channel</span><span class="p">(</span><span class="n">pool</span><span class="p">,</span> <span class="n">df</span><span class="o">.</span><span class="n">BASE_USER_MANAGED_CUID</span><span class="p">)</span>
+<span class="linenos">47</span>    <span class="n">receive_sdesc</span> <span class="o">=</span> <span class="n">du</span><span class="o">.</span><span class="n">B64</span><span class="o">.</span><span class="n">bytes_to_str</span><span class="p">(</span><span class="n">origin_channel</span><span class="o">.</span><span class="n">serialize</span><span class="p">())</span>
+<span class="linenos">48</span>    <span class="n">final_channel</span> <span class="o">=</span> <span class="n">dch</span><span class="o">.</span><span class="n">Channel</span><span class="p">(</span><span class="n">pool</span><span class="p">,</span> <span class="n">df</span><span class="o">.</span><span class="n">BASE_USER_MANAGED_CUID</span><span class="o">+</span><span class="mi">1</span><span class="p">)</span>
+<span class="linenos">49</span>    <span class="n">final_sdesc</span> <span class="o">=</span> <span class="n">du</span><span class="o">.</span><span class="n">B64</span><span class="o">.</span><span class="n">bytes_to_str</span><span class="p">(</span><span class="n">final_channel</span><span class="o">.</span><span class="n">serialize</span><span class="p">())</span>
+<span class="linenos">50</span>    <span class="n">origin_send_sdesc</span> <span class="o">=</span> <span class="n">receive_sdesc</span>
+<span class="linenos">51</span>
+<span class="linenos">52</span>    <span class="n">ret_queue</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+<span class="linenos">53</span>    <span class="n">mp_procs</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="linenos">54</span>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="n">ring_size</span><span class="p">):</span>
+<span class="linenos">55</span>        <span class="n">proc</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">start_ringproc</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="nb">str</span><span class="p">(</span><span class="n">iterations</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">i</span><span class="o">+</span><span class="n">df</span><span class="o">.</span><span class="n">BASE_USER_MANAGED_CUID</span><span class="o">+</span><span class="mi">1</span><span class="p">),</span> <span class="n">receive_sdesc</span><span class="p">,</span> <span class="n">ret_queue</span><span class="p">))</span>
+<span class="linenos">56</span>        <span class="n">proc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos">57</span>        <span class="n">mp_procs</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">proc</span><span class="p">)</span>
+<span class="linenos">58</span>        <span class="n">receive_sdesc</span> <span class="o">=</span> <span class="n">ret_queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+<span class="linenos">59</span>
+<span class="linenos">60</span>    <span class="c1"># This final process starts on the current node and completes the ring. It</span>
+<span class="linenos">61</span>    <span class="c1"># also provides the destination for the final message to be returned.</span>
+<span class="linenos">62</span>    <span class="n">proc</span> <span class="o">=</span> <span class="n">subprocess</span><span class="o">.</span><span class="n">Popen</span><span class="p">([</span><span class="s1">&#39;ringproc&#39;</span><span class="p">,</span> <span class="nb">str</span><span class="p">(</span><span class="n">iterations</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">df</span><span class="o">.</span><span class="n">BASE_USER_MANAGED_CUID</span><span class="p">),</span> <span class="n">receive_sdesc</span><span class="p">,</span> <span class="n">origin_send_sdesc</span><span class="p">,</span> <span class="n">final_sdesc</span><span class="p">],</span> <span class="n">stdout</span><span class="o">=</span><span class="n">subprocess</span><span class="o">.</span><span class="n">PIPE</span><span class="p">)</span>
+<span class="linenos">63</span>
+<span class="linenos">64</span>    <span class="n">reader</span> <span class="o">=</span> <span class="n">dch</span><span class="o">.</span><span class="n">ChannelRecvH</span><span class="p">(</span><span class="n">final_channel</span><span class="p">)</span>
+<span class="linenos">65</span>    <span class="n">writer</span> <span class="o">=</span> <span class="n">dch</span><span class="o">.</span><span class="n">ChannelSendH</span><span class="p">(</span><span class="n">origin_channel</span><span class="p">)</span>
+<span class="linenos">66</span>    <span class="n">reader</span><span class="o">.</span><span class="n">open</span><span class="p">()</span>
+<span class="linenos">67</span>    <span class="n">writer</span><span class="o">.</span><span class="n">open</span><span class="p">()</span>
+<span class="linenos">68</span>    <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+<span class="linenos">69</span>    <span class="n">writer</span><span class="o">.</span><span class="n">send_bytes</span><span class="p">(</span><span class="sa">b</span><span class="s1">&#39;hello&#39;</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">70</span>    <span class="n">last_msg</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">recv_bytes</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">blocking</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">71</span>    <span class="n">stop</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+<span class="linenos">72</span>
+<span class="linenos">73</span>    <span class="n">avg_time</span> <span class="o">=</span> <span class="p">(</span><span class="n">stop</span> <span class="o">-</span> <span class="n">start</span><span class="p">)</span> <span class="o">/</span> <span class="p">(</span><span class="n">iterations</span><span class="o">*</span><span class="n">ring_size</span><span class="p">)</span>
+<span class="linenos">74</span>    <span class="n">proc</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+<span class="linenos">75</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Ring proc exited...&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">76</span>    <span class="k">for</span> <span class="n">proc</span> <span class="ow">in</span> <span class="n">mp_procs</span><span class="p">:</span>
+<span class="linenos">77</span>        <span class="n">proc</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+<span class="linenos">78</span>        <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Ring proc exited...&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">79</span>    <span class="k">if</span> <span class="n">last_msg</span> <span class="o">==</span> <span class="sa">b</span><span class="s1">&#39;hello&#39;</span><span class="p">:</span>
+<span class="linenos">80</span>        <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Test Passed.&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">81</span>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;The average time per message transfer was </span><span class="si">{</span><span class="n">avg_time</span><span class="o">*</span><span class="mf">1e6</span><span class="si">}</span><span class="s1"> microseconds.&#39;</span><span class="p">)</span>
+<span class="linenos">82</span>    <span class="k">else</span><span class="p">:</span>
+<span class="linenos">83</span>        <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Test Failed.&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">84</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Main proc exiting...&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">85</span>
+<span class="linenos">86</span>
+<span class="linenos">87</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s1">&#39;__main__&#39;</span><span class="p">:</span>
+<span class="linenos">88</span>    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<p>The code in <a class="reference internal" href="#ring-proc"><span class="std std-numref">Listing 17</span></a> is the C program that uses the Channels API to receive and
+send a message. There is one process running this code on each node of the ring. The code takes
+three or five arguments. The three argument case is used for all but the last process in the ring.
+The code is given a receive channel descriptor where it will receive a message from in the ring. It
+then creates a new channel where it will send the message to. The send channel descriptor is written
+to standard output which is monitored to read it and then provide that channel descriptor to the next
+instance of the <em>ringproc</em> code from which it receives its message.</p>
+<p>Comments in the code describe why each API call is made. The pattern used here checks return codes
+from all calls and prints to standard error should there be any errors. Since standard error is
+captured by Dragon, any error messages are displayed back to the user.</p>
+<div class="literal-block-wrapper docutils container" id="ring-proc">
+<div class="code-block-caption"><span class="caption-number">Listing 17 </span><span class="caption-text">Ring Demo Process Code</span><a class="headerlink" href="#ring-proc" title="Permalink to this code"></a></div>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="linenos">  1</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;dragon/channels.h&gt;</span><span class="cp"></span>
+<span class="linenos">  2</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;dragon/return_codes.h&gt;</span><span class="cp"></span>
+<span class="linenos">  3</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;dragon/utils.h&gt;</span><span class="cp"></span>
+<span class="linenos">  4</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdlib.h&gt;</span><span class="cp"></span>
+<span class="linenos">  5</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdio.h&gt;</span><span class="cp"></span>
+<span class="linenos">  6</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;sys/types.h&gt;</span><span class="cp"></span>
+<span class="linenos">  7</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;sys/stat.h&gt;</span><span class="cp"></span>
+<span class="linenos">  8</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;unistd.h&gt;</span><span class="cp"></span>
+<span class="linenos">  9</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;string.h&gt;</span><span class="cp"></span>
+<span class="linenos"> 10</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;time.h&gt;</span><span class="cp"></span>
+<span class="linenos"> 11</span><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;stdlib.h&gt;</span><span class="cp"></span>
+<span class="linenos"> 12</span>
+<span class="linenos"> 13</span><span class="kt">int</span><span class="w"> </span><span class="nf">main</span><span class="p">(</span><span class="kt">int</span><span class="w"> </span><span class="n">argc</span><span class="p">,</span><span class="w"> </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">argv</span><span class="p">[])</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 14</span>
+<span class="linenos"> 15</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">argc</span><span class="w"> </span><span class="o">&lt;</span><span class="w"> </span><span class="mi">4</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 16</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;usage: ringproc &lt;iterations&gt; &lt;cuid&gt; &lt;receive_from_channel_desc&gt; [&lt;send_to_channel_desc&gt; &lt;final_channel_desc&gt;]</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 17</span><span class="w">        </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 18</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 19</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos"> 20</span>
+<span class="linenos"> 21</span><span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">iterations</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">atoi</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]);</span><span class="w"></span>
+<span class="linenos"> 22</span><span class="w">    </span><span class="n">dragonC_UID_t</span><span class="w"> </span><span class="n">cuid</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">strtoul</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">2</span><span class="p">],</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 23</span>
+<span class="linenos"> 24</span><span class="w">    </span><span class="n">dragonChannelSerial_t</span><span class="w"> </span><span class="n">recv_chser</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 25</span><span class="w">    </span><span class="n">dragonChannelDescr_t</span><span class="w"> </span><span class="n">recv_ch</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 26</span><span class="w">    </span><span class="n">dragonChannelRecvh_t</span><span class="w"> </span><span class="n">recv_h</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 27</span><span class="w">    </span><span class="n">dragonChannelSerial_t</span><span class="w"> </span><span class="n">send_chser</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 28</span><span class="w">    </span><span class="n">dragonChannelSerial_t</span><span class="w"> </span><span class="n">final_chser</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 29</span><span class="w">    </span><span class="n">dragonChannelDescr_t</span><span class="w"> </span><span class="n">send_ch</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 30</span><span class="w">    </span><span class="n">dragonChannelSendh_t</span><span class="w"> </span><span class="n">send_h</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 31</span><span class="w">    </span><span class="n">dragonChannelDescr_t</span><span class="w"> </span><span class="n">final_ch</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 32</span><span class="w">    </span><span class="n">dragonChannelSendh_t</span><span class="w"> </span><span class="n">finalsend_h</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 33</span><span class="w">    </span><span class="n">dragonMemoryPoolDescr_t</span><span class="w"> </span><span class="n">pool_descr</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 34</span><span class="w">    </span><span class="n">dragonMessage_t</span><span class="w"> </span><span class="n">msg</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 35</span><span class="w">    </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">send_ser_encoded</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 36</span><span class="w">    </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">final_ser_encoded</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 37</span><span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">send_ser_len</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 38</span>
+<span class="linenos"> 39</span><span class="w">    </span><span class="cm">/* This function is necessary for off-node communication and relies on the</span>
+<span class="linenos"> 40</span><span class="cm">    * Dragon run-time services to supply gateway channels in the</span>
+<span class="linenos"> 41</span><span class="cm">    * environment. Gateway channels are automatically supplied by Dragon</span>
+<span class="linenos"> 42</span><span class="cm">    * on multi-node allocations and this function works on both single</span>
+<span class="linenos"> 43</span><span class="cm">    * and multi-node allocations, though on single-node allocations it</span>
+<span class="linenos"> 44</span><span class="cm">    * does nothing. */</span><span class="w"></span>
+<span class="linenos"> 45</span>
+<span class="linenos"> 46</span><span class="w">    </span><span class="n">dragonError_t</span><span class="w"> </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_register_gateways_from_env</span><span class="p">();</span><span class="w"></span>
+<span class="linenos"> 47</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 48</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not register gateway channels from environment with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos"> 49</span><span class="w">        </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 50</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 51</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos"> 52</span>
+<span class="linenos"> 53</span><span class="w">    </span><span class="cm">/*</span>
+<span class="linenos"> 54</span><span class="cm">    * When sending a message, the structure must be initialized first.</span>
+<span class="linenos"> 55</span><span class="cm">    */</span><span class="w"></span>
+<span class="linenos"> 56</span>
+<span class="linenos"> 57</span><span class="w">    </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_message_init</span><span class="p">(</span><span class="o">&amp;</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 58</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 59</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not init message with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos"> 60</span><span class="w">        </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 61</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 62</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos"> 63</span>
+<span class="linenos"> 64</span><span class="w">    </span><span class="cm">/* A serialized channel descriptor is binary data which must be base64</span>
+<span class="linenos"> 65</span><span class="cm">    * encoded so it is valid ascii data before being passed around.</span>
+<span class="linenos"> 66</span><span class="cm">    * Dragon provides both base64 encoding and decoding for</span>
+<span class="linenos"> 67</span><span class="cm">    * interoperability between languages. */</span><span class="w"></span>
+<span class="linenos"> 68</span>
+<span class="linenos"> 69</span><span class="w">    </span><span class="n">recv_chser</span><span class="p">.</span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_base64_decode</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">3</span><span class="p">],</span><span class="w"> </span><span class="n">strlen</span><span class="p">(</span><span class="n">argv</span><span class="p">[</span><span class="mi">3</span><span class="p">]),</span><span class="w"> </span><span class="o">&amp;</span><span class="n">recv_chser</span><span class="p">.</span><span class="n">len</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 70</span>
+<span class="linenos"> 71</span><span class="w">    </span><span class="cm">/* With a valid serialized descriptor you can attach to a channel. This</span>
+<span class="linenos"> 72</span><span class="cm">    * attach here occurs on an off-node channel (except in the one node</span>
+<span class="linenos"> 73</span><span class="cm">    * case). Whether off-node or on-node, attach works exactly the same.</span>
+<span class="linenos"> 74</span><span class="cm">    * */</span><span class="w"></span>
+<span class="linenos"> 75</span>
+<span class="linenos"> 76</span><span class="w">    </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_attach</span><span class="p">(</span><span class="o">&amp;</span><span class="n">recv_chser</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">recv_ch</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 77</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 78</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not attach to receive channel with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos"> 79</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Converting &#39;%s&#39;</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">argv</span><span class="p">[</span><span class="mi">3</span><span class="p">]);</span><span class="w"></span>
+<span class="linenos"> 80</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 81</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos"> 82</span>
+<span class="linenos"> 83</span><span class="w">    </span><span class="cm">/* The decode mallocs space. This frees any malloced code in the descriptor.</span>
+<span class="linenos"> 84</span><span class="cm">    * Be sure to only call this if there is malloced space stored in the</span>
+<span class="linenos"> 85</span><span class="cm">    * descriptor. */</span><span class="w"></span>
+<span class="linenos"> 86</span>
+<span class="linenos"> 87</span><span class="w">    </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_serial_free</span><span class="p">(</span><span class="o">&amp;</span><span class="n">recv_chser</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 88</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos"> 89</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not free serialized channel descriptor with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos"> 90</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 91</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos"> 92</span>
+<span class="linenos"> 93</span><span class="w">    </span><span class="cm">/* The receive handle has optional attributes that are not supplied here. To</span>
+<span class="linenos"> 94</span><span class="cm">    * supply non-default attributes to the receive handle, call</span>
+<span class="linenos"> 95</span><span class="cm">    * dragon_channel_recv_attr_init first, then modify the attributes to</span>
+<span class="linenos"> 96</span><span class="cm">    * desired values and pass them as the third argument here. NULL means</span>
+<span class="linenos"> 97</span><span class="cm">    * to use the default attrs. */</span><span class="w"></span>
+<span class="linenos"> 98</span>
+<span class="linenos"> 99</span><span class="w">    </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_recvh</span><span class="p">(</span><span class="o">&amp;</span><span class="n">recv_ch</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">recv_h</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">100</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">101</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not construct receive handle with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">102</span><span class="w">        </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">103</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">104</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">105</span>
+<span class="linenos">106</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">argc</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">4</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">107</span><span class="w">        </span><span class="cm">/* In most cases instance of this process, it creates a channel to send</span>
+<span class="linenos">108</span><span class="cm">        * the message to. To do this, the code must attach to a pool.</span>
+<span class="linenos">109</span><span class="cm">        * The default pool is already created, but users may also</span>
+<span class="linenos">110</span><span class="cm">        * create their own pools. The pool is an on-node resource</span>
+<span class="linenos">111</span><span class="cm">        * only, so it must exist where the channel is to be created.</span>
+<span class="linenos">112</span><span class="cm">        * There is a default pool on each node running under the</span>
+<span class="linenos">113</span><span class="cm">        * Dragon run-time services. */</span><span class="w"></span>
+<span class="linenos">114</span>
+<span class="linenos">115</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_memory_pool_attach_from_env</span><span class="p">(</span><span class="o">&amp;</span><span class="n">pool_descr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;DRAGON_DEFAULT_PD&quot;</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">116</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">117</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not attach to memory pool with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">118</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">119</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">120</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">121</span>
+<span class="linenos">122</span><span class="w">        </span><span class="cm">/* We create our own send_to channel with the given cuid. Attributes</span>
+<span class="linenos">123</span><span class="cm">        * could be applied to the channel creation. NULL provides the</span>
+<span class="linenos">124</span><span class="cm">        * default attributes. To customize, call</span>
+<span class="linenos">125</span><span class="cm">        * dragon_channel_attr_init first, the customize and provide</span>
+<span class="linenos">126</span><span class="cm">        * them in place of NULL. */</span><span class="w"></span>
+<span class="linenos">127</span>
+<span class="linenos">128</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_create</span><span class="p">(</span><span class="o">&amp;</span><span class="n">send_ch</span><span class="p">,</span><span class="w"> </span><span class="n">cuid</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">pool_descr</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">129</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">130</span>
+<span class="linenos">131</span><span class="w">            </span><span class="cm">/* Notice the calls to dragon_get_rc_string which converts dragon</span>
+<span class="linenos">132</span><span class="cm">            * error codes into human readable strings. Also the</span>
+<span class="linenos">133</span><span class="cm">            * dragon_getlasterrstr provides useful traceback</span>
+<span class="linenos">134</span><span class="cm">            * information so you can see the origin of an error</span>
+<span class="linenos">135</span><span class="cm">            * should it occur. */</span><span class="w"></span>
+<span class="linenos">136</span>
+<span class="linenos">137</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not create send channel with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">138</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Traceback: %s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_getlasterrstr</span><span class="p">());</span><span class="w"></span>
+<span class="linenos">139</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">140</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">141</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">142</span>
+<span class="linenos">143</span><span class="w">        </span><span class="cm">/*</span>
+<span class="linenos">144</span><span class="cm">        * Here we serialize the new channel and provide it on standard output.</span>
+<span class="linenos">145</span><span class="cm">        */</span><span class="w"></span>
+<span class="linenos">146</span>
+<span class="linenos">147</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_serialize</span><span class="p">(</span><span class="o">&amp;</span><span class="n">send_ch</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">send_chser</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">148</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">149</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not serialize send channel with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">150</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">151</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">152</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">153</span>
+<span class="linenos">154</span><span class="w">        </span><span class="n">send_ser_encoded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_base64_encode</span><span class="p">(</span><span class="n">send_chser</span><span class="p">.</span><span class="n">data</span><span class="p">,</span><span class="w"> </span><span class="n">send_chser</span><span class="p">.</span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">send_ser_len</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">155</span>
+<span class="linenos">156</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_memory_pool_detach</span><span class="p">(</span><span class="o">&amp;</span><span class="n">pool_descr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">157</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">158</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not detach to memory pool with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">159</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">160</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">161</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">162</span>
+<span class="linenos">163</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_serial_free</span><span class="p">(</span><span class="o">&amp;</span><span class="n">send_chser</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">164</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">165</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not free serialized channel descriptor with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">166</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">167</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">168</span>
+<span class="linenos">169</span><span class="w">    </span><span class="p">}</span><span class="w"> </span><span class="k">else</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">170</span><span class="w">        </span><span class="cm">/*</span>
+<span class="linenos">171</span><span class="cm">        * We were given a channel descriptor for the send channel and the final</span>
+<span class="linenos">172</span><span class="cm">        * send channel.</span>
+<span class="linenos">173</span><span class="cm">        */</span><span class="w"></span>
+<span class="linenos">174</span><span class="w">        </span><span class="n">send_ser_encoded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">argv</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span><span class="w"></span>
+<span class="linenos">175</span><span class="w">        </span><span class="n">final_ser_encoded</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">argv</span><span class="p">[</span><span class="mi">5</span><span class="p">];</span><span class="w"></span>
+<span class="linenos">176</span>
+<span class="linenos">177</span><span class="w">        </span><span class="n">send_chser</span><span class="p">.</span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_base64_decode</span><span class="p">(</span><span class="n">send_ser_encoded</span><span class="p">,</span><span class="w"> </span><span class="n">strlen</span><span class="p">(</span><span class="n">send_ser_encoded</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="n">send_chser</span><span class="p">.</span><span class="n">len</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">178</span>
+<span class="linenos">179</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_attach</span><span class="p">(</span><span class="o">&amp;</span><span class="n">send_chser</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">send_ch</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">180</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">181</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not attach to send channel with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">182</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">183</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">184</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">185</span>
+<span class="linenos">186</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_serial_free</span><span class="p">(</span><span class="o">&amp;</span><span class="n">send_chser</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">187</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">188</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not free serialized channel descriptor with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">189</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">190</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">191</span>
+<span class="linenos">192</span><span class="w">        </span><span class="n">final_chser</span><span class="p">.</span><span class="n">data</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_base64_decode</span><span class="p">(</span><span class="n">final_ser_encoded</span><span class="p">,</span><span class="w"> </span><span class="n">strlen</span><span class="p">(</span><span class="n">final_ser_encoded</span><span class="p">),</span><span class="w"> </span><span class="o">&amp;</span><span class="n">final_chser</span><span class="p">.</span><span class="n">len</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">193</span>
+<span class="linenos">194</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_attach</span><span class="p">(</span><span class="o">&amp;</span><span class="n">final_chser</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">final_ch</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">195</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">196</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not attach to final send channel with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">197</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">198</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">199</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">200</span>
+<span class="linenos">201</span><span class="w">        </span><span class="cm">/* The final channel is where to send the message when it has completed</span>
+<span class="linenos">202</span><span class="cm">        * its rounds on the ring. The final channel contents are read</span>
+<span class="linenos">203</span><span class="cm">        * by the Python bootstrap program to indicate that the test</span>
+<span class="linenos">204</span><span class="cm">        * has completed. */</span><span class="w"></span>
+<span class="linenos">205</span>
+<span class="linenos">206</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_serial_free</span><span class="p">(</span><span class="o">&amp;</span><span class="n">final_chser</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">207</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">208</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not free final serialized channel descriptor with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">209</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">210</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">211</span>
+<span class="linenos">212</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_sendh</span><span class="p">(</span><span class="o">&amp;</span><span class="n">final_ch</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">finalsend_h</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">213</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">214</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not construct send handle for final channel with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">215</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">216</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">217</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">218</span>
+<span class="linenos">219</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_chsend_open</span><span class="p">(</span><span class="o">&amp;</span><span class="n">finalsend_h</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">220</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">221</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not open final send handle with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">222</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">223</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">224</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">225</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">226</span>
+<span class="linenos">227</span><span class="w">    </span><span class="cm">/*</span>
+<span class="linenos">228</span><span class="cm">    * This provides the newly created channel back to the caller of this code.</span>
+<span class="linenos">229</span><span class="cm">    */</span><span class="w"></span>
+<span class="linenos">230</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">send_ser_encoded</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">231</span><span class="w">    </span><span class="n">fflush</span><span class="p">(</span><span class="n">stdout</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">232</span>
+<span class="linenos">233</span><span class="w">    </span><span class="cm">/* The send handle is used to send message into a channel. Default attributes</span>
+<span class="linenos">234</span><span class="cm">    * are applied here. The send handle attributes can be customized by</span>
+<span class="linenos">235</span><span class="cm">    * calling dragon_channel_send_attr_init and providing in place of</span>
+<span class="linenos">236</span><span class="cm">    * NULL. */</span><span class="w"></span>
+<span class="linenos">237</span>
+<span class="linenos">238</span><span class="w">    </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_sendh</span><span class="p">(</span><span class="o">&amp;</span><span class="n">send_ch</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">send_h</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">239</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">240</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not construct send handle with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">241</span><span class="w">        </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">242</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">243</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">244</span>
+<span class="linenos">245</span><span class="w">    </span><span class="cm">/*</span>
+<span class="linenos">246</span><span class="cm">    * You must open send and receive handles before sending or receiving.</span>
+<span class="linenos">247</span><span class="cm">    */</span><span class="w"></span>
+<span class="linenos">248</span><span class="w">    </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_chsend_open</span><span class="p">(</span><span class="o">&amp;</span><span class="n">send_h</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">249</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">250</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not open send handle with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">251</span><span class="w">        </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">252</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">253</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">254</span>
+<span class="linenos">255</span><span class="w">    </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_chrecv_open</span><span class="p">(</span><span class="o">&amp;</span><span class="n">recv_h</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">256</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">257</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not open receive handle with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">258</span><span class="w">        </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">259</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">260</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">261</span>
+<span class="linenos">262</span><span class="w">    </span><span class="kt">int</span><span class="w"> </span><span class="n">k</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">263</span><span class="w">    </span><span class="n">dragonChannelSendh_t</span><span class="o">*</span><span class="w"> </span><span class="n">sendto_h</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">send_h</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">264</span>
+<span class="linenos">265</span><span class="w">    </span><span class="k">for</span><span class="w"> </span><span class="p">(</span><span class="n">k</span><span class="o">=</span><span class="mi">0</span><span class="p">;</span><span class="w"> </span><span class="n">k</span><span class="o">&lt;</span><span class="n">iterations</span><span class="p">;</span><span class="w"> </span><span class="n">k</span><span class="o">++</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">266</span><span class="w">        </span><span class="cm">/* Blocking receives may be given a timeout. This code blocks using the</span>
+<span class="linenos">267</span><span class="cm">        * default receive handle timeout which is to wait indefinitely. */</span><span class="w"></span>
+<span class="linenos">268</span>
+<span class="linenos">269</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_chrecv_get_msg_blocking</span><span class="p">(</span><span class="o">&amp;</span><span class="n">recv_h</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">270</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">271</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not receive message with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">272</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">273</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">274</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">275</span>
+<span class="linenos">276</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">((</span><span class="n">argc</span><span class="w"> </span><span class="o">&gt;</span><span class="w"> </span><span class="mi">4</span><span class="p">)</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="p">(</span><span class="n">k</span><span class="o">==</span><span class="n">iterations</span><span class="mi">-1</span><span class="p">))</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">277</span><span class="w">            </span><span class="cm">/* On the last iteration for the origin process, write the message to</span>
+<span class="linenos">278</span><span class="cm">            * the final channel instead of back into the ring. */</span><span class="w"></span>
+<span class="linenos">279</span>
+<span class="linenos">280</span><span class="w">            </span><span class="n">sendto_h</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">&amp;</span><span class="n">finalsend_h</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">281</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">282</span>
+<span class="linenos">283</span><span class="w">        </span><span class="cm">/* Send the message on to its destination. Transfer of ownership means</span>
+<span class="linenos">284</span><span class="cm">        * that any pool allocation associated with the message will</span>
+<span class="linenos">285</span><span class="cm">        * be freed by the receiver. This works both on and off-node</span>
+<span class="linenos">286</span><span class="cm">        * since the transport agent will clean up the message in the</span>
+<span class="linenos">287</span><span class="cm">        * off-node case. */</span><span class="w"></span>
+<span class="linenos">288</span>
+<span class="linenos">289</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_chsend_send_msg</span><span class="p">(</span><span class="n">sendto_h</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">msg</span><span class="p">,</span><span class="w"> </span><span class="n">DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP</span><span class="p">,</span><span class="w"> </span><span class="nb">NULL</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">290</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">291</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not send message with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">292</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">293</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">294</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">295</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">296</span>
+<span class="linenos">297</span><span class="w">    </span><span class="cm">/*</span>
+<span class="linenos">298</span><span class="cm">    * Send and receive handles should be closed when no longer needed.</span>
+<span class="linenos">299</span><span class="cm">    */</span><span class="w"></span>
+<span class="linenos">300</span>
+<span class="linenos">301</span><span class="w">    </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_chsend_close</span><span class="p">(</span><span class="o">&amp;</span><span class="n">send_h</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">302</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">303</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not close send handle with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">304</span><span class="w">        </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">305</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">306</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">307</span>
+<span class="linenos">308</span><span class="w">    </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_chrecv_close</span><span class="p">(</span><span class="o">&amp;</span><span class="n">recv_h</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">309</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">310</span><span class="w">        </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not close receive handle with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">311</span><span class="w">        </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">312</span><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">313</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">314</span><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">argc</span><span class="w"> </span><span class="o">&lt;=</span><span class="w"> </span><span class="mi">4</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">315</span>
+<span class="linenos">316</span><span class="w">        </span><span class="cm">/* Channels should be destroyed when no longer needed. Since the program</span>
+<span class="linenos">317</span><span class="cm">        * is ending, technically this would be cleaned up</span>
+<span class="linenos">318</span><span class="cm">        * automatically once the Dragon run-time services exit, but</span>
+<span class="linenos">319</span><span class="cm">        * better to be explicit about it in this example. */</span><span class="w"></span>
+<span class="linenos">320</span>
+<span class="linenos">321</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_channel_destroy</span><span class="p">(</span><span class="o">&amp;</span><span class="n">send_ch</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">322</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">323</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not destroy send channel with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">324</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">325</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">326</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">327</span>
+<span class="linenos">328</span><span class="w">        </span><span class="cm">/* To be complete, we&#39;ll detach from the pool. But again, this is done</span>
+<span class="linenos">329</span><span class="cm">        * automatically during cleanup when Dragon run-time services</span>
+<span class="linenos">330</span><span class="cm">        * exit. */</span><span class="w"></span>
+<span class="linenos">331</span>
+<span class="linenos">332</span><span class="w">        </span><span class="n">err</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_memory_pool_detach</span><span class="p">(</span><span class="o">&amp;</span><span class="n">pool_descr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">333</span><span class="w">        </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">err</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="linenos">334</span><span class="w">            </span><span class="n">fprintf</span><span class="p">(</span><span class="n">stderr</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Could not detach from the default pool with err=%s</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">dragon_get_rc_string</span><span class="p">(</span><span class="n">err</span><span class="p">));</span><span class="w"></span>
+<span class="linenos">335</span><span class="w">            </span><span class="n">fflush</span><span class="p">(</span><span class="n">stderr</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">336</span><span class="w">            </span><span class="k">return</span><span class="w"> </span><span class="mi">-1</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">337</span><span class="w">        </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">338</span>
+<span class="linenos">339</span><span class="w">    </span><span class="p">}</span><span class="w"></span>
+<span class="linenos">340</span>
+<span class="linenos">341</span><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">342</span><span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+</div>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="dragon_native_pi.html" class="btn btn-neutral float-left" title="Calculating π using parallel Monte Carlo" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="dragon_native_queue.html" class="btn btn-neutral float-right" title="Creating and Using a Queue in Dragon Native" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

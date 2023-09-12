@@ -1,0 +1,36 @@
+﻿dragon.native.queue
+===================
+
+.. automodule:: dragon.native.queue
+   :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      Queue
+   
+   
+
+   
+   
+   .. rubric:: Exceptions
+
+   .. autosummary::
+   
+      QueueError
+   
+   
+
+
+

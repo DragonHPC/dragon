@@ -1,0 +1,54 @@
+﻿dragon.globalservices.process
+=============================
+
+.. automodule:: dragon.globalservices.process
+   :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      create
+      create_with_argdata
+      get_argdata_from_immediate_handshake
+      get_create_message
+      get_create_message_with_argdata
+      get_list
+      join
+      kill
+      multi_join
+      prepare_argdata_for_immediate
+      query
+      start_capturing_child_mp_output
+      stop_capturing_child_mp_output
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      StreamDestination
+   
+   
+
+   
+   
+   .. rubric:: Exceptions
+
+   .. autosummary::
+   
+      ProcessError
+   
+   
+
+
+

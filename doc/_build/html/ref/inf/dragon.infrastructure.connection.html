@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.infrastructure.connection &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/clipboard.min.js"></script>
+        <script src="../../_static/copybutton.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a></li>
+      <li class="breadcrumb-item active">dragon.infrastructure.connection</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/ref/inf/dragon.infrastructure.connection.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-dragon.infrastructure.connection">
+<span id="dragon-infrastructure-connection"></span><h1>dragon.infrastructure.connection<a class="headerlink" href="#module-dragon.infrastructure.connection" title="Permalink to this heading"></a></h1>
+<p>Internal objects required for infrastructure process communication.</p>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Client</span></code>([address, family, authkey])</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.infrastructure.connection.Pipe" title="dragon.infrastructure.connection.Pipe"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Pipe</span></code></a>([duplex, channels, options])</p></td>
+<td><p>Pipe constructor, producing two Connections.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_next_ctr</span></code>()</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">make_uniq_chan_names</span></code>()</p></td>
+<td><p></p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.infrastructure.connection.Address" title="dragon.infrastructure.connection.Address"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Address</span></code></a></p></td>
+<td><p>Address class for dragon servers and listeners and all that</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.infrastructure.connection.CUID" title="dragon.infrastructure.connection.CUID"><code class="xref py py-obj docutils literal notranslate"><span class="pre">CUID</span></code></a></p></td>
+<td><p>A wrapper around int to allow waiting on a cuid.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.infrastructure.connection.Connection" title="dragon.infrastructure.connection.Connection"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Connection</span></code></a></p></td>
+<td><p>Dragon infrastructure's internal connection class.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.infrastructure.connection.ConnectionOptions" title="dragon.infrastructure.connection.ConnectionOptions"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ConnectionOptions</span></code></a></p></td>
+<td><p>Options for dragon.Connections</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">Listener</span></code></p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.infrastructure.connection.PipeOptions" title="dragon.infrastructure.connection.PipeOptions"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PipeOptions</span></code></a></p></td>
+<td><p>Options for the Pipe factory.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.ConnectionOptions">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ConnectionOptions</span></span><a class="headerlink" href="#dragon.infrastructure.connection.ConnectionOptions" title="Permalink to this definition"></a></dt>
+<dd><p>Options for dragon.Connections</p>
+<p>Separate object because this will expand over time.</p>
+<p>There are a number of different facts about how one might
+want a Connection object to behave vs. its underlying
+Channels and its interaction with Global Services, together
+with anticipated need to let someone customize how the object
+behaves for performance.  This object is meant to organize
+all these into one object.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.ConnectionOptions.CreationPolicy">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">CreationPolicy</span></span><a class="headerlink" href="#dragon.infrastructure.connection.ConnectionOptions.CreationPolicy" title="Permalink to this definition"></a></dt>
+<dd><p>An enumeration.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.ConnectionOptions.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">creation_policy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">CreationPolicy.EXTERNALLY_MANAGED</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_block_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">large_block_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">huge_block_size</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">default_pool</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.connection.ConnectionOptions.__init__" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.PipeOptions">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">PipeOptions</span></span><a class="headerlink" href="#dragon.infrastructure.connection.PipeOptions" title="Permalink to this definition"></a></dt>
+<dd><p>Options for the Pipe factory.</p>
+<p>Separate object because this, too, will expand over time.</p>
+<p>Same rationale as for ConnectionOptions.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.PipeOptions.CreationPolicy">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">CreationPolicy</span></span><a class="headerlink" href="#dragon.infrastructure.connection.PipeOptions.CreationPolicy" title="Permalink to this definition"></a></dt>
+<dd><p>An enumeration.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.PipeOptions.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">creation_policy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">CreationPolicy.EARLY</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">conn_options</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.connection.PipeOptions.__init__" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.CUID">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">CUID</span></span><a class="headerlink" href="#dragon.infrastructure.connection.CUID" title="Permalink to this definition"></a></dt>
+<dd><p>A wrapper around int to allow waiting on a cuid.</p>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Connection">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Connection</span></span><a class="headerlink" href="#dragon.infrastructure.connection.Connection" title="Permalink to this definition"></a></dt>
+<dd><p>Dragon infrastructure’s internal connection class.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Connection.State">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">State</span></span><a class="headerlink" href="#dragon.infrastructure.connection.Connection.State" title="Permalink to this definition"></a></dt>
+<dd><p>An enumeration.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Connection.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">inbound_initializer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">outbound_initializer</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">policy</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Policy((WaitMode(2),</span> <span class="pre">ReturnWhen(2)))</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.connection.Connection.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Initializes the Connection object.</p>
+<blockquote>
+<div><p>The object is initialized in an inbound direction, an outbound
+direction, or both.  These initializers can be either
+- a Channel object, whose lifecycle is assumed externally managed
+- a bytes-like descriptor, attached to lazily, destroyed automatically
+- a string name, for a rendezvous in Global services.</p>
+<p>TODO: document current behavior and design intent MUCH more thoroughly</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>inbound_initializer</strong> – an initializer for the inbound channel</p></li>
+<li><p><strong>outbound_initializer</strong> – an initializer for the outbound channel</p></li>
+<li><p><strong>options</strong> – ConnectionOptions object</p></li>
+<li><p><strong>policy</strong> – A Policy object.</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Connection.ghost_close">
+<span class="sig-name descname"><span class="pre">ghost_close</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.connection.Connection.ghost_close" title="Permalink to this definition"></a></dt>
+<dd><p>Force the connection into a closed state without sending EOT</p>
+<p>This ‘ghosts’ the receiver on the other end, which won’t
+be getting an EOT message from this object, but when using
+externally managed Channels on this object that is what one
+might want to do, in order to transfer use of that Channel.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Connection.thread_wait">
+<span class="sig-name descname"><span class="pre">thread_wait</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">timeout</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">done_ev</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ready</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.connection.Connection.thread_wait" title="Permalink to this definition"></a></dt>
+<dd><p>Thread waiter signaling with an ev.</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Connection.closed">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">closed</span></span><a class="headerlink" href="#dragon.infrastructure.connection.Connection.closed" title="Permalink to this definition"></a></dt>
+<dd><p>True if the connection is closed</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Connection.readable">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">readable</span></span><a class="headerlink" href="#dragon.infrastructure.connection.Connection.readable" title="Permalink to this definition"></a></dt>
+<dd><p>True if the connection is readable</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Connection.writable">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">writable</span></span><a class="headerlink" href="#dragon.infrastructure.connection.Connection.writable" title="Permalink to this definition"></a></dt>
+<dd><p>True if the connection is writable</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Pipe">
+<span class="sig-name descname"><span class="pre">Pipe</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">duplex</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">channels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.connection.Pipe" title="Permalink to this definition"></a></dt>
+<dd><p>Pipe constructor, producing two Connections.</p>
+<p>The channels parameter can be None, indicating that
+this is an anonymous Pipe requiring a new channel to be constructed
+and eventually destroyed by the receiver.</p>
+<p>It can also be a Channel object or descriptor in which case
+the two Connections returned will communicate through the channel, with
+one being in read mode and the other in write mode.</p>
+<p>Finally, if it is a tuple, it is expected to have two elements which are
+both channels or channel descriptors and each of which can send and receive.</p>
+<p>If the channels parameter is None, then the duplex parameter governs
+whether the connections are full duplex and whether two new channels
+get created or only one.</p>
+<p>If not duplex, the first one is the reader and the second the writer</p>
+<p>The options object carries lifecycle and creation options for the Pipe call
+and also policy settings for the Connection objects that result, as well as
+policy on how the Connections objects should interact with the pool when
+sending data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>channels</strong> – None or a Channel object or a 2-element tuple of distinct Channel objects</p></li>
+<li><p><strong>duplex</strong> – default True, whether to produce</p></li>
+<li><p><strong>options</strong> – a PipeOptions object</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>a pair of Connection objects.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Address">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Address</span></span><a class="headerlink" href="#dragon.infrastructure.connection.Address" title="Permalink to this definition"></a></dt>
+<dd><p>Address class for dragon servers and listeners and all that</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.connection.Address.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.connection.Address.__init__" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

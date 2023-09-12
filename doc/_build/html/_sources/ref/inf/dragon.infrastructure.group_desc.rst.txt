@@ -1,0 +1,30 @@
+﻿dragon.infrastructure.group\_desc
+=================================
+
+.. automodule:: dragon.infrastructure.group_desc
+   :members:
+
+   
+   
+   
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      GroupDescriptor
+   
+   
+
+   
+   
+   
+
+
+

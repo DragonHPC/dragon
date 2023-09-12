@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hex Dump &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/clipboard.min.js"></script>
+        <script src="../../_static/copybutton.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="dragon.heapmanager – Heap allocations through the Heap Manager library" href="cy_heapmanager.html" />
+    <link rel="prev" title="BitSet" href="bitset.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../services/services.html">Services</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../components.html">Low-level Components</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="managed_memory.html">Managed Memory</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="managed_memory.html#architecture">Architecture</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="heapmanager.html">Heap Manager</a></li>
+<li class="toctree-l4"><a class="reference internal" href="bitset.html">BitSet</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">Hex Dump</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="managed_memory.html#cython-adapters">Cython Adapters</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="cy_managedmemory.html"><code class="code docutils literal notranslate"><span class="pre">dragon.managed_memory</span></code> – Managed Memory Cython Adapter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../unordered_map.html">Unordered Map</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../broadcast.html">Broadcast Component</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../components.html">Low-level Components</a></li>
+          <li class="breadcrumb-item"><a href="managed_memory.html">Managed Memory</a></li>
+      <li class="breadcrumb-item active">Hex Dump</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/components/managed_memory/hexdump.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="hex-dump">
+<h1>Hex Dump<a class="headerlink" href="#hex-dump" title="Permalink to this heading"></a></h1>
+<p>The Hex Dump service provides a convenient interface for dumping untyped memory to a file or to standard
+output. It is useful in debugging problems that rely on low-level memory state. Hex Dump is given a pointer
+and a length to dump to the screen. Hex Dumps are printed in groups of 16 bytes in hexadecimal format.</p>
+<p>The Hex Dump utility will suppress 0’s by displaying the first and last sixteen 0’s of a region of memory and
+suppressing also 0’s in between. This allows large regions of memory to be dumped without overwhelming the
+output. Suppressed 0’s are indicated by an ellipsis (i.e. …).</p>
+<p>To the right of the hexadecimal interpretation of the bytes, the same 16 bytes are interpreted as ASCII
+characters as a convenience of the data contains ASCII data. Non-printable ASCII data is printed as a dot or
+period (i.e. a .).</p>
+<section id="example">
+<h2>Example<a class="headerlink" href="#example" title="Permalink to this heading"></a></h2>
+<p>Hex Dump has an easy to use interface. You provide a pointer and a length to it to dump. You can also provide
+an indentation string.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-number">Listing 35 </span><span class="caption-text"><strong>Figure 1: Hex Dump Example Code</strong></span><a class="headerlink" href="#id1" title="Permalink to this code"></a></div>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">hex_dump_to_fd</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;BITS&quot;</span><span class="p">,(</span><span class="kt">void</span><span class="o">*</span><span class="p">)</span><span class="n">set</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">,</span><span class="n">num_bytes</span><span class="p">,</span><span class="n">indent</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+</div>
+<p>When invoked, The output looks something like that found in figure 2. Note how lines with 0’s are suppressed.
+The <em>fd</em> is a file, which includes the possibility of using <em>stdout</em> or <em>stderr</em>. A title comes second
+followed by a pointer to the data and the number of bytes to dump. Finally, the <em>indent</em> is a null-terminated
+string to print before each line of the dump.</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-number">Listing 36 </span><span class="caption-text"><strong>Figure 2: Hex Dump Sample Output</strong></span><a class="headerlink" href="#id2" title="Permalink to this code"></a></div>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>*  BITS:
+*    00007FCF60C97070 80 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+*    00007FCF60C97080 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+*    ...
+*    00007FCF60CB7060 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+</pre></div>
+</div>
+</div>
+<section id="api-services">
+<h3>API Services<a class="headerlink" href="#api-services" title="Permalink to this heading"></a></h3>
+<dl class="c function">
+<dt class="sig sig-object c" id="c.hex_dump">
+<span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">hex_dump</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n"><span class="pre">title</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n"><span class="pre">addr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n"><span class="pre">len</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n"><span class="pre">indent</span></span><span class="sig-paren">)</span><a class="headerlink" href="#c.hex_dump" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Prints the memory pointed to by <em>addr</em> for length <em>len</em> printing <em>indent</em> before each line. Dumping memory
+prints 16 bytes per line and suppresses all but the first and last 16 bytes of regions of all zeroes.</p>
+<p><strong>Returns</strong></p>
+<p>No return value.</p>
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">hex_dump</span><span class="p">(</span><span class="s">&quot;BITS&quot;</span><span class="p">,(</span><span class="kt">void</span><span class="o">*</span><span class="p">)</span><span class="n">set</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">,</span><span class="n">num_bytes</span><span class="p">,</span><span class="n">indent</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+</dd></dl>
+
+<dl class="c function">
+<dt class="sig sig-object c" id="c.hex_dump_to_fd">
+<span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">hex_dump_to_fd</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">FILE</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n"><span class="pre">fd</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n"><span class="pre">title</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n"><span class="pre">addr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n"><span class="pre">len</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n"><span class="pre">indent</span></span><span class="sig-paren">)</span><a class="headerlink" href="#c.hex_dump_to_fd" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Works the same as <a class="reference internal" href="#c.hex_dump" title="hex_dump"><code class="xref c c-func docutils literal notranslate"><span class="pre">hex_dump()</span></code></a> but prints to the file <em>fd</em> instead.</p>
+<p><strong>Returns</strong></p>
+<p>No return value.</p>
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="kt">FILE</span><span class="o">*</span><span class="w"> </span><span class="n">fd</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="o">?</span><span class="p">;</span><span class="w"></span>
+<span class="n">hex_dump_to_fd</span><span class="p">(</span><span class="n">fd</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;BITS&quot;</span><span class="p">,(</span><span class="kt">void</span><span class="o">*</span><span class="p">)</span><span class="n">set</span><span class="o">-&gt;</span><span class="n">data</span><span class="p">,</span><span class="n">num_bytes</span><span class="p">,</span><span class="n">indent</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+</dd></dl>
+
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="bitset.html" class="btn btn-neutral float-left" title="BitSet" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="cy_heapmanager.html" class="btn btn-neutral float-right" title="dragon.heapmanager – Heap allocations through the Heap Manager library" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

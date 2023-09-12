@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Parallel Merge Sort &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Parallel Producer - Consumer Communication with Queue" href="mp_queue_demo.html" />
+    <link rel="prev" title="Running Jupyter Notebook inside of the Dragon" href="jupyter.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="cbook.html">Solution Cookbook</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="cbook.html#multiprocessing-with-dragon">Multiprocessing with Dragon</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="jupyter.html">Running Jupyter Notebook inside of the Dragon</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Parallel Merge Sort</a></li>
+<li class="toctree-l3"><a class="reference internal" href="mp_queue_demo.html">Parallel Producer - Consumer Communication with Queue</a></li>
+<li class="toctree-l3"><a class="reference internal" href="mp_scipy_image.html">SciPy Image Convolution Benchmark</a></li>
+<li class="toctree-l3"><a class="reference internal" href="torch-scipy-telemetry.html">Multi-node process orchestration and node telemetry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="distr-inf-telemetry.html">Distributed inference with a Large Language Model (LLM) and node telemetry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="pipeline.html">Creating and Using a Pipeline with Multiprocessing</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-native">Dragon Native</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-data-preview">Dragon Data (Preview)</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="cbook.html">Solution Cookbook</a></li>
+      <li class="breadcrumb-item active">Parallel Merge Sort</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/cbook/mp_merge_sort.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="parallel-merge-sort">
+<h1>Parallel Merge Sort<a class="headerlink" href="#parallel-merge-sort" title="Permalink to this heading"></a></h1>
+<p>Here we show a simple recursive merge sort implementation using Python
+Multiprocessing with Dragon.
+This divide-and-conquer algorithm uses recursion to subdivide the target
+list into smaller chunks and calls itself on each sublist. This is done
+until a minimal cutoff size is reached, at which point the Python standard
+is used on the sublist. See e.g. Knuth, The Art of Computer Programming,
+1998, Vol. 3, section 5.2.4 for more information on merge sort.</p>
+<p>In our parallel implementation, a new process is started for every sublist
+using Python Multiprocessing. Results are communicated using Multiprocessing
+queues. Parent processes block (sleep) in the result queues, until the child
+process has put their result into the queue.</p>
+<p>Note that <code class="code docutils literal notranslate"><span class="pre">__main__</span></code> actually executes <code class="code docutils literal notranslate"><span class="pre">(MAX_SIZE-MIN_SIZE)/INCREMENT</span></code> merge
+sorts of increasingly large sublists, measures the time and prints the
+timing results.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-number">Listing 4 </span><span class="caption-text"><strong>merge_sort.py: Parallel merge sort using Python Multiprocessing with Dragon</strong></span><a class="headerlink" href="#id1" title="Permalink to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">  1</span><span class="kn">import</span> <span class="nn">random</span>
+<span class="linenos">  2</span><span class="kn">import</span> <span class="nn">sys</span>
+<span class="linenos">  3</span><span class="kn">import</span> <span class="nn">time</span>
+<span class="linenos">  4</span><span class="kn">import</span> <span class="nn">math</span>
+<span class="linenos">  5</span>
+<span class="linenos">  6</span><span class="kn">import</span> <span class="nn">dragon</span>
+<span class="linenos">  7</span><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="linenos">  8</span>
+<span class="linenos">  9</span><span class="c1"># values are chosen so memory usage fits into the default Dragon memory pool of 4GB</span>
+<span class="linenos"> 10</span><span class="n">CUTOFF</span> <span class="o">=</span> <span class="mi">20000</span>
+<span class="linenos"> 11</span><span class="n">MIN_SIZE</span> <span class="o">=</span> <span class="mi">100000</span>
+<span class="linenos"> 12</span><span class="n">MAX_SIZE</span> <span class="o">=</span> <span class="mi">1000000</span>
+<span class="linenos"> 13</span><span class="n">INCREMENT</span> <span class="o">=</span> <span class="n">MIN_SIZE</span>
+<span class="linenos"> 14</span>
+<span class="linenos"> 15</span>
+<span class="linenos"> 16</span><span class="k">def</span> <span class="nf">merge</span><span class="p">(</span><span class="n">left</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">right</span><span class="p">:</span> <span class="nb">list</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">list</span><span class="p">:</span>
+<span class="linenos"> 17</span>    <span class="sd">&quot;&quot;&quot;This function merges two lists.</span>
+<span class="linenos"> 18</span>
+<span class="linenos"> 19</span><span class="sd">    :param left: First list containing data</span>
+<span class="linenos"> 20</span><span class="sd">    :type left: list</span>
+<span class="linenos"> 21</span><span class="sd">    :param right: Second list containing data</span>
+<span class="linenos"> 22</span><span class="sd">    :type right: list</span>
+<span class="linenos"> 23</span><span class="sd">    :return: Merged data</span>
+<span class="linenos"> 24</span><span class="sd">    :rtype: list</span>
+<span class="linenos"> 25</span><span class="sd">    &quot;&quot;&quot;</span>
+<span class="linenos"> 26</span>
+<span class="linenos"> 27</span>    <span class="n">merged_list</span> <span class="o">=</span> <span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">*</span> <span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">left</span><span class="p">)</span> <span class="o">+</span> <span class="nb">len</span><span class="p">(</span><span class="n">right</span><span class="p">))</span>
+<span class="linenos"> 28</span>
+<span class="linenos"> 29</span>    <span class="n">i</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos"> 30</span>    <span class="n">j</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos"> 31</span>    <span class="n">k</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos"> 32</span>
+<span class="linenos"> 33</span>    <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">left</span><span class="p">)</span> <span class="ow">and</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">right</span><span class="p">):</span>
+<span class="linenos"> 34</span>        <span class="k">if</span> <span class="n">left</span><span class="p">[</span><span class="n">i</span><span class="p">]</span> <span class="o">&lt;</span> <span class="n">right</span><span class="p">[</span><span class="n">j</span><span class="p">]:</span>
+<span class="linenos"> 35</span>            <span class="n">merged_list</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">left</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+<span class="linenos"> 36</span>            <span class="n">i</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span>
+<span class="linenos"> 37</span>        <span class="k">else</span><span class="p">:</span>
+<span class="linenos"> 38</span>            <span class="n">merged_list</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">right</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+<span class="linenos"> 39</span>            <span class="n">j</span> <span class="o">=</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span>
+<span class="linenos"> 40</span>        <span class="n">k</span> <span class="o">=</span> <span class="n">k</span> <span class="o">+</span> <span class="mi">1</span>
+<span class="linenos"> 41</span>
+<span class="linenos"> 42</span>    <span class="c1"># When we are done with the while loop above</span>
+<span class="linenos"> 43</span>    <span class="c1"># it is either the case that i &gt; midpoint or</span>
+<span class="linenos"> 44</span>    <span class="c1"># that j &gt; end but not both.</span>
+<span class="linenos"> 45</span>
+<span class="linenos"> 46</span>    <span class="c1"># finish up copying over the 1st list if needed</span>
+<span class="linenos"> 47</span>    <span class="k">while</span> <span class="n">i</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">left</span><span class="p">):</span>
+<span class="linenos"> 48</span>        <span class="n">merged_list</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">left</span><span class="p">[</span><span class="n">i</span><span class="p">]</span>
+<span class="linenos"> 49</span>        <span class="n">i</span> <span class="o">=</span> <span class="n">i</span> <span class="o">+</span> <span class="mi">1</span>
+<span class="linenos"> 50</span>        <span class="n">k</span> <span class="o">=</span> <span class="n">k</span> <span class="o">+</span> <span class="mi">1</span>
+<span class="linenos"> 51</span>
+<span class="linenos"> 52</span>    <span class="c1"># finish up copying over the 2nd list if needed</span>
+<span class="linenos"> 53</span>    <span class="k">while</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="nb">len</span><span class="p">(</span><span class="n">right</span><span class="p">):</span>
+<span class="linenos"> 54</span>        <span class="n">merged_list</span><span class="p">[</span><span class="n">k</span><span class="p">]</span> <span class="o">=</span> <span class="n">right</span><span class="p">[</span><span class="n">j</span><span class="p">]</span>
+<span class="linenos"> 55</span>        <span class="n">j</span> <span class="o">=</span> <span class="n">j</span> <span class="o">+</span> <span class="mi">1</span>
+<span class="linenos"> 56</span>        <span class="n">k</span> <span class="o">=</span> <span class="n">k</span> <span class="o">+</span> <span class="mi">1</span>
+<span class="linenos"> 57</span>
+<span class="linenos"> 58</span>    <span class="k">return</span> <span class="n">merged_list</span>
+<span class="linenos"> 59</span>
+<span class="linenos"> 60</span>
+<span class="linenos"> 61</span><span class="k">def</span> <span class="nf">parallel_merge_sort</span><span class="p">(</span><span class="n">chunk</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">cutoff</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">sorted_chunk_queue</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 62</span>    <span class="sd">&quot;&quot;&quot;Recursive merge sort function. Below `cutoff` items, sort immediately.</span>
+<span class="linenos"> 63</span><span class="sd">    Otherwise, divide the input list `chunk` into two, start two processes</span>
+<span class="linenos"> 64</span><span class="sd">    executing the same function on one of the sublist. Wait for their result in</span>
+<span class="linenos"> 65</span><span class="sd">    the `result_queue`. Merge the two results and put the resulting list into</span>
+<span class="linenos"> 66</span><span class="sd">    `sorted_chunk_queue`.</span>
+<span class="linenos"> 67</span>
+<span class="linenos"> 68</span><span class="sd">    :param chunk: sub-list to recursively sort</span>
+<span class="linenos"> 69</span><span class="sd">    :type chunk: list</span>
+<span class="linenos"> 70</span><span class="sd">    :param cutoff: number of items below which the list will be sorted immediately</span>
+<span class="linenos"> 71</span><span class="sd">    :type cutoff: int</span>
+<span class="linenos"> 72</span><span class="sd">    :param sorted_chunk_queue: Queue to put the merged list into</span>
+<span class="linenos"> 73</span><span class="sd">    :type sorted_chunk_queue: mp.Queue object</span>
+<span class="linenos"> 74</span><span class="sd">    &quot;&quot;&quot;</span>
+<span class="linenos"> 75</span>
+<span class="linenos"> 76</span>    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span> <span class="o">&lt;=</span> <span class="n">cutoff</span><span class="p">:</span>
+<span class="linenos"> 77</span>        <span class="n">chunk</span><span class="o">.</span><span class="n">sort</span><span class="p">()</span>
+<span class="linenos"> 78</span>        <span class="n">sorted_chunk_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span>
+<span class="linenos"> 79</span>
+<span class="linenos"> 80</span>    <span class="k">else</span><span class="p">:</span>
+<span class="linenos"> 81</span>        <span class="n">midpoint</span> <span class="o">=</span> <span class="nb">len</span><span class="p">(</span><span class="n">chunk</span><span class="p">)</span> <span class="o">//</span> <span class="mi">2</span>
+<span class="linenos"> 82</span>
+<span class="linenos"> 83</span>        <span class="n">left_chunk</span> <span class="o">=</span> <span class="n">chunk</span><span class="p">[:</span><span class="n">midpoint</span><span class="p">]</span>
+<span class="linenos"> 84</span>        <span class="n">right_chunk</span> <span class="o">=</span> <span class="n">chunk</span><span class="p">[</span><span class="n">midpoint</span><span class="p">:]</span>
+<span class="linenos"> 85</span>
+<span class="linenos"> 86</span>        <span class="n">result_queue</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+<span class="linenos"> 87</span>
+<span class="linenos"> 88</span>        <span class="n">left_proc</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">parallel_merge_sort</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">left_chunk</span><span class="p">,</span> <span class="n">cutoff</span><span class="p">,</span> <span class="n">result_queue</span><span class="p">))</span>
+<span class="linenos"> 89</span>        <span class="n">right_proc</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">parallel_merge_sort</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">right_chunk</span><span class="p">,</span> <span class="n">cutoff</span><span class="p">,</span> <span class="n">result_queue</span><span class="p">))</span>
+<span class="linenos"> 90</span>
+<span class="linenos"> 91</span>        <span class="n">left_proc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos"> 92</span>        <span class="n">right_proc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos"> 93</span>
+<span class="linenos"> 94</span>        <span class="n">result_a</span> <span class="o">=</span> <span class="n">result_queue</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>  <span class="c1"># blocking</span>
+<span class="linenos"> 95</span>        <span class="n">right_b</span> <span class="o">=</span> <span class="n">result_queue</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="linenos"> 96</span>
+<span class="linenos"> 97</span>        <span class="n">result</span> <span class="o">=</span> <span class="n">merge</span><span class="p">(</span><span class="n">result_a</span><span class="p">,</span> <span class="n">right_b</span><span class="p">)</span>
+<span class="linenos"> 98</span>
+<span class="linenos"> 99</span>        <span class="n">sorted_chunk_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<span class="linenos">100</span>
+<span class="linenos">101</span>
+<span class="linenos">102</span><span class="k">def</span> <span class="nf">merge_sort</span><span class="p">(</span><span class="n">data</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">size</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">cutoff</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="linenos">103</span>    <span class="sd">&quot;&quot;&quot;Kick off merge sort on a slice of `data` of size `size`,</span>
+<span class="linenos">104</span><span class="sd">    measure the run-time and return it.</span>
+<span class="linenos">105</span>
+<span class="linenos">106</span><span class="sd">    :param data: The whole input data</span>
+<span class="linenos">107</span><span class="sd">    :type data: list</span>
+<span class="linenos">108</span><span class="sd">    :param size: the size of the slice to sort</span>
+<span class="linenos">109</span><span class="sd">    :type size: int</span>
+<span class="linenos">110</span><span class="sd">    :param cutoff: when to stop recursing</span>
+<span class="linenos">111</span><span class="sd">    :type cutoff: int</span>
+<span class="linenos">112</span><span class="sd">    :return: runtime in seconds</span>
+<span class="linenos">113</span><span class="sd">    :rtype: int</span>
+<span class="linenos">114</span><span class="sd">    &quot;&quot;&quot;</span>
+<span class="linenos">115</span>
+<span class="linenos">116</span>    <span class="n">the_lst</span> <span class="o">=</span> <span class="n">data</span><span class="p">[:</span><span class="n">size</span><span class="p">]</span>
+<span class="linenos">117</span>
+<span class="linenos">118</span>    <span class="n">start</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+<span class="linenos">119</span>
+<span class="linenos">120</span>    <span class="n">result_queue</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+<span class="linenos">121</span>    <span class="n">parallel_merge_sort</span><span class="p">(</span><span class="n">the_lst</span><span class="p">,</span> <span class="n">cutoff</span><span class="p">,</span> <span class="n">result_queue</span><span class="p">)</span>
+<span class="linenos">122</span>    <span class="n">result</span> <span class="o">=</span> <span class="n">result_queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="linenos">123</span>
+<span class="linenos">124</span>    <span class="n">the_lst</span><span class="o">.</span><span class="n">clear</span><span class="p">()</span>
+<span class="linenos">125</span>    <span class="n">the_lst</span><span class="o">.</span><span class="n">extend</span><span class="p">(</span><span class="n">result</span><span class="p">)</span>
+<span class="linenos">126</span>
+<span class="linenos">127</span>    <span class="n">end</span> <span class="o">=</span> <span class="n">time</span><span class="o">.</span><span class="n">perf_counter</span><span class="p">()</span>
+<span class="linenos">128</span>    <span class="n">delta</span> <span class="o">=</span> <span class="n">end</span> <span class="o">-</span> <span class="n">start</span>
+<span class="linenos">129</span>
+<span class="linenos">130</span>    <span class="k">return</span> <span class="n">delta</span>
+<span class="linenos">131</span>
+<span class="linenos">132</span>
+<span class="linenos">133</span><span class="k">def</span> <span class="nf">find_number_of_processes</span><span class="p">(</span><span class="n">n</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">cutoff</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span><span class="p">:</span>
+<span class="linenos">134</span>    <span class="sd">&quot;&quot;&quot;Return the number of processes started by effectively</span>
+<span class="linenos">135</span><span class="sd">    replaying the recursion.</span>
+<span class="linenos">136</span>
+<span class="linenos">137</span><span class="sd">    :param n: number of elements</span>
+<span class="linenos">138</span><span class="sd">    :type n: int</span>
+<span class="linenos">139</span><span class="sd">    :param cutoff: umber of items below which no additional process is started</span>
+<span class="linenos">140</span><span class="sd">    :type cutoff: int</span>
+<span class="linenos">141</span><span class="sd">    :return: number of started processes</span>
+<span class="linenos">142</span><span class="sd">    :rtype: int</span>
+<span class="linenos">143</span><span class="sd">    &quot;&quot;&quot;</span>
+<span class="linenos">144</span>
+<span class="linenos">145</span>    <span class="n">procs</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="linenos">146</span>
+<span class="linenos">147</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<span class="linenos">148</span>        <span class="n">left</span> <span class="o">=</span> <span class="n">n</span> <span class="o">//</span> <span class="mi">2</span>
+<span class="linenos">149</span>        <span class="n">right</span> <span class="o">=</span> <span class="n">n</span> <span class="o">-</span> <span class="n">left</span>
+<span class="linenos">150</span>        <span class="n">procs</span> <span class="o">=</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">procs</span> <span class="o">+</span> <span class="mi">1</span>
+<span class="linenos">151</span>
+<span class="linenos">152</span>        <span class="k">if</span> <span class="n">left</span> <span class="o">&lt;=</span> <span class="n">cutoff</span><span class="p">:</span>
+<span class="linenos">153</span>            <span class="k">if</span> <span class="n">right</span> <span class="o">&gt;</span> <span class="n">cutoff</span><span class="p">:</span>
+<span class="linenos">154</span>                <span class="n">procs</span> <span class="o">=</span> <span class="n">procs</span> <span class="o">+</span> <span class="mi">2</span> <span class="o">*</span> <span class="n">left</span>
+<span class="linenos">155</span>
+<span class="linenos">156</span>            <span class="k">return</span> <span class="n">procs</span>
+<span class="linenos">157</span>
+<span class="linenos">158</span>        <span class="n">n</span> <span class="o">=</span> <span class="n">n</span> <span class="o">//</span> <span class="mi">2</span>
+<span class="linenos">159</span>
+<span class="linenos">160</span>
+<span class="linenos">161</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">162</span>
+<span class="linenos">163</span>    <span class="k">if</span> <span class="s2">&quot;dragon&quot;</span> <span class="ow">in</span> <span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">:</span>
+<span class="linenos">164</span>        <span class="n">mp</span><span class="o">.</span><span class="n">set_start_method</span><span class="p">(</span><span class="s2">&quot;dragon&quot;</span><span class="p">)</span>
+<span class="linenos">165</span>
+<span class="linenos">166</span>    <span class="n">data</span><span class="p">:</span> <span class="nb">list</span> <span class="o">=</span> <span class="p">[</span><span class="n">random</span><span class="o">.</span><span class="n">randrange</span><span class="p">(</span><span class="n">MAX_SIZE</span><span class="p">)</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">MAX_SIZE</span><span class="p">)]</span>
+<span class="linenos">167</span>
+<span class="linenos">168</span>    <span class="nb">print</span><span class="p">(</span>
+<span class="linenos">169</span>        <span class="sa">f</span><span class="s2">&quot;    List Size    Time (seconds)    Processes    Channels (or Queues) with cutoff=</span><span class="si">{</span><span class="n">CUTOFF</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span>
+<span class="linenos">170</span>        <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="linenos">171</span>    <span class="p">)</span>
+<span class="linenos">172</span>
+<span class="linenos">173</span>    <span class="k">for</span> <span class="n">size</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">MIN_SIZE</span><span class="p">,</span> <span class="n">MAX_SIZE</span> <span class="o">+</span> <span class="mi">1</span><span class="p">,</span> <span class="n">INCREMENT</span><span class="p">):</span>
+<span class="linenos">174</span>
+<span class="linenos">175</span>        <span class="n">delta</span> <span class="o">=</span> <span class="n">merge_sort</span><span class="p">(</span><span class="n">data</span><span class="p">,</span> <span class="n">size</span><span class="p">,</span> <span class="n">CUTOFF</span><span class="p">)</span>
+<span class="linenos">176</span>        <span class="n">proc_count</span> <span class="o">=</span> <span class="n">find_number_of_processes</span><span class="p">(</span><span class="n">size</span><span class="p">,</span> <span class="n">CUTOFF</span><span class="p">)</span>
+<span class="linenos">177</span>        <span class="n">channel_count</span> <span class="o">=</span> <span class="n">proc_count</span> <span class="o">//</span> <span class="mi">2</span>
+<span class="linenos">178</span>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">size</span><span class="si">:</span><span class="s2">13d</span><span class="si">}</span><span class="s2">    </span><span class="si">{</span><span class="n">delta</span><span class="si">:</span><span class="s2">14.6f</span><span class="si">}{</span><span class="n">proc_count</span><span class="si">:</span><span class="s2">12</span><span class="si">}{</span><span class="n">channel_count</span><span class="si">:</span><span class="s2">12</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>The code can be run with <code class="code docutils literal notranslate"><span class="pre">dragon</span> <span class="pre">merge_sort.py</span> <span class="pre">dragon</span></code> using Dragon.</p>
+<p>Example output using standard Multiprocessing</p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="go">&gt;$dragon merge_sort.py dragon</span>
+<span class="linenos"> 2</span><span class="go">List Size    Time (seconds)    Processes    Channels (or Queues) with cutoff=20000</span>
+<span class="linenos"> 3</span><span class="go">   100000          0.696831          15           7</span>
+<span class="linenos"> 4</span><span class="go">   200000          0.934078          31          15</span>
+<span class="linenos"> 5</span><span class="go">   300000          1.016903          31          15</span>
+<span class="linenos"> 6</span><span class="go">   400000          1.372683          63          31</span>
+<span class="linenos"> 7</span><span class="go">   500000          1.462831          63          31</span>
+<span class="linenos"> 8</span><span class="go">   600000          1.575892          63          31</span>
+<span class="linenos"> 9</span><span class="go">   700000          2.307709         127          63</span>
+<span class="linenos">10</span><span class="go">   800000          2.358397         127          63</span>
+<span class="linenos">11</span><span class="go">   900000          2.471223         127          63</span>
+<span class="linenos">12</span><span class="go">  1000000          2.561216         127          63</span>
+<span class="linenos">13</span><span class="go">+++ head proc exited, code 0</span>
+</pre></div>
+</div>
+<p>For comparison, the code can be run with standard Multiprocessing using <code class="code docutils literal notranslate"><span class="pre">python3</span> <span class="pre">merge_sort.py</span></code></p>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="go">&gt;$python3 merge_sort.py</span>
+<span class="linenos"> 2</span><span class="go">List Size    Time (seconds)    Processes    Channels (or Queues) with cutoff=20000</span>
+<span class="linenos"> 3</span><span class="go">   100000          0.143925          15           7</span>
+<span class="linenos"> 4</span><span class="go">   200000          0.232850          31          15</span>
+<span class="linenos"> 5</span><span class="go">   300000          0.319611          31          15</span>
+<span class="linenos"> 6</span><span class="go">   400000          0.461013          63          31</span>
+<span class="linenos"> 7</span><span class="go">   500000          0.562094          63          31</span>
+<span class="linenos"> 8</span><span class="go">   600000          0.669838          63          31</span>
+<span class="linenos"> 9</span><span class="go">   700000          0.784344         127          63</span>
+<span class="linenos">10</span><span class="go">   800000          0.882651         127          63</span>
+<span class="linenos">11</span><span class="go">   900000          0.975826         127          63</span>
+<span class="linenos">12</span><span class="go">  1000000          1.103736         127          63</span>
+</pre></div>
+</div>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="jupyter.html" class="btn btn-neutral float-left" title="Running Jupyter Notebook inside of the Dragon" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="mp_queue_demo.html" class="btn btn-neutral float-right" title="Parallel Producer - Consumer Communication with Queue" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

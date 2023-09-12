@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.mpbridge.reduction &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/clipboard.min.js"></script>
+        <script src="../../_static/copybutton.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="dragon.mpbridge.shared_memory" href="dragon.mpbridge.shared_memory.html" />
+    <link rel="prev" title="dragon.mpbridge.queues" href="dragon.mpbridge.queues.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../ref.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../native/index.html">Dragon Native</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../client/index.html">Dragon GS Client</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../inf/index.html">Dragon Infrastructure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../core/index.html">Dragon Core</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html">MPBridge</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="index.html#python-reference">Python Reference</a><ul class="current">
+<li class="toctree-l4 current"><a class="reference internal" href="dragon.mpbridge.html">dragon.mpbridge</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="index.html#architecture">Architecture</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../ref.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="index.html">MPBridge</a></li>
+          <li class="breadcrumb-item"><a href="dragon.mpbridge.html">dragon.mpbridge</a></li>
+      <li class="breadcrumb-item active">dragon.mpbridge.reduction</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/ref/mpbridge/dragon.mpbridge.reduction.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-dragon.mpbridge.reduction">
+<span id="dragon-mpbridge-reduction"></span><h1>dragon.mpbridge.reduction<a class="headerlink" href="#module-dragon.mpbridge.reduction" title="Permalink to this heading"></a></h1>
+<p>Dragon’s replacements for Multiprocessings ‘reduction’ module.</p>
+<p>To prevent users from sharing file descriptors between child processes, we always 
+raise an exception.</p>
+<p>See the documentation ‘Multiprocessing with Dragon’.</p>
+<dl class="field-list simple">
+<dt class="field-odd">raises NotImplementedError</dt>
+<dd class="field-odd"><p>Always raise this.</p>
+</dd>
+</dl>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.mpbridge.reduction.dragon_DupFd" title="dragon.mpbridge.reduction.dragon_DupFd"><code class="xref py py-obj docutils literal notranslate"><span class="pre">dragon_DupFd</span></code></a>(fd)</p></td>
+<td><p>Duplicates a file descriptor for a child process in Multiprocessing.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.mpbridge.reduction.dragon_recvfds" title="dragon.mpbridge.reduction.dragon_recvfds"><code class="xref py py-obj docutils literal notranslate"><span class="pre">dragon_recvfds</span></code></a>(sock, size)</p></td>
+<td><p>Receive a list of file descriptors from another process via a socket.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.mpbridge.reduction.dragon_sendfds" title="dragon.mpbridge.reduction.dragon_sendfds"><code class="xref py py-obj docutils literal notranslate"><span class="pre">dragon_sendfds</span></code></a>(sock, fds)</p></td>
+<td><p>Send an array of file descriptors to another process via a socket.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.mpbridge.reduction.dragon_DupFd">
+<span class="sig-name descname"><span class="pre">dragon_DupFd</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">fd</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#dragon.mpbridge.reduction.dragon_DupFd" title="Permalink to this definition"></a></dt>
+<dd><p>Duplicates a file descriptor for a child process in Multiprocessing.</p>
+<p>Dragon does not support sharing file descriptors as it does not generalize to multi-node
+or federated systems.</p>
+<p>See the documentation ‘Multiprocessing with Dragon’.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>fd</strong> (<em>int</em>) – the file descriptor of the parent process to be duplicated</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>the duplicated file descriptor</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><strong>NotImplementedError</strong> – Always raises an exception.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.mpbridge.reduction.dragon_sendfds">
+<span class="sig-name descname"><span class="pre">dragon_sendfds</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sock</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">socket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fds</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">array</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.mpbridge.reduction.dragon_sendfds" title="Permalink to this definition"></a></dt>
+<dd><p>Send an array of file descriptors to another process via a socket.</p>
+<p>Dragon does not support this behaviour as it does not generalize to multi-node
+or federated systems.</p>
+<p>See the documentation ‘Multiprocessing with Dragon’.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sock</strong> (<em>socket.socket</em>) – the socket to be used for sending</p></li>
+<li><p><strong>fds</strong> (<em>array.array</em>) – the array of file descriptors</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><strong>NotImplementedError</strong> – Always raises an exception.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.mpbridge.reduction.dragon_recvfds">
+<span class="sig-name descname"><span class="pre">dragon_recvfds</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sock</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">socket</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">size</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">list</span></span></span><a class="headerlink" href="#dragon.mpbridge.reduction.dragon_recvfds" title="Permalink to this definition"></a></dt>
+<dd><p>Receive a list of file descriptors from another process via a socket.</p>
+<p>Dragon does not support this behaviour as it does not generalize to multi-node
+or federated systems.</p>
+<p>See the documentation ‘Multiprocessing with Dragon’.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>sock</strong> (<em>socket.socket</em>) – the socket to be used for sending</p></li>
+<li><p><strong>size</strong> (<em>int</em>) – the number of file descriptor to receive.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><strong>NotImplementedError</strong> – Always raises an exception.</p>
+</dd>
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>the file descriptors</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>list</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="dragon.mpbridge.queues.html" class="btn btn-neutral float-left" title="dragon.mpbridge.queues" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="dragon.mpbridge.shared_memory.html" class="btn btn-neutral float-right" title="dragon.mpbridge.shared_memory" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

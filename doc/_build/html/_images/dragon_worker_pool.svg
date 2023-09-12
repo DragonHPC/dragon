@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="918px" preserveAspectRatio="none" style="width:1264px;height:918px;background:#FFFFFF;" version="1.1" viewBox="0 0 1264 918" width="1264px" zoomAndPan="magnify"><defs/><g><ellipse cx="610.5" cy="16" fill="#000000" rx="10" ry="10" style="stroke:none;stroke-width:1.0;"/><g id="Idle"><rect fill="#F8F8F8" height="78.2031" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="332" x="444.5" y="103"/><line style="stroke:#383838;stroke-width:1.5;" x1="444.5" x2="776.5" y1="129.2969" y2="129.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="24" x="598.5" y="120.9951">Idle</text><ellipse cx="455" cy="140.7656" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="211" x="460.5" y="145.4355">ProcessGroup object instantiated</text><ellipse cx="455" cy="154.7344" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="301" x="460.5" y="159.4043">Manager is running and manages GroupContext</text><ellipse cx="455" cy="168.7031" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="186" x="460.5" y="173.373">No Dragon processes started</text></g><g id="Maintain"><rect fill="#F8F8F8" height="78.2031" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="391" x="124" y="273"/><line style="stroke:#383838;stroke-width:1.5;" x1="124" x2="515" y1="299.2969" y2="299.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="57" x="291" y="290.9951">Maintain</text><ellipse cx="134.5" cy="310.7656" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="360" x="140" y="315.4355">Manager is checking with GS that processes are still alive</text><ellipse cx="134.5" cy="324.7344" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="239" x="140" y="329.4043">Manager restarts processes that died</text><ellipse cx="134.5" cy="338.7031" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="270" x="140" y="343.373">Bad exit codes from processes are ignored</text></g><g id="Running"><rect fill="#F8F8F8" height="78.2031" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="483" x="457" y="428"/><line style="stroke:#383838;stroke-width:1.5;" x1="457" x2="940" y1="454.2969" y2="454.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="58" x="669.5" y="445.9951">Running</text><ellipse cx="467.5" cy="465.7656" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="394" x="473" y="470.4355">Manager waits for running processes to complete on their own</text><ellipse cx="467.5" cy="479.7344" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="452" x="473" y="484.4043">When all processes are done, the manager transitions the group to Idle</text><ellipse cx="467.5" cy="493.7031" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="376" x="473" y="498.373">The ProcessGroup.join call returns once Running is reached</text></g><g id="Stop"><rect fill="#F8F8F8" height="78.2031" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="395" x="7" y="753"/><line style="stroke:#383838;stroke-width:1.5;" x1="7" x2="402" y1="779.2969" y2="779.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="32" x="188.5" y="770.9951">Stop</text><ellipse cx="17.5" cy="790.7656" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="294" x="23" y="795.4355">Manager does not hold GroupContext anymore</text><ellipse cx="17.5" cy="804.7344" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="364" x="23" y="809.4043">Manager process stopped, if no other clients are serviced</text><ellipse cx="17.5" cy="818.7031" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="186" x="23" y="823.373">No Dragon processes started</text></g><g id="Error"><rect fill="#F8F8F8" height="78.2031" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="368" x="402.5" y="598"/><line style="stroke:#383838;stroke-width:1.5;" x1="402.5" x2="770.5" y1="624.2969" y2="624.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="33" x="570" y="615.9951">Error</text><ellipse cx="413" cy="635.7656" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="337" x="418.5" y="640.4355">Something went wrong, someone raised an exception</text><ellipse cx="413" cy="649.7344" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="217" x="418.5" y="654.4043">The group is in an undefined state</text><ellipse cx="413" cy="663.7031" fill="#000000" rx="2.5" ry="2.5" style="stroke:#000000;stroke-width:0.0;"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="270" x="418.5" y="668.373">Some processes may be alive, others dead</text></g><ellipse cx="204.5" cy="902" fill="none" rx="10" ry="10" style="stroke:#000000;stroke-width:1.0;"/><ellipse cx="205" cy="902.5" fill="#000000" rx="6" ry="6" style="stroke:none;stroke-width:1.0;"/><!--MD5=[38f1f8b7f214ff6bc6d4b705f682283d]
+link *start to Idle--><path d="M610.5,26.32 C610.5,41.37 610.5,71.94 610.5,97.74 " fill="none" id="*start-to-Idle" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="610.5,102.83,614.5,93.83,610.5,97.83,606.5,93.83,610.5,102.83" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="126" x="611.5" y="69.0669">ProcessGroup.__init</text><!--MD5=[5bd7ecca6405779c555413637c9ddd2c]
+link Idle to Maintain--><path d="M444.31,157.78 C373.51,167.85 302.21,184.36 280.5,211 C266.93,227.65 273.49,249.59 284.8,268.67 " fill="none" id="Idle-to-Maintain" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="287.44,272.94,286.1005,263.1827,284.8067,268.6896,279.2998,267.3959,287.44,272.94" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="137" x="281.5" y="224.0669">ProcessGroup.start(),</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="93" x="305.5" y="239.1997">restart==True</text><!--MD5=[f2f7187654f46e16ea7eaf6bc11cd6d2]
+link Maintain to Idle--><path d="M383.77,272.97 C398.46,263.61 413.77,253.31 427.5,243 C444.62,230.14 445.59,222.73 463.5,211 C478.76,201 495.74,191.7 512.57,183.39 " fill="none" id="Maintain-to-Idle" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="517.31,181.07,507.4677,181.4294,512.8181,183.2661,510.9814,188.6164,517.31,181.07" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="119" x="464.5" y="231.5669">ProcessGroup.kill()</text><!--MD5=[3417694be1da1206b2440866876cc429]
+link Idle to Running--><path d="M604.83,181.4 C600.34,226.67 600.02,301.96 637.5,351 C658.55,378.54 690.27,352.16 709.5,381 C717.59,393.13 717.87,408.42 715.14,422.68 " fill="none" id="Idle-to-Running" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="714.01,427.88,719.8229,419.9295,715.0674,422.9931,712.0038,418.2376,714.01,427.88" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="137" x="638.5" y="309.0669">ProcessGroup.start(),</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="98" x="660" y="324.1997">restart==False</text><!--MD5=[376ddfb0bd4ef941b61e4745ba13b716]
+link Running to Idle--><path d="M736.17,427.8 C770.12,388.52 810.96,325.8 784.5,273 C765.5,235.09 729.62,205.4 695.35,184.03 " fill="none" id="Running-to-Idle" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="690.75,181.2,696.3185,189.3235,695.0083,183.8205,700.5113,182.5102,690.75,181.2" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="99" x="793.5" y="309.0669">after processes</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="23" x="831.5" y="324.1997">exit</text><!--MD5=[376ddfb0bd4ef941b61e4745ba13b716]
+link Running to Idle--><path d="M811.92,427.98 C846.9,410.31 881.46,385.38 901.5,351 C918.96,321.05 919.87,302.4 901.5,273 C874.36,229.56 828.8,200.53 781.69,181.18 " fill="none" id="Running-to-Idle-1" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="776.83,179.22,783.682,186.2946,781.4674,181.0892,786.6728,178.8747,776.83,179.22" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="119" x="915.5" y="316.5669">ProcessGroup.kill()</text><!--MD5=[b1de985808aabdb7c479a06495d92415]
+link Idle to Stop--><path d="M444.41,157.59 C269.3,177.68 18.5,221.99 18.5,311 C18.5,311 18.5,311 18.5,638 C18.5,688.53 59.95,725.45 103.72,750.35 " fill="none" id="Idle-to-Stop" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="108.23,752.87,102.3248,744.9878,103.8653,750.4309,98.4222,751.9714,108.23,752.87" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="131" x="19.5" y="471.5669">ProcessGroup.stop()</text><!--MD5=[19594d4d91264c25989bfd17ca2f97cb]
+link Running to Running--><path d="M940.24,455.78 C961.61,458.14 975,461.88 975,467 C975,471.68 963.81,475.21 945.57,477.58 " fill="none" id="Running-to-Running" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="940.24,478.22,949.6472,481.1363,945.2055,477.6333,948.7085,473.1916,940.24,478.22" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="125" x="981" y="471.5669">ProcessGroup.join()</text><!--MD5=[6c30bec02d9ac096a18f72b0ee9f7920]
+link Running to Error--><path d="M673.09,506.12 C655.75,532.13 632.77,566.6 614.84,593.49 " fill="none" id="Running-to-Error" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="612.01,597.74,620.3305,592.4703,614.7835,593.5797,613.6741,588.0327,612.01,597.74" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="150" x="653.5" y="549.0669">One or more processes</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="120" x="668.5" y="564.1997">have exit code &gt; 0</text><!--MD5=[cc1db2afbe58d4c0794036e47e6264bc]
+link Maintain to Running--><path d="M329.86,351.02 C336.32,367.82 346.36,386.36 361.5,398 C378.38,410.98 412.03,422.01 451.79,431.16 " fill="none" id="Maintain-to-Running" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="456.67,432.27,448.7848,426.3689,451.7952,431.1582,447.0059,434.1686,456.67,432.27" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="125" x="362.5" y="394.0669">ProcessGroup.join()</text><!--MD5=[cc1db2afbe58d4c0794036e47e6264bc]
+link Maintain to Running--><path d="M419.68,351.07 C443.66,360.54 469.1,370.89 492.5,381 C508.74,388.02 512.28,390.93 528.5,398 C550.13,407.42 573.51,417.1 595.8,426.09 " fill="none" id="Maintain-to-Running-1" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="600.54,427.99,593.6693,420.9336,595.8976,426.133,590.6981,428.3614,600.54,427.99" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="175" x="529.5" y="394.0669">ProcessGroup.kill(SIGTERM)</text><!--MD5=[8ba2ad011ccac83a7dcf596d12dc0b04]
+link Maintain to Stop--><path d="M310.28,351.31 C289.12,439.26 237.18,655.17 214.91,747.73 " fill="none" id="Maintain-to-Stop" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="213.68,752.84,219.6786,745.0287,214.8523,747.9794,211.9016,743.153,213.68,752.84" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="131" x="266.5" y="556.5669">ProcessGroup.stop()</text><!--MD5=[cbc840c912892ac0e22e0caddbf52b41]
+link Maintain to Error--><path d="M323.92,351.16 C330.56,393.31 346.65,461.14 384.5,506 C415.83,543.14 460.49,573.4 499.85,595.35 " fill="none" id="Maintain-to-Error" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="504.62,597.99,498.6755,590.1374,500.2432,595.5727,494.8079,597.1404,504.62,597.99" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="48" x="388" y="464.0669">Internal</text><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="53" x="385.5" y="479.1997">problem</text><!--MD5=[2152162db629b111ca8abeeac6537e55]
+link Stop to *end--><path d="M204.5,831.08 C204.5,850.38 204.5,872.66 204.5,886.78 " fill="none" id="Stop-to-*end" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="204.5,891.95,208.5,882.95,204.5,886.95,200.5,882.95,204.5,891.95" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[21885c3a4cf5f39852cd43c3b2e41936]
+link Error to Stop--><path d="M491.58,676.02 C434.63,698.83 362.26,727.81 304.43,750.97 " fill="none" id="Error-to-Stop" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="299.59,752.91,309.4319,753.2814,304.2324,751.053,306.4607,745.8536,299.59,752.91" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="131" x="408.5" y="719.0669">ProcessGroup.stop()</text><!--MD5=[7d364e43dace9a2f8df92504d800134c]
+link Error to Idle--><path d="M770.6,614.62 C904.75,594.81 1070.13,560.11 1112.5,506 C1179.08,420.96 1121.64,347.55 1043.5,273 C973.27,206 869.86,173.4 781.7,157.59 " fill="none" id="Error-to-Idle" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="776.72,156.71,784.8833,162.22,781.6432,157.583,786.2802,154.3429,776.72,156.71" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="119" x="1137.5" y="394.0669">ProcessGroup.kill()</text><!--MD5=[4c495c11146986ec5d1a521527cd302c]
+@startuml
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+' skinparam linetype ortho
+'skinparam linetype polyline
+' skinparam nodesep 10
+' skinparam ranksep 20
+
+[*] -d-> Idle : ProcessGroup.__init 
+Idle : * ProcessGroup object instantiated
+Idle : * Manager is running and manages GroupContext
+Idle : * No Dragon processes started 
+Idle -d-> Maintain: ProcessGroup.start(), \nrestart==True
+Idle -d-> Running: ProcessGroup.start(), \nrestart==False
+Idle -d-> Stop: ProcessGroup.stop()
+
+Running: * Manager waits for running processes to complete on their own
+Running: * When all processes are done, the manager transitions the group to Idle
+Running: * The ProcessGroup.join call returns once Running is reached
+Running - -> Idle: after processes\nexit
+Running - -> Running: ProcessGroup.join()
+Running - -> Error: One or more processes\nhave exit code > 0
+Running - -> Idle: ProcessGroup.kill()
+
+Maintain: * Manager is checking with GS that processes are still alive
+Maintain: * Manager restarts processes that died
+Maintain: * Bad exit codes from processes are ignored
+Maintain - -> Idle: ProcessGroup.kill()
+Maintain - -> Running: ProcessGroup.join()
+Maintain - -> Stop: ProcessGroup.stop()
+Maintain - -> Running: ProcessGroup.kill(SIGTERM)
+Maintain - -> Error: Internal\nproblem
+
+Stop: * Manager does not hold GroupContext anymore
+Stop: * Manager process stopped, if no other clients are serviced
+Stop: * No Dragon processes started
+Stop - -> [*]
+
+Error: * Something went wrong, someone raised an exception
+Error: * The group is in an undefined state
+Error: * Some processes may be alive, others dead
+Error - -> Stop: ProcessGroup.stop()
+Error - -> Idle: ProcessGroup.kill()
+@enduml
+
+@startuml
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+
+[*] -d-> Idle : ProcessGroup.__init 
+Idle : * ProcessGroup object instantiated
+Idle : * Manager is running and manages GroupContext
+Idle : * No Dragon processes started 
+Idle -d-> Maintain: ProcessGroup.start(), \nrestart==True
+Idle -d-> Running: ProcessGroup.start(), \nrestart==False
+Idle -d-> Stop: ProcessGroup.stop()
+
+Running: * Manager waits for running processes to complete on their own
+Running: * When all processes are done, the manager transitions the group to Idle
+Running: * The ProcessGroup.join call returns once Running is reached
+Running - -> Idle: after processes\nexit
+Running - -> Running: ProcessGroup.join()
+Running - -> Error: One or more processes\nhave exit code > 0
+Running - -> Idle: ProcessGroup.kill()
+
+Maintain: * Manager is checking with GS that processes are still alive
+Maintain: * Manager restarts processes that died
+Maintain: * Bad exit codes from processes are ignored
+Maintain - -> Idle: ProcessGroup.kill()
+Maintain - -> Running: ProcessGroup.join()
+Maintain - -> Stop: ProcessGroup.stop()
+Maintain - -> Running: ProcessGroup.kill(SIGTERM)
+Maintain - -> Error: Internal\nproblem
+
+Stop: * Manager does not hold GroupContext anymore
+Stop: * Manager process stopped, if no other clients are serviced
+Stop: * No Dragon processes started
+Stop - -> [*]
+
+Error: * Something went wrong, someone raised an exception
+Error: * The group is in an undefined state
+Error: * Some processes may be alive, others dead
+Error - -> Stop: ProcessGroup.stop()
+Error - -> Idle: ProcessGroup.kill()
+@enduml
+
+PlantUML version 1.2022.1(Tue Feb 01 18:19:58 GMT 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

@@ -1,0 +1,38 @@
+﻿dragon.infrastructure.process\_desc
+===================================
+
+.. automodule:: dragon.infrastructure.process_desc
+   :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      mk_argmode_from_default
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      ArgMode
+      ProcessDescriptor
+      ProcessOptions
+   
+   
+
+   
+   
+   
+
+
+

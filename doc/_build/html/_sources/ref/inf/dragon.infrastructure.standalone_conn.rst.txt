@@ -1,0 +1,34 @@
+﻿dragon.infrastructure.standalone\_conn
+======================================
+
+.. automodule:: dragon.infrastructure.standalone_conn
+   :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      Pipe
+      destroy_my_channels
+      destroy_standalone
+      get_going
+      get_new_id
+   
+   
+
+   
+   
+   
+
+   
+   
+   
+
+
+

@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BitSet &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/clipboard.min.js"></script>
+        <script src="../../_static/copybutton.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="Hex Dump" href="hexdump.html" />
+    <link rel="prev" title="Heap Manager" href="heapmanager.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../services/services.html">Services</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../components.html">Low-level Components</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="managed_memory.html">Managed Memory</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="managed_memory.html#architecture">Architecture</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="heapmanager.html">Heap Manager</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">BitSet</a></li>
+<li class="toctree-l4"><a class="reference internal" href="hexdump.html">Hex Dump</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="managed_memory.html#cython-adapters">Cython Adapters</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="cy_managedmemory.html"><code class="code docutils literal notranslate"><span class="pre">dragon.managed_memory</span></code> – Managed Memory Cython Adapter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../unordered_map.html">Unordered Map</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../broadcast.html">Broadcast Component</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../components.html">Low-level Components</a></li>
+          <li class="breadcrumb-item"><a href="managed_memory.html">Managed Memory</a></li>
+      <li class="breadcrumb-item active">BitSet</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/components/managed_memory/bitset.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="bitset">
+<h1>BitSet<a class="headerlink" href="#bitset" title="Permalink to this heading"></a></h1>
+<p>The BitSet datatype provides a low-level bit set. It provides the usual insert, delete, and membership
+functions. It has one special purpose function required for heap management that counts the zeros to the right
+starting at a position within the bit set.</p>
+<p>This low-level implementation builds the set inside a pre-defined space that is passed into the initialization
+function for the datatype. The implementation does not dynamically allocate any data. All space for the
+implementation is determined before the datatype is instantiated.</p>
+<section id="an-example-of-using-the-bitset">
+<h2>An Example of Using the BitSet<a class="headerlink" href="#an-example-of-using-the-bitset" title="Permalink to this heading"></a></h2>
+<p>Consider a BitSet of 1024 bits. The following code creates a BitSet, initializes it, and exercises a few of
+the functions.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-number">Listing 32 </span><span class="caption-text"><strong>Figure 1: A BitSet Example</strong></span><a class="headerlink" href="#id1" title="Permalink to this code"></a></div>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kt">size_t</span><span class="w"> </span><span class="n">bitsetsize</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 2</span><span class="n">dragonBitSetErr_t</span><span class="w"> </span><span class="n">brc</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 3</span><span class="n">bitsetsize</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_size</span><span class="p">(</span><span class="mi">1024</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 4</span><span class="kt">void</span><span class="o">*</span><span class="w"> </span><span class="n">bsptr</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">malloc</span><span class="p">(</span><span class="n">bitsetsize</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 5</span><span class="n">dragonBitSet_t</span><span class="w"> </span><span class="n">bset</span><span class="p">;</span><span class="w"></span>
+<span class="linenos"> 6</span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_init</span><span class="p">(</span><span class="n">bsptr</span><span class="p">,</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="mi">1024</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 7</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="linenos"> 8</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="linenos"> 9</span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_set</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">10</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="linenos">11</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">12</span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_set</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="mi">400</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">13</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="linenos">14</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">15</span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_set</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="mi">916</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">16</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="linenos">17</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">18</span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_set</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="mi">42</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">19</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="linenos">20</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">21</span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">bit</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">22</span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_get</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">bit</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">23</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="linenos">24</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">25</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">bit</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="mi">1</span><span class="p">)</span><span class="w"></span>
+<span class="linenos">26</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;That was a one</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">27</span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="mi">42</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">28</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="linenos">29</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">30</span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_dump</span><span class="p">(</span><span class="s">&quot;A Bit Dump&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;&quot;</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">31</span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="linenos">32</span><span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">33</span><span class="kt">size_t</span><span class="w"> </span><span class="n">val</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"></span>
+<span class="linenos">34</span><span class="n">dragon_bitset_zeroes_to_right</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="o">&amp;</span><span class="n">val</span><span class="p">);</span><span class="w"></span>
+<span class="linenos">35</span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;The number is %lu</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">val</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+</div>
+<p>The output from the example program in figure 1 is given in figure 2. The bits in the bitset display bit 0 on
+the left, not the right. In this way, the bits display lexicographically in a dump from left to right for
+easier reading. Bit 0 is the left-most bit in the dump while the last bit is lexicographically the last bit to
+be displayed.</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-number">Listing 33 </span><span class="caption-text"><strong>Figure 2: BitSet Example Output</strong></span><a class="headerlink" href="#id2" title="Permalink to this code"></a></div>
+<div class="highlight-text notranslate"><div class="highlight"><pre><span></span>That was a one
+A Bit Dump
+Size of bitset is 125
+BITS:
+  0000000001123268 80 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+  0000000001123278 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+  ...
+  0000000001123298 00 00 80 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+  00000000011232A8 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+  ...
+  00000000011232D8 00 00 08 00 00 00 00 00 00 00 00 00 00           .............
+The number is 399
+</pre></div>
+</div>
+</div>
+</section>
+<section id="meta-data-and-handles">
+<h2>Meta-Data and Handles<a class="headerlink" href="#meta-data-and-handles" title="Permalink to this heading"></a></h2>
+<p>The meta-data/data structures required to implement the BitSet includes the number of bits in the BitSet as
+the first 8 bytes, followed by enough bytes to hold the rest of the bits. Note that the BitSet is designed to
+always use a multiple of 8 bytes for easy alignment with other data.</p>
+<p>When a BitSet is initialized, a handle to the BitSet is also initialized. The handle is now the user of this
+API accesses the BitSet. The handle structure is given in figure 3.</p>
+<div class="literal-block-wrapper docutils container" id="id3">
+<div class="code-block-caption"><span class="caption-number">Listing 34 </span><span class="caption-text"><strong>Figure 3: BitSet Handle Definition</strong></span><a class="headerlink" href="#id3" title="Permalink to this code"></a></div>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">dragonBitSet_st</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">;</span><span class="w"></span>
+<span class="w">    </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">data</span><span class="p">;</span><span class="w"></span>
+<span class="p">}</span><span class="w"> </span><span class="n">dragonBitSet_t</span><span class="p">;</span><span class="w"></span>
+</pre></div>
+</div>
+</div>
+<p>Initialization copies the <em>size</em> field from the pre-defined memory into the handle. The <em>data</em> pointer points
+into the shared data.</p>
+<p><strong>NOTE</strong>: This implementation of BitSet is not locked and relies on some other locking mechanism for shared
+access between processes or threads.</p>
+</section>
+<section id="performance-of-operations">
+<h2>Performance of Operations<a class="headerlink" href="#performance-of-operations" title="Permalink to this heading"></a></h2>
+<p>The performance of all operations is O(1) in complexity except for the <code class="xref c c-func docutils literal notranslate"><span class="pre">dragon_bitset_zeroes_to_right()</span></code>
+function, which is O(n). However, this function is optimized so that is O(n) where n is the number of words to
+the right of the given bit. Whenever possible, entire words are examined rather than examining a bit at a time
+in the <code class="xref c c-func docutils literal notranslate"><span class="pre">dragon_bitset_zeroes_to_right()</span></code> function, resulting in a very efficient O(n) operation.</p>
+</section>
+<section id="bitset-client-api">
+<h2>BitSet Client API<a class="headerlink" href="#bitset-client-api" title="Permalink to this heading"></a></h2>
+<p>The API for using BitSets defines a shared datatype and a similar per-process handle definition.</p>
+<section id="structures">
+<h3>Structures<a class="headerlink" href="#structures" title="Permalink to this heading"></a></h3>
+<p>The enumeration of error codes and the handle definition are the two structures that are defined for the
+BitSet datatype.</p>
+<section id="error-codes">
+<h4>Error Codes<a class="headerlink" href="#error-codes" title="Permalink to this heading"></a></h4>
+<dl class="c enum">
+<dt class="sig sig-object c" id="c.dragonBitSetErr_t">
+<span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonBitSetErr_t</span></span></span><a class="headerlink" href="#c.dragonBitSetErr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>This is the BitSet error code enumeration. Most API calls return an error code as a result of calling
+them. The possible error codes for specific API calls are given with their function definitions, given
+below.</p>
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.dragonBitSetErr_t.DRAGON_SUCCESS">
+<span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_SUCCESS</span></span></span><a class="headerlink" href="#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Operation completed successfully.</p>
+</dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.dragonBitSetErr_t.DRAGON_BOUNDS_ERROR">
+<span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_BOUNDS_ERROR</span></span></span><a class="headerlink" href="#c.dragonBitSetErr_t.DRAGON_BOUNDS_ERROR" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The requested bit was out of the bounds of the set.</p>
+</dd></dl>
+
+<dl class="c enumerator">
+<dt class="sig sig-object c" id="c.dragonBitSetErr_t.DRAGON_BITSET_NULL_POINTER">
+<span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_BITSET_NULL_POINTER</span></span></span><a class="headerlink" href="#c.dragonBitSetErr_t.DRAGON_BITSET_NULL_POINTER" title="Permalink to this definition"></a><br /></dt>
+<dd><p>A null pointer was provided for the BitSet handle.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+<section id="the-handle">
+<h4>The Handle<a class="headerlink" href="#the-handle" title="Permalink to this heading"></a></h4>
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv414dragonBitSet_t">
+<span id="_CPPv314dragonBitSet_t"></span><span id="_CPPv214dragonBitSet_t"></span><span id="dragonBitSet_t"></span><span class="target" id="structdragonBitSet__t"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonBitSet_t</span></span></span><a class="headerlink" href="#_CPPv414dragonBitSet_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>A bitset handle.</p>
+<p>This structure should not be used directly. All manipulation of the bitset occurs via its API functions. This structure is meant to meant to be used internally within some larger structure and will be self-contained completely within the larger structure. The bitset implementation does no dynamic memory allocation. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N14dragonBitSet_t4sizeE">
+<span id="_CPPv3N14dragonBitSet_t4sizeE"></span><span id="_CPPv2N14dragonBitSet_t4sizeE"></span><span id="dragonBitSet_t::size__s"></span><span class="target" id="structdragonBitSet__t_1a983ad847a910a3d0e4dc682aec78d6ad"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">size</span></span></span><a class="headerlink" href="#_CPPv4N14dragonBitSet_t4sizeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>For internal use only </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N14dragonBitSet_t4dataE">
+<span id="_CPPv3N14dragonBitSet_t4dataE"></span><span id="_CPPv2N14dragonBitSet_t4dataE"></span><span id="dragonBitSet_t::data__cP"></span><span class="target" id="structdragonBitSet__t_1ab8b7704bef14918d142f37d52afb504b"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">data</span></span></span><a class="headerlink" href="#_CPPv4N14dragonBitSet_t4dataE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>For internal use only </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+</section>
+</section>
+<section id="api">
+<h3>API<a class="headerlink" href="#api" title="Permalink to this heading"></a></h3>
+<p>These are the user-facing API calls for bit sets.</p>
+<section id="life-cycle">
+<h4>Life-Cycle<a class="headerlink" href="#life-cycle" title="Permalink to this heading"></a></h4>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv418dragon_bitset_size6size_t">
+<span id="_CPPv318dragon_bitset_size6size_t"></span><span id="_CPPv218dragon_bitset_size6size_t"></span><span id="dragon_bitset_size__s"></span><span class="target" id="__bitset_8h_1a3145be09564be7e21bca622b2d66d17f"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_size</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">num_bits</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv418dragon_bitset_size6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Compute the number of bytes needed to hold this bitset. </p>
+<p>This API provides a bitset implementation that resides in a pre-allocated blob of memory. This datatype does not do any dynamic allocation of memory on its own. The bitset is a set of integers ranging from to to num_bits-1.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>num_bits</strong> – The number of integers that may be in the set. Potential members of the set range from 0 to num_bits-1. </p></li>
+<li><p><strong>size</strong> – The returned size required for this bitset. The user allocates a blob of this size and then passes a pointer to it in on the init function call before using any other functions in this API. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> The set was a null-pointer. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="kt">size_t</span><span class="w"> </span><span class="n">bitsetsize</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_size</span><span class="p">(</span><span class="mi">1024</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv426dragon_bitset_get_num_bitsPK14dragonBitSet_tP6size_t">
+<span id="_CPPv326dragon_bitset_get_num_bitsPK14dragonBitSet_tP6size_t"></span><span id="_CPPv226dragon_bitset_get_num_bitsPK14dragonBitSet_tP6size_t"></span><span id="dragon_bitset_get_num_bits__dragonBitSet_tCP.sP"></span><span class="target" id="__bitset_8h_1af164a6ad5497ee743a76ba7a29f6d378"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_get_num_bits</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">num_bits</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv426dragon_bitset_get_num_bitsPK14dragonBitSet_tP6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Return the number of bits contained in this set. </p>
+<p>Returns the number of bits (i.e. One more than maximum integer that can be contained in the set) in the set.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>set</strong> – A pointer to a bitset handle. </p></li>
+<li><p><strong>num_bits</strong> – A pointer to the size_t variable that will hold the number of bits this set contains. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> The set or num_bits was a null-pointer. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">dragonError_t</span><span class="w"> </span><span class="n">brc</span><span class="p">;</span><span class="w"></span>
+<span class="n">dragonBitSet_t</span><span class="w"> </span><span class="n">bset</span><span class="p">;</span><span class="w"></span>
+<span class="kt">size_t</span><span class="w"> </span><span class="n">num_bits</span><span class="p">;</span><span class="w"></span>
+<span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_init</span><span class="p">(</span><span class="n">bsptr</span><span class="p">,</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="mi">1024</span><span class="p">);</span><span class="w"></span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+<span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_get_num_bits</span><span class="p">(</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">num_bits</span><span class="p">);</span><span class="w"></span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+<span class="n">printf</span><span class="p">(</span><span class="s">&quot;Number of bits was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="w"> </span><span class="n">num_bits</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv418dragon_bitset_initPvP14dragonBitSet_tK6size_t">
+<span id="_CPPv318dragon_bitset_initPvP14dragonBitSet_tK6size_t"></span><span id="_CPPv218dragon_bitset_initPvP14dragonBitSet_tK6size_t"></span><span id="dragon_bitset_init__voidP.dragonBitSet_tP.sC"></span><span class="target" id="__bitset_8h_1a77d624dcbef6297e1d27b1a67a1bc86f"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_init</span></span></span><span class="sig-paren">(</span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">ptr</span></span>, <a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">num_bits</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv418dragon_bitset_initPvP14dragonBitSet_tK6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Initialize a bitset from a blob of memory. </p>
+<p>This API provides a bitset implementation that resides in a pre-allocated blob of memory. This datatype does not do any dynamic allocation of memory on its own. The bitset is a set of integers ranging from to to num_bits-1.</p>
+<p>A bitset must be initialized by calling init before any other API calls can be made except the size function which should be called first to determine required size of the blob to hold this bitset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ptr</strong> – A pointer to the blob of memory where the bitset will reside. </p></li>
+<li><p><strong>set</strong> – A pointer to a handle to be initialized to use this bitset. The handle is used on subsequent calls to the API. </p></li>
+<li><p><strong>num_bits</strong> – The number of bits for this bitset. This must be the same number of bits that was provided on the previous call to the size function in this API. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> The set or ptr was a null-pointer. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">dragonBitSet_t</span><span class="w"> </span><span class="n">bset</span><span class="p">;</span><span class="w"></span>
+<span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_init</span><span class="p">(</span><span class="n">bsptr</span><span class="p">,</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="mi">1024</span><span class="p">);</span><span class="w"></span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv421dragon_bitset_destroyP14dragonBitSet_t">
+<span id="_CPPv321dragon_bitset_destroyP14dragonBitSet_t"></span><span id="_CPPv221dragon_bitset_destroyP14dragonBitSet_t"></span><span id="dragon_bitset_destroy__dragonBitSet_tP"></span><span class="target" id="__bitset_8h_1ac86479365eb5f4deec53a408b36bf104"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_destroy</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv421dragon_bitset_destroyP14dragonBitSet_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Destroy a bitset. </p>
+<p>Once done with a bitset, destroy should be called to free resources use by the bitset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>set</strong> – A pointer to a bitset handle. </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> The set was a null-pointer. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">dragonBitSet_t</span><span class="w"> </span><span class="n">set</span><span class="p">;</span><span class="w"></span>
+<span class="c1">// initialize and use the bitset. Then finally destroy it.</span>
+<span class="n">dragon_bitset_destroy</span><span class="p">(</span><span class="o">&amp;</span><span class="n">set</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv420dragon_bitset_attachPvP14dragonBitSet_t">
+<span id="_CPPv320dragon_bitset_attachPvP14dragonBitSet_t"></span><span id="_CPPv220dragon_bitset_attachPvP14dragonBitSet_t"></span><span id="dragon_bitset_attach__voidP.dragonBitSet_tP"></span><span class="target" id="__bitset_8h_1acd6e30910a5d94aa66f24deb250c61c5"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_attach</span></span></span><span class="sig-paren">(</span><span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">ptr</span></span>, <a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv420dragon_bitset_attachPvP14dragonBitSet_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Attach to a previously initialized bitset. </p>
+<p>Once initialized, a previously initialized heap may be attached. However, bitsets are not multi-threaded/multi-processing safe. Sychronization of API calls must be done separately.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ptr</strong> – The pointer to the blob of previously initialized bitset. </p></li>
+<li><p><strong>set</strong> – A pointer to a handle that will be initialized by this call. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> The set or ptr was a null-pointer. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">dragonBitSet_t</span><span class="w"> </span><span class="n">bset</span><span class="p">;</span><span class="w"></span>
+<span class="c1">//bsptr points at the previously initialized BitSet space.</span>
+<span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_attach</span><span class="p">(</span><span class="n">bsptr</span><span class="p">,</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">);</span><span class="w"></span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="c1">// handle it</span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv420dragon_bitset_detachP14dragonBitSet_t">
+<span id="_CPPv320dragon_bitset_detachP14dragonBitSet_t"></span><span id="_CPPv220dragon_bitset_detachP14dragonBitSet_t"></span><span id="dragon_bitset_detach__dragonBitSet_tP"></span><span class="target" id="__bitset_8h_1a7fe8ceeda16f768308d8b2274944fdcf"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_detach</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv420dragon_bitset_detachP14dragonBitSet_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Detach from an attached bitset. </p>
+<p>If attached was called to attach a bitset, then detach should be called when access to the bitset is no longer required.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>set</strong> – A pointer to a bitset handle. </p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> The set was a null-pointer. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">dragonBitSet_t</span><span class="w"> </span><span class="n">set2</span><span class="p">;</span><span class="w"> </span><span class="c1">// attach this space to a BitSet.</span>
+<span class="c1">// Then later...</span>
+<span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_detach</span><span class="p">(</span><span class="o">&amp;</span><span class="n">set2</span><span class="p">);</span><span class="w"></span>
+
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
+<span class="w">    </span><span class="c1">// handle it</span>
+<span class="p">}</span><span class="w"></span>
+</pre></div>
+</div>
+</section>
+<section id="services">
+<h4>Services<a class="headerlink" href="#services" title="Permalink to this heading"></a></h4>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv417dragon_bitset_setP14dragonBitSet_tK6size_t">
+<span id="_CPPv317dragon_bitset_setP14dragonBitSet_tK6size_t"></span><span id="_CPPv217dragon_bitset_setP14dragonBitSet_tK6size_t"></span><span id="dragon_bitset_set__dragonBitSet_tP.sC"></span><span class="target" id="__bitset_8h_1ab9c460d13ae9b71b9cb2ec2c1403dba6"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_set</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">val_index</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv417dragon_bitset_setP14dragonBitSet_tK6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Set a bit to 1 in the bitset. </p>
+<p>Turn on a bit in the bitset regardless of its previous value. This makes the integer given by val_index a member of the set.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>set</strong> – A pointer to a bitset handle. </p></li>
+<li><p><strong>val_index</strong> – The integer to add to the set. The val_index value must be between 0 and the number of bits in the bitset minus one. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> The set was a null-pointer.</p></li>
+<li><p><strong>DRAGON_BITSET_BOUNDS_ERROR</strong> The val_index was too big for the given set. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_set</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w"></span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv419dragon_bitset_resetP14dragonBitSet_tK6size_t">
+<span id="_CPPv319dragon_bitset_resetP14dragonBitSet_tK6size_t"></span><span id="_CPPv219dragon_bitset_resetP14dragonBitSet_tK6size_t"></span><span id="dragon_bitset_reset__dragonBitSet_tP.sC"></span><span class="target" id="__bitset_8h_1ac54f578e648b8544ef03822ac45ef3b0"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_reset</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">val_index</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv419dragon_bitset_resetP14dragonBitSet_tK6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Reset a bit to 0 in the bitset. </p>
+<p>Turn off a bit in the bitset regardless of its previous value. This means the integer given by val_index is no longer a member of the bitset.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>set</strong> – A pointer to a bitset handle. </p></li>
+<li><p><strong>val_index</strong> – The integer to remove from the set. The val_index value must be between 0 and the number of bits in the bitset minus one. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> The set was a null-pointer.</p></li>
+<li><p><strong>DRAGON_BITSET_BOUNDS_ERROR</strong> The val_index was too big for the given set. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_reset</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="mi">0</span><span class="p">);</span><span class="w"></span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv417dragon_bitset_getPK14dragonBitSet_tK6size_tPh">
+<span id="_CPPv317dragon_bitset_getPK14dragonBitSet_tK6size_tPh"></span><span id="_CPPv217dragon_bitset_getPK14dragonBitSet_tK6size_tPh"></span><span id="dragon_bitset_get__dragonBitSet_tCP.sC.unsigned-cP"></span><span class="target" id="__bitset_8h_1afd76c18642c2b7c2250c345559faa8cc"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_get</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">val_index</span></span>, <span class="kt"><span class="pre">unsigned</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">val</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv417dragon_bitset_getPK14dragonBitSet_tK6size_tPh" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get a bit from the bitset. </p>
+<p>Retrieve a bit from the bitset. This is a membership test for the set.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>set</strong> – A pointer to a bitset handle. </p></li>
+<li><p><strong>val_index</strong> – The integer to test for membership. The integer must be between 0 and the number of bits in the bitset minus one. </p></li>
+<li><p><strong>val</strong> – A pointer to an unsigned byte that will hold the result. It will be 0 or 1. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> Either the set or the val was a null-pointer.</p></li>
+<li><p><strong>DRAGON_BITSET_BOUNDS_ERROR</strong> The val_index was too big for the given set. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="kt">unsigned</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="n">bit</span><span class="p">;</span><span class="w"></span>
+<span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_get</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="w"> </span><span class="mi">42</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">bit</span><span class="p">);</span><span class="w"></span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv429dragon_bitset_zeroes_to_rightPK14dragonBitSet_tK6size_tP6size_t">
+<span id="_CPPv329dragon_bitset_zeroes_to_rightPK14dragonBitSet_tK6size_tP6size_t"></span><span id="_CPPv229dragon_bitset_zeroes_to_rightPK14dragonBitSet_tK6size_tP6size_t"></span><span id="dragon_bitset_zeroes_to_right__dragonBitSet_tCP.sC.sP"></span><span class="target" id="__bitset_8h_1af9c9e1ca4793f8a24570bd60e40b44cf"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_zeroes_to_right</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">val_index</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">val</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv429dragon_bitset_zeroes_to_rightPK14dragonBitSet_tK6size_tP6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Compute the number of zero bits to the right of a member of the bitset. </p>
+<p>This is a special purpose function (primarily for the heap manager) that counts the zeroes to the right of a member of the set.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>set</strong> – A pointer to a bitset handle. </p></li>
+<li><p><strong>val_index</strong> – The integer member of the set. Whether this integer is a member of the set or not is irrelevant to this function call. It will count the zeroes to the right of any integer in the acceptable range of integers for the bitset. </p></li>
+<li><p><strong>val</strong> – A pointer to an unsigned integer that will hold the number of zeroes to the right of val_index. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> If either the set or the val pointer were passed in as NULL.</p></li>
+<li><p><strong>DRAGON_BITSET_BOUNDS_ERROR</strong> If val_index was too large for the given set. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="kt">size_t</span><span class="w"> </span><span class="n">val</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w"></span>
+<span class="n">brc</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_zeroes_to_right</span><span class="p">(</span><span class="o">&amp;</span><span class="n">bset</span><span class="p">,</span><span class="mi">0</span><span class="p">,</span><span class="o">&amp;</span><span class="n">val</span><span class="p">);</span><span class="w"></span>
+<span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">brc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">DRAGON_SUCCESS</span><span class="p">)</span><span class="w"></span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;Error Code was %u</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">brc</span><span class="p">);</span><span class="w"></span>
+<span class="k">else</span><span class="w"></span>
+<span class="w">    </span><span class="n">printf</span><span class="p">(</span><span class="s">&quot;The number is %lu</span><span class="se">\n</span><span class="s">&quot;</span><span class="p">,</span><span class="n">val</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+</section>
+<section id="status-debug">
+<h4>Status/Debug<a class="headerlink" href="#status-debug" title="Permalink to this heading"></a></h4>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv418dragon_bitset_dumpPKcPK14dragonBitSet_tPKc">
+<span id="_CPPv318dragon_bitset_dumpPKcPK14dragonBitSet_tPKc"></span><span id="_CPPv218dragon_bitset_dumpPKcPK14dragonBitSet_tPKc"></span><span id="dragon_bitset_dump__cCP.dragonBitSet_tCP.cCP"></span><span class="target" id="__bitset_8h_1a933b0aea17946d9f1c404b18967bb966"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_dump</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">title</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">indent</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv418dragon_bitset_dumpPKcPK14dragonBitSet_tPKc" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Dump a bitset to standard output for debug purposes. </p>
+<p>This prints the contents of a bitset as a hex dump to standard output.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>title</strong> – A null-terminated string to identify the dump in the output. </p></li>
+<li><p><strong>set</strong> – A pointer to a bitset handle. </p></li>
+<li><p><strong>indent</strong> – A null-terminated string (usually spaces) that prefixes each line of output in the dump. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">dragon_bitset_dump</span><span class="p">(</span><span class="s">&quot;Block Set&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">set</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;  &quot;</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+<hr class="docutils" />
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv424dragon_bitset_dump_to_fdP4FILEPKcPK14dragonBitSet_tPKc">
+<span id="_CPPv324dragon_bitset_dump_to_fdP4FILEPKcPK14dragonBitSet_tPKc"></span><span id="_CPPv224dragon_bitset_dump_to_fdP4FILEPKcPK14dragonBitSet_tPKc"></span><span id="dragon_bitset_dump_to_fd__FILEP.cCP.dragonBitSet_tCP.cCP"></span><span class="target" id="__bitset_8h_1acdea2d70be11f126c16feb3e9b2a5504"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_bitset_dump_to_fd</span></span></span><span class="sig-paren">(</span><span class="n"><span class="pre">FILE</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">fd</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">title</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv414dragonBitSet_t" title="dragonBitSet_t"><span class="n"><span class="pre">dragonBitSet_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">set</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">indent</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv424dragon_bitset_dump_to_fdP4FILEPKcPK14dragonBitSet_tPKc" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Dump a bitset to a file descriptor for debug purposes. </p>
+<p>Print a dump to the file <em>fd</em>. Exactly the same of :c:func:<code class="docutils literal notranslate"><span class="pre">dragon_bitset_dump</span></code> except you can specify an open, writable file.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>fd</strong> – An open, writable file descriptor. </p></li>
+<li><p><strong>title</strong> – A null-terminated string to identify the dump in the output. </p></li>
+<li><p><strong>set</strong> – A pointer to a bitset handle. </p></li>
+<li><p><strong>indent</strong> – A null-terminated string (usually spaces) that prefixes each line of output in the dump. </p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>DRAGON_SUCCESS</strong> It did its job.</p></li>
+<li><p><strong>DRAGON_BITSET_NULL_POINTER</strong> Indicates an incorrect call. The fd, title, set, and indent must all be non-null. A bad, non-null, pointer would result in a segfault. </p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<p>Print a dump of the BitSet structure with the given <em>title</em> to standard output. The output looks similar to
+this.</p>
+<blockquote>
+<div><div class="highlight-text notranslate"><div class="highlight"><pre><span></span>*   Block Set
+*    Size of bitset is 131072
+*    BITS:
+*    00007F5218663068 80 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+*    00007F5218663078 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+*    ...
+*    00007F5218683058 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................
+</pre></div>
+</div>
+<div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="n">dragon_bitset_dump_to_fd</span><span class="p">(</span><span class="n">logfile</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;Block Set&quot;</span><span class="p">,</span><span class="w"> </span><span class="o">&amp;</span><span class="n">set</span><span class="p">,</span><span class="w"> </span><span class="s">&quot;  &quot;</span><span class="p">);</span><span class="w"></span>
+</pre></div>
+</div>
+</div></blockquote>
+</section>
+</section>
+</section>
+<section id="python-interface">
+<h2>Python Interface<a class="headerlink" href="#python-interface" title="Permalink to this heading"></a></h2>
+<p>This provides the Python interface to BitSet.</p>
+<section id="init">
+<h3>init<a class="headerlink" href="#init" title="Permalink to this heading"></a></h3>
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.heapmanager.BitSet.init">
+<span class="sig-name descname"><span class="pre">init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">const</span> <span class="pre">size_t</span> <span class="pre">num_bits</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">unsigned</span> <span class="pre">char</span> <span class="pre">[:]</span> <span class="pre">space</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.heapmanager.BitSet.init" title="Permalink to this definition"></a></dt>
+<dd><p>Initialize the space with a BitSet of size num_bits.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>num_bits</strong> – The size of the BitSet.</p></li>
+<li><p><strong>space</strong> – The space big enough to hold the BitSet.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The BitSet object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<p><strong>Example Usage</strong></p>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="c1"># example using BitSet.init</span>
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="heapmanager.html" class="btn btn-neutral float-left" title="Heap Manager" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="hexdump.html" class="btn btn-neutral float-right" title="Hex Dump" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

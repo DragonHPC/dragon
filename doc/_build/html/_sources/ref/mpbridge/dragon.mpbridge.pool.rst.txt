@@ -1,0 +1,42 @@
+dragon.mpbridge.pool
+====================
+
+.. automodule:: dragon.mpbridge.pool
+   :members:
+
+   
+   
+   
+
+   
+   
+   .. rubric:: Functions
+
+   .. autosummary::
+   
+      Pool
+      dragon_terminate_pool
+      starmapstar
+   
+   
+
+   
+   
+   .. rubric:: Classes
+
+   .. autosummary::
+   
+      BaseImplPool
+      DragonPool
+      DragonPoolPatched
+      WrappedPG
+      WrappedResult
+   
+   
+
+   
+   
+   
+
+
+

@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.infrastructure.process_desc &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/clipboard.min.js"></script>
+        <script src="../../_static/copybutton.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a></li>
+      <li class="breadcrumb-item active">dragon.infrastructure.process_desc</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/ref/inf/dragon.infrastructure.process_desc.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-dragon.infrastructure.process_desc">
+<span id="dragon-infrastructure-process-desc"></span><h1>dragon.infrastructure.process_desc<a class="headerlink" href="#module-dragon.infrastructure.process_desc" title="Permalink to this heading"></a></h1>
+<p>A class that uniquely defines properties of a managed Process for infrastructure communication.</p>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.infrastructure.process_desc.mk_argmode_from_default" title="dragon.infrastructure.process_desc.mk_argmode_from_default"><code class="xref py py-obj docutils literal notranslate"><span class="pre">mk_argmode_from_default</span></code></a>(mode)</p></td>
+<td><p>Populate and return the mode of arguments as per the ArgMode</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.infrastructure.process_desc.ArgMode" title="dragon.infrastructure.process_desc.ArgMode"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ArgMode</span></code></a></p></td>
+<td><p>Enum for mode of delivering the arguments, either process will be using the channel (or) to deliver the argdata directly</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.infrastructure.process_desc.ProcessDescriptor" title="dragon.infrastructure.process_desc.ProcessDescriptor"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ProcessDescriptor</span></code></a></p></td>
+<td><p>Globally available description of a managed process.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.infrastructure.process_desc.ProcessOptions" title="dragon.infrastructure.process_desc.ProcessOptions"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ProcessOptions</span></code></a></p></td>
+<td><p>Open type, placeholder, for options on how to launch a process</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ArgMode">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ArgMode</span></span><a class="headerlink" href="#dragon.infrastructure.process_desc.ArgMode" title="Permalink to this definition"></a></dt>
+<dd><p>Enum for mode of delivering the arguments, either process will be using the channel (or)
+to deliver the argdata directly</p>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.mk_argmode_from_default">
+<span class="sig-name descname"><span class="pre">mk_argmode_from_default</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mode</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.process_desc.mk_argmode_from_default" title="Permalink to this definition"></a></dt>
+<dd><p>Populate and return the mode of arguments as per the ArgMode</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Mode of delivering the arguments for the launching process</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>ArgMode Enum</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ProcessDescriptor">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ProcessDescriptor</span></span><a class="headerlink" href="#dragon.infrastructure.process_desc.ProcessDescriptor" title="Permalink to this definition"></a></dt>
+<dd><p>Globally available description of a managed process.</p>
+<p>Attributes:</p>
+<blockquote>
+<div><dl class="simple">
+<dt>ecode<span class="classifier">int or None</span></dt><dd><p>exit code of the process, or None if still running</p>
+</dd>
+<dt>node<span class="classifier">nonnegative int</span></dt><dd><p>which node of the allocation this process is/was on</p>
+</dd>
+<dt>name<span class="classifier">str</span></dt><dd><p>user assigned unique name of the process</p>
+</dd>
+<dt>p_uid<span class="classifier">nonnegative int</span></dt><dd><p>unique process id</p>
+</dd>
+<dt>p_p_uid<span class="classifier">nonnegative int</span></dt><dd><p>parent process unique id</p>
+</dd>
+</dl>
+<p>live_children : set of nonnegative int</p>
+<dl class="simple">
+<dt>gs_ret_cuid<span class="classifier">nonnegative int</span></dt><dd><p>c_uid of the global services return channel</p>
+</dd>
+<dt>shep_ret_cuid<span class="classifier">nonnegative int</span></dt><dd><p>c_uid of the local shepherd return channel (currently not used)</p>
+</dd>
+<dt>state<span class="classifier">ProcessDescriptor.State enum member</span></dt><dd><p>current run state of this process</p>
+</dd>
+</dl>
+<p>stdin_sdesc : a serialized channel where the stdin of the process can be provided.</p>
+<p>stdout_sdesc : a serialized channel where the stdout of the process is written.</p>
+<p>stderr_sdesc : a serialized channel where the stderr of the process is written.</p>
+</div></blockquote>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ProcessDescriptor.State">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">State</span></span><a class="headerlink" href="#dragon.infrastructure.process_desc.ProcessDescriptor.State" title="Permalink to this definition"></a></dt>
+<dd><p>Current state of the process.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ProcessDescriptor.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="o"><span class="pre">*</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_uid</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">p_p_uid</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">live_children</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">gs_ret_cuid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">shep_ret_cuid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">state</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">ecode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdin_sdesc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdout_sdesc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stderr_sdesc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.process_desc.ProcessDescriptor.__init__" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ProcessDescriptor.get_sdict">
+<span class="sig-name descname"><span class="pre">get_sdict</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.process_desc.ProcessDescriptor.get_sdict" title="Permalink to this definition"></a></dt>
+<dd><p>Collect the entire information of the process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>A dictionary with all key-value pairs of the available information of the process.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>Dictionary</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ProcessDescriptor.from_sdict">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_sdict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sdict</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.process_desc.ProcessDescriptor.from_sdict" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the descriptor of the launched process.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ProcessOptions">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ProcessOptions</span></span><a class="headerlink" href="#dragon.infrastructure.process_desc.ProcessOptions" title="Permalink to this definition"></a></dt>
+<dd><p>Open type, placeholder, for options on how to launch a process</p>
+<p>Attributes:</p>
+<dl class="simple">
+<dt>argdata</dt><dd><p>argument data, bytes to deliver to the launching process</p>
+</dd>
+<dt>mode</dt><dd><p>mode of delivering the arguments, either process will be using the channel (or)
+to deliver the argdata directly</p>
+</dd>
+<dt>make_inf_channels</dt><dd><p>bool, default False, whether process should start making the infrastructure channels
+when they are needed, or just start the process directly.</p>
+</dd>
+</dl>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ProcessOptions.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">make_inf_channels</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mode</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">argdata</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.process_desc.ProcessOptions.__init__" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ProcessOptions.get_sdict">
+<span class="sig-name descname"><span class="pre">get_sdict</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.process_desc.ProcessOptions.get_sdict" title="Permalink to this definition"></a></dt>
+<dd><p>Collect the different attributes/options of launching the process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>A dictionary with key-value pairs of the process options.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>Dictionary</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.process_desc.ProcessOptions.from_sdict">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_sdict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sdict</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.process_desc.ProcessOptions.from_sdict" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the options of the launched process.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

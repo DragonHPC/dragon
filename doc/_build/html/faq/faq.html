@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FAQ &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="API Reference" href="../ref/ref.html" />
+    <link rel="prev" title="SciPy Image Convolution Benchmark" href="../benchmarks/scipy_image.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">FAQ</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#how-do-i-convert-my-python-multiprocessing-program-to-dragon">How do I convert my Python Multiprocessing program to Dragon ?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-do-i-debug-my-dragon-program">How do I debug my Dragon program ?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-can-i-change-the-size-of-the-default-memory-pool">How can I change the size of the default memory pool ?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-do-i-find-the-p-uid-of-the-current-process">How do I find the p_uid of the current process ?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#how-do-i-enable-the-tcp-rdma-based-transport">How do I enable the (TCP|RDMA)-based transport ?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#where-can-i-find-the-environment-variables-that-control-the-dragon-run-time">Where can I find the Environment Variables that control the Dragon Run-time ?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#what-do-i-do-if-i-need-to-clean-up-any-dragon-processes-or-experiments-that-did-not-complete-properly">What do I do if I need to clean up any Dragon processes or experiments that did not complete properly?</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#can-i-use-dragon-to-manage-mpi-jobs">Can I use Dragon to manage MPI jobs?</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+      <li class="breadcrumb-item active">FAQ</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/faq/faq.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="faq">
+<h1>FAQ<a class="headerlink" href="#faq" title="Permalink to this heading"></a></h1>
+<section id="how-do-i-convert-my-python-multiprocessing-program-to-dragon">
+<h2>How do I convert my Python Multiprocessing program to Dragon ?<a class="headerlink" href="#how-do-i-convert-my-python-multiprocessing-program-to-dragon" title="Permalink to this heading"></a></h2>
+<p>See <a class="reference internal" href="../pguide/dragon_multiprocessing.html#multiprocessing-with-dragon"><span class="std std-ref">Multiprocessing with Dragon</span></a>.</p>
+</section>
+<section id="how-do-i-debug-my-dragon-program">
+<h2>How do I debug my Dragon program ?<a class="headerlink" href="#how-do-i-debug-my-dragon-program" title="Permalink to this heading"></a></h2>
+<p>Set the environment variable <code class="code docutils literal notranslate"><span class="pre">DRAGON_DEBUG=True</span></code>. The Dragon logs will show
+debug output from all services alongside your program.</p>
+</section>
+<section id="how-can-i-change-the-size-of-the-default-memory-pool">
+<h2>How can I change the size of the default memory pool ?<a class="headerlink" href="#how-can-i-change-the-size-of-the-default-memory-pool" title="Permalink to this heading"></a></h2>
+<p>The size of the default memory pool in bytes is controlled by the environment
+variable <code class="code docutils literal notranslate"><span class="pre">DEFAULT_SEG_SZ</span></code> during startup. The default is <code class="code docutils literal notranslate"><span class="pre">2^32</span></code> or four GBytes
+per <a class="reference internal" href="../uguide/glossary.html#term-Node"><span class="xref std std-term">node</span></a>. If we want to increase the memory to eight GBytes, we set the
+variable as follows in bash: <code class="code docutils literal notranslate"><span class="pre">export</span> <span class="pre">DRAGON_DEFAULT_SEG_SZ=8589934592</span></code>.</p>
+</section>
+<section id="how-do-i-find-the-p-uid-of-the-current-process">
+<h2>How do I find the p_uid of the current process ?<a class="headerlink" href="#how-do-i-find-the-p-uid-of-the-current-process" title="Permalink to this heading"></a></h2>
+<ul class="simple">
+<li><p>Python Multiprocessing: <code class="code docutils literal notranslate"><span class="pre">multiprocessing.current_process().pid</span></code>. Note that Dragon replaces the OS <code class="code docutils literal notranslate"><span class="pre">pid</span></code> with the <code class="code docutils literal notranslate"><span class="pre">p_uid</span></code>, as the <code class="code docutils literal notranslate"><span class="pre">pid</span></code> is not unique on a <a class="reference internal" href="../uguide/glossary.html#term-Distributed-System"><span class="xref std std-term">Distributed System</span></a>.</p></li>
+<li><p>Dragon Native: <code class="code docutils literal notranslate"><span class="pre">dragon.native.process.current()</span></code></p></li>
+<li><p>Dragon Client &amp; Infrastructure: <code class="code docutils literal notranslate"><span class="pre">dragon.infrastructure.parameters.this_process.my_puid</span></code></p></li>
+</ul>
+</section>
+<section id="how-do-i-enable-the-tcp-rdma-based-transport">
+<span id="transport-faq"></span><h2>How do I enable the (TCP|RDMA)-based transport ?<a class="headerlink" href="#how-do-i-enable-the-tcp-rdma-based-transport" title="Permalink to this heading"></a></h2>
+<p>References to a RDMA-based transport exist in a few places in the
+documentation and refer to an optional extension which is not included
+in the open-source version of Dragon. For inquiries about Dragon’s high speed
+RDMA-based transport, please contact HPE by emailing <a class="reference external" href="mailto:dragonhpc&#37;&#52;&#48;hpe&#46;com">dragonhpc<span>&#64;</span>hpe<span>&#46;</span>com</a>.</p>
+<p>The TCP-based transport is enabled by default. To specify use of the RDMA (where
+available) or TCP-based transport explicitly, the Dragon launcher provides the
+<code class="code docutils literal notranslate"><span class="pre">--transport</span></code> option, though the only choice on the open source implementation is
+<code class="code docutils literal notranslate"><span class="pre">tcp</span></code>.</p>
+<div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="c1"># Explicitly use the RDMA-based transport</span>
+$ dragon --transport hsta my-dragon-script.py
+
+<span class="c1"># Use the tcp-based transport via the runtime&#39;s default setting</span>
+$ dragon my-dragon-script.py
+
+<span class="c1"># Use the TCP-based transport</span>
+$ dragon --transport tcp my-dragon-script.py
+</pre></div>
+</div>
+</section>
+<section id="where-can-i-find-the-environment-variables-that-control-the-dragon-run-time">
+<h2>Where can I find the Environment Variables that control the Dragon Run-time ?<a class="headerlink" href="#where-can-i-find-the-environment-variables-that-control-the-dragon-run-time" title="Permalink to this heading"></a></h2>
+<p>See <a class="reference internal" href="../pguide/envvars.html#environment-variables"><span class="std std-ref">Environment Variables</span></a>.</p>
+</section>
+<section id="what-do-i-do-if-i-need-to-clean-up-any-dragon-processes-or-experiments-that-did-not-complete-properly">
+<h2>What do I do if I need to clean up any Dragon processes or experiments that did not complete properly?<a class="headerlink" href="#what-do-i-do-if-i-need-to-clean-up-any-dragon-processes-or-experiments-that-did-not-complete-properly" title="Permalink to this heading"></a></h2>
+<p>In the event your experiment goes awry, we provide a helper script,
+<code class="code docutils literal notranslate"><span class="pre">dragon-cleanup</span></code>, to clean up any zombie processes and memory. The script
+<code class="code docutils literal notranslate"><span class="pre">dragon-cleanup</span></code> is placed in the <code class="code docutils literal notranslate"><span class="pre">[dragon</span> <span class="pre">install</span> <span class="pre">dir]/bin</span></code> and added to the
+<code class="code docutils literal notranslate"><span class="pre">$PATH</span></code> environment variable after loading the Dragon module.</p>
+</section>
+<section id="can-i-use-dragon-to-manage-mpi-jobs">
+<h2>Can I use Dragon to manage MPI jobs?<a class="headerlink" href="#can-i-use-dragon-to-manage-mpi-jobs" title="Permalink to this heading"></a></h2>
+<p>This functionality is currently only available on systems where the HPE Cray MPITCH library
+is installed.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../benchmarks/scipy_image.html" class="btn btn-neutral float-left" title="SciPy Image Convolution Benchmark" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="../ref/ref.html" class="btn btn-neutral float-right" title="API Reference" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ownership, Placement and Locality &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="The API Stack" href="stack.html" />
+    <link rel="prev" title="Environment Variables" href="envvars.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="pguide.html">Programming Guide</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="dragon_multiprocessing.html">Multiprocessing with Dragon</a></li>
+<li class="toctree-l2"><a class="reference internal" href="dragon_mpi.html">MPI with Dragon</a></li>
+<li class="toctree-l2"><a class="reference internal" href="envvars.html">Environment Variables</a></li>
+<li class="toctree-l2 current"><a class="current reference internal" href="#">Ownership, Placement and Locality</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#processes">Processes</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#round-robin-placement">Round Robin Placement</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="#managed-memory">Managed Memory</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#channels">Channels</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="stack.html">The API Stack</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="pguide.html">Programming Guide</a></li>
+      <li class="breadcrumb-item active">Ownership, Placement and Locality</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/pguide/owner.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="ownership-placement-and-locality">
+<h1>Ownership, Placement and Locality<a class="headerlink" href="#ownership-placement-and-locality" title="Permalink to this heading"></a></h1>
+<p>In this section we discuss the relationship of <a class="reference internal" href="../uguide/glossary.html#term-Dragon-Object"><span class="xref std std-term">Dragon objects</span></a> with
+<a class="reference internal" href="../uguide/glossary.html#term-System-Resource"><span class="xref std std-term">system resources</span></a>. Due to Dragon’s hierarchical
+<a class="reference internal" href="../uguide/resource_model.html#the-dragon-hpc-resource-model"><span class="std std-ref">resource model</span></a>, it is sufficient
+to consider only the <a class="reference internal" href="../uguide/glossary.html#term-Primary-Object"><span class="xref std std-term">primary objects</span></a> in the Client
+API that form the basis of all other objects created in the
+<a class="reference internal" href="../ref/native/index.html#dragon-native"><span class="std std-ref">Dragon native API</span></a> and Multiprocessing with Dragon API.</p>
+<p>Fundamentally, Dragon does not have the concept of ownership of an object, i.e. the lifetime of
+an object is not bound to the process that created it. For example a process can
+create an Dragon native <a class="reference internal" href="../ref/native/Python/dragon.native.queue.html#dragon.native.queue.Queue" title="dragon.native.queue.Queue"><code class="xref any py py-class docutils literal notranslate"><span class="pre">queue</span></code></a>, hand its
+<a class="reference internal" href="../uguide/glossary.html#term-Serialized-Descriptor"><span class="xref std std-term">serialized descriptor</span></a> to another process
+and terminate. The Dragon queue will remain usable as long as one process holds
+the descriptor and the queue destructor has not been called. However, as
+<a class="reference internal" href="../uguide/glossary.html#term-Primary-Object"><span class="xref std std-term">primary objects</span></a> abstract a <a class="reference internal" href="../uguide/glossary.html#term-System-Resource"><span class="xref std std-term">resource</span></a>,
+the Dragon channel that underpins the Dragon native queue has to be placed in memory
+<em>somewhere</em> on the physical system. To that end, the channel is <em>local</em> to one specific
+<a class="reference internal" href="../uguide/glossary.html#term-Node"><span class="xref std std-term">hardware node</span></a>. The Dragon run-time uses its transport service to make access
+<a class="reference internal" href="../uguide/glossary.html#term-Transparency"><span class="xref std std-term">transparent</span></a> to other nodes.</p>
+<p>In what follows, we discuss placement and locality properties of processes, managed memory and
+channels. We leave out the node object as it solely describes the hardware the run-time is running
+on. Some aspects of placement can be controlled using <a class="reference internal" href="../uguide/resource_model.html#policies"><span class="std std-ref">policies</span></a>
+in the Dragon Native API.</p>
+<section id="processes">
+<h2>Processes<a class="headerlink" href="#processes" title="Permalink to this heading"></a></h2>
+<p>With version 0.5 Dragon only supports round robin placement of processes. Each new process will be placed on the next
+node that Dragon is running on. Future releases of Dragon will allow for two levels of control that improve upon the
+current behavior. The first will be the ability to control the default policy, and the second will be explicit
+placement control for each process.</p>
+<section id="round-robin-placement">
+<h3>Round Robin Placement<a class="headerlink" href="#round-robin-placement" title="Permalink to this heading"></a></h3>
+<figure class="align-default" id="id1">
+<a class="reference internal image-reference" href="../_images/roundrobin.svg"><img alt="../_images/roundrobin.svg" height="357" src="../_images/roundrobin.svg" width="683" /></a>
+<figcaption>
+<p><span class="caption-number">Fig. 5 </span><span class="caption-text"><strong>Figure 1: UML deployment diagram of round robin placement with 4 processes on a distributed system with 3 compute nodes and one login node</strong></span><a class="headerlink" href="#id1" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<p>Figure 1 shows how processes will be placed across nodes in your allocation with the current round-robin placement
+policy. Any two processes started consecutively will be placed on unique nodes unless there is only a single node
+within your Slurm allocation.</p>
+</section>
+</section>
+<section id="managed-memory">
+<h2>Managed Memory<a class="headerlink" href="#managed-memory" title="Permalink to this heading"></a></h2>
+<p>Managed Memory is the underlying shared memory abstraction from which all <a class="reference internal" href="../uguide/glossary.html#term-Dragon-Object"><span class="xref std std-term">Dragon Objects</span></a> are
+allocated. They consist of <code class="code docutils literal notranslate"><span class="pre">Pools</span></code> and <code class="code docutils literal notranslate"><span class="pre">allocations</span></code> from those Pools. Every node Dragon is executing on has
+at least two Pools, one for infrastructure usage and another for user allocations. Pools can be created, destroyed,
+and shared with other processes. Management of Pools is handled by Dragon Global Services (GS), and interactions
+required with an operating system to actually manage them on a node is done by Dragon Local Services (LS).</p>
+<p>When a request is made to create a Dragon Object, the underlying Pool that it will be allocated from can be included
+with the request. This in turn specifies the physical location of that Dragon Object. If the request does not included
+the Pool to allocate the object from, one will be selected by GS through a default policy. With version 0.5, users
+programming to Python multiprocessing do not have control over the exact placement of the Dragon-managed resources
+used to implement multiprocessing abstractions. Such controls will be available in future releases.</p>
+<p>Advanced users programming to the <a class="reference internal" href="../ref/native/index.html#dragon-native"><span class="std std-ref">Dragon Native API</span></a> can explicitly manage the
+life-cycle of Pools outside of the control of GS.</p>
+<p>Allocations made from a Pool can be serialized and shared with other processes. These processes can then attach to the
+allocation. If the Pool the allocation is from is on the same node as that process, it can directly obtain a pointer
+to the memory. The process can modify the memory from that allocation, but Dragon does not provide any support
+for maintaining consistency of that memory between processes. Dragon makes use of a custom lock, which will be
+part of the public API in future releases, that can be used to support consistency of memory allocated from a Pool.
+If the allocation is not from a Pool on the same node as the process, the process can get limited information about
+the allocation, such as its size and physical location. Future Dragon releases will include more detail on using
+its low levels APIs like this.</p>
+</section>
+<section id="channels">
+<h2>Channels<a class="headerlink" href="#channels" title="Permalink to this heading"></a></h2>
+<p>Dragon Channels is the primary abstraction upon which all <a class="reference internal" href="../uguide/glossary.html#term-Dragon-Object"><span class="xref std std-term">Dragon Objects</span></a> are implemented. A Channel is similar to a basic FIFO queue,
+but with a rich set of capabilities for monitoring events, controlling
+buffering behavior, and completion semantics. Python multiprocessing
+abstractions, including Connection, Queue, Lock, and many more are implemented
+from one or more Channels. Channels provides <a class="reference internal" href="../uguide/glossary.html#term-Transparency"><span class="xref std std-term">transparent</span></a>
+access no matter which Managed Memory Pool the Channel is allocated from. If
+the Channel is on the same node as a process, the Channels library will
+directly access the Channel through shared memory. If the Channel is on a
+remote node, a <code class="code docutils literal notranslate"><span class="pre">Transport</span> <span class="pre">Agent</span></code> will act on behalf of the process to directly
+access the remote Channel. The access transparency of Channels is how Dragon is
+able to provide access transparency for all objects available through the
+runtime.</p>
+<p>Version 0.5 of Dragon uses an RDMA-based transport agent by default (note:
+<a class="reference internal" href="../faq/faq.html#transport-faq"><span class="std std-ref">a TCP-based agent is optionally available</span></a>). A transport agent
+process exists on every node that Dragon is running on. The transport agent
+process monitors an infrastructure Channel on its node, called a Gateway
+Channel, that user processes write requests into when they need to communicate
+with a remote Channel. The transport agent services that request and
+communicates back with the user process through a synchronization mechanism.
+All user processes on a node perform off-node communication through their local
+transport agent process. Transport agents can use any network protocol to
+perform their work. Later Dragon releases will include enhancements to the
+TCP-based transport agent to use encrypted communication.</p>
+<p>The physical location of a Channel can be specified in the request to GS by
+indicating which Managed Memory Pool it should be allocated from. If the
+location is not specified, a default policy is used to select the location. The
+default policy for version 0.5 is that the Channel be co-located with the
+process requesting its creation. For most Python multiprocessing objects that
+are constructed from Channels, the Channels will be on the same node as the
+process that is creating the object.</p>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="envvars.html" class="btn btn-neutral float-left" title="Environment Variables" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="stack.html" class="btn btn-neutral float-right" title="The API Stack" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Creating and Using a Pipeline with Multiprocessing &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="Calculating π using parallel Monte Carlo" href="dragon_native_pi.html" />
+    <link rel="prev" title="Distributed inference with a Large Language Model (LLM) and node telemetry" href="distr-inf-telemetry.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="cbook.html">Solution Cookbook</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="cbook.html#multiprocessing-with-dragon">Multiprocessing with Dragon</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="jupyter.html">Running Jupyter Notebook inside of the Dragon</a></li>
+<li class="toctree-l3"><a class="reference internal" href="mp_merge_sort.html">Parallel Merge Sort</a></li>
+<li class="toctree-l3"><a class="reference internal" href="mp_queue_demo.html">Parallel Producer - Consumer Communication with Queue</a></li>
+<li class="toctree-l3"><a class="reference internal" href="mp_scipy_image.html">SciPy Image Convolution Benchmark</a></li>
+<li class="toctree-l3"><a class="reference internal" href="torch-scipy-telemetry.html">Multi-node process orchestration and node telemetry</a></li>
+<li class="toctree-l3"><a class="reference internal" href="distr-inf-telemetry.html">Distributed inference with a Large Language Model (LLM) and node telemetry</a></li>
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Creating and Using a Pipeline with Multiprocessing</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-native">Dragon Native</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-data-preview">Dragon Data (Preview)</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="cbook.html">Solution Cookbook</a></li>
+      <li class="breadcrumb-item active">Creating and Using a Pipeline with Multiprocessing</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/cbook/pipeline.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="creating-and-using-a-pipeline-with-multiprocessing">
+<h1>Creating and Using a Pipeline with Multiprocessing<a class="headerlink" href="#creating-and-using-a-pipeline-with-multiprocessing" title="Permalink to this heading"></a></h1>
+<p>With DragonHPC it is easy to distribute computation over a collection of nodes
+and cores. In addition, it can be distributed dynamically. Consider a prime
+number sieve, the Sieve of Eratosthenes. This example demonstrates building a
+pipeline on-the-fly while getting results from it as they become available.</p>
+<p>The complete code for this example is provided in
+examples/multiprocessing/prime_numbers.py.</p>
+<figure class="align-center" id="pipelinepic">
+<a class="reference internal image-reference" href="../_images/PrimePipeline.jpg"><img alt="../_images/PrimePipeline.jpg" src="../_images/PrimePipeline.jpg" style="width: 1103.25px; height: 509.25px;" /></a>
+<figcaption>
+<p><span class="caption-number">Fig. 13 </span><span class="caption-text"><strong>Dynamic Growth of Prime Number Pipeline</strong></span><a class="headerlink" href="#pipelinepic" title="Permalink to this image"></a></p>
+</figcaption>
+</figure>
+<p>Consider the code in <a class="reference internal" href="#prime-setup"><span class="std std-numref">Listing 11</span></a>. Snapshot 0 in <a class="reference internal" href="#pipelinepic"><span class="std std-numref">Fig. 13</span></a>
+depicts the state of the program just after startup. The <em>main</em> function creates
+a <em>PrimeNumberPipeline</em> object and calls <em>start</em> which creates two queues and two
+processes. The source process generates all numbers to be consider for primeness.
+The pipeline stage process receives integers from its input queue and forwards them on
+if they are relatively prime to the primes held in that stage.</p>
+<p>Initially (i.e. in <em>snapshot 0</em>) the output from the stage goes directly to the
+sink queue where the user’s program will be receiving the prime numbers that made
+it through the sieve, in this case the <em>main</em> program.</p>
+<p>Notice that in the code there is nothing that specifies where these processes are
+run. They could be run on any node. They could all be run on the same node. The
+program is not written any different either way, unless the programmer really
+wants to have more control over placement of these processes.</p>
+<div class="literal-block-wrapper docutils container" id="prime-setup">
+<div class="code-block-caption"><span class="caption-number">Listing 11 </span><span class="caption-text"><strong>The Prime Number Pipeline Startup Code</strong></span><a class="headerlink" href="#prime-setup" title="Permalink to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="k">class</span> <span class="nc">PrimeNumberPipeline</span><span class="p">:</span>
+<span class="linenos"> 2</span>
+<span class="linenos"> 3</span>    <span class="o">...</span>
+<span class="linenos"> 4</span>
+<span class="linenos"> 5</span>    <span class="k">def</span> <span class="nf">start</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="linenos"> 6</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_source_queue</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">MAX_QUEUE_DEPTH</span><span class="p">)</span>
+<span class="linenos"> 7</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_sink_queue</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">MAX_QUEUE_DEPTH</span><span class="p">)</span>
+<span class="linenos"> 8</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_source_proc</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">source</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_max_number</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_source_queue</span><span class="p">))</span>
+<span class="linenos"> 9</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_source_proc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos">10</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_sink_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span> <span class="c1"># &quot;Prime&quot; the sink queue ;)</span>
+<span class="linenos">11</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_stage_proc</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">pipeline_stage</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="bp">self</span><span class="o">.</span><span class="n">_stage_size</span><span class="p">,</span> <span class="mi">2</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_source_queue</span><span class="p">,</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sink_queue</span><span class="p">))</span>
+<span class="linenos">12</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_stage_proc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos">13</span>
+<span class="linenos">14</span>    <span class="k">def</span> <span class="nf">stop</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="linenos">15</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_source_proc</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+<span class="linenos">16</span>        <span class="bp">self</span><span class="o">.</span><span class="n">_stage_proc</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+<span class="linenos">17</span>
+<span class="linenos">18</span>    <span class="k">def</span> <span class="nf">get</span><span class="p">(</span><span class="bp">self</span><span class="p">):</span>
+<span class="linenos">19</span>        <span class="k">return</span> <span class="bp">self</span><span class="o">.</span><span class="n">_sink_queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="linenos">20</span>
+<span class="linenos">21</span>
+<span class="linenos">22</span><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+<span class="linenos">23</span>    <span class="c1"># We set the start method to dragon to use dragon multiprocessing.</span>
+<span class="linenos">24</span>    <span class="n">mp</span><span class="o">.</span><span class="n">set_start_method</span><span class="p">(</span><span class="s1">&#39;dragon&#39;</span><span class="p">)</span>
+<span class="linenos">25</span>
+<span class="linenos">26</span>    <span class="c1"># We can control the pipeline by max_number and stage_size. The</span>
+<span class="linenos">27</span>    <span class="c1"># stage_size can control the amount of parallelism.</span>
+<span class="linenos">28</span>    <span class="n">prime_pipeline</span> <span class="o">=</span> <span class="n">PrimeNumberPipeline</span><span class="p">(</span><span class="n">stage_size</span><span class="o">=</span><span class="mi">3</span><span class="p">,</span> <span class="n">max_number</span><span class="o">=</span><span class="mi">100</span><span class="p">)</span>
+<span class="linenos">29</span>    <span class="n">prime_pipeline</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos">30</span>    <span class="nb">print</span><span class="p">(</span><span class="s1">&#39;Prime numbers:&#39;</span><span class="p">)</span>
+<span class="linenos">31</span>    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos">32</span>    <span class="k">for</span> <span class="n">prime</span> <span class="ow">in</span> <span class="nb">iter</span><span class="p">(</span><span class="n">prime_pipeline</span><span class="o">.</span><span class="n">get</span><span class="p">,</span> <span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">SENTINEL</span><span class="p">):</span>
+<span class="linenos">33</span>        <span class="n">text</span> <span class="o">=</span> <span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">prime</span><span class="si">}</span><span class="s1"> &#39;</span>
+<span class="linenos">34</span>        <span class="nb">print</span><span class="p">(</span><span class="n">text</span><span class="p">,</span> <span class="n">end</span><span class="o">=</span><span class="s2">&quot;&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">35</span>        <span class="n">count</span><span class="o">+=</span> <span class="nb">len</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+<span class="linenos">36</span>        <span class="k">if</span> <span class="n">count</span> <span class="o">&gt;</span> <span class="mi">80</span><span class="p">:</span>
+<span class="linenos">37</span>            <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos">38</span>            <span class="nb">print</span><span class="p">(</span><span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">39</span>    <span class="nb">print</span><span class="p">(</span><span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">40</span>    <span class="n">prime_pipeline</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+<span class="linenos">41</span>
+<span class="linenos">42</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">43</span>    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<p>Taking a look at the pipeline_stage code in <a class="reference internal" href="#prime-stage"><span class="std std-numref">Listing 12</span></a> the code is
+given a prime number when started to add to its list of primes. The stage will
+check that a number received from the input queue to the stage is relatively
+prime to the list of <em>primes</em> for the stage. If the new number is found to be
+relatively prime it is added to the list of primes for that stage if the list has
+not grown too large. In this way, each process in the pipeline can do a certain
+amount of sequential work which is tunable, depending on performance of the
+application.</p>
+<p>When a stage has reached the capacity of the <em>primes</em> list, then a new stage is
+started as shown in <em>snapshot 4</em>. The new stage is passed a number that is the
+first prime greater than the primes in the previous stage. Lines 36-41 of
+<a class="reference internal" href="#prime-stage"><span class="std std-numref">Listing 12</span></a> is the code that recognizes a new stage is needed, creates
+it, and splices it into the pipeline. Notice that the way the new pipeline stage
+is spliced in, the original output queue remains the final output queue. In other
+words the writing end of that queue is passed from one process to another. It is
+that simple with multiprocessing and DragonHPC to pass around queues. You can
+pass queues around and they are managed accordingly. This might mean
+passing the queue on to a process that is on a completely different node. There
+is a lot of very subtle power in the DragonHPC implementation of multiprocessing.</p>
+<div class="literal-block-wrapper docutils container" id="prime-stage">
+<div class="code-block-caption"><span class="caption-number">Listing 12 </span><span class="caption-text"><strong>The Prime Number Pipeline Stage Code</strong></span><a class="headerlink" href="#prime-stage" title="Permalink to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="k">class</span> <span class="nc">PrimeNumberPipeline</span><span class="p">:</span>
+<span class="linenos"> 2</span>
+<span class="linenos"> 3</span>    <span class="nd">@staticmethod</span>
+<span class="linenos"> 4</span>    <span class="k">def</span> <span class="nf">pipeline_stage</span><span class="p">(</span><span class="n">stage_size</span><span class="p">,</span> <span class="n">prime</span><span class="p">,</span> <span class="n">in_queue</span><span class="p">,</span> <span class="n">out_queue</span><span class="p">):</span>
+<span class="linenos"> 5</span>        <span class="c1"># A stage is given a prime from which to start. All other</span>
+<span class="linenos"> 6</span>        <span class="c1"># primes it finds (up to the stage size) are added to this</span>
+<span class="linenos"> 7</span>        <span class="c1"># list of primes to check.</span>
+<span class="linenos"> 8</span>        <span class="n">primes</span> <span class="o">=</span> <span class="p">[</span><span class="n">prime</span><span class="p">]</span>
+<span class="linenos"> 9</span>        <span class="n">stage_proc</span> <span class="o">=</span> <span class="kc">None</span>
+<span class="linenos">10</span>
+<span class="linenos">11</span>        <span class="c1"># This is the number of primes (relative to primes) that this</span>
+<span class="linenos">12</span>        <span class="c1"># stage has found.</span>
+<span class="linenos">13</span>        <span class="n">cur_count</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="linenos">14</span>
+<span class="linenos">15</span>        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<span class="linenos">16</span>            <span class="n">number</span> <span class="o">=</span> <span class="n">in_queue</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="linenos">17</span>
+<span class="linenos">18</span>            <span class="c1"># We terminate via a sentinel value.</span>
+<span class="linenos">19</span>            <span class="k">if</span> <span class="n">number</span> <span class="o">==</span> <span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">SENTINEL</span><span class="p">:</span>
+<span class="linenos">20</span>                <span class="n">out_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">SENTINEL</span><span class="p">)</span>
+<span class="linenos">21</span>                <span class="k">if</span> <span class="n">stage_proc</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos">22</span>                    <span class="n">stage_proc</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+<span class="linenos">23</span>                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="se">\n</span><span class="s1">primes in pipeline stage are </span><span class="si">{</span><span class="n">primes</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">24</span>                <span class="k">return</span>
+<span class="linenos">25</span>
+<span class="linenos">26</span>            <span class="k">if</span> <span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">is_relatively_prime</span><span class="p">(</span><span class="n">number</span><span class="p">,</span> <span class="n">primes</span><span class="p">):</span>
+<span class="linenos">27</span>                <span class="c1"># It is relatively prime, so send it to the output queue</span>
+<span class="linenos">28</span>                <span class="n">out_queue</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="n">number</span><span class="p">)</span>
+<span class="linenos">29</span>
+<span class="linenos">30</span>                <span class="c1"># If it is found to be relatively prime, we add it to the</span>
+<span class="linenos">31</span>                <span class="c1"># list of primes or we create a new stage with it (which</span>
+<span class="linenos">32</span>                <span class="c1"># in turn builds its list of primes).</span>
+<span class="linenos">33</span>                <span class="k">if</span> <span class="n">cur_count</span> <span class="o">&lt;</span> <span class="n">stage_size</span><span class="p">:</span>
+<span class="linenos">34</span>                    <span class="n">primes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">number</span><span class="p">)</span>
+<span class="linenos">35</span>
+<span class="linenos">36</span>                <span class="k">elif</span> <span class="n">cur_count</span> <span class="o">==</span> <span class="n">stage_size</span><span class="p">:</span>
+<span class="linenos">37</span>                    <span class="c1"># create a new pipeline stage</span>
+<span class="linenos">38</span>                    <span class="n">new_stage_queue</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">(</span><span class="n">maxsize</span><span class="o">=</span><span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">MAX_QUEUE_DEPTH</span><span class="p">)</span>
+<span class="linenos">39</span>                    <span class="n">stage_proc</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">PrimeNumberPipeline</span><span class="o">.</span><span class="n">pipeline_stage</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">stage_size</span><span class="p">,</span> <span class="n">number</span><span class="p">,</span> <span class="n">new_stage_queue</span><span class="p">,</span> <span class="n">out_queue</span><span class="p">))</span>
+<span class="linenos">40</span>                    <span class="n">out_queue</span> <span class="o">=</span> <span class="n">new_stage_queue</span>
+<span class="linenos">41</span>                    <span class="n">stage_proc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos">42</span>                <span class="k">else</span><span class="p">:</span>
+<span class="linenos">43</span>                    <span class="c1"># It was checked/will be checked by other stages in the pipeline</span>
+<span class="linenos">44</span>                    <span class="k">pass</span>
+<span class="linenos">45</span>
+<span class="linenos">46</span>                <span class="c1"># Number of relatively prime primes found for this stage.</span>
+<span class="linenos">47</span>                <span class="n">cur_count</span><span class="o">+=</span><span class="mi">1</span>
+</pre></div>
+</div>
+</div>
+<p>Of course as we progress through the sequence of prime numbers the pipeline
+grows. So this application will scale to a large number of prime numbers, but
+what is really amazing is that the same program will execute on your laptop, just
+not with the same performance as a supercomputer.</p>
+<p>The other subtlety in this program is that no stage is going to get too far ahead
+in its processing. The <em>MAX_QUEUE_DEPTH</em> constant sets the allowable size of the
+queue. No stage will get further ahead than <em>MAX_QUEUE_DEPTH</em> because the <em>put</em>
+(line 28) and <em>get</em> (line 16) operations apply backpressure to processes. The
+<em>put</em> and <em>get</em> operations will block and therefore suspend a pipeline stage that
+gets to far ahead of its neighbors.</p>
+<p>In the end this program demonstrates the dynamic nature of DragonHPC and its
+ability to dynamically construct workflows and re-route data at run-time. It also
+demonstrates the location independence of synchronization and communication
+objects in multiprocessing. Finally, it demonstrates the implicit flow control
+that is possible within these workflows which is managed by the ability of
+DragonHPC to apply backpressure on processes.</p>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="distr-inf-telemetry.html" class="btn btn-neutral float-left" title="Distributed inference with a Large Language Model (LLM) and node telemetry" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="dragon_native_pi.html" class="btn btn-neutral float-right" title="Calculating π using parallel Monte Carlo" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

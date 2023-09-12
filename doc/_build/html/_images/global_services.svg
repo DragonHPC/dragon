@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="797px" preserveAspectRatio="none" style="width:967px;height:797px;background:#FFFFFF;" version="1.1" viewBox="0 0 967 797" width="967px" zoomAndPan="magnify"><defs/><g><!--MD5=[4689d7ee49189f9387c61a4a341ced5f]
+cluster Global Services--><polygon fill="#FFFFFF" points="16,90,144,90,151,112.2969,352,112.2969,352,559,16,559,16,90" style="stroke:#000000;stroke-width:1.5;"/><line style="stroke:#000000;stroke-width:1.5;" x1="16" x2="151" y1="112.2969" y2="112.2969"/><text fill="#000000" font-family="sans-serif" font-size="14" font-weight="bold" lengthAdjust="spacing" textLength="122" x="20" y="104.9951">Global Services</text><!--MD5=[9d1b328ea9d53a266bae415698ac08f5]
+entity IMH--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="199" x="134.5" y="125"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="313.5" y="130"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="311.5" y="132"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="311.5" y="136"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="159" x="149.5" y="157.9951">Input Message Handler</text><!--MD5=[066ef1dac2fa6412368fd4a6a202e1d0]
+entity CP--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="185" x="31.5" y="308"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="196.5" y="313"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="194.5" y="315"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="194.5" y="319"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="145" x="46.5" y="340.9951">Command Processor</text><!--MD5=[0e3b12e6676a7ab5fc69030876e4a682]
+entity FWD--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="147" x="160.5" y="232"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="287.5" y="237"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="285.5" y="239"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="285.5" y="243"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="107" x="175.5" y="264.9951">stdin Forwarder</text><!--MD5=[594dc5f00bd6e49c9ecaa72349c48def]
+entity MON--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="125" x="32.5" y="497"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="137.5" y="502"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="135.5" y="504"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="135.5" y="508"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="85" x="47.5" y="529.9951">std* Monitor</text><!--MD5=[521e3f672ff1045f69c311733b568075]
+entity OUT--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="212" x="124" y="384"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="316" y="389"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="314" y="391"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="314" y="395"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="172" x="139" y="416.9951">Output Message Handler</text><!--MD5=[6dec86891f076b10543c1b2cd3604f44]
+entity WATCH--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="143" x="192.5" y="497"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="315.5" y="502"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="313.5" y="504"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="313.5" y="508"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="103" x="207.5" y="529.9951">Death Watcher</text><!--MD5=[5e3a54572c94ef26dc7725dc7faffc83]
+entity K--><rect fill="#F8F8F8" height="46.2969" style="stroke:#383838;stroke-width:1.5;" width="123" x="474.5" y="745"/><rect fill="#F8F8F8" height="10" style="stroke:#383838;stroke-width:1.5;" width="15" x="577.5" y="750"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="575.5" y="752"/><rect fill="#F8F8F8" height="2" style="stroke:#383838;stroke-width:1.5;" width="4" x="575.5" y="756"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="83" x="489.5" y="777.9951">Linux Kernel</text><!--MD5=[56f088548b0cf9641de4e27112879233]
+entity kernel_api--><ellipse cx="536" cy="655" fill="#F8F8F8" rx="8" ry="8" style="stroke:#383838;stroke-width:1.5;"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="108" x="482" y="684.9951">Linux Kernel API</text><!--MD5=[f4c2c6b1ce83135da143416fcde9e7c2]
+entity global_services_channel--><ellipse cx="234" cy="14" fill="#F8F8F8" rx="8" ry="8" style="stroke:#383838;stroke-width:1.5;"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="166" x="151" y="43.9951">Global Services Channel</text><!--MD5=[4245db78645dbc3abffb0dcaace90459]
+entity shepherd_channel--><ellipse cx="443" cy="520" fill="#F8F8F8" rx="8" ry="8" style="stroke:#383838;stroke-width:1.5;"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="129" x="378.5" y="549.9951">Shepherd Channel</text><!--MD5=[67017c8e3d9de8544ea0767f2f4adf08]
+entity launcher_backend_channel--><ellipse cx="653" cy="520" fill="#F8F8F8" rx="8" ry="8" style="stroke:#383838;stroke-width:1.5;"/><text fill="#000000" font-family="sans-serif" font-size="14" lengthAdjust="spacing" textLength="190" x="558" y="549.9951">Launcher Backend Channel</text><!--MD5=[41a454f5fabeacbb62a24e2b094712a2]
+link IMH to CP--><path d="M209.61,171.24 C182.66,195.83 143,232 143,232 C143,232 134.95,273.52 129.33,302.51 " fill="none" id="IMH-to-CP" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="128.31,307.76,133.9612,299.6938,129.2686,302.8527,126.1096,298.1601,128.31,307.76" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[b16883599a9e50d8b88fedccb5f3c280]
+link IMH to FWD--><path d="M234,171.01 C234,187.14 234,209.15 234,226.45 " fill="none" id="IMH-to-FWD" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="234,231.66,238,222.66,234,226.66,230,222.66,234,231.66" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[f13c0bafb9ca57ee984640d7618f6969]
+link FWD to OUT--><path d="M233.41,278.13 C232.7,304.83 231.5,349.71 230.73,378.58 " fill="none" id="FWD-to-OUT" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="230.59,383.78,234.82,374.8858,230.7185,378.7817,226.8227,374.6802,230.59,383.78" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[9b61486349332d77c888c90ba153ff02]
+link CP to MON--><path d="M116.79,354.05 C112.16,368.23 107,384 107,384 C107,384 100.95,452.11 97.44,491.57 " fill="none" id="CP-to-MON" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="96.98,496.71,101.7606,488.0992,97.4224,491.7296,93.792,487.3914,96.98,496.71" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[e493f30bb57fe7665d87477b011a2421]
+reverse link OUT to MON--><path d="M199.05,433.45 C175.77,452.59 144.19,478.55 121.95,496.84 " fill="none" id="OUT-backto-MON" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="203.01,430.2,193.5177,432.8262,199.1479,433.3755,198.5986,439.0057,203.01,430.2" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[b811ccfd8ff48d1a89217a35efbba526]
+reverse link OUT to WATCH--><path d="M238.38,435.37 C244.18,454.29 251.8,479.16 257.21,496.84 " fill="none" id="OUT-backto-WATCH" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="236.8,430.2,235.6216,439.9781,238.2694,434.9792,243.2683,437.627,236.8,430.2" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[14dc53bb30556683a1a0e0e0ea9c870d]
+link kernel_api to K--><path d="M536,664.34 C536,680.16 536,715.13 536,739.85 " fill="none" id="kernel_api-to-K" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="536,744.95,540,735.95,536,739.95,532,735.95,536,744.95" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[d442e18e2e985694405020eaafe37fb8]
+link OUT to launcher_backend_channel--><path d="M314.08,430.06 C418.45,457.45 588.84,502.16 638.81,515.28 " fill="none" id="OUT-to-launcher_backend_channel" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="643.78,516.58,636.0952,510.4201,638.9448,515.3068,634.0581,518.1564,643.78,516.58" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[ecac4001f5af5b261a9deb42e18592b2]
+link OUT to shepherd_channel--><path d="M272.34,430.06 C320.93,455.39 397.95,495.52 429.17,511.79 " fill="none" id="OUT-to-shepherd_channel" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="433.78,514.2,427.6264,506.5102,429.3397,511.9013,423.9486,513.6146,433.78,514.2" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[75342bbd4c14deb961cde0c7d11fa115]
+link global_services_channel to IMH--><path d="M234,23.26 C234,42.2 234,89.47 234,119.8 " fill="none" id="global_services_channel-to-IMH" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="234,124.88,238,115.88,234,119.88,230,115.88,234,124.88" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[9ef7f91717e093b8063097bd736480fb]
+link IMH to kernel_api--><path d="M333.5,167.17 C498.07,197.22 809,254 809,254 C809,254 809,254 809,521 C809,521 774,567 774,567 C774,567 600.63,630.38 549.83,648.95 " fill="none" id="IMH-to-kernel_api" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="545.04,650.7,554.8682,651.3379,549.731,648.9695,552.0994,643.8323,545.04,650.7" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="149" x="810" y="411.5669">halt event / normal halt</text><!--MD5=[ea26de6127976e35458c9cedf1704c5d]
+link WATCH to kernel_api--><path d="M307.15,543.06 C330.25,554.86 354,567 354,567 C354,567 479.76,627.11 522.2,647.4 " fill="none" id="WATCH-to-kernel_api" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="526.72,649.57,520.3241,642.0805,522.2086,647.4142,516.8749,649.2987,526.72,649.57" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="13" lengthAdjust="spacing" textLength="54" x="413" y="592.0669">waitpid()</text><!--MD5=[75520b09fb8fd98ab5fc7841c63f905d]
+@startuml
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+skinparam linetype polyline
+
+package "Global Services" {
+
+    [Input Message Handler] as IMH
+    [Command Processor] as CP
+    [stdin Forwarder] as FWD
+    [std* Monitor] as MON
+    [Output Message Handler] as OUT
+    [Death Watcher] as WATCH
+
+    IMH - -> CP
+    IMH - -> FWD
+    FWD - -> OUT
+    CP - -> MON
+    OUT <- - MON
+    WATCH -u-> OUT
+
+}
+
+[Linux Kernel] as K
+interface "Linux Kernel API" as kernel_api
+
+interface "Global Services Channel" as global_services_channel
+interface "Shepherd Channel" as shepherd_channel
+interface "Launcher Backend Channel" as launcher_backend_channel
+
+K <-u- kernel_api
+
+OUT - -> launcher_backend_channel
+OUT -d-> shepherd_channel
+IMH <-u- global_services_channel
+IMH - -> kernel_api : halt event / normal halt
+WATCH -d-> kernel_api : waitpid()
+
+
+@enduml
+
+PlantUML version 1.2022.1(Tue Feb 01 18:19:58 GMT 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

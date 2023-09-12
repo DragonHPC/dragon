@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Managed Memory &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/clipboard.min.js"></script>
+        <script src="../../../_static/copybutton.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="Channels" href="channels.html" />
+    <link rel="prev" title="Dragon Core" href="../index.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../../ref.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../../native/index.html">Dragon Native</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../client/index.html">Dragon GS Client</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../inf/index.html">Dragon Infrastructure</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="../index.html">Dragon Core</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="../index.html#c-reference">C Reference</a><ul class="current">
+<li class="toctree-l4 current"><a class="current reference internal" href="#">Managed Memory</a></li>
+<li class="toctree-l4"><a class="reference internal" href="channels.html">Channels</a></li>
+<li class="toctree-l4"><a class="reference internal" href="channelsets.html">ChannelSets</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../index.html#python-reference">Python Reference</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../mpbridge/index.html">MPBridge</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../../ref.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Dragon Core</a></li>
+      <li class="breadcrumb-item active">Managed Memory</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/ref/core/c/managed_memory.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="managed-memory">
+<span id="dragoncoremanagedmemory"></span><h1>Managed Memory<a class="headerlink" href="#managed-memory" title="Permalink to this heading"></a></h1>
+<div class="contents local topic" id="table-of-contents">
+<p class="topic-title">Table of Contents</p>
+<ul class="simple">
+<li><p><a class="reference internal" href="#description" id="id1">Description</a></p></li>
+<li><p><a class="reference internal" href="#structures-and-constants" id="id2">Structures and Constants</a></p></li>
+<li><p><a class="reference internal" href="#pool-lifecycle-management" id="id3">Pool Lifecycle Management</a></p></li>
+<li><p><a class="reference internal" href="#pool-information-functionality" id="id4">Pool Information &amp; Functionality</a></p></li>
+<li><p><a class="reference internal" href="#memory-lifecycle-management" id="id5">Memory Lifecycle Management</a></p></li>
+<li><p><a class="reference internal" href="#memory-information-functionality" id="id6">Memory Information &amp; Functionality</a></p></li>
+</ul>
+</div>
+<section id="description">
+<h2><a class="toc-backref" href="#id1">Description</a><a class="headerlink" href="#description" title="Permalink to this heading"></a></h2>
+<p>Dragon memory pools and memory allocations are shared memory
+allocations that can be attached to both on-node and off-node.
+Attaching on-node to a pool means that a process can create allocations
+within the pool. Attaching to a memory allocation on-node means a
+process can get a pointer to the allocation.</p>
+</section>
+<section id="structures-and-constants">
+<h2><a class="toc-backref" href="#id2">Structures and Constants</a><a class="headerlink" href="#structures-and-constants" title="Permalink to this heading"></a></h2>
+<p>Here are structures and constants for creating and sharing memory pools and memory
+pool allocations. These structures and constants are found in <code class="docutils literal notranslate"><span class="pre">managed_memory.h</span></code>.</p>
+<dl class="cpp enum">
+<dt class="sig sig-object cpp" id="_CPPv422dragonMemoryPoolType_t">
+<span id="_CPPv322dragonMemoryPoolType_t"></span><span id="_CPPv222dragonMemoryPoolType_t"></span><span class="target" id="managed__memory_8h_1a0c6cf2cf4996c13950369e16ab1636e2"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonMemoryPoolType_t</span></span></span><a class="headerlink" href="#_CPPv422dragonMemoryPoolType_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The type of memory pool. </p>
+<p>For future use. Currently, the only valid value is DRAGON_MEMORY_TYPE_SHM. </p>
+<p><em>Values:</em></p>
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolType_t22DRAGON_MEMORY_TYPE_SHME">
+<span id="_CPPv3N22dragonMemoryPoolType_t22DRAGON_MEMORY_TYPE_SHME"></span><span id="_CPPv2N22dragonMemoryPoolType_t22DRAGON_MEMORY_TYPE_SHME"></span><span class="target" id="managed__memory_8h_1a0c6cf2cf4996c13950369e16ab1636e2a838598c0cfe5c58dbe6c7dd3991c8f0a"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_MEMORY_TYPE_SHM</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolType_t22DRAGON_MEMORY_TYPE_SHME" title="Permalink to this definition"></a><br /></dt>
+<dd></dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolType_t23DRAGON_MEMORY_TYPE_FILEE">
+<span id="_CPPv3N22dragonMemoryPoolType_t23DRAGON_MEMORY_TYPE_FILEE"></span><span id="_CPPv2N22dragonMemoryPoolType_t23DRAGON_MEMORY_TYPE_FILEE"></span><span class="target" id="managed__memory_8h_1a0c6cf2cf4996c13950369e16ab1636e2a930680cccea03a82da9dcd747d9e857a"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_MEMORY_TYPE_FILE</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolType_t23DRAGON_MEMORY_TYPE_FILEE" title="Permalink to this definition"></a><br /></dt>
+<dd></dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolType_t26DRAGON_MEMORY_TYPE_PRIVATEE">
+<span id="_CPPv3N22dragonMemoryPoolType_t26DRAGON_MEMORY_TYPE_PRIVATEE"></span><span id="_CPPv2N22dragonMemoryPoolType_t26DRAGON_MEMORY_TYPE_PRIVATEE"></span><span class="target" id="managed__memory_8h_1a0c6cf2cf4996c13950369e16ab1636e2aa8f9fdcaeb6586c3241efd92b44558b3"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_MEMORY_TYPE_PRIVATE</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolType_t26DRAGON_MEMORY_TYPE_PRIVATEE" title="Permalink to this definition"></a><br /></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="cpp enum">
+<dt class="sig sig-object cpp" id="_CPPv428dragonMemoryPoolGrowthType_t">
+<span id="_CPPv328dragonMemoryPoolGrowthType_t"></span><span id="_CPPv228dragonMemoryPoolGrowthType_t"></span><span class="target" id="managed__memory_8h_1a61241ee397378e46be622d8c02d13e91"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonMemoryPoolGrowthType_t</span></span></span><a class="headerlink" href="#_CPPv428dragonMemoryPoolGrowthType_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The growth type for the pool. </p>
+<p>For future use. Currently, the only valid value is DRAGON_MEMORY_GROWTH_NONE. </p>
+<p><em>Values:</em></p>
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N28dragonMemoryPoolGrowthType_t25DRAGON_MEMORY_GROWTH_NONEE">
+<span id="_CPPv3N28dragonMemoryPoolGrowthType_t25DRAGON_MEMORY_GROWTH_NONEE"></span><span id="_CPPv2N28dragonMemoryPoolGrowthType_t25DRAGON_MEMORY_GROWTH_NONEE"></span><span class="target" id="managed__memory_8h_1a61241ee397378e46be622d8c02d13e91a84ef5c7f64a10783a0bf4c071eedcc6f"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_MEMORY_GROWTH_NONE</span></span></span><a class="headerlink" href="#_CPPv4N28dragonMemoryPoolGrowthType_t25DRAGON_MEMORY_GROWTH_NONEE" title="Permalink to this definition"></a><br /></dt>
+<dd></dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N28dragonMemoryPoolGrowthType_t30DRAGON_MEMORY_GROWTH_UNLIMITEDE">
+<span id="_CPPv3N28dragonMemoryPoolGrowthType_t30DRAGON_MEMORY_GROWTH_UNLIMITEDE"></span><span id="_CPPv2N28dragonMemoryPoolGrowthType_t30DRAGON_MEMORY_GROWTH_UNLIMITEDE"></span><span class="target" id="managed__memory_8h_1a61241ee397378e46be622d8c02d13e91aca9c3806da1403438d1e26dce0cced88"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_MEMORY_GROWTH_UNLIMITED</span></span></span><a class="headerlink" href="#_CPPv4N28dragonMemoryPoolGrowthType_t30DRAGON_MEMORY_GROWTH_UNLIMITEDE" title="Permalink to this definition"></a><br /></dt>
+<dd></dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N28dragonMemoryPoolGrowthType_t27DRAGON_MEMORY_GROWTH_CAPPEDE">
+<span id="_CPPv3N28dragonMemoryPoolGrowthType_t27DRAGON_MEMORY_GROWTH_CAPPEDE"></span><span id="_CPPv2N28dragonMemoryPoolGrowthType_t27DRAGON_MEMORY_GROWTH_CAPPEDE"></span><span class="target" id="managed__memory_8h_1a61241ee397378e46be622d8c02d13e91aeec45cca0f8051ccf02273736ed467c4"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_MEMORY_GROWTH_CAPPED</span></span></span><a class="headerlink" href="#_CPPv4N28dragonMemoryPoolGrowthType_t27DRAGON_MEMORY_GROWTH_CAPPEDE" title="Permalink to this definition"></a><br /></dt>
+<dd></dd></dl>
+
+</dd></dl>
+
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv422dragonMemoryPoolAttr_t">
+<span id="_CPPv322dragonMemoryPoolAttr_t"></span><span id="_CPPv222dragonMemoryPoolAttr_t"></span><span id="dragonMemoryPoolAttr_t"></span><span class="target" id="structdragonMemoryPoolAttr__t"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonMemoryPoolAttr_t</span></span></span><a class="headerlink" href="#_CPPv422dragonMemoryPoolAttr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The attributes of the Dragon Memory Pool. </p>
+<p>These are the attributes of a memory pool. Some are settable by the user. Some are read-only values and returned when requested by the user via the dragon_memory_pool_getattr function (not yet implemented). A few of these attributes are not yet implemented. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t21allocatable_data_sizeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t21allocatable_data_sizeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t21allocatable_data_sizeE"></span><span id="dragonMemoryPoolAttr_t::allocatable_data_size__s"></span><span class="target" id="structdragonMemoryPoolAttr__t_1ae355ff2dfb172492e58d079b769b470e"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">allocatable_data_size</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t21allocatable_data_sizeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The size of the original data segment of the pool. Ignored if set by user. This is the allocatable size of the pool which does not include meta information. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t15total_data_sizeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t15total_data_sizeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t15total_data_sizeE"></span><span id="dragonMemoryPoolAttr_t::total_data_size__s"></span><span class="target" id="structdragonMemoryPoolAttr__t_1afa7fb52162a81bec9b4e6e70cb031612"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">total_data_size</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t15total_data_sizeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The total size of the data segment include meta information. Ignored if set by user. This is the total size of the data segment including meta information. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t19data_min_block_sizeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t19data_min_block_sizeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t19data_min_block_sizeE"></span><span id="dragonMemoryPoolAttr_t::data_min_block_size__s"></span><span class="target" id="structdragonMemoryPoolAttr__t_1a408698c7ac03d7e62e73f14dc710d126"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">data_min_block_size</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t19data_min_block_sizeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The requested minimum allocation size from the pool. The actual minimum block size is reported via dragon_memory_pool_getattr. All allocations will be at least this size. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t23manifest_allocated_sizeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t23manifest_allocated_sizeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t23manifest_allocated_sizeE"></span><span id="dragonMemoryPoolAttr_t::manifest_allocated_size__s"></span><span class="target" id="structdragonMemoryPoolAttr__t_1aed101243eb3d3a32a488123ceff154da"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">manifest_allocated_size</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t23manifest_allocated_sizeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The size in bytes of the manifest. Ignored if set by user. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t12segment_sizeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t12segment_sizeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t12segment_sizeE"></span><span id="dragonMemoryPoolAttr_t::segment_size__s"></span><span class="target" id="structdragonMemoryPoolAttr__t_1a6d4122d3267e8ee83767372eb13fe8d0"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">segment_size</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t12segment_sizeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The requested size of segments when pool size is increased by the user. The actual segment size may be larger. The actual segment size will be reported by dragon_memory_pool_getattr. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t8max_sizeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t8max_sizeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t8max_sizeE"></span><span id="dragonMemoryPoolAttr_t::max_size__s"></span><span class="target" id="structdragonMemoryPoolAttr__t_1a0bb8bbd3f9a33eeea574e79e66e23444"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">max_size</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t8max_sizeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The requested maximum size of the memory pool. The actual maximum size will not be less than this but could be bigger based on requirements of the underlying heap representation. The actual maximum size will be reported by dragon_memory_pool_getattr. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t26max_allocatable_block_sizeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t26max_allocatable_block_sizeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t26max_allocatable_block_sizeE"></span><span id="dragonMemoryPoolAttr_t::max_allocatable_block_size__s"></span><span class="target" id="structdragonMemoryPoolAttr__t_1a0404a9fa18332cb407a6a5122e8bae61"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">max_allocatable_block_size</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t26max_allocatable_block_sizeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The maximum size of any allocatable block. Ignored if set by the user. This is the biggest block allocation this pool can support when empty. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t22minimum_data_alignmentE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t22minimum_data_alignmentE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t22minimum_data_alignmentE"></span><span id="dragonMemoryPoolAttr_t::minimum_data_alignment__s"></span><span class="target" id="structdragonMemoryPoolAttr__t_1af16692764ddf3b684cf5af6079b7f5db"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">minimum_data_alignment</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t22minimum_data_alignmentE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The minimum data alignment required of allocated blocks. The minimum data alignment cannot be greater than the minimum block size. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t8mem_typeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t8mem_typeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t8mem_typeE"></span><span id="dragonMemoryPoolAttr_t::mem_type__dragonMemoryPoolType_t"></span><span class="target" id="structdragonMemoryPoolAttr__t_1a890fea604af452aba81c6d5553a8f700"></span><a class="reference internal" href="#_CPPv422dragonMemoryPoolType_t" title="dragonMemoryPoolType_t"><span class="n"><span class="pre">dragonMemoryPoolType_t</span></span></a><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">mem_type</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t8mem_typeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The type of memory this pool supports. Currently only SHM memory pools are supported. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t11growth_typeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t11growth_typeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t11growth_typeE"></span><span id="dragonMemoryPoolAttr_t::growth_type__dragonMemoryPoolGrowthType_t"></span><span class="target" id="structdragonMemoryPoolAttr__t_1ab17202a98f7b3ce05420fc7602f34d7a"></span><a class="reference internal" href="#_CPPv428dragonMemoryPoolGrowthType_t" title="dragonMemoryPoolGrowthType_t"><span class="n"><span class="pre">dragonMemoryPoolGrowthType_t</span></span></a><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">growth_type</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t11growth_typeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The type of growth allowed on this memory pool. See dragonMemoryPoolGrowthType_t for an explanation. Currently ignored. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t4modeE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t4modeE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t4modeE"></span><span id="dragonMemoryPoolAttr_t::mode__mode_t"></span><span class="target" id="structdragonMemoryPoolAttr__t_1a8fcb759992f66f0745642fdd00305ec8"></span><span class="n"><span class="pre">mode_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">mode</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t4modeE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The mode to be used for the memory pool. This provides the umask for any file-backed permissions related to this memory pool. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t11npre_allocsE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t11npre_allocsE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t11npre_allocsE"></span><span id="dragonMemoryPoolAttr_t::npre_allocs__s"></span><span class="target" id="structdragonMemoryPoolAttr__t_1aafca0af2433593b3a466c39184ee4081"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">npre_allocs</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t11npre_allocsE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The number of preallocation sizes to do on this pool. To support fast allocation, a number of preallocations may be specified. This is the number of preallocation sizes that are specified in pre_allocs. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t10pre_allocsE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t10pre_allocsE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t10pre_allocsE"></span><span id="dragonMemoryPoolAttr_t::pre_allocs__sP"></span><span class="target" id="structdragonMemoryPoolAttr__t_1a923b7e4f5e45ffbc2012504b379b7386"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">pre_allocs</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t10pre_allocsE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The pre_allocs is an array of power of 2 preallocations to be made for fast allocation of certain sizes of blocks. Position 0 in this array indicates the number of preallocations to make with the minimum block size. Position 1 in the array is the number of allocations to make with two times the minimum block size. Each position, n, in the array indicates the number of allocations to make with 2**n times the block size. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t5mnameE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t5mnameE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t5mnameE"></span><span id="dragonMemoryPoolAttr_t::mname__cP"></span><span class="target" id="structdragonMemoryPoolAttr__t_1ad6c0ea9ee0e6691226d8e0f1ec091062"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">mname</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t5mnameE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The name of the manifest file when backed by a file. This value is ignored if set by the user. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N22dragonMemoryPoolAttr_t5namesE">
+<span id="_CPPv3N22dragonMemoryPoolAttr_t5namesE"></span><span id="_CPPv2N22dragonMemoryPoolAttr_t5namesE"></span><span id="dragonMemoryPoolAttr_t::names__cPP"></span><span class="target" id="structdragonMemoryPoolAttr__t_1a783eb19d27622ca3b71665f8779fb19c"></span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">names</span></span></span><a class="headerlink" href="#_CPPv4N22dragonMemoryPoolAttr_t5namesE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>An array data segment file names when backed by a file. The array of names is of length 1 + n_segments. This value is ignored if set by the user. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv423dragonMemoryPoolDescr_t">
+<span id="_CPPv323dragonMemoryPoolDescr_t"></span><span id="_CPPv223dragonMemoryPoolDescr_t"></span><span id="dragonMemoryPoolDescr_t"></span><span class="target" id="structdragonMemoryPoolDescr__t"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></span><a class="headerlink" href="#_CPPv423dragonMemoryPoolDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>This is an opaque handle to a memory pool. </p>
+<p>When a memory pool is created, the opaque descriptor is initialized to correspond to the pool in the current process. Memory pool descriptors reside in process local storage in the process in which they are created or attached. If you wish to share a pool descriptor with another process, you must serialize the pool descriptor and the serialized descriptor can be shared with another process. The other process must then attach to the memory pool to initialize its own pool descriptor. </p>
+</dd></dl>
+
+<dl class="cpp enum">
+<dt class="sig sig-object cpp" id="_CPPv428dragonMemoryAllocationType_t">
+<span id="_CPPv328dragonMemoryAllocationType_t"></span><span id="_CPPv228dragonMemoryAllocationType_t"></span><span class="target" id="managed__memory_8h_1a98a5bc37cb758f352cbda5315d26d238"></span><span class="k"><span class="pre">enum</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonMemoryAllocationType_t</span></span></span><a class="headerlink" href="#_CPPv428dragonMemoryAllocationType_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Specifies the memory allocation type. </p>
+<p>Dragon supports the allocation of memory based on a specific type or purpose. The generic allocation type is data and should be used by user-level code. Internally to Dragon, channel and channel buffer allocation types are also allowable. </p>
+<p><em>Values:</em></p>
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N28dragonMemoryAllocationType_t24DRAGON_MEMORY_ALLOC_DATAE">
+<span id="_CPPv3N28dragonMemoryAllocationType_t24DRAGON_MEMORY_ALLOC_DATAE"></span><span id="_CPPv2N28dragonMemoryAllocationType_t24DRAGON_MEMORY_ALLOC_DATAE"></span><span class="target" id="managed__memory_8h_1a98a5bc37cb758f352cbda5315d26d238a1b1d4e240c87b6788ebd2de6487ecab8"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_MEMORY_ALLOC_DATA</span></span></span><a class="headerlink" href="#_CPPv4N28dragonMemoryAllocationType_t24DRAGON_MEMORY_ALLOC_DATAE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Allocation is used for general-purpose data. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N28dragonMemoryAllocationType_t27DRAGON_MEMORY_ALLOC_CHANNELE">
+<span id="_CPPv3N28dragonMemoryAllocationType_t27DRAGON_MEMORY_ALLOC_CHANNELE"></span><span id="_CPPv2N28dragonMemoryAllocationType_t27DRAGON_MEMORY_ALLOC_CHANNELE"></span><span class="target" id="managed__memory_8h_1a98a5bc37cb758f352cbda5315d26d238aaa1f03c795326132b43da84b065b05e8"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_MEMORY_ALLOC_CHANNEL</span></span></span><a class="headerlink" href="#_CPPv4N28dragonMemoryAllocationType_t27DRAGON_MEMORY_ALLOC_CHANNELE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Internal Use Only. </p>
+</dd></dl>
+
+<dl class="cpp enumerator">
+<dt class="sig sig-object cpp" id="_CPPv4N28dragonMemoryAllocationType_t34DRAGON_MEMORY_ALLOC_CHANNEL_BUFFERE">
+<span id="_CPPv3N28dragonMemoryAllocationType_t34DRAGON_MEMORY_ALLOC_CHANNEL_BUFFERE"></span><span id="_CPPv2N28dragonMemoryAllocationType_t34DRAGON_MEMORY_ALLOC_CHANNEL_BUFFERE"></span><span class="target" id="managed__memory_8h_1a98a5bc37cb758f352cbda5315d26d238a5b0dfa93f22138392c1bbf3feba5c991"></span><span class="k"><span class="pre">enumerator</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">DRAGON_MEMORY_ALLOC_CHANNEL_BUFFER</span></span></span><a class="headerlink" href="#_CPPv4N28dragonMemoryAllocationType_t34DRAGON_MEMORY_ALLOC_CHANNEL_BUFFERE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Internal Use Only. </p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv419dragonMemoryDescr_t">
+<span id="_CPPv319dragonMemoryDescr_t"></span><span id="_CPPv219dragonMemoryDescr_t"></span><span id="dragonMemoryDescr_t"></span><span class="target" id="structdragonMemoryDescr__t"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></span><a class="headerlink" href="#_CPPv419dragonMemoryDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>This is an opaque handle to a memory allocation. </p>
+<p>When Dragon pool memory is allocated, a memory descriptor is initialized for the current process. These memory descriptors may be shared with other processes by first serializing them, and then passing the serialized descriptor to another process. The other process must then attach to the memory allocation using the serialized descriptor. Attaching and allocating are the two means of initializing a memory descriptor. </p>
+</dd></dl>
+
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv424dragonMemoryPoolSerial_t">
+<span id="_CPPv324dragonMemoryPoolSerial_t"></span><span id="_CPPv224dragonMemoryPoolSerial_t"></span><span id="dragonMemoryPoolSerial_t"></span><span class="target" id="structdragonMemoryPoolSerial__t"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonMemoryPoolSerial_t</span></span></span><a class="headerlink" href="#_CPPv424dragonMemoryPoolSerial_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>This is the type of a serialied memory pool descriptor. </p>
+<p>It should be treated as binary data with the given length. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N24dragonMemoryPoolSerial_t3lenE">
+<span id="_CPPv3N24dragonMemoryPoolSerial_t3lenE"></span><span id="_CPPv2N24dragonMemoryPoolSerial_t3lenE"></span><span id="dragonMemoryPoolSerial_t::len__s"></span><span class="target" id="structdragonMemoryPoolSerial__t_1a50be2add540e614cf55d080f89d16d2e"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">len</span></span></span><a class="headerlink" href="#_CPPv4N24dragonMemoryPoolSerial_t3lenE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The length of the serialized descriptor in bytes. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv420dragonMemorySerial_t">
+<span id="_CPPv320dragonMemorySerial_t"></span><span id="_CPPv220dragonMemorySerial_t"></span><span id="dragonMemorySerial_t"></span><span class="target" id="structdragonMemorySerial__t"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonMemorySerial_t</span></span></span><a class="headerlink" href="#_CPPv420dragonMemorySerial_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>A serialized memory descriptor. </p>
+<p>This is the type of binary data that may be shared with other processes when a memory descriptor should be shared between processes. </p>
+<div class="breathe-sectiondef docutils container">
+<p class="breathe-sectiondef-title rubric" id="breathe-section-title-public-members">Public Members</p>
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N20dragonMemorySerial_t3lenE">
+<span id="_CPPv3N20dragonMemorySerial_t3lenE"></span><span id="_CPPv2N20dragonMemorySerial_t3lenE"></span><span id="dragonMemorySerial_t::len__s"></span><span class="target" id="structdragonMemorySerial__t_1afdc0d792456683cc91f147f495ff2292"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">len</span></span></span><a class="headerlink" href="#_CPPv4N20dragonMemorySerial_t3lenE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The length of the serialized descriptor in bytes. </p>
+</dd></dl>
+
+<dl class="cpp var">
+<dt class="sig sig-object cpp" id="_CPPv4N20dragonMemorySerial_t4dataE">
+<span id="_CPPv3N20dragonMemorySerial_t4dataE"></span><span id="_CPPv2N20dragonMemorySerial_t4dataE"></span><span id="dragonMemorySerial_t::data__uint8_tP"></span><span class="target" id="structdragonMemorySerial__t_1a4d1263108fb1bf9b262ce5b9c979efd7"></span><span class="n"><span class="pre">uint8_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">data</span></span></span><a class="headerlink" href="#_CPPv4N20dragonMemorySerial_t4dataE" title="Permalink to this definition"></a><br /></dt>
+<dd><p>The serialized descriptor data to be shared. </p>
+</dd></dl>
+
+</div>
+</dd></dl>
+
+<dl class="cpp struct">
+<dt class="sig sig-object cpp" id="_CPPv429dragonMemoryPoolAllocations_t">
+<span id="_CPPv329dragonMemoryPoolAllocations_t"></span><span id="_CPPv229dragonMemoryPoolAllocations_t"></span><span id="dragonMemoryPoolAllocations_t"></span><span class="target" id="structdragonMemoryPoolAllocations__t"></span><span class="k"><span class="pre">struct</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragonMemoryPoolAllocations_t</span></span></span><a class="headerlink" href="#_CPPv429dragonMemoryPoolAllocations_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>A structure for getting all the memory allocations in a pool. </p>
+<p>When desired, a pool can be queried to return all the allocations within the pool. You do this by calling <code class="docutils literal notranslate"><span class="pre">dragon_memory_pool_get_allocations</span></code> or the type specific <code class="docutils literal notranslate"><span class="pre">dragon_memory_pool_get_type_allocations</span></code>. </p>
+</dd></dl>
+
+</section>
+<section id="pool-lifecycle-management">
+<h2><a class="toc-backref" href="#id3">Pool Lifecycle Management</a><a class="headerlink" href="#pool-lifecycle-management" title="Permalink to this heading"></a></h2>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv423dragon_memory_attr_initP22dragonMemoryPoolAttr_t">
+<span id="_CPPv323dragon_memory_attr_initP22dragonMemoryPoolAttr_t"></span><span id="_CPPv223dragon_memory_attr_initP22dragonMemoryPoolAttr_t"></span><span id="dragon_memory_attr_init__dragonMemoryPoolAttr_tP"></span><span class="target" id="managed__memory_8h_1a3ea98ca0a3c197a9b846ba74a18b4db7"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_attr_init</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv422dragonMemoryPoolAttr_t" title="dragonMemoryPoolAttr_t"><span class="n"><span class="pre">dragonMemoryPoolAttr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">attr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv423dragon_memory_attr_initP22dragonMemoryPoolAttr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Initialze memory pool attributes. </p>
+<p>Memory pools have attributes that can be specified to customize the behavior and characteristics of the memory pool. Call this method first to initialize all attributes to default values, before customizing the values for your application’s specifics.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>attr</strong> – is a attribute structue and may result in mallocing space, so destroy should be called when done with the structure.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv426dragon_memory_attr_destroyP22dragonMemoryPoolAttr_t">
+<span id="_CPPv326dragon_memory_attr_destroyP22dragonMemoryPoolAttr_t"></span><span id="_CPPv226dragon_memory_attr_destroyP22dragonMemoryPoolAttr_t"></span><span id="dragon_memory_attr_destroy__dragonMemoryPoolAttr_tP"></span><span class="target" id="managed__memory_8h_1af1a33d03262bceb5d4e020f2398e28ac"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_attr_destroy</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv422dragonMemoryPoolAttr_t" title="dragonMemoryPoolAttr_t"><span class="n"><span class="pre">dragonMemoryPoolAttr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">attr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv426dragon_memory_attr_destroyP22dragonMemoryPoolAttr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Destroy the memory pool attribute structure. </p>
+<p>Any mallocs that were performed by dragon_memory_attr_init are freed by calling this destroy function. Any mallocs that were executed done by a caller of this function are the responsibility of the code calling this. After user code is done initig the pool, be sure to set any pointer field to NULL or this function will return an error code to try and catch unfreed memory that was mistakenly left around.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>attr</strong> – is the attribute structure to clean up.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv425dragon_memory_pool_createP23dragonMemoryPoolDescr_t6size_tPKcK13dragonM_UID_tPK22dragonMemoryPoolAttr_t">
+<span id="_CPPv325dragon_memory_pool_createP23dragonMemoryPoolDescr_t6size_tPKcK13dragonM_UID_tPK22dragonMemoryPoolAttr_t"></span><span id="_CPPv225dragon_memory_pool_createP23dragonMemoryPoolDescr_t6size_tPKcK13dragonM_UID_tPK22dragonMemoryPoolAttr_t"></span><span id="dragon_memory_pool_create__dragonMemoryPoolDescr_tP.s.cCP.dragonM_UID_tC.dragonMemoryPoolAttr_tCP"></span><span class="target" id="managed__memory_8h_1a095b9f600dc8999d443650b8e65c0d67"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_create</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">bytes</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">base_name</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">dragonM_UID_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">m_uid</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv422dragonMemoryPoolAttr_t" title="dragonMemoryPoolAttr_t"><span class="n"><span class="pre">dragonMemoryPoolAttr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">attr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv425dragon_memory_pool_createP23dragonMemoryPoolDescr_t6size_tPKcK13dragonM_UID_tPK22dragonMemoryPoolAttr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Creates a memory pool of size <em>bytes</em>. </p>
+<p>Creates a memory pool of usable size <em>bytes</em>. <em>base_name</em> is a null-terminated character string to use if the memory is backed by a file or shared memory. The attributes <em>attr</em> specifies customizations of the memory or is ignored if set to <code class="docutils literal notranslate"><span class="pre">NULL</span></code>. If <em>attr</em> is provided and the value of <em>mem_type</em> in it set to <code class="docutils literal notranslate"><span class="pre">DRAGON_MEMORY_TYPE_PRIVATE</span></code>, then <em>base_name</em> is ignored.</p>
+<p>The memory pool descriptor <em>pool_descr</em> is returned once the allocation is satisfied. <em>pool_descr</em> can then be used for memory allocations. <em>pool_descr</em> can be serialized and shared with other processes that want to allocate memory from it.</p>
+<p>Note that depending on the value of <em>nodemask</em> in <em>attr</em>, the memory for the pool may or may not be faulted in.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pool_descr</strong> – is a structure pointer provided by the user, pointing at space that can be initialized. </p></li>
+<li><p><strong>bytes</strong> – is the size of the memory pool in bytes. </p></li>
+<li><p><strong>base_name</strong> – is the base of the name of the shared memory segement which is to be mapped into memory. </p></li>
+<li><p><strong>m_uid</strong> – is the memory pool identifer to uniquely identify this pool. </p></li>
+<li><p><strong>attr</strong> – are the attributes to be applied when creating this pool. Providing NULL for this argument will use default attributes for the pool.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or an error code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv426dragon_memory_pool_destroyP23dragonMemoryPoolDescr_t">
+<span id="_CPPv326dragon_memory_pool_destroyP23dragonMemoryPoolDescr_t"></span><span id="_CPPv226dragon_memory_pool_destroyP23dragonMemoryPoolDescr_t"></span><span id="dragon_memory_pool_destroy__dragonMemoryPoolDescr_tP"></span><span class="target" id="managed__memory_8h_1adaf5ebb183edc53427592b943acd1675"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_destroy</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv426dragon_memory_pool_destroyP23dragonMemoryPoolDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Destroys the memory pool described by <em>pool_descr</em>. Any outstanding allocations from the memory pool become invalid.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>DRAGON_SUCCESS or an error code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv437dragon_memory_pool_max_serialized_lenv">
+<span id="_CPPv337dragon_memory_pool_max_serialized_lenv"></span><span id="_CPPv237dragon_memory_pool_max_serialized_lenv"></span><span id="dragon_memory_pool_max_serialized_len"></span><span class="target" id="managed__memory_8h_1a8bb8e452e5d264e573652b6454331184"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_max_serialized_len</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv437dragon_memory_pool_max_serialized_lenv" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Provide a max size for a serialized pool descriptor. </p>
+<p>returns the maximum size that will be needed to hold a serialized pool descriptor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The maximum required size for a serialized pool descriptor. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv428dragon_memory_pool_serializeP24dragonMemoryPoolSerial_tPK23dragonMemoryPoolDescr_t">
+<span id="_CPPv328dragon_memory_pool_serializeP24dragonMemoryPoolSerial_tPK23dragonMemoryPoolDescr_t"></span><span id="_CPPv228dragon_memory_pool_serializeP24dragonMemoryPoolSerial_tPK23dragonMemoryPoolDescr_t"></span><span id="dragon_memory_pool_serialize__dragonMemoryPoolSerial_tP.dragonMemoryPoolDescr_tCP"></span><span class="target" id="managed__memory_8h_1a1c5d0d279f2366980fa5a3b542517bd9"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_serialize</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv424dragonMemoryPoolSerial_t" title="dragonMemoryPoolSerial_t"><span class="n"><span class="pre">dragonMemoryPoolSerial_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_ser</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv428dragon_memory_pool_serializeP24dragonMemoryPoolSerial_tPK23dragonMemoryPoolDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Serialize a pool descriptor to be shared with other processes. </p>
+<p>When sharing a pool, the pool descriptor may be serialized by the user to share with other processes which would use this to attach to the pool. Note that only local pools can be used to allocate memory. Non-local pool descriptors cannot be used for allocating memory on a separate node. Once the pool has been attached or the serialized data has been passed on to another process, it will be necessary to destroy the serialized pool descriptor since it contains malloced data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pool_ser</strong> – is a pointer to a structure that will hold the serialized pool descriptor.</p></li>
+<li><p><strong>pool_descr</strong> – is the pool descriptor that is being serialized.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or an error code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv430dragon_memory_pool_serial_freeP24dragonMemoryPoolSerial_t">
+<span id="_CPPv330dragon_memory_pool_serial_freeP24dragonMemoryPoolSerial_t"></span><span id="_CPPv230dragon_memory_pool_serial_freeP24dragonMemoryPoolSerial_t"></span><span id="dragon_memory_pool_serial_free__dragonMemoryPoolSerial_tP"></span><span class="target" id="managed__memory_8h_1a11839af0fc04c93a91fcb0ffa8f14870"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_serial_free</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv424dragonMemoryPoolSerial_t" title="dragonMemoryPoolSerial_t"><span class="n"><span class="pre">dragonMemoryPoolSerial_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_ser</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv430dragon_memory_pool_serial_freeP24dragonMemoryPoolSerial_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Free the space used by a serialied pool descriptor. </p>
+<p>When a pool descriptor is serialized, there is space that is malloced to hold the serialized pool descriptor. To prevent a memory leak in the current process, a serialized pool desctiptor should be destroyed once it is no longer needed, which might be after the process has attached to it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>pool_ser</strong> – is the serialized pool descriptor that should be cleaned up by freeing internal storage.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv425dragon_memory_pool_attachP23dragonMemoryPoolDescr_tPK24dragonMemoryPoolSerial_t">
+<span id="_CPPv325dragon_memory_pool_attachP23dragonMemoryPoolDescr_tPK24dragonMemoryPoolSerial_t"></span><span id="_CPPv225dragon_memory_pool_attachP23dragonMemoryPoolDescr_tPK24dragonMemoryPoolSerial_t"></span><span id="dragon_memory_pool_attach__dragonMemoryPoolDescr_tP.dragonMemoryPoolSerial_tCP"></span><span class="target" id="managed__memory_8h_1ab18883f0fbb549b213ca071b51f24f81"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_attach</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv424dragonMemoryPoolSerial_t" title="dragonMemoryPoolSerial_t"><span class="n"><span class="pre">dragonMemoryPoolSerial_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_ser</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv425dragon_memory_pool_attachP23dragonMemoryPoolDescr_tPK24dragonMemoryPoolSerial_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Attach to a pool using a serialied descriptor. </p>
+<p>A process that is given a serialized pool descriptor can use it to attach to an existing pool by calling this function. Once the pool has been attached or the serialized data has been passed on to another process, it will be necessary to destroy the serialized pool descriptor since it contains malloced data.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pool_descr</strong> – will be initialized if DRAGON_SUCCESS is returned. </p></li>
+<li><p><strong>pool_ser</strong> – is the given serialized pool descriptor for this pool.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv434dragon_memory_pool_attach_from_envP23dragonMemoryPoolDescr_tPKc">
+<span id="_CPPv334dragon_memory_pool_attach_from_envP23dragonMemoryPoolDescr_tPKc"></span><span id="_CPPv234dragon_memory_pool_attach_from_envP23dragonMemoryPoolDescr_tPKc"></span><span id="dragon_memory_pool_attach_from_env__dragonMemoryPoolDescr_tP.cCP"></span><span class="target" id="managed__memory_8h_1ad8ff043713174696c8940e74de7d5008"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_attach_from_env</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">env_var</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv434dragon_memory_pool_attach_from_envP23dragonMemoryPoolDescr_tPKc" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Given an environment variable name, use it to attach to a memory pool. </p>
+<p>Certain environment variables contain serialized descriptors to resources, including memory pools created by Dragon’s run-time services. This function will attach to a pool descriptor whose serialized descriptor is found in an environment variable. Once a process no longer needs access to a memory pool, it should detach from it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pool_descr</strong> – is a pointer to a pool descriptor that will be initialized upon successful completion of this function.</p></li>
+<li><p><strong>env_var</strong> – is a pointer to a null-terminated environment variable string which maps to a base64 encoded serialized memory pool descriptor.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv425dragon_memory_pool_detachP23dragonMemoryPoolDescr_t">
+<span id="_CPPv325dragon_memory_pool_detachP23dragonMemoryPoolDescr_t"></span><span id="_CPPv225dragon_memory_pool_detachP23dragonMemoryPoolDescr_t"></span><span id="dragon_memory_pool_detach__dragonMemoryPoolDescr_tP"></span><span class="target" id="managed__memory_8h_1a609a3510272ce5b5dd04f93ab37da9f2"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_detach</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv425dragon_memory_pool_detachP23dragonMemoryPoolDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Detach from a memory pool. </p>
+<p>Once a process no longer needs access to a memory pool, it should detach from it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>pool_descr</strong> – is the memory pool to detach from.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv430dragon_memory_pool_descr_cloneP23dragonMemoryPoolDescr_tPK23dragonMemoryPoolDescr_t">
+<span id="_CPPv330dragon_memory_pool_descr_cloneP23dragonMemoryPoolDescr_tPK23dragonMemoryPoolDescr_t"></span><span id="_CPPv230dragon_memory_pool_descr_cloneP23dragonMemoryPoolDescr_tPK23dragonMemoryPoolDescr_t"></span><span id="dragon_memory_pool_descr_clone__dragonMemoryPoolDescr_tP.dragonMemoryPoolDescr_tCP"></span><span class="target" id="managed__memory_8h_1a04466f8e003bd027563f343f14211097"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_descr_clone</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">newpool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">oldpool_descr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv430dragon_memory_pool_descr_cloneP23dragonMemoryPoolDescr_tPK23dragonMemoryPoolDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Make a copy of a memory pool descriptor. </p>
+<p>Does a copy from <em>oldpool_descr</em> into <em>newpool_descr</em> providing a clone of the original.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>newpool_descr</strong> – is the newly cloned descriptor. </p></li>
+<li><p><strong>oldpool_descr</strong> – is the original pool descriptor.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or an error code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="pool-information-functionality">
+<h2><a class="toc-backref" href="#id4">Pool Information &amp; Functionality</a><a class="headerlink" href="#pool-information-functionality" title="Permalink to this heading"></a></h2>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv429dragon_memory_pool_get_hostidP23dragonMemoryPoolDescr_tP11dragonULInt">
+<span id="_CPPv329dragon_memory_pool_get_hostidP23dragonMemoryPoolDescr_tP11dragonULInt"></span><span id="_CPPv229dragon_memory_pool_get_hostidP23dragonMemoryPoolDescr_tP11dragonULInt"></span><span id="dragon_memory_pool_get_hostid__dragonMemoryPoolDescr_tP.dragonULIntP"></span><span class="target" id="managed__memory_8h_1ab97f8cd40775242ab6294aad3f385831"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_get_hostid</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="n"><span class="pre">dragonULInt</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">hostid</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv429dragon_memory_pool_get_hostidP23dragonMemoryPoolDescr_tP11dragonULInt" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get the hostid of the host where this pool resides. </p>
+<p>The hostid of the pool can be used for identifying the location of this pool within the Dragon run-time nodes. It identifies the node where this pool exists.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pool_descr</strong> – is a valid pool descriptor for the pool in question. </p></li>
+<li><p><strong>hostid</strong> – is a pointer to the location where the hostid will be copied by this function call.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or an error code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv432dragon_memory_pool_get_uid_fnamePK24dragonMemoryPoolSerial_tP11dragonULIntPPc">
+<span id="_CPPv332dragon_memory_pool_get_uid_fnamePK24dragonMemoryPoolSerial_tP11dragonULIntPPc"></span><span id="_CPPv232dragon_memory_pool_get_uid_fnamePK24dragonMemoryPoolSerial_tP11dragonULIntPPc"></span><span id="dragon_memory_pool_get_uid_fname__dragonMemoryPoolSerial_tCP.dragonULIntP.cPP"></span><span class="target" id="managed__memory_8h_1afdc2b3132719ab7edae9be587b569315"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_get_uid_fname</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv424dragonMemoryPoolSerial_t" title="dragonMemoryPoolSerial_t"><span class="n"><span class="pre">dragonMemoryPoolSerial_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_ser</span></span>, <span class="n"><span class="pre">dragonULInt</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">uid_out</span></span>, <span class="kt"><span class="pre">char</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">fname_out</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv432dragon_memory_pool_get_uid_fnamePK24dragonMemoryPoolSerial_tP11dragonULIntPPc" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get meta information about a memory pool. </p>
+<p>Retrieve memory pool m_uid and optionally the filename of the pool without needing to attach to the pool. If <em>m_uid</em> is not NULL it will copy the m_uid of the pool into the space it points to. If <em>filename</em> is not NULL it will copy the filename of the pool using :c:func:<code class="docutils literal notranslate"><span class="pre">strdup()</span></code>:. It is up to the caller to free the space <em>filename</em> points to in this case.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>m_uid</strong> – is a pointer to space where the m_uid can be copied or NULL if it is not needed. </p></li>
+<li><p><strong>filename</strong> – is a pointer to a character pointer which will be initialized to point to to the pool’s filename unless NULL was provided in which case the filename copy is not performed.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or error code </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv427dragon_memory_pool_is_localP23dragonMemoryPoolDescr_t">
+<span id="_CPPv327dragon_memory_pool_is_localP23dragonMemoryPoolDescr_t"></span><span id="_CPPv227dragon_memory_pool_is_localP23dragonMemoryPoolDescr_t"></span><span id="dragon_memory_pool_is_local__dragonMemoryPoolDescr_tP"></span><span class="target" id="managed__memory_8h_1a228b72b653d0a47cd687f0e94838a72d"></span><span class="kt"><span class="pre">bool</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_is_local</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv427dragon_memory_pool_is_localP23dragonMemoryPoolDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Discover whether a pool is local or not. </p>
+<p>Return true if the memory pool is on the current node and false, otherwise. Occassionally, it is necessary to know if a memory pool is local to a node when serialized descriptors are passed around.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>true if is is local and false otherwise. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv435dragon_memory_pool_allocations_freeP29dragonMemoryPoolAllocations_t">
+<span id="_CPPv335dragon_memory_pool_allocations_freeP29dragonMemoryPoolAllocations_t"></span><span id="_CPPv235dragon_memory_pool_allocations_freeP29dragonMemoryPoolAllocations_t"></span><span id="dragon_memory_pool_allocations_free__dragonMemoryPoolAllocations_tP"></span><span class="target" id="managed__memory_8h_1a056c9f613021cbdf9cc76a5fa0ddc6a3"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_allocations_free</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv429dragonMemoryPoolAllocations_t" title="dragonMemoryPoolAllocations_t"><span class="n"><span class="pre">dragonMemoryPoolAllocations_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">allocs</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv435dragon_memory_pool_allocations_freeP29dragonMemoryPoolAllocations_t" title="Permalink to this definition"></a><br /></dt>
+<dd></dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv436dragon_memory_pool_allocation_existsPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tK11dragonULIntPi">
+<span id="_CPPv336dragon_memory_pool_allocation_existsPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tK11dragonULIntPi"></span><span id="_CPPv236dragon_memory_pool_allocation_existsPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tK11dragonULIntPi"></span><span id="dragon_memory_pool_allocation_exists__dragonMemoryPoolDescr_tCP.dragonMemoryAllocationType_tC.dragonULIntC.iP"></span><span class="target" id="managed__memory_8h_1a39dfeb27f911f17a137d53db778e58a7"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_allocation_exists</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv428dragonMemoryAllocationType_t" title="dragonMemoryAllocationType_t"><span class="n"><span class="pre">dragonMemoryAllocationType_t</span></span></a><span class="w"> </span><span class="n sig-param"><span class="pre">type</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">dragonULInt</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">type_id</span></span>, <span class="kt"><span class="pre">int</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">flag</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv436dragon_memory_pool_allocation_existsPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tK11dragonULIntPi" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Check whether a memory pool allocation exists. </p>
+<p>Given the manifest information (type, type id) for a particular memory allocation in a pool, return true or false that the allocation exists via the flag argument. This method only works locally on the node where the memory pool exists. The process calling this function and the memory pool must be co-located on the same node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pool_descr</strong> – is the Memory Pool being queried.</p></li>
+<li><p><strong>type</strong> – is an allocation type for the memory descriptor being queried.</p></li>
+<li><p><strong>type_id</strong> – is the user supplied identifier for the memory descriptor being queried.</p></li>
+<li><p><strong>flag</strong> – is a pointer to an integer where 1 will be stored if the memory exists and 0 otherwise.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv434dragon_memory_pool_get_allocationsPK23dragonMemoryPoolDescr_tP29dragonMemoryPoolAllocations_t">
+<span id="_CPPv334dragon_memory_pool_get_allocationsPK23dragonMemoryPoolDescr_tP29dragonMemoryPoolAllocations_t"></span><span id="_CPPv234dragon_memory_pool_get_allocationsPK23dragonMemoryPoolDescr_tP29dragonMemoryPoolAllocations_t"></span><span id="dragon_memory_pool_get_allocations__dragonMemoryPoolDescr_tCP.dragonMemoryPoolAllocations_tP"></span><span class="target" id="managed__memory_8h_1a8834c51590bedcfaf036702c2e472cad"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_get_allocations</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <a class="reference internal" href="#_CPPv429dragonMemoryPoolAllocations_t" title="dragonMemoryPoolAllocations_t"><span class="n"><span class="pre">dragonMemoryPoolAllocations_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">allocs</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv434dragon_memory_pool_get_allocationsPK23dragonMemoryPoolDescr_tP29dragonMemoryPoolAllocations_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get all allocations from a memory pool. </p>
+<p>This function returns all current allocations from the given memory pool. This function only works for pools that are co-located on the same node as the process calling this function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pool_descr</strong> – is a pointer to the descriptor to the memory pool.</p></li>
+<li><p><strong>allocs</strong> – is a pointer to an allocations structure that will be initialized by this function.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv439dragon_memory_pool_get_type_allocationsPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tP29dragonMemoryPoolAllocations_t">
+<span id="_CPPv339dragon_memory_pool_get_type_allocationsPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tP29dragonMemoryPoolAllocations_t"></span><span id="_CPPv239dragon_memory_pool_get_type_allocationsPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tP29dragonMemoryPoolAllocations_t"></span><span id="dragon_memory_pool_get_type_allocations__dragonMemoryPoolDescr_tCP.dragonMemoryAllocationType_tC.dragonMemoryPoolAllocations_tP"></span><span class="target" id="managed__memory_8h_1a4636fec3f4b78368a1d60a8d51943900"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_get_type_allocations</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv428dragonMemoryAllocationType_t" title="dragonMemoryAllocationType_t"><span class="n"><span class="pre">dragonMemoryAllocationType_t</span></span></a><span class="w"> </span><span class="n sig-param"><span class="pre">type</span></span>, <a class="reference internal" href="#_CPPv429dragonMemoryPoolAllocations_t" title="dragonMemoryPoolAllocations_t"><span class="n"><span class="pre">dragonMemoryPoolAllocations_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">allocs</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv439dragon_memory_pool_get_type_allocationsPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tP29dragonMemoryPoolAllocations_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get all allocations of a particular type from a memory pool. </p>
+<p>This function returns all current allocations of a particular type from the given memory pool. This function only works for pools that are co-located on the same node as the process calling this function.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>pool_descr</strong> – is a pointer to the descriptor to the memory pool.</p></li>
+<li><p><strong>type</strong> – is the type of the allocations to retrieve from the memory pool.</p></li>
+<li><p><strong>allocs</strong> – is a pointer to an allocations structure that will be initialized by this function.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv438dragon_memory_pool_allocations_destroyP29dragonMemoryPoolAllocations_t">
+<span id="_CPPv338dragon_memory_pool_allocations_destroyP29dragonMemoryPoolAllocations_t"></span><span id="_CPPv238dragon_memory_pool_allocations_destroyP29dragonMemoryPoolAllocations_t"></span><span id="dragon_memory_pool_allocations_destroy__dragonMemoryPoolAllocations_tP"></span><span class="target" id="managed__memory_8h_1a2df46c2cb184fdc09e8026a026a4027a"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_pool_allocations_destroy</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv429dragonMemoryPoolAllocations_t" title="dragonMemoryPoolAllocations_t"><span class="n"><span class="pre">dragonMemoryPoolAllocations_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">allocs</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv438dragon_memory_pool_allocations_destroyP29dragonMemoryPoolAllocations_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Free local the allocations structure. </p>
+<p>Calling this function frees internal mallocs that are done with the allocation sructure. This does not free the underlying memory allocations. This function should be called when the result of calling either of the get_allocations functions is no longer needed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>allocs</strong> – is the allocations structure that was returned from getting the allocations.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="memory-lifecycle-management">
+<h2><a class="toc-backref" href="#id5">Memory Lifecycle Management</a><a class="headerlink" href="#memory-lifecycle-management" title="Permalink to this heading"></a></h2>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv419dragon_memory_allocP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_t">
+<span id="_CPPv319dragon_memory_allocP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_t"></span><span id="_CPPv219dragon_memory_allocP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_t"></span><span id="dragon_memory_alloc__dragonMemoryDescr_tP.dragonMemoryPoolDescr_tCP.sC"></span><span class="target" id="managed__memory_8h_1ad4c94362f38fc1df17c954cccef68ec1"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_alloc</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">bytes</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv419dragon_memory_allocP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Allocate memory from a pool. </p>
+<p>This function allocates memory from a memory pool if the requested size is avialable. Otherwise, it returns a return code indicating that the requested size was not available.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is a pointer to a memory descriptor that will be initialied by the call.</p></li>
+<li><p><strong>pool_descr</strong> – is a pointer to a pool descriptor which will be used for the allocation.</p></li>
+<li><p><strong>bytes</strong> – is the size of the requested allocation.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. If the requested size is not then DRAGON_DYNHEAP_REQUESTED_SIZE_NOT_AVAILABLE is returned. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv428dragon_memory_alloc_blockingP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tPK10timespec_t">
+<span id="_CPPv328dragon_memory_alloc_blockingP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tPK10timespec_t"></span><span id="_CPPv228dragon_memory_alloc_blockingP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tPK10timespec_t"></span><span id="dragon_memory_alloc_blocking__dragonMemoryDescr_tP.dragonMemoryPoolDescr_tCP.sC.timespec_tCP"></span><span class="target" id="managed__memory_8h_1a5283f14a44dbd03cc0aedd6e2c81e70c"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_alloc_blocking</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">bytes</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">timespec_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">timer</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv428dragon_memory_alloc_blockingP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tPK10timespec_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Allocate memory from a pool, waiting if necessary. </p>
+<p>Allocates memory of the given size in bytes from a memory pool. The memory will be block aligned. The minimum block size of the pool determines its alignment. Pools are a finite sized resource. If the desired memory allocation size is not currently available, this call will block the current process for timeout until it is available. The effect of using this is that back pressure can be applied to a process or processes once they have consumed all the local resources they are allowed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is a pointer to the memory descriptor to be initialized.</p></li>
+<li><p><strong>pool_descr</strong> – is a pointer to a pool descriptor for the pool in which to make the allocation.</p></li>
+<li><p><strong>bytes</strong> – is the size of the requested allocation in bytes.</p></li>
+<li><p><strong>timeout</strong> – a pointer to the timeout that is to be used. Providing NULL means to wait indefinitely. Providing a zero timeout (both seconds and nanoseconds) means to try once and not block if the space is not available.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv424dragon_memory_alloc_typeP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tK28dragonMemoryAllocationType_tK11dragonULInt">
+<span id="_CPPv324dragon_memory_alloc_typeP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tK28dragonMemoryAllocationType_tK11dragonULInt"></span><span id="_CPPv224dragon_memory_alloc_typeP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tK28dragonMemoryAllocationType_tK11dragonULInt"></span><span id="dragon_memory_alloc_type__dragonMemoryDescr_tP.dragonMemoryPoolDescr_tCP.sC.dragonMemoryAllocationType_tC.dragonULIntC"></span><span class="target" id="managed__memory_8h_1a6356c035bbea0a1e34545de63cfbe49c"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_alloc_type</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">bytes</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv428dragonMemoryAllocationType_t" title="dragonMemoryAllocationType_t"><span class="n"><span class="pre">dragonMemoryAllocationType_t</span></span></a><span class="w"> </span><span class="n sig-param"><span class="pre">type</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">dragonULInt</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">type_id</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv424dragon_memory_alloc_typeP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tK28dragonMemoryAllocationType_tK11dragonULInt" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Allocate memory from a pool. </p>
+<p>Allocate memory for specific type with specific ID Use for allocating channels, channel buffers, and other non-general-purpose data allocations. Allocates memory of the given size in bytes from a memory pool. The memory will be block aligned. The minimum block size of the pool determines its alignment. Pools are a finite sized resource. If the desired memory allocation size is not currently available, this call will block the current process for timeout until it is available. The effect of using this is that back pressure can be applied to a process or processes once they have consumed all the local resources they are allowed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is a pointer to the memory descriptor to be initialized.</p></li>
+<li><p><strong>pool_descr</strong> – is a pointer to a pool descriptor for the pool in which to make the allocation.</p></li>
+<li><p><strong>bytes</strong> – is the size of the requested allocation in bytes.</p></li>
+<li><p><strong>type</strong> – is constant value associated with the type of memory to be allocated.</p></li>
+<li><p><strong>type_id</strong> – is a user supplied value to identify the memory allocation of this given type.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. If the requested size is not then DRAGON_DYNHEAP_REQUESTED_SIZE_NOT_AVAILABLE is returned. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv433dragon_memory_alloc_type_blockingP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tK28dragonMemoryAllocationType_tK11dragonULIntPK10timespec_t">
+<span id="_CPPv333dragon_memory_alloc_type_blockingP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tK28dragonMemoryAllocationType_tK11dragonULIntPK10timespec_t"></span><span id="_CPPv233dragon_memory_alloc_type_blockingP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tK28dragonMemoryAllocationType_tK11dragonULIntPK10timespec_t"></span><span id="dragon_memory_alloc_type_blocking__dragonMemoryDescr_tP.dragonMemoryPoolDescr_tCP.sC.dragonMemoryAllocationType_tC.dragonULIntC.timespec_tCP"></span><span class="target" id="managed__memory_8h_1a6f7fcd49e116f218b38f870c849d1b02"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_alloc_type_blocking</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">bytes</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv428dragonMemoryAllocationType_t" title="dragonMemoryAllocationType_t"><span class="n"><span class="pre">dragonMemoryAllocationType_t</span></span></a><span class="w"> </span><span class="n sig-param"><span class="pre">type</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">dragonULInt</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">type_id</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">timespec_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">timer</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv433dragon_memory_alloc_type_blockingP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK6size_tK28dragonMemoryAllocationType_tK11dragonULIntPK10timespec_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Allocate memory from a pool, waiting if necessary. </p>
+<p>Allocate memory for specific type with specific ID Use for allocating channels, channel buffers, and other non-general-purpose data allocations. Allocates memory of the given size in bytes from a memory pool. The memory will be block aligned. The minimum block size of the pool determines its alignment. Pools are a finite sized resource. If the desired memory allocation size is not currently available, this call will block the current process for timeout until it is available. The effect of using this is that back pressure can be applied to a process or processes once they have consumed all the local resources they are allowed.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is a pointer to the memory descriptor to be initialized.</p></li>
+<li><p><strong>pool_descr</strong> – is a pointer to a pool descriptor for the pool in which to make the allocation.</p></li>
+<li><p><strong>bytes</strong> – is the size of the requested allocation in bytes.</p></li>
+<li><p><strong>type</strong> – is constant value associated with the type of memory to be allocated.</p></li>
+<li><p><strong>type_id</strong> – is a user supplied value to identify the memory allocation of this given type.</p></li>
+<li><p><strong>timeout</strong> – a pointer to the timeout that is to be used. Providing NULL means to wait indefinitely. Providing a zero timeout (both seconds and nanoseconds) means to try once and not block if the space is not available.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv432dragon_memory_max_serialized_lenv">
+<span id="_CPPv332dragon_memory_max_serialized_lenv"></span><span id="_CPPv232dragon_memory_max_serialized_lenv"></span><span id="dragon_memory_max_serialized_len"></span><span class="target" id="managed__memory_8h_1af068ee071201376677b300f78c2041e4"></span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_max_serialized_len</span></span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv432dragon_memory_max_serialized_lenv" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get the maximum length of a serialized memory descriptor. </p>
+<p>Memory allocations may be serialized and shared with other processes. In some situations it may be necessary to preallocate some space to be used to store this serialized data. This function returns the maximum amount of space that would be required in bytes.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>the size in bytes that is needed for the maximum sized serialized descriptor. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv423dragon_memory_serializeP20dragonMemorySerial_tPK19dragonMemoryDescr_t">
+<span id="_CPPv323dragon_memory_serializeP20dragonMemorySerial_tPK19dragonMemoryDescr_t"></span><span id="_CPPv223dragon_memory_serializeP20dragonMemorySerial_tPK19dragonMemoryDescr_t"></span><span id="dragon_memory_serialize__dragonMemorySerial_tP.dragonMemoryDescr_tCP"></span><span class="target" id="managed__memory_8h_1a596496724c60a0c25093127ac8f3efda"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_serialize</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv420dragonMemorySerial_t" title="dragonMemorySerial_t"><span class="n"><span class="pre">dragonMemorySerial_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_ser</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv423dragon_memory_serializeP20dragonMemorySerial_tPK19dragonMemoryDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Serialize a memory descriptor. </p>
+<p>Memory descriptors, allocated from memory pools, may be serialized to share with other processes. This function returns a serialized descriptor for the memory allocation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_ser</strong> – is a pointer to a serialized memory descriptor structure. </p></li>
+<li><p><strong>mem_descr</strong> – is the memory descriptor being serialized.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv420dragon_memory_attachP19dragonMemoryDescr_tPK20dragonMemorySerial_t">
+<span id="_CPPv320dragon_memory_attachP19dragonMemoryDescr_tPK20dragonMemorySerial_t"></span><span id="_CPPv220dragon_memory_attachP19dragonMemoryDescr_tPK20dragonMemorySerial_t"></span><span id="dragon_memory_attach__dragonMemoryDescr_tP.dragonMemorySerial_tCP"></span><span class="target" id="managed__memory_8h_1afcb080d08c027de9fe24c997cc9470bd"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_attach</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv420dragonMemorySerial_t" title="dragonMemorySerial_t"><span class="n"><span class="pre">dragonMemorySerial_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_ser</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv420dragon_memory_attachP19dragonMemoryDescr_tPK20dragonMemorySerial_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Attach to an existing memory allocation. </p>
+<p>A serialized memory descriptor, provided from another process, is attached to the current process by making this call. Upon successful completion, the memory descriptor is initialized. Not that you can attach to remote, non-local memory descriptors but you cannot get a pointer into a non-local memory allocation.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is initialized after this call. </p></li>
+<li><p><strong>mem_ser</strong> – is the serialized memory descriptor provided to this process.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv420dragon_memory_detachP19dragonMemoryDescr_t">
+<span id="_CPPv320dragon_memory_detachP19dragonMemoryDescr_t"></span><span id="_CPPv220dragon_memory_detachP19dragonMemoryDescr_t"></span><span id="dragon_memory_detach__dragonMemoryDescr_tP"></span><span class="target" id="managed__memory_8h_1a60ced0f3c30f90bcfa4293bded6233e5"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_detach</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv420dragon_memory_detachP19dragonMemoryDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Detach from a memory allocation. </p>
+<p>Once a memory allocation is no longer needed, a process can either detach from it or destroy it. Detach leaves the memory allocation in existence, but cleans up any process local references to it.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mem_descr</strong> – is the memory descriptor to be detached.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv425dragon_memory_serial_freeP20dragonMemorySerial_t">
+<span id="_CPPv325dragon_memory_serial_freeP20dragonMemorySerial_t"></span><span id="_CPPv225dragon_memory_serial_freeP20dragonMemorySerial_t"></span><span id="dragon_memory_serial_free__dragonMemorySerial_tP"></span><span class="target" id="managed__memory_8h_1a7111f2ae26f9b3a186082a1a926bb4ca"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_serial_free</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv420dragonMemorySerial_t" title="dragonMemorySerial_t"><span class="n"><span class="pre">dragonMemorySerial_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_ser</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv425dragon_memory_serial_freeP20dragonMemorySerial_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Free the serialized descriptor. </p>
+<p>A serialized memory descriptor, created with the serialize function call, will contain malloced space that will need to be freed when the serialized descriptor is no longer needed by the current process. At that time it can be freed. This would be after it has passed the serialized descriptor to a new process or when it is longer being used in the current process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mem_ser</strong> – is a pointer to the serialized memory descriptor to free. The descriptor itself is not freed, but its internal structures are freed if needed.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv432dragon_memory_get_alloc_memdescrP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tK11dragonULIntK11dragonULIntPK11dragonULInt">
+<span id="_CPPv332dragon_memory_get_alloc_memdescrP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tK11dragonULIntK11dragonULIntPK11dragonULInt"></span><span id="_CPPv232dragon_memory_get_alloc_memdescrP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tK11dragonULIntK11dragonULIntPK11dragonULInt"></span><span id="dragon_memory_get_alloc_memdescr__dragonMemoryDescr_tP.dragonMemoryPoolDescr_tCP.dragonMemoryAllocationType_tC.dragonULIntC.dragonULIntC.dragonULIntCP"></span><span class="target" id="managed__memory_8h_1ac006234742e0f426b329b58386d93289"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_get_alloc_memdescr</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv428dragonMemoryAllocationType_t" title="dragonMemoryAllocationType_t"><span class="n"><span class="pre">dragonMemoryAllocationType_t</span></span></a><span class="w"> </span><span class="n sig-param"><span class="pre">type</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">dragonULInt</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">type_id</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">dragonULInt</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">offset</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">dragonULInt</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">bytes_size</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv432dragon_memory_get_alloc_memdescrP19dragonMemoryDescr_tPK23dragonMemoryPoolDescr_tK28dragonMemoryAllocationType_tK11dragonULIntK11dragonULIntPK11dragonULInt" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get a memory descriptor from it (type, type id) identifier. </p>
+<p>Given a (type, type id) pair for a given pool, the manifest is used to find the identified memory descriptor and return it. This only works on the node where the pool actually resides. It does not work off-node. A clone of the memory descriptor is intialized by this call.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is the memory descriptor to initialize with the located memory.</p></li>
+<li><p><strong>pool_descr</strong> – is the memory pool that is being queried.</p></li>
+<li><p><strong>type</strong> – is the type part of the memory descriptor identifier</p></li>
+<li><p><strong>type_id</strong> – is the id part of the memory descriptor identifier</p></li>
+<li><p><strong>offset</strong> – is an offset into the memory descriptor used to provide a cloned offset into the returned memory descriptor.</p></li>
+<li><p><strong>bytes_size</strong> – is a pointer to an unsigned integer where the size of the memory descriptor clone is stored.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+<section id="memory-information-functionality">
+<h2><a class="toc-backref" href="#id6">Memory Information &amp; Functionality</a><a class="headerlink" href="#memory-information-functionality" title="Permalink to this heading"></a></h2>
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv422dragon_memory_get_sizePK19dragonMemoryDescr_tP6size_t">
+<span id="_CPPv322dragon_memory_get_sizePK19dragonMemoryDescr_tP6size_t"></span><span id="_CPPv222dragon_memory_get_sizePK19dragonMemoryDescr_tP6size_t"></span><span id="dragon_memory_get_size__dragonMemoryDescr_tCP.sP"></span><span class="target" id="managed__memory_8h_1adf9e724ea671ce9ab7ca9c412b55a0c2"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_get_size</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">bytes</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv422dragon_memory_get_sizePK19dragonMemoryDescr_tP6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get a memory descriptor size. </p>
+<p>This function returns the size of the given memory descriptor. If this is an original memory descriptor and not a clone, then the original requested size will be returned. If it is a clone, it will be the size minus whatever offset was provided when the clone was made. This function works both on-node and off-node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is a pointer to a valid, initialized memory descriptor</p></li>
+<li><p><strong>bytes</strong> – is a pointer to where to store the number of bytes for the given memory descriptor.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv422dragon_memory_get_poolPK19dragonMemoryDescr_tP23dragonMemoryPoolDescr_t">
+<span id="_CPPv322dragon_memory_get_poolPK19dragonMemoryDescr_tP23dragonMemoryPoolDescr_t"></span><span id="_CPPv222dragon_memory_get_poolPK19dragonMemoryDescr_tP23dragonMemoryPoolDescr_t"></span><span id="dragon_memory_get_pool__dragonMemoryDescr_tCP.dragonMemoryPoolDescr_tP"></span><span class="target" id="managed__memory_8h_1adf1d38e5623245a2e5f9e687af7bcdb8"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_get_pool</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <a class="reference internal" href="#_CPPv423dragonMemoryPoolDescr_t" title="dragonMemoryPoolDescr_t"><span class="n"><span class="pre">dragonMemoryPoolDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">pool_descr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv422dragon_memory_get_poolPK19dragonMemoryDescr_tP23dragonMemoryPoolDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get the pool where this memory descriptor resides. </p>
+<p>Get the pool where this memory descriptor resides. This can be called both on-node and off-node.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is a pointer to a valid memory descriptor.</p></li>
+<li><p><strong>pool_descr</strong> – is a pointer to a pool descriptor which will be initialized by this call.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv425dragon_memory_get_pointerPK19dragonMemoryDescr_tPPv">
+<span id="_CPPv325dragon_memory_get_pointerPK19dragonMemoryDescr_tPPv"></span><span id="_CPPv225dragon_memory_get_pointerPK19dragonMemoryDescr_tPPv"></span><span id="dragon_memory_get_pointer__dragonMemoryDescr_tCP.voidPP"></span><span class="target" id="managed__memory_8h_1a4bb6458f0f6aa8e5e269e1ff6d8855ed"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_get_pointer</span></span></span><span class="sig-paren">(</span><span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">ptr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv425dragon_memory_get_pointerPK19dragonMemoryDescr_tPPv" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Get a pointer into a memory descriptor. </p>
+<p>Calling this function gives the caller a pointer into a memory allocation starting at offset 0 if it is the original memory descriptor or at the cloned offset if this is a clone. This function only works on the node where the memory descriptor’s pool resides.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is a pointer to a memory descriptor into which a pointer is returned.</p></li>
+<li><p><strong>ptr</strong> – is a pointer to a pointer where the pointer into the memory descriptor is copied.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv418dragon_memory_freeP19dragonMemoryDescr_t">
+<span id="_CPPv318dragon_memory_freeP19dragonMemoryDescr_t"></span><span id="_CPPv218dragon_memory_freeP19dragonMemoryDescr_t"></span><span id="dragon_memory_free__dragonMemoryDescr_tP"></span><span class="target" id="managed__memory_8h_1ae222dc273702929f32c9c0e2c472e31b"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_free</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv418dragon_memory_freeP19dragonMemoryDescr_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Free a memory allocation. </p>
+<p>Call this to free a memory allocation in a pool. Once done, all pointers into the memory allocation are invalid and should not be used again. Doing so would have unpredictable results. Calling this on a clone of a memory descriptor will result in all the memory in the allocation being freed, not just the cloned region. This operation only works when the memory descriptor is local to the node where the process calling it is running.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mem_descr</strong> – is the memory descriptor to free.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv425dragon_memory_descr_cloneP19dragonMemoryDescr_tPK19dragonMemoryDescr_t9ptrdiff_tP6size_t">
+<span id="_CPPv325dragon_memory_descr_cloneP19dragonMemoryDescr_tPK19dragonMemoryDescr_t9ptrdiff_tP6size_t"></span><span id="_CPPv225dragon_memory_descr_cloneP19dragonMemoryDescr_tPK19dragonMemoryDescr_t9ptrdiff_tP6size_t"></span><span id="dragon_memory_descr_clone__dragonMemoryDescr_tP.dragonMemoryDescr_tCP.ptrdiff_t.sP"></span><span class="target" id="managed__memory_8h_1a2c2815c25c1089f4aba372af9bce6b8e"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_descr_clone</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">newmem_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">oldmem_descr</span></span>, <span class="n"><span class="pre">ptrdiff_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">offset</span></span>, <span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">custom_length</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv425dragon_memory_descr_cloneP19dragonMemoryDescr_tPK19dragonMemoryDescr_t9ptrdiff_tP6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Clone a memory descriptor with a custom offset. </p>
+<p>Given a memory descriptor, construct a clone with a new offset and possible new length.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>newmem_descr</strong> – is the memory descriptor to hold the clone.</p></li>
+<li><p><strong>oldmem_descr</strong> – is the memory descriptor from which the clone is made.</p></li>
+<li><p><strong>offset</strong> – is the new offset to be used into the oldmem_descr.</p></li>
+<li><p><strong>custom_length</strong> – is a pointer to the new length to be used for the clone which is useful when you want to carve up a larger allocation. Providing NULL will use the original length minus the offset.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="cpp function">
+<dt class="sig sig-object cpp" id="_CPPv425dragon_memory_modify_sizeP19dragonMemoryDescr_tK6size_t">
+<span id="_CPPv325dragon_memory_modify_sizeP19dragonMemoryDescr_tK6size_t"></span><span id="_CPPv225dragon_memory_modify_sizeP19dragonMemoryDescr_tK6size_t"></span><span id="dragon_memory_modify_size__dragonMemoryDescr_tP.sC"></span><span class="target" id="managed__memory_8h_1aeab10ccaaa7b15ba16974384cc7a6ea8"></span><span class="n"><span class="pre">dragonError_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">dragon_memory_modify_size</span></span></span><span class="sig-paren">(</span><a class="reference internal" href="#_CPPv419dragonMemoryDescr_t" title="dragonMemoryDescr_t"><span class="n"><span class="pre">dragonMemoryDescr_t</span></span></a><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="n sig-param"><span class="pre">mem_descr</span></span>, <span class="k"><span class="pre">const</span></span><span class="w"> </span><span class="n"><span class="pre">size_t</span></span><span class="w"> </span><span class="n sig-param"><span class="pre">new_size</span></span><span class="sig-paren">)</span><a class="headerlink" href="#_CPPv425dragon_memory_modify_sizeP19dragonMemoryDescr_tK6size_t" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Change the size of a given memory descriptor. </p>
+<p>Without making a clone, change the size of a given memory descriptor.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>mem_descr</strong> – is the memory descriptor to modify.</p></li>
+<li><p><strong>new_size</strong> – is the new size. The new size cannot cause the memory descriptor to go beyond the original allocation’s size.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>DRAGON_SUCCESS or another dragonError_t return code. </p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../index.html" class="btn btn-neutral float-left" title="Dragon Core" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="channels.html" class="btn btn-neutral float-right" title="Channels" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

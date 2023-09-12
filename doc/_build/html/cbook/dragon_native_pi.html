@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calculating π using parallel Monte Carlo &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="How To Use The C Channels API" href="c_channels_demo.html" />
+    <link rel="prev" title="Creating and Using a Pipeline with Multiprocessing" href="pipeline.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="cbook.html">Solution Cookbook</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#multiprocessing-with-dragon">Multiprocessing with Dragon</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="cbook.html#dragon-native">Dragon Native</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">Calculating π using parallel Monte Carlo</a></li>
+<li class="toctree-l3"><a class="reference internal" href="c_channels_demo.html">How To Use The C Channels API</a></li>
+<li class="toctree-l3"><a class="reference internal" href="dragon_native_queue.html">Creating and Using a Queue in Dragon Native</a></li>
+<li class="toctree-l3"><a class="reference internal" href="dragon_mpi_workflow.html">An example MPI workflow using Dragon ProcessGroup</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-data-preview">Dragon Data (Preview)</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="cbook.html">Solution Cookbook</a></li>
+      <li class="breadcrumb-item active">Calculating π using parallel Monte Carlo</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/cbook/dragon_native_pi.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="calculating-using-parallel-monte-carlo">
+<h1>Calculating π using parallel Monte Carlo<a class="headerlink" href="#calculating-using-parallel-monte-carlo" title="Permalink to this heading"></a></h1>
+<p>The code below contains a program that computes the value of constant π =
+3.1415… to single precision using the standard Monte Carlo technique (see
+e.g. Press et al. 1992, <em>Numerical Recipes in C</em>, section 7.6).</p>
+<p>The parent process starts a user defined number of managed Dragon processes as
+workers executing the function <code class="code docutils literal notranslate"><span class="pre">pi_helper</span></code> to parallelize the radius
+computation. The parent process sends two random numbers to the workers using an
+outgoing Dragon queue <code class="code docutils literal notranslate"><span class="pre">q_send</span></code> and collects the radii from an incoming queue
+<code class="code docutils literal notranslate"><span class="pre">q_recv</span></code> to compute the result. It also computes a residual <code class="code docutils literal notranslate"><span class="pre">delta</span></code> with respect
+to the previous iteration. This is repeated
+until convergence is reached.</p>
+<p>This example demonstrates two important paradigms of parallel programming with
+Dragon: How to execute Python processes using Dragon native and how to use
+Dragon native Queues to communicate objects between processes.</p>
+<div class="literal-block-wrapper docutils container" id="id1">
+<div class="code-block-caption"><span class="caption-number">Listing 13 </span><span class="caption-text"><strong>pi_demo.py: Calculate the value of π in parallel using Dragon native</strong></span><a class="headerlink" href="#id1" title="Permalink to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">  1</span><span class="sd">&quot;&quot;&quot; Calculate pi in parallel using the standard Monte Carlo technique</span>
+<span class="linenos">  2</span><span class="sd">    with the Dragon native interface.</span>
+<span class="linenos">  3</span>
+<span class="linenos">  4</span><span class="sd">    NOTE: due to the missing Process object in Dragon native for version v0.3</span>
+<span class="linenos">  5</span><span class="sd">    we are using the Multiprocessing process API here. This will change with</span>
+<span class="linenos">  6</span><span class="sd">    v1.0</span>
+<span class="linenos">  7</span><span class="sd">&quot;&quot;&quot;</span>
+<span class="linenos">  8</span>
+<span class="linenos">  9</span><span class="kn">import</span> <span class="nn">sys</span>
+<span class="linenos"> 10</span><span class="kn">import</span> <span class="nn">os</span>
+<span class="linenos"> 11</span><span class="kn">import</span> <span class="nn">random</span>
+<span class="linenos"> 12</span><span class="kn">import</span> <span class="nn">pickle</span>
+<span class="linenos"> 13</span><span class="kn">import</span> <span class="nn">math</span>
+<span class="linenos"> 14</span>
+<span class="linenos"> 15</span><span class="kn">import</span> <span class="nn">dragon</span>
+<span class="linenos"> 16</span><span class="kn">from</span> <span class="nn">dragon.native.queue</span> <span class="kn">import</span> <span class="n">Queue</span>
+<span class="linenos"> 17</span>
+<span class="linenos"> 18</span><span class="kn">from</span> <span class="nn">multiprocessing</span> <span class="kn">import</span> <span class="n">Process</span> <span class="k">as</span> <span class="n">Process</span>  <span class="c1"># only for Dragon v0.3</span>
+<span class="linenos"> 19</span>
+<span class="linenos"> 20</span>
+<span class="linenos"> 21</span><span class="k">def</span> <span class="nf">pi_helper</span><span class="p">(</span><span class="n">q_in</span><span class="p">:</span> <span class="n">Queue</span><span class="p">,</span> <span class="n">q_out</span><span class="p">:</span> <span class="n">Queue</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+<span class="linenos"> 22</span>
+<span class="linenos"> 23</span>    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>  <span class="c1"># keep working</span>
+<span class="linenos"> 24</span>
+<span class="linenos"> 25</span>        <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">q_in</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="linenos"> 26</span>
+<span class="linenos"> 27</span>        <span class="k">if</span> <span class="n">x</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span> <span class="ow">and</span> <span class="n">y</span> <span class="o">==</span> <span class="o">-</span><span class="mi">1</span><span class="p">:</span>  <span class="c1"># we&#39;re done here</span>
+<span class="linenos"> 28</span>            <span class="k">break</span>
+<span class="linenos"> 29</span>
+<span class="linenos"> 30</span>        <span class="n">r</span> <span class="o">=</span> <span class="n">x</span> <span class="o">*</span> <span class="n">x</span> <span class="o">+</span> <span class="n">y</span> <span class="o">*</span> <span class="n">y</span>
+<span class="linenos"> 31</span>
+<span class="linenos"> 32</span>        <span class="k">if</span> <span class="n">r</span> <span class="o">&gt;</span> <span class="mf">1.0</span><span class="p">:</span>
+<span class="linenos"> 33</span>            <span class="n">q_out</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="kc">False</span><span class="p">)</span>
+<span class="linenos"> 34</span>        <span class="k">else</span><span class="p">:</span>
+<span class="linenos"> 35</span>            <span class="n">q_out</span><span class="o">.</span><span class="n">put</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos"> 36</span>
+<span class="linenos"> 37</span>
+<span class="linenos"> 38</span><span class="k">def</span> <span class="nf">main</span><span class="p">(</span><span class="n">num_workers</span><span class="p">):</span>
+<span class="linenos"> 39</span>
+<span class="linenos"> 40</span>    <span class="c1"># create Dragon queues</span>
+<span class="linenos"> 41</span>    <span class="n">q_send</span> <span class="o">=</span> <span class="n">Queue</span><span class="p">()</span>
+<span class="linenos"> 42</span>    <span class="n">q_recv</span> <span class="o">=</span> <span class="n">Queue</span><span class="p">()</span>
+<span class="linenos"> 43</span>
+<span class="linenos"> 44</span>    <span class="c1"># create &amp; start processes</span>
+<span class="linenos"> 45</span>    <span class="n">processes</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="linenos"> 46</span>    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_workers</span><span class="p">):</span>
+<span class="linenos"> 47</span>        <span class="n">p</span> <span class="o">=</span> <span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">pi_helper</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">q_send</span><span class="p">,</span> <span class="n">q_recv</span><span class="p">))</span>
+<span class="linenos"> 48</span>        <span class="n">p</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos"> 49</span>        <span class="n">processes</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">p</span><span class="p">)</span>
+<span class="linenos"> 50</span>
+<span class="linenos"> 51</span>    <span class="c1"># start calculation</span>
+<span class="linenos"> 52</span>    <span class="n">random</span><span class="o">.</span><span class="n">seed</span><span class="p">(</span><span class="n">a</span><span class="o">=</span><span class="mi">42</span><span class="p">)</span>
+<span class="linenos"> 53</span>
+<span class="linenos"> 54</span>    <span class="n">num_true</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos"> 55</span>    <span class="n">num_send</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos"> 56</span>    <span class="n">delta</span> <span class="o">=</span> <span class="mi">1</span>
+<span class="linenos"> 57</span>    <span class="n">count</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos"> 58</span>
+<span class="linenos"> 59</span>    <span class="k">while</span> <span class="nb">abs</span><span class="p">(</span><span class="n">delta</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">1e-6</span><span class="p">:</span>
+<span class="linenos"> 60</span>
+<span class="linenos"> 61</span>        <span class="c1"># send new values to everyone</span>
+<span class="linenos"> 62</span>        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_workers</span><span class="p">):</span>
+<span class="linenos"> 63</span>            <span class="n">x</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+<span class="linenos"> 64</span>            <span class="n">y</span> <span class="o">=</span> <span class="n">random</span><span class="o">.</span><span class="n">uniform</span><span class="p">(</span><span class="mf">0.0</span><span class="p">,</span> <span class="mf">1.0</span><span class="p">)</span>
+<span class="linenos"> 65</span>
+<span class="linenos"> 66</span>            <span class="n">q_send</span><span class="o">.</span><span class="n">put</span><span class="p">((</span><span class="n">x</span><span class="p">,</span> <span class="n">y</span><span class="p">),</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>
+<span class="linenos"> 67</span>            <span class="n">num_send</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="linenos"> 68</span>
+<span class="linenos"> 69</span>        <span class="c1"># receive results from everyone</span>
+<span class="linenos"> 70</span>        <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_workers</span><span class="p">):</span>
+<span class="linenos"> 71</span>
+<span class="linenos"> 72</span>            <span class="n">is_inside</span> <span class="o">=</span> <span class="n">q_recv</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="linenos"> 73</span>
+<span class="linenos"> 74</span>            <span class="k">if</span> <span class="n">is_inside</span><span class="p">:</span>
+<span class="linenos"> 75</span>                <span class="n">num_true</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="linenos"> 76</span>
+<span class="linenos"> 77</span>        <span class="c1"># calculate result of this iteration</span>
+<span class="linenos"> 78</span>        <span class="n">value</span> <span class="o">=</span> <span class="mf">4.0</span> <span class="o">*</span> <span class="nb">float</span><span class="p">(</span><span class="n">num_true</span><span class="p">)</span> <span class="o">/</span> <span class="nb">float</span><span class="p">(</span><span class="n">num_send</span><span class="p">)</span>
+<span class="linenos"> 79</span>        <span class="n">delta</span> <span class="o">=</span> <span class="p">(</span><span class="n">value</span> <span class="o">-</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">/</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span>
+<span class="linenos"> 80</span>
+<span class="linenos"> 81</span>        <span class="k">if</span> <span class="n">count</span> <span class="o">%</span> <span class="mi">512</span> <span class="o">==</span> <span class="mi">0</span><span class="p">:</span>
+<span class="linenos"> 82</span>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">count</span><span class="si">:</span><span class="s2">04</span><span class="si">}</span><span class="s2">: pi=</span><span class="si">{</span><span class="n">value</span><span class="si">:</span><span class="s2">10.7f</span><span class="si">}</span><span class="s2">, error=</span><span class="si">{</span><span class="n">delta</span><span class="si">:</span><span class="s2">8.1e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos"> 83</span>
+<span class="linenos"> 84</span>        <span class="n">count</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="linenos"> 85</span>
+<span class="linenos"> 86</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Final value after </span><span class="si">{</span><span class="n">count</span><span class="si">}</span><span class="s2"> iterations: pi=</span><span class="si">{</span><span class="n">value</span><span class="si">}</span><span class="s2">, error=</span><span class="si">{</span><span class="n">delta</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos"> 87</span>
+<span class="linenos"> 88</span>    <span class="c1"># shut down all managed processes</span>
+<span class="linenos"> 89</span>    <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">num_workers</span><span class="p">):</span>
+<span class="linenos"> 90</span>        <span class="n">q_send</span><span class="o">.</span><span class="n">put</span><span class="p">((</span><span class="o">-</span><span class="mf">1.0</span><span class="p">,</span> <span class="o">-</span><span class="mf">1.0</span><span class="p">),</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">0</span><span class="p">)</span>  <span class="c1"># termination message</span>
+<span class="linenos"> 91</span>
+<span class="linenos"> 92</span>    <span class="c1"># wait for all processes to be finished</span>
+<span class="linenos"> 93</span>    <span class="k">for</span> <span class="n">p</span> <span class="ow">in</span> <span class="n">processes</span><span class="p">:</span>
+<span class="linenos"> 94</span>        <span class="n">p</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<span class="linenos"> 95</span>
+<span class="linenos"> 96</span>
+<span class="linenos"> 97</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos"> 98</span>
+<span class="linenos"> 99</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">pi-demo: Calculate π = 3.1415 ... in parallel using the Dragon native API.</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos">100</span>
+<span class="linenos">101</span>    <span class="k">try</span><span class="p">:</span>
+<span class="linenos">102</span>        <span class="n">num_workers</span> <span class="o">=</span> <span class="nb">int</span><span class="p">(</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+<span class="linenos">103</span>    <span class="k">except</span><span class="p">:</span>
+<span class="linenos">104</span>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;USAGE: dragon pi_demo.py $N&quot;</span><span class="p">)</span>
+<span class="linenos">105</span>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;  N : number of worker puids to start&quot;</span><span class="p">)</span>
+<span class="linenos">106</span>        <span class="n">sys</span><span class="o">.</span><span class="n">exit</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Wrong argument &#39;</span><span class="si">{</span><span class="n">sys</span><span class="o">.</span><span class="n">argv</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">&#39;&quot;</span><span class="p">)</span>
+<span class="linenos">107</span>
+<span class="linenos">108</span>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Got num_workers = </span><span class="si">{</span><span class="n">num_workers</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">109</span>    <span class="n">main</span><span class="p">(</span><span class="n">num_workers</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>The program can be run using 2 workers with <code class="code docutils literal notranslate"><span class="pre">dragon</span> <span class="pre">pi-demo.py</span> <span class="pre">2</span></code> and results in
+the following output:</p>
+<div class="literal-block-wrapper docutils container" id="id2">
+<div class="code-block-caption"><span class="caption-number">Listing 14 </span><span class="caption-text"><strong>Output when running pi_demo.py with 2 workers</strong></span><a class="headerlink" href="#id2" title="Permalink to this code"></a></div>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="go">&gt;$dragon pi_demo.py 2</span>
+<span class="linenos"> 2</span>
+<span class="linenos"> 3</span><span class="go">pi-demo: Calculate π = 3.1415 ... in parallel using the Dragon native API.</span>
+<span class="linenos"> 4</span>
+<span class="linenos"> 5</span><span class="go">Got num_workers = 2</span>
+<span class="linenos"> 6</span><span class="go">0000: pi= 4.0000000, error= 2.7e-01</span>
+<span class="linenos"> 7</span><span class="go">0512: pi= 3.1189084, error=-7.2e-03</span>
+<span class="linenos"> 8</span><span class="go">1024: pi= 3.1531707, error= 3.7e-03</span>
+<span class="linenos"> 9</span><span class="go">1536: pi= 3.1659076, error= 7.7e-03</span>
+<span class="linenos">10</span><span class="go">2048: pi= 3.1449488, error= 1.1e-03</span>
+<span class="linenos">11</span><span class="go">2560: pi= 3.1409606, error=-2.0e-04</span>
+<span class="linenos">12</span><span class="go">3072: pi= 3.1389522, error=-8.4e-04</span>
+<span class="linenos">13</span><span class="go">3584: pi= 3.1391911, error=-7.6e-04</span>
+<span class="linenos">14</span><span class="go">4096: pi= 3.1354650, error=-2.0e-03</span>
+<span class="linenos">15</span><span class="go">4608: pi= 3.1277934, error=-4.4e-03</span>
+<span class="linenos">16</span><span class="go">5120: pi= 3.1267331, error=-4.7e-03</span>
+<span class="linenos">17</span><span class="go">5632: pi= 3.1319013, error=-3.1e-03</span>
+<span class="linenos">18</span><span class="go">6144: pi= 3.1446705, error= 9.8e-04</span>
+<span class="linenos">19</span><span class="go">Final value after 6342 iterations: pi=3.141595711132135, error=9.732459548770225e-07</span>
+<span class="linenos">20</span><span class="go">+++ head proc exited, code 0</span>
+</pre></div>
+</div>
+</div>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="pipeline.html" class="btn btn-neutral float-left" title="Creating and Using a Pipeline with Multiprocessing" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="c_channels_demo.html" class="btn btn-neutral float-right" title="How To Use The C Channels API" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

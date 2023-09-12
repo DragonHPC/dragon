@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" contentScriptType="application/ecmascript" contentStyleType="text/css" height="536px" preserveAspectRatio="none" style="width:516px;height:536px;background:#FFFFFF;" version="1.1" viewBox="0 0 516 536" width="516px" zoomAndPan="magnify"><defs/><g><ellipse cx="19" cy="16" fill="#000000" rx="10" ry="10" style="stroke:none;stroke-width:1.0;"/><rect fill="#000000" height="8" style="stroke:none;stroke-width:1.0;" width="80" x="196" y="67"/><rect fill="#F8F8F8" height="33.9688" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="83" x="152.5" y="435"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="63" x="162.5" y="456.1387">Consumer</text><rect fill="#F8F8F8" height="33.9688" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="89" x="153.5" y="116"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="69" x="163.5" y="137.1387">Producer 1</text><rect fill="#F8F8F8" height="33.9688" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="89" x="305.5" y="116"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="69" x="315.5" y="137.1387">Producer 2</text><rect fill="#F8F8F8" height="33.9688" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="121" x="79.5" y="191"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="101" x="89.5" y="212.1387">MPI Applications</text><rect fill="#F8F8F8" height="33.9688" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="61" x="83.5" y="292"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="41" x="93.5" y="313.1387">Parser</text><rect fill="#F8F8F8" height="33.9688" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="121" x="389.5" y="191"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="101" x="399.5" y="212.1387">MPI Applications</text><rect fill="#F8F8F8" height="33.9688" rx="12.5" ry="12.5" style="stroke:#383838;stroke-width:1.5;" width="61" x="347.5" y="292"/><text fill="#000000" font-family="sans-serif" font-size="12" lengthAdjust="spacing" textLength="41" x="357.5" y="313.1387">Parser</text><rect fill="#000000" height="8" style="stroke:none;stroke-width:1.0;" width="80" x="238" y="376.5"/><ellipse cx="194" cy="520" fill="none" rx="10" ry="10" style="stroke:#000000;stroke-width:1.0;"/><ellipse cx="194.5" cy="520.5" fill="#000000" rx="6" ry="6" style="stroke:none;stroke-width:1.0;"/><!--MD5=[6396badacac00578348ddb3cf20ba689]
+link start to B1--><path d="M28.6,19.35 C62.26,27.57 175.17,55.14 218.69,65.77 " fill="none" id="start-to-B1" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="223.65,66.98,215.8554,60.9597,218.7926,65.7942,213.9581,68.7315,223.65,66.98" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[e6f16bf8db920dd4798365ae8435897d]
+link start to Consumer--><path d="M15.58,25.47 C11.73,35.81 6,53.89 6,70 C6,70 6,70 6,381.5 C6,411.56 91.64,432.7 147.32,443.27 " fill="none" id="start-to-Consumer" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="152.28,444.2,144.1635,438.6213,147.3643,443.2855,142.7002,446.4863,152.28,444.2" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[60ab77eb307913f0c6c9c08a0ec3a9d2]
+link B1 to Producer 1--><path d="M233.96,75.23 C229.66,82.01 219.4,98.21 210.93,111.58 " fill="none" id="B1-to-Producer 1" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="208.14,115.99,216.3418,110.5374,210.8207,111.7693,209.5887,106.2483,208.14,115.99" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[cb9c1d959dbcd718864ff39ea3b6c638]
+link B1 to Producer 2--><path d="M244.23,75.06 C254.97,79.15 274.25,86.85 290,95 C300.46,100.41 311.54,106.99 321.29,113.08 " fill="none" id="B1-to-Producer 2" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="325.67,115.85,320.1778,107.6747,321.4364,113.1897,315.9214,114.4484,325.67,115.85" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[290cf40461cf7acbf87422450bdd3886]
+link Producer 1 to mpi1--><path d="M185.13,150.2 C176.57,160.98 165.26,175.21 156.1,186.73 " fill="none" id="Producer 1-to-mpi1" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="152.84,190.84,161.5736,186.2876,155.953,186.9273,155.3133,181.3067,152.84,190.84" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[e50840559f8ada9242f6a7b8da4fa6f9]
+link Producer 1 to parser1--><path d="M153.45,141.14 C124.31,148.38 88.35,162.74 70,191 C49.89,221.97 75.95,263.46 95.69,287.8 " fill="none" id="Producer 1-to-parser1" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="99.04,291.85,96.3547,282.3743,95.8405,288.0077,90.207,287.4935,99.04,291.85" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[733fa7d4f3fd7a171ced50d023cf66d4]
+link Producer 2 to mpi2--><path d="M372.19,150.2 C387.34,161.26 407.48,175.96 423.48,187.64 " fill="none" id="Producer 2-to-mpi2" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="427.87,190.84,422.9476,182.3094,423.8276,187.8974,418.2396,188.7774,427.87,190.84" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[ed326d77dc38e6c9bdca05b540b73dfa]
+link Producer 2 to parser2--><path d="M352.58,150.06 C357.65,181.52 368.87,251.29 374.56,286.62 " fill="none" id="Producer 2-to-parser2" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="375.42,291.98,377.9575,282.4636,374.6351,287.042,370.0567,283.7196,375.42,291.98" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[493a48c490b0bd2f8d53a2b400daa59a]
+link Producer 1 to Producer 2--><!--MD5=[cc699cc72ca64daa2e6d95525089cb81]
+link mpi1 to parser1--><path d="M135.71,225.35 C131.28,242.21 124.35,268.59 119.52,286.99 " fill="none" id="mpi1-to-parser1" style="stroke:#383838;stroke-width:1.0;stroke-dasharray:1.0,3.0;"/><polygon fill="#383838" points="118.21,291.96,124.343,284.2538,119.4663,287.1204,116.5997,282.2437,118.21,291.96" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="11" lengthAdjust="spacing" textLength="51" x="144.5" y="256.2104">stdout of</text><text fill="#000000" font-family="sans-serif" font-size="11" lengthAdjust="spacing" textLength="78" x="131" y="269.0151">head process</text><!--MD5=[751b5f7fc245e9e9538ba9ae010490a1]
+link mpi2 to parser2--><path d="M438.11,225.35 C425.74,242.36 406.34,269.04 392.94,287.46 " fill="none" id="mpi2-to-parser2" style="stroke:#383838;stroke-width:1.0;stroke-dasharray:1.0,3.0;"/><polygon fill="#383838" points="389.67,291.96,398.2006,287.0376,392.6126,287.9176,391.7326,282.3296,389.67,291.96" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="11" lengthAdjust="spacing" textLength="51" x="436.5" y="256.2104">stdout of</text><text fill="#000000" font-family="sans-serif" font-size="11" lengthAdjust="spacing" textLength="78" x="423" y="269.0151">head process</text><!--MD5=[051c9c29bce9cfb4ec48356ed7f155d5]
+link parser1 to Consumer--><path d="M111.41,326.24 C109.39,344 108.59,372.75 120,394 C128.48,409.8 143.44,422.58 157.7,432.01 " fill="none" id="parser1-to-Consumer" style="stroke:#383838;stroke-width:1.0;stroke-dasharray:1.0,3.0;"/><polygon fill="#383838" points="162.09,434.82,156.6697,426.5968,157.8799,432.1227,152.3541,433.3329,162.09,434.82" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="11" lengthAdjust="spacing" textLength="106" x="121" y="378.2104">Put parsed results</text><text fill="#000000" font-family="sans-serif" font-size="11" lengthAdjust="spacing" textLength="104" x="122" y="391.0151">into shared queue</text><!--MD5=[3121e00623291d76cfc8c46542d35c24]
+link parser2 to Consumer--><path d="M371.95,326.3 C364.3,344.93 349.47,375.24 328,394 C303.09,415.76 268.63,430.17 240.9,439.06 " fill="none" id="parser2-to-Consumer" style="stroke:#383838;stroke-width:1.0;stroke-dasharray:1.0,3.0;"/><polygon fill="#383838" points="235.8,440.65,245.5853,441.7668,240.5699,439.1505,243.1861,434.135,235.8,440.65" style="stroke:#383838;stroke-width:1.0;"/><text fill="#000000" font-family="sans-serif" font-size="11" lengthAdjust="spacing" textLength="106" x="351" y="378.2104">Put parsed results</text><text fill="#000000" font-family="sans-serif" font-size="11" lengthAdjust="spacing" textLength="104" x="352" y="391.0151">into shared queue</text><!--MD5=[309390a85ba723d7fd4f5f86597e3a4b]
+link parser1 to B2--><!--MD5=[12ae975dcfe429a5dd59226638ea173e]
+link parser2 to B2--><!--MD5=[f01dcc9449de110e6e747c3e4623ed79]
+link Producer 1 to B2--><path d="M201.92,150.11 C212.52,193.23 242,310.49 258,347 C261.98,356.09 268.15,365.67 272.59,372.06 " fill="none" id="Producer 1-to-B2" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="275.57,376.25,273.6066,366.5988,272.6692,372.1775,267.0906,371.2401,275.57,376.25" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[6901f2e9578fb19f1da257f26d20ac74]
+link Producer 2 to B2--><path d="M345.91,150.16 C336.78,185.91 313.62,274.29 290,347 C287.21,355.58 283.57,365.26 281.03,371.81 " fill="none" id="Producer 2-to-B2" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="279.21,376.48,286.2041,369.5459,281.025,371.8211,278.7498,366.6419,279.21,376.48" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[322897656e14e549faf7729e3bd828c3]
+link B1 to B2--><!--MD5=[39e4ce88a1528bca618534f793b0a633]
+link B2 to Consumer--><path d="M273.95,384.85 C263.87,393.19 237.06,415.37 217.25,431.76 " fill="none" id="B2-to-Consumer" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="213.39,434.96,222.8764,432.3128,217.2451,431.776,217.782,426.1446,213.39,434.96" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[a9d0e76d620c06a263e287e3db85a039]
+link Consumer to end--><path d="M194,469.31 C194,480.24 194,494.47 194,504.9 " fill="none" id="Consumer-to-end" style="stroke:#383838;stroke-width:1.0;"/><polygon fill="#383838" points="194,509.97,198,500.97,194,504.97,190,500.97,194,509.97" style="stroke:#383838;stroke-width:1.0;"/><!--MD5=[8cddf8b9765991f0bfc7ea106bc2fc39]
+@startuml
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+' skinparam linetype ortho
+'skinparam linetype polyline
+' skinparam nodesep 10
+' skinparam ranksep 20
+
+(*) - -> ===B1===
+(*) - -> Consumer
+===B1=== - -> "Producer 1"
+===B1=== - -> "Producer 2"
+"Producer 1" - -> "MPI Applications" as mpi1
+"Producer 1" - -> "Parser" as parser1
+"Producer 2" - -> "MPI Applications" as mpi2
+"Producer 2" - -> "Parser" as parser2
+"Producer 1" -[hidden]r-> "Producer 2"
+mpi1 ..>[stdout of\nhead process] "Parser" as parser1
+mpi2 ..>[stdout of\nhead process] "Parser" as parser2
+parser1 ..>[Put parsed results\ninto shared queue] Consumer
+parser2 ..>[Put parsed results\ninto shared queue] Consumer
+parser1 -[hidden]d-> ===B2===
+parser2 -[hidden]d-> ===B2===
+"Producer 1" - -> ===B2===
+"Producer 2" - -> ===B2===
+===B1=== -[hidden]-> ===B2===
+===B2=== - -> Consumer
+Consumer -d-> (*)
+
+@enduml
+
+@startuml
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+
+(*) - -> ===B1===
+(*) - -> Consumer
+===B1=== - -> "Producer 1"
+===B1=== - -> "Producer 2"
+"Producer 1" - -> "MPI Applications" as mpi1
+"Producer 1" - -> "Parser" as parser1
+"Producer 2" - -> "MPI Applications" as mpi2
+"Producer 2" - -> "Parser" as parser2
+"Producer 1" -[hidden]r-> "Producer 2"
+mpi1 ..>[stdout of\nhead process] "Parser" as parser1
+mpi2 ..>[stdout of\nhead process] "Parser" as parser2
+parser1 ..>[Put parsed results\ninto shared queue] Consumer
+parser2 ..>[Put parsed results\ninto shared queue] Consumer
+parser1 -[hidden]d-> ===B2===
+parser2 -[hidden]d-> ===B2===
+"Producer 1" - -> ===B2===
+"Producer 2" - -> ===B2===
+===B1=== -[hidden]-> ===B2===
+===B2=== - -> Consumer
+Consumer -d-> (*)
+
+@enduml
+
+PlantUML version 1.2022.1(Tue Feb 01 18:19:58 GMT 2022)
+(GPL source distribution)
+Java Runtime: OpenJDK Runtime Environment
+JVM: OpenJDK 64-Bit Server VM
+Default Encoding: UTF-8
+Language: en
+Country: US
+--></g></svg>

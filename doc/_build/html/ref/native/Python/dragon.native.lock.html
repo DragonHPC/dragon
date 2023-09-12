@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.native.lock &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../../" id="documentation_options" src="../../../_static/documentation_options.js"></script>
+        <script src="../../../_static/jquery.js"></script>
+        <script src="../../../_static/underscore.js"></script>
+        <script src="../../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../../_static/doctools.js"></script>
+        <script src="../../../_static/sphinx_highlight.js"></script>
+        <script src="../../../_static/clipboard.min.js"></script>
+        <script src="../../../_static/copybutton.js"></script>
+    <script src="../../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../../genindex.html" />
+    <link rel="search" title="Search" href="../../../search.html" />
+    <link rel="next" title="dragon.native.machine" href="dragon.native.machine.html" />
+    <link rel="prev" title="dragon.native.event" href="dragon.native.event.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../../ref.html">API Reference</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="../index.html">Dragon Native</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="../index.html#reference-by-language">Reference by Language</a><ul class="current">
+<li class="toctree-l4 current"><a class="reference internal" href="index.html">Python Language Bindings</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="../index.html#specification-by-language">Specification by Language</a></li>
+<li class="toctree-l3"><a class="reference internal" href="../index.html#architecture">Architecture</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../../client/index.html">Dragon GS Client</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../inf/index.html">Dragon Infrastructure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../core/index.html">Dragon Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../../mpbridge/index.html">MPBridge</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../../ref.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="../index.html">Dragon Native</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Python Language Bindings</a></li>
+      <li class="breadcrumb-item active">dragon.native.lock</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../../_sources/ref/native/Python/dragon.native.lock.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-dragon.native.lock">
+<span id="dragon-native-lock"></span><h1>dragon.native.lock<a class="headerlink" href="#module-dragon.native.lock" title="Permalink to this heading"></a></h1>
+<p>The Dragon native lock provides basic synchronization functionality between processes and threads.</p>
+<p>Importantly, a <code class="code docutils literal notranslate"><span class="pre">Lock()</span></code> can be released by any process or thread, while a recursive
+<code class="code docutils literal notranslate"><span class="pre">RLock()</span></code> needs to be released by the process &amp; thread that called it.</p>
+<p>Our implementation also extends the API by a few methods that are internal
+in Python Multiprocessing, but are used very frequently, thus appear useful for everyone.</p>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.native.lock.Lock" title="dragon.native.lock.Lock"><code class="xref py py-obj docutils literal notranslate"><span class="pre">Lock</span></code></a></p></td>
+<td><p>Dragon native Lock implementation based on a channel with a capacity of 1.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.native.lock.Lock">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Lock</span></span><a class="headerlink" href="#dragon.native.lock.Lock" title="Permalink to this definition"></a></dt>
+<dd><p>Dragon native Lock implementation based on a channel with a capacity of 1.</p>
+<p>Once a process or thread has acquired a lock, subsequent attempts to acquire it from any process or thread
+will block until it is released; any process may release it.</p>
+<p>Recursive use is supported by means of the ‘recursive’ parameter.  A recursive lock must be released by
+the process or thread that acquired it. Once a process or thread has acquired a recursive lock, the same
+process or thread may acquire it again without blocking; that process or thread must release it once for
+each time it has been acquired.</p>
+<p>Lock supports the context manager protocol and thus may be used in ‘with’ statements.</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.lock.Lock.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m_uid</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">int</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">4611686018427387904</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">recursive</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.native.lock.Lock.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>Initialize the lock object</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>m_uid</strong> (<em>int</em><em>, </em><em>optional</em>) – memory pool to create the channel in, defaults to _DEF_MUID</p></li>
+<li><p><strong>recursive</strong> (<em>bool</em><em>, </em><em>optional</em>) – if the Lock should be recursive, defaults to False</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.lock.Lock.acquire">
+<span class="sig-name descname"><span class="pre">acquire</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">block</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">bool</span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="p"><span class="pre">:</span></span><span class="w"> </span><span class="n"><span class="pre">Optional</span><span class="p"><span class="pre">[</span></span><span class="pre">float</span><span class="p"><span class="pre">]</span></span></span><span class="w"> </span><span class="o"><span class="pre">=</span></span><span class="w"> </span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#dragon.native.lock.Lock.acquire" title="Permalink to this definition"></a></dt>
+<dd><p>Acquire a lock, blocking or non-blocking.</p>
+<p>If the lock is not recursive:</p>
+<p>With the block argument set to True (the default), the method call will block until the lock is in an
+unlocked state, then set it to locked and return True.</p>
+<p>With the block argument set to False, the method call does not block.  If the lock is currently in a
+locked state, return False; otherwise set the lock to a locked state and return True.  When invoked
+with a positive, floating-point value for timeout, block for at most the number of seconds specified
+by timeout as long as the lock can not be acquired. Invocations with a negative value for timeout are
+equivalent to a timeout of zero. Invocations with a timeout value of None (the default) set the
+timeout period to infinite.  The timeout argument has no practical implications if the block argument
+is set to False and is thus ignored. Returns True if the lock has been acquired or False if the
+timeout period has elapsed.</p>
+<p>If the lock is recursive, repeated calls to a lock already owned by the current process return True
+and increment the recursion level. <code class="code docutils literal notranslate"><span class="pre">Release()</span></code> has then be called an equal amount of times by the same
+process to free the lock.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>block</strong> (<em>bool</em><em>, </em><em>optional</em>) – should the call block at all, defaults to True</p></li>
+<li><p><strong>timeout</strong> (<em>float</em><em>, </em><em>optional</em>) – how long to block in seconds, ignored if block=False, defaults to None</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>if the lock was acquired</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.lock.Lock.release">
+<span class="sig-name descname"><span class="pre">release</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">None</span></span></span><a class="headerlink" href="#dragon.native.lock.Lock.release" title="Permalink to this definition"></a></dt>
+<dd><p>Release a lock.</p>
+<p>If the lock is not recursive: This can be called from any process or thread,
+not only the process or thread which originally acquired the lock.</p>
+<p>If the lock is recursive: Decrement the recursion level. If after the decrement the recursion level is
+zero, reset the lock to unlocked (not owned by any process or thread) and if any other processes or
+threads are blocked waiting for the lock to become unlocked, allow exactly one of them to proceed. If
+after the decrement the recursion level is still nonzero, the lock remains locked and owned by the
+calling dragon process and thread.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>ValueError</strong> – if the lock has not been acquired before</p></li>
+<li><p><strong>AssertionError</strong> – if the lock is recursive and not held by the caller</p></li>
+</ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.lock.Lock.is_recursive">
+<span class="sig-name descname"><span class="pre">is_recursive</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#dragon.native.lock.Lock.is_recursive" title="Permalink to this definition"></a></dt>
+<dd><p>Return True if this lock is recursive, i.e. can be called multiple times by the
+same thread/process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>recursiveness of the lock</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.lock.Lock.is_mine">
+<span class="sig-name descname"><span class="pre">is_mine</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">bool</span></span></span><a class="headerlink" href="#dragon.native.lock.Lock.is_mine" title="Permalink to this definition"></a></dt>
+<dd><p>Return True if this rlock is owned by the caller process &amp; thread</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>ownership of the lock</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>bool</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.native.lock.Lock.count">
+<span class="sig-name descname"><span class="pre">count</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span> <span class="sig-return"><span class="sig-return-icon">&#x2192;</span> <span class="sig-return-typehint"><span class="pre">int</span></span></span><a class="headerlink" href="#dragon.native.lock.Lock.count" title="Permalink to this definition"></a></dt>
+<dd><p>How often this lock has been acquired.
+Will return only 0 or 1 for a non-recursive Lock.
+:return: The number of times this lock has been acquired
+:rtype: int</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="dragon.native.event.html" class="btn btn-neutral float-left" title="dragon.native.event" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="dragon.native.machine.html" class="btn btn-neutral float-right" title="dragon.native.machine" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

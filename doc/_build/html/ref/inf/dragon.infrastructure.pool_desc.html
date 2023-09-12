@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.infrastructure.pool_desc &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/clipboard.min.js"></script>
+        <script src="../../_static/copybutton.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul>
+<li class="toctree-l1"><a class="reference internal" href="../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a></li>
+      <li class="breadcrumb-item active">dragon.infrastructure.pool_desc</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/ref/inf/dragon.infrastructure.pool_desc.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-dragon.infrastructure.pool_desc">
+<span id="dragon-infrastructure-pool-desc"></span><h1>dragon.infrastructure.pool_desc<a class="headerlink" href="#module-dragon.infrastructure.pool_desc" title="Permalink to this heading"></a></h1>
+<p>A class that uniquely defines properties of a managed memory pool for infrastructure communication.</p>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.infrastructure.pool_desc.PoolDescriptor" title="dragon.infrastructure.pool_desc.PoolDescriptor"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PoolDescriptor</span></code></a></p></td>
+<td><p>Globally available descriptior of a pool.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.infrastructure.pool_desc.PoolOptions" title="dragon.infrastructure.pool_desc.PoolOptions"><code class="xref py py-obj docutils literal notranslate"><span class="pre">PoolOptions</span></code></a></p></td>
+<td><p>Options object for how a Pool is supposed to be created.</p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolDescriptor">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">PoolDescriptor</span></span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolDescriptor" title="Permalink to this definition"></a></dt>
+<dd><p>Globally available descriptior of a pool.</p>
+<p>Attributes:</p>
+<blockquote>
+<div><dl class="simple">
+<dt>m_uid<span class="classifier">nonnegative int</span></dt><dd><p>unique memory pool id</p>
+</dd>
+<dt>name<span class="classifier">str</span></dt><dd><p>string indicating pool name that servers as an identifier
+to query for the pool</p>
+</dd>
+<dt>sdesc<span class="classifier">bytes-like object</span></dt><dd><p>serialized library descriptor</p>
+</dd>
+<dt>node<span class="classifier">nonnegative int</span></dt><dd><p>which node this memory pool is associated with</p>
+</dd>
+<dt>state<span class="classifier">cls.State enum member</span></dt><dd><p>current state of this pool</p>
+</dd>
+</dl>
+</div></blockquote>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolDescriptor.State">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">State</span></span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolDescriptor.State" title="Permalink to this definition"></a></dt>
+<dd><p>Current state of the pool.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolDescriptor.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">m_uid</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">node</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">state</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sdesc</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolDescriptor.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>sdesc - serialized library descriptor</p>
+</dd></dl>
+
+<dl class="py property">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolDescriptor.sdesc">
+<em class="property"><span class="pre">property</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">sdesc</span></span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolDescriptor.sdesc" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the serialized library descriptor of the pool.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolDescriptor.get_sdict">
+<span class="sig-name descname"><span class="pre">get_sdict</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolDescriptor.get_sdict" title="Permalink to this definition"></a></dt>
+<dd><p>Collect the entire information of the pool.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>A dictionary with all key-value pairs of the available description of the pool.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>Dictionary</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolDescriptor.from_sdict">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_sdict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sdict</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolDescriptor.from_sdict" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the descriptor of the memory pool.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolOptions">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">PoolOptions</span></span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolOptions" title="Permalink to this definition"></a></dt>
+<dd><p>Options object for how a Pool is supposed to be created.</p>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolOptions.Placement">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Placement</span></span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolOptions.Placement" title="Permalink to this definition"></a></dt>
+<dd><p>Enum for placement strategy of the pool for its creation.</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolOptions.__init__">
+<span class="sig-name descname"><span class="pre">__init__</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">placement</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">target_node</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">0</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sattr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolOptions.__init__" title="Permalink to this definition"></a></dt>
+<dd><p>sattr - serialized library attributes</p>
+<p>placement - enum for placement strategy</p>
+<p>target_node - ignored if placement request isn’t for a specific node</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolOptions.get_sdict">
+<span class="sig-name descname"><span class="pre">get_sdict</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolOptions.get_sdict" title="Permalink to this definition"></a></dt>
+<dd><p>Collect the different attributes/options of the memory pool.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>A dictionary with key-value pairs of the pool creation options.</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>Dictionary</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="dragon.infrastructure.pool_desc.PoolOptions.from_sdict">
+<em class="property"><span class="pre">static</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">from_sdict</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">sdict</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.infrastructure.pool_desc.PoolOptions.from_sdict" title="Permalink to this definition"></a></dt>
+<dd><p>Returns the options of the memory pool.</p>
+</dd></dl>
+
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

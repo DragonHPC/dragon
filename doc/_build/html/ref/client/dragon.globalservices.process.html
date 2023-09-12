@@ -1,0 +1,452 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.globalservices.process &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/clipboard.min.js"></script>
+        <script src="../../_static/copybutton.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="dragon.globalservices.channel" href="dragon.globalservices.channel.html" />
+    <link rel="prev" title="dragon.globalservices.pool" href="dragon.globalservices.pool.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../ref.html">API Reference</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="../native/index.html">Dragon Native</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="index.html">Dragon GS Client</a><ul class="current">
+<li class="toctree-l3 current"><a class="reference internal" href="index.html#python-reference">Python Reference</a><ul class="current">
+<li class="toctree-l4"><a class="reference internal" href="dragon.globalservices.api_setup.html">dragon.globalservices.api_setup</a></li>
+<li class="toctree-l4"><a class="reference internal" href="dragon.globalservices.pool.html">dragon.globalservices.pool</a></li>
+<li class="toctree-l4 current"><a class="current reference internal" href="#">dragon.globalservices.process</a></li>
+<li class="toctree-l4"><a class="reference internal" href="dragon.globalservices.channel.html">dragon.globalservices.channel</a></li>
+<li class="toctree-l4"><a class="reference internal" href="dragon.globalservices.node.html">dragon.globalservices.node</a></li>
+<li class="toctree-l4"><a class="reference internal" href="dragon.globalservices.group.html">dragon.globalservices.group</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="index.html#architecture">Architecture</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="../inf/index.html">Dragon Infrastructure</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../core/index.html">Dragon Core</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../mpbridge/index.html">MPBridge</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../ref.html">API Reference</a></li>
+          <li class="breadcrumb-item"><a href="index.html">Dragon GS Client</a></li>
+      <li class="breadcrumb-item active">dragon.globalservices.process</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/ref/client/dragon.globalservices.process.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="module-dragon.globalservices.process">
+<span id="dragon-globalservices-process"></span><h1>dragon.globalservices.process<a class="headerlink" href="#module-dragon.globalservices.process" title="Permalink to this heading"></a></h1>
+<p>Global Services API for the Process primary resource component.</p>
+<p class="rubric">Functions</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.process.create" title="dragon.globalservices.process.create"><code class="xref py py-obj docutils literal notranslate"><span class="pre">create</span></code></a>(exe, run_dir, args, env[, user_name, ...])</p></td>
+<td><p>Asks Global Services to create a new process.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.globalservices.process.create_with_argdata" title="dragon.globalservices.process.create_with_argdata"><code class="xref py py-obj docutils literal notranslate"><span class="pre">create_with_argdata</span></code></a>(exe, run_dir, args, env)</p></td>
+<td><p>Asks Global services to create a new process and deliver starting args to it thru messaging.</p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_argdata_from_immediate_handshake</span></code>(...)</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.globalservices.process.get_create_message" title="dragon.globalservices.process.get_create_message"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_create_message</span></code></a>(exe, run_dir, args, env)</p></td>
+<td><p>Return a GSProcessCreate object.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.process.get_create_message_with_argdata" title="dragon.globalservices.process.get_create_message_with_argdata"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_create_message_with_argdata</span></code></a>(exe, ...[, ...])</p></td>
+<td><p>Return a GSProcessCreate object with starting args.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.globalservices.process.get_list" title="dragon.globalservices.process.get_list"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_list</span></code></a>()</p></td>
+<td><p>Asks Global Services for a list of the p_uids of all managed processes.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.process.join" title="dragon.globalservices.process.join"><code class="xref py py-obj docutils literal notranslate"><span class="pre">join</span></code></a>(identifier[, timeout])</p></td>
+<td><p>Asks Global Services to join a specified managed process.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.globalservices.process.kill" title="dragon.globalservices.process.kill"><code class="xref py py-obj docutils literal notranslate"><span class="pre">kill</span></code></a>(identifier[, sig])</p></td>
+<td><p>Asks Global Services to kill a specified managed process with a specified signal.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.process.multi_join" title="dragon.globalservices.process.multi_join"><code class="xref py py-obj docutils literal notranslate"><span class="pre">multi_join</span></code></a>(identifiers[, timeout, join_all])</p></td>
+<td><p>Asks Global Services to join a list of specified managed processes.</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">prepare_argdata_for_immediate</span></code>(argdata)</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.process.query" title="dragon.globalservices.process.query"><code class="xref py py-obj docutils literal notranslate"><span class="pre">query</span></code></a>(identifier)</p></td>
+<td><p>Asks Global Services for the ProcessDescriptor of a specified managed process</p></td>
+</tr>
+<tr class="row-even"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">start_capturing_child_mp_output</span></code>()</p></td>
+<td><p></p></td>
+</tr>
+<tr class="row-odd"><td><p><code class="xref py py-obj docutils literal notranslate"><span class="pre">stop_capturing_child_mp_output</span></code>()</p></td>
+<td><p></p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Classes</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.process.StreamDestination" title="dragon.globalservices.process.StreamDestination"><code class="xref py py-obj docutils literal notranslate"><span class="pre">StreamDestination</span></code></a></p></td>
+<td><p>An enumeration.</p></td>
+</tr>
+</tbody>
+</table>
+<p class="rubric">Exceptions</p>
+<table class="autosummary longtable docutils align-default">
+<colgroup>
+<col style="width: 10%" />
+<col style="width: 90%" />
+</colgroup>
+<tbody>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.process.ProcessError" title="dragon.globalservices.process.ProcessError"><code class="xref py py-obj docutils literal notranslate"><span class="pre">ProcessError</span></code></a></p></td>
+<td><p></p></td>
+</tr>
+</tbody>
+</table>
+<dl class="py class">
+<dt class="sig sig-object py" id="dragon.globalservices.process.StreamDestination">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">StreamDestination</span></span><a class="headerlink" href="#dragon.globalservices.process.StreamDestination" title="Permalink to this definition"></a></dt>
+<dd><p>An enumeration.</p>
+</dd></dl>
+
+<dl class="py exception">
+<dt class="sig sig-object py" id="dragon.globalservices.process.ProcessError">
+<em class="property"><span class="pre">exception</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">ProcessError</span></span><a class="headerlink" href="#dragon.globalservices.process.ProcessError" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.process.get_create_message">
+<span class="sig-name descname"><span class="pre">get_create_message</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">run_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stderr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">umask</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pipesize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pmi_required</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.process.get_create_message" title="Permalink to this definition"></a></dt>
+<dd><p>Return a GSProcessCreate object.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>exe</strong> – executable to run</p></li>
+<li><p><strong>run_dir</strong> – directory to run it in</p></li>
+<li><p><strong>args</strong> – argv for the process</p></li>
+<li><p><strong>env</strong> – environment for the new process, may be added to for infrastructure</p></li>
+<li><p><strong>user_name</strong> – Requested user specified reference name</p></li>
+<li><p><strong>options</strong> – ProcessOptions object, what options to apply to creation</p></li>
+<li><p><strong>stdin</strong> – If <code class="code docutils literal notranslate"><span class="pre">stdin=PIPE</span></code>, a Dragon Connection will be returned to enable sending data to the stdin of the child process.</p></li>
+<li><p><strong>stdout</strong> – Capture stdout from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stdout. Using DEVNULL will cause the stdout data to be thrown away.</p></li>
+<li><p><strong>stder</strong> – Capture stderr from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stderr. Using DEVNULL will cause the stdout data to be thrown away. Using STDOUT will cause the stderr data to be combined with the stdout data.</p></li>
+<li><p><strong>group</strong> – Not used</p></li>
+<li><p><strong>user</strong> – Not used</p></li>
+<li><p><strong>umask</strong> – Not used</p></li>
+<li><p><strong>pipesize</strong> – Set the channel capacity. Default = -1.</p></li>
+<li><p><strong>pmi_required</strong> – This process is part of a Dragon managed MPI/PMI application group.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>GSProcessCreate message object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.process.get_create_message_with_argdata">
+<span class="sig-name descname"><span class="pre">get_create_message_with_argdata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">run_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">argdata</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stderr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">umask</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pipesize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pmi_required</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.process.get_create_message_with_argdata" title="Permalink to this definition"></a></dt>
+<dd><p>Return a GSProcessCreate object with starting args.</p>
+<blockquote>
+<div><p>This is an extension of the ‘get_create_message’ method that encapsulates our scheme for getting
+starting arguments to the new process.  This depends on how big the arguments
+turn out to be, and is tightly bound with logic in global services and in the api_setup module.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>exe</strong> – executable to run</p></li>
+<li><p><strong>run_dir</strong> – directory to run it in</p></li>
+<li><p><strong>args</strong> – argv for the process</p></li>
+<li><p><strong>env</strong> – environment for the new process, may be added to for infrastructure</p></li>
+<li><p><strong>argdata</strong> – bytes to deliver</p></li>
+<li><p><strong>user_name</strong> – Requested user specified reference name</p></li>
+<li><p><strong>options</strong> – ProcessOptions object, what options to apply to creation</p></li>
+<li><p><strong>stdin</strong> – If <code class="code docutils literal notranslate"><span class="pre">stdin=PIPE</span></code>, a Dragon Connection will be returned to enable sending data to the stdin of the child process.</p></li>
+<li><p><strong>stdout</strong> – Capture stdout from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stdout. Using DEVNULL will cause the stdout data to be thrown away.</p></li>
+<li><p><strong>stder</strong> – Capture stderr from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stderr. Using DEVNULL will cause the stdout data to be thrown away. Using STDOUT will cause the stderr data to be combined with the stdout data.</p></li>
+<li><p><strong>group</strong> – Not used</p></li>
+<li><p><strong>user</strong> – Not used</p></li>
+<li><p><strong>umask</strong> – Not used</p></li>
+<li><p><strong>pipesize</strong> – Set the channel capacity. Default = -1.</p></li>
+<li><p><strong>pmi_required</strong> – This process is part of a Dragon managed MPI/PMI application group.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>GSProcessCreate message object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.process.create">
+<span class="sig-name descname"><span class="pre">create</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">run_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">soft</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stderr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">group</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">umask</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pipesize</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">-1</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pmi_required</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.process.create" title="Permalink to this definition"></a></dt>
+<dd><p>Asks Global Services to create a new process.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>exe</strong> – executable to run</p></li>
+<li><p><strong>run_dir</strong> – directory to run it in</p></li>
+<li><p><strong>args</strong> – argv for the process</p></li>
+<li><p><strong>env</strong> – environment for the new process, may be added to for infrastructure</p></li>
+<li><p><strong>user_name</strong> – Requested user specified reference name</p></li>
+<li><p><strong>options</strong> – ProcessOptions object, what options to apply to creation</p></li>
+<li><p><strong>soft</strong> – If process already exists with given name, do not create and return descriptor instead.</p></li>
+<li><p><strong>stdin</strong> – If <code class="code docutils literal notranslate"><span class="pre">stdin=PIPE</span></code>, a Dragon Connection will be returned to enable sending data to the stdin of the child process.</p></li>
+<li><p><strong>stdout</strong> – Capture stdout from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stdout. Using DEVNULL will cause the stdout data to be thrown away.</p></li>
+<li><p><strong>stder</strong> – Capture stderr from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stderr. Using DEVNULL will cause the stdout data to be thrown away. Using STDOUT will cause the stderr data to be combined with the stdout data.</p></li>
+<li><p><strong>group</strong> – Not used</p></li>
+<li><p><strong>user</strong> – Not used</p></li>
+<li><p><strong>umask</strong> – Not used</p></li>
+<li><p><strong>pipesize</strong> – Set the channel capacity. Default = -1.</p></li>
+<li><p><strong>pmi_required</strong> – This process is part of a Dragon managed MPI/PMI application group.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>ProcessDescriptor object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.process.create_with_argdata">
+<span class="sig-name descname"><span class="pre">create_with_argdata</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">exe</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">run_dir</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">args</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">env</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">argdata</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">user_name</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">''</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">options</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">soft</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">pmi_required</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdin</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stdout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">stderr</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.process.create_with_argdata" title="Permalink to this definition"></a></dt>
+<dd><p>Asks Global services to create a new process and deliver starting args to it thru messaging.</p>
+<blockquote>
+<div><p>This is an extension of the ‘create’ method that encapsulates our scheme for getting
+starting arguments to the new process.  This depends on how big the arguments
+turn out to be, and is tightly bound with logic in global services and in the api_setup module.</p>
+</div></blockquote>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>exe</strong> – executable to run</p></li>
+<li><p><strong>run_dir</strong> – directory to run it in</p></li>
+<li><p><strong>args</strong> – argv for the process</p></li>
+<li><p><strong>env</strong> – environment for the new process, may be added to for infrastructure</p></li>
+<li><p><strong>argdata</strong> – bytes to deliver</p></li>
+<li><p><strong>user_name</strong> – Requested user specified reference name</p></li>
+<li><p><strong>options</strong> – ProcessOptions object, what options to apply to creation</p></li>
+<li><p><strong>soft</strong> – If process already exists with given name, do not create and return descriptor instead.</p></li>
+<li><p><strong>pmi_required</strong> – This process is part of a Dragon managed MPI/PMI application group.</p></li>
+<li><p><strong>stdin</strong> – If <code class="code docutils literal notranslate"><span class="pre">stdin=PIPE</span></code>, a Dragon Connection will be returned to enable sending data to the stdin of the child process.</p></li>
+<li><p><strong>stdout</strong> – Capture stdout from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stdout. Using DEVNULL will cause the stdout data to be thrown away.</p></li>
+<li><p><strong>stder</strong> – Capture stderr from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stderr. Using DEVNULL will cause the stdout data to be thrown away. Using STDOUT will cause the stderr data to be combined with the stdout data.</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>ProcessDescriptor object</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.process.get_list">
+<span class="sig-name descname"><span class="pre">get_list</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.process.get_list" title="Permalink to this definition"></a></dt>
+<dd><p>Asks Global Services for a list of the p_uids of all managed processes.</p>
+<p>This is the moral equivalent of a very simple unix ‘ps’ for managed processes.</p>
+<p>TODO: add some options to this, and to the message itself, to have a finer
+control over which processes you get back.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>list of the p_uids of all processes, alive and dead</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.process.query">
+<span class="sig-name descname"><span class="pre">query</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifier</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.process.query" title="Permalink to this definition"></a></dt>
+<dd><p>Asks Global Services for the ProcessDescriptor of a specified managed process</p>
+<p>Note you can query processes that have already exited; this is how one
+can find out the process’s exit code.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>identifier</strong> – string indicating process name or integer indicating a p_uid</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>ProcessDescriptor object corresponding to specified managed process</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>ProcessError if there is no such process</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.process.kill">
+<span class="sig-name descname"><span class="pre">kill</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifier</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">sig</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">Signals.SIGKILL</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.process.kill" title="Permalink to this definition"></a></dt>
+<dd><p>Asks Global Services to kill a specified managed process with a specified signal.</p>
+<p>Note that this is like the unix ‘kill’ command - the signal given to the process
+might not necessarily be intended to cause it to terminate.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>identifier</strong> – string indicating process name or integer indicating a p_uid</p></li>
+<li><p><strong>sig</strong> – signal to use to kill the process, default=signal.SIGKILL</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Nothing if successful</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>ProcessError if there is no such process, or if the process has not yet started.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.process.join">
+<span class="sig-name descname"><span class="pre">join</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifier</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.process.join" title="Permalink to this definition"></a></dt>
+<dd><p>Asks Global Services to join a specified managed process.</p>
+<p>Returns when the process has exited.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>identifier</strong> – string indicating process name or integer indicating a p_uid</p></li>
+<li><p><strong>timeout</strong> – Timeout in seconds for max time to wait.  None = default, infinite wait</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The unix exit code from the process, or None if there is a timeout.</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>ProcessError if there is no such process or some other error has occurred.</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.process.multi_join">
+<span class="sig-name descname"><span class="pre">multi_join</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifiers</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">timeout</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">None</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">join_all</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.process.multi_join" title="Permalink to this definition"></a></dt>
+<dd><p>Asks Global Services to join a list of specified managed processes.</p>
+<p>If join_all is False, it returns when ‘any’ process has exited or there is a timeout.
+If join_all is True, it returns when ‘all’ processes have exited or there is a timeout.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>identifiers</strong> – list of process identifiers indicating p_uid (int) or process name (string)</p></li>
+<li><p><strong>timeout</strong> – Timeout in seconds for max time to wait. None = default, infinite wait</p></li>
+<li><p><strong>join_all</strong> – indicates whether we need to wait on all processes in the list or not</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>If join_all is False, return a list of tuples (p_uid, unix_exit_code) for any processes exited,
+or None if none exited and there is a timeout, along with a dictionary with the status of each process.
+If join_all is True, return a list of tuples (p_uid, unix_exit_code) when all processes exited,
+or None if none exited and there is a timeout or some exited and some errored/timed out,
+along with a dictionary with the status of each process.</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>ProcessError if there is no such process or some other error has occurred.</p>
+</dd>
+</dl>
+</dd></dl>
+
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="dragon.globalservices.pool.html" class="btn btn-neutral float-left" title="dragon.globalservices.pool" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="dragon.globalservices.channel.html" class="btn btn-neutral float-right" title="dragon.globalservices.channel" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

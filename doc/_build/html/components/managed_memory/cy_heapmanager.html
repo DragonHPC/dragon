@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>dragon.heapmanager – Heap allocations through the Heap Manager library &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../../" id="documentation_options" src="../../_static/documentation_options.js"></script>
+        <script src="../../_static/jquery.js"></script>
+        <script src="../../_static/underscore.js"></script>
+        <script src="../../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../../_static/doctools.js"></script>
+        <script src="../../_static/sphinx_highlight.js"></script>
+        <script src="../../_static/clipboard.min.js"></script>
+        <script src="../../_static/copybutton.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="next" title="dragon.managed_memory – Managed Memory Cython Adapter" href="cy_managedmemory.html" />
+    <link rel="prev" title="Hex Dump" href="hexdump.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../cbook/cbook.html">Solution Cookbook</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../../services/services.html">Services</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../components.html">Low-level Components</a><ul class="current">
+<li class="toctree-l2 current"><a class="reference internal" href="managed_memory.html">Managed Memory</a><ul class="current">
+<li class="toctree-l3"><a class="reference internal" href="managed_memory.html#architecture">Architecture</a></li>
+<li class="toctree-l3 current"><a class="reference internal" href="managed_memory.html#cython-adapters">Cython Adapters</a><ul class="current">
+<li class="toctree-l4 current"><a class="current reference internal" href="#"><code class="code docutils literal notranslate"><span class="pre">dragon.heapmanager</span></code> – Heap allocations through the Heap Manager library</a></li>
+</ul>
+</li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="cy_managedmemory.html"><code class="code docutils literal notranslate"><span class="pre">dragon.managed_memory</span></code> – Managed Memory Cython Adapter</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../unordered_map.html">Unordered Map</a></li>
+<li class="toctree-l2"><a class="reference internal" href="../broadcast.html">Broadcast Component</a></li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="../components.html">Low-level Components</a></li>
+          <li class="breadcrumb-item"><a href="managed_memory.html">Managed Memory</a></li>
+      <li class="breadcrumb-item active"><code class="code docutils literal notranslate"><span class="pre">dragon.heapmanager</span></code> – Heap allocations through the Heap Manager library</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/components/managed_memory/cy_heapmanager.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="dragon-heapmanager-heap-allocations-through-the-heap-manager-library">
+<span id="heapmanagercython"></span><h1><code class="code docutils literal notranslate"><span class="pre">dragon.heapmanager</span></code> – Heap allocations through the Heap Manager library<a class="headerlink" href="#dragon-heapmanager-heap-allocations-through-the-heap-manager-library" title="Permalink to this heading"></a></h1>
+<p>This page documents the Cython interface for the Dragon Heap Manager library.  For a description of the Heap
+Manager and its functionality please refer to [link to heap manager doc goes here].  Example usage of this API
+can be found at the bottom of this document.</p>
+<p>All functions and variables listed as C language are implemented with the <em>cdef</em> keyword and are not directly
+accessible from python-space.</p>
+<section id="objects">
+<h2>Objects<a class="headerlink" href="#objects" title="Permalink to this heading"></a></h2>
+<section id="bitset">
+<h3>BitSet<a class="headerlink" href="#bitset" title="Permalink to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="BitSet">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">BitSet</span></span><a class="headerlink" href="#BitSet" title="Permalink to this definition"></a></dt>
+<dd><p>BitSet object.  For internal testing use of the bitset library used by the heapmanager library.</p>
+<blockquote>
+<div><dl class="c var">
+<dt class="sig sig-object c" id="c._set">
+<span class="n"><span class="pre">dragonBitSet_t</span></span><span class="w"> </span><span class="sig-name descname"><span class="n"><span class="pre">_set</span></span></span><a class="headerlink" href="#c._set" title="Permalink to this definition"></a><br /></dt>
+<dd><p>BitSet struct handle</p>
+</dd></dl>
+
+<dl class="c var">
+<dt class="sig sig-object c" id="c._mem_ptr">
+<span class="kt"><span class="pre">void</span></span><span class="w"> </span><span class="p"><span class="pre">*</span></span><span class="sig-name descname"><span class="n"><span class="pre">_mem_ptr</span></span></span><a class="headerlink" href="#c._mem_ptr" title="Permalink to this definition"></a><br /></dt>
+<dd><p>Pointer to the heap this bitset is part of</p>
+</dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="BitSet._attach">
+<span class="sig-name descname"><span class="pre">_attach</span></span><a class="headerlink" href="#BitSet._attach" title="Permalink to this definition"></a></dt>
+<dd><p>Whether this bitset was initialzed to a new heap or attached to an existing one</p>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.init">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_bits</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">space</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.init" title="Permalink to this definition"></a></dt>
+<dd><p>Initializes a new BitSet object handle to the provided memory space</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>num_bits</strong> (<em>size_t</em>) – Number of bits the handle should track</p></li>
+<li><p><strong>space</strong> – A bytearray or memoryview object the bitset should attach to</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>BitSet object</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="#BitSet" title="BitSet">BitSet</a></p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.attach">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">attach</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">space</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.attach" title="Permalink to this definition"></a></dt>
+<dd><p>Attaches a new BitSet object handle to an existing memory space with an initialized BitSet</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>space</strong> – A bytearray or memoryview object that already has an initialized BitSet</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>BitSet object</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="#BitSet" title="BitSet">BitSet</a></p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.size">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">size</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">num_bits</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.size" title="Permalink to this definition"></a></dt>
+<dd><p>Get the needed size for the BitSet based on the number of bits to track</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>num_bits</strong> (<em>size_t</em>) – Number of bits to be tracked by the BitSet handle</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Required memory size for metadata and bits to track</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>size_t</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.detach">
+<span class="sig-name descname"><span class="pre">detach</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.detach" title="Permalink to this definition"></a></dt>
+<dd><p>Detach the BitSet from its heap.  Call after using attach.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>RuntimeError if not attached</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.destroy">
+<span class="sig-name descname"><span class="pre">destroy</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.destroy" title="Permalink to this definition"></a></dt>
+<dd><p>Destroy the BitSet from its heap.  Call after using init.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>RuntimeError if not initialized</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.get_num_bits">
+<span class="sig-name descname"><span class="pre">get_num_bits</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.get_num_bits" title="Permalink to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The number of bits in the set</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>size_t</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.get_bit">
+<span class="sig-name descname"><span class="pre">get_bit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.get_bit" title="Permalink to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>The state of the bit at the specified index</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>unsigned char</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>RuntimeError if out of index range</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.set_bit">
+<span class="sig-name descname"><span class="pre">set_bit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.set_bit" title="Permalink to this definition"></a></dt>
+<dd><p>Set the specified bit index to 1 unconditionally.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>idx</strong> (<em>int</em>) – Index to set to 1</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>Runtime error if out of index range</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.reset_bit">
+<span class="sig-name descname"><span class="pre">reset_bit</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.reset_bit" title="Permalink to this definition"></a></dt>
+<dd><p>Set the specified bit index to 0 unconditionally.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>idx</strong> (<em>int</em>) – Index to set to 0</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>Runtime error if out of index range</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.right_zeroes">
+<span class="sig-name descname"><span class="pre">right_zeroes</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">idx</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.right_zeroes" title="Permalink to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>idx</strong> (<em>int</em>) – Index to check right of</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>The number of 0 bits to the right of the specified index</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>int</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>Runtime error</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.dump">
+<span class="sig-name descname"><span class="pre">dump</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indent</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.dump" title="Permalink to this definition"></a></dt>
+<dd><dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>title</strong> (<em>str</em>) – Title to place in header of dump string</p></li>
+<li><p><strong>indent</strong> (<em>str</em>) – TODO: Descriptor</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="BitSet.dump_to_str">
+<span class="sig-name descname"><span class="pre">dump_to_str</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">indent</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#BitSet.dump_to_str" title="Permalink to this definition"></a></dt>
+<dd><p>Same behavior as dump but returns to string instead of stdout</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>title</strong> (<em>str</em>) – Title to place in header of dump string</p></li>
+<li><p><strong>indent</strong> (<em>str</em>) – TODO: Descriptor</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Dump</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>str</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div></blockquote>
+</dd></dl>
+
+</section>
+<section id="heap">
+<h3>Heap<a class="headerlink" href="#heap" title="Permalink to this heading"></a></h3>
+<dl class="py class">
+<dt class="sig sig-object py" id="Heap">
+<em class="property"><span class="pre">class</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">Heap</span></span><a class="headerlink" href="#Heap" title="Permalink to this definition"></a></dt>
+<dd><p>Heap object.  Used to manage allocated memory.  Can be explicitly detached from a heap or destroyed,
+otherwise GC should call the correct function when the objects lifetime ends.</p>
+<dl class="py attribute">
+<dt class="sig sig-object py" id="Heap.num_segments">
+<span class="sig-name descname"><span class="pre">num_segments</span></span><a class="headerlink" href="#Heap.num_segments" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="Heap.segment_size">
+<span class="sig-name descname"><span class="pre">segment_size</span></span><a class="headerlink" href="#Heap.segment_size" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="Heap.num_freelists">
+<span class="sig-name descname"><span class="pre">num_freelists</span></span><a class="headerlink" href="#Heap.num_freelists" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="Heap.recovery_needed">
+<span class="sig-name descname"><span class="pre">recovery_needed</span></span><a class="headerlink" href="#Heap.recovery_needed" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="Heap.init_handle">
+<span class="sig-name descname"><span class="pre">init_handle</span></span><a class="headerlink" href="#Heap.init_handle" title="Permalink to this definition"></a></dt>
+<dd></dd></dl>
+
+<dl class="py attribute">
+<dt class="sig sig-object py" id="Heap.exclusive_access">
+<span class="sig-name descname"><span class="pre">exclusive_access</span></span><a class="headerlink" href="#Heap.exclusive_access" title="Permalink to this definition"></a></dt>
+<dd><p>Return a pointer to the exlusive access mutex</p>
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.size">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">size</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">max_sz_pwr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_sz_pwr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alignment</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Heap.size" title="Permalink to this definition"></a></dt>
+<dd><p>Calculate the necessary memory size for the given powers of two and segment alignment.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>max_sz_pwr</strong> (<em>size_t</em>) – Power of 2 to allocate for the heap</p></li>
+<li><p><strong>min_sz_pwr</strong> (<em>size_t</em>) – Power of 2 for minimum segment size</p></li>
+<li><p><strong>alignment</strong> (<em>size_t</em>) – Memory alignment size (Multiples of 8)</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Size of heap to be allocated</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>size_t</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.init">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">init</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">max_sz_pwr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">min_sz_pwr</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">alignment</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">mem_addr</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Heap.init" title="Permalink to this definition"></a></dt>
+<dd><p>Not to be confused with the default constructor.  Takes the same parameters as the size class method
+as well as a pointer to an allocated heap.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>max_sz_pwr</strong> (<em>size_t</em>) – Power of 2 to allocate for the heap</p></li>
+<li><p><strong>min_sz_pwr</strong> (<em>size_t</em>) – Power of 2 for minimum segment size</p></li>
+<li><p><strong>alignment</strong> (<em>size_t</em>) – Memory alignment size (Multiples of 8)</p></li>
+<li><p><strong>mem_addr</strong> (<em>bytearray</em>) – Bytearray or memoryview object to initialize heap with</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>New heap manager</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="#Heap" title="Heap">Heap</a></p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.attach">
+<em class="property"><span class="pre">classmethod</span><span class="w"> </span></em><span class="sig-name descname"><span class="pre">attach</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mem_addr</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Heap.attach" title="Permalink to this definition"></a></dt>
+<dd><p>Creates and attaches a new handle to an existing heap.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mem_addr</strong> (<em>bytearray</em>) – Bytearray or memoryview object to attach heap to</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>New heap manager handle</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p><a class="reference internal" href="#Heap" title="Heap">Heap</a></p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.detach">
+<span class="sig-name descname"><span class="pre">detach</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Heap.detach" title="Permalink to this definition"></a></dt>
+<dd><p>Detaches the handle from its heap.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.destroy">
+<span class="sig-name descname"><span class="pre">destroy</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Heap.destroy" title="Permalink to this definition"></a></dt>
+<dd><p>Destroys the handle.  To be used when the object was created using <em>init</em>.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.malloc">
+<span class="sig-name descname"><span class="pre">malloc</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">size</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Heap.malloc" title="Permalink to this definition"></a></dt>
+<dd><p>Allocates the requested size of memory in the heap manager.  Returns a new DragonMem object to hold the pointer.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>size</strong> (<em>size_t</em>) – Size of memory to request from the heap manager</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>New memory object</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>MemoryView</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.free">
+<span class="sig-name descname"><span class="pre">free</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">mem_obj</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Heap.free" title="Permalink to this definition"></a></dt>
+<dd><p>Free the memory held by the memoryview object that was allocated using the <em>malloc</em> method.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>mem_obj</strong> (<em>memoryview</em>) – Memory object</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>RuntimeError if recovery is needed first</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.recover">
+<span class="sig-name descname"><span class="pre">recover</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Heap.recover" title="Permalink to this definition"></a></dt>
+<dd><p>Perform heap recovery when corrupted.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>None</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError if recovery needed flag is not set</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.get_stats">
+<span class="sig-name descname"><span class="pre">get_stats</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#Heap.get_stats" title="Permalink to this definition"></a></dt>
+<dd><p>Get an object that contains statistics about the heap.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>Statistics object</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>MemStat</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.dump">
+<span class="sig-name descname"><span class="pre">dump</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Heap.dump" title="Permalink to this definition"></a></dt>
+<dd><p>Print out a dump of heap information to stdout</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>title</strong> (<em>str</em>) – Title to include at the top of the output</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>None</p>
+</dd>
+<dt class="field-odd">Raises</dt>
+<dd class="field-odd"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.dump_to_str">
+<span class="sig-name descname"><span class="pre">dump_to_str</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Heap.dump_to_str" title="Permalink to this definition"></a></dt>
+<dd><p>Return a dump of heap information to a string</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>title</strong> (<em>str</em>) – Title to include at the top of the output</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p>Heap info</p>
+</dd>
+<dt class="field-odd">Return type</dt>
+<dd class="field-odd"><p>String</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p>RuntimeError</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py method">
+<dt class="sig sig-object py" id="Heap.dump_to_file">
+<span class="sig-name descname"><span class="pre">dump_to_file</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">title</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">fobj</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#Heap.dump_to_file" title="Permalink to this definition"></a></dt>
+<dd><p>Not implemented</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>title</strong> (<em>str</em>) – Title to include at the top of the output</p></li>
+<li><p><strong>fobj</strong> – Python file object</p></li>
+</ul>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><strong>RuntimeError</strong> – </p>
+</dd>
+</dl>
+</dd></dl>
+
+</dd></dl>
+
+</dd></dl>
+
+<section id="example-usage">
+<h4>Example usage<a class="headerlink" href="#example-usage" title="Permalink to this heading"></a></h4>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span> <span class="nn">dragon.malloc.heapmanager</span> <span class="kn">import</span> <span class="n">Heap</span>
+
+<span class="c1"># Get a 4GB Heap with 4k minimum segment sizes</span>
+<span class="n">heap_size</span> <span class="o">=</span> <span class="n">Heap</span><span class="o">.</span><span class="n">size</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">4096</span><span class="p">)</span>
+<span class="c1"># Allocate a memory object</span>
+<span class="n">memobj</span> <span class="o">=</span> <span class="nb">bytearray</span><span class="p">(</span><span class="n">heap_size</span><span class="p">)</span>
+<span class="c1"># Initialize the handle</span>
+<span class="n">heap_handle</span> <span class="o">=</span> <span class="n">Heap</span><span class="o">.</span><span class="n">init</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">12</span><span class="p">,</span> <span class="mi">4096</span><span class="p">,</span> <span class="nb">bytearray</span><span class="p">)</span>
+<span class="c1"># Attach another handle</span>
+<span class="n">heap_handle_2</span> <span class="o">=</span> <span class="n">HeapHandle</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="nb">bytearray</span><span class="p">)</span>
+
+<span class="c1"># Get some memory from the heap</span>
+<span class="n">tmp_mem</span> <span class="o">=</span> <span class="n">heap_handle</span><span class="o">.</span><span class="n">malloc</span><span class="p">(</span><span class="mi">32</span><span class="p">)</span>
+<span class="c1"># Do some stuff with the memory...</span>
+<span class="n">tmp</span><span class="p">[</span><span class="mi">0</span><span class="p">:</span><span class="mi">10</span><span class="p">]</span> <span class="o">=</span> <span class="sa">b</span><span class="s1">&#39;Hello world&#39;</span>
+
+<span class="c1"># Free the memory</span>
+<span class="c1"># When recovery is needed, runtime exception will be thrown</span>
+<span class="k">try</span><span class="p">:</span>
+    <span class="n">heap_handle</span><span class="o">.</span><span class="n">free</span><span class="p">(</span><span class="n">tmp_mem</span><span class="p">)</span>
+<span class="k">except</span><span class="p">:</span>
+    <span class="n">heap_handle</span><span class="o">.</span><span class="n">recover</span><span class="p">()</span>
+        <span class="n">heap_handle</span><span class="o">.</span><span class="n">free</span><span class="p">(</span><span class="n">tmp_mem</span><span class="p">)</span>
+
+<span class="c1"># Detach the other handle</span>
+<span class="n">heap_handle_2</span><span class="o">.</span><span class="n">detach</span><span class="p">()</span>
+
+<span class="c1"># Dump heap info</span>
+<span class="n">heap_handle</span><span class="o">.</span><span class="n">dump</span><span class="p">(</span><span class="s2">&quot;Heap info&quot;</span><span class="p">)</span>
+
+<span class="c1"># Destroy the handle</span>
+<span class="n">heap_handle</span><span class="o">.</span><span class="n">destroy</span><span class="p">()</span>
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="hexdump.html" class="btn btn-neutral float-left" title="Hex Dump" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="cy_managedmemory.html" class="btn btn-neutral float-right" title="dragon.managed_memory – Managed Memory Cython Adapter" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
