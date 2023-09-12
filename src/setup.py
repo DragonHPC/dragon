@@ -1,0 +1,178 @@
+import os
+from distutils import log
+from distutils.command.clean import clean as _clean
+from distutils.dir_util import remove_tree
+from functools import partial
+from pathlib import Path
+from sysconfig import get_config_var
+
+from setuptools import Extension, find_packages, setup
+from setuptools.command.build import build as _build
+from setuptools.command.build_py import build_py as _build_py
+from Cython.Build import cythonize
+
+from dragon.cli import entry_points
+
+
+ROOTDIR = str(Path(__file__).parent)
+
+
+DragonExtension = partial(Extension,
+    include_dirs=[f'{ROOTDIR}/lib', f'{ROOTDIR}/include'],
+    library_dirs=[f'{ROOTDIR}/lib'],
+    libraries=['dragon', 'rt'],
+)
+
+
+extensions = [
+    DragonExtension("dragon.utils", ["dragon/pydragon_utils.pyx"]),
+    DragonExtension("dragon.rc", ["dragon/pydragon_rc.pyx"]),
+    DragonExtension("dragon.dtypes", ["dragon/pydragon_dtypes.pyx"]),
+    DragonExtension("dragon.pheap", ["dragon/pydragon_heap.pyx"]),
+    DragonExtension("dragon.locks", ["dragon/pydragon_lock.pyx"]),
+    DragonExtension("dragon.channels", ["dragon/pydragon_channels.pyx"]),
+    DragonExtension("dragon.heapmanager", ["dragon/pydragon_heapmanager.pyx"]),
+    DragonExtension("dragon.managed_memory", ["dragon/pydragon_managed_memory.pyx"]),
+    DragonExtension("dragon.dlogging.logger", ["dragon/dlogging/pydragon_logging.pyx"]),
+    DragonExtension("dragon.pmod", ["dragon/pydragon_pmod.pyx"]),
+    DragonExtension("dragon.perf", ["dragon/pydragon_perf.pyx"]),
+    Extension(
+        "dragon.launcher.pmsgqueue",
+        ["dragon/launcher/pydragon_pmsgqueue.pyx"],
+        include_dirs=[f'{ROOTDIR}/include', f'{ROOTDIR}/dragon/launcher/include'],
+        library_dirs=[f'{ROOTDIR}/lib'],
+        libraries=["pmsgqueue", "rt"],
+    ),
+]
+
+class build(_build):
+
+    user_options = _build.user_options + [
+        ('cythonize', None, 'cythonize packages and modules'),
+    ]
+
+    boolean_options = _build.boolean_options + ['cythonize']
+
+    def initialize_options(self):
+        super().initialize_options()
+        self.cythonize = 0
+
+    def run(self):
+        _cythonize = partial(cythonize,
+            nthreads=int(os.environ.get('DRAGON_BUILD_NTHREADS', os.cpu_count())),
+            show_all_warnings=True,
+            compiler_directives={
+                "language_level": 3,
+            },
+            build_dir=self.build_temp,
+        )
+
+        # Cythonize core extensions
+        self.distribution.ext_modules = _cythonize(
+            self.distribution.ext_modules,
+            force=bool(self.cythonize),
+        )
+
+        if self.cythonize:
+            # Cythonize everything except dragon.cli and dragon.__main__
+            self.distribution.packages = ['dragon.cli']
+            self.distribution.py_modules = ['dragon.__main__']
+            self.distribution.ext_modules.extend(_cythonize(
+                'dragon/**/*.py',
+                exclude=['dragon/**/setup.py', 'dragon/cli/*.py', 'dragon/__main__.py'],
+                compiler_directives={
+                    "language_level": 3,
+                    # Disable annotation typing when compiling arbitrary
+                    # Python 3.x code.
+                    "annotation_typing": False,
+                },
+                force=True,
+            ))
+            #build_py_options = self.distribution.command_options.setdefault('build_py', {})
+            #build_py_options['compile'] = ('setup script', 1)
+            build_ext_options = self.distribution.command_options.setdefault('build_ext', {})
+            build_ext_options['inplace'] = ('setup script', 0)
+
+        super().run()
+
+
+class build_py(_build_py):
+
+    # The find_modules() implementation in setuptools (really distutils)
+    # automatically adds __init__.py for any non-root package module listed in
+    # py_modules. As a result, our implementation is a simplified variant of
+    # the original that does not automatically add __init__.py.
+
+    def find_modules(self):
+        """Finds individually-specified Python modules, ie. those listed by
+        module name in 'self.py_modules'.  Returns a list of tuples (package,
+        module_base, filename): 'package' is a tuple of the path through
+        package-space to the module; 'module_base' is the bare (no
+        packages, no dots) module name, and 'filename' is the path to the
+        ".py" file (relative to the distribution root) that implements the
+        module.
+        """
+        # Maps package names to the corresponding directory
+        packages = {}
+
+        # List of (package, module, filename) tuples to return
+        modules = []
+
+        for module in self.py_modules:
+            path = module.split('.')
+            package = '.'.join(path[0:-1])
+            module_base = path[-1]
+
+            try:
+                package_dir = packages[package]
+            except KeyError:
+                package_dir = self.get_package_dir(package)
+                # We explicitly do not what to automatically add __init__.py,
+                # hence we pass None as the first argument, but we still want
+                # to check the package_dir in order to properly resolve the
+                # module_file below.
+                self.check_package(None, package_dir)
+                packages[package] = package_dir
+
+            module_file = os.path.join(package_dir, module_base + ".py")
+            if not self.check_module(module, module_file):
+                continue
+
+            modules.append((package, module_base, module_file))
+
+        return modules
+
+
+class clean(_clean):
+
+    def run(self):
+        super().run()
+
+        # Clean up any in-place extensions
+        ext_suffix = get_config_var('EXT_SUFFIX')
+        for ext_file in Path('dragon').glob(f'**/*{ext_suffix}'):
+            log.info(f"removing '{ext_file}'")
+            if not self.dry_run:
+                ext_file.unlink()
+
+        # Clean __pycache__ directories
+        for directory in Path('dragon').glob('**/__pycache__'):
+            remove_tree(str(directory), dry_run=self.dry_run)
+
+
+setup(
+    cmdclass={"build": build, "build_py": build_py, "clean": clean},
+    options = {
+        "build_py": {"compile": 1},
+        "build_ext": {"inplace": 1},
+    },
+    name="dragon",
+    version=os.environ.get('DRAGON_VERSION', 'latest'),
+    description="Python multiprocessing over the Dragon distributed runtime",
+    packages=find_packages(),
+    ext_modules = extensions,
+    entry_points=entry_points,
+    python_requires=">=3.9",
+    install_requires=['cloudpickle', 'numpy', ],
+
+)

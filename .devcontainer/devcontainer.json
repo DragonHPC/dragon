@@ -1,0 +1,40 @@
+{
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "runArgs": [
+        // "--privileged", // so gdb can attach to processes
+        "--shm-size=6gb", // 4GB user pool, 1GB inf pool, 1GB extra pool
+        "--cpus=2", // explicit hard limits for CPUs and mem
+        "--memory=8GB",
+        "--cap-add=SYS_PTRACE"
+    ],
+    "onCreateCommand": [],
+    // remove the slow git status from the prompt.
+    "postStartCommand": "git config codespaces-theme.hide-status 1",
+    "settings": {
+        "terminal.integrated.profiles.linux": {
+            "bash (login)": {
+                "path": "/bin/bash",
+                "args": [
+                    "-li"
+                ]
+            }
+        },
+        "terminal.integrated.defaultProfile.linux": "bash (login)"
+    },
+    "extensions": [
+        "donjayamanne.git-extension-pack",
+        "mhutchie.git-graph",
+        "ms-python.python",
+        "ms-vscode.cpptools",
+        "ms-vscode.cpptools-extension-pack",
+        "ms-vscode.cpptools-themes",
+        "njpwerner.autodocstring", // allow automatic docstrings in Python
+        "jebbs.plantuml" // support .puml UML diagrams for the docs
+    ]
+    // Uncomment if you set up vscode in Dockerfile and want
+    // to run as non-root vscode in devcontainer
+    // "remoteUser": "vscode"
+}
+

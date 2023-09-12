@@ -1,0 +1,10 @@
+#%Module
+#
+#
+# Module Dragon
+#
+
+module load dragon-dev
+
+setenv DRAGON_CPYTHON_PATH $env(DRAGON_BASE_DIR)/cpython
+prepend-path PATH $env(DRAGON_CPYTHON_PATH)/bin

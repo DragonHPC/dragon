@@ -1,0 +1,16 @@
+if module --version 2>&1 | grep -q "Lua"; then
+   echo "Loading LMOD module files...."
+   module use $PWD/src/lmod
+else
+   echo "Loading TCL module files...."
+   module use $PWD/src/modulefiles
+fi
+module load dragon-dev
+
+pythonpath=`which python3`
+env_str='_env'
+export PATH=$PWD/hack:$PWD/src/tools:$PATH
+if [[ "$pythonpath" != *"$env_str"* ]]; then
+    echo "Activating environment."
+    . _env/bin/activate
+fi

@@ -1,0 +1,12 @@
+@Library("dst-shared")_
+
+sle15sp1PE {
+  product = "dragon"
+  timeout = 300
+  buildPrepScript = "dst/runBuildPrep.sle15.sh"
+  buildBuildScript = "dst/runBuild.sle15.sh"
+  buildUnitTestScript = "dst/runUnitTest.sle15.sh"
+  // agent = "dst-big-build" 
+  enableSonar = false
+  dockerRunArguments = "--shm-size=4gb --cpus 4 -m 4gb"
+}

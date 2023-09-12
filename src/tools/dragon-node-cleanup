@@ -1,0 +1,14 @@
+#!/bin/bash
+me=`whoami`
+
+pids=`ps -U $me -ux  | grep dragon | awk '$0 !~ /grep/' | awk '$0 !~ /bash/'| awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+echo "Here are Dragon PIDS to kill on" $(hostname): $pids
+echo $pids | xargs -r kill -9
+
+pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+echo "Here are the Python PIDS to kill on" $(hostname): $pids
+echo $pids | xargs -r kill -9
+
+echo "Cleaning up /dev/shm of any leftover pools on" $(hostname)
+find /dev/shm -user $me -exec rm -f {} \;
+

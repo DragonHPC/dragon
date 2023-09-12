@@ -1,0 +1,11 @@
+---
+BasedOnStyle: Mozilla
+BreakBeforeBraces: Linux
+ColumnLimit: "110"
+UseTab: Never
+IndentWidth: "4"
+BinPackArguments: true
+BinPackParameters: true
+AllowAllParametersOfDeclarationOnNextLine: false
+SpacesInConditionalStatement: False
+PointerAlignment: Left
