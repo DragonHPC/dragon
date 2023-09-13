@@ -1,4 +1,5 @@
 _build/
+*.png
 plantuml.jar
 ref/client/dragon*.rst
 ref/inf/dragon*.rst
