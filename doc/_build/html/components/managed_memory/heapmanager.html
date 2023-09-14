@@ -113,7 +113,7 @@ segment size are user-configurable when the heap is created.</p>
 <section id="an-example-of-malloc-and-free">
 <h2>An Example of Malloc and Free<a class="headerlink" href="#an-example-of-malloc-and-free" title="Permalink to this heading"></a></h2>
 <figure class="align-default" id="id1">
-<img alt="components/managed_memory/images/heapallocations.png" src="components/managed_memory/images/heapallocations.png" />
+<img alt="../../_images/heapallocations.png" src="../../_images/heapallocations.png" />
 <figcaption>
 <p><span class="caption-number">Fig. 44 </span><span class="caption-text"><strong>Figure 1: A Sample Heap with Allocations</strong></span><a class="headerlink" href="#id1" title="Permalink to this image"></a></p>
 </figcaption>
@@ -188,7 +188,7 @@ segment. Since the block starting at segment 0 is not free, the green block cann
 The algorithm doesn’t consider anything further, but because segment 0 is in a block of 32 bytes and the green
 block is part of a block of 64 bytes, they could not be joined either (at this point anyway).</p>
 <figure class="align-default" id="id3">
-<img alt="components/managed_memory/images/heapfree1.png" src="components/managed_memory/images/heapfree1.png" />
+<img alt="../../_images/heapfree1.png" src="../../_images/heapfree1.png" />
 <figcaption>
 <p><span class="caption-number">Fig. 45 </span><span class="caption-text"><strong>Figure 3: After Freeing the Green Block</strong></span><a class="headerlink" href="#id3" title="Permalink to this image"></a></p>
 </figcaption>
@@ -201,7 +201,7 @@ However, the segment at 0 is not free and again does not result in any joining o
 are three free blocks that are available in the heap. The segment 1 is a 32 byte block. The segments 2 and 3
 make up a 64 byte free block. Finally, the segments 4-6 make up a 128 byte free block.</p>
 <figure class="align-default" id="id4">
-<img alt="components/managed_memory/images/heapfree2.png" src="components/managed_memory/images/heapfree2.png" />
+<img alt="../../_images/heapfree2.png" src="../../_images/heapfree2.png" />
 <figcaption>
 <p><span class="caption-number">Fig. 46 </span><span class="caption-text"><strong>Figure 4: After Freeing the Purple Block</strong></span><a class="headerlink" href="#id4" title="Permalink to this image"></a></p>
 </figcaption>
@@ -212,7 +212,7 @@ make up a 64 byte free block. Finally, the segments 4-6 make up a 128 byte free 
 <p>The 512 byte block starting at segment 16 is freed next and results in once again examining its buddy at
 segment 0. Again, segment 0 is not free and no further joining of blocks is possible.</p>
 <figure class="align-default" id="id5">
-<img alt="components/managed_memory/images/heapfree3.png" src="components/managed_memory/images/heapfree3.png" />
+<img alt="../../_images/heapfree3.png" src="../../_images/heapfree3.png" />
 <figcaption>
 <p><span class="caption-number">Fig. 47 </span><span class="caption-text"><strong>Figure 5: After Freeing the Yellow Block</strong></span><a class="headerlink" href="#id5" title="Permalink to this image"></a></p>
 </figcaption>
@@ -230,7 +230,7 @@ point.</p>
 <p>At this point there are two free blocks: a 256 byte block starting at segment 0 and a 512 byte block starting
 at segment 16.</p>
 <figure class="align-default" id="id6">
-<img alt="components/managed_memory/images/heapfree4.png" src="components/managed_memory/images/heapfree4.png" />
+<img alt="../../_images/heapfree4.png" src="../../_images/heapfree4.png" />
 <figcaption>
 <p><span class="caption-number">Fig. 48 </span><span class="caption-text"><strong>Figure 6: After Freeing the Orange Block</strong></span><a class="headerlink" href="#id6" title="Permalink to this image"></a></p>
 </figcaption>
@@ -243,7 +243,7 @@ is free and the same size as the block being freed, the blocks are joined togeth
 but since its buddy is also free and the same size, the two 512 byte blocks are joined together into one 1K
 block.</p>
 <figure class="align-default" id="id7">
-<img alt="components/managed_memory/images/heapfree5.png" src="components/managed_memory/images/heapfree5.png" />
+<img alt="../../_images/heapfree5.png" src="../../_images/heapfree5.png" />
 <figcaption>
 <p><span class="caption-number">Fig. 49 </span><span class="caption-text"><strong>Figure 7: After Freeing the Maroon Block</strong></span><a class="headerlink" href="#id7" title="Permalink to this image"></a></p>
 </figcaption>
@@ -257,7 +257,7 @@ linked lists, called the free lists, and list of the actual segments making up t
 two bit sets, the block set and the free set. There is also a lock associated with the meta-data so the API is
 multi-processing compatible.</p>
 <figure class="align-default" id="id8">
-<img alt="components/managed_memory/images/metadata.png" src="components/managed_memory/images/metadata.png" />
+<img alt="../../_images/metadata.png" src="../../_images/metadata.png" />
 <figcaption>
 <p><span class="caption-number">Fig. 50 </span><span class="caption-text"><strong>Figure 8: Meta-Data and Handle Structure</strong></span><a class="headerlink" href="#id8" title="Permalink to this image"></a></p>
 </figcaption>
@@ -550,7 +550,7 @@ will be at least 8 byte aligned. Non-zero <em>alignment</em> must be a multiple 
 address of a variable to hold the computed size required to hold a heap of this size.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -591,7 +591,7 @@ within the heap will start on a 4K boundary relative to <em>ptr</em>. If address
 then the heap segments would start at address 4K x <em>i</em> + 101 where <em>i</em> is an integer.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -649,7 +649,7 @@ then the heap segments would start at address 4K x <em>i</em> + 101 where <em>i<
 same handle that was initialized using the <a class="reference internal" href="#c.dragon_heap_init" title="dragon_heap_init"><code class="xref c c-func docutils literal notranslate"><span class="pre">dragon_heap_init()</span></code></a> call.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -676,7 +676,7 @@ initialized, possibly in another thread. The handle will be initialized by this 
 previously initialized heap with other initialized handles.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -724,7 +724,7 @@ previously initialized heap with other initialized handles.</p>
 <a class="reference internal" href="#c.dragon_heap_attach" title="dragon_heap_attach"><code class="xref c c-func docutils literal notranslate"><span class="pre">dragon_heap_attach()</span></code></a> call.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -754,7 +754,7 @@ previously initialized heap with other initialized handles.</p>
 allocated block’s pointer can be store.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -802,7 +802,7 @@ allocated block’s pointer can be store.</p>
 <dd><p>Free a block pointed to by <em>ptr</em> in this heap.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -835,7 +835,7 @@ is indicated by getting back the return code <code class="xref c c-enumerator do
 heap operation.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -866,7 +866,7 @@ heap operation.</p>
 <a class="reference internal" href="#c.dragonDynHeapStats_t" title="dragonDynHeapStats_t"><code class="xref c c-enum docutils literal notranslate"><span class="pre">dragonDynHeapStats_t</span></code></a> structure.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -960,7 +960,7 @@ this.</p>
 </div>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
@@ -988,7 +988,7 @@ this.</p>
 this function with <em>stdout</em> as the file is exactly the same as calling <a class="reference internal" href="#c.dragon_heap_dump" title="dragon_heap_dump"><code class="xref c c-func docutils literal notranslate"><span class="pre">dragon_heap_dump()</span></code></a>.</p>
 <p><strong>Returns</strong></p>
 <div class="line-block">
-<div class="line"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></div>
+<div class="line"><a class="reference internal" href="bitset.html#c.dragonBitSetErr_t.DRAGON_SUCCESS" title="DRAGON_SUCCESS"><code class="xref c c-enumerator docutils literal notranslate"><span class="pre">DRAGON_SUCCESS</span></code></a></div>
 <div class="line-block">
 <div class="line">Success.</div>
 </div>
