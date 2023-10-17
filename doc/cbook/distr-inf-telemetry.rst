@@ -346,4 +346,14 @@ Usage
 
 To run this example, follow the multi-node start up instructions in :ref:`Running Jupyter Notebook inside of the Dragon<cbook/jupyter:Running Jupyter Notebook inside of the Dragon>`
 and then open the `llm_example.ipynb` notebook which can be found in the release package inside `examples/jupyter` directory. In order for the telemetry component to work and visualize the data with Grafana, you will
+<<<<<<< HEAD
 need to also have the Prometheus and Grafana servers started by following the instructions above.
+=======
+need to also have the Prometheus and Grafana servers started by following the instructions above.
+
+Description of the system used
+==============================
+
+For this example, an HPE Cray EX was used. Each node has AMD EPYC 7763 64-core
+CPUs and 4x Nvidia A100 GPUs.
+>>>>>>> internal/open-source

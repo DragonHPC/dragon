@@ -1388,6 +1388,46 @@ class GlobalContext(object):
         GroupContext.destroy_remove(self, msg, reply_channel)
 
 
+    @dutil.route(dmsg.GSGroupList, DTBL)
+    def handle_group_list(self, msg):
+        log = self._group_logger
+        log.debug(f'handling {msg!s}')
+
+        reply_channel = self.get_reply_handle(msg)
+
+        rm = dmsg.GSGroupListResponse(tag=self.tag_inc(),
+                                      ref=msg.tag,
+                                      err=dmsg.GSGroupListResponse.Errors.SUCCESS,
+                                      glist=list(self.group_table.keys()))
+
+        reply_channel.send(rm.serialize())
+        log.debug(f'response to {msg!s}: {rm!s}')
+
+
+    @dutil.route(dmsg.GSGroupQuery, DTBL)
+    def handle_group_query(self, msg):
+        log = self._group_logger
+        log.debug(f'handling {msg}')
+
+        reply_channel = self.get_reply_handle(msg)
+        target_uid, found, errmsg = self.resolve_guid(msg.user_name, msg.g_uid)
+
+        if not found:
+            rm = dmsg.GSGroupQueryResponse(tag=self.tag_inc(),
+                                           ref=msg.tag,
+                                           err=dmsg.GSGroupQueryResponse.Errors.UNKNOWN,
+                                           err_info=errmsg)
+        else:
+            gdesc = self.group_table[target_uid].descriptor
+            rm = dmsg.GSGroupQueryResponse(tag=self.tag_inc(),
+                                           ref=msg.tag,
+                                           err=dmsg.GSGroupQueryResponse.Errors.SUCCESS,
+                                           desc=gdesc)
+
+        reply_channel.send(rm.serialize())
+        log.debug(f'response to {msg!s}: {rm!s}')
+
+
 # separate process server entry:
 # python3 -c "import dragon.globalservices.server as dgs; dgs.single()"
 def single():

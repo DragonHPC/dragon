@@ -15,6 +15,8 @@ import struct
 
 import dragon
 from ..channels import Channel, Message, ChannelError
+from ..managed_memory import MemoryPool
+import dragon.utils as du
 from ..dtypes import WHEN_DEPOSITED
 from ..infrastructure.facts import default_pool_muid_from_index
 from ..infrastructure.parameters import this_process
@@ -98,8 +100,12 @@ class Value:
         valbytes = self._value2valbytes(value)
 
         # create value in shared memory
+<<<<<<< HEAD
         mpool = self._channel.get_pool()
         msg = Message.create_alloc(mpool, 8)
+=======
+        msg = Message.create_alloc(self._mpool, 8)
+>>>>>>> internal/open-source
         mview = msg.bytes_memview()
         mview[: len(valbytes)] = valbytes
 
@@ -163,6 +169,10 @@ class Value:
         self._sendh = self._channel.sendh(return_mode=WHEN_DEPOSITED)
         self._recvh.open()
         self._sendh.open()
+<<<<<<< HEAD
+=======
+        self._mpool = MemoryPool.attach(du.B64.str_to_bytes(this_process.default_pd))
+>>>>>>> internal/open-source
 
     def _value2valbytes(self, value: object) -> bytes:
 

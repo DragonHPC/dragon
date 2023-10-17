@@ -274,46 +274,44 @@ def destroy_remove_from(identifier, items):
         raise GroupError(f'removal of group resources {req_msg} failed: {reply_msg.err_info}')
 
 
-# def get_list():
-#     """Asks Global Services for a list of the g_uids of all groups.
+def get_list():
+    """Asks Global Services for a list of the g_uids of all groups.
 
-#     :return: list of the g_uids of all currently existing groups
-#     :rtype: list[g_uids]
-#     """
-#     req_msg = dmsg.GSGroupList(tag=das.next_tag(), p_uid=this_process.my_puid,
-#                                r_c_uid=das.get_gs_ret_cuid())
+    :return: list of the g_uids of all groups, alive and dead
+    :rtype: list[g_uids]
+    """
+    req_msg = dmsg.GSGroupList(tag=das.next_tag(), p_uid=this_process.my_puid,
+                               r_c_uid=das.get_gs_ret_cuid())
 
-#     reply_msg = das.gs_request(req_msg)
-#     assert isinstance(reply_msg, dmsg.GSGroupListResponse)
+    reply_msg = das.gs_request(req_msg)
+    assert isinstance(reply_msg, dmsg.GSGroupListResponse)
 
-#     return reply_msg.glist
+    return reply_msg.glist
 
 
-# def query(identifier):
-#     """Asks Global Services for the GroupDescriptor of a specified group of resources.
-#     Note you can only query currently existing groups.
+def query(identifier):
+    """Asks Global Services for the GroupDescriptor of a specified group of resources.
+    The group can be alive or dead.
 
-#     :param identifier: string indicating group name or integer indicating a g_uid
-#     :type identifier: str or int
-#     :raises GroupError: if there is no such group
-#     :return: GroupDescriptor object corresponding to specified group
-#     :rtype: GroupDescriptor
-#     """
-#     if isinstance(identifier, str):
-#         req_msg = dmsg.GSGroupQuery(tag=das.next_tag(), p_uid=this_process.my_puid,
-#                                     r_c_uid=das.get_gs_ret_cuid(),
-#                                     user_name=identifier)
-#     else:
-#         req_msg = dmsg.GSGroupQuery(tag=das.next_tag(), p_uid=this_process.my_puid,
-#                                     r_c_uid=das.get_gs_ret_cuid(),
-#                                     g_uid=int(identifier))
+    :param identifier: string indicating group name or integer indicating a g_uid
+    :type identifier: str|int
+    :raises GroupError: if there is no such group
+    :return: GroupDescriptor object corresponding to specified group
+    :rtype: GroupDescriptor
+    """
+    if isinstance(identifier, str):
+        req_msg = dmsg.GSGroupQuery(tag=das.next_tag(), p_uid=this_process.my_puid,
+                                    r_c_uid=das.get_gs_ret_cuid(),
+                                    user_name=identifier)
+    else:
+        req_msg = dmsg.GSGroupQuery(tag=das.next_tag(), p_uid=this_process.my_puid,
+                                    r_c_uid=das.get_gs_ret_cuid(),
+                                    g_uid=int(identifier))
 
-#     reply_msg = das.gs_request(req_msg)
-#     assert isinstance(reply_msg, dmsg.GSGroupQueryResponse)
+    reply_msg = das.gs_request(req_msg)
+    assert isinstance(reply_msg, dmsg.GSGroupQueryResponse)
 
-#     if dmsg.GSGroupQueryResponse.Errors.SUCCESS == reply_msg.err:
-#         the_desc = reply_msg.desc
-#     else:
-#         raise GroupError(f'group query {req_msg} failed: {reply_msg.err_info}')
-
-#     return the_desc
+    if dmsg.GSGroupQueryResponse.Errors.SUCCESS == reply_msg.err:
+        return reply_msg.desc
+    else:
+        raise GroupError(f'group query {req_msg} failed: {reply_msg.err_info}')

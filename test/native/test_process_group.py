@@ -150,9 +150,15 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
             p.join()
 
         # test autotransition
-        while not pg.status == "Idle":
-            self.assertTrue(pg.status == "Running")
-            time.sleep(0.1)  # avoid race condition
+        state_transitioned=False
+        while not state_transitioned:
+            # have to call pg.status once so it doesn't change between checks
+            status = pg.status
+            if status == "Idle":
+               state_transitioned=True
+            else:
+                self.assertTrue(status == "Running", f"status supposed to be running, it is {status}")
+            time.sleep(0.1)  # keeps the loop from being too hot
 
         puids = pg.puids
         for puid in puids:

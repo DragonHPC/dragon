@@ -60,12 +60,21 @@ class GroupDescriptor:
             :return: A dictionary with all key-value pairs of the available information of the group's member.
             :rtype: Dictionary
             """
-            rv = {'state': self.state.value,
-                  'uid': self.uid,
+            rv = {'uid': self.uid,
                   'placement': self.placement}
 
+            if isinstance(self.state, int):
+                rv['state'] = self.state
+            else:
+                rv['state'] = self.state.value
+
             rv['desc'] = self.desc.get_sdict()
-            rv['error_code'] = self.error_code.value
+
+            if isinstance(self.error_code, int):
+                rv['error_code'] = self.error_code
+            else:
+                rv['error_code'] = self.error_code.value
+
             rv['error_info'] = self.error_info
 
             return rv

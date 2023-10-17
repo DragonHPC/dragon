@@ -26,7 +26,7 @@ import support.util as tsu
 from dragon.globalservices.process import get_create_message, multi_join
 from dragon.globalservices.process import create as process_create
 from dragon.globalservices.group import create as group_create
-from dragon.globalservices.group import GroupError, add_to, create_add_to, remove_from, destroy_remove_from, kill, destroy
+from dragon.globalservices.group import GroupError, add_to, create_add_to, remove_from, destroy_remove_from, kill, destroy, get_list, query
 from dragon.infrastructure.group_desc import GroupDescriptor
 from dragon.infrastructure.process_desc import ProcessDescriptor
 from dragon.infrastructure.policy import Policy
@@ -575,7 +575,7 @@ class GSGroupAPI(unittest.TestCase):
         self.assertEqual(descr.name, "bob")
         self.assertEqual(int(descr.state), GroupDescriptor.State.ACTIVE)
 
-    def _destroy_a_thing(self, identifier, n, sets):
+    def _destroy_a_group(self, identifier, n, sets):
         def destroy_wrap(ident, result_list):
             res = destroy(ident)
             result_list.append(res)
@@ -609,7 +609,7 @@ class GSGroupAPI(unittest.TestCase):
         self.assertEqual(descr.name, "bob")
 
         # destroy an existing group of resources
-        descr = self._destroy_a_thing(descr.g_uid, n, descr.sets[0])
+        descr = self._destroy_a_group(descr.g_uid, n, descr.sets[0])
         self.assertEqual(all(item.desc.state == ProcessDescriptor.State.DEAD for item in descr.sets[0]), True)
         self.assertEqual(int(descr.state), GroupDescriptor.State.DEAD)
 
@@ -998,7 +998,7 @@ class GSGroupAPI(unittest.TestCase):
         del group_puids[0]
 
         # now, let's destroy the group
-        descr2 = self._destroy_a_thing(descr1.g_uid, n-2, descr1.sets[0])
+        descr2 = self._destroy_a_group(descr1.g_uid, n-2, descr1.sets[0])
         self.assertEqual(all(item.desc.state == ProcessDescriptor.State.DEAD for item in descr2.sets[0]), True)
         self.assertEqual(int(descr2.state), GroupDescriptor.State.DEAD)
 
@@ -1049,3 +1049,108 @@ class GSGroupAPI(unittest.TestCase):
                     self.assertEqual(item.desc.name, f'solver.{descr.g_uid}.{lst_idx}.{item_idx}')
                 else:
                     self.assertEqual(item.desc.name, f"alice{lst_idx-1}")
+
+    def test_query(self):
+        # create two groups
+        n = 3
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        items = [(n, process_msg.serialize())]
+        policy = Policy()
+        descr1 = self._create_group(items, policy, "bob")
+
+        n = 5
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        items = [(n, process_msg.serialize())]
+        policy = Policy()
+        descr2 = self._create_group(items, policy, "alice")
+
+        glist = get_list()
+
+        descr = query(glist[0])
+        self.assertEqual(descr.g_uid, descr1.g_uid)
+        descr = query(glist[1])
+        self.assertEqual(descr.g_uid, descr2.g_uid)
+
+    def test_query_alive(self):
+        n = 3
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        items = [(n, process_msg.serialize())]
+        policy = Policy()
+        descr = self._create_group(items, policy, "bob")
+        self.assertEqual(len(descr.sets[0]), n)
+
+        # test query by name
+        descr1 = query("bob")
+        self.assertEqual(descr.get_sdict(), descr1.get_sdict())
+
+        # test query by g_uid
+        descr2 = query(descr.g_uid)
+        self.assertEqual(descr.get_sdict(), descr2.get_sdict())
+
+    def test_query_dead(self):
+        n = 3
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        items = [(n, process_msg.serialize())]
+        policy = Policy()
+        descr = self._create_group(items, policy, "bob")
+        self.assertEqual(len(descr.sets[0]), n)
+
+        descr = self._destroy_a_group(descr.g_uid, n, descr.sets[0])
+
+        descr1 = query("bob")
+        self.assertEqual(descr.get_sdict(), descr1.get_sdict())
+
+    def test_get_list(self):
+        # no groups yet
+        glist = get_list()
+        self.assertEqual([], glist)
+
+        # create a couple of groups
+        glist_orig = []
+
+        n = 3
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        items = [(n, process_msg.serialize())]
+        policy = Policy()
+        descr1 = self._create_group(items, policy, "bob")
+        glist_orig.append(descr1.g_uid)
+
+        n = 5
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        items = [(n, process_msg.serialize())]
+        policy = Policy()
+        descr2 = self._create_group(items, policy, "alice")
+        glist_orig.append(descr2.g_uid)
+
+        glist = get_list()
+        self.assertEqual(glist_orig, glist)
+
+    def test_get_list_alive_and_dead_groups(self):
+        # create a couple of groups
+        glist_orig = []
+
+        n = 3
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        items = [(n, process_msg.serialize())]
+        policy = Policy()
+        descr1 = self._create_group(items, policy, "bob")
+        glist_orig.append(descr1.g_uid)
+
+        n = 5
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        items = [(n, process_msg.serialize())]
+        policy = Policy()
+        descr2 = self._create_group(items, policy, "alice")
+        glist_orig.append(descr2.g_uid)
+
+        glist = get_list()
+        self.assertEqual(glist_orig, glist)
+
+        # destroy the second group
+        descr = self._destroy_a_group(descr2.g_uid, n, descr2.sets[0])
+        self.assertEqual(descr.g_uid, glist_orig[1])
+
+        glist = get_list()
+        # the returned list should be the same with the original one as get_list(()
+        # returns both alive and dead groups
+        self.assertEqual(glist_orig, glist)

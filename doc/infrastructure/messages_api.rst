@@ -1684,6 +1684,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSNodeQueryTotalCPUCountResponse>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupdestroy:
+
+>>>>>>> internal/open-source
 121. **GSGroupDestroy**
 
     *type enum*
@@ -1707,6 +1712,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupDestroy>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupdestroyresponse:
+
+>>>>>>> internal/open-source
 122. **GSGroupDestroyResponse**
 
     *type enum*
@@ -1749,6 +1759,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupDestroyResponse>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupaddto:
+
+>>>>>>> internal/open-source
 123. **GSGroupAddTo**
 
     *type enum*
@@ -1776,6 +1791,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupAddTo>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupaddtoresponse:
+
+>>>>>>> internal/open-source
 124. **GSGroupAddToResponse**
 
     *type enum*
@@ -1825,6 +1845,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupAddToResponse>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupremovefrom:
+
+>>>>>>> internal/open-source
 125. **GSGroupRemoveFrom**
 
     *type enum*
@@ -1852,6 +1877,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupRemoveFrom>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupremovefromresponse:
+
+>>>>>>> internal/open-source
 126. **GSGroupRemoveFromResponse**
 
     *type enum*
@@ -1901,6 +1931,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupRemoveFromResponse>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupcreate:
+
+>>>>>>> internal/open-source
 127. **GSGroupCreate**
 
     *type enum*
@@ -1929,6 +1964,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupCreate>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupcreateresponse:
+
+>>>>>>> internal/open-source
 128. **GSGroupCreateResponse**
 
     *type enum*
@@ -1948,6 +1988,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupCreateResponse>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupkill:
+
+>>>>>>> internal/open-source
 129. **GSGroupKill**
 
     *type enum*
@@ -1975,6 +2020,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupKill>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupkillresponse:
+
+>>>>>>> internal/open-source
 130. **GSGroupKillResponse**
 
     *type enum*
@@ -2024,6 +2074,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupKillResponse>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupcreateaddto:
+
+>>>>>>> internal/open-source
 131. **GSGroupCreateAddTo**
 
     *type enum*
@@ -2054,6 +2109,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupCreateAddTo>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupcreateaddtoresponse:
+
+>>>>>>> internal/open-source
 132. **GSGroupCreateAddToResponse**
 
     *type enum*
@@ -2096,6 +2156,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupCreateAddToResponse>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupdestroyremovefrom:
+
+>>>>>>> internal/open-source
 133. **GSGroupDestroyRemoveFrom**
 
     *type enum*
@@ -2123,6 +2188,11 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupDestroyRemoveFrom>`
 
+<<<<<<< HEAD
+=======
+.. _gsgroupdestroyremovefromresponse:
+
+>>>>>>> internal/open-source
 134. **GSGroupDestroyRemoveFromResponse**
 
     *type enum*
@@ -2172,6 +2242,119 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupDestroyRemoveFromResponse>`
 
+<<<<<<< HEAD
+=======
+.. _gsgrouplist:
+
+117. **GSGroupList**
+
+    *type enum*
+        GS_GROUP_LIST (= 117)
+
+    *purpose*
+        Request a list of the g_uid for all the groups of resources
+        currently being managed
+
+    *fields*
+        None additional
+
+    *response*
+        GSGroupListResponse
+
+    *see also*
+        GSGroupQuery
+
+        refer to the :ref:`cfs` section for additional request message fields
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupList>`
+
+.. _gsgrouplistresponse:
+
+118. **GSGroupListResponse**
+
+    *type enum*
+        GS_GROUP_LIST_RESPONSE (= 118)
+
+    *purpose*
+        Response to GSGroupList message
+
+    *fields*
+        **glist**
+            - list of nonnegative integers for all the groups
+
+    *request*
+        GSGroupList
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupListResponse>`
+
+.. _gsgroupquery:
+
+119. **GSGroupQuery**
+
+    *type enum*
+        GS_GROUP_QUERY  (= 119)
+
+    *purpose*
+        Request the GroupDescriptor for a managed group of resources
+
+    *fields*
+        One of the ``g_uid`` and ``user_name`` fields must be
+        present.
+
+        If both are specified, then the ``user_name`` field is ignored.
+
+        **g_uid**
+            - integer
+            - target group UID
+
+        **user_name**
+            - string
+            - user supplied name for the target group
+
+    *response*
+        GSGroupQueryResponse
+
+        refer to the :ref:`cfs` section for additional request message fields
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupQuery>`
+
+.. _gsgroupqueryresponse:
+
+120. **GSGroupQueryResponse**
+
+    *type enum*
+        GS_GROUP_QUERY_RESPONSE  (= 120)
+
+    *purpose*
+        Response to request for GroupDescriptor for a managed group
+
+    *fields*
+        Alternatives on ``err``:
+
+        SUCCESS (= 0)
+            Group has been found
+
+            **desc**
+                - map
+                - initializer for GroupDescriptor - includes at a minimum
+                  g_uid of new group and assigned user name.
+
+        UNKNOWN (= 1)
+            No such group is known.
+
+            **err_info**
+                - string
+                - explanation of what went wrong
+
+    *request*
+        GSGroupQuery
+
+    *see also*
+        GSGroupList
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupQueryResponse>`
+
+>>>>>>> internal/open-source
 Other Messages
 --------------
 

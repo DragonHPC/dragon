@@ -21,6 +21,19 @@ Multiprocessing with Dragon
    distr-inf-telemetry.rst
    pipeline.rst
 
+<<<<<<< HEAD
+=======
+Workflows with Dragon
+===========================
+
+.. toctree::
+   :maxdepth: 1
+
+   ai-in-the-loop.rst
+   dragon_parsl_mpi_app.rst
+
+
+>>>>>>> internal/open-source
 Dragon Native
 =============
 
