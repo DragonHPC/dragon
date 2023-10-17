@@ -1684,11 +1684,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSNodeQueryTotalCPUCountResponse>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupdestroy:
 
->>>>>>> internal/open-source
 121. **GSGroupDestroy**
 
     *type enum*
@@ -1712,11 +1709,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupDestroy>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupdestroyresponse:
 
->>>>>>> internal/open-source
 122. **GSGroupDestroyResponse**
 
     *type enum*
@@ -1759,11 +1753,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupDestroyResponse>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupaddto:
 
->>>>>>> internal/open-source
 123. **GSGroupAddTo**
 
     *type enum*
@@ -1791,11 +1782,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupAddTo>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupaddtoresponse:
 
->>>>>>> internal/open-source
 124. **GSGroupAddToResponse**
 
     *type enum*
@@ -1845,11 +1833,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupAddToResponse>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupremovefrom:
 
->>>>>>> internal/open-source
 125. **GSGroupRemoveFrom**
 
     *type enum*
@@ -1877,11 +1862,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupRemoveFrom>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupremovefromresponse:
 
->>>>>>> internal/open-source
 126. **GSGroupRemoveFromResponse**
 
     *type enum*
@@ -1931,11 +1913,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupRemoveFromResponse>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupcreate:
 
->>>>>>> internal/open-source
 127. **GSGroupCreate**
 
     *type enum*
@@ -1964,11 +1943,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupCreate>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupcreateresponse:
 
->>>>>>> internal/open-source
 128. **GSGroupCreateResponse**
 
     *type enum*
@@ -1988,11 +1964,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupCreateResponse>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupkill:
 
->>>>>>> internal/open-source
 129. **GSGroupKill**
 
     *type enum*
@@ -2020,11 +1993,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupKill>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupkillresponse:
 
->>>>>>> internal/open-source
 130. **GSGroupKillResponse**
 
     *type enum*
@@ -2074,11 +2044,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupKillResponse>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupcreateaddto:
 
->>>>>>> internal/open-source
 131. **GSGroupCreateAddTo**
 
     *type enum*
@@ -2109,11 +2076,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupCreateAddTo>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupcreateaddtoresponse:
 
->>>>>>> internal/open-source
 132. **GSGroupCreateAddToResponse**
 
     *type enum*
@@ -2156,11 +2120,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupCreateAddToResponse>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupdestroyremovefrom:
 
->>>>>>> internal/open-source
 133. **GSGroupDestroyRemoveFrom**
 
     *type enum*
@@ -2188,11 +2149,8 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupDestroyRemoveFrom>`
 
-<<<<<<< HEAD
-=======
 .. _gsgroupdestroyremovefromresponse:
 
->>>>>>> internal/open-source
 134. **GSGroupDestroyRemoveFromResponse**
 
     *type enum*
@@ -2242,8 +2200,6 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupDestroyRemoveFromResponse>`
 
-<<<<<<< HEAD
-=======
 .. _gsgrouplist:
 
 117. **GSGroupList**
@@ -2354,7 +2310,6 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSGroupQueryResponse>`
 
->>>>>>> internal/open-source
 Other Messages
 --------------
 

@@ -21,8 +21,6 @@ Multiprocessing with Dragon
    distr-inf-telemetry.rst
    pipeline.rst
 
-<<<<<<< HEAD
-=======
 Workflows with Dragon
 ===========================
 
@@ -33,7 +31,6 @@ Workflows with Dragon
    dragon_parsl_mpi_app.rst
 
 
->>>>>>> internal/open-source
 Dragon Native
 =============
 
