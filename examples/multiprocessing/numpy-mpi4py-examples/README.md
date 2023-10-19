@@ -25,6 +25,16 @@ In order to run multi-node with Dragon, the `--dragon` option is needed. For exa
 > salloc --nodes=2 --exclusive
 > dragon scipy_scale_work.py --dragon
 ```
+## Parsl batched executor benchmark for comparison with Dragon.
+
+### Usage
+
+Simple SciPy example implemented in Parsl and comparable to the implementation above. This example uses the batched dragon executor that utilizes a multiprocessing pool and submits batches of work through the map_async function.
+```
+dragon parsl_batched_scipy_scale_work.py [-h] [--num_workers NUM_WORKERS] [--iterations ITERATIONS]
+                          [--burns BURN_ITERATIONS] [--size ARRAY_SIZE]
+                          [--mem DATASET_MEMORY_FOOTPRINT] [--runtime PER_IMAGE_COMPUTE_TIME]
+```
 
 ## Simple mpi4py benchmarks for comparison with Dragon.
 

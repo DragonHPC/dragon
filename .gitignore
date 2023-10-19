@@ -35,6 +35,8 @@ doc/internal/services/transport_agent/images/transport_agent.png
 doc/plantuml.jar
 external/external_deps/
 src/*egg*
+src/bin/dragon_hsta
+src/build/dragon_hsta
 src/dist/
 src/doxygen/
 src/dragon/dlogging/pydragon_logging.c
@@ -43,6 +45,13 @@ src/dragon/launcher/launchargs.c
 src/dragon/launcher/pydragon_mrnetserver.cpp
 src/dragon/launcher/pydragon_pmsgqueue.c
 src/dragon/pydragon_*.c
+src/dragon/transport/hsta/__init__.c
+src/dragon/transport/hsta/__main__.c
+src/dragon/transport/hsta/crash-*
+src/dragon/transport/hsta/dragon_hsta
+src/dragon/transport/hsta/hsta_dbg.*.out
+src/dragon/transport/hsta/ideas.txt
+src/dragon/transport/hsta/leak-*
 src/include/dragon/return_codes_map.h
 src/bin
-
+src/dragon/transport/hsta/dragon-hsta
