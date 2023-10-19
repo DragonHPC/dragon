@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" >
+<head>
+  <meta charset="utf-8" /><meta name="generator" content="Docutils 0.17.1: http://docutils.sourceforge.net/" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI-in-the-loop Workflow &mdash; Dragon  documentation</title>
+      <link rel="stylesheet" href="../_static/pygments.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/theme.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/copybutton.css" type="text/css" />
+      <link rel="stylesheet" href="../_static/css/custom.css" type="text/css" />
+  <!--[if lt IE 9]>
+    <script src="../_static/js/html5shiv.min.js"></script>
+  <![endif]-->
+  
+        <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+        <script src="../_static/jquery.js"></script>
+        <script src="../_static/underscore.js"></script>
+        <script src="../_static/_sphinx_javascript_frameworks_compat.js"></script>
+        <script src="../_static/doctools.js"></script>
+        <script src="../_static/sphinx_highlight.js"></script>
+        <script src="../_static/clipboard.min.js"></script>
+        <script src="../_static/copybutton.js"></script>
+        <script async="async" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+    <link rel="next" title="An example Parsl @mpi_app using Dragon based executor" href="dragon_parsl_mpi_app.html" />
+    <link rel="prev" title="Creating and Using a Pipeline with Multiprocessing" href="pipeline.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+            <a href="../index.html" class="icon icon-home"> Dragon
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../start/start.html">Getting Started</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../uguide/uguide.html">Users Guide</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../pguide/pguide.html">Programming Guide</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="cbook.html">Solution Cookbook</a><ul class="current">
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#multiprocessing-with-dragon">Multiprocessing with Dragon</a></li>
+<li class="toctree-l2 current"><a class="reference internal" href="cbook.html#workflows-with-dragon">Workflows with Dragon</a><ul class="current">
+<li class="toctree-l3 current"><a class="current reference internal" href="#">AI-in-the-loop Workflow</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#installation">Installation</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#description-of-the-system-used">Description of the system used</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#how-to-run">How to run</a></li>
+</ul>
+</li>
+<li class="toctree-l3"><a class="reference internal" href="dragon_parsl_mpi_app.html">An example Parsl <code class="code docutils literal notranslate"><span class="pre">&#64;mpi_app</span></code> using Dragon based executor</a></li>
+</ul>
+</li>
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-native">Dragon Native</a></li>
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-data-preview">Dragon Data (Preview)</a></li>
+</ul>
+</li>
+<li class="toctree-l1"><a class="reference internal" href="../benchmarks/benchmarks.html">Benchmarks</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../faq/faq.html">FAQ</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../ref/ref.html">API Reference</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../infrastructure/infrastructure.html">Infrastructure</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../services/services.html">Services</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../components/components.html">Low-level Components</a></li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../index.html">Dragon</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../index.html" class="icon icon-home"></a></li>
+          <li class="breadcrumb-item"><a href="cbook.html">Solution Cookbook</a></li>
+      <li class="breadcrumb-item active">AI-in-the-loop Workflow</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../_sources/cbook/ai-in-the-loop.rst.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="ai-in-the-loop-workflow">
+<h1>AI-in-the-loop Workflow<a class="headerlink" href="#ai-in-the-loop-workflow" title="Permalink to this heading"></a></h1>
+<p>This is an example of how Dragon can be used to execute an AI-in-the-loop workflow.
+Inspiration for this demo comes from the NERSC-10 Workflow Archetypes White Paper.
+This workflow most closely resembles the workflow scenario given as part of archetype four.</p>
+<p>In this example we use a small model implemented in PyTorch to compute an approximation to <span class="math notranslate nohighlight">\(\sin(x)\)</span>.
+In parallel to doing the inference with the model, we launch <code class="code docutils literal notranslate"><span class="pre">sim-cheap</span></code> on four MPI ranks.
+This MPI job computes the Taylor approximation to <span class="math notranslate nohighlight">\(\sin(x)\)</span> and compares this with the output of the model.
+If the difference is less than 0.05 we consider the model’s approximation to be sufficiently accurate and print out the result with the exact result.
+If the difference is larger than 0.05 we consider this a failure and re-train the model on a new set of data.</p>
+<p>To generate this data we launch <code class="code docutils literal notranslate"><span class="pre">sim-expensive</span></code>.
+This MPI job is launched on eight ranks-per-node and each rank generates 32 data points of the form <span class="math notranslate nohighlight">\((x, \sin(x))\)</span> where <span class="math notranslate nohighlight">\(x \in X \tilde U(-\pi, \pi)\)</span>.
+This data is aggregated into a PyTorch tensor and then used to train the model.
+We then re-evaluate the re-trained model and decide if we need to re-train again or if the estimate is sufficiently accurate.
+We continue this loop until we’ve had five successes.</p>
+<p>Figure 1 presents the structure of this main loop. It shows when each MPI application is launched and what portions are executed in parallel.</p>
+<figure class="align-default" id="id3">
+<a class="reference internal image-reference" href="../_images/ai-in-the-loop-workflow.jpg"><img alt="../_images/ai-in-the-loop-workflow.jpg" src="../_images/ai-in-the-loop-workflow.jpg" style="width: 191.1px; height: 162.0px;" /></a>
+<figcaption>
+<p><span class="caption-number">Fig. 14 </span><span class="caption-text"><a href="#id1"><span class="problematic" id="id2">**</span></a>Figure 1: Example AI-in-the-loop workflow **</span><a class="headerlink" href="#id3" title="Permalink to this image"></a></p>
+<div class="legend">
+</div>
+</figcaption>
+</figure>
+<p>This example consists of the following python files:</p>
+<ul class="simple">
+<li><p><code class="code docutils literal notranslate"><span class="pre">ai-in-the-loop.py</span></code> - This is the main file. It contains functions for launching both MPI executables and parsing the results as well as imports functions defined in <code class="code docutils literal notranslate"><span class="pre">model.py</span></code> and coordinates the model inference and training with the MPI jobs.</p></li>
+<li><p><code class="code docutils literal notranslate"><span class="pre">model.py</span></code> - This file defines the model and provides some functions for model training and inference.</p></li>
+</ul>
+<p>Below, we present the main python code (<code class="code docutils literal notranslate"><span class="pre">ai-in-the-loop.py</span></code>) which acts as the coordinator of the workflow.
+The code of the other files can be found in the release package, inside <code class="code docutils literal notranslate"><span class="pre">examples/workflows/ai-in-the-loop</span></code> directory.</p>
+<div class="literal-block-wrapper docutils container" id="id4">
+<div class="code-block-caption"><span class="caption-number">Listing 13 </span><span class="caption-text"><strong>ai-in-the-loop.py: Main orchestrator for AI-in-the-loop demo</strong></span><a class="headerlink" href="#id4" title="Permalink to this code"></a></div>
+<div class="highlight-python notranslate"><div class="highlight"><pre><span></span><span class="linenos">  1</span><span class="kn">import</span> <span class="nn">dragon</span>
+<span class="linenos">  2</span><span class="kn">import</span> <span class="nn">multiprocessing</span> <span class="k">as</span> <span class="nn">mp</span>
+<span class="linenos">  3</span>
+<span class="linenos">  4</span><span class="kn">import</span> <span class="nn">os</span>
+<span class="linenos">  5</span><span class="kn">import</span> <span class="nn">math</span>
+<span class="linenos">  6</span><span class="kn">import</span> <span class="nn">torch</span>
+<span class="linenos">  7</span><span class="kn">from</span> <span class="nn">itertools</span> <span class="kn">import</span> <span class="n">count</span>
+<span class="linenos">  8</span><span class="kn">from</span> <span class="nn">model</span> <span class="kn">import</span> <span class="n">Net</span><span class="p">,</span> <span class="n">make_features</span><span class="p">,</span> <span class="n">infer</span><span class="p">,</span> <span class="n">train</span>
+<span class="linenos">  9</span>
+<span class="linenos"> 10</span><span class="kn">from</span> <span class="nn">dragon.native.process</span> <span class="kn">import</span> <span class="n">Process</span><span class="p">,</span> <span class="n">TemplateProcess</span><span class="p">,</span> <span class="n">Popen</span>
+<span class="linenos"> 11</span><span class="kn">from</span> <span class="nn">dragon.native.process_group</span> <span class="kn">import</span> <span class="n">ProcessGroup</span>
+<span class="linenos"> 12</span><span class="kn">from</span> <span class="nn">dragon.infrastructure.connection</span> <span class="kn">import</span> <span class="n">Connection</span>
+<span class="linenos"> 13</span><span class="kn">from</span> <span class="nn">dragon.native.machine</span> <span class="kn">import</span> <span class="n">System</span>
+<span class="linenos"> 14</span>
+<span class="linenos"> 15</span>
+<span class="linenos"> 16</span><span class="k">def</span> <span class="nf">parse_results</span><span class="p">(</span><span class="n">stdout_conn</span><span class="p">:</span> <span class="n">Connection</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="linenos"> 17</span>    <span class="sd">&quot;&quot;&quot;Read stdout from the Dragon connection.</span>
+<span class="linenos"> 18</span>
+<span class="linenos"> 19</span><span class="sd">    :param stdout_conn: Dragon connection to rank 0&#39;s stdout</span>
+<span class="linenos"> 20</span><span class="sd">    :type stdout_conn: Connection</span>
+<span class="linenos"> 21</span><span class="sd">    :return: tuple with a list of x values and the corresponding sin(x) values.</span>
+<span class="linenos"> 22</span><span class="sd">    :rtype: tuple</span>
+<span class="linenos"> 23</span><span class="sd">    &quot;&quot;&quot;</span>
+<span class="linenos"> 24</span>    <span class="n">x</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="linenos"> 25</span>    <span class="n">y</span> <span class="o">=</span> <span class="p">[]</span>
+<span class="linenos"> 26</span>    <span class="n">output</span> <span class="o">=</span> <span class="s2">&quot;&quot;</span>
+<span class="linenos"> 27</span>    <span class="k">try</span><span class="p">:</span>
+<span class="linenos"> 28</span>        <span class="c1"># this is brute force</span>
+<span class="linenos"> 29</span>        <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+<span class="linenos"> 30</span>            <span class="n">output</span> <span class="o">+=</span> <span class="n">stdout_conn</span><span class="o">.</span><span class="n">recv</span><span class="p">()</span>
+<span class="linenos"> 31</span>    <span class="k">except</span> <span class="ne">EOFError</span><span class="p">:</span>
+<span class="linenos"> 32</span>        <span class="k">pass</span>
+<span class="linenos"> 33</span>    <span class="k">finally</span><span class="p">:</span>
+<span class="linenos"> 34</span>        <span class="n">stdout_conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<span class="linenos"> 35</span>
+<span class="linenos"> 36</span>    <span class="n">split_line</span> <span class="o">=</span> <span class="n">output</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;</span><span class="se">\n</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="linenos"> 37</span>    <span class="k">for</span> <span class="n">line</span> <span class="ow">in</span> <span class="n">split_line</span><span class="p">[:</span><span class="o">-</span><span class="mi">1</span><span class="p">]:</span>
+<span class="linenos"> 38</span>        <span class="k">try</span><span class="p">:</span>
+<span class="linenos"> 39</span>            <span class="n">x_val</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)[</span><span class="mi">0</span><span class="p">])</span>
+<span class="linenos"> 40</span>            <span class="n">y_val</span> <span class="o">=</span> <span class="nb">float</span><span class="p">(</span><span class="n">line</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s2">&quot;,&quot;</span><span class="p">)[</span><span class="mi">1</span><span class="p">])</span>
+<span class="linenos"> 41</span>            <span class="n">x</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">x_val</span><span class="p">)</span>
+<span class="linenos"> 42</span>            <span class="n">y</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">y_val</span><span class="p">)</span>
+<span class="linenos"> 43</span>        <span class="k">except</span> <span class="p">(</span><span class="ne">IndexError</span><span class="p">,</span> <span class="ne">ValueError</span><span class="p">):</span>
+<span class="linenos"> 44</span>            <span class="k">pass</span>
+<span class="linenos"> 45</span>
+<span class="linenos"> 46</span>    <span class="k">return</span> <span class="n">x</span><span class="p">,</span> <span class="n">y</span>
+<span class="linenos"> 47</span>
+<span class="linenos"> 48</span>
+<span class="linenos"> 49</span><span class="k">def</span> <span class="nf">generate_data</span><span class="p">(</span>
+<span class="linenos"> 50</span>    <span class="n">num_ranks</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">samples_per_rank</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">sample_range</span><span class="p">:</span> <span class="nb">list</span><span class="p">,</span> <span class="n">number_of_times_trained</span><span class="p">:</span> <span class="nb">int</span>
+<span class="linenos"> 51</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="linenos"> 52</span>    <span class="sd">&quot;&quot;&quot;Launches mpi application that generates (x, sin(x)) pairs uniformly sampled from [sample_range[0], sample_range[1]).</span>
+<span class="linenos"> 53</span>
+<span class="linenos"> 54</span><span class="sd">    :param num_ranks: number of ranks to use to generate data</span>
+<span class="linenos"> 55</span><span class="sd">    :type num_ranks: int</span>
+<span class="linenos"> 56</span><span class="sd">    :param samples_per_rank: number of samples to generate per rank</span>
+<span class="linenos"> 57</span><span class="sd">    :type samples_per_rank: int</span>
+<span class="linenos"> 58</span><span class="sd">    :param sample_range: range from which to sample training data</span>
+<span class="linenos"> 59</span><span class="sd">    :type sample_range: list</span>
+<span class="linenos"> 60</span><span class="sd">    :param number_of_times_trained: number of times trained. can be used to set a seed for the mpi application.</span>
+<span class="linenos"> 61</span><span class="sd">    :type number_of_times_trained: int</span>
+<span class="linenos"> 62</span><span class="sd">    :return: tuple of PyTorch tensors containing data and targets respectively</span>
+<span class="linenos"> 63</span><span class="sd">    :rtype: tuple</span>
+<span class="linenos"> 64</span><span class="sd">    &quot;&quot;&quot;</span>
+<span class="linenos"> 65</span>    <span class="sd">&quot;&quot;&quot;Launch process group and parse data&quot;&quot;&quot;</span>
+<span class="linenos"> 66</span>    <span class="n">exe</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">(),</span> <span class="s2">&quot;sim-expensive&quot;</span><span class="p">)</span>
+<span class="linenos"> 67</span>    <span class="n">args</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">samples_per_rank</span><span class="p">),</span> <span class="nb">str</span><span class="p">(</span><span class="n">sample_range</span><span class="p">[</span><span class="mi">0</span><span class="p">]),</span> <span class="nb">str</span><span class="p">(</span><span class="n">sample_range</span><span class="p">[</span><span class="mi">1</span><span class="p">]),</span> <span class="nb">str</span><span class="p">(</span><span class="n">number_of_times_trained</span><span class="p">)]</span>
+<span class="linenos"> 68</span>    <span class="n">run_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
+<span class="linenos"> 69</span>
+<span class="linenos"> 70</span>    <span class="n">grp</span> <span class="o">=</span> <span class="n">ProcessGroup</span><span class="p">(</span><span class="n">restart</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">pmi_enabled</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos"> 71</span>
+<span class="linenos"> 72</span>    <span class="c1"># Pipe the stdout output from the head process to a Dragon connection</span>
+<span class="linenos"> 73</span>    <span class="n">grp</span><span class="o">.</span><span class="n">add_process</span><span class="p">(</span><span class="n">nproc</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="n">TemplateProcess</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">exe</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="n">cwd</span><span class="o">=</span><span class="n">run_dir</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">Popen</span><span class="o">.</span><span class="n">PIPE</span><span class="p">))</span>
+<span class="linenos"> 74</span>
+<span class="linenos"> 75</span>    <span class="c1"># All other ranks should have their output go to DEVNULL</span>
+<span class="linenos"> 76</span>    <span class="n">grp</span><span class="o">.</span><span class="n">add_process</span><span class="p">(</span>
+<span class="linenos"> 77</span>        <span class="n">nproc</span><span class="o">=</span><span class="n">num_ranks</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span>
+<span class="linenos"> 78</span>        <span class="n">template</span><span class="o">=</span><span class="n">TemplateProcess</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">exe</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="n">cwd</span><span class="o">=</span><span class="n">run_dir</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">Popen</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">),</span>
+<span class="linenos"> 79</span>    <span class="p">)</span>
+<span class="linenos"> 80</span>    <span class="c1"># start the process group</span>
+<span class="linenos"> 81</span>    <span class="n">grp</span><span class="o">.</span><span class="n">init</span><span class="p">()</span>
+<span class="linenos"> 82</span>    <span class="n">grp</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos"> 83</span>    <span class="n">group_procs</span> <span class="o">=</span> <span class="p">[</span><span class="n">Process</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">ident</span><span class="o">=</span><span class="n">puid</span><span class="p">)</span> <span class="k">for</span> <span class="n">puid</span> <span class="ow">in</span> <span class="n">grp</span><span class="o">.</span><span class="n">puids</span><span class="p">]</span>
+<span class="linenos"> 84</span>    <span class="k">for</span> <span class="n">proc</span> <span class="ow">in</span> <span class="n">group_procs</span><span class="p">:</span>
+<span class="linenos"> 85</span>        <span class="k">if</span> <span class="n">proc</span><span class="o">.</span><span class="n">stdout_conn</span><span class="p">:</span>
+<span class="linenos"> 86</span>            <span class="c1"># get info printed to stdout from rank 0</span>
+<span class="linenos"> 87</span>            <span class="n">x</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">parse_results</span><span class="p">(</span><span class="n">proc</span><span class="o">.</span><span class="n">stdout_conn</span><span class="p">)</span>
+<span class="linenos"> 88</span>    <span class="c1"># wait for workers to finish and shutdown process group</span>
+<span class="linenos"> 89</span>    <span class="n">grp</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+<span class="linenos"> 90</span>    <span class="n">grp</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+<span class="linenos"> 91</span>    <span class="c1"># transform data into tensors for training</span>
+<span class="linenos"> 92</span>    <span class="n">data</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">x</span><span class="p">)</span>
+<span class="linenos"> 93</span>    <span class="n">target</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">tensor</span><span class="p">(</span><span class="n">y</span><span class="p">)</span>
+<span class="linenos"> 94</span>    <span class="k">return</span> <span class="n">data</span><span class="p">,</span> <span class="n">target</span><span class="o">.</span><span class="n">unsqueeze</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="linenos"> 95</span>
+<span class="linenos"> 96</span>
+<span class="linenos"> 97</span><span class="k">def</span> <span class="nf">compute_cheap_approx</span><span class="p">(</span><span class="n">num_ranks</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+<span class="linenos"> 98</span>    <span class="sd">&quot;&quot;&quot;Launch process group with cheap approximation and parse output to float as a string</span>
+<span class="linenos"> 99</span>
+<span class="linenos">100</span><span class="sd">    :param num_ranks: number of mpi ranks (and therefor terms) to use for the cheap approximation</span>
+<span class="linenos">101</span><span class="sd">    :type num_ranks: int</span>
+<span class="linenos">102</span><span class="sd">    :param x: point where you are trying to compute sin(x)</span>
+<span class="linenos">103</span><span class="sd">    :type x: float</span>
+<span class="linenos">104</span><span class="sd">    :return: Taylor expansion of sin(x)</span>
+<span class="linenos">105</span><span class="sd">    :rtype: float</span>
+<span class="linenos">106</span><span class="sd">    &quot;&quot;&quot;</span>
+<span class="linenos">107</span>    <span class="n">exe</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">(),</span> <span class="s2">&quot;sim-cheap&quot;</span><span class="p">)</span>
+<span class="linenos">108</span>    <span class="n">args</span> <span class="o">=</span> <span class="p">[</span><span class="nb">str</span><span class="p">(</span><span class="n">x</span><span class="p">)]</span>
+<span class="linenos">109</span>    <span class="n">run_dir</span> <span class="o">=</span> <span class="n">os</span><span class="o">.</span><span class="n">getcwd</span><span class="p">()</span>
+<span class="linenos">110</span>
+<span class="linenos">111</span>    <span class="n">grp</span> <span class="o">=</span> <span class="n">ProcessGroup</span><span class="p">(</span><span class="n">restart</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">pmi_enabled</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">112</span>
+<span class="linenos">113</span>    <span class="c1"># Pipe the stdout output from the head process to a Dragon connection</span>
+<span class="linenos">114</span>    <span class="n">grp</span><span class="o">.</span><span class="n">add_process</span><span class="p">(</span><span class="n">nproc</span><span class="o">=</span><span class="mi">1</span><span class="p">,</span> <span class="n">template</span><span class="o">=</span><span class="n">TemplateProcess</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">exe</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="n">cwd</span><span class="o">=</span><span class="n">run_dir</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">Popen</span><span class="o">.</span><span class="n">PIPE</span><span class="p">))</span>
+<span class="linenos">115</span>
+<span class="linenos">116</span>    <span class="c1"># All other ranks should have their output go to DEVNULL</span>
+<span class="linenos">117</span>    <span class="n">grp</span><span class="o">.</span><span class="n">add_process</span><span class="p">(</span>
+<span class="linenos">118</span>        <span class="n">nproc</span><span class="o">=</span><span class="n">num_ranks</span> <span class="o">-</span> <span class="mi">1</span><span class="p">,</span>
+<span class="linenos">119</span>        <span class="n">template</span><span class="o">=</span><span class="n">TemplateProcess</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">exe</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="n">args</span><span class="p">,</span> <span class="n">cwd</span><span class="o">=</span><span class="n">run_dir</span><span class="p">,</span> <span class="n">stdout</span><span class="o">=</span><span class="n">Popen</span><span class="o">.</span><span class="n">DEVNULL</span><span class="p">),</span>
+<span class="linenos">120</span>    <span class="p">)</span>
+<span class="linenos">121</span>    <span class="c1"># start the process group</span>
+<span class="linenos">122</span>    <span class="n">grp</span><span class="o">.</span><span class="n">init</span><span class="p">()</span>
+<span class="linenos">123</span>    <span class="n">grp</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos">124</span>    <span class="n">group_procs</span> <span class="o">=</span> <span class="p">[</span><span class="n">Process</span><span class="p">(</span><span class="kc">None</span><span class="p">,</span> <span class="n">ident</span><span class="o">=</span><span class="n">puid</span><span class="p">)</span> <span class="k">for</span> <span class="n">puid</span> <span class="ow">in</span> <span class="n">grp</span><span class="o">.</span><span class="n">puids</span><span class="p">]</span>
+<span class="linenos">125</span>    <span class="k">for</span> <span class="n">proc</span> <span class="ow">in</span> <span class="n">group_procs</span><span class="p">:</span>
+<span class="linenos">126</span>        <span class="c1"># get info printed to stdout from rank 0</span>
+<span class="linenos">127</span>        <span class="k">if</span> <span class="n">proc</span><span class="o">.</span><span class="n">stdout_conn</span><span class="p">:</span>
+<span class="linenos">128</span>            <span class="n">_</span><span class="p">,</span> <span class="n">y</span> <span class="o">=</span> <span class="n">parse_results</span><span class="p">(</span><span class="n">proc</span><span class="o">.</span><span class="n">stdout_conn</span><span class="p">)</span>
+<span class="linenos">129</span>    <span class="c1"># wait for workers to finish and shutdown process group</span>
+<span class="linenos">130</span>    <span class="n">grp</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+<span class="linenos">131</span>    <span class="n">grp</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+<span class="linenos">132</span>
+<span class="linenos">133</span>    <span class="k">return</span> <span class="n">y</span>
+<span class="linenos">134</span>
+<span class="linenos">135</span>
+<span class="linenos">136</span><span class="k">def</span> <span class="nf">infer_and_compare</span><span class="p">(</span><span class="n">model</span><span class="p">:</span> <span class="n">torch</span><span class="o">.</span><span class="n">nn</span><span class="p">,</span> <span class="n">x</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">:</span>
+<span class="linenos">137</span>    <span class="sd">&quot;&quot;&quot;Launch inference and cheap approximation and check the difference between them</span>
+<span class="linenos">138</span>
+<span class="linenos">139</span><span class="sd">    :param model: PyTorch model that approximates sin(x)</span>
+<span class="linenos">140</span><span class="sd">    :type model: torch.nn</span>
+<span class="linenos">141</span><span class="sd">    :param x: value where we want to evaluate sin(x)</span>
+<span class="linenos">142</span><span class="sd">    :type x: float</span>
+<span class="linenos">143</span><span class="sd">    :return: the model&#39;s output val and the difference between it and the cheap approximation value</span>
+<span class="linenos">144</span><span class="sd">    :rtype: tuple</span>
+<span class="linenos">145</span><span class="sd">    &quot;&quot;&quot;</span>
+<span class="linenos">146</span>    <span class="k">with</span> <span class="n">torch</span><span class="o">.</span><span class="n">no_grad</span><span class="p">():</span>
+<span class="linenos">147</span>        <span class="c1"># queues to send data to and from inference process</span>
+<span class="linenos">148</span>        <span class="n">q_in</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+<span class="linenos">149</span>        <span class="n">q_out</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
+<span class="linenos">150</span>        <span class="n">q_in</span><span class="o">.</span><span class="n">put</span><span class="p">((</span><span class="n">model</span><span class="p">,</span> <span class="n">x</span><span class="p">))</span>
+<span class="linenos">151</span>        <span class="n">inf_proc</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">infer</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="n">q_in</span><span class="p">,</span> <span class="n">q_out</span><span class="p">))</span>
+<span class="linenos">152</span>        <span class="n">inf_proc</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+<span class="linenos">153</span>        <span class="c1"># launch mpi application to compute cheap approximation</span>
+<span class="linenos">154</span>        <span class="n">te_fx</span> <span class="o">=</span> <span class="n">compute_cheap_approx</span><span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="n">x</span><span class="o">.</span><span class="n">numpy</span><span class="p">()[</span><span class="mi">0</span><span class="p">])</span>
+<span class="linenos">155</span>        <span class="n">inf_proc</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+<span class="linenos">156</span>        <span class="n">model_val</span> <span class="o">=</span> <span class="n">q_out</span><span class="o">.</span><span class="n">get</span><span class="p">()</span>
+<span class="linenos">157</span>        <span class="c1"># compare cheap approximation and model value</span>
+<span class="linenos">158</span>        <span class="n">diff</span> <span class="o">=</span> <span class="nb">abs</span><span class="p">(</span><span class="n">model_val</span><span class="o">.</span><span class="n">numpy</span><span class="p">()</span> <span class="o">-</span> <span class="n">te_fx</span><span class="p">[</span><span class="mi">0</span><span class="p">])</span>
+<span class="linenos">159</span>
+<span class="linenos">160</span>    <span class="k">return</span> <span class="n">model_val</span><span class="p">,</span> <span class="n">diff</span>
+<span class="linenos">161</span>
+<span class="linenos">162</span>
+<span class="linenos">163</span><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+<span class="linenos">164</span>
+<span class="linenos">165</span>    <span class="n">ranks_per_node</span> <span class="o">=</span> <span class="mi">8</span>
+<span class="linenos">166</span>    <span class="n">data_interval</span> <span class="o">=</span> <span class="p">[</span><span class="o">-</span><span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">,</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">]</span>
+<span class="linenos">167</span>    <span class="n">samples_per_rank</span> <span class="o">=</span> <span class="mi">32</span>
+<span class="linenos">168</span>    <span class="n">my_alloc</span> <span class="o">=</span> <span class="n">System</span><span class="p">()</span>
+<span class="linenos">169</span>    <span class="c1"># Define model</span>
+<span class="linenos">170</span>    <span class="n">model</span> <span class="o">=</span> <span class="n">Net</span><span class="p">()</span>
+<span class="linenos">171</span>    <span class="c1"># Define optimizer</span>
+<span class="linenos">172</span>    <span class="n">optimizer</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">optim</span><span class="o">.</span><span class="n">Adam</span><span class="p">(</span><span class="n">model</span><span class="o">.</span><span class="n">parameters</span><span class="p">(),</span> <span class="n">lr</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+<span class="linenos">173</span>    <span class="c1"># Load pretrained model</span>
+<span class="linenos">174</span>    <span class="n">PATH</span> <span class="o">=</span> <span class="s2">&quot;model_pretrained_poly.pt&quot;</span>
+<span class="linenos">175</span>    <span class="n">checkpoint</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">load</span><span class="p">(</span><span class="n">PATH</span><span class="p">)</span>
+<span class="linenos">176</span>    <span class="n">model</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">&quot;model_state_dict&quot;</span><span class="p">])</span>
+<span class="linenos">177</span>    <span class="n">optimizer</span><span class="o">.</span><span class="n">load_state_dict</span><span class="p">(</span><span class="n">checkpoint</span><span class="p">[</span><span class="s2">&quot;optimizer_state_dict&quot;</span><span class="p">])</span>
+<span class="linenos">178</span>
+<span class="linenos">179</span>    <span class="n">number_of_times_trained</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos">180</span>    <span class="n">successes</span> <span class="o">=</span> <span class="mi">0</span>
+<span class="linenos">181</span>
+<span class="linenos">182</span>    <span class="n">generate_new_x</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos">183</span>
+<span class="linenos">184</span>    <span class="k">while</span> <span class="n">successes</span> <span class="o">&lt;</span> <span class="mi">5</span><span class="p">:</span>
+<span class="linenos">185</span>
+<span class="linenos">186</span>        <span class="k">if</span> <span class="n">generate_new_x</span><span class="p">:</span>
+<span class="linenos">187</span>            <span class="c1"># uniformly sample from [-pi, pi)</span>
+<span class="linenos">188</span>            <span class="n">x</span> <span class="o">=</span> <span class="n">torch</span><span class="o">.</span><span class="n">rand</span><span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="o">*</span> <span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span><span class="p">)</span> <span class="o">-</span> <span class="n">math</span><span class="o">.</span><span class="n">pi</span>
+<span class="linenos">189</span>
+<span class="linenos">190</span>        <span class="n">model_val</span><span class="p">,</span> <span class="n">diff</span> <span class="o">=</span> <span class="n">infer_and_compare</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">x</span><span class="p">)</span>
+<span class="linenos">191</span>        <span class="k">if</span> <span class="n">diff</span> <span class="o">&gt;</span> <span class="mf">0.05</span><span class="p">:</span>
+<span class="linenos">192</span>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;training&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">193</span>            <span class="c1"># want to train and then retry same value</span>
+<span class="linenos">194</span>            <span class="n">generate_new_x</span> <span class="o">=</span> <span class="kc">False</span>
+<span class="linenos">195</span>            <span class="n">number_of_times_trained</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="linenos">196</span>            <span class="c1"># interval we uniformly sample training data from</span>
+<span class="linenos">197</span>            <span class="c1"># launch mpi job to generate data</span>
+<span class="linenos">198</span>            <span class="n">data</span><span class="p">,</span> <span class="n">target</span> <span class="o">=</span> <span class="n">generate_data</span><span class="p">(</span>
+<span class="linenos">199</span>                <span class="n">my_alloc</span><span class="o">.</span><span class="n">nnodes</span><span class="p">()</span> <span class="o">*</span> <span class="n">ranks_per_node</span><span class="p">,</span> <span class="n">samples_per_rank</span><span class="p">,</span> <span class="n">data_interval</span><span class="p">,</span> <span class="n">number_of_times_trained</span>
+<span class="linenos">200</span>            <span class="p">)</span>
+<span class="linenos">201</span>            <span class="c1"># train model</span>
+<span class="linenos">202</span>            <span class="n">loss</span> <span class="o">=</span> <span class="n">train</span><span class="p">(</span><span class="n">model</span><span class="p">,</span> <span class="n">optimizer</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">target</span><span class="p">)</span>
+<span class="linenos">203</span>        <span class="k">else</span><span class="p">:</span>
+<span class="linenos">204</span>            <span class="n">successes</span> <span class="o">+=</span> <span class="mi">1</span>
+<span class="linenos">205</span>            <span class="n">generate_new_x</span> <span class="o">=</span> <span class="kc">True</span>
+<span class="linenos">206</span>            <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot; approx = </span><span class="si">{</span><span class="n">model_val</span><span class="si">}</span><span class="s2">, exact = </span><span class="si">{</span><span class="n">math</span><span class="o">.</span><span class="n">sin</span><span class="p">(</span><span class="n">x</span><span class="p">)</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">,</span> <span class="n">flush</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="linenos">207</span>
+<span class="linenos">208</span>
+<span class="linenos">209</span><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+<span class="linenos">210</span>    <span class="n">mp</span><span class="o">.</span><span class="n">set_start_method</span><span class="p">(</span><span class="s2">&quot;dragon&quot;</span><span class="p">)</span>
+<span class="linenos">211</span>    <span class="n">main</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<section id="installation">
+<h2>Installation<a class="headerlink" href="#installation" title="Permalink to this heading"></a></h2>
+<p>After installing dragon, the only other dependency is on PyTorch. The PyTorch version and corresponding pip command can be found here (<a class="reference external" href="https://pytorch.org/get-started/locally/">https://pytorch.org/get-started/locally/</a>).</p>
+<p><code class="docutils literal notranslate"><span class="pre">`</span>
+<span class="pre">&gt;</span> <span class="pre">pip</span> <span class="pre">install</span> <span class="pre">torch</span> <span class="pre">torchvision</span> <span class="pre">torchaudio</span>
+<span class="pre">`</span></code></p>
+</section>
+<section id="description-of-the-system-used">
+<h2>Description of the system used<a class="headerlink" href="#description-of-the-system-used" title="Permalink to this heading"></a></h2>
+<p>For this example, HPE Cray Hotlum nodes were used. Each node has AMD EPYC 7763 64-core CPUs.</p>
+</section>
+<section id="how-to-run">
+<h2>How to run<a class="headerlink" href="#how-to-run" title="Permalink to this heading"></a></h2>
+<section id="example-output-when-run-on-16-nodes-with-8-mpi-ranks-per-node-used-to-generate-data-and-four-mpi-ranks-to-compute-the-cheap-approximation">
+<h3>Example Output when run on 16 nodes with 8 MPI ranks-per-node used to generate data and four MPI ranks to compute the cheap approximation<a class="headerlink" href="#example-output-when-run-on-16-nodes-with-8-mpi-ranks-per-node-used-to-generate-data-and-four-mpi-ranks-to-compute-the-cheap-approximation" title="Permalink to this heading"></a></h3>
+<div class="highlight-console notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="go">&gt; make</span>
+<span class="linenos"> 2</span><span class="go">gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib   -c -o sim-cheap.o sim-cheap.c</span>
+<span class="linenos"> 3</span><span class="go">gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib  sim-cheap.o -o sim-cheap -lm -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib -lmpich</span>
+<span class="linenos"> 4</span><span class="go">gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib   -c -o sim-expensive.o</span>
+<span class="linenos"> 5</span><span class="go">gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib  sim-expensive.o -o sim-expensive -lm -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib -lmpich</span>
+<span class="linenos"> 6</span><span class="go">&gt; salloc --nodes=16 --exclusive</span>
+<span class="linenos"> 7</span><span class="go">&gt; dragon ai-in-the-loop.py</span>
+<span class="linenos"> 8</span><span class="go">training</span>
+<span class="linenos"> 9</span><span class="go">approx = 0.1283823400735855, exact = 0.15357911534767393</span>
+<span class="linenos">10</span><span class="go">training</span>
+<span class="linenos">11</span><span class="go">approx = -0.41591891646385193, exact = -0.4533079140996079</span>
+<span class="linenos">12</span><span class="go">approx = -0.9724616408348083, exact = -0.9808886564963794</span>
+<span class="linenos">13</span><span class="go">approx = -0.38959139585494995, exact = -0.4315753703483373</span>
+<span class="linenos">14</span><span class="go">approx = 0.8678910732269287, exact = 0.8812041533601648</span>
+</pre></div>
+</div>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="pipeline.html" class="btn btn-neutral float-left" title="Creating and Using a Pipeline with Multiprocessing" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+        <a href="dragon_parsl_mpi_app.html" class="btn btn-neutral float-right" title="An example Parsl @mpi_app using Dragon based executor" accesskey="n" rel="next">Next <span class="fa fa-arrow-circle-right" aria-hidden="true"></span></a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2023, Hewlett Packard Enterprise.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>

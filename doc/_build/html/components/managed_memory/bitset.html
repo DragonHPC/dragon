@@ -110,7 +110,7 @@ implementation is determined before the datatype is instantiated.</p>
 <p>Consider a BitSet of 1024 bits. The following code creates a BitSet, initializes it, and exercises a few of
 the functions.</p>
 <div class="literal-block-wrapper docutils container" id="id1">
-<div class="code-block-caption"><span class="caption-number">Listing 32 </span><span class="caption-text"><strong>Figure 1: A BitSet Example</strong></span><a class="headerlink" href="#id1" title="Permalink to this code"></a></div>
+<div class="code-block-caption"><span class="caption-number">Listing 35 </span><span class="caption-text"><strong>Figure 1: A BitSet Example</strong></span><a class="headerlink" href="#id1" title="Permalink to this code"></a></div>
 <div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="kt">size_t</span><span class="w"> </span><span class="n">bitsetsize</span><span class="p">;</span><span class="w"></span>
 <span class="linenos"> 2</span><span class="n">dragonBitSetErr_t</span><span class="w"> </span><span class="n">brc</span><span class="p">;</span><span class="w"></span>
 <span class="linenos"> 3</span><span class="n">bitsetsize</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">dragon_bitset_size</span><span class="p">(</span><span class="mi">1024</span><span class="p">);</span><span class="w"></span>
@@ -154,7 +154,7 @@ the left, not the right. In this way, the bits display lexicographically in a du
 easier reading. Bit 0 is the left-most bit in the dump while the last bit is lexicographically the last bit to
 be displayed.</p>
 <div class="literal-block-wrapper docutils container" id="id2">
-<div class="code-block-caption"><span class="caption-number">Listing 33 </span><span class="caption-text"><strong>Figure 2: BitSet Example Output</strong></span><a class="headerlink" href="#id2" title="Permalink to this code"></a></div>
+<div class="code-block-caption"><span class="caption-number">Listing 36 </span><span class="caption-text"><strong>Figure 2: BitSet Example Output</strong></span><a class="headerlink" href="#id2" title="Permalink to this code"></a></div>
 <div class="highlight-text notranslate"><div class="highlight"><pre><span></span>That was a one
 A Bit Dump
 Size of bitset is 125
@@ -179,7 +179,7 @@ always use a multiple of 8 bytes for easy alignment with other data.</p>
 <p>When a BitSet is initialized, a handle to the BitSet is also initialized. The handle is now the user of this
 API accesses the BitSet. The handle structure is given in figure 3.</p>
 <div class="literal-block-wrapper docutils container" id="id3">
-<div class="code-block-caption"><span class="caption-number">Listing 34 </span><span class="caption-text"><strong>Figure 3: BitSet Handle Definition</strong></span><a class="headerlink" href="#id3" title="Permalink to this code"></a></div>
+<div class="code-block-caption"><span class="caption-number">Listing 37 </span><span class="caption-text"><strong>Figure 3: BitSet Handle Definition</strong></span><a class="headerlink" href="#id3" title="Permalink to this code"></a></div>
 <div class="highlight-C notranslate"><div class="highlight"><pre><span></span><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">dragonBitSet_st</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
 <span class="w">    </span><span class="kt">size_t</span><span class="w"> </span><span class="n">size</span><span class="p">;</span><span class="w"></span>
 <span class="w">    </span><span class="kt">char</span><span class="o">*</span><span class="w"> </span><span class="n">data</span><span class="p">;</span><span class="w"></span>

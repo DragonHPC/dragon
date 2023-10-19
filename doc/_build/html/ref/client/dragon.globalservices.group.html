@@ -127,8 +127,14 @@ primary resource component. Only process groups are supported at this time.</p>
 <tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.group.destroy_remove_from" title="dragon.globalservices.group.destroy_remove_from"><code class="xref py py-obj docutils literal notranslate"><span class="pre">destroy_remove_from</span></code></a>(identifier, items)</p></td>
 <td><p>Remove resources from an existing group and call destroy on them.</p></td>
 </tr>
-<tr class="row-even"><td><p><a class="reference internal" href="#dragon.globalservices.group.kill" title="dragon.globalservices.group.kill"><code class="xref py py-obj docutils literal notranslate"><span class="pre">kill</span></code></a>(identifier[, sig])</p></td>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.globalservices.group.get_list" title="dragon.globalservices.group.get_list"><code class="xref py py-obj docutils literal notranslate"><span class="pre">get_list</span></code></a>()</p></td>
+<td><p>Asks Global Services for a list of the g_uids of all groups.</p></td>
+</tr>
+<tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.group.kill" title="dragon.globalservices.group.kill"><code class="xref py py-obj docutils literal notranslate"><span class="pre">kill</span></code></a>(identifier[, sig])</p></td>
 <td><p>Asks Global Services to send the processes belonging to a specified group a specified signal.</p></td>
+</tr>
+<tr class="row-even"><td><p><a class="reference internal" href="#dragon.globalservices.group.query" title="dragon.globalservices.group.query"><code class="xref py py-obj docutils literal notranslate"><span class="pre">query</span></code></a>(identifier)</p></td>
+<td><p>Asks Global Services for the GroupDescriptor of a specified group of resources.</p></td>
 </tr>
 <tr class="row-odd"><td><p><a class="reference internal" href="#dragon.globalservices.group.remove_from" title="dragon.globalservices.group.remove_from"><code class="xref py py-obj docutils literal notranslate"><span class="pre">remove_from</span></code></a>(identifier, items)</p></td>
 <td><p>Remove resources from an existing group.</p></td>
@@ -313,6 +319,41 @@ types of resources we call destroy.</p>
 <li><p><a class="reference internal" href="#dragon.globalservices.group.GroupError" title="dragon.globalservices.group.GroupError"><strong>GroupError</strong></a> – if the addition of resources failed</p></li>
 <li><p><a class="reference internal" href="#dragon.globalservices.group.GroupError" title="dragon.globalservices.group.GroupError"><strong>GroupError</strong></a> – if the identifier corresponds to an unknown group</p></li>
 </ul>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.group.get_list">
+<span class="sig-name descname"><span class="pre">get_list</span></span><span class="sig-paren">(</span><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.group.get_list" title="Permalink to this definition"></a></dt>
+<dd><p>Asks Global Services for a list of the g_uids of all groups.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>list of the g_uids of all groups, alive and dead</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p>list[g_uids]</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt class="sig sig-object py" id="dragon.globalservices.group.query">
+<span class="sig-name descname"><span class="pre">query</span></span><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">identifier</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#dragon.globalservices.group.query" title="Permalink to this definition"></a></dt>
+<dd><p>Asks Global Services for the GroupDescriptor of a specified group of resources.
+The group can be alive or dead.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>identifier</strong> (<em>str</em><em>|</em><em>int</em>) – string indicating group name or integer indicating a g_uid</p>
+</dd>
+<dt class="field-even">Raises</dt>
+<dd class="field-even"><p><a class="reference internal" href="#dragon.globalservices.group.GroupError" title="dragon.globalservices.group.GroupError"><strong>GroupError</strong></a> – if there is no such group</p>
+</dd>
+<dt class="field-odd">Returns</dt>
+<dd class="field-odd"><p>GroupDescriptor object corresponding to specified group</p>
+</dd>
+<dt class="field-even">Return type</dt>
+<dd class="field-even"><p><a class="reference internal" href="../inf/dragon.infrastructure.group_desc.html#dragon.infrastructure.group_desc.GroupDescriptor" title="dragon.infrastructure.group_desc.GroupDescriptor">GroupDescriptor</a></p>
 </dd>
 </dl>
 </dd></dl>

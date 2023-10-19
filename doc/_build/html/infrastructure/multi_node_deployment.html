@@ -116,13 +116,13 @@ work of communicating off node when necessary. Figures 1 and 2 depict a
 multi-node version of the Dragon <a class="reference internal" href="../services/services.html#services"><span class="std std-ref">Services</span></a>.</p>
 <figure class="align-default" id="id4">
 <img alt="../_images/deployment_multi_node.svg" src="../_images/deployment_multi_node.svg" /><figcaption>
-<p><span class="caption-number">Fig. 27 </span><span class="caption-text"><strong>Figure 1: Startup Overview</strong></span><a class="headerlink" href="#id4" title="Permalink to this image"></a></p>
+<p><span class="caption-number">Fig. 28 </span><span class="caption-text"><strong>Figure 1: Startup Overview</strong></span><a class="headerlink" href="#id4" title="Permalink to this image"></a></p>
 </figcaption>
 </figure>
 <figure class="align-default" id="id5">
 <a class="reference internal image-reference" href="infrastructure/images/multinodeoverview.png"><img alt="infrastructure/images/multinodeoverview.png" src="infrastructure/images/multinodeoverview.png" /></a>
 <figcaption>
-<p><span class="caption-number">Fig. 28 </span><span class="caption-text"><strong>Figure 2: Multi-Node Overview of Dragon Services</strong></span><a class="headerlink" href="#id5" title="Permalink to this image"></a></p>
+<p><span class="caption-number">Fig. 29 </span><span class="caption-text"><strong>Figure 2: Multi-Node Overview of Dragon Services</strong></span><a class="headerlink" href="#id5" title="Permalink to this image"></a></p>
 </figcaption>
 </figure>
 <section id="multi-node-bringup">
@@ -137,7 +137,7 @@ manager with an active job allocation, the launcher frontend will handle
 obtaining the network configuration. It exists in <code class="code docutils literal notranslate"><span class="pre">dragon.launcher.network_config.main</span></code>,
 but can be invoked directly via <code class="code docutils literal notranslate"><span class="pre">dragon-network-config</span></code>. Its help is below:</p>
 <div class="literal-block-wrapper docutils container" id="id6">
-<div class="code-block-caption"><span class="caption-number">Listing 25 </span><span class="caption-text"><strong>Dragon Network Config (dragon-network-config) tool’s help and basic use</strong></span><a class="headerlink" href="#id6" title="Permalink to this code"></a></div>
+<div class="code-block-caption"><span class="caption-number">Listing 28 </span><span class="caption-text"><strong>Dragon Network Config (dragon-network-config) tool’s help and basic use</strong></span><a class="headerlink" href="#id6" title="Permalink to this code"></a></div>
 <div class="highlight-default notranslate"><div class="highlight"><pre><span></span>usage: dragon-network-config [-h] [-p PORT] [--network-prefix NETWORK_PREFIX] [--wlm WORKLOAD_MANAGER] [--log] [--output-to-yaml] [--output-to-json]
                              [--no-stdout] [--primary PRIMARY] [--hostlist HOSTLIST | --hostfile HOSTFILE]
 
@@ -172,7 +172,7 @@ $ dragon-network-config --wlm slurm --output-to-yaml --output-to-json
 <p>If output to file (YAML or JSON are supported), the file can be provided to the
 launcher frontend at launch. Formatting of the files appears below:</p>
 <div class="literal-block-wrapper docutils container" id="id7">
-<div class="code-block-caption"><span class="caption-number">Listing 26 </span><span class="caption-text"><strong>Example of YAML formatted network configuration file</strong></span><a class="headerlink" href="#id7" title="Permalink to this code"></a></div>
+<div class="code-block-caption"><span class="caption-number">Listing 29 </span><span class="caption-text"><strong>Example of YAML formatted network configuration file</strong></span><a class="headerlink" href="#id7" title="Permalink to this code"></a></div>
 <div class="highlight-YAML notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="s">&#39;0&#39;</span><span class="p p-Indicator">:</span><span class="w"></span>
 <span class="linenos"> 2</span><span class="w">  </span><span class="nt">h_uid</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">null</span><span class="w"></span>
 <span class="linenos"> 3</span><span class="w">  </span><span class="nt">host_id</span><span class="p">:</span><span class="w"> </span><span class="l l-Scalar l-Scalar-Plain">18446744071562724608</span><span class="w"></span>
@@ -199,7 +199,7 @@ launcher frontend at launch. Formatting of the files appears below:</p>
 </div>
 </div>
 <div class="literal-block-wrapper docutils container" id="id8">
-<div class="code-block-caption"><span class="caption-number">Listing 27 </span><span class="caption-text"><strong>Example of JSON formatted network configuration file</strong></span><a class="headerlink" href="#id8" title="Permalink to this code"></a></div>
+<div class="code-block-caption"><span class="caption-number">Listing 30 </span><span class="caption-text"><strong>Example of JSON formatted network configuration file</strong></span><a class="headerlink" href="#id8" title="Permalink to this code"></a></div>
 <div class="highlight-JSON notranslate"><div class="highlight"><pre><span></span><span class="linenos"> 1</span><span class="p">{</span><span class="w"></span>
 <span class="linenos"> 2</span><span class="w">  </span><span class="nt">&quot;0&quot;</span><span class="p">:</span><span class="w"> </span><span class="p">{</span><span class="w"></span>
 <span class="linenos"> 3</span><span class="w">        </span><span class="nt">&quot;state&quot;</span><span class="p">:</span><span class="w"> </span><span class="mi">4</span><span class="p">,</span><span class="w"></span>

@@ -58,11 +58,13 @@
 <li class="toctree-l4"><a class="reference internal" href="#examples-of-input-and-output">Examples of input and Output</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#installation">Installation</a></li>
 <li class="toctree-l4"><a class="reference internal" href="#usage">Usage</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#description-of-the-system-used">Description of the system used</a></li>
 </ul>
 </li>
 <li class="toctree-l3"><a class="reference internal" href="pipeline.html">Creating and Using a Pipeline with Multiprocessing</a></li>
 </ul>
 </li>
+<li class="toctree-l2"><a class="reference internal" href="cbook.html#workflows-with-dragon">Workflows with Dragon</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-native">Dragon Native</a></li>
 <li class="toctree-l2"><a class="reference internal" href="cbook.html#dragon-data-preview">Dragon Data (Preview)</a></li>
 </ul>
@@ -392,6 +394,11 @@ Last, we need to create a new dashboard for visualizing our metrics. You can fin
 <p>To run this example, follow the multi-node start up instructions in <a class="reference internal" href="jupyter.html#running-jupyter-notebook-inside-of-the-dragon"><span class="std std-ref">Running Jupyter Notebook inside of the Dragon</span></a>
 and then open the <code class="code docutils literal notranslate"><span class="pre">llm_example.ipynb</span></code> notebook which can be found in the release package inside <code class="code docutils literal notranslate"><span class="pre">examples/jupyter</span></code> directory. In order for the telemetry component to work and visualize the data with Grafana, you will
 need to also have the Prometheus and Grafana servers started by following the instructions above.</p>
+</section>
+<section id="description-of-the-system-used">
+<h2>Description of the system used<a class="headerlink" href="#description-of-the-system-used" title="Permalink to this heading"></a></h2>
+<p>For this example, an HPE Cray EX was used. Each node has AMD EPYC 7763 64-core
+CPUs and 4x Nvidia A100 GPUs.</p>
 </section>
 </section>
 

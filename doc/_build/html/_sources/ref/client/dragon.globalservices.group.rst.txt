@@ -19,7 +19,9 @@
       create_add_to
       destroy
       destroy_remove_from
+      get_list
       kill
+      query
       remove_from
    
    

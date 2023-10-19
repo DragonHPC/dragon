@@ -129,13 +129,13 @@ and potentially for other user level processes.</p></li>
 <h2>Architecture<a class="headerlink" href="#architecture" title="Permalink to this heading"></a></h2>
 <figure class="align-default" id="id1">
 <img alt="../_images/shepherd.svg" src="../_images/shepherd.svg" /><figcaption>
-<p><span class="caption-number">Fig. 38 </span><span class="caption-text"><strong>Figure 1: Internal Shepherd Structure</strong></span><a class="headerlink" href="#id1" title="Permalink to this image"></a></p>
+<p><span class="caption-number">Fig. 39 </span><span class="caption-text"><strong>Figure 1: Internal Shepherd Structure</strong></span><a class="headerlink" href="#id1" title="Permalink to this image"></a></p>
 </figcaption>
 </figure>
 <figure class="align-default" id="id2">
 <img alt="services/images/shepherdstructure.png" src="services/images/shepherdstructure.png" />
 <figcaption>
-<p><span class="caption-number">Fig. 39 </span><span class="caption-text"><strong>Figure 2: Internal Shepherd Structure</strong></span><a class="headerlink" href="#id2" title="Permalink to this image"></a></p>
+<p><span class="caption-number">Fig. 40 </span><span class="caption-text"><strong>Figure 2: Internal Shepherd Structure</strong></span><a class="headerlink" href="#id2" title="Permalink to this image"></a></p>
 </figcaption>
 </figure>
 <p>Local Services runs as a separate process that receives its work through a channel. After bringup of the Dragon
@@ -200,7 +200,7 @@ completes its execution.</p>
 <figure class="align-default" id="id3">
 <img alt="services/images/processstates.png" src="services/images/processstates.png" />
 <figcaption>
-<p><span class="caption-number">Fig. 40 </span><span class="caption-text"><strong>Figure 8: Process State Transition Diagram</strong></span><a class="headerlink" href="#id3" title="Permalink to this image"></a></p>
+<p><span class="caption-number">Fig. 41 </span><span class="caption-text"><strong>Figure 8: Process State Transition Diagram</strong></span><a class="headerlink" href="#id3" title="Permalink to this image"></a></p>
 </figcaption>
 </figure>
 <p>Managed processes are created by Local Services in response to the
@@ -237,7 +237,7 @@ notification of the termination of the process.</p>
 <figure class="align-default" id="id4">
 <img alt="services/images/managedservices.png" src="services/images/managedservices.png" />
 <figcaption>
-<p><span class="caption-number">Fig. 41 </span><span class="caption-text"><strong>Figure 9: Managed Process services provided by Local Services</strong></span><a class="headerlink" href="#id4" title="Permalink to this image"></a></p>
+<p><span class="caption-number">Fig. 42 </span><span class="caption-text"><strong>Figure 9: Managed Process services provided by Local Services</strong></span><a class="headerlink" href="#id4" title="Permalink to this image"></a></p>
 </figcaption>
 </figure>
 <p>Initially the managed process is in the <em>init</em> state and an AsyncIO <em>process</em> task (see <a class="reference internal" href="#tasktypes"><span class="std std-ref">Task Types</span></a>) is created that will run to create the process and move it to the <em>run</em> state. Once the task is
@@ -268,7 +268,7 @@ on the task. Once cleanup has occurred, the process is deleted from Local Servic
 <figure class="align-default" id="id5">
 <img alt="services/images/gsmonitor.png" src="services/images/gsmonitor.png" />
 <figcaption>
-<p><span class="caption-number">Fig. 42 </span><span class="caption-text"><strong>Figure 10: The Global Services Monitor</strong></span><a class="headerlink" href="#id5" title="Permalink to this image"></a></p>
+<p><span class="caption-number">Fig. 43 </span><span class="caption-text"><strong>Figure 10: The Global Services Monitor</strong></span><a class="headerlink" href="#id5" title="Permalink to this image"></a></p>
 </figcaption>
 </figure>
 <p>During startup, Local Services creates <a class="reference internal" href="global_services.html#globalservices"><span class="std std-ref">Global Services</span></a> like a managed process on the node designated as
