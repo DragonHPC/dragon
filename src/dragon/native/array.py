@@ -24,7 +24,6 @@ from ..localservices.options import ChannelOptions as LSChannelOptions
 from ..globalservices.channel import create, get_refcnt, release_refcnt
 from ..dtypes import WHEN_DEPOSITED
 from ..native.lock import Lock
-import numpy as np
 
 LOGGER = logging.getLogger(__name__)
 _DEF_MUID = default_pool_muid_from_index(this_process.index)

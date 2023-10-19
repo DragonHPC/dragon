@@ -303,6 +303,12 @@ can be found `here <https://pytorch.org/get-started/locally/>`_.
     > pip install scipy
 
 
+Description of the system used
+==============================
+
+For this example, an HPE Cray EX was used. Each node has AMD EPYC 7763 64-core
+CPUs and 4x Nvidia A100 GPUs.
+
 How to run
 ==========
 

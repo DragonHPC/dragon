@@ -9,48 +9,65 @@ def determine_environment(args=None):
     # Check if the user requested a specific launcher mode
     arg_map = launchargs.get_args(args)
 
+    wlm = str(arg_map.get('wlm', ''))
     single_arg = arg_map['single_node_override']
     multi_arg = arg_map['multi_node_override']
+
     if single_arg and multi_arg:
         msg = """Cannot request both single node and multi-node launcher simultaneously.
 Please specify only '--single-node-override' or '--multi-node-override'"""
         raise ValueError(msg)
-    elif single_arg:
+
+    if single_arg and wlm != '':
+        msg = 'Cannot request single node deployment of Dragon and specify a workload manager.'
+        raise ValueError(msg)
+
+    if single_arg:
         return False
-    elif multi_arg:
+
+    if multi_arg:
         return True
 
     # If no override specific, do automatic detection
-
-    # Try to figure out if we're in a support multinode case
     multi_mode = False
 
     # Try to determine if we're on a supported multinode system
-    pbs = shutil.which('qstat')
-    is_pbs = re.match('.*/pbs/.*', str(pbs))
+    if wlm != '':
+        # only one of these will be true
+        is_pbs = wlm == 'pbs'
+        is_slurm = wlm == 'slurm'
+        is_ssh = wlm == 'ssh'
+    else:
+        # Likewise, only one of these will be true (unless somehow they have both PBS and slurm installed)
+        pbs = shutil.which('qstat')
+        is_pbs = re.match('.*/pbs/.*', str(pbs)) != None
+        is_slurm = shutil.which('srun') != None
+        is_ssh = False
 
-    is_slurm = shutil.which('srun')
+    if is_ssh + is_pbs + is_slurm >= 2:
+        # adding the booleans here is a quick check that two or more are not True.
+        raise RuntimeError('Dragon cannot determine the correct multi-node launch mode. Please specify the workload manager with --wlm')
+
+    if is_ssh:
+        return True
 
     if is_pbs:
         # Next see if we have a PALS environment loaded -- ALPS isn't supported
         mpiexec = shutil.which("mpiexec")
-        if mpiexec and is_pbs:
+        if mpiexec:
             pals_mpiexec = re.match('.*/pals/.*', mpiexec)
             if pals_mpiexec:
-                multi_mode = True
-            else:
-                msg = """PBS has been detected on the system. However, Dragon is only
-    compatible with PALS when using PBS. Please load or install PALS into your path to continue"""
-                raise RuntimeError(msg)
+                if not os.environ.get("PBS_NODEFILE"):
+                    msg = """Using a supported PALS with PBS config. However, no active jobs allocation
+        has been detected. Resubmit as part of a 'qsub' execution."""
+                    raise RuntimeError(msg)
 
-            if not os.environ.get("PBS_NODEFILE"):
-                msg = """Using a supported PALS with PBS config. However, no active jobs allocation
-    has been detected. Resubmit as part of a 'qsub' execution."""
-                raise RuntimeError(msg)
+                return True
 
-    elif is_slurm:
-        multi_mode = True
+        msg = "PBS has been detected on the system. However, Dragon is only compatible with a PALS mpiexec and it was not found."
+        raise RuntimeError(msg)
 
+    if is_slurm:
         # Check if we have nodes allocated. If not, raise an
         # exception
         if not os.environ.get("SLURM_JOB_ID"):
@@ -58,7 +75,9 @@ Please specify only '--single-node-override' or '--multi-node-override'"""
     Resubmit as part of an 'salloc' or 'sbatch' execution"""
             raise RuntimeError(msg)
 
-    return multi_mode
+        return True
+
+    return False
 
 
 def get_launcher():
