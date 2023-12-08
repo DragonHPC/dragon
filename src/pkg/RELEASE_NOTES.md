@@ -5,8 +5,17 @@ comes with the full implementation of Dragon using the TCP transport agent.
 Optional Dragon extensions that further enhance Dragon's performance in HPC
 environments exist; please see the FAQ on the Dragon documentation website.
 
-# Dragon 0.6 and 0.61 Release Summary
+# Dragon 0.7 Release Summary
+This package introduces a number of key features to Dragon in addition to many bug fixes, improved robustness, and
+addition/refinements to documentation. Highlighted new features are:
 
+- Ability to support running Dragon in multinode mode on an allocation of up to 1024 nodes.
+- Ability to establish policies for CPU and GPU placement when starting a Dragon Process or Dragon ProcessGroup
+- Enhanced support for Conda python environments
+- The Dragon GlobalServices API for Dragon process Groups now supports List and Query operations
+- Documentation updates explaining how to run Dragon multinode using generic SSH launch
+
+# Dragon 0.6 and 0.61 Release Summary
 This package is the first to extend Dragon beyond support for Python
 multiprocessing. The key new feature is support for running collections of
 executables, including executables that require support for PMI (e.g., MPI). PMI

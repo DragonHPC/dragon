@@ -51,32 +51,45 @@ class BaseNetworkConfig(ABC):
     def _launch_network_config_helper(self) -> subprocess.Popen:
         raise NotImplementedError
 
-    def _parse_network_configuration(self, stdout) -> None:
+    def _parse_network_configuration(self) -> None:
         self.node_descriptors = {}
 
-        stdout_stream = NewlineStreamWrapper(stdout)
+        last_node_descriptor_count = 0
+        stdout_stream = NewlineStreamWrapper(self.config_helper.stdout)
+        stderr_stream = NewlineStreamWrapper(self.config_helper.stderr)
         while len(self.node_descriptors.keys()) != self.NNODES:
-            if stdout_stream.poll():
-                lines = []
-                while stdout_stream.poll():
-                    line = stdout_stream.recv()
-                    # sattach returns an empty string if nothing to report. ignore
-                    if line == "":
-                        break
-                    else:
-                        lines.append(line)
 
-                for line in lines:
-                    self.LOGGER.debug(f'{line=}')
-                    if line != "":
-                        node_index, node_desc = line.split(": ", maxsplit=1)
-                        if " " in node_index:
-                            node_index = node_index.split(" ")[-1]
-                        if str(node_index) not in self.node_descriptors.keys():
-                            self.LOGGER.debug(json.loads(node_desc))
-                            self.node_descriptors[
-                                str(node_index)
-                            ] = NodeDescriptor.from_sdict(json.loads(node_desc))
+            lines = []
+            node_descriptor_count = len(self.node_descriptors.keys())
+            if last_node_descriptor_count != node_descriptor_count:
+                self.LOGGER.debug(f'received {node_descriptor_count} of {self.NNODES} expected NodeDescriptors')
+                last_node_descriptor_count = node_descriptor_count
+
+            if self.config_helper.poll():  # Is the helper process still running?
+                if self.config_helper.returncode != 0:  # Did the helper process exit with non-zero error code?
+                    out, err = self.config_helper.communicate()
+                    raise RuntimeError(str(err))
+
+            while stdout_stream.poll():
+                line = stdout_stream.recv()
+                # sattach returns an empty string if nothing to report. ignore
+                if line == "":
+                    break
+                else:
+                    lines.append(line)
+
+            for line in lines:
+                self.LOGGER.debug(f'{line=}')
+                node_index, node_desc = line.split(": ", maxsplit=1)
+                if " " in node_index:
+                    node_index = node_index.split(" ")[-1]
+                if str(node_index) not in self.node_descriptors.keys():
+                    self.LOGGER.debug(json.loads(node_desc))
+                    self.node_descriptors[
+                        str(node_index)
+                    ] = NodeDescriptor.from_sdict(json.loads(node_desc))
+
+        self.LOGGER.debug(f'received {self.NNODES} of {self.NNODES} expected NodeDescriptors')
 
     def _sigint_teardown(self):
         """Safely teardown network config infrastructure"""
@@ -112,14 +125,15 @@ class BaseNetworkConfig(ABC):
             if sigint_trigger == -2:
                 signal.raise_signal(signal.SIGINT)
 
+            self.LOGGER.debug("Parsing configuration data.")
+            self._parse_network_configuration()
+
             self.LOGGER.debug("Waiting for config helper to exit.")
             self.config_helper.wait()
-            if self.config_helper.returncode != 0:
+
+            if self.config_helper.returncode != 0 and self.config_helper.returncode != -9:
                 out, err = self.config_helper.communicate()
                 raise RuntimeError(str(err))
-
-            self.LOGGER.debug("Parsing configuration data.")
-            self._parse_network_configuration(self.config_helper.stdout)
 
             self.LOGGER.debug("Closing config helper's stdout handle.")
             self.config_helper.stdout.close()

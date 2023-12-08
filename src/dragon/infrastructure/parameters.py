@@ -262,6 +262,7 @@ class LaunchParameters:
             TypedParm(name=dfacts.HSTA_MAX_GETMSG_MB, cast=int, check=positive, default=8),
             TypedParm(name=dfacts.PMOD_COMMUNICATION_TIMEOUT, cast=int, check=positive, default=30),
             TypedParm(name=dfacts.BASEPOOL, cast=str, check=check_pool, default=dfacts.DEFAULT_POOL),
+            TypedParm(name=dfacts.OVERLAY_FANOUT, cast=int, check=positive, default=32),
         ]
 
         env = os.environ

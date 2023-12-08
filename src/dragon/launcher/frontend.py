@@ -7,7 +7,6 @@ import signal
 import subprocess
 from enum import Enum
 from shlex import quote
-
 from functools import total_ordering
 
 from ..utils import B64
@@ -140,6 +139,7 @@ class LauncherFrontEnd():
 
         self.args_map = args_map
         self.nnodes = args_map.get('node_count', 0)
+        self.ntree_nodes = this_process.overlay_fanout
         self.network_prefix = args_map.get('network_prefix', dfacts.DEFAULT_TRANSPORT_NETIF)
         self.port = args_map.get('port', dfacts.DEFAULT_TRANSPORT_PORT)
         self._config_from_file = args_map.get('network_config', None)
@@ -621,7 +621,6 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         the_env = dict(os.environ)
         the_env['DRAGON_NETWORK_CONFIG'] = self.net.compress()
 
-
         # TODO: The differentiation between the SSH path vs. other paths
         #       is clunky. Ideally, this could be abstracted to make the
         #       if/else disappear
@@ -672,6 +671,61 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
                 raise RuntimeError("Unable to launch backend via SSH loop")
 
         return wlm_proc
+
+    def construct_bcast_tree(self, net_conf, conn_policy, be_ups, frontend_sdesc):
+
+        log = logging.getLogger(dls.LA_FE).getChild('construct_bcast_tree')
+
+        # Pack up all of our node descriptors for the backend:
+        forwarding = {}
+        for be_up in be_ups:
+            assert isinstance(be_up, dmsg.BEIsUp), 'la_fe received invalid be up'
+            # TODO: VERIFY WE GET A UNIQUE CUID: keep a set of seen cuids.
+            # After attaching, get the cuid and compare it against the set
+            # of already seen cuids. Throw an exception if already seen.
+            # Delete the set after this loop.
+            log.debug(f'received descriptor: {be_up.be_ch_desc} and host_id: {be_up.host_id}')
+            for key, node_desc in net_conf.items():
+                if str(be_up.host_id) == str(node_desc.host_id):
+                    forwarding[key] = NodeDescriptor(host_id=int(node_desc.host_id),
+                                                     ip_addrs=node_desc.ip_addrs,
+                                                     overlay_cd=be_up.be_ch_desc)
+                    break
+
+        # Send out the FENodeIdx to the child nodes I own
+        conn_outs = {}  # key is the node_index and value is the Connection object
+        fe_node_idx = dmsg.FENodeIdxBE(tag=dlutil.next_tag(),
+                                       node_index=0,
+                                       forward=forwarding,
+                                       send_desc=frontend_sdesc)
+        log.debug(f'fanout = {this_process.overlay_fanout}')
+        for idx in range(this_process.overlay_fanout):
+            if idx < self.nnodes:
+                try:
+                    be_sdesc = B64.from_str(forwarding[str(idx)].overlay_cd)
+                    be_ch = Channel.attach(be_sdesc.decode(), mem_pool=self.fe_mpool)
+                    conn_options = ConnectionOptions(default_pool=self.fe_mpool, min_block_size=2 ** 16)
+                    conn_out = Connection(outbound_initializer=be_ch,
+                                          options=conn_options,
+                                          policy=conn_policy)
+                    conn_out.ghost = True
+
+                    # Update the node index to the one we're talking to
+                    fe_node_idx.node_index = idx
+                    log.debug(f'sending {fe_node_idx.uncompressed_serialize()}')
+                    conn_out.send(fe_node_idx.serialize())
+
+                    conn_outs[idx] = conn_out
+
+                except ChannelError as ex:
+                    log.fatal(f'could not connect to BE channel with host_id {be_up.host_id}')
+                    raise RuntimeError('Connection with BE failed') from ex
+            else:
+                break
+
+        log.info('sent all FENodeIdxBE msgs')
+
+        return conn_outs
 
     def run_startup(self):
         """Complete bring up of runtime services
@@ -899,42 +953,22 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         be_ups = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(nnodes)]
         assert len(be_ups) == self.nnodes
 
-        self.conn_outs = {}  # key is the node_index and value is the Connection object
-        for be_up in be_ups:
-            assert isinstance(be_up, dmsg.BEIsUp), 'la_fe received invalid be up'
-            log.debug(f'received descriptor: {be_up.be_ch_desc} and host_id: {be_up.host_id}')
-            try:
-                # TODO: VERIFY WE GET A UNIQUE CUID: keep a set of seen cuids.
-                # After attaching, get the cuid and compare it against the set
-                # of already seen cuids. Throw an exception if already seen.
-                # Delete the set after this loop.
-                be_sdesc = B64.from_str(be_up.be_ch_desc)
-                be_ch = Channel.attach(be_sdesc.decode(), mem_pool=self.fe_mpool)
-                conn_options = ConnectionOptions(default_pool=self.fe_mpool, min_block_size=2 ** 16)
-                conn_out = Connection(outbound_initializer=be_ch,
-                                      options=conn_options,
-                                      policy=conn_policy)
-                conn_out.ghost = True
-            except ChannelError as ex:
-                log.fatal(f'could not connect to BE channel with host_id {be_up.host_id}')
-                raise RuntimeError('Connection with BE failed') from ex
-
-            # Send node_index to backend - FENodeIdxBE msg
-            for key, node_desc in net_conf.items():
-                if str(be_up.host_id) == str(node_desc.host_id):
-                    fe_node_idx = dmsg.FENodeIdxBE(tag=dlutil.next_tag(), node_index=key)
-                    conn_out.send(fe_node_idx.serialize())
-                    self.conn_outs[int(key)] = conn_out
-                    log.debug(f"this is node_index: {key} with host_id: {be_up.host_id}")
-                    break
+        # Construct the number of backend connections based on
+        # the hierarchical bcast info and send FENodeIdxBE to those
+        # nodes
+        log.info(f'received {nnodes} BEIsUp msgs')
+        self.conn_outs = self.construct_bcast_tree(net_conf,
+                                                   conn_policy,
+                                                   be_ups,
+                                                   encoded_inbound_str)
         del be_ups
-        log.info(f'received {nnodes} BEIsUp msgs and sent {nnodes} FENodeIdxBE msgs')
 
-        chs_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(nnodes)]
+        chs_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
         for ch_up in chs_up:
             assert isinstance(ch_up, dmsg.SHChannelsUp), 'la_fe received invalid channel up'
         log.info(f'received {nnodes} SHChannelsUP msgs')
 
+        nodes_desc = {ch_up.idx: ch_up.node_desc for ch_up in chs_up}
         gs_cds = [ch_up.gs_cd for ch_up in chs_up if ch_up.gs_cd is not None]
         if len(gs_cds) == 0:
             print('The Global Services CD was not returned by any of the SHChannelsUp messages. Launcher Exiting.')
@@ -958,8 +992,12 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         else:
             num_gw_channels = 1
 
+        # HSTA uses NUM_GW_TYPES gateways per agent
+        if self.transport is dfacts.TransportAgentOptions.HSTA:
+            num_gw_channels *= dfacts.NUM_GW_TYPES
+
         # Send LAChannelsInfo in a test environment or to all
-        la_ch_info = dmsg.LAChannelsInfo(tag=dlutil.next_tag(), nodes_desc=chs_up,
+        la_ch_info = dmsg.LAChannelsInfo(tag=dlutil.next_tag(), nodes_desc=nodes_desc,
                                          gs_cd=gs_cd, num_gw_channels=num_gw_channels,
                                          port=self.port,
                                          transport=str(self.transport))

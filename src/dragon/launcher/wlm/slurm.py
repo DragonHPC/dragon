@@ -13,7 +13,7 @@ def get_slurm_launch_be_args(args_map=None):
 
 class SlurmNetworkConfig(BaseNetworkConfig):
 
-    SRUN_COMMAND_LINE = "srun --nodes={nnodes} --ntasks={nnodes} --cpu_bind=none -u -l"
+    SRUN_COMMAND_LINE = "srun --nodes={nnodes} --ntasks={nnodes} --cpu_bind=none -u -l -W 0"
 
     def __init__(self, network_prefix, port, hostlist):
 

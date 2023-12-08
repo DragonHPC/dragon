@@ -75,6 +75,20 @@ typedef enum dragonChannelSendReturnWhen_st {
 } dragonChannelSendReturnWhen_t;
 
 /**
+ * @brief Constants indicating a type of channel operation.
+ *
+ * Constants for send_msg, get_msg and poll channels operations. Currently,
+ * these are used to help selet a gateway index for a channel operation,
+ * with the constant's value specifying an offset into a gateway group.
+ **/
+
+typedef enum dragonChannelOpType_st {
+    DRAGON_OP_TYPE_SEND_MSG = 0,
+    DRAGON_OP_TYPE_GET_MSG,
+    DRAGON_OP_TYPE_POLL
+} dragonChannelOpType_t;
+
+/**
  * @brief This is the type of the release function for dragon waiting.
  *
  * This function type is the type of a function that may be supplied to certain

@@ -1,4 +1,4 @@
-MPBridge 
+MPBridge
 ++++++++
 
 The Dragon MPbridge component maps the Python Multiprocessing API onto :ref:`ref/native/index:Dragon Native`
@@ -24,8 +24,9 @@ Components
 
 .. figure:: images/mpbridge_architecture.svg
     :scale: 75%
+    :name: mpbridge-architecture
 
-    **Figure 1: MPBridge architecture**
+    **MPBridge architecture**
 
 Designing the MPBridge component, we had the following goals in mind:
 
@@ -53,24 +54,25 @@ Example: The Dragon Queue
 For example, the size of a queue in Dragon native is `q.size()`, while in Multiprocessing it is `q.qsize()`.
 We created a private method `q._size()` and have `q.size()` wrap it in Dragon Native. In MPBridge, we then
 remove the `q.size()` that DragonQueue has inherited from Dragon Native's queue and add `q.qsize()` in
-DragonQueue that wraps the same private method. 
+DragonQueue that wraps the same private method.
 
 Next we show a class diagram of Dragons queue implementation and how it is inserted into the Multiprocessing package.
 
 .. figure:: images/mpbridge_class_diagram.svg
+   :name: dragon-mpbridge-queue-impl
 
-    **Figure 2: Class diagram of the mpbridge.queue implementation.**
+    **Class diagram of the mpbridge.queue implementation.**
 
 Dragon's native queue implementation resides in ``dragon.native.queue.Queue``. Its public interface is the sum
 of the public interface of the three Python Multiprocessing Queues: ``Queue``, ``JoinableQueue`` and
 ``SimpleQueue``. The MPBridge component inherits from ``dragon.native.queue.Queue`` into
 ``dragon.mpbridge.queues.DragonQueu``, ``dragon.mpbridge.queue.DragonSimpleQueue`` and
 ``dragon.mpbridge.queue.DragonJoinableQueue``. The public API is modified accordingly, so that it conforms with the
-Multiprocessing API. 
+Multiprocessing API.
 The MPBridge component also contains 3 functions (``Queue``, ``SimpleQueue`` and ``JoinableQueue``) that return the corresponding
-classes. The are called from the ``DragonContext``. 
+classes. The are called from the ``DragonContext``.
 Just as in Multiprocessing, the methods below the context are exported during startup into the module API. The context itself
 is part of a list of contexts held at the top level, containing a context per start method. Setting the start method then means setting
-the ``DefaultContext`` equal to one of these contexts. To add our start method to this mechanism, we add an ``AugmentedDefaultContext`` 
+the ``DefaultContext`` equal to one of these contexts. To add our start method to this mechanism, we add an ``AugmentedDefaultContext``
 that adds our start method to the list of possible start methods and overloads the ``set_start_method`` method.
 

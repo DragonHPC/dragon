@@ -34,9 +34,17 @@ from .value import Value
 from .lock import Lock
 from .machine import current as current_node
 
-from ..globalservices.process import multi_join, kill as process_kill, get_create_message, get_create_message_with_argdata, query as process_query
+from ..globalservices.process import (
+    multi_join,
+    kill as process_kill,
+    get_create_message,
+    get_create_message_with_argdata,
+    query as process_query,
+)
 from ..globalservices.group import create, kill as group_kill, add_to, create_add_to, remove_from, destroy
 from ..infrastructure.policy import Policy
+
+from ..infrastructure.policy import Policy, GS_DEFAULT_POLICY
 
 LOG = logging.getLogger(__name__)
 
@@ -127,7 +135,7 @@ class Error(BaseState):
 class Idle(BaseState):
     """This state kills existing processes and does nothing otherwise."""
 
-    forbidden = [PGSignals.SHUTDOWN, PGSignals.KILL]
+    forbidden = [PGSignals.KILL]
 
     def run(self, prior_state: BaseState, signal: PGSignals, sig_id: int) -> None:
         """The idle state just does nothing except making sure all processes are gone."""
@@ -180,7 +188,9 @@ class Maintain(BaseState):
                         puids = [descr.uid for lst in group_descr.sets for descr in lst]
                         for new_puid in puids:
                             if new_puid not in self.context.puid_to_message_map:
-                                self.context.puid_to_message_map[new_puid] = self.context.puid_to_message_map[puid]
+                                self.context.puid_to_message_map[new_puid] = self.context.puid_to_message_map[
+                                    puid
+                                ]
                                 # since we added only one process, we can safely assume that we found it
                                 break
                         break
@@ -249,7 +259,9 @@ class Stop(BaseState):
             destroy(self.context.guid)
         self.context.guid = self.context._group_descr = None
 
+
 # end concrete state classes
+
 
 class GroupContext:
     """The Context defines the group interface for the manager and the client.
@@ -318,18 +330,37 @@ class GroupContext:
         """
 
         self.nproc = nproc
-        self.templates = templates # list of tuples
-        self.messages = {} # keys are the indices of tuples in self.templates
+        self.templates = templates  # list of tuples
+        self.messages = {}  # keys are the indices of tuples in self.templates
 
         # use a dict to make restarting easy and order-safe
-        self.puid_to_message_map = {} # keys are the puids, values are the keys in self.messages{}
+        self.puid_to_message_map = {}  # keys are the puids, values are the keys in self.messages{}
 
         for i, tup in enumerate(templates):
             t = tup[1]
             if t.is_python:
-                self.messages[i] = get_create_message_with_argdata(t.target, t.cwd, t.args, t.env, t.argdata, pmi_required=pmi_enabled, stdin=t.stdin, stdout=t.stdout, stderr=t.stderr)
+                self.messages[i] = get_create_message_with_argdata(
+                    t.target,
+                    t.cwd,
+                    t.args,
+                    t.env,
+                    t.argdata,
+                    pmi_required=pmi_enabled,
+                    stdin=t.stdin,
+                    stdout=t.stdout,
+                    stderr=t.stderr,
+                )
             else:
-                self.messages[i] = get_create_message(t.target, t.cwd, t.args, t.env, pmi_required=pmi_enabled, stdin=t.stdin, stdout=t.stdout, stderr=t.stderr)
+                self.messages[i] = get_create_message(
+                    t.target,
+                    t.cwd,
+                    t.args,
+                    t.env,
+                    pmi_required=pmi_enabled,
+                    stdin=t.stdin,
+                    stdout=t.stdout,
+                    stderr=t.stderr,
+                )
 
         self.guid = None
         self._group_descr = None
@@ -494,7 +525,9 @@ class GroupContext:
         if not self._start_time:
             self._start_time = time.monotonic()
 
-        group_descr = create([ (tup[0], self.messages[i].serialize()) for i, tup in enumerate(self.templates) ], self.policy)
+        group_descr = create(
+            [(tup[0], self.messages[i].serialize()) for i, tup in enumerate(self.templates)], self.policy
+        )
 
         self._group_descr = group_descr
         self.guid = group_descr.g_uid
@@ -645,7 +678,7 @@ class ProcessGroup:
         ignore_error_on_exit: bool = False,
         pmi_enabled: bool = False,
         walltime: float = None,
-        policy: Policy = None
+        policy: Policy = None,
     ):
         """Instantiate a number of Dragon processes.
 
@@ -663,7 +696,7 @@ class ProcessGroup:
         :type policy: dragon.infrastructure.policy.Policy
         """
 
-        self.templates = [] # this will be a list of tuples that will be sent to the GSGroup API
+        self.templates = []  # this will be a list of tuples that will be sent to the GSGroup API
         self.nproc = 0
         self.restart = restart
         self.ignore_error_on_exit = ignore_error_on_exit
@@ -683,7 +716,9 @@ class ProcessGroup:
 
         # if add_process is called after the ProcessGroup is initialized, then we raise
         if self._group_context:
-            raise DragonProcessGroupError("You cannot call add_process() to already initialized ProcessGroup. Please use ProcessGroup.create_add_to() instead to add more processes.")
+            raise DragonProcessGroupError(
+                "You cannot call add_process() to already initialized ProcessGroup. Please use ProcessGroup.create_add_to() instead to add more processes."
+            )
 
         self.templates.append((nproc, template))
         self.nproc += nproc
@@ -691,7 +726,15 @@ class ProcessGroup:
     def init(self) -> None:
         """Initialize the GroupContext and Manager."""
 
-        self._group_context = GroupContext(self.templates, self.nproc, self.restart, self.ignore_error_on_exit, self.pmi_enabled, self.walltime, self.policy)
+        self._group_context = GroupContext(
+            self.templates,
+            self.nproc,
+            self.restart,
+            self.ignore_error_on_exit,
+            self.pmi_enabled,
+            self.walltime,
+            self.policy,
+        )
         self._manager = Manager()
         self._send_signal(PGSignals.NEW)
 

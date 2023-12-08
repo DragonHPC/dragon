@@ -7,6 +7,7 @@ from dragon.launcher.network_config import NetworkConfig
 
 from dragon.infrastructure.process_desc import ProcessDescriptor
 from dragon.infrastructure.connection import Connection, ConnectionOptions
+from dragon.infrastructure.node_desc import NodeDescriptor
 from dragon.infrastructure.parameters import POLICY_INFRASTRUCTURE
 from dragon.infrastructure import facts as dfacts
 from dragon.infrastructure import messages as dmsg
@@ -139,12 +140,12 @@ def send_shchannelsup(nodes, mpool):
         else:
             node['gs_ch'] = None
             gs_cd = None
-
+        node_desc = NodeDescriptor(host_name=node['hostname'],
+                                   host_id=host_id,
+                                   ip_addrs=node['ip_addrs'],
+                                   shep_cd=B64.bytes_to_str(node['ls_ch'].serialize()))
         ch_up_msg = dmsg.SHChannelsUp(tag=next_tag(),
-                                      host_name=node['hostname'],
-                                      host_id=host_id,
-                                      ip_addrs=node['ip_addrs'],
-                                      shep_cd=B64.bytes_to_str(node['ls_ch'].serialize()),
+                                      node_desc=node_desc,
                                       gs_cd=gs_cd,
                                       idx=node['node_index'])
         log.info(f'construct SHChannelsUp: {ch_up_msg}')

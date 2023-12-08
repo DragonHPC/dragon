@@ -44,7 +44,7 @@ are relative to the directory that contains the README.md.
 
 .. code-block:: console
 
-    pip3 install --force-reinstall dragon-0.61-cp39-cp39-linux_x86_64.whl
+    pip3 install --force-reinstall dragon-0.7-cp39-cp39-linux_x86_64.whl
 
 * Check and possibly update that `$PATH` is has the location of pip installed
   console scripts, such as ~/.local/bin if you're not using a virtual environment.
@@ -57,7 +57,7 @@ are relative to the directory that contains the README.md.
 
 .. code-block:: console
 
-    module use [/path to dragon-0.61]/modulefiles
+    module use [/path to dragon-0.7]/modulefiles
     module load dragon
 
 If you intend to use Dragon on your own Linux VM or an image that you

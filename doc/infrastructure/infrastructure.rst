@@ -14,3 +14,4 @@ Infrastructure
     multi_node_deployment.rst
     bootstrapping.rst
     logging.rst
+    policy.rst

@@ -40,7 +40,8 @@ def get_new_tag():
 
 ProcessProps = collections.namedtuple('ProcessProps', ['p_uid', 'critical', 'r_c_uid',
                                       'stdin_req', 'stdout_req', 'stderr_req',
-                                      'stdin_connector', 'stdout_connector', 'stderr_connector'])
+                                      'stdin_connector', 'stdout_connector', 'stderr_connector',
+                                      'layout'])
 
 class PopenProps(subprocess.Popen):
 
@@ -48,9 +49,17 @@ class PopenProps(subprocess.Popen):
         assert isinstance(props, ProcessProps)
         super().__init__(*args, **kwds)
         self.props = props
-        # TODO Add affinity control to the process options. To be on the safe
-        # TODO side for now, open affinity to all cores.
+
+        # Assuming this is basically a free call, default the afinity to "everything" just in case
         os.sched_setaffinity(self.pid, range(os.cpu_count()))
+        if props.layout is not None:
+            if props.layout.cpu_core:
+                os.sched_setaffinity(self.pid, props.layout.cpu_core)
+
+            # gpu_core list must be turned into a string in the form "0,1,2" etc
+            if props.layout.gpu_core and props.layout.accelerator_env:
+                    os.environ[props.layout.accelevator_env] = ",".join(str(core) for core in props.layout.gpu_core)
+
         # XXX Affinity settings are only inherited by grandchild processes
         # XXX created after this point in time. Any grandchild processes
         # XXX started when the child process starts up most certainly will
@@ -871,9 +880,9 @@ class LocalServer:
                 # The stdout_conn and stderr_conn will be filled in just below.
                 the_proc = PopenProps(
                     ProcessProps(p_uid=msg.t_p_uid, critical=False, r_c_uid=msg.r_c_uid,
-                        stdin_req=msg.stdin, stdout_req=msg.stdout, stderr_req=msg.stderr,
-                        stdin_connector=stdin_connector, stdout_connector=stdout_connector,
-                        stderr_connector=stderr_connector),
+                                 stdin_req=msg.stdin, stdout_req=msg.stdout, stderr_req=msg.stderr,
+                                 stdin_connector=stdin_connector, stdout_connector=stdout_connector,
+                                 stderr_connector=stderr_connector, layout=msg.layout),
                     real_args,
                     bufsize=0,
                     stdin=subprocess.PIPE,

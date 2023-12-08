@@ -14,12 +14,13 @@ not work in a distributed system. While very portable across time and operating 
 descriptor based approach doesn't offer the best performance and scalability.
 
 .. figure:: images/infrastructure.svg
+    :name: infra-schematic
 
-    **Figure 1: Dragon Runtime Architecture in a multi-node deployment**
+    **Dragon Runtime Architecture in a multi-node deployment**
 
 .. The rest of this section describes this component diagram ...
 
-There are various actors involved in the Dragon runtime, they are shown in figure 1.  Although they will be
+There are various actors involved in the Dragon runtime, they are shown in :numref:`infra-schematic`.  Although they will be
 specified in more detail in other documents, we list them here and summarize their function. Whenever
 necessary, the user program is called ``my.py`` and is started from the command line by invoking the
 :ref:`Launcher` with ``dragon my.py``.  In particular, no preliminary interaction with the system's workload

@@ -11,17 +11,19 @@ command prompt on. This frontend can be co-located with backend nodes
 or run from its own node. All off-node communication that is initiated by the
 :ref:`LocalServices` goes through :ref:`GlobalServices`. Local
 Services itself has a one-node view of the world while Global Services does the
-work of communicating off node when necessary. Figures 1 and 2 depict a
+work of communicating off node when necessary. :numref:`deploy-multi-node` and :numref:`multi-node-overview` depict a
 multi-node version of the Dragon :ref:`Services`.
 
 .. figure:: images/deployment_multi_node.svg
+    :name: deploy-multi-node
 
-    **Figure 1: Startup Overview**
+    **Startup Overview**
 
 .. figure:: images/multinodeoverview.png
     :scale: 30%
+    :name: multi-node-overview
 
-    **Figure 2: Multi-Node Overview of Dragon Services**
+    **Multi-Node Overview of Dragon Services**
 
 .. _MultiNodeBringup:
 
@@ -117,7 +119,7 @@ Since all :ref:`Services` run as user-level services (i.e. not with superuser
 authority), the services described here are assumed to be one per launched user
 program.
 
-The multi-node bring-up sequence is given in figure 3 and in the section titled
+The multi-node bring-up sequence is given in :numref:`startup-seq-multinode` and in the section titled
 :ref:`MultiNodeBringup` where the message descriptions are also provided. The
 Launcher Frontend brings up an instance of the Launcher Backend on each node.
 Each launcher (frontend and backend) then brings up an instance of the TCP
@@ -132,12 +134,13 @@ output from the user program to the Frontend through the Backend.
 Sequence diagram
 -------------------
 
-Figure 3 depicts the message flow in the multi-node startup sequence.
+:numref:`startup-seq-multinode` depicts the message flow in the multi-node startup sequence.
 
 .. raw:: html
     :file: images/startup_seq_multi_node.svg
+    :name: startup-seq-multinode
 
-**Figure 3: Sequence diagram of Dragon multi-node bringup**
+**Sequence diagram of Dragon multi-node bringup**
 
 Notes on Bring-up Sequence
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -337,8 +340,9 @@ Sequence diagram
 
 .. raw:: html
     :file: images/teardown_seq_multi_node.svg
+    :name: teardown-seq-multinode
 
-**Figure 7: Multi-Node Teardown Sequence**
+**Multi-Node Teardown Sequence**
 
 Notes on Teardown Sequence
 ^^^^^^^^^^^^^^^^^^^^^^^^^^

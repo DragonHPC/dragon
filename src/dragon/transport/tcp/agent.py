@@ -10,6 +10,8 @@ from .task import TaskMixin
 from .transport import Address, LOOPBACK_ADDRESS_IPv4, Transport
 
 from ...dtypes import DEFAULT_WAIT_MODE, WaitMode
+from ...infrastructure.node_desc import NodeDescriptor
+
 
 LOGGER = logging.getLogger('dragon.transport.tcp.agent')
 
@@ -164,6 +166,37 @@ class Agent:
         self._clients.add(client)
         if self.is_running():
             self._start_client(client)
+
+    def _update_client_nodes(self, nodes: list[NodeDescriptor]):
+        """Update nodes dictionary for routing messages in the client
+
+        :param nodes: Nodes to add to our internal data
+        :type nodes: list[NodeDescriptor]
+        """
+        for client in self._clients:
+            client.update_nodes(nodes)
+
+    def update_nodes(self, nodes: list[NodeDescriptor]):
+        """Update the nodes dictionary used to route messages
+
+        :param nodes: Nodes to add to our internal data
+        :type nodes: list[NodeDescriptor]
+        """
+        # Update local object
+        try:
+            for node in nodes:
+                try:
+                    addr = Address.from_netloc(str(node.ip_addrs[0]))
+                    self.nodes[int(node.host_id)] = Address(addr.host, addr.port or node.port)
+                    LOGGER.debug(f'Updated agent nodes: {self.nodes}')
+                except Exception:
+                    LOGGER.critical(f'Failed to update agent node-address mapping for {node}')
+                    raise
+        except Exception:
+            raise
+
+        # Update clients
+        self._update_client_nodes(nodes)
 
 
 if __name__ == '__main__':
