@@ -4,7 +4,30 @@ from dataclasses import asdict, dataclass, field
 @dataclass
 class Policy:
     """
-    Dataclass to describe what node, affinity, and pattern to distrbiute a Policy to
+    The purpose of the Policy object is to enable fine-tuning of process distribution
+    across nodes, devices, cores, and etc.
+    For example spawning a process that should only run on certain CPU cores, or only have
+    access to specific GPU devices on a node, or how to spread a collection of processes
+    over nodes (e.g. Round-robin, Blocking, etc).
+
+    There is a default global Policy in place that utilizes no core or accelerator affinity,
+    and places processes across nodes in a round-robin fashion.  Using Policy is meant to fine-tune
+    this default policy, and any non-specific attributes will use the default policy values.
+
+    For a full example of setup for launching processes through Global Services, see `examples/dragon_gs_client/pi_demo.py`
+    When launching a process simply create a policy with the desired fine-tuning, and pass it in as a paramter.
+
+    .. code-block:: python
+        import dragon.globalservices.process as dgprocess
+        import dragon.infrastructure.policy as dgpol
+
+        # Do setup
+        # ...
+        # ...
+        # Create a custom process for core affinity and selecting a specific GPU
+        policy = dgpol.Policy(core_affinity=[0,2], gpu_affinity=[0])
+        # Launch the process with the fine-tuned policy
+        p = dgprocess.create(cmd, wdir, cmd_params, None, options=options, policy=policy)
     """
 
     class Placement(enum.IntEnum):
@@ -14,6 +37,12 @@ class Policy:
         Local and Anywhere will be useful later for multi-system communication
         Right now Placement will have little effect unless HOST_NAME or HOST_ID
         are used, which will try to place a policy on the specified node
+
+        LOCAL - Local to current system of nodes
+        ANYWHERE - Place anywhere
+        HOST_NAME - Place on node with specific name
+        HOST_ID - Place on node with specific ID
+        DEFAULT - Defaults to ANYWHERE
         """
         LOCAL = -5 # Local to the current system of nodes
         ANYWHERE = -4 # What it says on the tin
@@ -24,6 +53,10 @@ class Policy:
     class Distribution(enum.IntEnum):
         """
         Pattern to use to distribute policies across nodes
+
+        ROUNDROBIN
+        BLOCK
+        DEFAULT - Defaults to roundrobin
         """
         ROUNDROBIN = enum.auto()
         BLOCK = enum.auto()
@@ -41,6 +74,10 @@ class Policy:
     class Affinity(enum.IntEnum):
         """
         Device Affinity distribution
+
+        ANY - Place on any available core or GPU device
+        SPECIFIC - Place to specific CPU core affinities or GPU device
+        DEFAULT - Defaults to Any
         """
         ANY = -5
         # ROUNDROBIN = -4 # TODO: Not implemented
@@ -59,9 +96,11 @@ class Policy:
     host_name : str = "" # To be populated by caller in use with Placement.HOST_NAME
     host_id : int = -1 # To be populated by caller in use with Placement.HOST_ID
     distribution : Distribution = Distribution.DEFAULT
-    device : Device = Device.DEFAULT
-    affinity : Affinity = Affinity.DEFAULT
-    specific_affinity : list[int] = field(default_factory=list) # To be populated by called in use with Affinity.SPECIFIC
+    device : Device = Device.DEFAULT # What device to apply to
+    affinity : Affinity = Affinity.DEFAULT # Affinity distribution
+    cpu_affinity : list[int] = field(default_factory=list) # To be populated by called in use with Affinity.SPECIFIC, specify exact device IDs or cores
+    gpu_env_str : str = "" # To be used with gpu_affinity for vendor specific environment vars
+    gpu_affinity : list[int] = field(default_factory=list)
     wait_mode : WaitMode = WaitMode.DEFAULT # TODO (For channels)
     refcounted : bool = True # TODO (Apply refcounting for this resource)
 
@@ -77,7 +116,9 @@ class Policy:
             "distribution" : self.distribution,
             "device" : self.device,
             "affinity" : self.affinity,
-            "specific_affinity" : self.specific_affinity,
+            "cpu_affinity" : self.cpu_affinity,
+            "gpu_env_str" : self.gpu_env_str,
+            "gpu_affinity" : self.gpu_affinity,
             "wait_mode" : self.wait_mode,
             "refcounted" : self.refcounted,
         }
@@ -97,7 +138,9 @@ GS_DEFAULT_POLICY = Policy(
     distribution=Policy.Distribution.ROUNDROBIN,
     device=Policy.Device.CPU,
     affinity=Policy.Affinity.ANY,
-    specific_affinity=[],
+    cpu_affinity=[],
+    gpu_env_str="",
+    gpu_affinity=[],
     wait_mode=Policy.WaitMode.IDLE,
     refcounted=True
 )

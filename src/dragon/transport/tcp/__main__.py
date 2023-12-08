@@ -229,6 +229,10 @@ async def tcp_transport_agent(node_index: str = None,
                     if isinstance(msg, halt_msg):
                         LOGGER.info(f'Received {type(msg)}')
                         break
+                    elif isinstance(msg, dmsg.TAUpdateNodes):
+                        agent.update_nodes(msg.nodes)
+                        LOGGER.info(f'Received {type(msg)}')
+                        continue
                     LOGGER.warning(f'Received unsupported control message: {msg}')
 
             LOGGER.debug('Agent is not running, terminating')

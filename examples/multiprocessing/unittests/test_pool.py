@@ -261,7 +261,7 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
                 self.assertIn(value, expected_values)
                 expected_values.remove(value)
 
-    
+
     def test_make_pool(self):
         expected_error = RemoteError if self.TYPE == "manager" else ValueError
 
@@ -487,7 +487,6 @@ class WithProcessesTestPoolWorkerLifetime(BaseTestCase, ProcessesMixin, unittest
 
     # DRAGON ALLOWED_TYPES = ('processes', )
 
-    @unittest.skip(f"bug filed CIRRUS-1473")
     def test_pool_worker_lifetime(self):
         p = multiprocessing.Pool(3, maxtasksperchild=10)
         self.assertEqual(3, len(p._pool))

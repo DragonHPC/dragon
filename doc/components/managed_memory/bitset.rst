@@ -17,7 +17,8 @@ the functions.
 
 .. code-block:: C
     :linenos:
-    :caption: **Figure 1: A BitSet Example**
+    :caption: **A BitSet Example**
+    :name: bitset-example
 
     size_t bitsetsize;
     dragonBitSetErr_t brc;
@@ -55,13 +56,14 @@ the functions.
     dragon_bitset_zeroes_to_right(&bset,0,&val);
     printf("The number is %lu\n",val);
 
-The output from the example program in figure 1 is given in figure 2. The bits in the bitset display bit 0 on
+The output from the example program in :numref:`bitset-example` is given in :numref:`bitset-example-output`. The bits in the bitset display bit 0 on
 the left, not the right. In this way, the bits display lexicographically in a dump from left to right for
 easier reading. Bit 0 is the left-most bit in the dump while the last bit is lexicographically the last bit to
 be displayed.
 
 .. code-block:: text
-    :caption: **Figure 2: BitSet Example Output**
+    :caption: **BitSet Example Output**
+    :name: bitset-example-output
 
     That was a one
     A Bit Dump
@@ -85,10 +87,11 @@ the first 8 bytes, followed by enough bytes to hold the rest of the bits. Note t
 always use a multiple of 8 bytes for easy alignment with other data.
 
 When a BitSet is initialized, a handle to the BitSet is also initialized. The handle is now the user of this
-API accesses the BitSet. The handle structure is given in figure 3.
+API accesses the BitSet. The handle structure is given in :numref:`bitset-handle-def`.
 
 .. code-block:: C
-    :caption: **Figure 3: BitSet Handle Definition**
+    :caption: **BitSet Handle Definition**
+    :name: bitset-handle-def
 
     typedef struct dragonBitSet_st {
         size_t size;

@@ -16,6 +16,8 @@ static dragonList_t* dg_gateways = NULL;
 /* used to verify header assignment in channels */
 static bool _header_checked = false;
 
+static const int dg_num_gateway_types = 3;
+
 /* below are macros that cover locking and unlocking the UT and OT locks with
  * error handling */
 #define _obtain_ut_lock(channel)                                                                             \
@@ -1956,7 +1958,7 @@ _channel_is_masquerading(const dragonChannelDescr_t* ch)
 }
 
 static dragonError_t
-_get_gw_idx(const dragonChannelDescr_t *ch, int *gw_idx)
+_get_gw_idx(const dragonChannelDescr_t *ch, dragonChannelOpType_t op_type, int *gw_idx)
 {
     dragonULInt target_hostid;
 
@@ -1964,7 +1966,34 @@ _get_gw_idx(const dragonChannelDescr_t *ch, int *gw_idx)
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to obtain hostid for target channel.");
 
-    *gw_idx = dragon_hash_ulint(target_hostid) % dg_num_gateways;
+    /* For tcp agents, there is always 1 gateway and the index is hence always 0.
+     * For hsta agents, there will be a multiple of dg_num_gateway_types gateways,
+     * and a group of dg_num_gateway_types for each nic in the multi-nic case.
+     *
+     * Example with 4 nics
+     * -------------------
+     *
+     * send_msg get_msg poll  send_msg get_msg poll  send_msg get_msg poll  send_msg get_msg poll
+     * \______/ \_____/ \__/  \______/ \_____/ \__/  \______/ \_____/ \__/  \______/ \_____/ \__/
+     *   gw 0     gw 1  gw 2    gw 3     gw 4  gw 5    gw 6     gw 7  gw 8    gw 9    gw 10  gw 11
+     * \___________________/  \___________________/  \___________________/  \___________________/
+     *         nic 0                  nic 1                  nic 2                  nic 3
+     */
+    if (dg_num_gateways == 1) {
+        *gw_idx = 0;
+    } else {
+        int num_gw_groups = dg_num_gateways / dg_num_gateway_types;
+        int my_gw_group = dragon_hash_ulint(target_hostid) % num_gw_groups;
+        *gw_idx = (dg_num_gateway_types * my_gw_group) + op_type;
+    }
+
+    if (*gw_idx < 0 || dg_num_gateways <= *gw_idx) {
+        char err_str[100];
+        sprintf(err_str,
+                "Invalid gateway index: gateway idx=%d, num gateways=%d.",
+                *gw_idx, dg_num_gateways);
+        append_err_return(err, err_str);
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2872,7 +2901,7 @@ dragon_channel_sendh(const dragonChannelDescr_t* ch, dragonChannelSendh_t* ch_sh
 
         int gw_idx;
 
-        err = _get_gw_idx(&ch_sh->_ch, &gw_idx);
+        err = _get_gw_idx(&ch_sh->_ch, DRAGON_OP_TYPE_SEND_MSG, &gw_idx);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not get a gateway index.");
 
@@ -3049,7 +3078,7 @@ dragon_channel_recvh(const dragonChannelDescr_t* ch, dragonChannelRecvh_t* ch_rh
 
         int gw_idx;
 
-        err = _get_gw_idx(&ch_rh->_ch, &gw_idx);
+        err = _get_gw_idx(&ch_rh->_ch, DRAGON_OP_TYPE_GET_MSG, &gw_idx);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not get a gateway index.");
 
@@ -4052,7 +4081,7 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
         dragonMemoryDescr_t req_mem;
         int gw_idx;
 
-        err = _get_gw_idx(ch, &gw_idx);
+        err = _get_gw_idx(ch, DRAGON_OP_TYPE_POLL, &gw_idx);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not get a gateway index.");
 

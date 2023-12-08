@@ -19,43 +19,12 @@ The code demonstrates the following key concepts working with Dragon:
 * How to utilize pandarallel in a multi-node environment
 * How to utilize k-means clustering on features such as alignment, E value, and percentage coverage
 
-.. code-block:: python
-    :linenos:
-    :caption: **bioinformatics_alignment_pandarallel_demo.ipynb: A bioinformatics benchmark for aligning nucleotide sequences and amino acid sequences**
+The following notebook was used for the single-node comparison:
 
-    import dragon
-    import multiprocessing
-
-    import cloudpickle
-
-    import os
-    os.environ['OPENBLAS_NUM_THREADS'] = '1'
-
-    import numpy as np
-    import pandas as pd
-
-    import Bio
-    from Bio import SeqIO, Entrez
-    import pyalign
-    import time
-    import matplotlib.pyplot as plt
-    from sklearn.cluster import KMeans
-    import seaborn as sns
-    import pandarallel; pandarallel.__version__
-
-    multiprocessing.set_start_method("dragon")
-    pandarallel.core.dill = cloudpickle
-    pandarallel.core.CONTEXT = multiprocessing.get_context("dragon")
-    pandarallel.pandarallel.initialize(progress_bar=True)
-
-    start = time.monotonic()
-    nucl_df['PyAlign Alignment Score'] = nucl_df['Sequence'].parallel_apply(lambda seq2: alignment_algorithm(endo_nucl_seq, seq2, gap=0))
-    stop = time.monotonic()
-    functions, bar_num, tot_time = ['PyAlign Alignment Score'],[128],[stop-start]
-
+.. literalinclude:: ../../examples/jupyter/doc_ref/bioinformatics_alignment_pandarallel_demo.py
 
 For the single-node run, both base multiprocessing and Dragon are compared. The runs utilized a single node with 2 AMD EPYC 7742 64-Core Processors with 128 cores.
-Dragon employs a number of optimizations on base multiprocessing; the Dragon start method outperforms the use of the base multiprocessing spawn start method on the same hardware. 
+Dragon employs a number of optimizations on base multiprocessing; the Dragon start method outperforms the use of the base multiprocessing spawn start method on the same hardware.
 
 The timing for the base multiprocessing runtime is:
 
@@ -102,10 +71,14 @@ The timing for the single-node Dragon runtime is:
      -
      - 27.174203
 
-For multi-node Dragon run, the run was on 2 Apollo nodes. Each Apollo node has 1x AMD Rome CPU with 4x AMD MI100 GPUs and 128 cores. 
-The multi-node use case scales with the total number of CPUs reported by the allocation. As there are more nodes, workers, and CPUs available for multi-node, Dragon extends 
-multiprocessing's stock capabilities and demonstrates additional improvement to measured execution time. 
-Base multiprocessing does not support multi-node workloads. 
+For multi-node Dragon run, the run was on 2 Apollo nodes. Each Apollo node has 1x AMD Rome CPU with 4x AMD MI100 GPUs and 128 cores.
+The multi-node use case scales with the total number of CPUs reported by the allocation. As there are more nodes, workers, and CPUs available for multi-node, Dragon extends
+multiprocessing's stock capabilities and demonstrates additional improvement to measured execution time.
+Base multiprocessing does not support multi-node workloads.
+
+The following notebook was used for the multi-node comparison:
+
+.. literalinclude:: ../../examples/jupyter/doc_ref/bioinformatics_alignment_pandarallel_multinode_demo.py
 
 The timing for the multi-node Dragon runtime is:
 

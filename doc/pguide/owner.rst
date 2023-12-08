@@ -39,10 +39,11 @@ Round Robin Placement
 
 .. figure:: images/roundrobin.svg
     :scale: 75%
+    :name: roundrobin
 
-    **Figure 1: UML deployment diagram of round robin placement with 4 processes on a distributed system with 3 compute nodes and one login node**
+    **UML deployment diagram of round robin placement with 4 processes on a distributed system with 3 compute nodes and one login node**
 
-Figure 1 shows how processes will be placed across nodes in your allocation with the current round-robin placement
+:numref:`roundrobin` shows how processes will be placed across nodes in your allocation with the current round-robin placement
 policy. Any two processes started consecutively will be placed on unique nodes unless there is only a single node
 within your Slurm allocation.
 

@@ -185,13 +185,14 @@ Activity Diagram
 
 Following is a flow diagram showing the interaction between components during process launch, output and input
 handling, signaling, and process termination. The text below the figure gives additional details on the
-activities during this interaction. The *a1* through *a6* are denoted in figure 1 and the numbered list below
+activities during this interaction. The *a1* through *a6* are denoted in :numref:`launchproc` and the numbered list below
 further describes those activities.
 
 .. figure:: images/launchproc.srms1.png
     :scale: 75%
+    :name: launchproc
 
-    **Figure 1: Launcher Component Interaction during Process Interaction**
+    **Launcher Component Interaction during Process Interaction**
 
 
 Activity Description

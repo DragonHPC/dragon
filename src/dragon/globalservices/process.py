@@ -180,7 +180,7 @@ def _create_stdio_connections(the_desc):
 
 def get_create_message(exe, run_dir, args, env, user_name='', options=None,
            stdin=None, stdout=None, stderr=None, group=None,
-           user=None, umask=- 1, pipesize=- 1, pmi_required=False):
+           user=None, umask=- 1, pipesize=- 1, pmi_required=False, policy=None):
     """Return a GSProcessCreate object.
 
     :param exe: executable to run
@@ -197,6 +197,7 @@ def get_create_message(exe, run_dir, args, env, user_name='', options=None,
     :param umask: Not used
     :param pipesize: Set the channel capacity. Default = -1.
     :param pmi_required: This process is part of a Dragon managed MPI/PMI application group.
+    :param policy: If a policy other than the global default is to be used for this process.
     :return: GSProcessCreate message object
     """
 
@@ -214,7 +215,8 @@ def get_create_message(exe, run_dir, args, env, user_name='', options=None,
                                 rundir=run_dir, user_name=user_name,
                                 options=options, stdin=stdin, stdout=stdout,
                                 stderr=stderr, group=group, user=user, umask=umask,
-                                pipesize=pipesize, pmi_required=pmi_required)
+                                pipesize=pipesize, pmi_required=pmi_required,
+                                policy=policy)
 
 
 def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_name='', options=None,
@@ -290,7 +292,7 @@ def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_
 
 def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
            stdin=None, stdout=None, stderr=None, group=None,
-           user=None, umask=- 1, pipesize=- 1, pmi_required=False):
+           user=None, umask=- 1, pipesize=- 1, pmi_required=False, policy=None):
     """Asks Global Services to create a new process.
 
     :param exe: executable to run
@@ -308,6 +310,7 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
     :param umask: Not used
     :param pipesize: Set the channel capacity. Default = -1.
     :param pmi_required: This process is part of a Dragon managed MPI/PMI application group.
+    :param policy: If a policy other than the global default is to be used for this process.
     :return: ProcessDescriptor object
     """
 
@@ -343,6 +346,7 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
         umask=umask,
         pipesize=pipesize,
         pmi_required=pmi_required,
+        policy=policy,
     )
 
     reply_msg = das.gs_request(req_msg)

@@ -24,7 +24,7 @@ that contains this README.md.
 
 * The dragon-*.whl file must be pip3 installed once for your environment.
 
-        pip3 install --force-reinstall dragon-0.61-cp39-cp39-linux_x86_64.whl
+        pip3 install --force-reinstall dragon-0.7-cp39-cp39-linux_x86_64.whl
 
 * Check and possibly update that `$PATH` has the location of pip installed
   console scripts, such as ~/.local/bin
@@ -34,7 +34,7 @@ that contains this README.md.
 * modulefiles - This contains module files that are needed when using Dragon.
   You must set up the environment by loading the dragon module as follows.
 
-        module use [/path to dragon-0.61]/modulefiles
+        module use [/path to dragon-0.7]/modulefiles
         module load dragon
 
   If you intend to use Dragon on your own Linux VM or an image that you
@@ -69,7 +69,7 @@ that contains this README.md.
   of Dragon.
 
 After doing the `pip3 install` and the
-`module use [/path to dragon-0.61]/modulefiles && module load dragon` you have
+`module use [/path to dragon-0.7]/modulefiles && module load dragon` you have
 completed the prerequisites for running Dragon multiprocessing programs.
 
 Running a Program using Dragon

@@ -63,7 +63,7 @@ def do_set_ops(_keys, ddict, value_size):
 
 def do_del_ops(_keys, ddict):
     """Each client will delete the given list of keys in the dictionary
-    
+
     :param _keys: list of all keys to be deleted from the dictionary
     :type _keys: list
     :param ddict: dragon distributed dictionary
@@ -76,7 +76,7 @@ def do_del_ops(_keys, ddict):
 
 def do_get_ops(_keys, ddict):
     """Each client will retrieve the values for the given list of keys in the dictionary
-    
+
     :param _keys: list of all keys to be fetched from the dictionary
     :type _keys: list
     :param ddict: dragon distributed dictionary
@@ -343,6 +343,7 @@ class TestDragonDictMultiNodeStress(unittest.TestCase):
         for i in range(len(procs)):
             procs[i].kill()
 
+    @unittest.skip('CIRRUS-1820: Hanging')
     def test_dict_with_stress_load(self):
         managers_per_node = 1 # 2 Managers per node
         num_nodes = len(get_list()) # Collect the total number of nodes

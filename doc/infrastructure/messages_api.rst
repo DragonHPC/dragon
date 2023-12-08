@@ -3319,26 +3319,14 @@ value 0 in the single node case.
         channels there are.
 
     *fields*
-        **ip_addr**
-            - string
-            - the ip address of the node sending this message.
-
-        **host_name**
-            - string
-            - the hostname of the node sending this message.
-
-        **host_id**
-            - integer
-            - the hostid of the node sending this message.
+        **node_desc**
+            - ``Python<dragon.infrastructure.node_desc.NodeDescriptor`` or its serialized
+              descriptor
 
         **idx**
             - integer
             - which Shepherd in the allocation this is. Index is 0 in the single node
               case and lives in [0,N) for N multi node back end allocation
-
-        **shep_cd**
-            - base64 encoded string
-            - The channel descriptor of the local shepherd
 
         **gs_cd**
             - base64 encoded string
@@ -3347,7 +3335,7 @@ value 0 in the single node case.
               empty string.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.SHChannelsUp>`
-
+                         :class:`Python<dragon.infrastructure.node_desc.NodeDescriptor>`
 
 .. _shpinggs:
 
@@ -3889,9 +3877,9 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
     *fields*
         **nodes_desc**
             - dictionary with keys corresponding to string node indices and values of class
-            ``dragon.launcher.node_desc._NodeDescriptor``(eg: The hostname info for node 5 is accessed via
+            ``dragon.infrastructure.node_desc.NodeDescriptor``(eg: The hostname info for node 5 is accessed via
             ``la_channels_msg.nodes_desc['4'].host_name`` )
-            - Attributed for each value of ``dragon.launcher.node_desc._NodeDescriptor``:
+            - Excamples attributes for each value of ``dragon.infrastructure.node_desc.NodeDescriptor``:
 
               - 'host_name': hostname string
               - 'host_id': integer which is determined by calling the Posix gethostid function
@@ -3907,7 +3895,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
             - The number of gateway channels per node
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.LAChannelsInfo>`
-                         :class:`Python<dragon.launcher.node_desc._NodeDescriptor>`
+                         :class:`Python<dragon.infrastructure.node_desc.NodeDescriptor>`
 
 94. **Breakpoint**
 

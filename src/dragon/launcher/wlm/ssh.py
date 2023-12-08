@@ -53,7 +53,7 @@ def get_ssh_launch_be_args(hostname=None, args_map=None) -> str:
     if ENV_VARS is None or args_map is not None:
         get_ssh_env_vars(args_map=args_map)
 
-    be_args = " ".join(["ssh -oBatchMode=yes {hostname}", f"cd {getcwd()} &&"] + ENV_VARS)
+    be_args = " ".join(["ssh -oBatchMode=yes {hostname}", f"/bin/bash -c cd {getcwd()} &&"] + ENV_VARS)
     return be_args
 
 

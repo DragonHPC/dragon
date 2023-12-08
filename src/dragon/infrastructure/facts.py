@@ -11,6 +11,7 @@ PREFIX = 'DRAGON_'
 DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE = 0
 DRAGON_OVERLAY_DEFAULT_NUM_GW_CHANNELS_PER_NODE = 1
 NUM_GW_CHANNELS_PER_NODE_VAR = 'NUM_GW_CHANNELS_PER_NODE'
+NUM_GW_TYPES = 3
 # needed for naming convention for the gateway channels
 # should be unique on a given node, not globally
 # Note: there is also a dependency on dragon_channel_register_gateways_from_env()
@@ -22,7 +23,7 @@ env_vars = frozenset({'MODE', 'INDEX', 'DEFAULT_PD', 'INF_PD', 'LOCAL_SHEP_CD', 
                  'SHEP_RET_CD', 'GS_CD', 'DEFAULT_SEG_SZ', 'INF_SEG_SZ', 'TEST', 'DEBUG', 'MY_PUID',
                  'BE_CUID', 'INF_WAIT_MODE', 'USER_WAIT_MODE', 'USER_RETURN_WHEN_MODE', 'INF_RETURN_WHEN_MODE',
                  'GW_CAPACITY', NUM_GW_CHANNELS_PER_NODE_VAR, 'TRANSPORT_AGENT', 'HSTA_MAX_EJECTION_MB', 'HSTA_MAX_GETMSG_MB',
-                 'PMOD_COMMUNICATION_TIMEOUT', 'BASEPOOL'})
+                 'PMOD_COMMUNICATION_TIMEOUT', 'BASEPOOL', 'OVERLAY_FANOUT'})
 
 
 # TODO:PE-37770  This list of names should NOT need to appear

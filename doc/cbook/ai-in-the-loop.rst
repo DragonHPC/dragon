@@ -1,35 +1,36 @@
 AI-in-the-loop Workflow
 +++++++++++++++++++++++++++++++++++++++++++++++++++
 
-This is an example of how Dragon can be used to execute an AI-in-the-loop workflow. 
-Inspiration for this demo comes from the NERSC-10 Workflow Archetypes White Paper. 
-This workflow most closely resembles the workflow scenario given as part of archetype four. 
+This is an example of how Dragon can be used to execute an AI-in-the-loop workflow.
+Inspiration for this demo comes from the NERSC-10 Workflow Archetypes White Paper.
+This workflow most closely resembles the workflow scenario given as part of archetype four.
 
-In this example we use a small model implemented in PyTorch to compute an approximation to :math:`\sin(x)`. 
-In parallel to doing the inference with the model, we launch `sim-cheap` on four MPI ranks. 
-This MPI job computes the Taylor approximation to :math:`\sin(x)` and compares this with the output of the model. 
-If the difference is less than 0.05 we consider the model's approximation to be sufficiently accurate and print out the result with the exact result. 
-If the difference is larger than 0.05 we consider this a failure and re-train the model on a new set of data. 
+In this example we use a small model implemented in PyTorch to compute an approximation to :math:`\sin(x)`.
+In parallel to doing the inference with the model, we launch `sim-cheap` on four MPI ranks.
+This MPI job computes the Taylor approximation to :math:`\sin(x)` and compares this with the output of the model.
+If the difference is less than 0.05 we consider the model's approximation to be sufficiently accurate and print out the result with the exact result.
+If the difference is larger than 0.05 we consider this a failure and re-train the model on a new set of data.
 
-To generate this data we launch `sim-expensive`. 
-This MPI job is launched on eight ranks-per-node and each rank generates 32 data points of the form :math:`(x, \sin(x))` where :math:`x \in X \tilde U(-\pi, \pi)`. 
-This data is aggregated into a PyTorch tensor and then used to train the model. 
-We then re-evaluate the re-trained model and decide if we need to re-train again or if the estimate is sufficiently accurate. 
+To generate this data we launch `sim-expensive`.
+This MPI job is launched on eight ranks-per-node and each rank generates 32 data points of the form :math:`(x, \sin(x))` where :math:`x \in U(-\pi, \pi)`.
+This data is aggregated into a PyTorch tensor and then used to train the model.
+We then re-evaluate the re-trained model and decide if we need to re-train again or if the estimate is sufficiently accurate.
 We continue this loop until we've had five successes.
 
-Figure 1 presents the structure of this main loop. It shows when each MPI application is launched and what portions are executed in parallel.  
+:numref:`ai-in-the-loop`  presents the structure of this main loop. It shows when each MPI application is launched and what portions are executed in parallel.
 
-.. figure:: images/ai-in-the-loop-workflow.jpg 
-    :scale: 30%
+.. figure:: images/ai-in-the-loop-workflow.jpg
+    :scale: 100%
+    :name: ai-in-the-loop
 
-    **Figure 1: Example AI-in-the-loop workflow **
+    **Example AI-in-the-loop workflow**
 
 
 This example consists of the following python files:
 
-* `ai-in-the-loop.py` - This is the main file. It contains functions for launching both MPI executables and parsing the results as well as imports functions defined in `model.py` and coordinates the model inference and training with the MPI jobs. 
+* `ai-in-the-loop.py` - This is the main file. It contains functions for launching both MPI executables and parsing the results as well as imports functions defined in `model.py` and coordinates the model inference and training with the MPI jobs.
 
-* `model.py` - This file defines the model and provides some functions for model training and inference. 
+* `model.py` - This file defines the model and provides some functions for model training and inference.
 
 Below, we present the main python code (`ai-in-the-loop.py`) which acts as the coordinator of the workflow.
 The code of the other files can be found in the release package, inside `examples/workflows/ai-in-the-loop` directory.
@@ -259,7 +260,7 @@ The code of the other files can be found in the release package, inside `example
 Installation
 ============
 
-After installing dragon, the only other dependency is on PyTorch. The PyTorch version and corresponding pip command can be found here (https://pytorch.org/get-started/locally/). 
+After installing dragon, the only other dependency is on PyTorch. The PyTorch version and corresponding pip command can be found here (https://pytorch.org/get-started/locally/).
 
 ```
 > pip install torch torchvision torchaudio
@@ -282,7 +283,7 @@ Example Output when run on 16 nodes with 8 MPI ranks-per-node used to generate d
     > make
     gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib   -c -o sim-cheap.o sim-cheap.c
     gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib  sim-cheap.o -o sim-cheap -lm -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib -lmpich
-    gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib   -c -o sim-expensive.o 
+    gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib   -c -o sim-expensive.o
     gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib  sim-expensive.o -o sim-expensive -lm -L /opt/cray/pe/mpich/8.1.26/ofi/gnu/9.1/lib -lmpich
     > salloc --nodes=16 --exclusive
     > dragon ai-in-the-loop.py

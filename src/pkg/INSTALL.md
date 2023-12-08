@@ -17,7 +17,7 @@ are relative to the directory that contains the README.md.
 
 The `dragon-*.whl` file must be pip3 installed once for your environment.
 
-        pip3 install --force-reinstall dragon-0.61-cp39-cp39-linux_x86_64.whl
+        pip3 install --force-reinstall dragon-0.7-cp39-cp39-linux_x86_64.whl
 
 
 Check and possibly update that `$PATH` is has the location of pip installed

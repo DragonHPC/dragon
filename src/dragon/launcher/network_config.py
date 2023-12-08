@@ -4,6 +4,8 @@ import logging
 import json
 import enum
 import zlib
+import signal
+import sys
 from typing import Optional
 from base64 import b64encode, b64decode
 
@@ -307,7 +309,7 @@ def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF,
         raise RuntimeError("Unable to acquire backend network configuration")
 
     # Dump to stdout
-    print(json.dumps(node_info.get_sdict()))
+    print(json.dumps(node_info.get_sdict()), flush=True)
 
 
 def get_args(inputs=None):

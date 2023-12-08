@@ -1,4 +1,4 @@
-"""The Dragon native pool manages a pool of child processes. 
+"""The Dragon native pool manages a pool of child processes.
 """
 
 from __future__ import annotations
@@ -240,6 +240,8 @@ class Pool:
         initargs: tuple = (),
         maxtasksperchild: int = None,
         policy: Policy = None,
+        *args,
+        **kwargs,
     ):
         """Init method
 
@@ -426,7 +428,6 @@ class Pool:
             completed_tasks += 1
 
         LOGGER.debug(f"{myp.ident} returning from worker_function")
-        
 
     @classmethod
     def _handle_results(cls, outqueue, cache, end_event):

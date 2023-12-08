@@ -21,8 +21,9 @@ Architecture
 ============
 
 .. figure:: images/scalable_locks.svg
+    :name: scalable-locks
 
-    **Figure 1: Architecture of the Scalable Locks component**
+    **Architecture of the Scalable Locks component**
 
 Dragons scalable locks implementation provides access to
 
@@ -251,14 +252,14 @@ Functions
 
     Attach to the FIFO-style lock previously mapped into the memory pointed to by *prt* and return a
     :c:type:`dragonFIFOLock_t` handle to the lock.
-    
+
     Returns ``DRAGON_SUCCESS`` or an error code.
 
 .. c:function:: dragonError_t dragon_greedy_lock_attach(dragonGreedyLock_t * dlock, void * ptr)
 
     Attach to the greedy-style lock previously mapped into the memory pointed to by *prt* and return a
     :c:type:`dragonGreedyLock_t` handle to the lock.
-    
+
     Returns ``DRAGON_SUCCESS`` or an error code.
 
 .. c:function:: dragonError_t dragon_fifo_lock_detach(dragonFIFOLock_t * dlock)
@@ -434,12 +435,12 @@ Operational Functions
     Waits for a write lock on the *RWLock* to become available. This will occur when all readers have released
     their locks by calling *dragon_rwlock_read_unlock*. Once the write lock is acquired, all readers wait
     until the write lock is released by calling *dragon_rwlock_write_unlock*.
-    
+
     Returns DRAGON_SUCCESS, TBD.
-    
+
     .. c:function:: dragonError_t dragon_rwlock_write_unlock(dragonRWLock_t * dlock)
 
     Releases the acquired write lock on the *RWLock* referred to by *dlock*. Any waiting readers or writers
     will be able to proceed. No guarantee is made for which will proceed first.
-    
+
     Returns DRAGON_SUCCESS, TBD.

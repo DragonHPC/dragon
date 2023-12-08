@@ -151,6 +151,21 @@ class TestProcessGroupMultiNode(unittest.TestCase):
 
         pg.stop()
 
+    @unittest.skip(f"CIRRUS-1831: Will fail until PG api is fixed. The TODO comment should also be addressed.")
+    def test_node_id(self):
+        pg = ProcessGroup(self.template, 4)
+        pg.start()
+
+        nodes = node_get_list()
+        puids = pg.puids
+        for puid in puids:
+            gs_info = process_query(puid)
+            print(gs_info)
+            # TODO: Increment counter for each node, assert we've got equal distribution of procs
+
+        pg.stop()
+
+
 
 if __name__ == "__main__":
     unittest.main()

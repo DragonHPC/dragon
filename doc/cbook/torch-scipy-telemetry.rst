@@ -20,14 +20,15 @@ The example consists of four components:
 We start a pool of workers for the mnist computation, a different pool of workers for the SciPy computation, as many monitor processes as the number of nodes
 that Dragon uses (it could be a subset of the node allocation) and a single post-processing process. All the workers are distributed across the available nodes.
 
-Figure 1 presents the structure of a toy example with 4 compute nodes and shows the basic architecture and process placement. The shared queue
+:numref:`structure-of-demo` presents the structure of a toy example with 4 compute nodes and shows the basic architecture and process placement. The shared queue
 lives on the same node as the process that created it. In our example, the head/main process creates the queue. The user main program and the head/main process
 live on compute node 1.
 
 .. figure:: images/telemetry_deployment_diagram.jpg
     :scale: 30%
+    :name: structure-of-demo
 
-    **Figure 1: Structure of the multi-node process orchestration and node telemetry demo on an allocation of 4 compute nodes**
+    **Structure of the multi-node process orchestration and node telemetry demo on an allocation of 4 compute nodes**
 
 
 This example consists of the following python files:

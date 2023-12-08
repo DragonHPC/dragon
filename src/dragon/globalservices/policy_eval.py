@@ -8,8 +8,9 @@ class ResourceLayout:
     h_uid : int
     host_name : str
     numa_node : int # TODO
-    core : [int] # List of acceptable CPU cores the layout can be applied to
-    accelerator : int # TODO
+    cpu_core : [int] # List of acceptable CPU cores the layout can be applied to
+    gpu_core : [int]
+    accelerator_env : str
 
 
 # Possible TODO: Affinity offset or placement offset, to "start counting from here", just make sure it starts at a certain place
@@ -50,7 +51,7 @@ class PolicyEvaluator:
 
         return node
 
-    def _add_layout(self, node, affinity, layouts):
+    def _add_layout(self, node, cpu_affinity, gpu_affinity, env_str, layouts):
         """
         Short helper function to auto-increment num_policies value on nodes
 
@@ -60,7 +61,9 @@ class PolicyEvaluator:
 
         """
         # NOTE: Numa node and accelerator are placeholders
-        layouts.append( ResourceLayout(node.h_uid, node.host_name, 1, affinity, 0) )
+        numa_node = 0
+        layouts.append( ResourceLayout(node.h_uid, node.host_name, numa_node,
+                                       cpu_affinity, gpu_affinity, env_str) )
         node.num_policies += 1
 
     def _node_by_id(self, host_id) -> NodeDescriptor:
@@ -140,31 +143,28 @@ class PolicyEvaluator:
 
             return node
 
-    def _get_affinity(self, p : Policy, node : NodeDescriptor) -> list[int]:
+    def _get_cpu_affinity(self, p : Policy, node : NodeDescriptor) -> list[int]:
         """
         Generate a list of available devices the policy can be applied to for the given Node
         """
 
-        affinity = p.affinity
-        if affinity == Policy.Affinity.DEFAULT:
-            affinity = Policy.Affinity.ANY
+        if p.cpu_affinity: # List not empty, assume SPECIFIC affinity
+            affinity = [x for x in node.cpu_devices if x in p.cpu_affinity]
+            return affinity # This covers both "ANY" and "SPECIFIC" if a specific list is given
 
-        device = p.device
-        if device == Policy.Device.DEFAULT:
-            device = Policy.Device.CPU
+        if p.affinity == Policy.Affinity.ANY:
+            return node.cpu_devices
 
-        if device == Policy.Device.CPU:
-            if p.specific_affinity: # List not empty, assume SPECIFIC affinity
-                affinity = [x for x in node.cpu_devices if x in p.specific_affinity]
-                return affinity # This covers both "ANY" and "SPECIFIC" if a specific list is given
+        return []
 
-            if affinity == Policy.Affinity.ANY:
-                return node.cpu_devices
+    def _get_gpu_affinity(self, p : Policy, node : NodeDescriptor) -> list[int]:
 
-        if device == Policy.Device.GPU:
-            raise RuntimeError("GPU Affinity Not Implemented")
-        # TODO: Affinity ROUNDROBIN and BLOCK.  These are more load balancing options than not, so tracking usage needs to be figured out
-        # TODO: GPU Affinity.  NodeDescriptor needs to pull a list of available accelerators (through an os.exec grep command maybe?)
+        if p.gpu_affinity:
+            affinity = [x for x in node.accelerators.device_list if x in p.gpu_affinity]
+            return affinity
+
+        if p.affinity == Policy.Affinity.ANY and node.accelerators is not None:
+            return node.accelerators.device_list
 
         return []
 
@@ -180,8 +180,12 @@ class PolicyEvaluator:
             # Merge incoming policies against the self.default_policy so any DEFAULT enums get replaced with the default policy option
             p = self.merge(self.default_policy, p)
             node = self._get_node(p) # Get a node based on policy (if requesting specific nodes, may raise exception)
-            affinity = self._get_affinity(p, node) # Get affinity based on policy
-            self._add_layout(node, affinity, layouts)
+            cpu_affinity = self._get_cpu_affinity(p, node) # Get affinity based on policy
+            gpu_affinity = self._get_gpu_affinity(p, node)
+            env_str = "" # Environment string for setting accelerator affinity
+            if gpu_affinity:
+                env_str = node.accelerators.env_str
+            self._add_layout(node, cpu_affinity, gpu_affinity, env_str, layouts)
 
         return layouts
 

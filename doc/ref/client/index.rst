@@ -33,10 +33,11 @@ Architecture
 
 .. figure:: images/client_architecture.svg
     :scale: 75%
+    :name: GS-client-architecture
 
-    **Figure 1: GS Client architecture**
+    **GS Client architecture**
 
-Figure 1 shows the architecture of GS Client API. It exposes four  base components to the user:
+:numref:`GS-client-architecture` shows the architecture of GS Client API. It exposes four  base components to the user:
 
 1. **Process**: An interface to a managed process.
 2. **Pool/Shared Memory**: An interface to a managed memory pool or allocation.

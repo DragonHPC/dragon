@@ -183,34 +183,36 @@ which we update every second until the end event is set. Note line 17 where we s
 Examples of input and Output
 ============================
 
-Figure 1 provides an example of an input and the response the user receives from the chatbot.
-
+:numref:`single-prompt-response` provides an example of an input and the response the user receives from the chatbot.
 
 .. figure:: images/llm-grafana-single-prompt-response.jpg
     :scale: 60%
+    :name: single-prompt-response
 
-    **Figure 1: Input prompt and response with IDs for the prompter, inference worker, and response worker**
+    **Input prompt and response with IDs for the prompter, inference worker, and response worker**
 
 
 
 To simulate many different users iteracting with a chatbot, we loop over a list of fifteen prompts seven times giving a total of 105 prompts that the four inference workers
-to respond to. The input loop and prompts are shown in Figure 2. A sample telemetry output as displayed in Grafana after all these prompts are processed is
-shown in Figure 3. Note how the utilization is nearly equal among the GPUs with all starting and ending at the same time. The spikes in utilization prior to
+to respond to. The input loop and prompts are shown in :numref:`loop-over-prompts`. A sample telemetry output as displayed in Grafana after all these prompts are processed is
+shown in :numref:`node-telemetry` . Note how the utilization is nearly equal among the GPUs with all starting and ending at the same time. The spikes in utilization prior to
 the running of the many prompts are from the models being loaded onto the GPUs at the start up of the inference workers and the worker that responded to the prompt
-in Figure 1.
+in :numref:`single-prompt-response`.
 
 .. figure:: images/llm-grafana-many-prompts.jpg
     :scale: 50%
+    :name: loop-over-prompts
 
-    **Figure 2: Loop over list of prompts to simulate many users**
+    **Loop over list of prompts to simulate many users**
 
 
 
 
 .. figure:: images/llm-grafana-telem-data.jpg
     :scale: 60%
+    :name: node-telemetry
 
-    **Figure 3: Node telemetry data that is visualized using Grafana GUI and highlights the load balanced nature of this example**
+    **Node telemetry data that is visualized using Grafana GUI and highlights the load balanced nature of this example**
 
 
 

@@ -23,12 +23,14 @@ Launcher Single Node Architecture
 =================================
 
 .. figure:: images/launcher_single_node.svg
+    :name: launcher-single-node
 
-    **Image 1: Single node architecture of the Launcher component**
+    **Single node architecture of the Launcher component**
 
 .. figure:: images/singlenodelauncher.png
+    :name: singlenode-launcher
 
-    **Figure 2: Single-node Launcher/Backend Components**
+    **Single-node Launcher/Backend Components**
 
 In a single node deployment of Dragon, the launcher consists of the following components:
 
@@ -51,14 +53,16 @@ Launcher Multi Node Architecture
 ================================
 
 .. figure:: images/launcher_multi_node.svg
+    :name: launcher-multi-node
 
-    **Image 3: Multi node architecture of the Launcher component**
+    **Multi node architecture of the Launcher component**
 
 .. figure:: images/launchercomponents.png
+    :name: launcher-comps
 
-    **Figure 4: Multi-node Launcher/Backend Components**
+    **Multi-node Launcher/Backend Components**
 
-In the multi-node case, shown in figures 3 and 4, the Launcher Front End uses the workload manager to start
+In the multi-node case, shown in :numref:`launcher-multi-node` and :numref:`launcher-comps`, the Launcher Front End uses the workload manager to start
 the  Shepherd on every node through :ref:`CTI`. It then starts the Network Front End which creates an MRNet
 Server Front End which creates a scalable communication tree that eventually connects to a Network Back End.
 The Launcher Back End  component is started by MRNet and communication between the Launcher Back End and the
@@ -75,7 +79,7 @@ user interacts with the *Command Processor* which is a *Read Evaluate Print Loop
 processor is a full-fledged Python interpreter with several predefined functions for invoking the various
 *Launcher* commands. The command definitions are given in the :ref:`LauncherCommands` section.
 
-Not depicted in figure 4, the :ref:`GlobalServices` and its :ref:`Channels` are only present on the primary
+Not depicted in :numref:`launcher-comps`, the :ref:`GlobalServices` and its :ref:`Channels` are only present on the primary
 node. All other components on the compute node are present on every compute node.
 
 
@@ -333,8 +337,9 @@ may be necessary for some multi-node applications but can be used in single-node
 as well allowing a server application to run in either environment.
 
 .. figure:: images/servermode.png
+    :name: servermode
 
-    **Figure 5: Dragon Server Mode**
+    **Dragon Server Mode**
 
 In server mode there are two programs that are started by the launcher. The
 *Server Front End* and the *Server Back End*. The front end runs on the login
@@ -345,8 +350,9 @@ Dragon run-time services.
 
 .. figure:: images/server.srms1.png
     :scale: 75%
+    :name: passthru-message-ex
 
-    **Figure 6: PassThru Message Exchange**
+    **PassThru Message Exchange**
 
 The *Launcher* starts the
 front end specifying that standard input and output are to be piped from/to
@@ -425,8 +431,9 @@ State Transitions
 -------------------
 
 .. figure:: images/launcherstates.png
+    :name: launcherstates
 
-    **Figure 7: State Diagram**
+    **State Diagram**
 
 The four states of the Launcher define four states the launcher could be in. In
 addition, there are a few more states during initialization that are not described
@@ -489,8 +496,9 @@ functionality is in the implementation of a Jupyter Notebook kernel that runs
 within the Dragon run-time services.
 
 .. figure:: images/jupytermode.png
+    :name: jupytermode
 
-    **Figure 8: Dragon Server Mode for Jupyter Notebooks**
+    **Dragon Server Mode for Jupyter Notebooks**
 
 
 There are two supported methods to run a Jupyter notebook in conjunction with

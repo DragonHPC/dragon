@@ -5,6 +5,8 @@ ref/client/dragon*.rst
 ref/inf/dragon*.rst
 ref/native/Python/dragon*.rst
 ref/mpbridge/dragon*.rst
+ref/data/dragon*.rst
+ref/workflows/dragon*.rst
 ref/native/Python/dragon*.rst
 *.svg
 internal/services/transport_agent/tcp/*

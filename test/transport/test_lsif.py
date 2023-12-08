@@ -9,6 +9,7 @@ from dragon.channels import Channel
 from dragon.infrastructure import facts as dfacts
 from dragon.infrastructure import messages as dmsg
 from dragon.infrastructure.connection import Connection
+from dragon.infrastructure.node_desc import NodeDescriptor
 from dragon.launcher.util import next_tag
 from dragon.managed_memory import MemoryPool
 from dragon.transport import start_transport_agent
@@ -72,10 +73,19 @@ class LocalServicesInterface:
 
         LOGGER.info('Memory pools and channels created')
 
+        # Use the nodes dict to construct a dictionary of NodeDescriptor objects
+        nodes_desc = {
+            i: NodeDescriptor(ip_addrs=node['ip_addrs'],
+                              host_id=node['host_id'],
+                              shep_cd=node['shep_cd'],
+                              host_name=node['host_name'])
+            for i, node in self.nodes.items()
+        }
+
         # Create LAChannelsInfo
         la_ch_info = dmsg.LAChannelsInfo(
             tag=next_tag(),
-            nodes_desc=self.nodes,
+            nodes_desc=nodes_desc,
             gs_cd='',
             num_gw_channels=NUM_GW_CHANNELS_PER_NODE,
         )

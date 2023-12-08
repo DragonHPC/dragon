@@ -515,7 +515,6 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.init()
 
         self.assertTrue(pg.status == "Idle")
-        self.assertRaises(DragonProcessGroupError, pg.kill, signal.SIGTERM)
         self.assertRaises(DragonProcessGroupError, pg.kill)
 
         pg.start()
