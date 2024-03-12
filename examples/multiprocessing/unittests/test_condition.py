@@ -6,7 +6,7 @@ import sys
 import os
 import signal
 
-from test import support
+import test.support
 
 import threading
 
@@ -290,7 +290,7 @@ class WithProcessesTestCondition(BaseTestCase, ProcessesMixin, unittest.TestCase
         p = self.Process(target=self._test_waitfor_timeout_f, args=(cond, state, success, sem))
         p.daemon = True
         p.start()
-        self.assertTrue(sem.acquire(timeout=support.LONG_TIMEOUT))
+        self.assertTrue(sem.acquire(timeout=test.support.LONG_TIMEOUT))
 
         # Only increment 3 times, so state == 4 is never reached.
         for i in range(3):
@@ -584,7 +584,7 @@ class WithManagerTestCondition(BaseTestCase, ManagerMixin, unittest.TestCase):
         p = self.Process(target=self._test_waitfor_timeout_f, args=(cond, state, success, sem))
         p.daemon = True
         p.start()
-        self.assertTrue(sem.acquire(timeout=support.LONG_TIMEOUT))
+        self.assertTrue(sem.acquire(timeout=test.support.LONG_TIMEOUT))
 
         # Only increment 3 times, so state == 4 is never reached.
         for i in range(3):
@@ -878,7 +878,7 @@ class WithThreadsTestCondition(BaseTestCase, ThreadsMixin, unittest.TestCase):
         p = self.Process(target=self._test_waitfor_timeout_f, args=(cond, state, success, sem))
         p.daemon = True
         p.start()
-        self.assertTrue(sem.acquire(timeout=support.LONG_TIMEOUT))
+        self.assertTrue(sem.acquire(timeout=test.support.LONG_TIMEOUT))
 
         # Only increment 3 times, so state == 4 is never reached.
         for i in range(3):

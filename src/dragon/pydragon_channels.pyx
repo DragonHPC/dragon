@@ -1761,7 +1761,7 @@ cdef class Peer2PeerWritingChannelFile:
             self.flush()
 
             derr = dragon_memory_free(&self._small_blk_descr)
-            if derr != DRAGON_SUCCESS:
+            if derr != DRAGON_MAP_KEY_NOT_FOUND and derr != DRAGON_SUCCESS:
                 raise ChannelError("Could not free small message send buffer", derr)
 
         finally:

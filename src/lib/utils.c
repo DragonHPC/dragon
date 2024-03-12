@@ -64,8 +64,8 @@ char *
 _errstr_with_code(char * str, int code)
 {
     char * new_str = malloc(sizeof(char) * (strnlen(str, DRAGON_MAX_ERRSTR_REC_LEN) +
-                                            snprintf(NULL, 0, " %i", code) + 1));
-    sprintf(new_str, "%s %i", str, code);
+                                            snprintf(NULL, 0, " %s", dragon_get_rc_string(code)) + 1));
+    sprintf(new_str, "%s %s", str, dragon_get_rc_string(code));
     return new_str;
 }
 
@@ -122,25 +122,13 @@ _sanitize_id(char *boot_id)
 int
 _get_dec_from_hex(char hex) {
 
-    if (isdigit(hex)) {
-        return atoi(&hex);
-    } else{
-        switch(hex) {
-        case('a'):
-            return 10;
-        case('b'):
-            return 11;
-        case('c'):
-            return 12;
-        case('d'):
-            return 13;
-        case('e'):
-            return 14;
-        case('f'):
-            return 15;
-        }
-    }
-    return 0;
+    /* This only works for lowercase hex letters and digits. Don't use
+       for anything else! */
+
+    if (isdigit(hex))
+        return hex - '0';
+    else
+        return hex - 'a';
 }
 
 dragonError_t
@@ -148,15 +136,16 @@ _hex_to_dec(char *hex, uint64_t *dec)
 {
     *dec = 0UL;
     int i, len = strlen(hex);
-    int term = len - 16;
+    int start = len - 16;
 
-    if (term < 0)
+    if (start < 0)
         err_return(DRAGON_INVALID_ARGUMENT, "Hex string less than 8 bytes");
 
     // Read the last 16 digits and convert
-    for (i = len-1;  i >= term; i--) {
-        *dec += (uint64_t) _get_dec_from_hex(hex[i]) * (uint64_t) pow(16.0, len-1-i);
+    for (i = start;  i < len; i++) {
+        *dec += *dec * 16 + _get_dec_from_hex(hex[i]);
     }
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -432,26 +421,26 @@ dragon_timespec_deadline(const timespec_t* timer, timespec_t* deadline)
  * Check whether the current time has past the end of a timer and compute remaining time.
  *
  * This function no_err_return(DRAGON_SUCCESS) if no timeout has occurred and computes the
- * remaining time. If end_time is in the past, then this function returns DRAGON_TIMEOUT.
+ * remaining time. If deadline is in the past, then this function returns DRAGON_TIMEOUT.
  *
- * @param end_time A pointer to a timespec structure that holds the time when the timer
+ * @param deadline A pointer to a timespec structure that holds the time when the timer
  * will expire.
- * @param remaining_timeout The computed remaining time for the given end_time.
+ * @param remaining_timeout The computed remaining time for the given deadline.
  * @returns DRAGON_SUCCESS or DRAGON_TIMEOUT or an undetermined error code.
  **********************************************************************************/
 
 dragonError_t
-dragon_timespec_remaining(const timespec_t * end_time, timespec_t * remaining_timeout)
+dragon_timespec_remaining(const timespec_t * deadline, timespec_t * remaining_timeout)
 {
     timespec_t now_time;
 
-    if (end_time == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "Cannot pass NULL as end_time argument.");
+    if (deadline == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Cannot pass NULL as deadline argument.");
 
     if (remaining_timeout == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Cannot pass NULL as remaining_timeout argument.");
 
-    if (end_time->tv_nsec == 0 && end_time->tv_sec == 0) {
+    if (deadline->tv_nsec == 0 && deadline->tv_sec == 0) {
         /* A zero timeout corresponds to a try-once attempt */
         remaining_timeout->tv_nsec = 0;
         remaining_timeout->tv_sec = 0;
@@ -460,13 +449,13 @@ dragon_timespec_remaining(const timespec_t * end_time, timespec_t * remaining_ti
 
     clock_gettime(CLOCK_MONOTONIC, &now_time);
 
-    if (dragon_timespec_le(end_time, &now_time)) {
+    if (dragon_timespec_le(deadline, &now_time)) {
         remaining_timeout->tv_sec = 0;
         remaining_timeout->tv_nsec = 0;
         no_err_return(DRAGON_TIMEOUT);
     }
 
-    dragonError_t err = dragon_timespec_diff(remaining_timeout, end_time, &now_time);
+    dragonError_t err = dragon_timespec_diff(remaining_timeout, deadline, &now_time);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "This shouldn't happen.");
 

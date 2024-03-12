@@ -6,12 +6,12 @@ import json
 import zlib
 import base64
 import subprocess
-
+from typing import Optional, Union
 from dataclasses import dataclass, asdict
 
 from ..infrastructure import channel_desc
 from ..infrastructure import pool_desc
-from ..infrastructure import node_desc
+from ..infrastructure.node_desc import NodeDescriptor
 from ..infrastructure import process_desc
 from ..infrastructure import parameters as parms
 from ..infrastructure import facts as dfacts
@@ -170,7 +170,7 @@ class MessageTypes(enum.Enum):
     GS_GROUP_CREATE_ADD_TO_RESPONSE = 132 #:
     GS_GROUP_DESTROY_REMOVE_FROM = 133 #:
     GS_GROUP_DESTROY_REMOVE_FROM_RESPONSE = 134 #:
-
+    HSTA_UPDATE_NODES = 135  #:
 
 @enum.unique
 class FileDescriptor(enum.Enum):
@@ -299,8 +299,11 @@ class _MsgBase(object):
     def from_sdict(cls, sdict):
         return cls(**sdict)
 
-    def serialize(self):
+    def uncompressed_serialize(self):
         return json.dumps(self.get_sdict())
+
+    def serialize(self):
+        return base64.b64encode(zlib.compress(json.dumps(self.get_sdict()).encode('utf-8'))).decode('ascii')
 
     def __str__(self):
         cn = self.__class__.__name__
@@ -348,7 +351,7 @@ class GSProcessCreate(_MsgBase):
     def __init__(self, tag, p_uid, r_c_uid, exe, args, env=None, rundir='',
                  user_name='', options=None, stdin=None, stdout=None, stderr=None,
                  group=None, user=None, umask=- 1, pipesize=None, pmi_required=False,
-                 _pmi_info=None, layout=None, _tc=None):
+                 _pmi_info=None, layout=None, policy=None, _tc=None):
 
         # Coerce args to a list of strings
         args = list(to_str_iter(args))
@@ -391,11 +394,20 @@ class GSProcessCreate(_MsgBase):
         if layout is None:
             self.layout = None
         elif isinstance(layout, dict):
-            self.layout = ResourceLayout(**_pmi_info)
+            self.layout = ResourceLayout(**layout)
         elif isinstance(layout, ResourceLayout):
-            self.layout = _pmi_info
+            self.layout = layout
         else:
             raise ValueError(f'GS unsupported layout value {layout=}')
+
+        if policy is None:
+            self.policy = None
+        elif isinstance(policy, dict):
+            self.policy = Policy(**policy)
+        elif isinstance(policy, Policy):
+            self.policy = policy
+        else:
+            raise ValueError(f'GS unsupported policy value {policy=}')
 
     @property
     def options(self):
@@ -430,6 +442,7 @@ class GSProcessCreate(_MsgBase):
         rv['pmi_required'] = self.pmi_required
         rv['_pmi_info'] = None if self._pmi_info is None else asdict(self._pmi_info)
         rv['layout'] = None if self.layout is None else asdict(self.layout)
+        rv['policy'] = None if self.policy is None else asdict(self.policy)
 
         return rv
 
@@ -2520,10 +2533,10 @@ class GSNodeQueryResponse(_MsgBase):
 
     @desc.setter
     def desc(self, value):
-        if isinstance(value, node_desc.NodeDescriptor):
+        if isinstance(value, NodeDescriptor):
             self._desc = value
         else:
-            self._desc = node_desc.NodeDescriptor.from_sdict(value)
+            self._desc = NodeDescriptor.from_sdict(value)
 
     def get_sdict(self):
         rv = super().get_sdict()
@@ -2930,7 +2943,7 @@ class SHProcessCreate(_MsgBase):
         if layout is None:
             self.layout = None
         elif isinstance(layout, dict):
-            self.layout = ResourceLayout(**pmi_info)
+            self.layout = ResourceLayout(**layout)
         elif isinstance(layout, ResourceLayout):
             self.layout = layout
         else:
@@ -3542,23 +3555,22 @@ class SHChannelsUp(_MsgBase):
 
     _tc = MessageTypes.SH_CHANNELS_UP
 
-    def __init__(self, tag, ip_addrs, host_id, host_name, shep_cd, gs_cd, idx=0, _tc=None):
+    def __init__(self, tag, node_desc, gs_cd, idx=0, _tc=None):
         super().__init__(tag)
-        self.ip_addrs = ip_addrs
-        self.host_id = host_id
-        self.host_name = host_name
-        self.shep_cd = shep_cd
+
+        self.idx = idx
+        if isinstance(node_desc, dict):
+            self.node_desc = NodeDescriptor.from_sdict(node_desc)
+        elif isinstance(node_desc, NodeDescriptor):
+            self.node_desc = node_desc
+
         # On the primary node the gs_cd is set to the base64 encoded gs channel descriptor.
         # Otherwise, it is ignored and presumably the empty string.
         self.gs_cd = gs_cd
-        self.idx = idx
 
     def get_sdict(self):
         rv = super().get_sdict()
-        rv['ip_addrs'] = self.ip_addrs
-        rv['host_id'] = self.host_id
-        rv['host_name'] = self.host_name
-        rv['shep_cd'] = self.shep_cd
+        rv['node_desc'] = self.node_desc.get_sdict()
         rv['gs_cd'] = self.gs_cd
         rv['idx'] = self.idx
         return rv
@@ -3785,7 +3797,7 @@ class SHFwdOutput(_MsgBase):
         return rv
 
     def __str__(self):
-        return f'{super().__str__()}, self.data={self.data!r}, self.p_uid={self.p_uid!r}, self.fd_num={self.fd_num!r}'
+        return f'{super().__str__()}, self.data={self.data!r}, self.p_uid={self.p_uid!r}, self.pid={self.pid!r}, self.fd_num={self.fd_num!r}'
 
 
 class SHDumpState(_MsgBase):
@@ -4096,31 +4108,15 @@ class LAChannelsInfo(_MsgBase):
         self.transport = dfacts.TransportAgentOptions.from_str(transport)
         self.num_gw_channels = num_gw_channels
 
-        msg = "LAChannelsInfo nodes_desc requires list of dmsg.SHChannelsUp or already arranged dict"
-        if isinstance(nodes_desc, list):
-            sh_chs = all(isinstance(node_desc, SHChannelsUp) for node_desc in nodes_desc)
-            if not sh_chs:
-                raise TypeError(msg)
-            self.nodes_desc = {node.idx: node_desc.NodeDescriptor(host_name=node.host_name,
-                                                                  name=node.host_name,
-                                                                  host_id=node.host_id,
-                                                                  ip_addrs=node.ip_addrs,
-                                                                  shep_cd=node.shep_cd,
-                                                                  port=port)
-                               for node in nodes_desc}
-        elif isinstance(nodes_desc, dict):
-            self.nodes_desc = {key: node_desc.NodeDescriptor(name=nodes_desc[key]['name'] if 'name' in nodes_desc[key] else None,
-                                                             host_name=nodes_desc[key]['host_name'],
-                                                             host_id=nodes_desc[key]['host_id'],
-                                                             ip_addrs=nodes_desc[key]['ip_addrs'],
-                                                             shep_cd=nodes_desc[key]['shep_cd'])
-                               for key in nodes_desc.keys()}
-        else:
-            raise TypeError(msg)
+        self.nodes_desc = {}
+        for key in nodes_desc.keys():
+            if isinstance(nodes_desc[key], dict):
+                self.nodes_desc[key] = NodeDescriptor.from_sdict(nodes_desc[key])
+            elif isinstance(nodes_desc[key], NodeDescriptor):
+                self.nodes_desc[key] = nodes_desc[key]
 
-    def serialize(self):
-        j = {'COMPRESSED': base64.b64encode(zlib.compress(json.dumps(self.get_sdict()).encode('utf-8'))).decode('ascii')}
-        return json.dumps(j)
+            if port is not None:
+                self.nodes_desc[key].port = port
 
     def get_sdict(self):
         rv = super().get_sdict()
@@ -4340,13 +4336,55 @@ class FENodeIdxBE(_MsgBase):
 
     _tc = MessageTypes.FE_NODE_IDX_BE
 
-    def __init__(self, tag, node_index, _tc=None):
+    def __init__(self,
+                 tag,
+                 node_index,
+                 forward: Optional[dict['str', Union[NodeDescriptor, dict]]] = None,
+                 send_desc: Optional[Union[B64, str]] = None,
+                 _tc=None):
+
         super().__init__(tag)
         self.node_index = int(node_index)
+        self.forward = forward
+        self.send_desc = send_desc
+
+    @property
+    def forward(self):
+        return self._forward
+
+    @forward.setter
+    def forward(self, value):
+        try:
+            self._forward = {}
+            for idx, node in value.items():
+                if isinstance(node, NodeDescriptor):
+                    self._forward[idx] = node
+                else:
+                    self._forward[idx] = NodeDescriptor.from_sdict(node)
+        except (TypeError, AttributeError):
+            self._forward = value
+
+    @property
+    def send_desc(self):
+        return self._send_desc
+
+    @send_desc.setter
+    def send_desc(self, value):
+        if isinstance(value, str):
+            self._send_desc = B64.from_str(value)
+        else:
+            self._send_desc = value
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['node_index'] = self.node_index
+        try:
+            rv['forward'] = self.forward.copy()
+            for idx in self.forward.keys():
+                rv['forward'][idx] = self.forward[idx].get_sdict()
+        except AttributeError:
+            rv['forward'] = self.forward
+        rv['send_desc'] = str(self.send_desc)
         return rv
 
 
@@ -4479,6 +4517,40 @@ class LAExit(_MsgBase):
     def get_sdict(self):
         rv = super().get_sdict()
         rv['sigint'] = self.sigint
+        return rv
+
+
+class TAUpdateNodes(_MsgBase):
+    """
+            Refer to :ref:`definition<taupdatenodes>` and :ref:`Common Fields<cfs>` for a description of the
+            message structure.
+
+    """
+    _tc = MessageTypes.HSTA_UPDATE_NODES
+
+    def __init__(self, tag,
+                 nodes: list[Union[NodeDescriptor, dict]],
+                 _tc=None):
+        super().__init__(tag)
+        self.nodes = nodes
+
+    @property
+    def nodes(self):
+        return self._nodes
+
+    @nodes.setter
+    def nodes(self, value):
+        self._nodes = []
+        for node in value:
+            if isinstance(node, NodeDescriptor):
+                self._nodes.append(node)
+            else:
+                self._nodes.append(NodeDescriptor.from_sdict(node))
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['nodes'] = [node.get_sdict() for node in self.nodes]
+
         return rv
 
 
@@ -4615,7 +4687,8 @@ all_message_classes = [GSProcessCreate,
                        GSGroupCreateAddTo,
                        GSGroupCreateAddToResponse,
                        GSGroupDestroyRemoveFrom,
-                       GSGroupDestroyRemoveFromResponse]
+                       GSGroupDestroyRemoveFromResponse,
+                       TAUpdateNodes]
 
 mt_dispatch = {cls._tc.value: cls for cls in all_message_classes}
 
@@ -4623,14 +4696,15 @@ mt_dispatch = {cls._tc.value: cls for cls in all_message_classes}
 def parse(jstring, restrict=None):
 
     try:
+        # if a compressed message, decompress to get the service message
+        jstring = zlib.decompress(base64.b64decode(jstring))
+    except zlib.error as zerr:
+        pass
+
+    try:
         sdict = json.loads(jstring)
     except TypeError as e:
         raise TypeError(f'The message "{jstring}" could not be parsed.') from e
-
-    # if a compressed message, decompress to get the service message
-    if 'COMPRESSED' in sdict:
-        jstring = zlib.decompress(base64.b64decode(sdict['COMPRESSED']))
-        sdict = json.loads(jstring)
 
     typecode = sdict['_tc']
 

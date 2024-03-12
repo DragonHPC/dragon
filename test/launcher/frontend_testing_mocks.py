@@ -7,6 +7,7 @@ from dragon.launcher.network_config import NetworkConfig
 
 from dragon.infrastructure.process_desc import ProcessDescriptor
 from dragon.infrastructure.connection import Connection, ConnectionOptions
+from dragon.infrastructure.node_desc import NodeDescriptor
 from dragon.infrastructure.parameters import POLICY_INFRASTRUCTURE
 from dragon.infrastructure import facts as dfacts
 from dragon.infrastructure import messages as dmsg
@@ -139,12 +140,12 @@ def send_shchannelsup(nodes, mpool):
         else:
             node['gs_ch'] = None
             gs_cd = None
-
+        node_desc = NodeDescriptor(host_name=node['hostname'],
+                                   host_id=host_id,
+                                   ip_addrs=node['ip_addrs'],
+                                   shep_cd=B64.bytes_to_str(node['ls_ch'].serialize()))
         ch_up_msg = dmsg.SHChannelsUp(tag=next_tag(),
-                                      host_name=node['hostname'],
-                                      host_id=host_id,
-                                      ip_addrs=node['ip_addrs'],
-                                      shep_cd=B64.bytes_to_str(node['ls_ch'].serialize()),
+                                      node_desc=node_desc,
                                       gs_cd=gs_cd,
                                       idx=node['node_index'])
         log.info(f'construct SHChannelsUp: {ch_up_msg}')
@@ -191,6 +192,23 @@ def handle_gsprocesscreate(primary_conn):
                                             ref=proc_create.tag,
                                             err=dmsg.GSProcessCreateResponse.Errors.SUCCESS,
                                             desc=gs_desc)
+    primary_conn.send(response.serialize())
+
+
+def handle_gsprocesscreate_error(primary_conn):
+    '''Indicate an error with GSProcessCreate'''
+
+    log = logging.getLogger('handle_gsprocesscreate_error')
+    proc_create = dmsg.parse(primary_conn.recv())
+    log.info('presumably got GSProcessCreate')
+    assert isinstance(proc_create, dmsg.GSProcessCreate)
+    log.info('recvd GSProccessCreate')
+
+    # Send error response
+    response = dmsg.GSProcessCreateResponse(tag=next_tag(),
+                                            ref=proc_create.tag,
+                                            err=dmsg.GSProcessCreateResponse.Errors.FAIL,
+                                            err_info="Error starting Head Process")
     primary_conn.send(response.serialize())
 
 

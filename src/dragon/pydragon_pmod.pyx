@@ -81,7 +81,7 @@ cdef class PMOD:
         for hostname in hostname_list:
             hostname_bytes = hostname.encode('utf-8')
             hostname_c = hostname_bytes
-            strncpy(&self._job_params.hostnames[i].name[0], hostname_c, PMOD_MAX_HOSTNAME_LEN)
+            strncpy(&self._job_params.hostnames[i].name[0], hostname_c, PMOD_MAX_HOSTNAME_LEN-1)
             i = i + 1
 
 

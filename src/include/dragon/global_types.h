@@ -22,6 +22,12 @@ typedef uint8_t dragonUUID[16];
 typedef struct timespec timespec_t;
 typedef struct timeval timeval_t;
 
+/* a few global constants */
+/* This following strings must be identical in facts.py */
+#define DRAGON_NUM_GW_ENV_VAR "DRAGON_NUM_GW_CHANNELS_PER_NODE"
+#define DRAGON_DEFAULT_PD_VAR "DRAGON_DEFAULT_PD"
+#define DRAGON_INF_PD_VAR "DRAGON_INF_PD"
+
 /**
  * @brief Wait Mode constants
  *
@@ -73,6 +79,20 @@ typedef enum dragonChannelSendReturnWhen_st {
     DRAGON_CHANNEL_SEND_RETURN_WHEN_RECEIVED,
     DRAGON_CHANNEL_SEND_RETURN_WHEN_NONE
 } dragonChannelSendReturnWhen_t;
+
+/**
+ * @brief Constants indicating a type of channel operation.
+ *
+ * Constants for send_msg, get_msg and poll channels operations. Currently,
+ * these are used to help selet a gateway index for a channel operation,
+ * with the constant's value specifying an offset into a gateway group.
+ **/
+
+typedef enum dragonChannelOpType_st {
+    DRAGON_OP_TYPE_SEND_MSG = 0,
+    DRAGON_OP_TYPE_GET_MSG,
+    DRAGON_OP_TYPE_POLL
+} dragonChannelOpType_t;
 
 /**
  * @brief This is the type of the release function for dragon waiting.

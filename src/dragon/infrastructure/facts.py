@@ -1,5 +1,6 @@
 """Specified constants and names used in the Dragon runtime.
 """
+import os
 import shlex
 import enum
 import sys
@@ -10,7 +11,14 @@ PREFIX = 'DRAGON_'
 # Number of gateway channels per node
 DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE = 0
 DRAGON_OVERLAY_DEFAULT_NUM_GW_CHANNELS_PER_NODE = 1
+
+# These three constants are repeated within C code. Any change
+# here requires a change in globals.h as well.
 NUM_GW_CHANNELS_PER_NODE_VAR = 'NUM_GW_CHANNELS_PER_NODE'
+DEFAULT_PD_VAR = 'DEFAULT_PD'
+INF_PD_VAR = 'INF_PD'
+
+NUM_GW_TYPES = 3
 # needed for naming convention for the gateway channels
 # should be unique on a given node, not globally
 # Note: there is also a dependency on dragon_channel_register_gateways_from_env()
@@ -18,11 +26,11 @@ GW_ENV_PREFIX = PREFIX + 'GW'
 
 # For environment variable passing, this set is the list of dragon parameters
 # in capital letters.
-env_vars = frozenset({'MODE', 'INDEX', 'DEFAULT_PD', 'INF_PD', 'LOCAL_SHEP_CD', 'LOCAL_BE_CD', 'GS_RET_CD',
+env_vars = frozenset({'MODE', 'INDEX', DEFAULT_PD_VAR, INF_PD_VAR, 'LOCAL_SHEP_CD', 'LOCAL_BE_CD', 'GS_RET_CD',
                  'SHEP_RET_CD', 'GS_CD', 'DEFAULT_SEG_SZ', 'INF_SEG_SZ', 'TEST', 'DEBUG', 'MY_PUID',
                  'BE_CUID', 'INF_WAIT_MODE', 'USER_WAIT_MODE', 'USER_RETURN_WHEN_MODE', 'INF_RETURN_WHEN_MODE',
                  'GW_CAPACITY', NUM_GW_CHANNELS_PER_NODE_VAR, 'TRANSPORT_AGENT', 'HSTA_MAX_EJECTION_MB', 'HSTA_MAX_GETMSG_MB',
-                 'PMOD_COMMUNICATION_TIMEOUT', 'BASEPOOL'})
+                 'PMOD_COMMUNICATION_TIMEOUT', 'BASEPOOL', 'OVERLAY_FANOUT', 'NET_CONF_CACHE'})
 
 
 # TODO:PE-37770  This list of names should NOT need to appear
@@ -614,3 +622,5 @@ DEFAULT_PMI_CONTROL_PORT = 8575
 DEFAULT_PORT_RANGE=1000
 
 # GS_DEFAULT_POLICY -- To prevent circular imports, this lives in policy_eval.py
+
+DEFAULT_NET_CONF_CACHE = os.path.join(os.getcwd(), ".dragon-net-conf")

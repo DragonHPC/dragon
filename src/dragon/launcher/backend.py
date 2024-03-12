@@ -21,7 +21,7 @@ from ..infrastructure import facts as dfacts
 from ..infrastructure import messages as dmsg
 from ..infrastructure.node_desc import NodeDescriptor
 from ..infrastructure.connection import Connection, ConnectionOptions
-from ..infrastructure.parameters import POLICY_INFRASTRUCTURE
+from ..infrastructure.parameters import POLICY_INFRASTRUCTURE, this_process
 from ..infrastructure.util import NewlineStreamWrapper, route
 
 
@@ -126,6 +126,12 @@ class LauncherBackEnd:
         # and its threads for routing values up and down the tree.
         self._shutdown = threading.Event()
         self._logging_shutdown = threading.Event()
+
+        # Only the primary launcher backend communicates with GlobalServices.
+        # Initialize gs_channel and gs_queue to None to enable us to verify that
+        # they are properly initialized before use.
+        self.gs_channel = None
+        self.gs_queue = None
 
     def __enter__(self):
         return self
@@ -265,6 +271,16 @@ class LauncherBackEnd:
             pass
 
         try:
+            log.debug('frontend_fwd_conns close')
+            for conn in self.frontend_fwd_conns.values():
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+        except Exception:
+            pass
+
+        try:
             log.debug('gs_queue close')
             self.gs_queue.close()
         except Exception:
@@ -321,6 +337,7 @@ class LauncherBackEnd:
         try:
             log.debug('be_mpool destroy')
             self.be_mpool.destroy()
+            del self.be_mpool
         except Exception:
             pass
 
@@ -398,14 +415,28 @@ class LauncherBackEnd:
             pass
         self.local_inout.close()
         log.debug('local_inout closed')
-        self.local_ch_in.destroy()
-        log.debug('local_ch_in destroyed')
-        self.local_ch_out.destroy()
-        log.debug('local_ch_out destroyed')
-        self.be_inbound.destroy()
-        log.debug('be_inbound destroyed')
-        self.be_mpool.destroy()
-        log.debug('be_mpool destroyed')
+
+        for conn in self.frontend_fwd_conns.values():
+            conn.close()
+        log.debug('closed all backend forwarding connections')
+
+        try:
+            self.local_ch_in.destroy()
+            log.debug('local_ch_in destroyed')
+        except Exception:
+            pass
+
+        try:
+            self.local_ch_out.destroy()
+            log.debug('local_ch_out destroyed')
+        except Exception:
+            pass
+
+        try:
+            self.be_inbound.destroy()
+            log.debug('be_inbound destroyed')
+        except Exception:
+            pass
 
         log.info('overlay infra down')
 
@@ -423,6 +454,56 @@ class LauncherBackEnd:
 
         # Return the file descriptors to make mocking easier
         return ls_proc, ls_proc.stdin.fileno(), ls_proc.stdout.fileno()
+
+    def _get_my_child_nodes(self, index, nnodes, fanout):
+        """Get the node IDs I need to forward bcast messages to
+
+        :param index: my node index, assume 0-indexed counting (ie: start counting at 0)
+        :type index: int
+        :param nnodes: number of nodes on backend
+        :type nnodes: int
+        :param fanout: number of nodes a given node will send to
+        :type fanout: int
+        """
+
+        return list(range(fanout * (index+1), min(nnodes, fanout * (index+1) + fanout)))
+
+    def _construct_child_forwarding(self,
+                                    node_info: dict[NodeDescriptor]):
+        """Set up any infrastructure messages I must forward to other backend nodes
+
+        :param node_info: node indices and channel descriptors
+        :type node_info: dict[NodeDescriptor]
+        """
+
+        log = logging.getLogger(dls.LA_BE).getChild('_construct_child_forwarding')
+
+        # Figure out what nodes I need to forward to
+        nnodes = len(node_info)
+        fanout = this_process.overlay_fanout
+        fwd_conns = {}
+
+        # I need to work out what nodes I'm responsible for
+        log.info(f'getting children for fan {fanout} and {nnodes} nodes. My idx = {self.node_idx}')
+        ids_to_forward = self._get_my_child_nodes(self.node_idx, nnodes, fanout)
+        if 0 == len(ids_to_forward):
+            # my index is in the last tree layer, I don't need to forward
+            log.info(f'{self.node_idx} is a leaf node')
+            return fwd_conns
+
+        log.info(f'{self.node_idx} forward to nodes {ids_to_forward}')
+
+        conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2 ** 16)
+        conn_policy = POLICY_INFRASTRUCTURE
+        for idx in ids_to_forward:
+            outbound = Channel.attach(B64.from_str(node_info[str(idx)].overlay_cd).decode(),
+                                      mem_pool=self.be_mpool)
+            fwd_conns[idx] = Connection(outbound_initializer=outbound,
+                                        options=conn_options,
+                                        policy=conn_policy)
+            fwd_conns[idx].ghost = True
+
+        return fwd_conns
 
     def run_startup(self,
                     arg_ip_addr: str,
@@ -550,6 +631,28 @@ class LauncherBackEnd:
             log.error(f'node_idx = {self.node_idx} | invalid node id, error starting LA BE')
         log.debug(f'my node index is {self.node_idx}')
 
+        # Update my overlay network with the extra IP and host ID info:
+        log.debug(f'Before sending TAUpdateNodes')
+        update_msg = dmsg.TAUpdateNodes(tag=dlutil.next_tag(),
+                                        nodes=list(fe_node_idx_msg.forward.values()))
+        log.debug(f'sending TAUpdateNodes to overlay: {update_msg.uncompressed_serialize()}')
+        self.local_inout.send(update_msg.serialize())
+
+        # If I'm a tree child of the frontend, I need to forward infrastructure messages to
+        # specific children of my own
+        self.frontend_fwd_conns = self._construct_child_forwarding(fe_node_idx_msg.forward)
+        log.debug(f'connections to forward to: {self.frontend_fwd_conns}')
+
+        # If I have any FENodeIdxBE messages to propogate, do it now,
+        # filling in that node's index as well as my channel descriptor, for when
+        # we eventually have a hierarchical reduce implemented
+        for idx, conn in self.frontend_fwd_conns.items():
+            fe_node_idx = dmsg.FENodeIdxBE(tag=dlutil.next_tag(),
+                                        node_index=int(idx),
+                                        forward=fe_node_idx_msg.forward,
+                                        send_desc=self.be_inbound)
+            conn.send(fe_node_idx.serialize())
+
         # This starts the "down the tree" router.
         log.debug('starting frontend monitor')
         recv_msgs_from_overlaynet_thread_args = (self.la_be_stdin,)
@@ -651,6 +754,8 @@ class LauncherBackEnd:
                     break
                 la_be_stdin.send(fe_msg.serialize())
                 log.info(f'received {type(fe_msg)} from Launcher FE and sent to Launcher BE')
+
+                # Forwad the message to any
                 if isinstance(fe_msg, dmsg.BEHalted):
                     log.debug("Exiting receive_messages_from_overlaynet")
                     running = False
@@ -698,6 +803,8 @@ class LauncherBackEnd:
                 # Do any specific to the message handling then forward it along
                 self.to_overlaynet_log.info(f"received {type(msg)}")
                 if type(msg) in LauncherBackEnd._DTBL:
+                    if isinstance(msg, dmsg.SHFwdOutput):
+                        self.to_overlaynet_log.debug(f"{msg}")
                     self.infra_out.send(msg.serialize())
                     self.to_overlaynet_log.info(f"forwarded {type(msg)} to frontend")
 
@@ -810,9 +917,29 @@ class LauncherBackEnd:
         # Close infrasructure communication
         self._close_overlay_comms()
 
+    def forward_to_leaves(self, msg):
+        """Forward an infrastructure messages to leaves I'm responsible for
+
+        :param msg: Infrastructure message
+        :type msg: dragon.infrastructure.messages._MsgBase
+        """
+        for conn in self.frontend_fwd_conns.values():
+            conn.send(msg.serialize())
+
     @route(dmsg.GSProcessCreate, _DTBL)
     def handle_gs_process_create(self, msg: dmsg.GSProcessCreate):
-        self.msg_log.info('received a GSProcess Create in the Launcher Backend and forwarded to GS.')
+
+        # The GSProcessCreate message should only be received by the Primary Launcher Backend process.
+        # Verify that we're the primary and that our connection to Global Services is established.
+        if (not self.is_primary) or self.transport_test_env:
+            self.msg_log.error('Non-primary LA_BE received GSProcessCreate Request. Cannot forward request to GlobalServices.')
+            raise RuntimeError('Non-primary LA_BE received GSProcessCreate Request.')
+
+        if not self.gs_queue:
+            self.msg_log.error('Primary LA_BE received GSProcessCreate Request but gs_queue not established. Cannot forward request to GlobalServices.')
+            raise RuntimeError('Primary LA_BE received GSProcessCreate Request but gs_queue not established.')
+
+        self.msg_log.info('Primary la_be received a GSProcess Create in the Launcher Backend and forwarded to GS.')
         self.gs_queue.send(msg.serialize())
 
     @route(dmsg.GSProcessCreateResponse, _DTBL)
@@ -830,6 +957,12 @@ class LauncherBackEnd:
     @route(dmsg.GSTeardown, _DTBL)
     def handle_gs_teardown(self, msg: dmsg.GSTeardown):
 
+        # The GSTeardown message should only be received by the Primary Launcher Backend process.
+        # Verify that we're the primary and that our connection to Global Services is established.
+        if (not self.is_primary) or self.transport_test_env:
+            self.msg_log.error('Non-primary LA_BE received GSTeardown Request. Cannot forward request to GlobalServices.')
+            raise RuntimeError('Non-primary LA_BE received GSTeardown Request.')
+
         # If we've been told to teardown before infrastructure is fully up,
         # we may be in trouble, so guard against that
         self.msg_log.info('m4.1 primary la_be received GSTeardown')
@@ -844,6 +977,10 @@ class LauncherBackEnd:
     def handle_sh_halt_ta(self, msg: dmsg.SHHaltTA):
         self.msg_log.info('m7.1 la_be received SHHaltTA')
         try:
+            # Forward to leaves
+            self.forward_to_leaves(msg)
+
+            # Try forwarding ot local services
             if self._state >= BackendState.LS_UP:
                 self.ls_queue.send(msg.serialize())
                 self.msg_log.info('m7.2 la_be forwarded SHHaltTA to LS')
@@ -857,15 +994,23 @@ class LauncherBackEnd:
 
     @route(dmsg.SHTeardown, _DTBL)
     def handle_sh_teardown(self, msg: dmsg.SHTeardown):
+
         self.msg_log.info('m11.1 la_be received SHTeardown')
-        self.msg_log.info('m11.2 la_be forwarded SHTeardown to LS')
+
+        self.forward_to_leaves(msg)
+        self.msg_log.info('forward shteardown to backend leaves')
+
         self.ls_queue.send(msg.serialize())
+        self.msg_log.info('m11.2 la_be forwarded SHTeardown to LS')
 
     @route(dmsg.BEHalted, _DTBL)
     def handle_be_halted(self, msg: dmsg.BEHalted):
         self.msg_log.info("m14 la_be received dmsg.BEHalted")
         self._shutdown.set()
         self.la_be_stdout.send(msg.serialize())
+
+        self.forward_to_leaves(msg)
+        self.msg_log.info('forward BEHalted to backend leaves')
 
         # This is the dmsg.BEHalted
         self.ls_stdin.send(msg.serialize())
@@ -893,7 +1038,10 @@ class LauncherBackEnd:
         if self.is_primary and (not self.transport_test_env):
             self.gs_channel = Channel.attach(B64.from_str(msg.gs_cd).decode())
             self.gs_queue = Connection(outbound_initializer=self.gs_channel, policy=POLICY_INFRASTRUCTURE)
-            self.msg_log.debug(f'Created gs_queue: {self.gs_queue}')
+            self.msg_log.debug(f'Primary la_be created gs_queue: {self.gs_queue}')
+
+        # Forward the message to my leaves
+        self.forward_to_leaves(msg)
 
         # Forward the LAChannelsInfo Message to Local Services
         self.ls_queue.send(msg.serialize())

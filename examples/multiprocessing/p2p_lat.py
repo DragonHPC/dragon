@@ -5,7 +5,7 @@ import multiprocessing as mp
 import time
 import argparse
 
-BURN_ITERS = 2
+BURN_ITERS = 1
 
 
 def worker_conn(id, send_link, recv_link, result_link, msg_size, total_iterations, use_bytes):
@@ -78,7 +78,7 @@ def run_p2p_lat(iterations=100, max_msg_sz=1024, use_bytes=False, with_queues=Fa
         right_left_link = mp.Pipe(duplex=False)
 
     msg_sz = 2
-    print(f"Msglen [B]   Lat [usec]")
+    print(f"Msglen [B]   Lat [usec]", flush=True)
     while msg_sz <= max_msg_sz:
         if with_queues:
             proc0 = mp.Process(target=worker_queue, args=(0, q1, q0, result_links[0][1], msg_sz, iterations))
@@ -120,7 +120,7 @@ def run_p2p_lat(iterations=100, max_msg_sz=1024, use_bytes=False, with_queues=Fa
         proc0.join()
         proc1.join()
 
-        print(f"{msg_sz}  {time_avg}")
+        print(f"{msg_sz}  {time_avg}", flush=True)
 
         msg_sz *= 2
 
@@ -146,11 +146,11 @@ if __name__ == "__main__":
     my_args = parser.parse_args()
 
     if my_args.dragon:
-        print("using Dragon")
+        print("using Dragon", flush=True)
         mp.set_start_method("dragon")
 
     else:
-        print("using multiprocessing")
+        print("using multiprocessing", flush=True)
         mp.set_start_method("spawn")
 
     run_p2p_lat(

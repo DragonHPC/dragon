@@ -21,6 +21,7 @@ from ..infrastructure import process_desc as pdesc
 from ..infrastructure import facts as dfacts
 from ..infrastructure import connection as dconn
 from ..utils import B64
+from ..infrastructure.policy import Policy
 import os
 
 log = logging.getLogger('process_api')
@@ -180,7 +181,7 @@ def _create_stdio_connections(the_desc):
 
 def get_create_message(exe, run_dir, args, env, user_name='', options=None,
            stdin=None, stdout=None, stderr=None, group=None,
-           user=None, umask=- 1, pipesize=- 1, pmi_required=False):
+           user=None, umask=- 1, pipesize=- 1, pmi_required=False, policy=None):
     """Return a GSProcessCreate object.
 
     :param exe: executable to run
@@ -197,6 +198,7 @@ def get_create_message(exe, run_dir, args, env, user_name='', options=None,
     :param umask: Not used
     :param pipesize: Set the channel capacity. Default = -1.
     :param pmi_required: This process is part of a Dragon managed MPI/PMI application group.
+    :param policy: If a policy other than the global default is to be used for this process.
     :return: GSProcessCreate message object
     """
 
@@ -206,6 +208,12 @@ def get_create_message(exe, run_dir, args, env, user_name='', options=None,
     if env is not None:
         the_env.update(env) # layer on the user supplied environment.
 
+    # Ensure that the executable is a string and not a bytes object
+    try:
+        exe = exe.decode()
+    except (UnicodeDecodeError, AttributeError):
+        pass
+
     log.debug('creating GSProcessCreate')
     return dmsg.GSProcessCreate(tag=das.next_tag(),
                                 p_uid=this_process.my_puid,
@@ -214,7 +222,8 @@ def get_create_message(exe, run_dir, args, env, user_name='', options=None,
                                 rundir=run_dir, user_name=user_name,
                                 options=options, stdin=stdin, stdout=stdout,
                                 stderr=stderr, group=group, user=user, umask=umask,
-                                pipesize=pipesize, pmi_required=pmi_required)
+                                pipesize=pipesize, pmi_required=pmi_required,
+                                policy=policy)
 
 
 def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_name='', options=None,
@@ -255,6 +264,12 @@ def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_
     if env is not None:
         the_env.update(env) # layer on the user supplied environment.
 
+    # Ensure that the executable is a string and not a bytes object
+    try:
+        exe = exe.decode()
+    except (UnicodeDecodeError, AttributeError):
+        pass
+
     log.debug('creating GSProcessCreate')
 
     if argdata is None:
@@ -290,7 +305,7 @@ def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_
 
 def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
            stdin=None, stdout=None, stderr=None, group=None,
-           user=None, umask=- 1, pipesize=- 1, pmi_required=False):
+           user=None, umask=- 1, pipesize=- 1, pmi_required=False, policy=None):
     """Asks Global Services to create a new process.
 
     :param exe: executable to run
@@ -308,8 +323,12 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
     :param umask: Not used
     :param pipesize: Set the channel capacity. Default = -1.
     :param pmi_required: This process is part of a Dragon managed MPI/PMI application group.
+    :param policy: If a policy other than the global default is to be used for this process.
     :return: ProcessDescriptor object
     """
+
+    if policy is None:
+        policy = Policy.global_policy()
 
     # When a new process is requested we want to check to see if we are supposed to
     # redirect output from new processes to the parent process (this process). If so, we
@@ -343,6 +362,7 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
         umask=umask,
         pipesize=pipesize,
         pmi_required=pmi_required,
+        policy=policy,
     )
 
     reply_msg = das.gs_request(req_msg)

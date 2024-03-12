@@ -17,3 +17,4 @@ sphinx-copybutton
 vacuum
 wheel
 jupyter
+parsl

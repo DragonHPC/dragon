@@ -132,7 +132,7 @@ _bcast_init_obj(void* obj_ptr, size_t alloc_sz, size_t max_payload_sz, size_t ma
     size_t diff = (((void*)header->payload_area) + max_payload_sz) - obj_ptr;
     if (diff > alloc_sz) {
         char err_str[300];
-        sprintf((char*)&err_str, "The provided size was %lu bytes and the required size was %lu bytes.\nThere is not enough room to allocate the requested bcast object.", alloc_sz, diff);
+        snprintf(err_str, 299, "The provided size was %lu bytes and the required size was %lu bytes.\nThere is not enough room to allocate the requested bcast object.", alloc_sz, diff);
         err_return(DRAGON_INVALID_ARGUMENT, err_str);
     }
 
@@ -1487,6 +1487,8 @@ dragon_bcast_notify_signal(dragonBCastDescr_t* bd, const dragonWaitMode_t wait_m
 
     /* signal notification is requested. */
     dragonBCastSignalArg_t* arg = malloc(sizeof(dragonBCastSignalArg_t));
+    if (arg == NULL)
+        err_return (DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for malloc'ed thread argument.");
 
     if (payload_sz == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The BCast notify payload_sz argument cannot be NULL when signal notification is requested.");
@@ -1645,6 +1647,9 @@ dragon_bcast_trigger_one(dragonBCastDescr_t* bd, const timespec_t* timer, const 
 {
     dragonError_t err;
     err = dragon_bcast_trigger_some(bd, 1, timer, payload, payload_sz);
+
+    if (err == DRAGON_BCAST_NO_WAITERS)
+        no_err_return(DRAGON_BCAST_NO_WAITERS);
 
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Call to trigger some of 1 did not succeed.");
@@ -1861,8 +1866,14 @@ dragon_bcast_trigger_all(dragonBCastDescr_t* bd, const timespec_t* timer, const 
 
     err = dragon_bcast_trigger_some(bd, INT_MAX, timer, payload, payload_sz);
 
-    if (err != DRAGON_SUCCESS)
-        err_return(err, "Call to trigger some with INT_MAX failed.");
+    if (err == DRAGON_BCAST_NO_WAITERS)
+        no_err_return(DRAGON_BCAST_NO_WAITERS);
+
+    if (err != DRAGON_SUCCESS) {
+        char err_str[200];
+        snprintf(err_str, 199, "Call to trigger some with INT_MAX failed with %s.", dragon_get_rc_string(err));
+        err_return(err, err_str);
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }

@@ -10,7 +10,6 @@ import unittest
 import test.support
 import test.support.script_helper
 from test.support import hashlib_helper
-from test import support
 
 import dragon  # DRAGON import before multiprocessing
 
@@ -261,7 +260,7 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
                 self.assertIn(value, expected_values)
                 expected_values.remove(value)
 
-    
+
     def test_make_pool(self):
         expected_error = RemoteError if self.TYPE == "manager" else ValueError
 
@@ -424,9 +423,9 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
         # force state to RUN to emit ResourceWarning in __del__()
         pool._state = multiprocessing.pool.RUN
 
-        with support.check_warnings(("unclosed running multiprocessing pool", ResourceWarning)):
+        with test.support.check_warnings(("unclosed running multiprocessing pool", ResourceWarning)):
             pool = None
-            support.gc_collect()
+            test.support.gc_collect()
 
 
 def raising():
@@ -487,7 +486,6 @@ class WithProcessesTestPoolWorkerLifetime(BaseTestCase, ProcessesMixin, unittest
 
     # DRAGON ALLOWED_TYPES = ('processes', )
 
-    @unittest.skip(f"bug filed CIRRUS-1473")
     def test_pool_worker_lifetime(self):
         p = multiprocessing.Pool(3, maxtasksperchild=10)
         self.assertEqual(3, len(p._pool))
@@ -895,9 +893,9 @@ class WithManagerTestPool(BaseTestCase, ManagerMixin, unittest.TestCase):
         # force state to RUN to emit ResourceWarning in __del__()
         pool._state = multiprocessing.pool.RUN
 
-        with support.check_warnings(("unclosed running multiprocessing pool", ResourceWarning)):
+        with test.support.check_warnings(("unclosed running multiprocessing pool", ResourceWarning)):
             pool = None
-            support.gc_collect()
+            test.support.gc_collect()
 
 
 @unittest.skip("DRAGON: Threads not implemented")
@@ -1245,9 +1243,9 @@ class WithThreadsTestPool(BaseTestCase, ThreadsMixin, unittest.TestCase):
         # force state to RUN to emit ResourceWarning in __del__()
         pool._state = multiprocessing.pool.RUN
 
-        with support.check_warnings(("unclosed running multiprocessing pool", ResourceWarning)):
+        with test.support.check_warnings(("unclosed running multiprocessing pool", ResourceWarning)):
             pool = None
-            support.gc_collect()
+            test.support.gc_collect()
 
 # DRAGON
 if __name__ == "__main__":

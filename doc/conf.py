@@ -24,8 +24,8 @@ sys.path.insert(0, os.path.abspath("."))
 # -- Project information -----------------------------------------------------
 
 project = "Dragon"
-DragonVersion = "0.61"
-copyright = "2023, Hewlett Packard Enterprise"
+DragonVersion = "0.8"
+copyright = "2024, Hewlett Packard Enterprise"
 author = "Michael Burke, Eric Cozzi, Zach Crisler, Julius Donnert, Veena Ghorakavi, Nick Hill, Maria Kalantzi, Ben Keen, Kent D. Lee, Pete Mendygral, Davin Potts and Nick Radcliffe"
 
 # -- General configuration ---------------------------------------------------

@@ -4,14 +4,14 @@ CFLAGS ?= -fPIC -Wall -Ofast -fomit-frame-pointer
 INCLUDE = -I $(DRAGON_INCLUDE_DIR)
 LIBS = -L $(DRAGON_LIB_DIR)
 
-BIN_FILES = test_ch test_bch perf_fch test_send test_poll test_peek_pop test_channelsets test_wrong test_gateways test_gateway_messages
+BIN_FILES = test_ch test_bch perf_fch test_send test_poll test_peek_pop test_channelsets test_wrong test_gateways test_gateway_messages test_fli
 
 %.c.o: %.c
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
 default: build
 
-build: test_ch test_bch perf_fch test_send test_poll test_channelsets test_wrong test_gateways test_gateway_messages
+build: test_ch test_bch perf_fch test_send test_poll test_channelsets test_wrong test_gateways test_gateway_messages test_fli
 
 test_ch: test_ch.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_ch $< $(LIBS) -ldragon -ldl
@@ -33,6 +33,9 @@ perf_fch: perf_fch.c.o
 
 test_channelsets: test_channelsets.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_channelsets $< $(LIBS) -ldragon -ldl
+
+test_fli: test_fli.c.o
+	$(CC) $(INCLUDE) $(CFLAGS) -o test_fli $< $(LIBS) -ldragon -ldl
 
 test_gateways: test_gateways.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_gateways $< $(LIBS) -ldragon -ldl

@@ -4,7 +4,7 @@ shared objects are separated out from the Dragon Python wheel file.  This is to 
 Dragon runtime environment from other languages, such as Fortran/C/C++.
 
 Before you can run programs using Dragon, you must set up the run-time for your
-environment. You must have Python 3.9 installed and it must be in your path
+environment. You must have Python 3.9, 3.10, or 3.11 installed and it must be in your path
 somewhere. A common choice is to use a Python virtual environment, which can be initialized
 from a base Python 3.9+ with:
 
@@ -17,7 +17,7 @@ are relative to the directory that contains the README.md.
 
 The `dragon-*.whl` file must be pip3 installed once for your environment.
 
-        pip3 install --force-reinstall dragon-0.61-cp39-cp39-linux_x86_64.whl
+        pip3 install --force-reinstall dragon-0.8-*.whl
 
 
 Check and possibly update that `$PATH` is has the location of pip installed

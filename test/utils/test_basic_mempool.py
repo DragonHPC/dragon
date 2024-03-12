@@ -26,7 +26,7 @@ DEFAULT_UID = 123456
 def mk_remote_mem_ser(local_mem_ser):
     mem_ser_array = bytearray(local_mem_ser)
     mem_ser_array[8] = 99 # change m_uid
-    mem_ser_array[16] = 99 # change hostid
+    mem_ser_array[16] = mem_ser_array[16] ^ 99 # change hostid
     mem_ser_remote = bytes(mem_ser_array)
     return mem_ser_remote
 
@@ -39,7 +39,7 @@ def mk_remote_mem_ser(local_mem_ser):
 def mk_remote_pool_ser(local_pool_ser):
     pool_ser_array = bytearray(local_pool_ser)
     pool_ser_array[0] = 99 # change m_uid
-    pool_ser_array[8] = 99 # change hostid
+    pool_ser_array[8] = pool_ser_array[8] ^ 99 # change hostid
     pool_ser_remote = bytes(pool_ser_array)
     return pool_ser_remote
 

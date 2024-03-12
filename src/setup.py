@@ -17,10 +17,17 @@ from dragon.cli import entry_points
 ROOTDIR = str(Path(__file__).parent)
 
 
+def make_relative_rpath_args(path):
+    """Construct platform-appropriate RPATH to support binary
+    wheels that ship with libdragon.so, etc."""
+    return ["-Wl,-rpath,$ORIGIN/" + path]
+
+
 DragonExtension = partial(Extension,
     include_dirs=[f'{ROOTDIR}/lib', f'{ROOTDIR}/include'],
     library_dirs=[f'{ROOTDIR}/lib'],
     libraries=['dragon', 'rt'],
+    extra_link_args=make_relative_rpath_args("lib"),
 )
 
 
@@ -36,6 +43,7 @@ extensions = [
     DragonExtension("dragon.dlogging.logger", ["dragon/dlogging/pydragon_logging.pyx"]),
     DragonExtension("dragon.pmod", ["dragon/pydragon_pmod.pyx"]),
     DragonExtension("dragon.perf", ["dragon/pydragon_perf.pyx"]),
+    DragonExtension("dragon.fli", ["dragon/pydragon_fli.pyx"]),
     Extension(
         "dragon.launcher.pmsgqueue",
         ["dragon/launcher/pydragon_pmsgqueue.pyx"],
@@ -58,6 +66,18 @@ class build(_build):
         self.cythonize = 0
 
     def run(self):
+        rootdir = Path(ROOTDIR)
+        lib_tempdir = rootdir / 'dragon' / 'lib'
+        try:
+            # In order for setuptools to include files in a wheel, those
+            # files must be in f'{ROOTDIR}/dragon' or a subdirectory; we
+            # create a temporary symlink to point at f'{ROOTDIR}/lib' to
+            # include 'libdragon.so' etc. in the binary wheel.
+            lib_tempdir.symlink_to(rootdir / 'lib')
+        except:
+            if not lib_tempdir.is_symlink():
+                raise
+
         _cythonize = partial(cythonize,
             nthreads=int(os.environ.get('DRAGON_BUILD_NTHREADS', os.cpu_count())),
             show_all_warnings=True,
@@ -94,6 +114,7 @@ class build(_build):
             build_ext_options['inplace'] = ('setup script', 0)
 
         super().run()
+        lib_tempdir.unlink()
 
 
 class build_py(_build_py):
@@ -127,7 +148,7 @@ class build_py(_build_py):
                 package_dir = packages[package]
             except KeyError:
                 package_dir = self.get_package_dir(package)
-                # We explicitly do not what to automatically add __init__.py,
+                # We explicitly do not want to automatically add __init__.py,
                 # hence we pass None as the first argument, but we still want
                 # to check the package_dir in order to properly resolve the
                 # module_file below.
@@ -170,6 +191,9 @@ setup(
     version=os.environ.get('DRAGON_VERSION', 'latest'),
     description="Python multiprocessing over the Dragon distributed runtime",
     packages=find_packages(),
+    package_data={
+        'dragon': ['lib/libdragon.so', 'lib/libpmod.so', 'lib/libpmsgqueue.so',]
+    },
     ext_modules = extensions,
     entry_points=entry_points,
     python_requires=">=3.9",

@@ -45,12 +45,14 @@ Architecture
 ============
 
 .. figure:: images/shepherd.svg
+    :name: shepherd
 
-    **Figure 1: Internal Shepherd Structure**
+    **Internal Shepherd Structure**
 
 .. figure:: images/shepherdstructure.png
+    :name: shepherdstructure
 
-    **Figure 2: Internal Shepherd Structure**
+    **Internal Shepherd Structure**
 
 Local Services runs as a separate process that receives its work through a channel. After bringup of the Dragon
 run-time services, Local Services receives messages through the :ref:`Messages` from this channel, processes
@@ -119,8 +121,9 @@ Process Management
 ==================
 
 .. figure:: images/processstates.png
+    :name: processstates
 
-    **Figure 8: Process State Transition Diagram**
+    **Process State Transition Diagram**
 
 Managed processes are created by Local Services in response to the
 :ref:`SHProcessCreate <shprocesscreate>` message. The following fields are part
@@ -151,8 +154,9 @@ all notifications about output on standard output and error, while the Global Se
 notification of the termination of the process.
 
 .. figure:: images/managedservices.png
+    :name: managedservices
 
-    **Figure 9: Managed Process services provided by Local Services**
+    **Managed Process services provided by Local Services**
 
 Initially the managed process is in the *init* state and an AsyncIO *process* task (see :ref:`Task Types
 <tasktypes>`) is created that will run to create the process and move it to the *run* state. Once the task is
@@ -186,8 +190,9 @@ The Local Services/Global Services Integration
 ========================================
 
 .. figure:: images/gsmonitor.png
+    :name: gsmonitor
 
-    **Figure 10: The Global Services Monitor**
+    **The Global Services Monitor**
 
 During startup, Local Services creates :ref:`GlobalServices` like a managed process on the node designated as
 the *PRIMARY_INDEX* in the Dragon Runtime launch parameters (see :ref:`LaunchParameters`) from the perspective

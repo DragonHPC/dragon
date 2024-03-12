@@ -40,7 +40,8 @@ def get_new_tag():
 
 ProcessProps = collections.namedtuple('ProcessProps', ['p_uid', 'critical', 'r_c_uid',
                                       'stdin_req', 'stdout_req', 'stderr_req',
-                                      'stdin_connector', 'stdout_connector', 'stderr_connector'])
+                                      'stdin_connector', 'stdout_connector', 'stderr_connector',
+                                      'layout'])
 
 class PopenProps(subprocess.Popen):
 
@@ -48,9 +49,17 @@ class PopenProps(subprocess.Popen):
         assert isinstance(props, ProcessProps)
         super().__init__(*args, **kwds)
         self.props = props
-        # TODO Add affinity control to the process options. To be on the safe
-        # TODO side for now, open affinity to all cores.
+
+        # Assuming this is basically a free call, default the afinity to "everything" just in case
         os.sched_setaffinity(self.pid, range(os.cpu_count()))
+        if props.layout is not None:
+            if props.layout.cpu_core:
+                os.sched_setaffinity(self.pid, props.layout.cpu_core)
+
+            # gpu_core list must be turned into a string in the form "0,1,2" etc
+            if props.layout.gpu_core and props.layout.accelerator_env:
+                    os.environ[props.layout.accelevator_env] = ",".join(str(core) for core in props.layout.gpu_core)
+
         # XXX Affinity settings are only inherited by grandchild processes
         # XXX created after this point in time. Any grandchild processes
         # XXX started when the child process starts up most certainly will
@@ -848,32 +857,36 @@ class LocalServer:
                 the_env['DRAGON_PMOD_CHILD_CHANNEL'] = str(dutils.B64(pmod_launch_ch.serialize()))
 
                 log.info(f'p_uid {msg.t_p_uid} Setting required PMI environment variables')
+                # For PBS, we need to tell PMI to not use a FD to get PALS info:
+                try:
+                    del the_env['PMI_CONTROL_FD']
+                except KeyError:
+                    pass
+
                 the_env['PMI_CONTROL_PORT'] = str(msg.pmi_info.control_port)
                 the_env['MPICH_OFI_CXI_PID_BASE'] = str(msg.pmi_info.pid_base)
                 the_env['DL_PLUGIN_RESILIENCY'] = "1"
                 the_env['LD_PRELOAD'] = 'libdragon.so'
                 the_env['_DRAGON_PALS_ENABLED'] = '1'
                 the_env['FI_CXI_RX_MATCH_MODE'] = 'hybrid'
-                # the_env['DRAGON_DEBUG'] = '1'
-                # the_env['PMI_DEBUG'] = '1'
 
             stdin_connector = InputConnector(stdin_conn)
 
-            stdout_connector = OutputConnector(be_in = self.be_in, puid=msg.t_p_uid,
-                    hostname=self.hostname, out_err=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                    conn=stdout_conn, root_proc=stdout_root, critical_proc=False)
+            stdout_connector = OutputConnector(be_in=self.be_in, puid=msg.t_p_uid,
+                                               hostname=self.hostname, out_err=dmsg.SHFwdOutput.FDNum.STDOUT.value,
+                                               conn=stdout_conn, root_proc=stdout_root, critical_proc=False)
 
-            stderr_connector = OutputConnector(be_in = self.be_in, puid=msg.t_p_uid,
-                    hostname=self.hostname, out_err=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                    conn=stderr_conn, root_proc=stderr_root, critical_proc=False)
+            stderr_connector = OutputConnector(be_in=self.be_in, puid=msg.t_p_uid,
+                                               hostname=self.hostname, out_err=dmsg.SHFwdOutput.FDNum.STDERR.value,
+                                               conn=stderr_conn, root_proc=stderr_root, critical_proc=False)
 
             with self.apt_lock:  # race with death watcher; hold lock to get process in table.
                 # The stdout_conn and stderr_conn will be filled in just below.
                 the_proc = PopenProps(
                     ProcessProps(p_uid=msg.t_p_uid, critical=False, r_c_uid=msg.r_c_uid,
-                        stdin_req=msg.stdin, stdout_req=msg.stdout, stderr_req=msg.stderr,
-                        stdin_connector=stdin_connector, stdout_connector=stdout_connector,
-                        stderr_connector=stderr_connector),
+                                 stdin_req=msg.stdin, stdout_req=msg.stdout, stderr_req=msg.stderr,
+                                 stdin_connector=stdin_connector, stdout_connector=stdout_connector,
+                                 stderr_connector=stderr_connector, layout=msg.layout),
                     real_args,
                     bufsize=0,
                     stdin=subprocess.PIPE,

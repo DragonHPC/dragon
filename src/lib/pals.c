@@ -9,6 +9,9 @@
 extern dragonRecvJobParams_t pmod_mparams;
 
 static void *lib_pals_handle = NULL;
+static int ptrs_set = 0;
+static int inside_vanilla_pals = 0;
+
 
 pals_rc_t (*fn_pals_init)(pals_state_t *state);
 pals_rc_t (*fn_pals_init2)(pals_state_t **state);
@@ -54,34 +57,62 @@ void set_pals_function_pointers()
     fn_pals_errmsg = dlsym(lib_pals_handle, "pals_errmsg");
 }
 
+int get_pals_context() {
+    return inside_vanilla_pals;
+}
+
+void set_pals_context() {
+    inside_vanilla_pals = 1;
+}
+
+void unset_pals_context() {
+    inside_vanilla_pals = 0;
+}
+
 int check_calling_context()
 {
-    if (getenv("_DRAGON_PALS_ENABLED")) {
+    if (getenv("_DRAGON_PALS_ENABLED") && !(get_pals_context())) {
         return 1;
     } else {
         return 0;
     }
 }
 
+
+
 pals_rc_t pals_init(pals_state_t *state)
 {
+    // PALS init and finalize functions will always only need to return
+    // the values PALS knows to be true. Thus, we need to make sure any
+    // PALS functions we wrap know to send back unmodified return values,
+    // ie: only use the results from direct calls to our PALS function pointers.
     set_pals_function_pointers();
-    // no error checking, just pass rc through to caller
-    return fn_pals_init(state);
+    set_pals_context();
+
+    pals_rc_t err = fn_pals_init(state);
+    unset_pals_context();
+    return err;
 }
 
-// TODO: pals_init2 will always be defined, so how can PMI check if it's NULL?
+//// TODO: pals_init2 will always be defined, so how can PMI check if it's NULL?
 pals_rc_t pals_init2(pals_state_t **state)
 {
     set_pals_function_pointers();
+
+    set_pals_context();
     // no error checking, just pass rc through to caller
-    return fn_pals_init2(state);
+    pals_rc_t err = fn_pals_init2(state);
+    unset_pals_context();
+    return err;
 }
 
 pals_rc_t pals_fini(pals_state_t *state)
 {
+    set_pals_context();
     // no error checking, just pass rc through to caller
-    return fn_pals_fini(state);
+    pals_rc_t err = fn_pals_fini(state);
+    unset_pals_context();
+    return err;
 }
 
 pals_rc_t pals_get_peidx(pals_state_t *state, int *peidx)

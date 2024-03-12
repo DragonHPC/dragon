@@ -53,7 +53,7 @@ def get_ssh_launch_be_args(hostname=None, args_map=None) -> str:
     if ENV_VARS is None or args_map is not None:
         get_ssh_env_vars(args_map=args_map)
 
-    be_args = " ".join(["ssh -oBatchMode=yes {hostname}", f"cd {getcwd()} &&"] + ENV_VARS)
+    be_args = " ".join(["ssh -oBatchMode=yes {hostname}", f"/bin/bash -c cd {getcwd()} &&"] + ENV_VARS)
     return be_args
 
 
@@ -241,13 +241,16 @@ class SSHNetworkConfig(BaseNetworkConfig):
     def __init__(self, network_prefix, port, hostlist):
 
         super().__init__(
-            network_prefix, port, len(hostlist)
+            'ssh', network_prefix, port, len(hostlist)
         )
         self.hostlist = hostlist
 
     @classmethod
     def check_for_wlm_support(cls) -> bool:
         return shutil.which("ssh")
+
+    def _supports_net_conf_cache(self) -> bool:
+        return False
 
     def _launch_network_config_helper(self) -> subprocess.Popen:
         popen_dict = {}

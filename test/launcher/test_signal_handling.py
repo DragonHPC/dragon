@@ -12,6 +12,7 @@ from dragon.launcher.util import next_tag, SRQueue, get_with_timeout
 from dragon.launcher.launchargs import get_args
 
 from dragon.infrastructure.process_desc import ProcessDescriptor
+from dragon.infrastructure.node_desc import NodeDescriptor
 from dragon.infrastructure import facts as dfacts
 from dragon.infrastructure import messages as dmsg
 import dragon.utils as du
@@ -68,11 +69,12 @@ def send_shchannelsup(nodes, mpool):
             node['gs_ch'] = None
             gs_cd = None
 
+        node_desc = NodeDescriptor(host_name=node['hostname'],
+                                   host_id=host_id,
+                                   ip_addrs=node['ip_addrs'],
+                                   shep_cd=B64.bytes_to_str(node['ls_ch'].serialize()))
         ch_up_msg = dmsg.SHChannelsUp(tag=next_tag(),
-                                      host_name=node['hostname'],
-                                      host_id=host_id,
-                                      ip_addrs=node['ip_addrs'],
-                                      shep_cd=B64.bytes_to_str(node['ls_ch'].serialize()),
+                                      node_desc=node_desc,
                                       gs_cd=gs_cd,
                                       idx=node['node_index'])
         log.info(f'construct SHChannelsUp: {ch_up_msg}')
@@ -895,6 +897,7 @@ class SigIntTest(unittest.TestCase):
 
         mock_procs.join()
 
+    @unittest.skip("Skipped pending fix of problem outlined in CIRRUS-1922. This test terminates too much and sometimes kills Docker container.")
     @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
     @patch('dragon.launcher.frontend.start_overlay_network')
     def test_rapid_sigint(self, mock_overlay, mock_be_launch):
@@ -949,6 +952,7 @@ class SigIntTest(unittest.TestCase):
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @unittest.skip("Skipped pending fix of problem outlined in CIRRUS-1922. This test terminates too much and sometimes kills Docker container.")
     @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
     @patch('dragon.launcher.frontend.start_overlay_network')
     def test_teardown_with_hung_backend_sigint(self, mock_overlay, mock_be_launch):

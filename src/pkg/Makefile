@@ -5,7 +5,9 @@ INSTALL_MODE ?= 755
 PRODUCTS = INSTALL.md \
 		   LICENSE.md \
 		   README.md \
-		   RELEASE_NOTES.md
+		   RELEASE_NOTES.md \
+		   CHANGELOG.md
+
 
 build:
 	@echo "Nothing to do for now"

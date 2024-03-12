@@ -518,13 +518,13 @@ class Queue(object):
                     release_refcnt(self._channel.cuid)
                     self._channel.detach()
                 except Exception as e:
-                    LOG.debug(f'Could not complete release of refcount or detach. {e=}')
+                    pass  # Could not complete release of refcount or detach.
 
             elif self._ext_channel and self._unpickled_instance:
                 try:
                     self._channel.detach()  # this should be revisited once refcounting fully works as it should not be necessary then
                 except Exception as e:
-                    LOG.debug(f"We couldn't detach from externally managed channel. {e=}")
+                    pass  # We couldn't detach from externally managed channel.
             if self._joinable:
                 try:
                     release_refcnt(self._cnt_channel.cuid)
@@ -532,8 +532,7 @@ class Queue(object):
                     release_refcnt(self._ev_channel.cuid)
                     self._ev_channel.detach()
                 except Exception as e:
-                    LOG.debug(
-                      f'Joinable queue: there was a problem with releasing channel refcount or while detaching from channel. {e=}')
+                    pass  # Joinable queue: there was a problem with releasing channel refcount or while detaching from channel
 
         if self._buffer_pool is not None:
             try:

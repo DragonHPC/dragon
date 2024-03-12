@@ -98,7 +98,7 @@ cdef class BitSet:
             self._handle_error(derr, "Error destroying BitSet")
 
     def _handle_error(self, dragonError_t derr, err_msg):
-        raise RuntimeError(err_msg + f" (Dragon Bitset error code={derr})")
+        raise RuntimeError(err_msg + f" (Dragon Bitset error code={dragon_get_rc_string(derr)})")
 
 
     def get_num_bits(self):
@@ -234,7 +234,7 @@ cdef class Heap:
         self._valid = False
 
     def _handle_error(self, dragonError_t derr, err_msg):
-        raise RuntimeError(err_msg + f" (Dragon DynHeap error code={derr})")
+        raise RuntimeError(err_msg + f" (Dragon DynHeap error code={dragon_get_rc_string(derr)})")
 
     @staticmethod
     def size(const size_t max_sz_pwr, const size_t min_sz_pwr, const size_t alignment, lock_kind) -> size_t:
@@ -243,7 +243,7 @@ cdef class Heap:
 
         derr = dragon_heap_size(max_sz_pwr, min_sz_pwr, alignment, lock_kind.value, &mem_size)
         if derr != DRAGON_SUCCESS:
-            raise RuntimeError(f"Failed to get DynHeap size.  Dragon DynHeap error code=({derr})")
+            raise RuntimeError(f"Failed to get DynHeap size.  Dragon DynHeap error code=({dragon_get_rc_string(derr)})")
 
         return mem_size
 

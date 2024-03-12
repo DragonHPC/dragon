@@ -7,7 +7,7 @@
 
 #define DRAGON_CHANNEL_GWHEADER_NULINTS ((sizeof(dragonGatewayMessageHeader_t)/sizeof(dragonULInt*))-1)
 //#define DRAGON_CHANNEL_EXTRA_CHECKS
-static timespec_t TRANSPORT_PATIENCE_ON_CLIENT_COMPLETE = {0,100000};
+static timespec_t TRANSPORT_PATIENCE_ON_CLIENT_COMPLETE = {0,1000000};
 
 static dragonError_t
 _gateway_message_bcast_size(size_t payload_sz, size_t * bcast_nbytes)

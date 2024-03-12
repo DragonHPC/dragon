@@ -5,6 +5,8 @@ from typing import Optional
 
 from ...channels import GatewayMessage, Channel, ChannelEmpty, ChannelRecvTimeout
 from ...dtypes import WaitMode, DEFAULT_WAIT_MODE
+from ...infrastructure.node_desc import NodeDescriptor
+
 from .errno import get_errno, DRAGON_TIMEOUT
 from .io import UUIDBytesIO
 from .messages import ErrorResponse, EventRequest, EventResponse, \
@@ -106,6 +108,18 @@ class Client(TaskMixin):
             return GatewayMessage.from_message(msg)
         finally:
             msg.destroy()
+
+    def update_nodes(self, node_update_map: dict[int, Address]):
+        """Update the node dictionary for routing gateway requests
+
+        :param nodes: Nodes to add to our internal data
+        :type nodes: list[NodeDescriptor]
+        """
+        try:
+            self.nodes.update(node_update_map)
+        except Exception:
+            LOGGER.critical(f'Failed to update client node-address mapping')
+            raise
 
     def process(self, msg: GatewayMessage) -> asyncio.Task:
         # Look up destination node address

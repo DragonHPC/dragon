@@ -32,17 +32,25 @@ Resubmit as part of a 'qsub' execution"""
             raise RuntimeError(msg)
 
         super().__init__(
+            'pbs+pals',
             network_prefix,
             port,
             get_nodefile_node_count(os.environ.get("PBS_NODEFILE")),
         )
 
+        self.job_id = os.environ.get("PBS_JOBID")
         self.MPIEXEC_ARGS = self.MPIEXEC_COMMAND_LINE.format(nnodes=self.NNODES).split()
 
     @classmethod
     def check_for_wlm_support(cls) -> bool:
         if (mpiexec := shutil.which("mpiexec")):
             return re.match('.*/pals/.*', mpiexec)
+        return False
+
+    def _get_wlm_job_id(self) -> str:
+        return self.job_id
+
+    def _supports_net_conf_cache(self) -> bool:
         return False
 
     def _launch_network_config_helper(self) -> subprocess.Popen:

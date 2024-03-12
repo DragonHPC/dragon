@@ -209,59 +209,63 @@ class LaunchParameters:
     @classmethod
     def init_class_vars(cls):
 
+        typecast = lambda ty: lambda val: ty() if val == "" else ty(val)
+
         PARMS = [
-            TypedParm(name=dfacts.MODE, cast=str, check=check_mode, default=dfacts.TEST_MODE),
-            TypedParm(name=dfacts.INDEX, cast=int, check=nonnegative, default=0),
-            TypedParm(name=dfacts.DEFAULT_PD, cast=str, check=check_base64, default=""),
-            TypedParm(name=dfacts.INF_PD, cast=str, check=check_base64, default=""),
-            TypedParm(name=dfacts.LOCAL_SHEP_CD, cast=str, check=check_base64, default=""),
-            TypedParm(name=dfacts.LOCAL_BE_CD, cast=str, check=check_base64, default=""),
-            TypedParm(name=dfacts.GS_RET_CD, cast=str, check=check_base64, default=""),
-            TypedParm(name=dfacts.SHEP_RET_CD, cast=str, check=check_base64, default=""),
-            TypedParm(name=dfacts.GS_CD, cast=str, check=check_base64, default=""),
+            TypedParm(name=dfacts.MODE, cast=typecast(str), check=check_mode, default=dfacts.TEST_MODE),
+            TypedParm(name=dfacts.INDEX, cast=typecast(int), check=nonnegative, default=0),
+            TypedParm(name=dfacts.DEFAULT_PD, cast=typecast(str), check=check_base64, default=""),
+            TypedParm(name=dfacts.INF_PD, cast=typecast(str), check=check_base64, default=""),
+            TypedParm(name=dfacts.LOCAL_SHEP_CD, cast=typecast(str), check=check_base64, default=""),
+            TypedParm(name=dfacts.LOCAL_BE_CD, cast=typecast(str), check=check_base64, default=""),
+            TypedParm(name=dfacts.GS_RET_CD, cast=typecast(str), check=check_base64, default=""),
+            TypedParm(name=dfacts.SHEP_RET_CD, cast=typecast(str), check=check_base64, default=""),
+            TypedParm(name=dfacts.GS_CD, cast=typecast(str), check=check_base64, default=""),
             TypedParm(
                 name=dfacts.DEFAULT_SEG_SZ,
-                cast=int,
+                cast=typecast(int),
                 check=positive,
                 default=int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ),
             ),
             TypedParm(
-                name=dfacts.INF_SEG_SZ, cast=int, check=positive, default=int(dfacts.DEFAULT_SINGLE_INF_SEG_SZ)
+                name=dfacts.INF_SEG_SZ, cast=typecast(int), check=positive, default=int(dfacts.DEFAULT_SINGLE_INF_SEG_SZ)
             ),
-            TypedParm(name=dfacts.MY_PUID, cast=int, check=positive, default=1),
-            TypedParm(name=dfacts.TEST, cast=int, check=nonnegative, default=0),
-            TypedParm(name=dfacts.DEBUG, cast=int, check=nonnegative, default=0),
-            TypedParm(name=dfacts.BE_CUID, cast=int, check=positive, default=dfacts.BASE_BE_CUID),
+            TypedParm(name=dfacts.MY_PUID, cast=typecast(int), check=positive, default=1),
+            TypedParm(name=dfacts.TEST, cast=typecast(int), check=nonnegative, default=0),
+            TypedParm(name=dfacts.DEBUG, cast=typecast(int), check=nonnegative, default=0),
+            TypedParm(name=dfacts.BE_CUID, cast=typecast(int), check=positive, default=dfacts.BASE_BE_CUID),
             TypedParm(
                 name=dfacts.INF_WAIT_MODE,
-                cast=cast_wait_mode,
+                cast=typecast(cast_wait_mode),
                 check=nocheck,
                 default=dfacts.INFRASTRUCTURE_DEFAULT_WAIT_MODE,
             ),
             TypedParm(
                 name=dfacts.USER_WAIT_MODE,
-                cast=cast_wait_mode,
+                cast=typecast(cast_wait_mode),
                 check=nocheck,
                 default=dfacts.USER_DEFAULT_WAIT_MODE,
             ),
             TypedParm(
                 name=dfacts.INF_RETURN_WHEN_MODE,
-                cast=cast_return_when_mode,
+                cast=typecast(cast_return_when_mode),
                 check=nocheck,
                 default=dfacts.INFRASTRUCTURE_DEFAULT_RETURN_WHEN_MODE,
             ),
             TypedParm(
                 name=dfacts.USER_RETURN_WHEN_MODE,
-                cast=cast_return_when_mode,
+                cast=typecast(cast_return_when_mode),
                 check=nocheck,
                 default=dfacts.USER_DEFAULT_RETURN_WHEN_MODE,
             ),
-            TypedParm(name=dfacts.GW_CAPACITY, cast=int, check=positive, default=dfacts.GW_DEFAULT_CAPACITY),
-            TypedParm(name=dfacts.NUM_GW_CHANNELS_PER_NODE, cast=int, check=nonnegative, default=dfacts.DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE),
-            TypedParm(name=dfacts.HSTA_MAX_EJECTION_MB, cast=int, check=positive, default=8),
-            TypedParm(name=dfacts.HSTA_MAX_GETMSG_MB, cast=int, check=positive, default=8),
-            TypedParm(name=dfacts.PMOD_COMMUNICATION_TIMEOUT, cast=int, check=positive, default=30),
-            TypedParm(name=dfacts.BASEPOOL, cast=str, check=check_pool, default=dfacts.DEFAULT_POOL),
+            TypedParm(name=dfacts.GW_CAPACITY, cast=typecast(int), check=positive, default=dfacts.GW_DEFAULT_CAPACITY),
+            TypedParm(name=dfacts.NUM_GW_CHANNELS_PER_NODE, cast=typecast(int), check=nonnegative, default=dfacts.DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE),
+            TypedParm(name=dfacts.HSTA_MAX_EJECTION_MB, cast=typecast(int), check=positive, default=8),
+            TypedParm(name=dfacts.HSTA_MAX_GETMSG_MB, cast=typecast(int), check=positive, default=8),
+            TypedParm(name=dfacts.PMOD_COMMUNICATION_TIMEOUT, cast=typecast(int), check=positive, default=30),
+            TypedParm(name=dfacts.BASEPOOL, cast=typecast(str), check=check_pool, default=dfacts.DEFAULT_POOL),
+            TypedParm(name=dfacts.OVERLAY_FANOUT, cast=typecast(int), check=positive, default=32),
+            TypedParm(name=dfacts.NET_CONF_CACHE, cast=typecast(str), check=nocheck, default=dfacts.DEFAULT_NET_CONF_CACHE),
         ]
 
         env = os.environ
@@ -276,7 +280,7 @@ class LaunchParameters:
         cls.gw_env_vars = frozenset([f'GW{x+1}' for x in range(num_gateways)])
 
         for gw_env_var in cls.gw_env_vars:
-            PARMS.append(TypedParm(gw_env_var, cast=str, check=nocheck, default=""))
+            PARMS.append(TypedParm(gw_env_var, cast=typecast(str), check=nocheck, default=""))
 
         cls.PARMS = PARMS
 

@@ -1,10 +1,10 @@
 """Dragon's replacement for Multiprocessing Pool.
 
 By default this uses a patched version of the dragon native pool and sets
-`DRAGON_BASEPOOL="NATIVE"`. The private api for this class is still under 
-development. To revert to the version based on the `multiprocessing.Pool` class 
-with a patched terminate_pool method, set `DRAGON_BASEPOOL="PATCHED"` in the 
-environment. 
+`DRAGON_BASEPOOL="NATIVE"`. The private api for this class is still under
+development. To revert to the version based on the `multiprocessing.Pool` class
+with a patched terminate_pool method, set `DRAGON_BASEPOOL="PATCHED"` in the
+environment.
 """
 import multiprocessing.pool
 from multiprocessing import get_start_method
@@ -15,6 +15,7 @@ from typing import Iterable, Any
 
 from ..native.pool import Pool as NativePool
 from ..native.pool import job_counter, mapstar, ApplyResult, MapResult
+from ..native.process import Process
 from ..native.process_group import ProcessGroup
 from ..globalservices.process import multi_join
 
@@ -23,6 +24,7 @@ import collections
 import itertools
 import time
 import threading
+import signal
 import os
 
 
@@ -125,6 +127,86 @@ class DragonPoolPatched(multiprocessing.pool.Pool):  # Dummy
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+class WrappedDragonProcess:  # Dummy
+
+    def __init__(self, process, ident):
+        self._puid = ident
+        if process is None:
+            self._process = Process(None, ident=self._puid)
+
+    def start(self) -> None:
+        """Start the process represented by the underlying process object."""
+        self._process.start()
+
+    def is_alive(self) -> bool:
+        """Check if the process is still running
+
+        :return: True if the process is running, False otherwise
+        :rtype: bool
+        """
+        return self._process.is_alive
+
+    def join(self, timeout: float = None) -> int:
+        """Wait for the process to finish.
+
+        :param timeout: timeout in seconds, defaults to None
+        :type timeout: float, optional
+        :return: exit code of the process, None if timeout occurs
+        :rtype: int
+        :raises: ProcessError
+        """
+        return self._process.join()
+
+    def terminate(self) -> None:
+        """Send SIGTERM signal to the process, terminating it.
+
+        :return: None
+        :rtype: NoneType
+        """
+        self._process.terminate()
+
+    def kill(self) -> None:
+        """Send SIGKILL signal to the process, killing it.
+
+        :return: None
+        :rtype: NoneType
+        """
+        self._process.kill()
+
+    @property
+    def pid(self):
+        """Process puid. Globally unique"""
+        return self._puid
+
+    @property
+    def name(self) -> str:
+        """gets serialized descriptors name for the process
+
+        :return: serialized descriptor name of process
+        :rtype: str
+        """
+        return self._process.name
+
+    @property
+    def exitcode(self) -> int:
+        """When the process has terminated, return exit code. None otherwise."""
+        return self._process.returncode
+
+    @property
+    def sentinel(self):
+        raise NotImplementedError
+
+    @property
+    def authkey(self):
+        raise NotImplementedError
+
+    @property
+    def daemon(self):
+        raise NotImplementedError
+
+    @property
+    def close(self):
+        raise NotImplementedError
 
 class WrappedResult:
     """Returned by all functions that return a result. Wraps ApplyResult and MapResult so that correct timeout error can be raised."""
@@ -177,32 +259,38 @@ class WrappedResult:
         self._result.wait(timeout)
 
 
-class WrappedPG:
-    """Wraps a ProcessGroup and makes the interface compliant with how self._pool is used in the multiprocessing pool unittests."""
-
-    def __init__(self, process_group: ProcessGroup = None):
-        """Initializes wrapped process group
-
-        :param process_group: ProcessGroup used by native pool implementation, defaults to None
-        :type process_group: ProcessGroup, optional
-        """
-        self._pg = process_group
-
-    def __len__(self) -> int:
-        """Returns the number of processes in the process group
-
-        :return: the number of processes in the process group
-        :rtype: int
-        """
-        return self._pg.nproc
-
-
 class DragonPool(NativePool):
     """Dragon's replacement for Multiprocessing Pool."""
 
     def __init__(self, *args, context=None, **kwargs):
         super().__init__(*args, **kwargs)
-        self._pool = WrappedPG(self._pg)
+
+    @property
+    def _pool(self):
+        puids = self._pg.puids
+        pool_procs = []
+        # need to wait until all procs are up.
+        while None in self._pg.puids:
+            time.sleep(0.1)
+        # add a wrapped proc that has an interface like what mp is expecting
+        for puid in puids:
+            pool_procs.append(WrappedDragonProcess(None, ident=puid))
+        return pool_procs
+
+    def _repopulate_pool(self):
+        # repopulate pool by shutting PG down and then starting new PG
+        if self._close_thread is not None:
+            raise RuntimeError("Trying to repopulate a pool that was previously closed. This pattern is not supported.")
+        if not self._pg.status == "Stop":
+            self._pg.kill(signal.SIGTERM)
+            self._pg.join()
+            self._pg.stop()
+
+        self._pg = ProcessGroup(restart=True, ignore_error_on_exit=True)
+        self._pg.add_process(self._processes, self._template)
+        self._pg.init()
+        self._pg.start()
+
 
     def apply_async(
         self,
@@ -272,7 +360,7 @@ class DragonPool(NativePool):
         :return: The result of `func(*args, **kwargs)`
         :rtype:
         """
-        return WrappedResult(self.apply_async(func, args, kwds)).get()
+        return self.apply_async(func, args, kwds).get()
 
     def map(self, func: callable, iterable: Iterable, chunksize: int = None) -> Iterable[Any]:
         """Apply `func` to each element in `iterable`, collecting the results
@@ -287,7 +375,7 @@ class DragonPool(NativePool):
         :return: list of results from applying `func` to each element of input iterable
         :rtype: Iterable[Any]
         """
-        return WrappedResult(self.map_async(func, iterable, chunksize)).get()
+        return self.map_async(func, iterable, chunksize).get()
 
     def starmap(self, func: callable, iterable: Iterable[Iterable], chunksize: int = None) -> Iterable[Any]:
         """Like `map()` method but the elements of the `iterable` are expected to be iterables as well and will be unpacked as arguments. Hence `func` and (a, b) becomes func(a, b).

@@ -287,7 +287,6 @@ int main(int argc, char *argv[])
 
             }
 
-            //dbg comment explaining this
             err = dragon_channel_message_destroy(&peek_msg, 1);
             if (err != DRAGON_SUCCESS)
                 err_fail(err, "Failed to destroy peek message");
@@ -296,7 +295,6 @@ int main(int argc, char *argv[])
 
     }
 
-    //dbg comment explaining this
     err = dragon_channel_message_destroy(&send_msg, 1);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Failed to destroy peek message");
@@ -383,7 +381,6 @@ int main(int argc, char *argv[])
 
             }
 
-            //dbg comment explaining this
             err = dragon_channel_message_destroy(&peek_msg, 1);
             if (err != DRAGON_SUCCESS) {
                 char * errstr = dragon_getlasterrstr();

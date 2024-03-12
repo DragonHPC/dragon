@@ -170,9 +170,9 @@ class GSLS(unittest.TestCase):
 
         sh_msg = tsu.get_and_check_type(self.bela_input_rh, dmsg.SHChannelsUp)
         self.assertIsInstance(sh_msg, dmsg.SHChannelsUp)
-        self.assertEqual(dutils.host_id(), sh_msg.host_id)
+        self.assertEqual(dutils.host_id(), sh_msg.node_desc.host_id)
         if self.chatty_teardown:
-            print(f"info from SHChannelsUp: host_id={sh_msg.host_id}, hostname={sh_msg.host_name}")
+            print(f"info from SHChannelsUp: host_id={sh_msg.node_desc.host_id}, hostname={sh_msg.node_desc.host_name}")
             sys.stdout.flush()
 
         tsu.get_and_check_type(self.bela_input_rh, dmsg.GSIsUp)
@@ -206,11 +206,20 @@ class GSLS(unittest.TestCase):
 
         self.proc_gs_return_chan.destroy()
 
+        # When ref counting works this should detach.
         self.inf_pool.detach()
 
         self.shep_stdin_wh.send(dmsg.BEHalted(tag=self.next_tag()).serialize())
 
         tsu.get_and_check_several_ignore_SHFwdOutput(self, self.shep_stdout_rh, {dmsg.SHHalted: 1})
+
+        # We can safely destroy and detach for sure once we have receieved SHHalted. If it fails,
+        # the detach above worked.
+        try:
+            self.inf_pool.destroy()
+        except:
+            pass
+
         self.shep_stdin_rh.close()
         self.shep_stdin_wh.close()
         self.shep_stdout_rh.close()
@@ -706,14 +715,15 @@ class GSLSMulti(unittest.TestCase):
 
             msg = tsu.get_and_check_type(self.names[f'bela_input_rh_{i}'], dmsg.SHChannelsUp)
             assert isinstance(msg, dmsg.SHChannelsUp)
-            self.assertEqual(dutils.host_id(), msg.host_id)
+            self.assertEqual(dutils.host_id(), msg.node_desc.host_id)
             if self.chatty_teardown:
                 print(f'got SHChannelsUp from LS {i}', flush=True)
-                print(f'Info from SHChannelsUp: host_id={msg.host_id}, hostname={msg.host_name}', flush=True)
+                print(f'Info from SHChannelsUp: host_id={msg.node_desc.host_id}, hostname={msg.node_desc.host_name}', flush=True)
 
             chs_up.append(msg)
 
-        la_ch_info = dmsg.LAChannelsInfo(tag=self.next_tag(), nodes_desc=chs_up,
+        nodes_desc = {ch_up.idx: ch_up.node_desc for ch_up in chs_up}
+        la_ch_info = dmsg.LAChannelsInfo(tag=self.next_tag(), nodes_desc=nodes_desc,
                                          gs_cd=self.gs_cd, num_gw_channels=0)
         for i in range(self.nls):
             # communicate gs_cd to all local services process so that they

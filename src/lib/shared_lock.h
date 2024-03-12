@@ -4,6 +4,7 @@
 #include <pthread.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <dragon/return_codes.h>
 #include <dragon/shared_lock.h>
 
@@ -29,7 +30,7 @@ typedef struct dragonFIFOLiteLock_st {
 } dragonFIFOLiteLock_t;
 
 typedef struct dragonFIFOLock_st {
-    dragonFIFOLiteLock_t thr_lock;  // this type needs my_node (local node), which we need to protect per process 
+    dragonFIFOLiteLock_t thr_lock;  // this type needs my_node (local node), which we need to protect per process
                                     // if the same lock struct is used across threads.  for pure FIFO each thread
                                     // should use its own lock struct
     void * thr_lock_dptr;
@@ -97,6 +98,9 @@ dragon_unlock(dragonLock_t * lock);
 
 dragonError_t
 dragon_lock_state(dragonLock_t * lock, dragonLockState_t * state);
+
+bool
+dragon_lock_is_valid(dragonLock_t * lock);
 
 /* ----------------------------------------
    Begin direct API calls
@@ -173,6 +177,15 @@ dragon_fifo_lock_state(dragonFIFOLock_t * dlock, dragonLockState_t * state);
 
 dragonError_t
 dragon_greedy_lock_state(dragonGreedyLock_t * dlock, dragonLockState_t * state);
+
+bool
+dragon_fifolite_lock_is_valid(dragonFIFOLiteLock_t * dlock);
+
+bool
+dragon_fifo_lock_is_valid(dragonFIFOLock_t * dlock);
+
+bool
+dragon_greedy_lock_is_valid(dragonGreedyLock_t* dlock);
 
 #ifdef __cplusplus
 }

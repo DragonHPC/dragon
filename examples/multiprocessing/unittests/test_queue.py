@@ -6,7 +6,14 @@ import queue as pyqueue
 
 import test.support
 from test.support import hashlib_helper
-from test import support
+try:
+    from test.support.os_helper import temp_cwd
+    from test.support.import_helper import DirsOnSysPath
+except ImportError:
+    #location prior to Python 3.10
+    from test.support import temp_cwd
+    from test.support import DirsOnSysPath
+
 
 import dragon  # DRAGON import before multiprocessing
 
@@ -250,7 +257,7 @@ class WithProcessesTestQueue(BaseTestCase, ProcessesMixin, unittest.TestCase):
         close_queue(queue)
 
     def test_no_import_lock_contention(self):
-        with test.support.temp_cwd():
+        with temp_cwd():
             module_name = "imported_by_an_imported_module"
             with open(module_name + ".py", "w") as f:
                 f.write(
@@ -265,7 +272,7 @@ class WithProcessesTestQueue(BaseTestCase, ProcessesMixin, unittest.TestCase):
                 """
                 )
 
-            with test.support.DirsOnSysPath(os.getcwd()):
+            with DirsOnSysPath(os.getcwd()):
                 try:
                     __import__(module_name)
                 except pyqueue.Empty:
@@ -295,7 +302,7 @@ class WithProcessesTestQueue(BaseTestCase, ProcessesMixin, unittest.TestCase):
             q = self.Queue()
             q.put(NotSerializable())
             q.put(True)
-            self.assertTrue(q.get(timeout=support.SHORT_TIMEOUT))
+            self.assertTrue(q.get(timeout=test.support.SHORT_TIMEOUT))
             close_queue(q)
 
         with test.support.captured_stderr():
@@ -310,7 +317,7 @@ class WithProcessesTestQueue(BaseTestCase, ProcessesMixin, unittest.TestCase):
                 # qsize is not available on all platform as it
                 # relies on sem_getvalue
                 pass
-            self.assertTrue(q.get(timeout=support.SHORT_TIMEOUT))
+            self.assertTrue(q.get(timeout=test.support.SHORT_TIMEOUT))
 
             # Check that the size of the queue is correct
             self.assertTrue(q.empty())
@@ -349,7 +356,7 @@ class WithProcessesTestQueue(BaseTestCase, ProcessesMixin, unittest.TestCase):
 
             # Verify that q is still functioning correctly
             q.put(True)
-            self.assertTrue(q.get(timeout=support.SHORT_TIMEOUT))
+            self.assertTrue(q.get(timeout=test.support.SHORT_TIMEOUT))
 
         # Assert that the serialization and the hook have been called correctly
         self.assertTrue(not_serializable_obj.reduce_was_called)
@@ -570,7 +577,7 @@ class WithManagerTestQueue(BaseTestCase, ManagerMixin, unittest.TestCase):
         close_queue(queue)
 
     def test_no_import_lock_contention(self):
-        with test.support.temp_cwd():
+        with temp_cwd():
             module_name = "imported_by_an_imported_module"
             with open(module_name + ".py", "w") as f:
                 f.write(
@@ -585,7 +592,7 @@ class WithManagerTestQueue(BaseTestCase, ManagerMixin, unittest.TestCase):
                 """
                 )
 
-            with test.support.DirsOnSysPath(os.getcwd()):
+            with DirsOnSysPath(os.getcwd()):
                 try:
                     __import__(module_name)
                 except pyqueue.Empty:
@@ -615,7 +622,7 @@ class WithManagerTestQueue(BaseTestCase, ManagerMixin, unittest.TestCase):
             q = self.Queue()
             q.put(NotSerializable())
             q.put(True)
-            self.assertTrue(q.get(timeout=support.SHORT_TIMEOUT))
+            self.assertTrue(q.get(timeout=test.support.SHORT_TIMEOUT))
             close_queue(q)
 
         with test.support.captured_stderr():
@@ -630,7 +637,7 @@ class WithManagerTestQueue(BaseTestCase, ManagerMixin, unittest.TestCase):
                 # qsize is not available on all platform as it
                 # relies on sem_getvalue
                 pass
-            self.assertTrue(q.get(timeout=support.SHORT_TIMEOUT))
+            self.assertTrue(q.get(timeout=test.support.SHORT_TIMEOUT))
             # Check that the size of the queue is correct
             self.assertTrue(q.empty())
             close_queue(q)
@@ -668,7 +675,7 @@ class WithManagerTestQueue(BaseTestCase, ManagerMixin, unittest.TestCase):
 
             # Verify that q is still functioning correctly
             q.put(True)
-            self.assertTrue(q.get(timeout=support.SHORT_TIMEOUT))
+            self.assertTrue(q.get(timeout=test.support.SHORT_TIMEOUT))
 
         # Assert that the serialization and the hook have been called correctly
         self.assertTrue(not_serializable_obj.reduce_was_called)
@@ -888,7 +895,7 @@ class WithThreadsTestQueue(BaseTestCase, ThreadsMixin, unittest.TestCase):
         close_queue(queue)
 
     def test_no_import_lock_contention(self):
-        with test.support.temp_cwd():
+        with temp_cwd():
             module_name = "imported_by_an_imported_module"
             with open(module_name + ".py", "w") as f:
                 f.write(
@@ -903,7 +910,7 @@ class WithThreadsTestQueue(BaseTestCase, ThreadsMixin, unittest.TestCase):
                 """
                 )
 
-            with test.support.DirsOnSysPath(os.getcwd()):
+            with DirsOnSysPath(os.getcwd()):
                 try:
                     __import__(module_name)
                 except pyqueue.Empty:
@@ -933,7 +940,7 @@ class WithThreadsTestQueue(BaseTestCase, ThreadsMixin, unittest.TestCase):
             q = self.Queue()
             q.put(NotSerializable())
             q.put(True)
-            self.assertTrue(q.get(timeout=support.SHORT_TIMEOUT))
+            self.assertTrue(q.get(timeout=test.support.SHORT_TIMEOUT))
             close_queue(q)
 
         with test.support.captured_stderr():
@@ -948,7 +955,7 @@ class WithThreadsTestQueue(BaseTestCase, ThreadsMixin, unittest.TestCase):
                 # qsize is not available on all platform as it
                 # relies on sem_getvalue
                 pass
-            self.assertTrue(q.get(timeout=support.SHORT_TIMEOUT))
+            self.assertTrue(q.get(timeout=test.support.SHORT_TIMEOUT))
             # Check that the size of the queue is correct
             self.assertTrue(q.empty())
             close_queue(q)
@@ -986,7 +993,7 @@ class WithThreadsTestQueue(BaseTestCase, ThreadsMixin, unittest.TestCase):
 
             # Verify that q is still functioning correctly
             q.put(True)
-            self.assertTrue(q.get(timeout=support.SHORT_TIMEOUT))
+            self.assertTrue(q.get(timeout=test.support.SHORT_TIMEOUT))
 
         # Assert that the serialization and the hook have been called correctly
         self.assertTrue(not_serializable_obj.reduce_was_called)
