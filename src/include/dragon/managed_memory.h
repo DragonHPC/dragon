@@ -249,6 +249,9 @@ dragonError_t
 dragon_memory_pool_attach_from_env(dragonMemoryPoolDescr_t * pool_descr, const char * env_var);
 
 dragonError_t
+dragon_memory_pool_attach_default(dragonMemoryPoolDescr_t* pool);
+
+dragonError_t
 dragon_memory_pool_detach(dragonMemoryPoolDescr_t * pool_descr);
 
 dragonError_t
@@ -284,6 +287,14 @@ dragon_memory_pool_get_allocations(const dragonMemoryPoolDescr_t * pool_descr, d
 dragonError_t
 dragon_memory_pool_get_type_allocations(const dragonMemoryPoolDescr_t * pool_descr, const dragonMemoryAllocationType_t type,
                                         dragonMemoryPoolAllocations_t * allocs);
+
+
+
+dragonError_t
+dragon_memory_pool_get_pointer(const dragonMemoryPoolDescr_t * pool_descr, void **base_ptr);
+
+dragonError_t
+dragon_memory_pool_get_size(const dragonMemoryPoolDescr_t * pool_descr, size_t *size);
 
 dragonError_t
 dragon_memory_alloc(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr, const size_t bytes);

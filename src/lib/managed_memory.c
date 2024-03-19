@@ -38,6 +38,26 @@ static dragonMap_t * dg_mallocs = NULL;
     }\
 })
 
+#define _maybe_obtain_manifest_lock(pool) ({\
+    dragonError_t err = dragon_lock(&pool->mlock);\
+    if (err != DRAGON_SUCCESS && err != DRAGON_OBJECT_DESTROYED) {\
+        char * err_str = _errstr_with_code("manifest lock error code", (int)err);\
+        err_noreturn(err_str);\
+        free(err_str);\
+        return err;\
+    }\
+})
+
+#define _maybe_release_manifest_lock(pool) ({\
+    dragonError_t err = dragon_unlock(&pool->mlock);\
+    if (err != DRAGON_SUCCESS && err != DRAGON_OBJECT_DESTROYED) {\
+        char * err_str = _errstr_with_code("manifest unlock error code", (int)err);\
+        err_noreturn(err_str);\
+        free(err_str);\
+        return err;\
+    }\
+})
+
 static void
 _find_pow2_requirement(size_t v, size_t * nv, uint32_t * power)
 {
@@ -475,10 +495,24 @@ _alloc_pool_shm(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryP
     no_err_return(DRAGON_SUCCESS);
 }
 
+static bool
+_pool_is_destroyed(dragonMemoryPool_t * pool)
+{
+    return dragon_lock_is_valid(&pool->mlock) != true;
+}
+
 static dragonError_t
 _free_pool_shm(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
 {
-    dragonError_t err = _unmap_manifest_shm(pool, attr);
+    dragonError_t err;
+    bool pool_is_destroyed = _pool_is_destroyed(pool);
+
+    /* Free the lock since it's relying on pool resources */
+    err = dragon_lock_destroy(&pool->mlock);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "failed to release heap manager lock");
+
+    err = _unmap_manifest_shm(pool, attr);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to unmap manifest");
 
@@ -486,14 +520,21 @@ _free_pool_shm(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to unmap data");
 
-    err = _unlink_shm_file(attr->mname);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "failed to unlink manifest");
-
-    for (int i = 0; i < attr->n_segments + 1; i++) {
-        err = _unlink_shm_file(attr->names[i]);
+    /* If another process already called destroy, then this process
+       should not try to unlink the files, but should unmap
+       the segments. The segments still remain in memory for
+       all other processes until they are unmapped, regardless
+       of whether it was destroyed. */
+    if (!pool_is_destroyed) {
+        err = _unlink_shm_file(attr->mname);
         if (err != DRAGON_SUCCESS)
-            append_err_return(err, "failed to unlink data file");
+            append_err_return(err, "failed to unlink manifest");
+
+        for (int i = 0; i < attr->n_segments + 1; i++) {
+            err = _unlink_shm_file(attr->names[i]);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "failed to unlink data file");
+        }
     }
 
     /* Because this is used during error recovery, don't use no_err_return.
@@ -636,6 +677,20 @@ _attach_heap_managers(dragonMemoryPool_t * const pool)
 }
 
 static dragonError_t
+_detach_heap_managers(dragonMemoryPool_t * pool)
+{
+    dragonError_t err;
+    dragonMemoryPoolHeap_t * heap = &(pool->heap);
+    for (int idx=0; idx < heap->nmgrs; idx++) {
+        err = dragon_heap_detach(&(heap->mgrs[idx]));
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "failed to destroy a heap manager");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+static dragonError_t
 _destroy_heap_managers(dragonMemoryPool_t * pool)
 {
     dragonError_t err;
@@ -693,9 +748,6 @@ static dragonError_t
 _generate_manifest_record(dragonMemory_t * mem, dragonMemoryPool_t * pool,
                           const dragonMemoryAllocationType_t type, const dragonULInt type_id)
 {
-    if (mem->bytes == 0)
-        err_return(DRAGON_INVALID_ARGUMENT, "You cannot generate a manifest record with zero size. There is an internal error.");
-
     /* generate a record and put it in the manifest */
     mem->mfst_record.offset        = (dragonULInt)((char *)mem->local_dptr - (char *)pool->local_dptr);
     mem->mfst_record.size          = (dragonULInt)mem->bytes;
@@ -1194,11 +1246,6 @@ dragon_memory_pool_destroy(dragonMemoryPoolDescr_t * pool_descr)
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "cannot construct pool attributes from pool");
 
-    /* Free the lock since it's relying on pool resources */
-    err = dragon_lock_destroy(&pool->mlock);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "failed to release heap manager lock");
-
     err = _destroy_heap_managers(pool);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to destroy the heap manager");
@@ -1468,7 +1515,7 @@ dragon_memory_pool_serialize(dragonMemoryPoolSerial_t * pool_ser, const dragonMe
 dragonError_t
 dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemoryPoolSerial_t * pool_ser)
 {
-    bool local_pool;
+    bool local_pool = true;
 
     /* Check args are not null. */
     if (pool_descr == NULL)
@@ -1509,12 +1556,9 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
     if (pool == NULL)
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate internal pool structure.");
 
-    /* If this is a non-local pool we are attaching to, then we set a flag and return. */
+    /* If this is a non-local pool we are attaching to, then we set a flag. */
     if (local_host_id != host_id)
         local_pool = false;
-    else
-        local_pool = true;
-
 
     /* Grab the memory storage type */
     dragonULInt mem_type = *ptr;
@@ -1637,6 +1681,9 @@ dragon_memory_pool_attach_from_env(dragonMemoryPoolDescr_t * pool_descr, const c
 {
     dragonMemoryPoolSerial_t pool_ser;
 
+    if (pool_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "You must provide a valid pool descriptor variable.");
+
     char *encoded_pool_str = getenv(env_var);
     if (encoded_pool_str == NULL) {
         char err_str[200];
@@ -1649,6 +1696,38 @@ dragon_memory_pool_attach_from_env(dragonMemoryPoolDescr_t * pool_descr, const c
     dragonError_t err = dragon_memory_pool_attach(pool_descr, &pool_ser);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to attach to memory pool");
+
+    dragon_memory_pool_serial_free(&pool_ser);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Attach to Default Pool
+ *
+ * Processes created by Dragon have access to a default pool, one per node.
+ * The default pool on a node can be used when no other managed memory pools
+ * are available or have been provided. This function attaches to the
+ * default pool on its current node.
+ *
+ * @param pool is a pointer to a pool descriptor to be initialized by this call.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_memory_pool_attach_default(dragonMemoryPoolDescr_t* pool)
+{
+    dragonError_t err;
+    char* pool_str;
+
+    pool_str = getenv(DRAGON_DEFAULT_PD_VAR);
+
+    if (pool_str == NULL)
+        err_return(DRAGON_INVALID_OPERATION, "Called dragon_get_default_pool with no default pool set in environment.");
+
+    err = dragon_memory_pool_attach_from_env(pool, pool_str);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not attach to default memory pool.");
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -1683,14 +1762,18 @@ dragon_memory_pool_detach(dragonMemoryPoolDescr_t * pool_descr)
 
     /* If this is a non-local pool, then there is less to do */
     if (pool->local_dptr != NULL) {
-
         /* Get pool attributes to free them */
         dragonMemoryPoolAttr_t attrs;
-        _obtain_manifest_lock(pool);
+        _maybe_obtain_manifest_lock(pool);
+
         err = _attrs_from_header(pool, &attrs);
-        _release_manifest_lock(pool);
+        _maybe_release_manifest_lock(pool);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "cannot construct pool attributes from pool");
+
+        err = _detach_heap_managers(pool);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not detach heap manager in pool detach.");
 
         /* @MCB TODO: Need control flow to manage different memory types */
         /* Unmap manifest and data pointers */
@@ -1850,9 +1933,6 @@ dragon_memory_serialize(dragonMemorySerial_t * mem_ser, const dragonMemoryDescr_
     /* bytes is included for remote mem descriptors and verification for
        subsequent clones. */
     *(dragonULInt*)ptr = mem->bytes;
-
-    if (mem->local_dptr != NULL && mem->mfst_record.size == 0)
-        err_return(DRAGON_INVALID_ARGUMENT, "Internal Failure: Found 0 sized memory allocation.");
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2023,6 +2103,8 @@ dragon_memory_detach(dragonMemoryDescr_t * mem_descr)
 dragonError_t
 dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr, const size_t bytes, const timespec_t* timeout)
 {
+    size_t alloc_bytes = bytes;
+
     if (mem_descr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid memory descriptor");
 
@@ -2033,10 +2115,6 @@ dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemory
 
     if (pool_descr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid pool descriptor");
-
-    /* @MCB: Don't allow nonsensical "empty" allocations */
-    if (bytes == 0)
-        err_return(DRAGON_INVALID_ARGUMENT, "cannot create allocation of size 0");
 
     dragonMemoryPool_t * pool;
     dragonError_t err = _pool_from_descr(pool_descr, &pool);
@@ -2056,7 +2134,15 @@ dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemory
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate new memory object");
     }
 
-    err = dragon_heap_malloc_blocking(&pool->heap.mgrs[0], bytes, &mem->local_dptr, timeout);
+    // A zero byte allocation is needed in channels when attributes are to be sent
+    // and potentially other entities that require a shared memory descriptor when
+    // there is no real allocation to make. So don't reject bytes == 0.
+    if (bytes == 0)
+        // To avoid special case code for this everywhere (cloning, freeing, etc.)
+        // we will make a 1 byte allocation, but say that it is zero bytes.
+        alloc_bytes = 1;
+
+    err = dragon_heap_malloc_blocking(&pool->heap.mgrs[0], alloc_bytes, &mem->local_dptr, timeout);
     if (err != DRAGON_SUCCESS)
         /* Don't use append_err_return. In hot path */
         return err;
@@ -2154,6 +2240,8 @@ dragonError_t
 dragon_memory_alloc_type_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr, const size_t bytes,
                          const dragonMemoryAllocationType_t type, const dragonULInt type_id, const timespec_t* timeout)
 {
+    size_t alloc_bytes = bytes;
+
     if (mem_descr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid memory descriptor");
 
@@ -2189,7 +2277,15 @@ dragon_memory_alloc_type_blocking(dragonMemoryDescr_t * mem_descr, const dragonM
       Release the lock
      */
 
-    err = dragon_heap_malloc_blocking(&pool->heap.mgrs[0], bytes, &mem->local_dptr, timeout);
+    // A zero byte allocation is needed in channels when attributes are to be sent
+    // and potentially other entities that require a shared memory descriptor when
+    // there is no real allocation to make. So don't reject bytes == 0.
+    if (bytes == 0)
+        // To avoid special case code for this everywhere (cloning, freeing, etc.)
+        // we will make a 1 byte allocation, but say that it is zero bytes.
+        alloc_bytes = 1;
+
+    err = dragon_heap_malloc_blocking(&pool->heap.mgrs[0], alloc_bytes, &mem->local_dptr, timeout);
     if (err != DRAGON_SUCCESS) {
         _release_manifest_lock(pool);
         free(mem);
@@ -2612,6 +2708,62 @@ dragon_memory_pool_get_type_allocations(const dragonMemoryPoolDescr_t * pool_des
 }
 
 /**
+ * @brief Get the base address for a memory pool
+ *
+ * This function returns the base address for a memory pool.
+ *
+ * @param pool_descr is a pointer to the descriptor to the memory pool.
+ *
+ * @param base_ptr is a pointer to the returned base address.
+ *
+ * @returns DRAGON_SUCCESS or another dragonError_t return code.
+*/
+
+dragonError_t
+dragon_memory_pool_get_pointer(const dragonMemoryPoolDescr_t * pool_descr, void **base_ptr)
+{
+    dragonMemoryPool_t * pool = NULL;
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "could not retrieve pool from descriptor");
+
+    if (pool->local_dptr == NULL)
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot get a base pointer for a non-local pool.");
+
+    *base_ptr = pool->local_dptr;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Get the total size of a memory pool
+ *
+ * This function returns the total size of a memory pool.
+ *
+ * @param pool_descr is a pointer to the descriptor to the memory pool.
+ *
+ * @param size is a pointer to the returned size of the pool.
+ *
+ * @returns DRAGON_SUCCESS or another dragonError_t return code.
+*/
+
+dragonError_t
+dragon_memory_pool_get_size(const dragonMemoryPoolDescr_t * pool_descr, size_t *size)
+{
+    dragonMemoryPool_t * pool = NULL;
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "could not retrieve pool from descriptor");
+
+    if (pool->local_dptr == NULL)
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot get the size of a non-local pool.");
+
+    *size = *pool->header.total_data_size;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
  * @brief Get a pointer into a memory descriptor
  *
  * Calling this function gives the caller a pointer into a memory allocation starting at
@@ -2835,7 +2987,7 @@ dragon_memory_descr_clone(dragonMemoryDescr_t * newmem_descr, const dragonMemory
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "invalid memory descriptor");
 
-    if (offset >= mem->bytes)
+    if (offset > mem->bytes)
         err_return(DRAGON_INVALID_ARGUMENT, "offset too big for allocation");
 
     if (custom_length != NULL) {

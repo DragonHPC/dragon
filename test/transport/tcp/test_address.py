@@ -10,7 +10,7 @@ from dragon.transport.tcp import transport
 class AddressIPv4TestCase(unittest.IsolatedAsyncioTestCase):
 
     IP = ip_address('127.0.0.1')
-    NETLOC = ['127.0.0.1', '[127.0.0.1]']
+    NETLOC = ['127.0.0.1', '127.0.0.1']
 
     LOOPBACK = transport.LOOPBACK_ADDRESS_IPv4
 

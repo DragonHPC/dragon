@@ -16,6 +16,7 @@ from ..infrastructure import messages as dmsg
 from ..infrastructure import connection as dconn
 from ..infrastructure import parameters as dp
 from ..infrastructure import util as dutil
+from ..infrastructure import policy as dpolicy
 from ..utils import B64
 
 LOG = logging.getLogger('process:')
@@ -136,7 +137,8 @@ class ProcessContext:
                                     stdin_msg=stdin_msg,
                                     stdout_msg=stdout_msg,
                                     stderr_msg=stderr_msg,
-                                    pmi_info=self.request._pmi_info)  #pylint: disable=protected-access
+                                    pmi_info=self.request._pmi_info,
+                                    layout=self.request.layout)  #pylint: disable=protected-access
 
     def mk_sh_proc_kill(self, the_tag, the_sig=signal.SIGKILL):
         return dmsg.SHProcessKill(tag=the_tag,
@@ -189,6 +191,10 @@ class ProcessContext:
 
         if not msg.user_name:
             msg.user_name = auto_name
+
+        # If a policy was passed through but has not been evaluated into a layout, do so now
+        if msg.layout is None and msg.policy is not None:
+            msg.layout = server.policy_eval.evaluate([msg.policy])[0]
 
         which_node = server.choose_shepherd(msg)
 

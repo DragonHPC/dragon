@@ -14,7 +14,6 @@ except ImportError:
     msvcrt = None
 
 import test.support
-from test import support
 from test.support import hashlib_helper
 from test.support import socket_helper
 
@@ -327,7 +326,7 @@ class WithProcessesTestPicklingConnections(BaseTestCase, ProcessesMixin, unittes
     def tearDownClass(cls):
         from multiprocessing import resource_sharer
 
-        resource_sharer.stop(timeout=support.LONG_TIMEOUT)
+        resource_sharer.stop(timeout=test.support.LONG_TIMEOUT)
 
     @classmethod
     def _listener(cls, conn, families):

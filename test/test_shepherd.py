@@ -60,14 +60,6 @@ class SingleLS(unittest.TestCase):
         self.shep_stdout_rh.close()
         self.shep_stdin_wh.close()
 
-        self.shep_ch.detach()
-        self.be_ch.detach()
-        self.gs_ch.detach()
-
-        if ATTACH_POOLS:
-            self.def_pool.detach()
-            self.inf_pool.detach()
-
     def next_tag(self):
         tmp = self.tag
         self.tag += 1
@@ -91,8 +83,6 @@ class SingleLS(unittest.TestCase):
 
             inf_pd = du.B64.str_to_bytes(msg.inf_pd)
             self.inf_pool = dmm.MemoryPool.attach(inf_pd)
-        else:
-            print(f'shep_cd: {msg.shep_cd}')
 
         shep_cd = du.B64.str_to_bytes(msg.shep_cd)
         self.shep_ch = dch.Channel.attach(shep_cd)
@@ -138,8 +128,35 @@ class SingleLS(unittest.TestCase):
         tsu.get_and_check_type(self.shep_stdout_rh, dmsg.SHHalted)
 
         self.proc.join()
-        if not ATTACH_POOLS:
-            time.sleep(10)
+
+        # In place of the next three destroy calls we could have called
+        # detach, but this demonstrates that we can call destroy twice
+        # on a channel and it will work. Local services destroyed first,
+        # and then after the join above we know we can destroy here as well.
+        # The advantage of calling destroy here is that since we know we are
+        # done with the channel, destroy will ignore any ref counting and clean
+        # it up.
+        try:
+            self.gs_ch.destroy()
+        except:
+            pass
+
+        try:
+            self.be_ch.destroy()
+        except:
+            pass
+
+        try:
+            self.shep_ch.destroy()
+        except:
+            pass
+
+        if ATTACH_POOLS:
+            # Calling destroy here is OK because we have joined on exit of local services
+            # which already destoyed the pools. Calling destroy here forcefully detaches
+            # from the pool (regardless of ref counting).
+            self.def_pool.destroy()
+            self.inf_pool.destroy()
 
     def do_abnormal_teardown(self):
         # when the BE receives AbnormalTermination, then the SHTeardown proceeds as usual
@@ -151,6 +168,29 @@ class SingleLS(unittest.TestCase):
         tsu.get_and_check_type(self.shep_stdout_rh, dmsg.SHHalted)
 
         self.proc.join()
+
+        try:
+            self.gs_ch.detach()
+        except:
+            pass
+
+        try:
+            self.be_ch.detach()
+        except:
+            pass
+
+        try:
+            self.shep_ch.detach()
+        except:
+            pass
+
+        if ATTACH_POOLS:
+            # Calling destroy here is OK because we have joined on exit of local services
+            # which already destoyed the pools. Calling destroy here forcefully detaches
+            # from the pool (regardless of ref counting).
+            self.def_pool.destroy()
+            self.inf_pool.destroy()
+
 
     def _make_pool(self, tag, p_uid, r_c_uid, size, m_uid, name):
         self.shep_main_wh.send(
@@ -170,11 +210,6 @@ class SingleLS(unittest.TestCase):
         # Tests normal bringup followed by teardown.
         self.do_bringup()
         self.do_teardown()
-
-    # def test_bringup_teardown2(self):
-    #     # for diagnosing pool lifecycle issues
-    #     self.do_bringup()
-    #     self.do_teardown()
 
     def test_process_fwdoutput(self):
         self.do_bringup()

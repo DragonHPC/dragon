@@ -9,8 +9,6 @@ import unittest
 from unittest.mock import patch
 
 from dragon.infrastructure.facts import PROCNAME_LA_BE
-from dragon.infrastructure.messages import AbnormalTerminationError
-
 from dragon.launcher.backend import LauncherBackEnd
 from .launcher_testing_utils import catch_thread_exceptions
 from .backend_testing_mocks import LauncherBackendHelper, mock_start_localservices_wrapper
@@ -71,6 +69,8 @@ class BackendBringUpTeardownTest(unittest.TestCase):
             log.removeHandler(handler)
             handler.close()
 
+        del self.be_helper
+
     def start_backend_thread(self, args_map):
 
         # get startup going in another thread. Note: need to do threads
@@ -92,6 +92,29 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         self.start_backend_thread(args_map)
 
         self.be_helper.clean_startup(log, mock_overlay, mock_network_config, mock_localservices_tuple)
+        self.be_helper.launch_user_process(log)
+        self.be_helper.clean_shutdown(log)
+        self.be_helper.cleanup()
+
+        # join on the be thread
+        self.be_thread.join()
+
+    @mock_start_localservices_wrapper
+    @patch("dragon.launcher.backend.start_overlay_network")
+    @patch("dragon.launcher.backend.NodeDescriptor.get_local_node_network_conf")
+    def test_accelerators_present(self, mock_localservices_tuple, mock_network_config, mock_overlay):
+        """Test that we can come up and exit cleanly"""
+
+        log = logging.getLogger("clean_be_startup_teardown")
+
+        args_map = self.be_helper.handle_network_and_frontend_start(mock_network_config)
+        self.start_backend_thread(args_map)
+
+        self.be_helper.clean_startup(log,
+                                     mock_overlay,
+                                     mock_network_config,
+                                     mock_localservices_tuple,
+                                     accelerator_present=True)
         self.be_helper.launch_user_process(log)
         self.be_helper.clean_shutdown(log)
         self.be_helper.cleanup()

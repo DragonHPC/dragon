@@ -8,7 +8,7 @@ cdef class PriorityHeap:
     cdef dragonPriorityHeap_t _hdl
 
     def _handle_err(self, derr, msg):
-        RuntimeError(f"Priority Heap Error: {msg}, Dragon Err code:({derr})")
+        RuntimeError(f"Priority Heap Error: {msg}, Dragon Err code:({dragon_get_rc_string(derr)})")
 
     @staticmethod
     def create(dragonPriorityHeapUint_t base, dragonPriorityHeapLongUint_t capacity,

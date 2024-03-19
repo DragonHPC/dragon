@@ -950,7 +950,7 @@ dragonError_t dragon_heap_init(void* ptr, dragonDynHeap_t* heap, const size_t ma
                 derr = dragon_heap_malloc(heap, size, &allocations[idx]);
                 if (derr != DRAGON_SUCCESS) {
                     char err_str[200];
-                    sprintf((char*)&err_str, "Could not satisfy preallocated block allocation request of size %lu", size);
+                    snprintf(err_str, 199, "Could not satisfy preallocated block allocation request of size %lu", size);
                     append_err_return(derr, err_str);
                 }
 
@@ -1233,7 +1233,7 @@ dragonError_t dragon_heap_malloc(dragonDynHeap_t* heap, const size_t size, void*
         // in the heap.
         *ptr = NULL;
         char err_str[200];
-        sprintf((char*)&err_str, "Will never be able to satisfy dragon_heap_malloc request of size %lu. This may be because of static pre-allocations.", size);
+        snprintf(err_str, 199, "Will never be able to satisfy dragon_heap_malloc request of size %lu. This may be because of static pre-allocations.", size);
         err_return(DRAGON_DYNHEAP_REQUESTED_SIZE_TOO_LARGE, err_str);
     }
 

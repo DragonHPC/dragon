@@ -100,7 +100,7 @@ cdef class MemoryPoolAttr:
 
         derr = dragon_memory_attr_init(&self._mattr)
         if derr != DRAGON_SUCCESS:
-            raise RuntimeError(f"MemoryAttr Error: Unable to initialize memory attribute. Dragon Error Code: ({derr})")
+            raise RuntimeError(f"MemoryAttr Error: Unable to initialize memory attribute. Dragon Error Code: ({dragon_get_rc_string(derr)})")
 
         if pre_alloc_blocks is not None:
             self._mattr.npre_allocs = len(pre_alloc_blocks)
@@ -356,7 +356,7 @@ cdef class MemoryPool:
 
         derr = dragon_memory_attr_init(&self._mattr)
         if derr != DRAGON_SUCCESS:
-            raise RuntimeError(f"MemoryAttr Error: Unable to initialized memory attribute. Dragon Error Code: ({derr})")
+            raise RuntimeError(f"MemoryAttr Error: Unable to initialized memory attribute. Dragon Error Code: ({dragon_get_rc_string(derr)})")
 
         # @MCB: if pre_alloc_blocks is used, build mattr struct
         if pre_alloc_blocks is not None:

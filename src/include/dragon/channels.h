@@ -429,6 +429,9 @@ dragonError_t
 dragon_channel_detach(dragonChannelDescr_t* ch);
 
 dragonError_t
+dragon_channel_descr_clone(dragonChannelDescr_t * newch_descr, const dragonChannelDescr_t * oldch_descr);
+
+dragonError_t
 dragon_channel_get_pool(const dragonChannelDescr_t* ch, dragonMemoryPoolDescr_t* pool_descr);
 
 dragonError_t

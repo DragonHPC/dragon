@@ -20,6 +20,7 @@ typedef enum dragonError_st {
     DRAGON_NOT_FOUND,
     DRAGON_INVALID_LOCK_KIND,
     DRAGON_INVALID_SYNC_KIND,
+    DRAGON_EOT,
     DRAGON_CHANNEL_MEMORY_POOL_NONLOCAL,
     DRAGON_CHANNEL_ALREADY_DESTROYED,
     DRAGON_CHANNEL_BUFFER_ERROR,
@@ -107,6 +108,7 @@ typedef enum dragonError_st {
     DRAGON_BARRIER_BROKEN,
     DRAGON_BARRIER_WAIT_TRY_AGAIN,
     DRAGON_BARRIER_READY_TO_RELEASE,
+    DRAGON_OBJECT_DESTROYED,
     DRAGON_BAD_RETURN_CODE // This must remain the last return code so the dragon_get_rc_string works correctly.
 } dragonError_t;
 

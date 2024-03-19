@@ -11,6 +11,8 @@ API Reference
     inf/index.rst
     core/index.rst
     mpbridge/index.rst
+    workflows/index.rst
+    data/index.rst
 
 <Picture of Dragon services. The picture should show unmanaged running on top of
 the run-time services and also beside it. The segment on top of dragon run-time

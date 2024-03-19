@@ -4,7 +4,6 @@ import unittest
 import time
 import socket
 
-from test import support
 from test.support import hashlib_helper
 from test.support import socket_helper
 

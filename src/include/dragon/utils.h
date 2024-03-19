@@ -40,9 +40,6 @@ uint32_t
 dragon_get_ctr_from_uuid(dragonUUID uuid);
 
 dragonError_t
-dragon_timespec_deadline(const timespec_t* timer, timespec_t* deadline);
-
-dragonError_t
 dragon_timespec_add(timespec_t* result, const timespec_t* first, const timespec_t* second);
 
 dragonError_t
@@ -52,7 +49,10 @@ bool
 dragon_timespec_le(const timespec_t* first, const timespec_t* second);
 
 dragonError_t
-dragon_timespec_remaining(const timespec_t * end_time, timespec_t * remaining_timeout);
+dragon_timespec_deadline(const timespec_t* timer, timespec_t* deadline);
+
+dragonError_t
+dragon_timespec_remaining(const timespec_t * deadline, timespec_t * remaining_timeout);
 
 char*
 dragon_base64_encode(uint8_t *data, size_t input_length, size_t *output_length);

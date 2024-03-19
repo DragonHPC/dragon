@@ -496,8 +496,12 @@ cdef extern from "<dragon/shared_lock.h>":
     ctypedef struct dragonFIFOLiteLock_t:
         pass
 
-    ctypedef struct dragonLock_t:
+    ctypedef struct dragonLock_u:
         pass
+
+    ctypedef struct dragonLock_t:
+        dragonLockKind_t kind
+        dragonLock_u ptr
 
     size_t dragon_lock_size(dragonLockKind_t kind)
     dragonError_t dragon_lock_init(dragonLock_t * lock, void * ptr, dragonLockKind_t lock_kind)
@@ -572,3 +576,58 @@ cdef extern from "dragon/perf.h":
     dragonError_t dragon_chperf_kernel_append_op(int kernel_idx, dragonChPerfOpcode_t op_code, int dst_ch_idx, size_t size_in_bytes, double timeout_in_sec)
     dragonError_t dragon_chperf_kernel_run(int kernel_idx, double *run_time)
 
+cdef extern from "dragon/fli.h":
+
+    ctypedef struct dragonFLIAttr_t:
+        pass
+
+    ctypedef struct dragonFLIDescr_t:
+        pass
+
+    ctypedef struct dragonFLISerial_t:
+        size_t len
+        uint8_t * data
+
+    ctypedef struct dragonFLISendHandleDescr_t:
+        pass
+
+    ctypedef struct dragonFLIRecvHandleDescr_t:
+        pass
+
+    dragonChannelDescr_t* STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION
+
+    dragonError_t dragon_fli_create(dragonFLIDescr_t* adapter, dragonChannelDescr_t* main_ch,
+                                    dragonChannelDescr_t* mgr_ch, dragonMemoryPoolDescr_t* pool,
+                                    const dragonULInt num_strm_chs, dragonChannelDescr_t** strm_channels,
+                                    const bool user_buffered_protocol, dragonFLIAttr_t* attrs) nogil
+    dragonError_t dragon_fli_destroy(dragonFLIDescr_t* adapter) nogil
+    dragonError_t dragon_fli_serialize(const dragonFLIDescr_t* adapter, dragonFLISerial_t* serial) nogil
+    dragonError_t dragon_fli_serial_free(dragonFLISerial_t* serial) nogil
+    dragonError_t dragon_fli_attach(const dragonFLISerial_t* serial, const dragonMemoryPoolDescr_t* pool,
+                                    dragonFLIDescr_t* adapter) nogil
+    dragonError_t dragon_fli_detach(dragonFLIDescr_t* adapter) nogil
+    dragonError_t dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandleDescr_t* send_handle,
+                                              dragonChannelDescr_t* strm_ch, const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_handle,
+                                               const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_open_recv_handle(const dragonFLIDescr_t* adapter, dragonFLIRecvHandleDescr_t* recv_handle,
+                                              dragonChannelDescr_t* strm_ch, const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_close_recv_handle(dragonFLIRecvHandleDescr_t* recv_handle, const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_create_writable_fd(dragonFLISendHandleDescr_t* send_handle, int* fd_ptr, const bool buffer,
+                            size_t chunk_size, const uint64_t arg, const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_finalize_writable_fd(dragonFLISendHandleDescr_t* send_handle) nogil
+    dragonError_t dragon_fli_create_readable_fd(dragonFLIRecvHandleDescr_t* recv_handle, int* fd_ptr,
+                            const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_finalize_readable_fd(dragonFLIRecvHandleDescr_t* recv_handle) nogil
+    dragonError_t dragon_fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, size_t num_bytes,
+                                        uint8_t* bytes, uint64_t arg, const bool buffer, const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_send_mem(dragonFLISendHandleDescr_t* send_handle, dragonMemoryDescr_t* mem,
+                                      uint64_t arg, const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_recv_bytes(dragonFLIRecvHandleDescr_t* recv_handle, size_t requested_size,
+                                        size_t* received_size, uint8_t** bytes, uint64_t* arg,
+                                        const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_recv_bytes_into(dragonFLIRecvHandleDescr_t* recv_handle, size_t requested_size,
+                                            size_t* received_size, uint8_t* bytes, uint64_t* arg,
+                                            const timespec_t* timeout) nogil
+    dragonError_t dragon_fli_recv_mem(dragonFLIRecvHandleDescr_t* recv_handle, dragonMemoryDescr_t* mem,
+                                      uint64_t* arg, const timespec_t* timeout) nogil

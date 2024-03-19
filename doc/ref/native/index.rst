@@ -37,8 +37,9 @@ Architecture
 
 .. figure:: images/architecture.svg
     :scale: 75%
+    :name: dragon-native-architecture
 
-    **Figure 1: The Dragon native architecture**
+    **The Dragon native architecture**
 
 Dragon native components use the Dragon Global Services Client API to implement
 :term:`refcounted <Refcounted Object>`, :term:`managed <Managed Object>`, or

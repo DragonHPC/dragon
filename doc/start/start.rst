@@ -15,7 +15,7 @@ Prerequisites
 
 You need to have the following software packages installed on your system:
 
-- Python 3.9 (e.g., module load cray-python)
+- Python 3.9, 3.10, or 3.11 corresponding to your whl file (e.g., module load cray-python)
 - GCC 9 or later
 - Slurm or PBS+PALS (for multi-node Dragon)
 
@@ -30,7 +30,7 @@ Install Dragon
 Before you can run programs using Dragon, you must set up the run-time for your
 environment. You must have Python 3.9 installed and it must be in your path
 somewhere. A common choice is to use a Python virtual environment, which can be initialized
-from a base Python 3.9+ with:
+for example from a base Python 3.9+ with:
 
 .. code-block:: console
 
@@ -44,7 +44,7 @@ are relative to the directory that contains the README.md.
 
 .. code-block:: console
 
-    pip3 install --force-reinstall dragon-0.61-cp39-cp39-linux_x86_64.whl
+    pip3 install --force-reinstall dragon-0.8-*.whl
 
 * Check and possibly update that `$PATH` is has the location of pip installed
   console scripts, such as ~/.local/bin if you're not using a virtual environment.
@@ -57,7 +57,7 @@ are relative to the directory that contains the README.md.
 
 .. code-block:: console
 
-    module use [/path to dragon-0.61]/modulefiles
+    module use [/path to dragon-0.8]/modulefiles
     module load dragon
 
 If you intend to use Dragon on your own Linux VM or an image that you

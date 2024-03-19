@@ -9,7 +9,14 @@ import operator
 import gc
 
 import test.support
-from test import support
+try:
+    from test.support.import_helper import import_module
+    from test.support.threading_helper import join_thread
+except ImportError:
+    #location prior to Python 3.10
+    from test.support import import_module
+    from test.support import join_thread
+
 
 import threading
 
@@ -22,10 +29,10 @@ from multiprocessing import util
 from multiprocessing.connection import wait
 
 # Skip tests if _multiprocessing wasn't built.
-_multiprocessing = test.support.import_module("_multiprocessing")
+_multiprocessing = import_module("_multiprocessing")
 
 # Skip tests if sem_open implementation is broken.
-support.skip_if_broken_multiprocessing_synchronize()
+test.support.skip_if_broken_multiprocessing_synchronize()
 
 
 def latin(s):
@@ -42,7 +49,7 @@ def join_process(process):
     """Since multiprocessing.Process has the same API than threading.Thread
     (join() and is_alive(), the support function can be reused
     """
-    support.join_thread(process)
+    join_thread(process)
 
 
 #
@@ -186,13 +193,13 @@ class BaseMixin(object):
         processes = set(multiprocessing.process._dangling) - set(cls.dangling[0])
         if processes:
             test.support.environment_altered = True
-            support.print_warning(f"Dangling processes: {processes}")
+            test.support.print_warning(f"Dangling processes: {processes}")
         processes = None
 
         threads = set(threading._dangling) - set(cls.dangling[1])
         if threads:
             test.support.environment_altered = True
-            support.print_warning(f"Dangling threads: {threads}")
+            test.support.print_warning(f"Dangling threads: {threads}")
         threads = None
 
 
@@ -262,7 +269,7 @@ class ManagerMixin(BaseMixin):
             dt = time.monotonic() - start_time
             if dt >= 5.0:
                 test.support.environment_altered = True
-                support.print_warning(
+                test.support.print_warning(
                     f"multiprocessing.Manager still has "
                     f"{multiprocessing.active_children()} "
                     f"active children after {dt} seconds"
@@ -275,8 +282,8 @@ class ManagerMixin(BaseMixin):
             # ensure that all processes which hold a reference to a
             # managed object have been joined.
             test.support.environment_altered = True
-            support.print_warning("Shared objects which still exist " "at manager shutdown:")
-            support.print_warning(cls.manager._debug_info())
+            test.support.print_warning("Shared objects which still exist " "at manager shutdown:")
+            test.support.print_warning(cls.manager._debug_info())
         cls.manager.shutdown()
         cls.manager.join()
         cls.manager = None
@@ -354,14 +361,14 @@ def tearDownModule():
     if processes:
         need_sleep = True
         test.support.environment_altered = True
-        support.print_warning(f"Dangling processes: {processes}")
+        test.support.print_warning(f"Dangling processes: {processes}")
     processes = None
 
     threads = set(threading._dangling) - set(dangling[1])
     if threads:
         need_sleep = True
         test.support.environment_altered = True
-        support.print_warning(f"Dangling threads: {threads}")
+        test.support.print_warning(f"Dangling threads: {threads}")
     threads = None
 
     # Sleep 500 ms to give time to child processes to complete.

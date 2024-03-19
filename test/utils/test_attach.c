@@ -116,13 +116,6 @@ int main(int argc, char **argv)
             main_err_fail(derr, "Failed to detach from pool", jmp_destroy_pool);
     }
 
-    /* FIXME: This is temporary while PE-43816 is being worked on. */
-    printf("This is a temporary fix to remove pool until PE-43816 is completed.\n");
-    derr = dragon_memory_pool_destroy(&mpool);
-    if (derr != DRAGON_SUCCESS) {
-        err_fail(derr, "Failed to destroy the memory pool");
-    }
-    return SUCCESS;
 /********
          Check our channel attach/detach before our final pool detach
 ********/

@@ -11,8 +11,9 @@ Architecture of Dragon Dictionay
 .. figure:: images/dragon_dict_architecture.png
     :align: center
     :scale: 30%
+    :name: high-level-arch
 
-    **Figure 1: High-level architecture of a Dragon Dictionary**
+    **High-level architecture of a Dragon Dictionary**
 
 From Python code, a user instantiates a dragon dictionary specifying the number of back-end managers. During bring-up of a dragon dictionary,
 a pool of manager processes are started along with a collection of dragon channels used for communication between clients and managers. Each of the managers
@@ -95,9 +96,9 @@ The dictionary is spawned from across 1 node to 64 nodes with each manager worke
 with each key of constant size of 30 bytes in the dictionary. The results clearly demonstrate the advantage of distributed dictionary, with increased
 aggregated rate of opearations as the dictionary managers are spawned across the increasing number of nodes.
 
-
 .. figure:: images/dragon_dict_results.png
     :align: center
     :scale: 25%
+    :name: multinode-results
 
-    **Figure 2: Results on a multi-node setup**
+    **Results on a multi-node setup**

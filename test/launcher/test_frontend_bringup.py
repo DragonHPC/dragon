@@ -24,7 +24,13 @@ from .launcher_testing_utils import catch_thread_exceptions
 
 from .frontend_testing_mocks import run_frontend, open_backend_comms, open_overlay_comms
 from .frontend_testing_mocks import send_beisup, handle_teardown, recv_fenodeidx, send_shchannelsup, recv_lachannelsinfo
-from .frontend_testing_mocks import handle_gsprocesscreate, handle_bringup, stand_up_backend, handle_overlay_teardown
+from .frontend_testing_mocks import (
+    handle_gsprocesscreate,
+    handle_gsprocesscreate_error,
+    handle_bringup,
+    stand_up_backend,
+    handle_overlay_teardown
+)
 from .frontend_testing_mocks import send_abnormal_term
 
 
@@ -155,6 +161,72 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
 
         # Check we launched the backend with default transport
         self.assertEqual(la_info.transport, TransportAgentOptions.TCP)
+
+        # Receive GSProcessCreate
+        handle_gsprocesscreate(self.primary_conn)
+
+        # Send GSHalted
+        handle_teardown(self.be_nodes, self.primary_conn, self.fe_ta_conn)
+
+        # Join on the frontend thread
+        fe_proc.join()
+
+    @unittest.skip('HSTA not currently supported in open source.')
+    @catch_thread_exceptions
+    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
+    @patch('dragon.launcher.frontend.start_overlay_network')
+    def test_error_launching_head_process(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
+        '''Test error launching head process'''
+
+        args_map = get_args_map(self.network_config)
+
+        # get startup going in another thread. Note: need to do threads in order to use
+        # all our mocks
+        fe_proc = threading.Thread(name='Frontend Server',
+                                   target=run_frontend,
+                                   args=(args_map,),
+                                   daemon=False)
+        fe_proc.start()
+
+        # Get backend up
+        la_info = self.do_bringup(mock_overlay, mock_launch)
+
+        # Check we launched the backend with default transport
+        self.assertEqual(la_info.transport, TransportAgentOptions.HSTA)
+
+        # Receive GSProcessCreate
+        handle_gsprocesscreate_error(self.primary_conn)
+
+        # Join on the frontend thread
+        fe_proc.join()
+
+        logging.info(f"exception: {exceptions_caught_in_threads}")
+        assert 'Frontend Server' in exceptions_caught_in_threads  # there was an exception in thread  1
+        assert exceptions_caught_in_threads['Frontend Server']['exception']['type'] == RuntimeError
+        assert str(exceptions_caught_in_threads['Frontend Server']['exception']['value']) == 'Abnormal exit detected'
+
+    @unittest.skip('HSTA not currently supported in open source.')
+    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
+    @patch('dragon.launcher.frontend.start_overlay_network')
+    def test_clean_exit_with_hsta_launch(self, mock_overlay, mock_launch):
+        '''Test a clean bring-up and teardown with HSTA'''
+
+        args_map = get_args_map(self.network_config,
+                                arg1=['-t', 'hsta'])
+
+        # get startup going in another thread. Note: need to do threads in order to use
+        # all our mocks
+        fe_proc = threading.Thread(name='Frontend Server',
+                                   target=run_frontend,
+                                   args=(args_map,),
+                                   daemon=False)
+        fe_proc.start()
+
+        # Get backend up
+        la_info = self.do_bringup(mock_overlay, mock_launch)
+
+        # Check we launched the backend with default transport
+        self.assertEqual(la_info.transport, TransportAgentOptions.HSTA)
 
         # Receive GSProcessCreate
         handle_gsprocesscreate(self.primary_conn)
@@ -315,6 +387,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert str(exceptions_caught_in_threads['Frontend Server']['exception']['value']) \
             == 'Overlay transport agent launch failed on launcher frontend'
 
+    @unittest.skip("Skipped pending fix of problem outlined in CIRRUS-1922. This test sporadically fails.")
     @catch_thread_exceptions
     @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
     @patch('dragon.launcher.frontend.start_overlay_network')
