@@ -54,7 +54,7 @@ if __name__ == "__main__":
 
         multiprocessing.util.log_to_stderr(logging.DEBUG)
 
-    print(f"Multiprocessing start method: {multiprocessing.get_start_method()}")
+    print(f"Multiprocessing start method: {multiprocessing.get_start_method()}", flush=True)
 
     num_cpus = args.num_workers
     ar_size = int(1e3 * args.work_size)

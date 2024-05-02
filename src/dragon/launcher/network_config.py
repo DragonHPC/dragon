@@ -4,8 +4,6 @@ import logging
 import json
 import enum
 import zlib
-import signal
-import sys
 from typing import Optional
 from base64 import b64encode, b64decode
 

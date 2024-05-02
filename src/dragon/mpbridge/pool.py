@@ -1,6 +1,6 @@
 """Dragon's replacement for Multiprocessing Pool.
 
-By default this uses a patched version of the dragon native pool and sets
+By default this uses the dragon native pool and sets
 `DRAGON_BASEPOOL="NATIVE"`. The private api for this class is still under
 development. To revert to the version based on the `multiprocessing.Pool` class
 with a patched terminate_pool method, set `DRAGON_BASEPOOL="PATCHED"` in the
@@ -144,7 +144,11 @@ class WrappedDragonProcess:  # Dummy
         :return: True if the process is running, False otherwise
         :rtype: bool
         """
-        return self._process.is_alive
+        try:
+            stat = self._process.is_alive
+        except Exception:
+            stat = False
+        return stat
 
     def join(self, timeout: float = None) -> int:
         """Wait for the process to finish.
@@ -154,7 +158,7 @@ class WrappedDragonProcess:  # Dummy
         :return: exit code of the process, None if timeout occurs
         :rtype: int
         :raises: ProcessError
-        """
+    """
         return self._process.join()
 
     def terminate(self) -> None:
@@ -285,12 +289,11 @@ class DragonPool(NativePool):
             self._pg.kill(signal.SIGTERM)
             self._pg.join()
             self._pg.stop()
-
+        del self._pg
         self._pg = ProcessGroup(restart=True, ignore_error_on_exit=True)
         self._pg.add_process(self._processes, self._template)
         self._pg.init()
         self._pg.start()
-
 
     def apply_async(
         self,

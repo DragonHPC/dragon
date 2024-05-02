@@ -100,7 +100,13 @@ class Value:
         valbytes = self._value2valbytes(value)
 
         # create value in shared memory
-        msg = Message.create_alloc(self._mpool, 8)
+        mpool = self._channel.get_pool()
+        # if the channel isn't local, then fall back on using the default
+        # allocation pool
+        if not mpool.is_local:
+            mpool = self._channel.default_alloc_pool
+
+        msg = Message.create_alloc(mpool, 8)
         mview = msg.bytes_memview()
         mview[: len(valbytes)] = valbytes
 

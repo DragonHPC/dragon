@@ -30,7 +30,9 @@ DIST_SOURCES := $(wildcard pkg/*) \
 				multi-node/test_array.py \
 				multi-node/test_barrier.py \
 				multi-node/test_connection.py \
-				multi-node/test_dict.py \
+				multi-node/test_ddict.py \
+				multi-node/test_distdict.py \
+				multi-node/test_fli.py \
 				multi-node/test_lock.py \
 				multi-node/test_machine.py \
 				multi-node/test_pool.py \
@@ -58,12 +60,13 @@ TESTS_PYTHON := test_c_files.py \
                 transport/test_lsif.py \
                 test_transport.py \
                 test_integration_shep_gs.py \
-                test_launcher.py
+				test_launcher.py
 
 
 TESTS_DRAGON := test_mpbridge.py \
                 test_native.py \
-                test_dict.py
+                test_dict.py \
+				test_distdict.py
 
 .PHONY: all
 all: test

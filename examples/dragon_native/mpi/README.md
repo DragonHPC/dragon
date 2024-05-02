@@ -5,7 +5,7 @@ start MPI applications.
 
 ## MPI Pool Workers Demo
 
-The file `mpi_pool_workers_demo.py` contains a program that starts a single rank 
+The file `mpi_process_group_demo.py` contains a program that starts a single rank
 MPI hello world application on each of the allocated workload manager nodes. As
 support for MPI applications is expanded, Dragon will support multiple ranks per
 node, partitioning of nodes, etc.
@@ -22,13 +22,13 @@ node, partitioning of nodes, etc.
    ```
 3. Run the dragon example!
    ```
-   > dragon mpi_pool_workers_demo.py
+   > dragon mpi_process_group_demo.py
    ```
 
 ### Example Output
 
 ```
-login> dragon mpi_pool_workers_demo.py
+login> dragon mpi_process_group_demo.py
 [stdout: p_uid=4294967297] Hello world from processor pinoak0202, rank 1 out of 2 processors
 [stdout: p_uid=4294967298] Hello world from processor pinoak0201, rank 0 out of 2 processors
 ```
@@ -86,3 +86,65 @@ INFO:consumer:{0: ('4', '62.30')}
 INFO:consumer:{0: ('8', '68.07')}
 ...
 ```
+
+## Policy Demo
+
+The file `policy_demo.py` contains a program that shows how policies can be passed to process groups and processes that are a part of the process group. This example highlights how an MPI application can be launched on a subset of the allocated nodes and how a policy restricting the cpu affinity can be applied to the whole group.
+
+### Running the example
+
+1. Run `make` to build the mpi_hello example application.
+   ```
+   > make
+   ```
+2. Get an allocation of nodes
+   ```
+   > salloc --nodes=2 --exclusive
+   ```
+3. Run the dragon example!
+   ```
+   > dragon policy_demo.py
+   ```
+
+### Example Output
+
+```
+ dragon policy_demo.py
+Using 2 of 4
+pinoak0015 has AMD GPUs with visible devices: [0, 1, 2, 3, 4, 5, 6, 7]
+pinoak0016 has AMD GPUs with visible devices: [0, 1, 2, 3, 4, 5, 6, 7]
+pinoak0014 has AMD GPUs with visible devices: [0, 1, 2, 3, 4, 5, 6, 7]
+pinoak0013 has AMD GPUs with visible devices: [0, 1, 2, 3, 4, 5, 6, 7]
+4294967298 returned output: Hello world from pid 57645, processor pinoak0015, rank 0 out of 16 processors
+
+4294967299 returned output: Hello world from pid 57646, processor pinoak0015, rank 1 out of 16 processors
+
+4294967300 returned output: Hello world from pid 57647, processor pinoak0015, rank 2 out of 16 processors
+
+4294967301 returned output: Hello world from pid 57648, processor pinoak0015, rank 3 out of 16 processors
+
+4294967302 returned output: Hello world from pid 57649, processor pinoak0015, rank 4 out of 16 processors
+
+4294967303 returned output: Hello world from pid 57650, processor pinoak0015, rank 5 out of 16 processors
+
+4294967304 returned output: Hello world from pid 57651, processor pinoak0015, rank 6 out of 16 processors
+
+4294967305 returned output: Hello world from pid 57652, processor pinoak0015, rank 7 out of 16 processors
+
+4294967306 returned output: Hello world from pid 56247, processor pinoak0016, rank 8 out of 16 processors
+
+4294967307 returned output: Hello world from pid 56248, processor pinoak0016, rank 9 out of 16 processors
+
+4294967308 returned output: Hello world from pid 56249, processor pinoak0016, rank 10 out of 16 processors
+
+4294967309 returned output: Hello world from pid 56250, processor pinoak0016, rank 11 out of 16 processors
+
+4294967310 returned output: Hello world from pid 56251, processor pinoak0016, rank 12 out of 16 processors
+
+4294967311 returned output: Hello world from pid 56252, processor pinoak0016, rank 13 out of 16 processors
+
+4294967312 returned output: Hello world from pid 56253, processor pinoak0016, rank 14 out of 16 processors
+
+4294967313 returned output: Hello world from pid 56254, processor pinoak0016, rank 15 out of 16 processors
+```
+

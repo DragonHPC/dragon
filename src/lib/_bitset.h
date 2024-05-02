@@ -66,6 +66,9 @@ dragonError_t
 dragon_bitset_destroy(dragonBitSet_t* set);
 
 dragonError_t
+dragon_bitset_clear(dragonBitSet_t* set);
+
+dragonError_t
 dragon_bitset_attach(void* ptr, dragonBitSet_t* set);
 
 dragonError_t

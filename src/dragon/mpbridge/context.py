@@ -776,7 +776,6 @@ class DragonContext(multiprocessing.context.BaseContext):
                 initializer=initializer,
                 initargs=initargs,
                 maxtasksperchild=maxtasksperchild,
-                context=self.get_context(),
             )
 
     def RawValue(self, typecode_or_type, *args):

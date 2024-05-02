@@ -9,7 +9,6 @@
 extern dragonRecvJobParams_t pmod_mparams;
 
 static void *lib_pals_handle = NULL;
-static int ptrs_set = 0;
 static int inside_vanilla_pals = 0;
 
 

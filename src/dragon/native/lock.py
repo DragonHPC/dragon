@@ -147,7 +147,9 @@ class Lock:
         :rtype: bool
         """
 
-        LOGGER.debug(f"Acquire Lock {self!r} with blocking={block}, timeout={timeout}")
+        # Locks are often acquired and released many times, we don't log these to prevent
+        # big impacts on performance.
+        #LOGGER.debug(f"Acquire Lock {self!r} with blocking={block}, timeout={timeout}")
 
         if timeout is not None and timeout < 0:
             timeout = 0
@@ -184,7 +186,9 @@ class Lock:
         :raises AssertionError: if the lock is recursive and not held by the caller
         """
 
-        LOGGER.debug(f"Release Lock {self!r}")
+        # Locks are often acquired and released many times, we don't log these to prevent
+        # big impacts on performance.
+        #LOGGER.debug(f"Release Lock {self!r}")
 
         if self._recursive:
             assert self._accesscount > 0, "attempt to release recursive lock not owned by process"

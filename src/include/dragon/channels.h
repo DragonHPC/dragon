@@ -228,7 +228,8 @@ typedef struct dragonChannelRecvAttr_st {
  *
 */
 typedef struct dragonChannelDescr_st {
-    uint64_t _idx;
+    dragonRT_UID_t _rt_idx;
+    dragonC_UID_t _idx;
 } dragonChannelDescr_t;
 
 /**
@@ -619,6 +620,9 @@ dragon_channel_gatewaymessage_transport_event_cmplt(dragonGatewayMessage_t* gmsg
 
 dragonError_t
 dragon_channel_gatewaymessage_client_event_cmplt(dragonGatewayMessage_t* gmsg, dragonULInt* event, const dragonWaitMode_t wait_mode);
+
+dragonError_t
+dragon_create_process_local_channel(dragonChannelDescr_t* ch, const timespec_t* timeout);
 
 #ifdef __cplusplus
 }

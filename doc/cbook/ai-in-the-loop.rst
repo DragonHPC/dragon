@@ -49,7 +49,7 @@ The code of the other files can be found in the release package, inside `example
     from itertools import count
     from model import Net, make_features, infer, train
 
-    from dragon.native.process import Process, TemplateProcess, Popen
+    from dragon.native.process import Process, ProcessTemplate, Popen
     from dragon.native.process_group import ProcessGroup
     from dragon.infrastructure.connection import Connection
     from dragon.native.machine import System
@@ -112,12 +112,12 @@ The code of the other files can be found in the release package, inside `example
         grp = ProcessGroup(restart=False, pmi_enabled=True)
 
         # Pipe the stdout output from the head process to a Dragon connection
-        grp.add_process(nproc=1, template=TemplateProcess(target=exe, args=args, cwd=run_dir, stdout=Popen.PIPE))
+        grp.add_process(nproc=1, template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.PIPE))
 
         # All other ranks should have their output go to DEVNULL
         grp.add_process(
             nproc=num_ranks - 1,
-            template=TemplateProcess(target=exe, args=args, cwd=run_dir, stdout=Popen.DEVNULL),
+            template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.DEVNULL),
         )
         # start the process group
         grp.init()
@@ -153,12 +153,12 @@ The code of the other files can be found in the release package, inside `example
         grp = ProcessGroup(restart=False, pmi_enabled=True)
 
         # Pipe the stdout output from the head process to a Dragon connection
-        grp.add_process(nproc=1, template=TemplateProcess(target=exe, args=args, cwd=run_dir, stdout=Popen.PIPE))
+        grp.add_process(nproc=1, template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.PIPE))
 
         # All other ranks should have their output go to DEVNULL
         grp.add_process(
             nproc=num_ranks - 1,
-            template=TemplateProcess(target=exe, args=args, cwd=run_dir, stdout=Popen.DEVNULL),
+            template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.DEVNULL),
         )
         # start the process group
         grp.init()

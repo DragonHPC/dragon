@@ -5,7 +5,7 @@ import time
 import dragon
 
 from dragon.native.queue import Queue
-from dragon.native.process import Process, current, TemplateProcess
+from dragon.native.process import Process, current, ProcessTemplate
 from dragon.infrastructure.parameters import this_process
 
 
@@ -110,7 +110,7 @@ class TestDragonNativeProcess(unittest.TestCase):
         exe = "sleep"
         args = ("10000",)
 
-        templ = TemplateProcess(exe, args)
+        templ = ProcessTemplate(exe, args)
 
         p = Process.from_template(templ, ident="Banana")  # creates a new process
 
@@ -124,7 +124,7 @@ class TestDragonNativeProcess(unittest.TestCase):
 
         q = Queue()
 
-        templ = TemplateProcess(self.putter, args=(q,))
+        templ = ProcessTemplate(self.putter, args=(q,))
         func, args, kwargs = templ.get_original_python_parameters()
         self.assertTrue(callable(func))
         self.assertIsInstance(args[0], Queue)

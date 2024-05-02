@@ -1,15 +1,11 @@
-Data 
+Data
 ++++++++
 
-Python Reference
-================
-.. currentmodule:: dragon.data.distdictionary
+Dragon has APIs for managing data in a scalable fashion. A prominent member of
+these APIs is the distributed dictionary. Descriptions and APIs are grouped
+together for each of the supported Dragon Data Types.
 
-.. autosummary::
-    :toctree:
-    :recursive:
+.. toctree::
+    :maxdepth: 5
 
-    dict_managers
-    distributed_dict
-    dragon_dict
-
+    ddict.rst

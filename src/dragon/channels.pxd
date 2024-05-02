@@ -19,3 +19,6 @@ cdef class Channel:
         derr = dragon_channel_get_pool(&self._channel, pool)
         if derr != DRAGON_SUCCESS:
             return (derr, "Could not retrieve memory pool from channel")
+
+        if not dragon_memory_pool_is_local(pool):
+            pool[0] = self._default_pool._pool_hdl

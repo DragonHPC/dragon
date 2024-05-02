@@ -32,12 +32,12 @@ class GroupDescriptor:
             FAIL = 1  #: Resource was not created
             ALREADY = 2  #: Resource exists already
 
-        state : object = None
-        uid : int = None
-        placement : int = None
-        desc : object = None
-        error_code : int = None
-        error_info : str = None
+        state: object = None
+        uid: int = None
+        placement: int = None
+        desc: object = None
+        error_code: int = None
+        error_info: str = None
 
         @classmethod
         def from_sdict(cls, d):
@@ -79,15 +79,20 @@ class GroupDescriptor:
 
             return rv
 
-    state : State = State.PENDING
-    g_uid : int = None
-    name : str = None
-    sets : list(list()) = field(default_factory=list)
-    policy : Policy = None
+    state: State = State.PENDING
+    g_uid: int = None
+    name: str = None
+    sets: list(list()) = field(default_factory=list)
+    policy: Policy = None
 
     def __post_init__(self):
         if type(self.policy) is dict:
             self.policy = Policy.from_sdict(self.policy)
+
+        if type(self.policy) is list:
+            modded_args = [(i, Policy.from_sdict(p)) for i, p in enumerate(self.policy) if isinstance(p, dict)]
+            for i, p in modded_args:
+                self.policy[i] = p
 
         if self.sets:
             old_sets, self.sets = self.sets, []
@@ -136,6 +141,8 @@ class GroupDescriptor:
 
         if isinstance(self.policy, Policy):
             rv['policy'] = self.policy.get_sdict()
+        elif isinstance(self.policy, list):
+            rv['policy'] = [policy.get_sdict() for policy in self.policy]
         else:
             rv['policy'] = self.policy
 

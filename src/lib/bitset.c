@@ -110,7 +110,34 @@ dragon_bitset_init(void* ptr, dragonBitSet_t* set, const size_t num_bits)
     *size_ptr = num_bits;
     set->size = num_bits;
     set->data = (char*) (ptr + sizeof(size_t));
-    size_t max_idx = (num_bits + 7) / 8;
+
+    dragon_bitset_clear(set); // Called internally this will not fail.
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/** @brief Clear a bitset to all zeroes.
+ *
+ *  This API provides a bitset implementation that resides in a pre-allocated blob of memory.
+ *  This datatype does not do any dynamic allocation of memory on its own. The bitset is a set
+ *  of integers ranging from to to num_bits-1.
+ *
+ *  A bitset must be cleared (i.e. set to zeroes) by calling this. The BitSet should have been
+ *  previously initialized.
+ *
+ *  @param set A pointer to a handle to an initialized bitset.
+ *
+ *  @return
+ *      * **DRAGON_SUCCESS** It did its job.
+ *      * **DRAGON_BITSET_NULL_POINTER** The set was a null-pointer.
+ */
+dragonError_t
+dragon_bitset_clear(dragonBitSet_t* set)
+{
+    if (set == NULL)
+        err_return(DRAGON_BITSET_NULL_POINTER,"The dragonBitSet handle pointer is NULL.");
+
+    size_t max_idx = (set->size + 7) / 8;
     for (size_t k = 0; k<max_idx; k++)
         set->data[k] = 0;
 

@@ -2,6 +2,10 @@ import enum
 from dataclasses import dataclass, field, fields
 from ..infrastructure.policy import Policy
 from ..infrastructure.node_desc import NodeDescriptor
+import logging
+
+
+LOG = logging.getLogger('policy_eval:')
 
 @dataclass
 class ResourceLayout:
@@ -159,11 +163,15 @@ class PolicyEvaluator:
 
     def _get_gpu_affinity(self, p : Policy, node : NodeDescriptor) -> list[int]:
 
+        #LOG.debug(f'{node=}')
         if p.gpu_affinity:
+            #LOG.debug(f'{node.accelerators=}')
+            assert(isinstance(p.gpu_affinity, list))
             affinity = [x for x in node.accelerators.device_list if x in p.gpu_affinity]
             return affinity
 
         if p.affinity == Policy.Affinity.ANY and node.accelerators is not None:
+            #LOG.debug(f'{node.accelerators=}')
             return node.accelerators.device_list
 
         return []
@@ -179,7 +187,9 @@ class PolicyEvaluator:
         for p in policies:
             # Merge incoming policies against the self.default_policy so any DEFAULT enums get replaced with the default policy option
             p = self.merge(self.default_policy, p)
+            #LOG.debug(f'Merged policy {p=}')
             node = self._get_node(p) # Get a node based on policy (if requesting specific nodes, may raise exception)
+            #LOG.debug(f'Node {node=}')
             cpu_affinity = self._get_cpu_affinity(p, node) # Get affinity based on policy
             gpu_affinity = self._get_gpu_affinity(p, node)
             env_str = "" # Environment string for setting accelerator affinity
@@ -187,6 +197,7 @@ class PolicyEvaluator:
                 env_str = node.accelerators.env_str
             self._add_layout(node, cpu_affinity, gpu_affinity, env_str, layouts)
 
+        #LOG.debug(f'{layouts=}')
         return layouts
 
     @staticmethod

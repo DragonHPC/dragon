@@ -3,8 +3,10 @@ import logging
 import threading
 import re
 import subprocess
+import signal
 from enum import Enum
 from functools import total_ordering
+from time import sleep
 
 from ..utils import B64
 from ..managed_memory import MemoryPool, DragonPoolError, DragonMemoryError
@@ -505,6 +507,20 @@ class LauncherBackEnd:
 
         return fwd_conns
 
+    def _sigterm_handler(self, *args):
+        """Handle transmitting AbnormalTermination to frontend if SIGTERM comes from WLM"""
+
+        log = logging.getLogger(dls.LA_BE).getChild('_sigterm_handler')
+
+        # If overlay threads aren't up, wait till they are
+        while self._state < BackendState.OVERLAY_THREADS_UP:
+            sleep(0.1)
+
+        # Now send an exceptionless abort which will get an AbnormalTerm to the frontend,
+        # and then we're done
+        log.debug('sending exceptionless abort due to SIGTERM signal')
+        self.la_be_stdout.send(dmsg.ExceptionlessAbort(tag=dlutil.next_tag()).serialize())
+
     def run_startup(self,
                     arg_ip_addr: str,
                     arg_host_id: str,
@@ -524,6 +540,15 @@ class LauncherBackEnd:
         :type fname: str, optional
         """
         log = logging.getLogger(dls.LA_BE).getChild('run_startup')
+
+        # Take control of SIGTERM signal from WLM
+        try:
+            self._orig_sigterm = signal.signal(signal.SIGTERM, self._sigterm_handler)
+            log.debug("got sigterm signal handling in place")
+        except ValueError:
+            # this error is thrown if we are running inside a child thread
+            # which we do for unit tests. So pass on this
+            log.debug("Unable to do signal handling outside of main thread")
 
         net_conf = NodeDescriptor.get_local_node_network_conf()
         self.host_id = int(net_conf.host_id)
@@ -713,7 +738,6 @@ class LauncherBackEnd:
         assert isinstance(sh_ping_be_msg, dmsg.SHPingBE), 'la_be ping from ls expected'
         log.info('la_be recv SHPingBE - m3')
 
-
         # switch to comms with local services over channels and proceed with bring up
         self.ls_channel = Channel.attach(B64.from_str(sh_ping_be_msg.shep_cd).decode())
         self.la_channel = Channel.attach(B64.from_str(sh_ping_be_msg.be_cd).decode())
@@ -796,7 +820,7 @@ class LauncherBackEnd:
                 # Handle the case that we're able to catch an abort and need to send
                 # that to the frontend but then assume the frontend will no longer talk to us.
                 if isinstance(msg, dmsg.ExceptionlessAbort):
-                    self.infra_out.send(dmsg.AbnormalTermination(tag=dlutil.next_tag()).serialize())
+                    self.infra_out.send(dmsg.AbnormalTermination(tag=dlutil.next_tag(), host_id=self.host_id).serialize())
                     self._abnormally_terminating = True
                     self.to_overlaynet_log.info('forwarded AbnormalTermination to frontend via ExceptionlessAbort')
 
@@ -921,7 +945,7 @@ class LauncherBackEnd:
         """Forward an infrastructure messages to leaves I'm responsible for
 
         :param msg: Infrastructure message
-        :type msg: dragon.infrastructure.messages._MsgBase
+        :type msg: dragon.infrastructure.messages.InfraMsg
         """
         for conn in self.frontend_fwd_conns.values():
             conn.send(msg.serialize())

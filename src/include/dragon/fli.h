@@ -13,13 +13,30 @@
 extern "C" {
 #endif
 
-/** @defgroup fli_structs API Structures
+/** @defgroup fli_consts API Structures
  *
- *  The fli API structures.
+ *  The fli API constants.
  *  @{
  */
 
+ /**
+  * @brief Constant to be used when opening a send and a receive handle as the
+  * stream channel argument when wishing to use the main channel as a stream
+  * channel. Both sender and receiver must have been designed to use this
+  * protocol since no run-time negotiation of this is provided.
+  *
+  */
+
 static dragonChannelDescr_t* const STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION = (dragonChannelDescr_t*)0x0000000000001111;
+
+
+/** @} */ // end of fli_consts group.
+
+/** @defgroup fli_structs
+ *
+ *  The FLI API structures.
+ *  @{
+ */
 
 /**
  * @brief The attributes structure of an fli adapter.
@@ -90,6 +107,10 @@ typedef struct dragonFLIRecvHandleDescr_st {
 
 /** @} */ // end of fli_structs group.
 
+/** @defgroup fli_lifecycle Channels Lifecycle Functions
+ *  @{
+ */
+
 /**
  * @brief Initialize attributes for a FLI adapter.
  *
@@ -107,7 +128,7 @@ dragon_fli_attr_init(dragonFLIAttr_t* attr);
 /**
  * @brief Create an FLI adapter.
  *
- * Create an FLI adapter. An FLI adapter guarantees that a send a receive handle
+ * An FLI adapter guarantees that a send and receive handle
  * is between one sender and one receiver and will not have to deal with data
  * interleaving from other processes. In addition, data may be streamed between
  * the sender and receiver when the FLI adapter is not used in buffered mode.
@@ -201,10 +222,10 @@ dragon_fli_attr_init(dragonFLIAttr_t* attr);
  * of the adapter create above. The application is responsible for the clean up of these
  * channels at the end of their life.
  *
-* @param use_buffered_protocol if true then only a main channel should provided, no
+* @param use_buffered_protocol if true then only a main channel should be provided and no
  * manager channel or stream channels are required. In this case all sent data is
- * buffered into one message for each file write operation (all sends on an open send
- * handle). The receiving side receives one message per completed file write operation.
+ * buffered into one message for all file write operations (all writes on an open send
+ * handle). The receiving side receives one message per conversation.
  *
  * @param attr is a pointer to the attributes structure that was previously
  * inited. If the attr arg is NULL the default attributes will be used.
@@ -232,7 +253,9 @@ dragonError_t
 dragon_fli_destroy(dragonFLIDescr_t* adapter);
 
 /**
- * @brief Serialize a FLI adapter for sharing with another process When sharing
+ * @brief Serialize a FLI adapter
+ *
+ * This enable sharing with another process. When sharing
  * an FLI adapter with another process  you may use this function to create a
  * shareable serialized descriptor. This creates a binary string which may not
  * be ASCII compliant. Before sharing, if ASCII compliance is required, call a
@@ -303,6 +326,50 @@ dragon_fli_attach(const dragonFLISerial_t* serial, const dragonMemoryPoolDescr_t
  */
 dragonError_t
 dragon_fli_detach(dragonFLIDescr_t* adapter);
+
+/**
+ * @brief Get available stream channels from adapter.
+ *
+ * Get the number of stream channels currently available in the manager
+ * FLI. This provides a count of the number of channels currently held
+ * in reserve in the FLI
+ *
+ * @param adapter is a descriptor and opaque handle to the FLI adapter.
+ *
+ * @param count is a pointer to an integer result when DRAGON_SUCCESS is
+ * returned. Otherwise the value will be 0.
+ *
+ * @param timeout is the amount of time to wait. A NULL timeout means to wait
+ * indefinitely.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_fli_get_available_streams(dragonFLIDescr_t* adapter, uint64_t* num_streams,
+                                const timespec_t* timeout);
+
+/**
+ * @brief Query if this FLI is a buffered FLI.
+ *
+ * Sets the is_buffered flag accordingly if the FLI is buffered or not.
+ *
+ * @param adapter is a descriptor and opaque handle to the FLI adapter.
+ *
+ * @param is_buffered is a pointer to a bool result.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+
+dragonError_t
+dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
+
+
+/** @} */ // end of fli_lifecycle group.
+
+/** @defgroup fli_handles
+ *  FLI Send/Receive Handle Management
+ *  @{
+ */
 
 /**
  * @brief Open a Send Handle
@@ -416,6 +483,20 @@ dragon_fli_close_recv_handle(dragonFLIRecvHandleDescr_t* recv_handle, const time
 
 
 /**
+ * @brief Check that a Stream is completely received
+ *
+ * Check a receive handle to see if a stream has been completely received.
+ *
+ * @param recv_handle is the open receive handle to be queried.
+ *
+ * @param stream_received is set upon successful completion.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_fli_stream_received(dragonFLIRecvHandleDescr_t* recv_handle, bool* stream_received);
+
+/**
  * @brief Create a file descriptor to send bytes over an FLI adapter.
  *
  * All writes to the file descriptor will be sent over the FLI adapter. Writes
@@ -525,6 +606,12 @@ dragon_fli_create_readable_fd(dragonFLIRecvHandleDescr_t* recv_handle, int* fd_p
 dragonError_t
 dragon_fli_finalize_readable_fd(dragonFLIRecvHandleDescr_t* recv_handle);
 
+/** @} */ // end of fli_lifecycle group.
+
+/** @defgroup fli_sendrecv
+ *  FLI Send/Receive Functions
+ *  @{
+ */
 
 /**
  * @brief Send bytes through the FLI adapter.
@@ -534,7 +621,7 @@ dragon_fli_finalize_readable_fd(dragonFLIRecvHandleDescr_t* recv_handle);
  *
  * @param send_handle is an open send handle.
  *
- * @param num_bytes is the number of bytes to be sent.
+ * @param num_bytes is the number of bytes to be sent and must be greater than zero.
  *
  * @param bytes is a pointer to the data to be sent.
  *
@@ -542,7 +629,8 @@ dragon_fli_finalize_readable_fd(dragonFLIRecvHandleDescr_t* recv_handle);
  * received by the receiving side. It does not affect the message itself. When using
  * the buffered protocol, only the first write into an open send handle will allow
  * this arg to be passed along. All other values of this arg on subsequent writes
- * to an open send handle are ignored.
+ * to an open send handle are ignored. The value of 0xFFFFFFFFFFFFFFFF is used
+ * internally and is not allowed.
  *
  * @param buffer is a constant of either false (or 0 or NULL), which means use
  * the default behavior, or true in which case it buffers the data until
@@ -574,7 +662,12 @@ dragon_fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, size_t num_bytes,
  * received by the receiving side. It does not affect the message itself. When using
  * the buffered protocol, only the first write into an open send handle will allow
  * this arg to be passed along. All other values of this arg on subsequent writes
- * to an open send handle are ignored.
+ * to an open send handle are ignored. The value of 0xFFFFFFFFFFFFFFFF is used
+ * internally and is not allowed.
+ *
+ * @param transfer_ownership is true if ownership of the managed memory should
+ * be transferred to the receiver. Passing false means the ownership remains
+ * with the sender. This also implies a copy is made on sending.
  *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and
@@ -583,10 +676,10 @@ dragon_fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, size_t num_bytes,
  *
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
  **/
+
 dragonError_t
 dragon_fli_send_mem(dragonFLISendHandleDescr_t* send_handle, dragonMemoryDescr_t* mem,
-                    uint64_t arg, const timespec_t* timeout);
-
+                    uint64_t arg, bool transfer_ownership, const timespec_t* timeout);
 /**
  * @brief Receive data from the FLI adapter.
  *
@@ -690,6 +783,8 @@ dragon_fli_recv_bytes_into(dragonFLIRecvHandleDescr_t* recv_handle, size_t reque
 dragonError_t
 dragon_fli_recv_mem(dragonFLIRecvHandleDescr_t* recv_handle, dragonMemoryDescr_t* mem,
                 uint64_t* arg, const timespec_t* timeout);
+
+/** @} */ // end of fli_sendrecv group.
 
 #ifdef __cplusplus
 }

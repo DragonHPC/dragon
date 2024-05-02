@@ -29,7 +29,8 @@ import time
 import logging
 from warnings import warn
 from .parameters import this_process
-from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM, gethostname, inet_aton
+import struct
 from .facts import FIRST_PUID
 
 
@@ -524,6 +525,17 @@ def port_check(ip_port):
         return True
 
 
+def get_port():
+    host = gethostname()
+    min_port = 1025; max_port = 65536
+
+    for port in range(min_port, max_port + 1):
+        if port_check((host, port)):
+            return port
+
+    raise RuntimeError('No available ports')
+
+
 def get_host_info(network_prefix) -> tuple[str, str, list[str]]:
     """Return username, hostname, and list of IP addresses."""
     from dragon.transport.ifaddrs import getifaddrs, InterfaceAddressFilter
@@ -602,3 +614,31 @@ class stack:
     def clear(self):
         # Clears the stack of all items, resetting it to an empty stack.
         self.items = []
+
+
+# get external IP address
+def get_external_ip_addr():
+    s = socket(AF_INET, SOCK_DGRAM)
+    s.settimeout(0)
+    connected = False
+    try:
+        # doesn't even have to be reachable
+        s.connect(('10.254.254.254', 1))
+        connected = True
+        ip_addr = s.getsockname()[0]
+        s.close()
+        return ip_addr
+    except Exception:
+        if connected:
+            s.close
+        raise
+
+
+def rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr):
+    fe_ext_packed_ip = inet_aton(fe_ext_ip_addr)
+    head_node_packed_ip = inet_aton(head_node_ip_addr)
+
+    fe_ext_int = struct.unpack("!L", fe_ext_packed_ip)[0]
+    head_node_int = struct.unpack("!L", head_node_packed_ip)[0]
+
+    return (fe_ext_int << 32) | head_node_int

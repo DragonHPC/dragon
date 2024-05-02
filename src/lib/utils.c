@@ -3,6 +3,7 @@
 #include <dragon/return_codes_map.h>
 #include "hostid.h"
 #include "err.h"
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -223,6 +224,26 @@ dragon_set_host_id(dragonULInt id)
         dg_hostid_called = 1;
     }
     no_err_return(DRAGON_SUCCESS);
+}
+
+/* get the front end's external IP address, along with the IP address
+ * for the head node, which are used to identify this Dragon runtime */
+dragonULInt
+dragon_get_local_rt_uid()
+{
+    static dragonULInt rt_uid = 0UL;
+
+    if (rt_uid == 0UL) {
+        char *rt_uid_str = getenv("DRAGON_RT_UID");
+
+        /* Return 0 to indicate failure */
+        if (rt_uid_str == NULL)
+            return 0UL;
+
+        rt_uid = (dragonULInt) strtoul(rt_uid_str, NULL, 10);
+    }
+
+    return rt_uid;
 }
 
 dragonError_t
@@ -462,6 +483,14 @@ dragon_timespec_remaining(const timespec_t * deadline, timespec_t * remaining_ti
     no_err_return(DRAGON_SUCCESS);
 }
 
+void strip_newlines(const char* inout_str, size_t* input_length) {
+    size_t idx = *input_length-1;
+
+    while (inout_str[idx] == '\n')
+        idx--;
+
+    *input_length = idx+1;
+}
 
 static const char encoding_table[] = {
             'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
@@ -492,13 +521,14 @@ static const unsigned char decoding_table[256] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
 
 char*
-dragon_base64_encode(uint8_t *data, size_t input_length, size_t *output_length) {
+dragon_base64_encode(uint8_t *data, size_t input_length)
+{
 
     const int mod_table[] = { 0, 2, 1 };
 
-    *output_length = 4 * ((input_length + 2) / 3);
+    size_t output_length = 4 * ((input_length + 2) / 3);
 
-    char *encoded_data = (char*)malloc(1 + *output_length);
+    char *encoded_data = (char*)malloc(1 + output_length);
 
     if (encoded_data == NULL)
         return NULL;
@@ -518,15 +548,19 @@ dragon_base64_encode(uint8_t *data, size_t input_length, size_t *output_length) 
     }
 
     for (int i = 0; i < mod_table[input_length % 3]; i++)
-        encoded_data[*output_length - 1 - i] = '=';
+        encoded_data[output_length - 1 - i] = '=';
 
-    encoded_data[*output_length] = '\0';
+    encoded_data[output_length] = '\0';
 
     return encoded_data;
 }
 
 uint8_t*
-dragon_base64_decode(const char *data, size_t input_length, size_t *output_length) {
+dragon_base64_decode(const char *data, size_t *output_length)
+{
+    size_t input_length = strlen(data);
+
+    strip_newlines(data, &input_length);
 
     if (input_length % 4 != 0)
         return NULL;
@@ -573,3 +607,77 @@ dragon_hash_ulint(dragonULInt x)
     z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
     return z ^ (z >> 31);
 }
+
+dragonULInt
+dragon_hash(void* ptr, size_t num_bytes)
+{
+    if (num_bytes == 0)
+        return 0;
+
+    if (ptr == NULL)
+        return 0;
+
+    dragonULInt alignment = sizeof(dragonULInt) - (dragonULInt)ptr % sizeof(dragonULInt);
+    if (alignment == sizeof(dragonULInt))
+        alignment = 0;
+
+    long num_words = (num_bytes-alignment)/sizeof(dragonULInt);
+
+    long rem = (num_bytes-alignment)%sizeof(dragonULInt);
+
+    uint8_t* first_bytes = (uint8_t*) ptr;
+    dragonULInt* arr = (dragonULInt*) ptr + alignment;
+    uint8_t* last_bytes = (uint8_t*)&arr[num_words];
+
+    dragonULInt hashVal = 0;
+
+    long i;
+    for (i=0;i<alignment;i++)
+        hashVal = hashVal + first_bytes[i];
+
+    for (i=0;i<num_words;i++)
+        hashVal = hashVal + arr[i];
+
+    for (i=0;i<rem;i++)
+        hashVal = hashVal + last_bytes[i];
+
+    return hashVal;
+}
+
+bool
+dragon_bytes_equal(void* ptr1, void* ptr2, size_t ptr1_numbytes, size_t ptr2_numbytes)
+{
+    /* It is assumed that each pointer points to a word boundary since memory allocations
+       in Dragon always start on word boundaries. */
+
+    if (ptr1_numbytes != ptr2_numbytes)
+        return false;
+
+    if (ptr1 == ptr2)
+        return true;
+
+    size_t num_words = ptr1_numbytes/sizeof(dragonULInt);
+    size_t rem = ptr1_numbytes%sizeof(dragonULInt);
+    dragonULInt* first = (dragonULInt*) ptr1;
+    dragonULInt* second = (dragonULInt*) ptr2;
+
+    for (size_t i=0;i<num_words;i++)
+        if (first[i] != second[i])
+            return false;
+
+    uint8_t* first_bytes = (uint8_t*)&first[num_words];
+    uint8_t* second_bytes = (uint8_t*)&second[num_words];
+
+    for (size_t i=0;i<rem;i++)
+        if (first_bytes[i] != second_bytes[i])
+            return false;
+
+    return true;
+}
+
+uint64_t
+dragon_sec_to_nsec(uint64_t sec)
+{
+    return sec * 1e9;
+}
+

@@ -78,6 +78,13 @@ class build(_build):
             if not lib_tempdir.is_symlink():
                 raise
 
+        message_defs_file = rootdir / 'dragon' / 'infrastructure' / 'message_defs.capnp'
+        try:
+            message_defs_file.symlink_to(rootdir / 'lib' / 'message_defs.capnp')
+        except:
+            if not message_defs_file.is_symlink():
+                raise
+
         _cythonize = partial(cythonize,
             nthreads=int(os.environ.get('DRAGON_BUILD_NTHREADS', os.cpu_count())),
             show_all_warnings=True,
@@ -192,11 +199,10 @@ setup(
     description="Python multiprocessing over the Dragon distributed runtime",
     packages=find_packages(),
     package_data={
-        'dragon': ['lib/libdragon.so', 'lib/libpmod.so', 'lib/libpmsgqueue.so',]
+        'dragon': ['lib/libdragon.so', 'lib/libpmod.so', 'lib/libpmsgqueue.so']
     },
     ext_modules = extensions,
     entry_points=entry_points,
     python_requires=">=3.9",
-    install_requires=['cloudpickle', 'numpy', ],
-
+    install_requires=['cloudpickle', 'numpy']
 )

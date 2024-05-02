@@ -31,6 +31,22 @@ class TestIORedirection(unittest.TestCase):
         self.assertEqual('Hello World\n', result)
         proc.stdout.close()
 
+    def test_native_process_stdout2(self):
+
+        exe = sys.executable
+        proc = Popen(executable=exe, args=['-c', 'print("Hello World")'], stdout=Popen.PIPE)
+
+        result = ''
+        try:
+            while True:
+                data = proc.stdout.recv()
+                result += data
+        except EOFError:
+            pass
+
+        self.assertEqual('Hello World\n', result)
+        proc.stdout.close()
+
     def test_native_process_stdout_to_devnull(self):
         '''
             No output should appear on the terminal from running this test.

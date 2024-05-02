@@ -9,14 +9,7 @@ module load dragon-dev
 cd src
 make distclean
 cd ..
-pythonpath=`which python3`
-echo $pythonpath
-env_str='_env'
-echo $env_str
-if [[ "$pythonpath" == *"$env_str"* ]]; then
-  echo "Deactivating environment."
-  deactivate
-fi
+deactivate
 echo "Building and activating new, clean environment."
 python3 -m venv --clear _env
 . _env/bin/activate
@@ -24,6 +17,10 @@ python3 -m pip install -U pip
 python3 -m pip install -r src/requirements.txt -c src/constraints.txt
 export PATH=$PWD/hack:$PATH
 echo "Building source code."
+cd external
+make clean
+make build-capnproto
+cd ..
 cd src
 make
 python3 setup.py develop

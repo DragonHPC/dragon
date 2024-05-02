@@ -28,7 +28,7 @@ class TestMessages:
         cls.SendRequest = partial(messages.SendRequest,
             seqno=None, timeout=0.5, channel_sd=b'channel desc',
             return_mode=messages.SendReturnMode.WHEN_BUFFERED, sendhid=uuid4(),
-            payload=b'payload',
+            payload=b'payload', clientid=0, hints=0
         )
 
         cls.RecvRequest = partial(messages.RecvRequest,

@@ -41,6 +41,7 @@ Dragon Native
    c_channels_demo.rst
    dragon_native_queue.rst
    dragon_mpi_workflow.rst
+   dragon_native_policy_demo.rst
 
 Dragon Data (Preview)
 =====================

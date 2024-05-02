@@ -3,6 +3,7 @@
 import os
 import shlex
 import enum
+import socket
 import sys
 from .. import dtypes
 
@@ -61,6 +62,13 @@ PATCHED = 'PATCHED'
 NATIVE = 'NATIVE'
 DEFAULT_POOL = NATIVE
 
+# This number is set so that cuids can be divided between local
+# services instances for the purpose of doling out process local
+# channels. This allows a little more than 16 million nodes in the
+# dragon run-time instance.
+MAX_NODES_POW = 24
+MAX_NODES = 2 ** MAX_NODES_POW
+
 #: Input channel unique ID for Global Services head
 GS_INPUT_CUID = 2
 
@@ -101,10 +109,12 @@ BASE_TA_CUID = 2 ** 55
 #: Range for the local transport agent channel ID's (cuid)
 RANGE_TA_CUID = 2 ** 55
 
-#: Starting value of the local services shepherd channel unique ID (cuid)
-BASE_SHEP_CUID = 2 ** 56
-#: Range for the local services channel ID's (cuid)
-RANGE_SHEP_CUID = 2 ** 56
+#: Starting value for the backend channel ID (cuid) that
+#: communicates with the frontend
+BASE_BE_FE_CUID = 2 ** 56
+#: Range for the backend channel ID's (cuid) that
+#: communicate with the frontend
+RANGE_BE_FE_CUID = 2 ** 56
 
 #: Starting value for the local launcher backend channel unique ID (cuid)
 BASE_BE_CUID = 2 ** 57
@@ -135,12 +145,11 @@ BASE_BE_LOCAL_CUID = 2 ** 61
 #: communicate with its transport agent
 RANGE_BE_LOCAL_CUID = 2 ** 61
 
-#: Starting value for the backend channel ID (cuid) that
-#: communicates with the frontend
-BASE_BE_FE_CUID = 2 ** 62
-#: Range for the backend channel ID's (cuid) that
-#: communicate with the frontend
-RANGE_BE_FE_CUID = 2 ** 62
+#: Starting value of the local services shepherd channel unique ID (cuid)
+SHEP_CUID_POW = 62
+BASE_SHEP_CUID = 2 ** SHEP_CUID_POW
+#: Range for the local services channel ID's (cuid)
+RANGE_SHEP_CUID = 2 ** SHEP_CUID_POW
 
 #: Starting value of the User created channel ID (cuid)
 FIRST_CUID = 2 ** 63
@@ -555,6 +564,8 @@ from ..cli import (PROCNAME_GS,
                    PROCNAME_LS,
                    PROCNAME_TCP_TA,
                    PROCNAME_OVERLAY_TA,
+                   PROCNAME_OOB_TA,
+                   PROCNAME_RDMA_TA,
                    console_script_args)
 
 # Aliases for transport agent commands. Transport agent commands are always
@@ -619,7 +630,31 @@ DEFAULT_TRANSPORT_PORT = 7575
 DEFAULT_OVERLAY_NETWORK_PORT = 6565
 DEFAULT_FRONTEND_PORT = 6566
 DEFAULT_PMI_CONTROL_PORT = 8575
+DEFAULT_OOB_PORT = 9575
 DEFAULT_PORT_RANGE=1000
+
+def port_check(ip_port):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(ip_port)
+    except Exception:
+        if s is not None:
+            s.close()
+        return False
+    else:
+        s.close()
+        return True
+
+def get_port(min_port, port_range):
+    host = socket.gethostname()
+    max_port = min_port + port_range
+
+    for port in range(min_port, max_port):
+        if port_check((host, port)):
+            return port
+
+# Port used for out-of-band communication
+OOB_PORT = get_port(DEFAULT_OOB_PORT, DEFAULT_PORT_RANGE)
 
 # GS_DEFAULT_POLICY -- To prevent circular imports, this lives in policy_eval.py
 

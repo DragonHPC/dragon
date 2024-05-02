@@ -465,3 +465,16 @@ primes in pipeline stage are [7, 11, 13]
 
 primes in pipeline stage are [2, 3, 5]
 $
+
+## Pascal Triangle: Shared State Context Demo
+
+In this example, we demonstrate that the Dragon multiprocessing interface can be used to create a simple shared state example. The manager multiprocessing process and the client multiprocessing process communicate via a shared state spawned by the context multiprocessing process. The main multiprocessing process will start the manager and client multiprocessing processes. The manager process finds the sum of the Pascal triangle array calcualated by the client process. The third multiprocessing process spawned by the context class finds when the Pascal triangle has been completed. The shared state that contains the Pascal triangle array and the Pascal triangle sum is guarded by a lock; only the process that accesses the lock may alter the array and value.
+
+### Example Output
+
+```
+> dragon shared_state_pascal_triangle.py --rows 5
+Pascal Triangle Array Calculated for 5 rows from the Pascal row of 0 to the Pascal row of 5 , and the associated sum of the Pascal triangle array.
+Pascal Triangle Array [1, 1, 1, 1, 1, 2, 1, 1, 3, 3, 1, 1, 4, 6, 4, 1]
+Pascal Triangle Sum: 32
+```

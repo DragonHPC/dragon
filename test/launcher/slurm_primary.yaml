@@ -5,6 +5,7 @@
     - 10.128.0.5:6565
     is_primary: false
     name: nid00004
+    host_name: nid00004
     num_cpus: 0
     physical_mem: 0
     shep_cd: ''
@@ -16,6 +17,7 @@
     - 10.128.0.6:6565
     is_primary: true
     name: nid00005
+    host_name: nid00005
     num_cpus: 0
     physical_mem: 0
     shep_cd: ''
@@ -27,6 +29,7 @@
     - 10.128.0.7:6565
     is_primary: false
     name: nid00006
+    host_name: nid00006
     num_cpus: 0
     physical_mem: 0
     shep_cd: ''
@@ -38,6 +41,7 @@
     - 10.128.0.8:6565
     is_primary: false
     name: nid00007
+    host_name: nid00007
     num_cpus: 0
     physical_mem: 0
     shep_cd: ''

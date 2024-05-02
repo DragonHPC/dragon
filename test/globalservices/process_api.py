@@ -70,7 +70,7 @@ class SingleProcAPIChannels(unittest.TestCase):
     def setUp(self) -> None:
         self.gs_stdout_rh, self.gs_stdout_wh = multiprocessing.Pipe(duplex=False)
 
-        self.node_sdesc = NodeDescriptor.make_for_current_node(is_primary=True).sdesc
+        self.node_sdesc = NodeDescriptor.get_localservices_node_conf(is_primary=True).sdesc
 
         self.some_parms = copy.copy(dparm.this_process)
 
@@ -344,7 +344,7 @@ class SingleProcAPIChannels(unittest.TestCase):
 
         self.assertEqual(descr.name, "bob")
 
-        dump_msg = dmsg.GSDump(tag=self.next_tag(), filename="dump_file")
+        dump_msg = dmsg.GSDumpState(tag=self.next_tag(), filename="dump_file")
         self.gs_input_wh.send(dump_msg.serialize())
 
     def test_query_by_name(self):

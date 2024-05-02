@@ -4,7 +4,7 @@
 # Module Dragon
 #
 
-setenv DRAGON_VERSION 0.8
+setenv DRAGON_VERSION 0.9
 setenv DRAGON_BASE_DIR [file dirname [ file dirname $ModulesCurrentModulefile ] ]
 
 if { [ is-loaded PrgEnv-cray ] } {

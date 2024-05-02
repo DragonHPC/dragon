@@ -13,6 +13,8 @@ HEADERS = dragon/bcast.h \
           dragon/return_codes_map.h \
           dragon/shared_lock.h \
           dragon/utils.h \
+          dragon/ddict.h \
+          dragon/dictionary.hpp \
           dragon/fli.h
 
 DISTFILES = $(addprefix $(INSTALL_DIR)/include/,$(HEADERS))

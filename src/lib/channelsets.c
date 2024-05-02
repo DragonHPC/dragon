@@ -303,6 +303,15 @@ dragon_channelset_destroy(dragonChannelSetDescr_t * chset_descr)
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Cannot get channelset from descriptor.");
 
+    if (!chset->first_poll_call) {
+        int perr = pthread_join(chset->tid, NULL);
+        if (perr != 0) {
+            char err_str[80];
+            snprintf(err_str, 80, "There was an error on the pthread_join call. ERR=%d", perr);
+            err_return(DRAGON_FAILURE, err_str);
+        }
+    }
+
     for (int k=0;k<chset->num_channels;k++) {
         dragon_channel_remove_event_bcast(&chset->channels[k].descr, chset->channels[k].token);
     }
@@ -485,11 +494,9 @@ dragonError_t
 dragon_channelset_poll(dragonChannelSetDescr_t * chset_descr, dragonWaitMode_t wait_mode, timespec_t * timeout,
                        dragonReleaseFun release_fun, void* release_arg, dragonChannelSetEventNotification_t ** event)
 {
-    pthread_t tid;
     pthread_attr_t attr;
 
     pthread_attr_init(&attr);
-    pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
     size_t payload_sz;
     dragonChannelSet_t * chset;
@@ -503,7 +510,7 @@ dragon_channelset_poll(dragonChannelSetDescr_t * chset_descr, dragonWaitMode_t w
     if (chset->first_poll_call) {
         chset->first_poll_call = false;
 
-        int perr = pthread_create(&tid, &attr, _channelset_sync, (void*)chset);
+        int perr = pthread_create(&chset->tid, &attr, _channelset_sync, (void*)chset);
         pthread_attr_destroy(&attr);
 
         if (perr != 0) {

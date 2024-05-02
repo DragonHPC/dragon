@@ -8,7 +8,7 @@ allocations/elasticity aka The Cloud (TM) and more complex node properties
 import enum
 import re
 import os
-from socket import gethostname, socket, AF_INET, SOCK_STREAM
+from socket import gethostname
 from typing import Optional
 
 from .facts import DEFAULT_TRANSPORT_NETIF, DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_PORT_RANGE
@@ -26,7 +26,9 @@ class NodeDescriptor:
         DISCOVERABLE = enum.auto()
         PENDING = enum.auto()
         ACTIVE = enum.auto()
+        IDLE = enum.auto()
         ERROR = enum.auto()
+        DOWN = enum.auto()
 
     # TODO: this is a stub (PE-42397). How do we deal with:
     #   * networks and their encryption ?
@@ -84,40 +86,80 @@ class NodeDescriptor:
         return f"name:{self.name}, host_id:{self.host_id} at {self.ip_addrs}, state:{self.state.name}"
 
     @classmethod
-    def make_for_current_node(cls, name: Optional[str] = None, ip_addrs: Optional[list[str]] = None, is_primary: bool = False):
-        """Create a serialized node descriptor for the node this Shepherd is running on.
-        Can only be used to send to GS, as h_uid will be None in the descriptor.
+    def get_localservices_node_conf(cls,
+                                    name: Optional[str] = None,
+                                    host_name: Optional[str] = None,
+                                    host_id: Optional[int] = None,
+                                    is_primary: bool = False,
+                                    ip_addrs: Optional[list[str]] = None,
+                                    shep_cd: Optional[str] = None,
+                                    cpu_devices: Optional[list[int]] = None,
+                                    accelerators: Optional[AcceleratorDescriptor] = None):
+        """Return a NodeDescriptor object for Local Services to pass into its SHChannelsUp message
 
-        :param name: hostname of this node, defaults to None
-        :type name: str, optional
-        :param ip_addrs: List of the IP addresses for this node, defaults to ["127.0.0.1"]
-        :type ip_addrs: list[str], optional
+        Populates the values in a NodeDescriptor object that Local Services needs to provide to the
+        launcher frontend as part of infrastructure bring-up
+
+
+        :param name: Name for node. Often resorts to hostname, defaults to None
+        :type name: Optional[str], optional
+        :param host_name: Hostname for the node, defaults to gethostname()
+        :type host_name: Optional[str], optional
+        :param host_id: unique host ID of this node, defaults to get_host_id()
+        :type host_id: Optional[int], optional
         :param is_primary: denote if this is the primary node running GS, defaults to False
         :type is_primary: bool, optional
-        :return: serialized Node descruptor
-        :rtype: dict
+        :param ip_addrs: IP addresses used for backend messaging by transport agents, defaults to ["127.0.0.1"]
+        :type ip_addrs: Optional[list[str]], optional
+        :param shep_cd: Channel descriptor for this node's Local Services, defaults to None
+        :type shep_cd: Optional[str], optional
+        :param cpu_devices: List of CPUs and IDs on this node, defaults to list(os.sched_getaffinity(0))
+        :type cpu_devices: Optional[list[int]], optional
+        :param accelerators: List of any accelerators available on this node, defaults to find_accelerators()
+        :type accelerators: Optional[AcceleratorDescriptor], optional
         """
 
-        state = cls.State.ACTIVE
+        from dragon.infrastructure import parameters as dparms
 
-        huid = get_host_id() # will become h_uid in GS
+        if host_name is None:
+            host_name = gethostname()
 
-        if name is None:
-            name = f"Node-{huid}"
+        if host_id is None:
+            host_id = get_host_id()
+
+        if cpu_devices is None:
+            cpu_devices = list(os.sched_getaffinity(0))
+
+        if accelerators is None:
+            accelerators = find_accelerators()
 
         if ip_addrs is None:
             ip_addrs = ["127.0.0.1"]
 
+        state = cls.State.ACTIVE
+
+        if name is None:
+            name = f"Node-{host_id}"
+
+        if shep_cd is None:
+            shep_cd = dparms.this_process.local_shep_cd
+
         num_cpus = os.cpu_count()
         physical_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-        host_name = gethostname()
 
-        desc = cls(
-            state=state, name=name, ip_addrs=ip_addrs, num_cpus=num_cpus,
-            physical_mem=physical_mem, is_primary=is_primary, host_id=huid, host_name=host_name
-        )
 
-        return desc
+        return cls(state=state,
+                   name=name,
+                   host_name=host_name,
+                   ip_addrs=ip_addrs,
+                   host_id=host_id,
+                   shep_cd=shep_cd,
+                   is_primary=is_primary,
+                   num_cpus=num_cpus,
+                   physical_mem=physical_mem,
+                   cpu_devices=cpu_devices,
+                   accelerators=accelerators)
+
 
     @classmethod
     def get_local_node_network_conf(cls,
@@ -188,47 +230,6 @@ class NodeDescriptor:
 
         raise RuntimeError(f'Could not find available port for IP address={ip_addr} in port range {port_range}')
 
-    @classmethod
-    def get_localservices_node_conf(cls,
-                                    name: str = "",
-                                    host_name: str = '',
-                                    host_id: int = None,
-                                    ip_addrs: Optional[list[str]] = None,
-                                    shep_cd: str = '',
-                                    cpu_devices: Optional[list[int]] = None,
-                                    accelerators: Optional[AcceleratorDescriptor] = None):
-        """Return a NodeDescriptor object for Local Services to pass into its SHChannelsUp message
-
-        Populates the values in a NodeDescriptor object that Local Services needs to provide to the
-        launcher frontend as part of infrastructure bring-up
-
-        :param name: Name for node. Often resorts to hostname, defaults to ""
-        :type name: str, optional
-        :param host_name: Hostname for the node, defaults to ''
-        :type host_name: str, optional
-        :param host_id: unique host ID of this node, defaults to None
-        :type host_id: int, optional
-        :param ip_addrs: IP addresses used for backend messaging by transport agents, defaults to None
-        :type ip_addrs: list[str], optional
-        :param shep_cd: Channel descriptor for this node's Local Services, defaults to ''
-        :type shep_cd: str, optional
-        :param cpu_devices: List of CPUs and IDs on this node, defaults to None
-        :type cpu_devices: list[int], optional
-        :param accelerators: List of any accelerators available on this node, defaults to None
-        :type accelerators: AcceleratorDescriptor, optional
-        """
-
-        from dragon.infrastructure import parameters as dparms
-
-        return cls(state=NodeDescriptor.State.ACTIVE,
-                   name=name,
-                   host_name=host_name,
-                   ip_addrs=ip_addrs,
-                   host_id=get_host_id(),
-                   shep_cd=dparms.this_process.local_shep_cd,
-                   cpu_devices=list(os.sched_getaffinity(0)),
-                   accelerators=find_accelerators())
-
     @property
     def sdesc(self):
         return self.get_sdict()
@@ -247,7 +248,8 @@ class NodeDescriptor:
             "physical_mem": self.physical_mem,
             "shep_cd": self.shep_cd,
             "overlay_cd": self.overlay_cd,
-            "cpu_devices": self.cpu_devices
+            "cpu_devices": self.cpu_devices,
+            "state": self.state
         }
 
         # Account for a NULL accelerator giving us a None for now
@@ -261,4 +263,10 @@ class NodeDescriptor:
     @classmethod
     def from_sdict(cls, sdict):
         sdict["state"] = NodeDescriptor.State(sdict["state"])
+        try:
+            if sdict["accelerators"] is not None:
+                sdict["accelerators"] = AcceleratorDescriptor.from_sdict(sdict["accelerators"])
+        except KeyError:
+            sdict["accelerators"] = None
+
         return NodeDescriptor(**sdict)

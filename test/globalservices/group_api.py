@@ -75,7 +75,7 @@ class GSGroupAPI(unittest.TestCase):
     def setUp(self) -> None:
         self.gs_stdout_rh, self.gs_stdout_wh = multiprocessing.Pipe(duplex=False)
 
-        self.node_sdesc = NodeDescriptor.make_for_current_node(is_primary=True).sdesc
+        self.node_sdesc = NodeDescriptor.get_localservices_node_conf(is_primary=True).sdesc
 
         self.some_parms = copy.copy(dparm.this_process)
 
@@ -252,35 +252,73 @@ class GSGroupAPI(unittest.TestCase):
 
     def _send_get_responses(self, nitems, result):
         if result == 'fail':
+            shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessCreate)
+            responses = []
             for i in range(nitems):
-                shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHProcessCreate)
-                shep_reply_msg = dmsg.SHProcessCreateResponse(
-                    tag=self.next_tag(), ref=shep_msg.tag, err=dmsg.SHProcessCreateResponse.Errors.FAIL,
-                    err_info='simulated failure'
+                responses.append(
+                    dmsg.SHProcessCreateResponse(
+                        tag=self.next_tag(),
+                        ref=shep_msg.procs[i].tag,
+                        err=dmsg.SHProcessCreateResponse.Errors.FAIL,
+                        err_info='simulated failure'
+                    )
                 )
-                self.gs_input_wh.send(shep_reply_msg.serialize())
+            shep_reply_msg = dmsg.SHMultiProcessCreateResponse(
+                tag=self.next_tag(),
+                ref=shep_msg.tag,
+                err=dmsg.SHMultiProcessCreateResponse.Errors.SUCCESS,
+                responses=responses
+            )
+            self.gs_input_wh.send(shep_reply_msg.serialize())
         elif result == 'success':
+            shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessCreate)
+            responses = []
             for i in range(nitems):
-                shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHProcessCreate)
-                shep_reply_msg = dmsg.SHProcessCreateResponse(
-                    tag=self.next_tag(), ref=shep_msg.tag, err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
+                responses.append(
+                    dmsg.SHProcessCreateResponse(
+                        tag=self.next_tag(),
+                        ref=shep_msg.procs[i].tag,
+                        err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
+                    )
                 )
-                self.gs_input_wh.send(shep_reply_msg.serialize())
+            shep_reply_msg = dmsg.SHMultiProcessCreateResponse(
+                tag=self.next_tag(),
+                ref=shep_msg.tag,
+                err=dmsg.SHMultiProcessCreateResponse.Errors.SUCCESS,
+                responses=responses
+            )
+            self.gs_input_wh.send(shep_reply_msg.serialize())
         else:
             # we create half failed processes and half successful ones
+            shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessCreate)
+
+            responses = []
             for i in range(0, nitems//2):
-                shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHProcessCreate)
-                shep_reply_msg = dmsg.SHProcessCreateResponse(
-                    tag=self.next_tag(), ref=shep_msg.tag, err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
+                responses.append(
+                    dmsg.SHProcessCreateResponse(
+                        tag=self.next_tag(),
+                        ref=shep_msg.procs[i].tag,
+                        err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
+                    )
                 )
-                self.gs_input_wh.send(shep_reply_msg.serialize())
+
             for i in range(nitems//2, nitems):
-                shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHProcessCreate)
-                shep_reply_msg = dmsg.SHProcessCreateResponse(
-                    tag=self.next_tag(), ref=shep_msg.tag, err=dmsg.SHProcessCreateResponse.Errors.FAIL,
-                    err_info='simulated failure'
+                responses.append(
+                    dmsg.SHProcessCreateResponse(
+                        tag=self.next_tag(),
+                        ref=shep_msg.procs[i].tag,
+                        err=dmsg.SHProcessCreateResponse.Errors.FAIL,
+                        err_info='simulated failure'
+                    )
                 )
-                self.gs_input_wh.send(shep_reply_msg.serialize())
+
+            shep_reply_msg = dmsg.SHMultiProcessCreateResponse(
+                tag=self.next_tag(),
+                ref=shep_msg.tag,
+                err=dmsg.SHMultiProcessCreateResponse.Errors.SUCCESS,
+                responses=responses
+            )
+            self.gs_input_wh.send(shep_reply_msg.serialize())
 
     def _create_group(self, group_items, group_policy, group_name, existing=False):
         def create_wrap(items, policy, the_name, result_list):
@@ -675,12 +713,23 @@ class GSGroupAPI(unittest.TestCase):
         self.assertEqual(int(descr.state), GroupDescriptor.State.ACTIVE)
 
     def _send_responses(self, nitems):
-            for i in range(nitems):
-                shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHProcessCreate)
-                shep_reply_msg = dmsg.SHProcessCreateResponse(
-                    tag=self.next_tag(), ref=shep_msg.tag, err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
+        shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessCreate)
+        responses = []
+        for i in range(nitems):
+            responses.append(
+                dmsg.SHProcessCreateResponse(
+                    tag=self.next_tag(),
+                    ref=shep_msg.procs[i].tag,
+                    err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
                 )
-                self.gs_input_wh.send(shep_reply_msg.serialize())
+            )
+        shep_reply_msg = dmsg.SHMultiProcessCreateResponse(
+            tag=self.next_tag(),
+            ref=shep_msg.tag,
+            err=dmsg.SHMultiProcessCreateResponse.Errors.SUCCESS,
+            responses=responses
+        )
+        self.gs_input_wh.send(shep_reply_msg.serialize())
 
     def test_create_add_to(self):
         # first create a group

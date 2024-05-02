@@ -82,9 +82,8 @@ void create_fake_infra_pool()
     err = dragon_memory_pool_serialize(&mem_pool_ser, &mem_pool);
     pmod_assert(err == DRAGON_SUCCESS);
 
-    size_t encoded_size;
 
-    char *mem_pool_str = dragon_base64_encode(mem_pool_ser.data, mem_pool_ser.len, &encoded_size);
+    char *mem_pool_str = dragon_base64_encode(mem_pool_ser.data, mem_pool_ser.len);
     pmod_assert(mem_pool_str != NULL);
 
     setenv("DRAGON_INF_PD", mem_pool_str, 1);
@@ -145,9 +144,7 @@ void get_child_ch(int child_count, dragonChannelDescr_t *child_ch)
     err = dragon_channel_serialize(child_ch, &child_ch_ser);
     pmod_assert(err == DRAGON_SUCCESS);
 
-    size_t encoded_size;
-
-    char *child_ch_str = dragon_base64_encode(child_ch_ser.data, child_ch_ser.len, &encoded_size);
+    char *child_ch_str = dragon_base64_encode(child_ch_ser.data, child_ch_ser.len);
 
     setenv("DRAGON_PMOD_CHILD_CHANNEL", child_ch_str, 1);
 

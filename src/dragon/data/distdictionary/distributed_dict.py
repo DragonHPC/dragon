@@ -28,7 +28,7 @@ from ...globalservices import process
 from ...infrastructure import facts
 from ...infrastructure import parameters
 from ...channels import Channel, Message, Many2ManyWritingChannelFile, Many2ManyReadingChannelFile
-from ...native.process import TemplateProcess, Process
+from ...native.process import ProcessTemplate, Process
 from ...native.process_group import ProcessGroup
 from .dict_managers import manager_proc
 
@@ -103,7 +103,7 @@ class ManagerOwnerProc:
         # Initialize the manager pool of workers
         # Pool workers are manager processes that serve the data to the client
         args = (mpool_size, mowner_chnl_create.name)
-        template = TemplateProcess(manager_proc, args=args)
+        template = ProcessTemplate(manager_proc, args=args)
         self.manager_pool = managerPool()
         self.manager_pool.add_process(n_workers, template)
         self.manager_pool.init()

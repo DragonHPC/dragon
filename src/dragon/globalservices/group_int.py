@@ -1,6 +1,9 @@
 """Global services' internal Group context..
 """
 
+from collections import defaultdict
+from typing import Dict, List
+
 from .process_int import ProcessContext
 from .channel_int import ChannelContext
 from .pool_int import PoolContext
@@ -15,6 +18,7 @@ from ..globalservices import api_setup as das
 from .group import GroupError
 from .policy_eval import PolicyEvaluator
 
+import os
 import logging
 import copy
 import signal
@@ -54,10 +58,8 @@ class PMIJobHelper:
 
         self.control_port = dfacts.DEFAULT_PMI_CONTROL_PORT + self.job_id
         self.pid_base_map = {}  # key h_uid, value base value
-        LOG.debug('Before allocating pid base _PMI_PID_DICT=%s', str(PMIJobHelper._PMI_PID_DICT))
         for h_uid, lranks in self.ppn_map.items():
             self.pid_base_map[h_uid] = PMIJobHelper.allocate_pmi_pid_base(h_uid, lranks)
-        LOG.debug('After allocating pid base _PMI_PID_DICT=%s', str(PMIJobHelper._PMI_PID_DICT))
 
     @classmethod
     def is_pmi_required(cls, items:list[tuple]):
@@ -187,16 +189,10 @@ class PMIJobHelper:
         if self._index < self.nranks:
             lrank = self.lrank_list[self._index]
             h_uid = self.get_host_id_from_index(self._index)
-            pmi_info = dmsg.PMIInfo(
-                job_id=self.job_id,
+            pmi_info = dmsg.PMIProcessInfo(
                 lrank=lrank,
                 ppn=self.ppn_map[h_uid],
                 nid=self.pmi_h_uid_list.index(h_uid),
-                nnodes=self.pmi_nnodes,
-                nranks=self.nranks,
-                nidlist=self.nid_list,
-                hostlist=self.host_list,
-                control_port=self.control_port,
                 pid_base=self.pid_base_map[h_uid],
             )
             self._index += 1
@@ -234,8 +230,8 @@ class GroupContext:
         self.destroy_request = None
         self.pmi_job_helper = pmi_job_helper
         self.destroy_called = False
-        self.destroy_remove_success_ids = None # used when destroy_remove is called to keep the items to be
-                                               # destroyed after having received all the SHProcessKillResponse messages
+        self.destroy_remove_success_ids = None  # used when destroy_remove is called to keep the items to be
+                                                # destroyed after having received all the SHProcessKillResponse messages
         self._descriptor = group_desc.GroupDescriptor(g_uid=g_uid,
                                                       name=request.user_name,
                                                       policy=policy)
@@ -352,16 +348,29 @@ class GroupContext:
         if not msg.user_name:
             msg.user_name = auto_name
 
+        ## This block maybe needs to change
         policy = msg.policy
-        assert isinstance(policy, Policy)
 
         # Policy Evaluator wants a list of policies, one for each member
         total_members = sum([n for n, _ in msg.items])
-        policies = [policy] * total_members
+        # With discussion this can be cleaned up and either always be a list
+        # or policy merging logic for process level policies and PG level
+        # policies could happen here
+        if isinstance(policy, list):
+            for pol in policy:
+                assert isinstance(pol, Policy)
+            policies = policy
+        else:
+            #important because the policy does need to be a policy to evaluate it
+            assert isinstance(policy, Policy)
+            policies = [policy] * total_members
+        #policies = policy
+        LOG.debug('policies=%s', policies)
 
         # Gather our node list and evaluate the policies against it
         layout_list = server.policy_eval.evaluate(policies=policies)
-        LOG.debug('layout_list=%s', layout_list)
+        if int(os.environ.get('PMI_DEBUG', 0)):
+            LOG.info('layout_list=%s', layout_list)
 
         pmi_job_helper = None
         if PMIJobHelper.is_pmi_required(msg.items):
@@ -376,13 +385,16 @@ class GroupContext:
         server.group_table[this_guid] = group_context
         server.group_resource_count[this_guid] = [] # list of items corresponding to the multiplicity of each list in server.group_resource_list
 
+        # Maps a given node (local services instance) to a list of
+        # ProcessContexts that are to be created on that instance
+        ls_proccontext_map : Dict[int, List[ProcessContext]] = defaultdict(list)
+
         # msg.items is a list of tuples of the form (count:int, create_msg: dragon.infrastructure.messages.Message)
         layout_index = 0
         for tuple_idx, item in enumerate(msg.items):
             count, res_msg = item
             resource_msg = dmsg.parse(res_msg)
 
-            LOG.debug(f'Creating msg {resource_msg}')
             if count > 0:
                 # initialize a new list
                 group_context.descriptor.sets.append([])
@@ -393,39 +405,45 @@ class GroupContext:
                     layout_index += 1
 
                     # we need a unique copy of the msg for each member
-                    msg = copy.deepcopy(resource_msg)
-                    msg.tag = das.next_tag()
+                    resource_copy = copy.deepcopy(resource_msg)
+                    resource_copy.tag = das.next_tag()
 
                     # create a unique name for this resource based on the tuple user_name
-                    if msg.user_name:
-                        msg.user_name = f'{msg.user_name}.{this_guid}.{tuple_idx}.{item_idx}'
+                    if resource_copy.user_name:
+                        resource_copy.user_name = f'{resource_copy.user_name}.{this_guid}.{tuple_idx}.{item_idx}'
 
                     # update the layout to place the process correctly
-                    msg.layout = item_layout
+                    resource_copy.layout = item_layout
 
                     # add a new resource into this list
                     group_context.descriptor.sets[tuple_idx] += [group_desc.GroupDescriptor.GroupMember()]
 
                     # this is where we're actually starting the creation of the group members
                     if isinstance(resource_msg, dmsg.GSProcessCreate):
-
-                        if msg.pmi_required:
+                        if resource_msg.pmi_required:
                             # The PMIJobHelper generates the pmi_info structure
                             # from the layout_map and list of group items.
-                            msg._pmi_info = next(pmi_job_iter)
-                            LOG.info(f'{msg._pmi_info=}')
+                            resource_copy.pmi_required = True
+                            resource_copy._pmi_info = next(pmi_job_iter)
+                            if int(os.environ.get('PMI_DEBUG', 0)):
+                                LOG.info('%s', resource_copy._pmi_info)
 
-                        issued, outbound_tag, proc_context = ProcessContext.construct(server, msg, reply_channel,
-                                                                                      head=False, send_msg=False,
-                                                                                      belongs_to_group=True)
+                        success, outbound_tag, proc_context = ProcessContext.construct(server, resource_copy, reply_channel,
+                                                                                       head=False, send_msg=False,
+                                                                                       belongs_to_group=True)
 
                         server.resource_to_group_map[proc_context.descriptor.p_uid] = (this_guid, (tuple_idx, item_idx))
 
-                        if issued and outbound_tag and proc_context:
+                        if success and outbound_tag and proc_context:
+                            ls_proccontext_map[proc_context.node].append(proc_context)
                             server.pending[outbound_tag] = group_context.complete_construction
                             server.group_to_pending_resource_map[(outbound_tag, this_guid)] = proc_context
+
+                            # Update the group with the corresponding GroupMember
+                            member = group_context._generate_member(this_guid, proc_context)
+                            group_context._update_group_member(this_guid, member, tuple_idx, item_idx, related_to_create=False)
                         else:
-                            if proc_context and outbound_tag == 'already': # the process was already created
+                            if proc_context and outbound_tag == 'already':  # the process was already created
                                 LOG.debug(f"The process {proc_context.descriptor.p_uid} was already created.")
                                 member = {'state': proc_context.descriptor.state,
                                           'uid': proc_context.descriptor.p_uid,
@@ -441,7 +459,7 @@ class GroupContext:
                             # be cleared, a group pending construct_completion will be issued from process_int
                                 continue
 
-                            else: # there was a failure
+                            else:  # there was a failure
                                 # in this case, outbound_tag contains the error message
                                 LOG.debug(f"There was a failure in the process {proc_context.descriptor.p_uid} creation: {outbound_tag}")
                                 member = group_context._generate_member(this_guid, proc_context, outbound_tag)
@@ -460,6 +478,33 @@ class GroupContext:
                         raise GroupError(f'Unknown msg type {resource_msg} for a Group member.')
             else:
                 raise GroupError('The Group should include at least one member in each subgroup.')
+
+        # If PMI is required, we need to send these common PMI options.
+        # By sending them as part of the SHMultiProcessCreate message,
+        # we limit the duplication of these common vaules in each embedded
+        # SHProcessCreate message, reducing the overall message size.
+        pmi_group_info : dmsg.PMIGroupInfo = None
+        if pmi_job_helper:
+            pmi_group_info : dmsg.PMIGroupInfo = dmsg.PMIGroupInfo(
+                job_id=pmi_job_helper.job_id,
+                nnodes=pmi_job_helper.pmi_nnodes,
+                nranks=pmi_job_helper.nranks,
+                nidlist=pmi_job_helper.nid_list,
+                hostlist=pmi_job_helper.host_list,
+                control_port=pmi_job_helper.control_port
+            )
+
+        for node, contexts in ls_proccontext_map.items():
+            procs = [context.shprocesscreate_msg for context in contexts]
+            shep_req = dmsg.SHMultiProcessCreate(
+                tag=server.tag_inc(),
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                pmi_group_info=pmi_group_info,
+                procs=procs
+            )
+            shep_hdl = server.shep_inputs[node]
+            server.pending_sends.put((shep_hdl, shep_req.serialize()))
+            LOG.debug(f'request %s to shep %d', shep_req, node)
 
         return True
 
@@ -501,6 +546,14 @@ class GroupContext:
 
         else:
             raise RuntimeError(f'got {msg!s} err {msg.err} unknown')
+
+        # Before updating, make sure GS hasn't already marked this process as dead via out-of-order
+        # exit of the proc
+        cur_state = self.server.group_table[guid].descriptor.sets[lst_idx][item_idx].state
+        if cur_state is process_desc.ProcessDescriptor.State.DEAD:
+            LOG.debug(f'guid: {guid}, puid {member["uid"]} was already dead prior to create response')
+            member['state'] = cur_state
+            member['desc'].state = cur_state
 
         # Update the group with the corresponding GroupMember
         self._update_group_member(guid, member, lst_idx, item_idx)
@@ -732,10 +785,15 @@ class GroupContext:
 
                 # Gather our node list and evaluate the policies against it
                 layout_list = server.policy_eval.evaluate(policies=policies)
-                LOG.debug('layout_list=%s', layout_list)
+                if int(os.environ.get('PMI_DEBUG', 0)):
+                    LOG.debug('layout_list=%s', layout_list)
 
                 # we need the number of existing lists in the group
                 existing_lists = len(groupdesc.sets)
+
+                # Maps a given node (local services instance) to a list of
+                # ProcessContexts that are to be created on that instance
+                ls_proccontext_map : Dict[int, List[ProcessContext]] = defaultdict(list)
 
                 # msg.items is a list of tuples of the form (count:int, create_msg: dragon.infrastructure.messages.Message)
                 layout_index = 0
@@ -754,32 +812,34 @@ class GroupContext:
                             layout_index += 1
 
                             # we need a unique copy of the msg for each member
-                            msg = copy.deepcopy(resource_msg)
+                            resource_copy = copy.deepcopy(resource_msg)
+                            resource_copy.tag = das.next_tag()
 
                             # create a unique name for this resource based on the tuple user_name
-                            if msg.user_name:
-                                msg.user_name = f'{msg.user_name}.{target_uid}.{tuple_idx+existing_lists}.{item_idx}'
+                            if resource_copy.user_name:
+                                resource_copy.user_name = f'{resource_copy.user_name}.{target_uid}.{tuple_idx+existing_lists}.{item_idx}'
 
                             # update the layout to place the process correctly
-                            msg.layout = item_layout
+                            resource_copy.layout = item_layout
 
                             # add a new resource into this list
                             groupdesc.sets[tuple_idx+existing_lists] += [group_desc.GroupDescriptor.GroupMember()]
 
                             # this is where we're actually starting the creation of the group members
                             if isinstance(resource_msg, dmsg.GSProcessCreate):
-                                issued, outbound_tag, proc_context = ProcessContext.construct(server, msg, reply_channel,
-                                                                                              head=False, send_msg=False,
-                                                                                              belongs_to_group=True,
-                                                                                              addition=True)
+                                success, outbound_tag, proc_context = ProcessContext.construct(server, resource_copy, reply_channel,
+                                                                                               head=False, send_msg=False,
+                                                                                               belongs_to_group=True,
+                                                                                               addition=True)
 
                                 server.resource_to_group_map[proc_context.descriptor.p_uid] = (target_uid, (tuple_idx+existing_lists, item_idx))
 
-                                if issued and outbound_tag and proc_context:
+                                if success and outbound_tag and proc_context:
+                                    ls_proccontext_map[proc_context.node].append(proc_context)
                                     server.pending[outbound_tag] = groupctx.complete_addition
                                     server.group_to_pending_resource_map[(outbound_tag, target_uid)] = proc_context
                                 else:
-                                    if proc_context and outbound_tag == 'already': # the process was already created
+                                    if proc_context and outbound_tag == 'already':  # the process was already created
                                         member = {'state': proc_context.descriptor.state,
                                                   'uid': proc_context.descriptor.p_uid,
                                                   'placement': proc_context.descriptor.node,
@@ -811,7 +871,17 @@ class GroupContext:
                                 raise GroupError(f'Unknown msg type {resource_msg} for a Group member.')
                     else:
                         raise GroupError('The Group should include at least one member in each subgroup.')
-                return True
+
+                for node, contexts in ls_proccontext_map.items():
+                    procs = [context.shprocesscreate_msg for context in contexts]
+                    shep_req = dmsg.SHMultiProcessCreate(
+                        tag=server.tag_inc(),
+                        r_c_uid=dfacts.GS_INPUT_CUID,
+                        procs=procs
+                    )
+                    shep_hdl = server.shep_inputs[node]
+                    server.pending_sends.put((shep_hdl, shep_req.serialize()))
+                    LOG.debug(f'request %s to shep %d', shep_req, node)
 
             else:
                 raise NotImplementedError('close case')

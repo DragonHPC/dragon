@@ -97,6 +97,19 @@ TRANSPORT_HELP = f'''TRANSPORT_AGENT selects which transport agent will be used 
 backend node-to-node communication. By default, the TCP transport agent
 is selected. Currently supported agents are: {', '.join([ta.value for ta in TransportAgentOptions])}'''
 
+RESILIENT_HELP = '''If used, the Dragon runtime will attempt to continue execution of the
+user app in the event of a hardware or user software error by falling back to functional
+hardware resources and omitting hardware where the given error occurred.'''
+
+IDLE_HELP = '''In conjuction with the --resilient flag, the specifies the number of nodes
+that will be held in reserve when the user application is run. In the event a node executing
+the user application experiences an error, the Dragon runtime will pull an "idle" node into the
+compute pool and begin executing the user application on it.'''
+
+EXHAUST_HELP = '''When used with --resilient execution, the Dragon runtime will continue executing
+the user application in the event of any number of localized hardware errors until there are 0
+nodes available for computation. If not used, the default behavior of executing until the number
+of nodes available is less than those requested via the --nodes argument'''
 
 class SplitArgsAtComma(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -158,8 +171,6 @@ def get_parser():
 
     parser = argparse.ArgumentParser(prog='dragon',
                                      description='Dragon Launcher Arguments and Options')
-    parser.add_argument('-N', '--nodes', metavar='NODE_COUNT', dest='node_count',
-                        type=non_negative_int, help=NODES_HELP)
 
     host_group = parser.add_mutually_exclusive_group()
     host_group.add_argument('--hostlist', action=SplitArgsAtComma, metavar='HOSTLIST', type=str, help=HOSTLIST_HELP)
@@ -182,6 +193,15 @@ def get_parser():
 
     parser.add_argument('-l', '--log-level', nargs=1, default=dict(), action=dlogutil.LoggingValue,
                         dest='log_device_level_map', metavar='LOG_LEVEL', help=LOGGING_HELP)
+
+    parser.add_argument('-r', '--resilient', action='store_true', help=RESILIENT_HELP)
+    parser.add_argument('-N', '--nodes', metavar='NODE_COUNT', dest='node_count',
+                        type=non_negative_int, help=NODES_HELP)
+    parser.add_argument('-i', '--idle', metavar='IDLE_COUNT', dest='idle_count',
+                        type=non_negative_int, help=IDLE_HELP)
+    parser.add_argument('-e', '--exhaust-resources', action='store_true', help=EXHAUST_HELP)
+
+
     parser.add_argument('--no-label', action='store_true', default=True)
     parser.add_argument('--basic-label', action='store_true')
     parser.add_argument('--verbose-label', action='store_true')

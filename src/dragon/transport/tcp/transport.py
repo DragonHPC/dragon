@@ -375,6 +375,8 @@ class StreamTransport(Transport, TaskMixin):
         self._recv_tasks = defaultdict(WeakSet)
         self._mailboxes = defaultdict(asyncio.Queue)
         self._send_tasks = WeakValueDictionary()
+        self._oob_connect = False
+        self._oob_accept = False
 
     @run_forever
     async def run(self):
@@ -382,7 +384,10 @@ class StreamTransport(Transport, TaskMixin):
 
         Typically ran in a separate `asyncio.Task` via `StreamTransport.start`.
         """
-        self._server = await asyncio.start_server(self.accept_connection, str(self.addr.host), int(self.addr.port), **self.server_options)
+        if self._oob_accept:
+            self._server = await asyncio.start_server(self.accept_connection, 'localhost', int(self.addr.port), **self.server_options)
+        else:
+            self._server = await asyncio.start_server(self.accept_connection, str(self.addr.host), int(self.addr.port), **self.server_options)
         try:
             async with self._server:
                 await self._server.serve_forever()
@@ -467,8 +472,13 @@ class StreamTransport(Transport, TaskMixin):
         :return: `asyncio.StreamReader` and `asyncio.StreamWriter` pair
         """
         opts = self.default_connection_options.new_child(self.connection_options[addr])
-        reader, writer = await asyncio.open_connection(str(addr.host), int(addr.port), **opts)
-        addr = await self.addr.do_handshake(reader, writer)
+        if self._oob_connect or self._oob_accept:
+            reader, writer = await asyncio.open_connection('localhost', int(addr.port), **opts)
+            await self.addr.do_handshake(reader, writer)
+        else:
+            reader, writer = await asyncio.open_connection(str(addr.host), int(addr.port), **opts)
+            addr = await self.addr.do_handshake(reader, writer)
+
         # XXX See comment above in accept_connection() on why this is not a
         # XXX tenable workaround for actual server authentication.
         ## Verify connection is to the advertised address

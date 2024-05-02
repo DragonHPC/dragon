@@ -77,3 +77,62 @@ Completed message with all pids: [12844, 12845, 12846, 12847]
 ```
 
 This example is not designed to work multi-node.
+
+## Group API Example
+
+The Dragon Group API Example efficiently starts a group of Python processes.
+
+How to run the example:
+
+`dragon dragon_group_demo.py`
+
+Expected output:
+
+```
+Hello from x1000c0s2b0n0
+Hello from x1000c0s2b0n0
+Hello from x1000c0s2b0n1
+Hello from x1000c0s2b0n1
+```
+
+## Group API MPI Example
+
+In this example, the Dragon Group API is used to start the mpi_hello MPI application.
+
+How to run the example:
+
+```
+make
+dragon dragon_group_mpi_demo.py
+```
+
+Expected Output:
+
+```
+> make
+gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.27/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.27/ofi/gnu/9.1/lib  -c mpi_hello.c -o mpi_hello.c.o
+gcc -lm -L /opt/cray/pe/mpich/8.1.27/ofi/gnu/9.1/lib -lmpich  mpi_hello.c.o -o mpi_hello
+
+> dragon dragon_group_mpi_demo.py
+Hello world from pid 180513, processor x1000c0s2b0n0, rank 1 out of 4 processors
+Hello world from pid 179427, processor x1000c0s2b0n1, rank 0 out of 4 processors
+Hello world from pid 180514, processor x1000c0s2b0n0, rank 3 out of 4 processors
+Hello world from pid 179428, processor x1000c0s2b0n1, rank 2 out of 4 processors
+```
+
+## Group Create Add To API Example
+
+The Dragon Group API Example efficiently starts a group of Python processes.
+
+How to run the example:
+
+`dragon dragon_group_create_addto_demo.py`
+
+Expected output:
+
+```
+Hello from x1000c0s2b0n0
+Hello from x1000c0s2b0n0
+Hello2 from x1002c0s1b1n0
+Hello2 from x1002c0s3b0n0
+```

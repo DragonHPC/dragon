@@ -1,9 +1,11 @@
 import os
 import logging
+from typing import Optional
 
 from dragon.launcher.frontend import LauncherFrontEnd
 from dragon.launcher.util import next_tag
 from dragon.launcher.network_config import NetworkConfig
+from dragon.launcher.dragon_multi_fe import main as frontend_main
 
 from dragon.infrastructure.process_desc import ProcessDescriptor
 from dragon.infrastructure.connection import Connection, ConnectionOptions
@@ -35,6 +37,11 @@ def run_frontend(args_map):
         fe_server.run_msg_server()
 
 
+def run_resilient_frontend(args_map):
+
+    frontend_main(args_map=args_map)
+
+
 def open_overlay_comms(ch_in_desc: B64,
                        ch_out_desc: B64):
     '''Attach to Frontend's overlay network channels and open a connection'''
@@ -54,8 +61,10 @@ def open_overlay_comms(ch_in_desc: B64,
 
 
 def open_backend_comms(frontend_sdesc: str,
-                       network_config: str):
+                       network_config: str,
+                       net_conf: Optional[dict] = None):
     '''Attach to frontend channel and create channels for backend'''
+    log = logging.getLogger('open_backend_comms')
     be_mpool = None
     try:
         conn_options = ConnectionOptions(min_block_size=2 ** 16)
@@ -68,25 +77,33 @@ def open_backend_comms(frontend_sdesc: str,
         be_ch_out = Channel.attach(B64.from_str(frontend_sdesc).decode(),
                                    mem_pool=be_mpool)
 
-        net = NetworkConfig.from_file(network_config)
-        net_conf = net.get_network_config()
+        if net_conf is None:
+            net = NetworkConfig.from_file(network_config)
+            net_conf = net.get_network_config()
 
         be_nodes = {}
-        for node in net_conf.values():
-            be_cuid = dfacts.be_fe_cuid_from_hostid(node.host_id)
+        log.info(f'net_conf in open_backend_comms: {net_conf}')
+        for idx, node in net_conf.items():
 
-            # Add this to the object as it lets teardown know it needs to clean this up
-            be_ch_in = Channel(be_mpool, be_cuid)
+            if node.state == NodeDescriptor.State.ACTIVE:
+                be_cuid = dfacts.be_fe_cuid_from_hostid(node.host_id)
 
-            overlay_inout = Connection(inbound_initializer=be_ch_in,
-                                     outbound_initializer=be_ch_out,
-                                     options=conn_options,
-                                     policy=conn_policy)
-            overlay_inout.ghost = True
-            be_nodes[node.host_id] = {'conn': overlay_inout,
-                                      'ch_in': be_ch_in,
-                                      'hostname': node.name,
-                                      'ip_addrs': node.ip_addrs}
+                # Add this to the object as it lets teardown know it needs to clean this up
+                be_ch_in = Channel(be_mpool, be_cuid)
+
+                overlay_inout = Connection(inbound_initializer=be_ch_in,
+                                           outbound_initializer=be_ch_out,
+                                           options=conn_options,
+                                           policy=conn_policy)
+                overlay_inout.ghost = True
+                be_nodes[node.host_id] = {'conn': overlay_inout,
+                                          'ch_in': be_ch_in,
+                                          'hostname': node.name,
+                                          'ip_addrs': node.ip_addrs,
+                                          'state': node.state,
+                                          'node_index': idx,
+                                          'is_primary': node.is_primary}
+                log.debug(f'constructed backend node: {be_nodes[node.host_id]}')
 
     except (ChannelError, DragonPoolError, DragonMemoryError) as init_err:
         # Try to clean up the pool
@@ -110,18 +127,20 @@ def send_beisup(nodes):
 def recv_fenodeidx(nodes):
     '''recv FENoe4deIdxBE and finish filling out node dictionary'''
     log = logging.getLogger('recv_fe_nodeidx')
-    for node in nodes.values():
-        fe_node_idx_msg = dmsg.parse(node['conn'].recv())
-        assert isinstance(fe_node_idx_msg, dmsg.FENodeIdxBE), 'la_be node_index from fe expected'
+    host_ids = [key for key in nodes.keys()]
+    for idx, _ in enumerate(host_ids):
+        if nodes[host_ids[idx]]['state'] == NodeDescriptor.State.ACTIVE:
+            fe_node_idx_msg = dmsg.parse(nodes[host_ids[idx]]['conn'].recv())
+            assert isinstance(fe_node_idx_msg, dmsg.FENodeIdxBE), 'la_be node_index from fe expected'
 
-        log.info(f'got FENodeIdxBE for index {fe_node_idx_msg.node_index}')
-        node['node_index'] = fe_node_idx_msg.node_index
-        if node['node_index'] < 0:
-            raise RuntimeError("frontend giving bad node indices")
-        node['is_primary'] = node['node_index'] == 0
-        if node['is_primary']:
-            primary_conn = node['conn']
-        log.info(f'constructed be node: {node}')
+            log.info(f'got FENodeIdxBE for index {fe_node_idx_msg.node_index}')
+            nodes[host_ids[idx]]['node_index'] = fe_node_idx_msg.node_index
+            if nodes[host_ids[idx]]['node_index'] < 0:
+                raise RuntimeError("frontend giving bad node indices")
+            nodes[host_ids[idx]]['is_primary'] = nodes[host_ids[idx]]['node_index'] == 0
+            if nodes[host_ids[idx]]['is_primary']:
+                primary_conn = nodes[host_ids[idx]]['conn']
+            log.info(f'constructed be node: {nodes[host_ids[idx]]}')
 
     return primary_conn
 
@@ -169,8 +188,8 @@ def send_taup(nodes):
         node['conn'].send(ta_up.serialize())
 
 
-def send_abnormal_term(conn):
-    abnorm = dmsg.AbnormalTermination(tag=next_tag())
+def send_abnormal_term(conn, host_id=0):
+    abnorm = dmsg.AbnormalTermination(tag=next_tag(), host_id=host_id)
     conn.send(abnorm.serialize())
 
 
@@ -212,43 +231,43 @@ def handle_gsprocesscreate_error(primary_conn):
     primary_conn.send(response.serialize())
 
 
-def stand_up_backend(mock_overlay, mock_launch, network_config):
+def stand_up_backend(mock_overlay, mock_launch, network_config, net_conf=None):
 
     log = logging.getLogger('mock_backend_standup')
     # Get the mock's input args to the
-    while mock_overlay.call_args is None:
+    while len(mock_overlay.call_args_list) == 0:
         pass
-    overlay_args = mock_overlay.call_args.kwargs
-
+    overlay_args = mock_overlay.call_args_list.pop().kwargs
     overlay = {}
 
     # Connect to overlay comms to talk to fronteend
     overlay['ta_ch_in'], overlay['ta_ch_out'], overlay['fe_ta_conn'] = open_overlay_comms(overlay_args['ch_in_sdesc'],
-                                                                                    overlay_args['ch_out_sdesc'])
+                                                                                          overlay_args['ch_out_sdesc'])
 
     # Let frontend know the overlay is "up"
     overlay['fe_ta_conn'].send(dmsg.OverlayPingLA(next_tag()).serialize())
 
     # Grab the frontend channel descriptor for the launched backend and
     # send it mine
-    while mock_launch.call_args is None:
+    while len(mock_launch.call_args_list) == 0:
         pass
-    launch_be_args = mock_launch.call_args.kwargs
+    launch_be_args = mock_launch.call_args_list.pop().kwargs
     log.info(f'got be args: {launch_be_args}')
 
     # Connect to backend comms for frontend-to-backend and back comms
     overlay['be_mpool'], overlay['be_ch_out'], overlay['be_ch_in'], overlay['be_nodes'], overlay['overlay_inout'] = open_backend_comms(launch_be_args['frontend_sdesc'],
-                                                                                                                           network_config)
+                                                                                                                                       network_config,
+                                                                                                                                       net_conf=net_conf)
     log.info('got backend up')
 
     return overlay
 
 
-def handle_bringup(mock_overlay, mock_launch, network_config):
+def handle_bringup(mock_overlay, mock_launch, network_config, net_conf=None):
 
     log = logging.getLogger('mock_fulL_bringup')
 
-    overlay = stand_up_backend(mock_overlay, mock_launch, network_config)
+    overlay = stand_up_backend(mock_overlay, mock_launch, network_config, net_conf=net_conf)
 
     # Send BEIsUp
     send_beisup(overlay['be_nodes'])
@@ -281,7 +300,12 @@ def handle_overlay_teardown(overlay_conn):
     '''complete teardown of frontend overlay process'''
     halt_on = dmsg.parse(overlay_conn.recv())
     assert isinstance(halt_on, dmsg.LAHaltOverlay)
-    overlay_conn.send(dmsg.OverlayHalted(tag=next_tag()).serialize())
+
+    # This may fail depending on the testing infrastructure
+    try:
+        overlay_conn.send(dmsg.OverlayHalted(tag=next_tag()).serialize())
+    except ChannelError:
+        pass
 
 
 def handle_teardown(nodes, primary_conn, overlay_conn,

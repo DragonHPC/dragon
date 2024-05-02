@@ -1,5 +1,5 @@
 """ The Dragon native process object provides process management across one or
-multiple distributed systems. `TemplateProcess` can hold a blueprint for a process
+multiple distributed systems. `ProcessTemplate` can hold a blueprint for a process
 that can be used to generate many similar processes.
 """
 
@@ -26,6 +26,8 @@ from ..infrastructure.parameters import this_process
 from ..infrastructure.facts import ARG_IMMEDIATE_LIMIT
 from ..infrastructure.process_desc import ProcessOptions
 from ..infrastructure.messages import PIPE as MSG_PIPE, STDOUT as MSG_STDOUT, DEVNULL as MSG_DEVNULL
+from ..infrastructure.policy import Policy
+from ..globalservices.policy_eval import PolicyEvaluator
 
 LOG = logging.getLogger(__file__)
 
@@ -231,7 +233,7 @@ class Popen:
         raise NotImplementedError
 
 
-class TemplateProcess:
+class ProcessTemplate:
     """This class provides a template for a Dragon process."""
 
     def __init__(
@@ -244,7 +246,7 @@ class TemplateProcess:
         stdin: int = None,
         stdout: int = None,
         stderr: int = None,
-        # policy: Policy = DefaultPolicy,
+        policy: Policy = None,
     ):
         """Generic Dragon process template object defining a process based on a
         binary executable or a Python callable.
@@ -260,7 +262,7 @@ class TemplateProcess:
         similar processes like this:
 
         ```Python
-            t = TemplateProcess(myfunc)
+            t = ProcessTemplate(myfunc)
             p1 = Process.from_template(t, ident="NewProcess1")
             p2 = Process.from_template(t, ident="NewProcess2")
         ```
@@ -291,12 +293,14 @@ class TemplateProcess:
         :type stdout: int, optional
         :param stderr: Stderr file handling. Valid values are PIPE, STDOUT and None.
         :type stderr: int, optional
+        :param policy: determines the placement and resources of the process
+        :type policy: dragon.infrastructure.policy.Policy
         """
 
         self.is_python = callable(target)
 
         # store only the modified targets. We want to be able to pickle the
-        # TemplateProcess. The user has to use a method to get the original arguments.
+        # ProcessTemplate. The user has to use a method to get the original arguments.
 
         if self.is_python:
             self.target, self.args, self.argdata = self._get_python_process_parameters(target, args, kwargs)
@@ -311,6 +315,19 @@ class TemplateProcess:
         self.stdout = stdout
         self.stderr = stderr
         self.stdin = stdin
+
+        self.policy = policy
+        # can't grab the global policy here because of the following.
+        # default behavior will be that the global policy is grabbed when
+        # the process is started. Thus, template processes hold a policy
+        # that gets merged in later to the hierarchy of policies.
+        # with Policy(placement=x)
+        #     with Policy(placement=y)
+        #       local_policy = Policy(cpu_affinity=)
+        #       temp_proc = ProcessTemplate(..., policy=local_policy)
+        #
+        #    pg = ProcessGroup(policy = Policy(placement=z))
+        #    pg.add_procs(10, temp_proc) <- If I merge the policy into template policy, I don't know if placement=y is from the local policy or if placement=y is from global policy so I can't inject the group policy into the hierarchy correctly.
 
     @staticmethod
     def _find_target(target, cwd) -> str:
@@ -354,7 +371,7 @@ class TemplateProcess:
         raise NotImplementedError(f"You need to create a Process object from this template to start it.")
 
 
-class Process(TemplateProcess):
+class Process(ProcessTemplate):
     """This object describes a process managed by the Dragon runtime."""
 
     def __new__(cls, *args, **kwargs):
@@ -381,7 +398,7 @@ class Process(TemplateProcess):
         stdin: int = None,
         stdout: int = None,
         stderr: int = None,
-        # policy: Policy = DefaultPolicy,
+        policy: Policy = None,
     ):
         """Generic Dragon process object executing a binary executable or a
         Python callable.
@@ -421,13 +438,15 @@ class Process(TemplateProcess):
         :type stdout: int, optional
         :param stderr: Stderr file handling. Valid values are PIPE, STDOUT and None.
         :type stderr: int, optional
+        :param policy: determines the placement and resources of the process
+        :type policy: dragon.infrastructure.policy.Policy
         """
 
         self.started = False
         self.ident = ident
         self._pmi_enabled = _pmi_enabled
 
-        # strip the name/uid from the parameters, as TemplateProcess cannot have it by definition.
+        # strip the name/uid from the parameters, as ProcessTemplate cannot have it by definition.
         if ident:
             try:
                 self._update_descriptor(ident=ident)
@@ -438,16 +457,16 @@ class Process(TemplateProcess):
                     LOG.warning(f"Returning named process from infrastructure with valid target arg in call.")
                 return  # we're done
 
-        return super().__init__(target, args, kwargs, cwd, env, stdin, stdout, stderr)
+        return super().__init__(target, args, kwargs, cwd, env, stdin, stdout, stderr, policy)
 
     @classmethod
     def from_template(
-        cls, template: TemplateProcess, ident: str = None, _pmi_enabled: bool = False
+        cls, template: ProcessTemplate, ident: str = None, _pmi_enabled: bool = False
     ) -> object:
         """A classmethod that creates a new process object from a template.
 
         :param template: the template to base the process on
-        :type template: TemplateProcess
+        :type template: ProcessTemplate
         :param ident: intended name of the process, defaults to None
         :type ident: str, optional
         :return: The new process object
@@ -470,8 +489,8 @@ class Process(TemplateProcess):
             else:
                 raise ProcessError(f"A process '{ident}' already exists within the Dragon runtime.")
 
-        return cls(target, args, kwargs, template.cwd, template.env, ident=ident, 
-                   _pmi_enabled=_pmi_enabled, stdin=template.stdin, stdout=template.stdout, stderr=template.stderr)
+        return cls(target, args, kwargs, template.cwd, template.env, ident=ident,
+                   _pmi_enabled=_pmi_enabled, stdin=template.stdin, stdout=template.stdout, stderr=template.stderr, policy=template.policy)
 
     def start(self) -> None:
         """Start the process represented by the underlying process object."""
@@ -480,6 +499,11 @@ class Process(TemplateProcess):
             raise RuntimeError(f"This Process has already been started with puid {self.puid}")
 
         options = ProcessOptions(make_inf_channels=True)
+        if self.policy is not None:
+            # merge global policy and processes' policy
+            self.policy = PolicyEvaluator.merge(Policy.global_policy(), self.policy)
+        else:
+            self.policy = Policy.global_policy()
 
         if self.is_python:
 
@@ -491,6 +515,7 @@ class Process(TemplateProcess):
                 env=self.env,
                 options=options,
                 user_name=self.ident,
+                policy=self.policy,
             )
         else:  # binary
 
@@ -503,7 +528,8 @@ class Process(TemplateProcess):
                 user_name=self.ident,
                 stdin=self.stdin,
                 stdout=self.stdout,
-                stderr=self.stderr
+                stderr=self.stderr,
+                policy=self.policy
             )
 
         self.started = True

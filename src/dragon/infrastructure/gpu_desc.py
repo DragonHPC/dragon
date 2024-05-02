@@ -55,11 +55,11 @@ def find_accelerators() -> AcceleratorDescriptor:
     devices = find_nvidia()
     if devices is not None:
         acc = AcceleratorDescriptor(vendor=AccVendor.NVIDIA,
-                                    device_list=list(range(len(devices)-1)),
+                                    device_list=list(range(len(devices))),
                                     env_str=AccEnvStr.NVIDIA
                                     )
         return acc
-    
+
     devices = find_amd()
     if devices is not None:
         return None  # Not implemented, see find_amd()
@@ -69,7 +69,7 @@ def find_accelerators() -> AcceleratorDescriptor:
     except FileNotFoundError as e:
         # print("LSPCI not installed") # TODO: This needs to be sent to a logger somewhere
         return None
-    
+
     # NOTE: Will not work as expected with heterogenous setups (e.g. mixed Nvidia/AMD cards on one node)
     devices = AcceleratorDescriptor()
     n_devices = 0
@@ -85,8 +85,8 @@ def find_accelerators() -> AcceleratorDescriptor:
             n_devices += 1
 
     if n_devices > 0:
-        devices.device_list = list(range(n_devices-1))
+        devices.device_list = list(range(n_devices))
     else:
         return None
-    
+
     return devices

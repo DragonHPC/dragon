@@ -1,7 +1,7 @@
 .. _DragonCoreManagedMemoryCython:
 
 Managed Memory
-++++++++++++++
++++++++++++++++++++
 
 This is the Dragon managed memory interface for Python
 
@@ -10,7 +10,7 @@ This is the Dragon managed memory interface for Python
     :local:
     :backlinks: entry
 
-Classes 
+Classes
 =======
 
 .. automodule:: dragon.managed_memory
@@ -20,14 +20,14 @@ Classes
 .. =========
 
 .. .. automodule:: dragon.managed_memory
-..     :members: 
+..     :members:
 
 Enums
 =====
 
 .. automodule:: dragon.managed_memory
-    :members: PoolType, AllocType, 
-    
+    :members: PoolType, AllocType,
+
 
 Exceptions
 ==========
