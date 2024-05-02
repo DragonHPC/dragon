@@ -354,8 +354,8 @@ class GroupContext:
         # Policy Evaluator wants a list of policies, one for each member
         total_members = sum([n for n, _ in msg.items])
         # With discussion this can be cleaned up and either always be a list
-        # or policy merging logic for process level policies and PG level
-        # policies could happen here
+        # or policy merging logic for process level policies and PG level 
+        # policies could happen here 
         if isinstance(policy, list):
             for pol in policy:
                 assert isinstance(pol, Policy)
@@ -480,9 +480,9 @@ class GroupContext:
                 raise GroupError('The Group should include at least one member in each subgroup.')
 
         # If PMI is required, we need to send these common PMI options.
-        # By sending them as part of the SHMultiProcessCreate message,
+        # By sending them as part of the SHMultiProcessCreate message, 
         # we limit the duplication of these common vaules in each embedded
-        # SHProcessCreate message, reducing the overall message size.
+        # SHProcessCreate message, reducing the overall message size. 
         pmi_group_info : dmsg.PMIGroupInfo = None
         if pmi_job_helper:
             pmi_group_info : dmsg.PMIGroupInfo = dmsg.PMIGroupInfo(

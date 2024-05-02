@@ -265,6 +265,7 @@ cdef class MemoryAlloc:
         cdef:
             dragonError_t derr
 
+
         # @MCB TODO: Does this still make sense?
         if self._is_attach == 0:
             raise RuntimeError("cannot detach from memory not attached to")

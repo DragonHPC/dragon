@@ -80,7 +80,7 @@ This example is not designed to work multi-node.
 
 ## Group API Example
 
-The Dragon Group API Example efficiently starts a group of Python processes.
+The Dragon Group API Example efficiently starts a group of Python processes. 
 
 How to run the example:
 
@@ -97,7 +97,7 @@ Hello from x1000c0s2b0n1
 
 ## Group API MPI Example
 
-In this example, the Dragon Group API is used to start the mpi_hello MPI application.
+In this example, the Dragon Group API is used to start the mpi_hello MPI application. 
 
 How to run the example:
 
@@ -122,7 +122,7 @@ Hello world from pid 179428, processor x1000c0s2b0n1, rank 2 out of 4 processors
 
 ## Group Create Add To API Example
 
-The Dragon Group API Example efficiently starts a group of Python processes.
+The Dragon Group API Example efficiently starts a group of Python processes. 
 
 How to run the example:
 

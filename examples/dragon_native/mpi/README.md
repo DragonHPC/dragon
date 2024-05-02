@@ -89,7 +89,7 @@ INFO:consumer:{0: ('8', '68.07')}
 
 ## Policy Demo
 
-The file `policy_demo.py` contains a program that shows how policies can be passed to process groups and processes that are a part of the process group. This example highlights how an MPI application can be launched on a subset of the allocated nodes and how a policy restricting the cpu affinity can be applied to the whole group.
+The file `policy_demo.py` contains a program that shows how policies can be passed to process groups and processes that are a part of the process group. This example highlights how an MPI application can be launched on a subset of the allocated nodes and how a policy restricting the cpu affinity can be applied to the whole group.  
 
 ### Running the example
 

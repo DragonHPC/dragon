@@ -260,7 +260,7 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
                 self.assertIn(value, expected_values)
                 expected_values.remove(value)
 
-
+    
     def test_make_pool(self):
         expected_error = RemoteError if self.TYPE == "manager" else ValueError
 

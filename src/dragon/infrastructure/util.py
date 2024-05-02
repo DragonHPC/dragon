@@ -357,6 +357,7 @@ def survey_dev_shm():
         except FileNotFoundError:
             pass
 
+
 def compare_dev_shm(previous):
     """Warns if there are files owned by current user in /dev/shm not previously seen
 

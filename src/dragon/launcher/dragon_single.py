@@ -117,8 +117,8 @@ def main():
         runtime_ip_addr = dutil.get_external_ip_addr().split(':')[0]
     except OSError:
         runtime_ip_addr = None
-
-    if runtime_ip_addr is not None:
+    
+    if runtime_ip_addr is not None: 
         os.environ['DRAGON_FE_EXTERNAL_IP_ADDR'] = runtime_ip_addr
         os.environ['DRAGON_HEAD_NODE_IP_ADDR'] = runtime_ip_addr
         os.environ['DRAGON_RT_UID'] = str(dutil.rt_uid_from_ip_addrs(runtime_ip_addr, runtime_ip_addr))

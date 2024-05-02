@@ -10,10 +10,6 @@ This is the Dragon channels interface for Python
     :local:
     :backlinks: entry
 
-
-.. automodule:: dragon.channels
-    :members: Message, ChannelSendH, ChannelRecvH, Channel, Peer2PeerReadingChannelFile, Many2ManyReadingChannelFile, Many2ManyWritingChannelFile, GatewayMessage
-=======
 Classes
 =======
 

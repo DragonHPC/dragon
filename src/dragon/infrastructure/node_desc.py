@@ -135,15 +135,15 @@ class NodeDescriptor:
 
         if ip_addrs is None:
             ip_addrs = ["127.0.0.1"]
-
+        
         state = cls.State.ACTIVE
 
         if name is None:
             name = f"Node-{host_id}"
-
+        
         if shep_cd is None:
             shep_cd = dparms.this_process.local_shep_cd
-
+        
         num_cpus = os.cpu_count()
         physical_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
 
@@ -265,7 +265,7 @@ class NodeDescriptor:
         sdict["state"] = NodeDescriptor.State(sdict["state"])
         try:
             if sdict["accelerators"] is not None:
-                sdict["accelerators"] = AcceleratorDescriptor.from_sdict(sdict["accelerators"])
+                sdict["accelerators"] = AcceleratorDescriptor.from_sdict(sdict["accelerators"]) 
         except KeyError:
             sdict["accelerators"] = None
 

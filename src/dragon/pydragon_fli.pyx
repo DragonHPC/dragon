@@ -743,6 +743,7 @@ cdef class FLInterface:
 
         if not self._is_serialized:
             derr = dragon_fli_serialize(&self._adapter, &self._serial)
+
             if derr != DRAGON_SUCCESS:
                 raise DragonFLIError(derr, "Failed to serialize FLInterface")
 
@@ -761,6 +762,7 @@ cdef class FLInterface:
         cdef dragonError_t derr
 
         derr = dragon_fli_detach(&self._adapter)
+
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Failed to detach from FLI adapter")
 

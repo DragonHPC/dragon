@@ -9,13 +9,13 @@ import operator
 import gc
 
 import test.support
-try:
+try: 
     from test.support.import_helper import import_module
-    from test.support.threading_helper import join_thread
+    from test.support.threading_helper import join_thread 
 except ImportError:
     #location prior to Python 3.10
     from test.support import import_module
-    from test.support import join_thread
+    from test.support import join_thread 
 
 
 import threading

@@ -15,6 +15,7 @@ The underlying state machine looks like this:
 
 .. image:: ./images/dragon_worker_pool.svg
     :scale: 75%
+
 """
 
 

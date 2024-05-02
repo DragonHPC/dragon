@@ -119,7 +119,7 @@ cpdef set_local_kv(key, value, timeout=None):
 
     if len(key) == 0:
         raise KeyError('Key cannot be empty')
-
+    
     if timeout is None:
         time_ptr = NULL
     elif isinstance(timeout, int) or isinstance(timeout, float):

@@ -1497,6 +1497,7 @@ _get_msg(dragonChannel_t* channel, dragonMessage_t* msg_recv, timespec_t* end_ti
             dragonMemorySerial_t mem_ser;
             mem_ser.data = (uint8_t*)channel->msg_blks_ptrs[mblk];
             mem_ser.len = src_bytes;
+
             err = dragon_memory_attach(&mem_descr, &mem_ser);
             if (err != DRAGON_SUCCESS) {
                 _release_ot_lock(channel);
@@ -1583,6 +1584,7 @@ _get_msg(dragonChannel_t* channel, dragonMessage_t* msg_recv, timespec_t* end_ti
         dragonMemorySerial_t mem_ser;
         mem_ser.len = src_bytes;
         mem_ser.data = (uint8_t*)channel->msg_blks_ptrs[mblk];
+
         err = dragon_memory_attach(msg_mem, &mem_ser);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "cannot attach to payload memory");
@@ -1718,6 +1720,7 @@ _peek_msg(dragonChannel_t* channel, dragonMessage_t* msg_peek)
         dragonMemorySerial_t mem_ser;
         mem_ser.len = src_bytes;
         mem_ser.data = (uint8_t*)channel->msg_blks_ptrs[mblk];
+
         err = dragon_memory_attach(&msg_mem_descr, &mem_ser);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "cannot attach to payload memory");
@@ -2736,6 +2739,7 @@ dragon_channel_detach(dragonChannelDescr_t* ch)
         append_err_return(err, "invalid channel descriptor");
 
     long int ref_cnt = atomic_fetch_sub_explicit(&(channel->ref_cnt), 1, memory_order_acq_rel) - 1;
+
     if (ref_cnt > 0)
         no_err_return(DRAGON_SUCCESS);
 

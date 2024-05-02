@@ -921,6 +921,7 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
     err = _assign_gateway_message_header_send(gmsg, target_hostid, deadline, target_ch_ser.len, cleanup_payload_required,
                                               msg_nbytes, msg_ser_nbytes, dest_mem_ser_nbytes, return_mode,
                                               send_attr->sendhid, mattr.clientid, mattr.hints);
+
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not assign values into gateway message header.");
         goto gwmsg_alloc_fail;

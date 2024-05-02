@@ -18,7 +18,7 @@ the functions.
 .. code-block:: C
     :linenos:
     :caption: **A BitSet Example**
-    :name: bitset-example
+    :name: bitset-example 
 
     size_t bitsetsize;
     dragonBitSetErr_t brc;
@@ -63,7 +63,7 @@ be displayed.
 
 .. code-block:: text
     :caption: **BitSet Example Output**
-    :name: bitset-example-output
+    :name: bitset-example-output 
 
     That was a one
     A Bit Dump
@@ -91,7 +91,7 @@ API accesses the BitSet. The handle structure is given in :numref:`bitset-handle
 
 .. code-block:: C
     :caption: **BitSet Handle Definition**
-    :name: bitset-handle-def
+    :name: bitset-handle-def 
 
     typedef struct dragonBitSet_st {
         size_t size;

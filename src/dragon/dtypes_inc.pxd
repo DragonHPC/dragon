@@ -291,6 +291,7 @@ cdef extern from "<dragon/channels.h>":
     dragonError_t dragon_channel_message_count(const dragonChannelDescr_t * ch, uint64_t * count) nogil
     dragonError_t dragon_channel_barrier_waiters(const dragonChannelDescr_t* ch, uint64_t* count) nogil
     dragonError_t dragon_channel_blocked_receivers(const dragonChannelDescr_t* ch, uint64_t* count) nogil
+
     bool dragon_channel_barrier_is_broken(const dragonChannelDescr_t* ch) nogil
 
     # Send handle

@@ -8,10 +8,10 @@ environment. You must have Python 3.9, 3.10, or 3.11 installed and it must corre
 environment. An install script is supplied in the distribution that performs the
 install step(s) for you and creates and activates a virtual environment. You will
 find this install script in the untarred distribution file at the root level.
+    
+    ./dragon-install 
 
-    ./dragon-install
-
-You have completed the prerequisites for running Dragon with multiprocessing programs. If you are not in the virtual environment, you may need to navigate to the untarred distribution file at the root level and follow the commands below for activating the virtual environment.
+You have completed the prerequisites for running Dragon with multiprocessing programs. If you are not in the virtual environment, you may need to navigate to the untarred distribution file at the root level and follow the commands below for activating the virtual environment. 
 
 If you have already installed and want to come back and use your install at a later
 time you may have to reactivate your environment. Execute this from the same directory as the install was run from above.

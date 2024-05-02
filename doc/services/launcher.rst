@@ -28,7 +28,7 @@ Launcher Single Node Architecture
     **Single node architecture of the Launcher component**
 
 .. figure:: images/singlenodelauncher.png
-    :name: singlenode-launcher
+    :name: singlenode-launcher 
 
     **Single-node Launcher/Backend Components**
 
@@ -53,12 +53,12 @@ Launcher Multi Node Architecture
 ================================
 
 .. figure:: images/launcher_multi_node.svg
-    :name: launcher-multi-node
+    :name: launcher-multi-node 
 
     **Multi node architecture of the Launcher component**
 
 .. figure:: images/launchercomponents.png
-    :name: launcher-comps
+    :name: launcher-comps 
 
     **Multi-node Launcher/Backend Components**
 
@@ -337,7 +337,7 @@ may be necessary for some multi-node applications but can be used in single-node
 as well allowing a server application to run in either environment.
 
 .. figure:: images/servermode.png
-    :name: servermode
+    :name: servermode 
 
     **Dragon Server Mode**
 
@@ -350,7 +350,7 @@ Dragon run-time services.
 
 .. figure:: images/server.srms1.png
     :scale: 75%
-    :name: passthru-message-ex
+    :name: passthru-message-ex 
 
     **PassThru Message Exchange**
 
@@ -431,7 +431,7 @@ State Transitions
 -------------------
 
 .. figure:: images/launcherstates.png
-    :name: launcherstates
+    :name: launcherstates 
 
     **State Diagram**
 
@@ -496,7 +496,7 @@ functionality is in the implementation of a Jupyter Notebook kernel that runs
 within the Dragon run-time services.
 
 .. figure:: images/jupytermode.png
-    :name: jupytermode
+    :name: jupytermode 
 
     **Dragon Server Mode for Jupyter Notebooks**
 

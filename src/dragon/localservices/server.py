@@ -67,6 +67,7 @@ class PopenProps(subprocess.Popen):
                 os.sched_setaffinity(self.pid, props.layout.cpu_core)
 
 
+
         # XXX Affinity settings are only inherited by grandchild processes
         # XXX created after this point in time. Any grandchild processes
         # XXX started when the child process starts up most certainly will

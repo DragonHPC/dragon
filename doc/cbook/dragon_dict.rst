@@ -99,6 +99,6 @@ aggregated rate of opearations as the dictionary managers are spawned across the
 .. figure:: images/dragon_dict_results.png
     :align: center
     :scale: 25%
-    :name: multinode-results
+    :name: multinode-results 
 
     **Results on a multi-node setup**

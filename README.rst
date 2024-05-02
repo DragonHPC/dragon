@@ -1,6 +1,6 @@
 # Dragon
 
-## Introduction
+## Introduction 
 
 Dragon is a distributed runtime environment with the goal of being a foundation for many
 libraries, applications, tools, and services.  Software written on top of the Dragon runtime
@@ -182,9 +182,7 @@ The Dragon team is:
 * Faisal Hadi (manager) [mohammad.hadi@hpe.com]
 * Nick Hill [nicholas.hill@hpe.com]
 * Maria Kalantzi [maria.kalantzi@hpe.com]
-* Ben Keen [ keen.benjamin.j@gmail.com]
 * Kent Lee [kent.lee@hpe.com]
 * Pete Mendygral [pete.mendygral@hpe.com]
-* Davin Potts [davin.potts@hpe.com]
 * Nick Radcliffe [nick.radcliffe@hpe.com]
 * Rajesh Ratnakaram [rajesh.ratnakaram@hpe.com]

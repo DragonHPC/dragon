@@ -546,12 +546,12 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         log = logging.getLogger('_sighup_handler')
         # needed for logging of set_quick_teardown path
         self.sigint_log = logging.getLogger('sighup_route')
-        self._sigint_count = 2
+        self._sigint_count = 2 
 
         print("Frontend detected SIGHUP or SIGTERM from WLM. Attempting to clean up...", flush=True)
         log.debug('caught sighup or sigterm on frontend')
         self._set_quick_teardown()
-
+    
         if self._STATE.value in LauncherFrontEnd._STBL:
             self._STBL[self._STATE.value][0](self)
         else:
@@ -917,7 +917,7 @@ Performance may be suboptimal.'''
 
             # Catch WLM killing off the backend
             self._orig_sighup = signal.signal(signal.SIGHUP, self._sighup_handler)
-
+            
             self._orig_sigterm = signal.signal(signal.SIGTERM, self._sigterm_handler)
 
             log.debug("got signal handling in place")
@@ -966,18 +966,18 @@ Performance may be suboptimal.'''
         fe_host_id = str(self.net_conf['f'].host_id)
         fe_ip_addr = self.net_conf['f'].ip_addrs[0]  # it includes the port
         log.debug(f'network config: {self.net_conf}')
-
-        # this will raise an OSError when the frontend is run on a compute node w/o external access
+        
+        # this will raise an OSError when the frontend is run on a compute node w/o external access 
         try:
             fe_ext_ip_addr = get_external_ip_addr().split(':')[0]
         except OSError:
             fe_ext_ip_addr = None
 
-        # this will exist even w/o external access
+        # this will exist even w/o external access 
         head_node_ip_addr = self.net_conf['0'].ip_addrs[0].split(':')[0]
         os.environ['DRAGON_HEAD_NODE_IP_ADDR'] = head_node_ip_addr
-
-        if fe_ext_ip_addr is not None:
+        
+        if fe_ext_ip_addr is not None: 
             os.environ['DRAGON_FE_EXTERNAL_IP_ADDR'] = fe_ext_ip_addr
             os.environ['DRAGON_RT_UID'] = str(rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr))
 

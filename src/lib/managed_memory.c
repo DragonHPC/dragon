@@ -1276,6 +1276,7 @@ dragon_memory_pool_destroy(dragonMemoryPoolDescr_t * pool_descr)
     err = _free_pool(pool, &attrs);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to release pool resources");
+
     err = dragon_memory_attr_destroy(&attrs);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to destroy the attributes for this pool");
@@ -1295,6 +1296,7 @@ dragon_memory_pool_destroy(dragonMemoryPoolDescr_t * pool_descr)
     /* finally free the base object */
     free(pool->mname);
     free(pool);
+
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -1580,6 +1582,7 @@ dragon_memory_pool_serialize(dragonMemoryPoolSerial_t * pool_ser, const dragonMe
 
     no_err_return(DRAGON_SUCCESS);
 }
+
 
 /**
  * @brief Attach to a pool using a serialied descriptor.
@@ -2256,6 +2259,7 @@ dragon_memory_attach(dragonMemoryDescr_t * mem_descr, const dragonMemorySerial_t
 
     /* Get our serialized pool */
     dragonMemoryPoolDescr_t pool_descr;
+
     dragonError_t err = dragon_memory_pool_attach(&pool_descr, &pool_ser);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "could not attach to memory pool");
@@ -3149,6 +3153,7 @@ dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMe
         _obtain_manifest_lock(pool);
         err = _lookup_allocation(pool, type, type_id, mem);
         _release_manifest_lock(pool);
+
         if (err != DRAGON_SUCCESS) {
             char err_str[100];
             free(mem);

@@ -15,13 +15,13 @@ work of communicating off node when necessary. :numref:`deploy-multi-node` and :
 multi-node version of the Dragon :ref:`Services`.
 
 .. figure:: images/deployment_multi_node.svg
-    :name: deploy-multi-node
+    :name: deploy-multi-node 
 
     **Startup Overview**
 
 .. figure:: images/multinodeoverview.png
     :scale: 30%
-    :name: multi-node-overview
+    :name: multi-node-overview 
 
     **Multi-Node Overview of Dragon Services**
 

@@ -7,7 +7,7 @@
 
 Added lock size into required size of Pool #651 by kent-lee was merged Apr 18, 2024
 
-Update python 3.9 build to sle15sp3 #654 by nicholas-hill was merged Apr 18, 2024
+Update python 3.9 build to sle15sp3 #654 by nicholas-hill was merged Apr 18, 2024 
 
 Efficient GS->LS Group Creation of processes #641 by eric-cozzi was merged Apr 11, 2024
 
@@ -53,11 +53,11 @@ Remove HSTA from bring-up if there's only one backend node #632 by nick-radcliff
 
 ### Added
 
-Libfabric support for hsta and multi-NIC support [#620, #614, #594] by nick-radcliffe was merged Mar 7, 2024, Feb 22, 2024, Feb 15, 2024
+Libfabric support for hsta and multi-NIC support [#620, #614, #594] by nick-radcliffe was merged Mar 7, 2024, Feb 22, 2024, Feb 15, 2024 
 
-PyTorch Dataloader process placement patch and example [#610, #608, #601, #599] by veena-venkata-ghorakavi and wahlc was merged Feb 9, 2024, Feb 6, 2024, Jan 4, 2024
+PyTorch Dataloader process placement patch and example [#610, #608, #601, #599] by veena-venkata-ghorakavi and wahlc was merged Feb 9, 2024, Feb 6, 2024, Jan 4, 2024  
 
-Streamline node updates [#607] by eric-cozzi was merged Feb 8, 2024
+Streamline node updates [#607] by eric-cozzi was merged Feb 8, 2024 
 
 Build multiple python versions of dragon [#600] by mohammad-hadi was merged Jan 4, 2024
 

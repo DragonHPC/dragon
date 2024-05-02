@@ -190,7 +190,7 @@ further describes those activities.
 
 .. figure:: images/launchproc.srms1.png
     :scale: 75%
-    :name: launchproc
+    :name: launchproc 
 
     **Launcher Component Interaction during Process Interaction**
 

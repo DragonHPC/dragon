@@ -38,7 +38,7 @@ Round Robin Placement
 
 .. figure:: images/roundrobin.svg
     :scale: 75%
-    :name: roundrobin
+    :name: roundrobin 
 
     **UML deployment diagram of round robin placement with 4 processes on a distributed system with 3 compute nodes and one login node**
 

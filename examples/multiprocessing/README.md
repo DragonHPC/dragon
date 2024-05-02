@@ -468,7 +468,7 @@ $
 
 ## Pascal Triangle: Shared State Context Demo
 
-In this example, we demonstrate that the Dragon multiprocessing interface can be used to create a simple shared state example. The manager multiprocessing process and the client multiprocessing process communicate via a shared state spawned by the context multiprocessing process. The main multiprocessing process will start the manager and client multiprocessing processes. The manager process finds the sum of the Pascal triangle array calcualated by the client process. The third multiprocessing process spawned by the context class finds when the Pascal triangle has been completed. The shared state that contains the Pascal triangle array and the Pascal triangle sum is guarded by a lock; only the process that accesses the lock may alter the array and value.
+In this example, we demonstrate that the Dragon multiprocessing interface can be used to create a simple shared state example. The manager multiprocessing process and the client multiprocessing process communicate via a shared state spawned by the context multiprocessing process. The main multiprocessing process will start the manager and client multiprocessing processes. The manager process finds the sum of the Pascal triangle array calcualated by the client process. The third multiprocessing process spawned by the context class finds when the Pascal triangle has been completed. The shared state that contains the Pascal triangle array and the Pascal triangle sum is guarded by a lock; only the process that accesses the lock may alter the array and value. 
 
 ### Example Output
 

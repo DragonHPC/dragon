@@ -34,6 +34,7 @@ class StreamDestination(enum.Enum):
     STDOUT = 1
     STDERR = 2
 
+
 _capture_stdout_conn = None
 _capture_stderr_conn = None
 _capture_stdout_chan = None
@@ -43,10 +44,12 @@ DRAGON_CAPTURE_MP_CHILD_OUTPUT = 'DRAGON_CAPTURE_MP_CHILD_OUTPUT'
 DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT = 'DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT'
 _capture_shutting_down = False
 
+
 # This is for user processes to use when they wish to capture the
 # output of child multiprocessing processes.
 def start_capturing_child_mp_output():
     os.environ[DRAGON_CAPTURE_MP_CHILD_OUTPUT] = 'True'
+
 
 def stop_capturing_child_mp_output():
     global _capture_shutting_down, _capture_stdout_chan, _capture_stderr_chan
@@ -368,6 +371,7 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
 
     reply_msg = das.gs_request(req_msg)
     log.debug('got GSProcessCreateResponse')
+
     assert isinstance(reply_msg, dmsg.GSProcessCreateResponse)
 
     ec = dmsg.GSProcessCreateResponse.Errors
@@ -436,7 +440,7 @@ def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
             pmi_required=pmi_required,
             stdin=stdin,
             stdout=stdout,
-            stderr=stderr,
+            stderr=stderr, 
             policy=policy)
 
     elif len(argdata) <= dfacts.ARG_IMMEDIATE_LIMIT:

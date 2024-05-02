@@ -7,7 +7,7 @@ or a list of all nodes.
 import logging
 
 from ..globalservices.node import query, query_total_cpus, get_list
-from ..infrastructure.gpu_desc import AccVendor
+from ..infrastructure.gpu_desc import AccVendor 
 from ..infrastructure.parameters import this_process
 from ..utils import host_id
 
@@ -74,16 +74,16 @@ class Node:
         :rtype: int
         """
         return self._descr.num_cpus
-
+    
     @property
     def num_gpus(self) -> int:
-        """Return a the number of GPUs on this node
+        """Return a the number of GPUs on this node 
 
-        :return: The number of GPUs
+        :return: The number of GPUs 
         :rtype: list[int]
-        """
+        """        
         if self._descr.accelerators is None:
-            return 0
+            return 0    
         return len(self._descr.accelerators.device_list)
 
     @property
@@ -94,45 +94,45 @@ class Node:
         :rtype: int
         """
         return self._descr.physical_mem
-
+    
     @property
     def gpus(self) -> list[int]:
-        """Return a list of GPU visible devices on this node
+        """Return a list of GPU visible devices on this node 
 
-        :return: list of GPU visible devices
+        :return: list of GPU visible devices 
         :rtype: list[int]
-        """
+        """    
         if self._descr.accelerators is None:
-            return None
+            return None    
         return self._descr.accelerators.device_list
-
+    
     @property
     def gpu_vendor(self) -> str:
-        """Return the name of the GPU Vendor on this node
+        """Return the name of the GPU Vendor on this node 
 
-        :return: GPU vendor name
+        :return: GPU vendor name 
         :rtype: str
         """
         if self._descr.accelerators is None:
-            return None
+            return None    
         vendor_int = self._descr.accelerators.vendor
         if vendor_int == AccVendor.NVIDIA:
             return 'Nvidia'
         elif vendor_int == AccVendor.AMD:
             return 'AMD'
-        #TODO: Add Intel as a vendor
+        #TODO: Add Intel as a vendor 
         else:
             return 'Unknown Vendor'
-
+    
     @property
     def cpus(self) -> list[int]:
         """Return the CPUs available on this node
 
-        :return: list of CPUs
+        :return: list of CPUs 
         :rtype: list[int]
         """
         return self._descr.cpu_devices
-
+    
 
     @property
     def hostname(self) -> str:
@@ -166,8 +166,8 @@ class System:
     def __init__(self):
       """A stub of a system abstraction"""
       self.nodes = get_list()
-
-    def nodes(self):
+    
+    def nodes(self): 
         return self.nodes
 
     def nnodes(self) -> int:

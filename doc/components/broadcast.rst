@@ -13,8 +13,8 @@ call to a trigger function. The payload is optional. The BCast object provides a
 synchronization/communication structure.
 
 .. figure:: images/bcast.png
-    :name: bcast-any-to-many
-
+    :name: bcast-any-to-many 
+    
     **An Any to Many Broadcast Synchronization Object**
 
 A BCast object is meant to be shared by multiple threads/processes. The object is first created by a process.
@@ -49,7 +49,7 @@ Triggering processes may trigger one or all processes that are waiting on a BCas
 
 .. figure:: images/bcastflow.srms1.png
     :scale: 75%
-    :name: ops-on-bcast
+    :name: ops-on-bcast 
 
     **Operations on a BCast Object**
 

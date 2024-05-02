@@ -1,4 +1,4 @@
-"""The Dragon native pool manages a pool of child processes.
+"""The Dragon native pool manages a pool of child processes. 
 """
 
 from __future__ import annotations

@@ -16,7 +16,7 @@ independently of where processes and Dragon resources are placed.
 .. figure:: images/overview_queue_doc.jpg
     :align: center
     :scale: 25%
-    :name: overview-queue-doc
+    :name: overview-queue-doc 
 
     **Dragon Object Location Transparency**
 

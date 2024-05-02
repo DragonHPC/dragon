@@ -59,7 +59,7 @@ that contains this README.md.
   itself. Also under this directory are the standard Python multiprocessing unit
   tests packaged for easier use with Dragon (these have been developed for
   Python 3.9 but are still in progress for Python 3.10 and 3.11.) There is a
-  README.md in the `examples` directory with more information about these
+  README.md in the `examples` directory with more information about these 
   demonstration programs.
 
 * dragon_unittests - This directory contains a selection of Dragon-specific unit

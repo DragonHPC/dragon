@@ -565,6 +565,7 @@ dragon_base64_decode(const char *data, size_t *output_length)
     if (input_length % 4 != 0)
         return NULL;
 
+
     *output_length = input_length / 4 * 3;
 
     if (data[input_length - 1] == '=') (*output_length)--;

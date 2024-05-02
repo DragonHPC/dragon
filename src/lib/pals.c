@@ -33,9 +33,12 @@ pals_rc_t (*fn_pals_app_spawn)(
     const char *preput_envs[], const int num_envs, pals_rc_t errors[]);
 const char *(*fn_pals_errmsg)(pals_state_t *state);
 
-void set_pals_function_pointers()
+pals_rc_t set_pals_function_pointers()
 {
-    lib_pals_handle = dlopen("/opt/cray/pe/pals/default/lib/libpals.so", RTLD_LAZY | RTLD_GLOBAL);
+    lib_pals_handle = dlopen("libpals.so", RTLD_LAZY | RTLD_GLOBAL);
+    if (lib_pals_handle == NULL)
+        return PALS_FAILED;
+
 
     fn_pals_init = dlsym(lib_pals_handle, "pals_init");
     fn_pals_init2 = dlsym(lib_pals_handle, "pals_init2");
@@ -54,6 +57,8 @@ void set_pals_function_pointers()
     fn_pals_get_apid = dlsym(lib_pals_handle, "pals_get_apid");
     fn_pals_app_spawn = dlsym(lib_pals_handle, "pals_app_spawn");
     fn_pals_errmsg = dlsym(lib_pals_handle, "pals_errmsg");
+
+    return PALS_OK;
 }
 
 int get_pals_context() {
@@ -85,7 +90,9 @@ pals_rc_t pals_init(pals_state_t *state)
     // the values PALS knows to be true. Thus, we need to make sure any
     // PALS functions we wrap know to send back unmodified return values,
     // ie: only use the results from direct calls to our PALS function pointers.
-    set_pals_function_pointers();
+    if (set_pals_function_pointers() != PALS_OK)
+        return PALS_FAILED;
+
     set_pals_context();
 
     pals_rc_t err = fn_pals_init(state);
@@ -96,7 +103,8 @@ pals_rc_t pals_init(pals_state_t *state)
 //// TODO: pals_init2 will always be defined, so how can PMI check if it's NULL?
 pals_rc_t pals_init2(pals_state_t **state)
 {
-    set_pals_function_pointers();
+    if (set_pals_function_pointers() != PALS_OK)
+        return PALS_FAILED;
 
     set_pals_context();
     // no error checking, just pass rc through to caller

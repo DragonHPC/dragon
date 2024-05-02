@@ -217,7 +217,7 @@ def single(make_infrastructure_resources: bool = True,
 
         ls_node_desc = NodeDescriptor.get_localservices_node_conf(host_name='localhost',
                                                                   name='localhost',
-                                                                  ip_addrs=['127.0.0.1'],
+                                                                  ip_addrs=['127.0.0.1'], 
                                                                   is_primary=True)
         ch_up_msg = dmsg.SHChannelsUp(tag=get_new_tag(),
                                       node_desc=ls_node_desc,

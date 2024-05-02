@@ -8,14 +8,14 @@ The test is run with `dragon test_process.py -f -v`
 import unittest
 import time
 import socket
-import os
+import os 
 
 import dragon
 import multiprocessing as mp
 from dragon.globalservices.process import query, multi_join, this_process
 from dragon.native.machine import cpu_count, current, System, Node
-from dragon.native.process import Process
-from dragon.infrastructure.policy import Policy
+from dragon.native.process import Process 
+from dragon.infrastructure.policy import Policy 
 
 def inception(nnew: int, q: mp.Queue, ev1: mp.Event, ev2: mp.Event, sem: mp.Semaphore) -> None:
 
@@ -39,7 +39,7 @@ def placement_gpu_info(sleep_time, q, vendor=None):
             visible_devices=int(os.getenv("CUDA_VISIBLE_DEVICES"))
         elif vendor == 'AMD':
             visible_devices=int(os.getenv("ROCR_VISIBLE_DEVICES"))
-    else:
+    else: 
         visible_devices=None
         # this sleep is important until Process Group holds a history of puids
     q.put((hostname, visible_devices,))
@@ -95,7 +95,7 @@ class TestProcessMultiNode(unittest.TestCase):
 
         for p in processes:
             self.assertTrue(p.exitcode == 0)
-
+    
     def test_policy(self) -> None:
         my_alloc = System()
         node_list = my_alloc.nodes
@@ -109,7 +109,7 @@ class TestProcessMultiNode(unittest.TestCase):
             args = (5,q,node.gpu_vendor,)
             policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node.hostname, device=Policy.Device.GPU, gpu_affinity=[node.gpus[-1]])
         #using native process to take template
-        proc = Process(target=placement_gpu_info, args=args, policy=policy)
+        proc = Process(target=placement_gpu_info, args=args, policy=policy)         
         proc.start()
         hostname, gpu_affinity = q.get()
         self.assertEqual(hostname, node.hostname)

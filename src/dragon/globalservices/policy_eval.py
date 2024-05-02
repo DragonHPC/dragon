@@ -66,7 +66,7 @@ class PolicyEvaluator:
         """
         # NOTE: Numa node and accelerator are placeholders
         numa_node = 0
-        layouts.append( ResourceLayout(node.h_uid, node.host_name, numa_node,
+        layouts.append( ResourceLayout(node.h_uid, node.host_name, numa_node, 
                                        cpu_affinity, gpu_affinity, env_str) )
         node.num_policies += 1
 
@@ -151,7 +151,7 @@ class PolicyEvaluator:
         """
         Generate a list of available devices the policy can be applied to for the given Node
         """
-
+    
         if p.cpu_affinity: # List not empty, assume SPECIFIC affinity
             affinity = [x for x in node.cpu_devices if x in p.cpu_affinity]
             return affinity # This covers both "ANY" and "SPECIFIC" if a specific list is given
@@ -160,7 +160,7 @@ class PolicyEvaluator:
             return node.cpu_devices
 
         return []
-
+        
     def _get_gpu_affinity(self, p : Policy, node : NodeDescriptor) -> list[int]:
 
         #LOG.debug(f'{node=}')
@@ -169,11 +169,11 @@ class PolicyEvaluator:
             assert(isinstance(p.gpu_affinity, list))
             affinity = [x for x in node.accelerators.device_list if x in p.gpu_affinity]
             return affinity
-
+            
         if p.affinity == Policy.Affinity.ANY and node.accelerators is not None:
             #LOG.debug(f'{node.accelerators=}')
             return node.accelerators.device_list
-
+        
         return []
 
     def evaluate(self, policies : list[Policy]=None) -> list[ResourceLayout]:

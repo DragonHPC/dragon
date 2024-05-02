@@ -3,7 +3,7 @@ Glossary
 
 .. figure:: images/dragon_domain_model.svg
    :scale: 75%
-   :name: dragon-domain-model
+   :name: dragon-domain-model 
 
    **UML diagram of the most important Dragon concepts and their relation. Open arrows are read as "is a", diamond edges as "contains", normal arrows are annotated**
 
