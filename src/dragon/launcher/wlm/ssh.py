@@ -249,6 +249,9 @@ class SSHNetworkConfig(BaseNetworkConfig):
     def check_for_wlm_support(cls) -> bool:
         return shutil.which("ssh")
 
+    def _get_wlm_job_id(self) -> str:
+        raise RuntimeError('SSHNetworkConfig does not implement _get_wlm_job_id')
+
     def _supports_net_conf_cache(self) -> bool:
         return False
 

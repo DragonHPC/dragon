@@ -1,3 +1,13 @@
+# Dragon 0.9 Release Summary
+This release augments scalability and performance for launching 10k or more processes and greatly improves distributed dictionary
+performanace. Other highlighted features:
+
+- Improvements to ProcessGroup to provide better user experience and performance
+- Improve launch time for large numbers of processes by enabling batch launch
+- New implementation for distributed dictionary that improves performances and scalability
+- Support for placement of processes via Policy API
+- Bug fix for launching a Pool of pools
+
 # Dragon 0.8 Release Summary
 This package introduces new features that enhance portability, further optimize performance at scale, and increase usability with packages that rely on Python multiprocessing derivatives. Highlighted new features are:
 

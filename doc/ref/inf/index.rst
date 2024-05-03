@@ -49,7 +49,7 @@ Architecture
 
 .. figure:: images/infrastructure_architecture.svg
    :scale: 75%
-   :name: dragon-inf-api-architecture
+   :name: dragon-inf-api-architecture 
 
    **Architecture of the Dragon Infrastructure API**
 

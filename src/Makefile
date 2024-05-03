@@ -17,6 +17,7 @@ TOOLS := tools/dragon-cleanup \
 
 BINARIES := $(addprefix bin/, $(notdir $(TOOLS)))
 
+EXTERNAL := ../external/capnproto
 
 CY_FILES := dragon/pydragon_rc.pyx dragon/return_codes.pxd
 
@@ -24,8 +25,12 @@ CY_FILES := dragon/pydragon_rc.pyx dragon/return_codes.pxd
 all: build
 
 .PHONY: build
-build: $(LIBRARIES) $(BINARIES) $(CY_FILES)
+build: $(EXTERNAL) $(CYFILES) $(LIBRARIES) $(BINARIES)
 	$(PYTHON) setup.py build $(SETUP_PY_BUILD_FLAGS)
+
+.PHONY: $(EXTERNAL)
+$(EXTERNAL):
+	$(MAKE) -C ../external build-capnproto
 
 .PHONY: $(LIBRARIES)
 $(LIBRARIES): %.so:
@@ -51,7 +56,6 @@ clean:
 	$(MAKE) -C dragon/launcher/src clean
 	$(MAKE) -C lib clean
 	$(MAKE) -C include clean
-	$(MAKE) -C ../external clean
 
 # create a package for release
 .PHONY: dist
@@ -60,7 +64,24 @@ dist: $(addprefix $(INSTALL_DIR)/,$(LIBRARIES) $(BINARIES)) $(CY_FILES)
 	$(MAKE) -C ../external dist
 	$(PYTHON) setup.py clean --all
 	$(PYTHON) setup.py build $(SETUP_PY_BUILD_FLAGS) --cythonize -f
-	$(PYTHON) setup.py bdist_wheel --skip-build
+# Prepare to files to be included in the distribution.
+	cp ../external/pycapnp/pycapnp*.whl dist
+	cp bin/dragon-install dist
+# This code copies the message_defs.capnp file into the wheel file
+# which is needed for the captain proto support.
+	rm -rf build/dragon_wheel
+	mkdir build/dragon_wheel/
+	mkdir build/dragon_wheel/dragon
+	mkdir build/dragon_wheel/dragon/infrastructure
+	cp -f lib/message_defs.capnp build/dragon_wheel/dragon/infrastructure/
+# The following lines do not work to get the library files into the wheel file
+# because RPATH is not set correctly in them. Code is left here for now because
+# it does show how we might copy the files in should we solve the RPATH problem.
+#	mkdir build/dragon_wheel/lib
+#	cp -f lib/libdragon.so build/dragon_wheel/lib
+#	cp -f lib/libpmod.so build/dragon_wheel/lib
+#	cp -f lib/libpmsgqueue.so build/dragon_wheel/lib
+	$(PYTHON) setup.py bdist_wheel --skip-build --bdist-dir=$(abspath build/dragon_wheel)
 	$(MAKE) -C modulefiles dist
 	$(MAKE) -C pkg dist
 	$(MAKE) -C ../test dist

@@ -7,6 +7,7 @@ import sys
 import threading
 import atexit
 from distutils.util import strtobool
+from typing import List, Tuple, Dict
 
 from .. import channels as dch
 
@@ -33,6 +34,7 @@ class StreamDestination(enum.Enum):
     STDOUT = 1
     STDERR = 2
 
+
 _capture_stdout_conn = None
 _capture_stderr_conn = None
 _capture_stdout_chan = None
@@ -42,10 +44,12 @@ DRAGON_CAPTURE_MP_CHILD_OUTPUT = 'DRAGON_CAPTURE_MP_CHILD_OUTPUT'
 DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT = 'DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT'
 _capture_shutting_down = False
 
+
 # This is for user processes to use when they wish to capture the
 # output of child multiprocessing processes.
 def start_capturing_child_mp_output():
     os.environ[DRAGON_CAPTURE_MP_CHILD_OUTPUT] = 'True'
+
 
 def stop_capturing_child_mp_output():
     global _capture_shutting_down, _capture_stdout_chan, _capture_stderr_chan
@@ -67,7 +71,7 @@ def stop_capturing_child_mp_output():
             dgchan.destroy(_capture_stdout_chan.cuid)
             log.info('stdout channel destroy complete')
             _capture_stdout_chan = None
-        except:
+        except Exception:
             pass
 
     if _capture_stderr_chan is not None:
@@ -76,7 +80,7 @@ def stop_capturing_child_mp_output():
             dgchan.destroy(_capture_stderr_chan.cuid)
             log.info('stderr channel destroy complete')
             _capture_stderr_chan = None
-        except:
+        except Exception:
             pass
 
 
@@ -228,7 +232,7 @@ def get_create_message(exe, run_dir, args, env, user_name='', options=None,
 
 def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_name='', options=None,
            stdin=None, stdout=None, stderr=None, group=None,
-           user=None, umask=- 1, pipesize=- 1, pmi_required=False):
+           user=None, umask=- 1, pipesize=- 1, pmi_required=False, policy=None):
     """Return a GSProcessCreate object with starting args.
 
         This is an extension of the 'get_create_message' method that encapsulates our scheme for getting
@@ -283,7 +287,7 @@ def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_
                                 rundir=run_dir, user_name=user_name,
                                 options=options, stdin=stdin, stdout=stdout,
                                 stderr=stderr, group=group, user=user, umask=umask,
-                                pipesize=pipesize, pmi_required=pmi_required)
+                                pipesize=pipesize, pmi_required=pmi_required, policy=policy)
 
     if len(argdata) <= dfacts.ARG_IMMEDIATE_LIMIT:
         # deliver arguments in the argdata directly.
@@ -298,7 +302,7 @@ def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_
                                 rundir=run_dir, user_name=user_name,
                                 options=options, stdin=stdin, stdout=stdout,
                                 stderr=stderr, group=group, user=user, umask=umask,
-                                pipesize=pipesize, pmi_required=pmi_required)
+                                pipesize=pipesize, pmi_required=pmi_required, policy=policy)
     else:
         raise NotImplementedError(f"Argument data larger than {dfacts.ARG_IMMEDIATE_LIMIT} bytes is not supported at the moment.")
 
@@ -367,6 +371,7 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
 
     reply_msg = das.gs_request(req_msg)
     log.debug('got GSProcessCreateResponse')
+
     assert isinstance(reply_msg, dmsg.GSProcessCreateResponse)
 
     ec = dmsg.GSProcessCreateResponse.Errors
@@ -392,7 +397,7 @@ def prepare_argdata_for_immediate(argdata):
 
 def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
                         options=None, soft=False, pmi_required=False,
-                        stdin=None, stdout=None, stderr=None):
+                        stdin=None, stdout=None, stderr=None, policy=None):
     """Asks Global services to create a new process and deliver starting args to it thru messaging.
 
         This is an extension of the 'create' method that encapsulates our scheme for getting
@@ -435,7 +440,8 @@ def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
             pmi_required=pmi_required,
             stdin=stdin,
             stdout=stdout,
-            stderr=stderr)
+            stderr=stderr, 
+            policy=policy)
 
     elif len(argdata) <= dfacts.ARG_IMMEDIATE_LIMIT:
         # deliver arguments in the argdata directly.
@@ -454,7 +460,8 @@ def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
             pmi_required=pmi_required,
             stdin=stdin,
             stdout=stdout,
-            stderr=stderr)
+            stderr=stderr,
+            policy=policy)
     else:
         # TODO: capture these comments in documentation
         # Here we don't set argdata to anything at all.
@@ -481,7 +488,8 @@ def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
             pmi_required=pmi_required,
             stdin=stdin,
             stdout=stdout,
-            stderr=stderr)
+            stderr=stderr,
+            policy=policy)
 
         # Another transaction to gs but we are only here if
         # we are sending a lot of data.  Could be returned with create call
@@ -627,21 +635,71 @@ def join(identifier, timeout=None):
         raise ProcessError(f'process join {req_msg} failed: {reply_msg.err_info}')
 
 
-def multi_join(identifiers, timeout=None, join_all=False):
+def get_multi_join_success_puids(statuses: Dict[str, List[int]]) -> Tuple[List[Tuple[int, int]], bool]:
+    """Go through list of processes that have been joined on to isolate successful zero exits
+
+    :param statuses: Dict of puid keys pointing to error status and exit codes of multi_join function
+    :type statuses: Dict[str, List[int, int]]
+    :returns: List comprised of puids and exit code tuples, if exit code was zero. And whether
+              there was a timeout
+    :rtype: Tuple[List[Tuple[int, int]], bool]
+    """
+
+    ec = dmsg.GSProcessJoinListResponse.Errors  # get the error codes
+    success_list = []
+    timeout_flag = False
+    for t_p_uid, status_info in statuses.items():
+        if status_info[0] == ec.SUCCESS.value:
+            success_list.append((int(t_p_uid), status_info[1]))
+        elif status_info[0] == ec.TIMEOUT.value:
+            timeout_flag = True
+    return success_list, timeout_flag
+
+
+def get_multi_join_failure_puids(statuses: Dict[str, List[int]]) -> Tuple[List[Tuple[int, int]], bool]:
+    """Go through list of processes that have been joined on to isolate non-zero exits
+
+    :param statuses: Dict of puid keys pointing to error status and exit codes of multi_join function
+    :type statuses: Dict[str, List[int, int]]
+    :returns: Tuple made up of List comprised of puids and exit code tuples, if exit was no-zero.
+              And whether there was a timeout
+    :rtype: Tuple[List[Tuple[int, int]], bool]
+    """
+    ec = dmsg.GSProcessJoinListResponse.Errors  # get the error codes
+    failure_list = []
+    timeout_flag = False
+    for t_p_uid, status_info in statuses.items():
+        # Look for non-zero exit codes
+        if status_info[1] not in [0, None]:
+            failure_list.append((int(t_p_uid), status_info[1]))
+        elif status_info[0] == ec.TIMEOUT.value:
+            timeout_flag = True
+    return failure_list, timeout_flag
+
+
+def multi_join(identifiers: List[int or str],
+               timeout: bool = None,
+               join_all: bool = False,
+               return_on_bad_exit: bool = False) -> Tuple[List[Tuple[int, int]], Dict]:
     """Asks Global Services to join a list of specified managed processes.
 
     If join_all is False, it returns when 'any' process has exited or there is a timeout.
     If join_all is True, it returns when 'all' processes have exited or there is a timeout.
 
     :param identifiers: list of process identifiers indicating p_uid (int) or process name (string)
-    :param timeout: Timeout in seconds for max time to wait. None = default, infinite wait
-    :param join_all: indicates whether we need to wait on all processes in the list or not
-    :return: If join_all is False, return a list of tuples (p_uid, unix_exit_code) for any processes exited,
-             or None if none exited and there is a timeout, along with a dictionary with the status of each process.
-             If join_all is True, return a list of tuples (p_uid, unix_exit_code) when all processes exited,
-             or None if none exited and there is a timeout or some exited and some errored/timed out,
-             along with a dictionary with the status of each process.
-    :raises: ProcessError if there is no such process or some other error has occurred.
+    :type identifiers: List[int, str]
+    :param timeout: Timeout in seconds for max time to wait. defaults to None, infinite wait
+    :type timeout: bool, optional
+    :param join_all: indicates whether we need to wait on all processes in the list or not, defaults to False
+    :type join_all: bool, optional
+    :param return_on_bad_exit: If join_all is True, multi_join will still return if there was a
+                               non-zero exit, defaults to False
+    :type return_on_bad_exit: bool, optional
+    :returns: If join_all is False, return a list of tuples (p_uid, unix_exit_code) for any processes exited,
+              or None if none exited and there is a timeout, along with a dictionary with the status of each process.
+              If join_all is True, return a list of tuples (p_uid, unix_exit_code) when all processes exited,
+              or None if none exited and there is a timeout or some exited and some errored/timed out,
+              along with a dictionary with the status of each process.
     """
 
     if len(identifiers) == 0:
@@ -665,35 +723,25 @@ def multi_join(identifiers, timeout=None, join_all=False):
     req_msg = dmsg.GSProcessJoinList(tag=das.next_tag(), p_uid=this_process.my_puid,
                                      r_c_uid=das.get_gs_ret_cuid(), timeout=msg_timeout,
                                      t_p_uid_list=puid_identifiers, user_name_list=name_identifiers,
-                                     join_all=join_all)
+                                     join_all=join_all, return_on_bad_exit=return_on_bad_exit)
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSProcessJoinListResponse)
-
-    ec = dmsg.GSProcessJoinListResponse.Errors # get the error codes
-
-    success_list = []
-    timeout_flag = False
-    for t_p_uid, status_info in reply_msg.puid_status.items():
-        if status_info[0] == ec.SUCCESS.value:
-            success_list.append((int(t_p_uid), status_info[1]))
-        elif status_info[0] == ec.TIMEOUT.value:
-            if not timeout_flag:
-                timeout_flag = True
+    success_list, timeout_flag = get_multi_join_success_puids(reply_msg.puid_status)
 
     if success_list:
-        if join_all: # 'all' option
+        if join_all:  # 'all' option
             # we want all the processes finished, otherwise return None
             if len(success_list) == len(identifiers):
-                return success_list, reply_msg.puid_status # also return the dict with the status of all processes
-                                                           # in the list for future use outside the
-                                                           # Connection.wait() context
-            else: # there is at least one process exited and at least one errored/timed out
+                return success_list, reply_msg.puid_status  # also return the dict with the status of all processes
+                                                            # in the list for future use outside the
+                                                            # Connection.wait() context
+            else:  # there is at least one process exited and at least one errored/timed out
                 return None, reply_msg.puid_status
-        else: # 'any' option and at least one process exited
+        else:  # 'any' option and at least one process exited
             return success_list, reply_msg.puid_status
 
-    elif timeout_flag: # none has exited and all timed out
+    elif timeout_flag:  # none has exited and all timed out
         return None, reply_msg.puid_status
     else:
         log.debug(f'process join {req_msg} failed: {reply_msg.puid_status.items()}')

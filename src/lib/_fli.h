@@ -26,6 +26,7 @@ typedef struct dragonFLI_st {
     bool has_main_ch; /* true if main_ch is initialized and used. */
     bool has_mgr_ch; /* true if mgr_ch is initialized and used. */
     bool use_buffered_protocol; /* true if not using stream channels */
+    bool was_attached; /* true if attach is used */
 } dragonFLI_t;
 
 /* buffered allocation used for the buffered protocol on these

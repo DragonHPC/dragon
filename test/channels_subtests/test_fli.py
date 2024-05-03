@@ -45,6 +45,9 @@ class FLICreateTest(unittest.TestCase):
             streams.append(strm)
 
         fli = FLInterface(main_ch=self.main_ch, manager_ch=manager_ch, pool=self.mpool, stream_channels=streams)
+
+        self.assertEqual(fli.num_available_streams(), 5)
+
         fli.destroy()
 
         # Clean up excess channels
@@ -139,18 +142,17 @@ class FLISendRecvTest(unittest.TestCase):
         recvh.close()
 
     def test_send_recv_bytes(self):
-        sendh = self.fli.sendh()
-        recvh = self.fli.recvh()
 
-        b = b'Hello World'
-        sendh.send_bytes(b)
-        sendh.close()
-        (x, _) = recvh.recv_bytes() # recv_bytes returns a tuple, first the bytes then the message attribute
-        self.assertEqual(b, x)
+        with self.fli.sendh() as sendh:
+            b = b'Hello World'
+            sendh.send_bytes(b)
 
-        with self.assertRaises(FLIEOT):
-            (x, _) = recvh.recv_bytes() # We should get back an EOT here
-            recvh.close()
+        with self.fli.recvh() as recvh:
+            (x, _) = recvh.recv_bytes() # recv_bytes returns a tuple, first the bytes then the message attribute
+            self.assertEqual(b, x)
+
+            with self.assertRaises(FLIEOT):
+                (x, _) = recvh.recv_bytes() # We should get back an EOT here
 
     def test_send_recv_mem(self):
         sendh = self.fli.sendh()
@@ -251,8 +253,6 @@ class FLISendRecvTest(unittest.TestCase):
         self.assertEqual(x, b)
         self.assertEqual(42, hint)
         proc.join()
-
-
 
 if __name__ == '__main__':
     unittest.main()

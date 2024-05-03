@@ -434,6 +434,7 @@ dragon_fifo_lock_attach(dragonFIFOLock_t * dlock, void * ptr)
 {
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
+
     if (ptr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 

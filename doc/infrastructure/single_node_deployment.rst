@@ -13,12 +13,12 @@ user application decides to directly spawn processes itself, it retains the resp
 resources they use.
 
 .. figure:: images/deployment_single_node.svg
-    :name: deploy-single-node
+    :name: deploy-single-node 
 
     **Deployment diagram a single node**
 
 .. figure:: images/singlenodeoverview.png
-    :name: singlenode-overview
+    :name: singlenode-overview 
 
     **Single-Node Overview of Dragon Services**
 
@@ -41,7 +41,7 @@ Single Node Bringup
 ===================
 
 .. figure:: images/startup_seq_single_node.svg
-    :name: startup-seq-single-node
+    :name: startup-seq-single-node 
 
     **Startup Sequence on a single node**
 
@@ -661,7 +661,7 @@ the teardown of the Dragon Services.
 
     .. figure:: images/single_teardown.srms1.png
         :scale: 75%
-        :name: teardown-seq-single-node
+        :name: teardown-seq-single-node 
 
         **Single-Node Teardown Sequence**
 

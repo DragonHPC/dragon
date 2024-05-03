@@ -81,7 +81,7 @@ class SingleProcMsgChannels(unittest.TestCase):
         self.shep_input_wh = dconn.Connection(outbound_initializer=self.shep_input_chan)
         self.some_parms.local_shep_cd = B64.bytes_to_str(self.shep_input_chan.serialize())
 
-        self.node_sdesc = NodeDescriptor.make_for_current_node(is_primary=True).sdesc
+        self.node_sdesc = NodeDescriptor.get_localservices_node_conf(is_primary=True).sdesc
 
         self.dut = None
         self.head_uid = None
@@ -161,15 +161,9 @@ class SingleProcMsgChannels(unittest.TestCase):
 
         if pmi_required:
             self.assertIsNotNone(shep_msg.pmi_info)
-            self.assertEqual(shep_msg.pmi_info.job_id, pmi_info.job_id)
             self.assertEqual(shep_msg.pmi_info.lrank, pmi_info.lrank)
             self.assertEqual(shep_msg.pmi_info.ppn, pmi_info.ppn)
             self.assertEqual(shep_msg.pmi_info.nid, pmi_info.nid)
-            self.assertEqual(shep_msg.pmi_info.nnodes, pmi_info.nnodes)
-            self.assertEqual(shep_msg.pmi_info.nranks, pmi_info.nranks)
-            self.assertEqual(shep_msg.pmi_info.nidlist, pmi_info.nidlist)
-            self.assertEqual(shep_msg.pmi_info.hostlist, pmi_info.hostlist)
-            self.assertEqual(shep_msg.pmi_info.control_port, pmi_info.control_port)
 
         shep_reply_msg = dmsg.SHProcessCreateResponse(
             tag=self._tag_inc(), ref=shep_msg.tag, err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
@@ -447,16 +441,10 @@ class SingleProcMsgChannels(unittest.TestCase):
             the_puid=dfacts.LAUNCHER_PUID,
             the_rcuid=dfacts.BASE_BE_CUID,
             pmi_required=True,
-            pmi_info=dmsg.PMIInfo(
-                job_id=12323,
+            pmi_info=dmsg.PMIProcessInfo(
                 lrank=0,
                 ppn=1,
                 nid=1,
-                nnodes=2,
-                nranks=2,
-                nidlist=[0,1],
-                hostlist=['head', 'worker'],
-                control_port=1023,
                 pid_base=1
             )
         )

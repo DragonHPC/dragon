@@ -37,7 +37,7 @@ Architecture
 
 .. figure:: images/architecture.svg
     :scale: 75%
-    :name: dragon-native-architecture
+    :name: dragon-native-architecture 
 
     **The Dragon native architecture**
 

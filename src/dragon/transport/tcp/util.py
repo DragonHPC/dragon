@@ -9,7 +9,6 @@ from ...channels import Channel, ChannelRecvH, ChannelSendH, Message, PollResult
 from ...managed_memory import MemoryAlloc, MemoryPool
 from ...dtypes import WaitMode, DEFAULT_WAIT_MODE
 
-
 def unget_nowait(self: Queue, item: Any) -> None:
     """Re-queues an item at the front of a queue, essentially performing the
     opposite of get_nowait().
@@ -53,7 +52,7 @@ def seconds_remaining(deadline: float, _inf: Optional[float] = None) -> (Optiona
     return remaining, since
 
 
-def mem_descr_msg(sdesc: bytes, data: bytes) -> Message:
+def mem_descr_msg(sdesc: bytes, data: bytes, clientid: int, hints: int) -> Message:
     """Attaches to memory allocation given a serialized memory descriptor and
     writes the specified data. Yields a Dragon message created from the
     corresponding memory allocation.
@@ -66,13 +65,13 @@ def mem_descr_msg(sdesc: bytes, data: bytes) -> Message:
             raise ValueError(f'Memory allocation too small: {mem}')
         v = mem.get_memview()
         v[:] = data
-        return Message.create_from_mem(mem)
+        return Message.create_from_mem(mem, clientid, hints)
     except:
         mem.detach()
         raise
 
 
-def mem_pool_msg(pool: MemoryPool, data: bytes, deadline: Optional[float] = None) -> Message:
+def mem_pool_msg(pool: MemoryPool, data: bytes, clientid: int, hints: int, deadline: Optional[float] = None) -> Message:
     """Creates Dragon message from data in specific pool's memory allocation.
 
     Deadline is measured relative to time.monotonic().
@@ -80,7 +79,7 @@ def mem_pool_msg(pool: MemoryPool, data: bytes, deadline: Optional[float] = None
     # XXX ChannelSendH.send_bytes() does not call Message.create_alloc() with
     # XXX a timeout or deadline; hence it is re-implemented here.
     timeout, _ = seconds_remaining(deadline)
-    msg = Message.create_alloc(pool, len(data), timeout=timeout)
+    msg = Message.create_alloc(pool, len(data), clientid=clientid, hints=hints, timeout=timeout)
     try:
         v = msg.bytes_memview()
         v[:] = data
@@ -90,7 +89,7 @@ def mem_pool_msg(pool: MemoryPool, data: bytes, deadline: Optional[float] = None
     return msg
 
 
-def create_msg(data: bytes, channel: Optional[Channel] = None, deadline: Optional[float] = None, sdesc: Optional[bytes] = None) -> Message:
+def create_msg(data: bytes, clientid: int, hints: int, channel: Optional[Channel] = None, deadline: Optional[float] = None, sdesc: Optional[bytes] = None) -> Message:
     """Creates a Dragon message from data.
 
     If a channel is specified, the message will be created from a memory
@@ -103,9 +102,9 @@ def create_msg(data: bytes, channel: Optional[Channel] = None, deadline: Optiona
     """
     if sdesc is None:
         assert channel is not None
-        return mem_pool_msg(channel.get_pool(), data, deadline)
+        return mem_pool_msg(channel.default_alloc_pool, data, clientid, hints, deadline)
     else:
-        return mem_descr_msg(sdesc, data)
+        return mem_descr_msg(sdesc, data, clientid, hints)
 
 
 @contextmanager
@@ -127,6 +126,8 @@ def open_handle(h: Union[ChannelRecvH, ChannelSendH]) -> Generator[Union[Channel
 
 
 def send_msg(channel_sdesc: bytes,
+             clientid: int,
+             hints: int,
              payload: bytes,
              deadline: float,
              mem_sd: Optional[bytes] = None,
@@ -134,7 +135,7 @@ def send_msg(channel_sdesc: bytes,
              wait_mode: WaitMode = DEFAULT_WAIT_MODE) -> None:
     # TODO Should we cache attached channels and open handles?
     with attach_channel(channel_sdesc) as ch, open_handle(ch.sendh(wait_mode=wait_mode)) as h:
-        msg = create_msg(payload, ch, deadline, mem_sd)
+        msg = create_msg(payload, clientid, hints, ch, deadline, mem_sd)
         timeout, _ = seconds_remaining(deadline)
 
         h.send(
@@ -150,7 +151,12 @@ def recv_msg(channel_sdesc: bytes,
     # TODO Should we cache attached channels and open handles?
     with attach_channel(channel_sdesc) as ch, open_handle(ch.recvh(wait_mode=wait_mode)) as h:
         timeout, _ = seconds_remaining(deadline)
-        return h.recv(timeout=timeout)
+        msg = h.recv(timeout=timeout)
+        clientid = msg.clientid
+        hints = msg.hints
+        py_view = msg.tobytes()
+        msg.destroy()
+        return clientid, hints, py_view
 
 
 def poll_channel(channel_sdesc: bytes, event_mask: int, deadline: float) -> (bool, int):

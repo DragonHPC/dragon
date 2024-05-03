@@ -33,7 +33,7 @@ Architecture
 
 .. figure:: images/client_architecture.svg
     :scale: 75%
-    :name: GS-client-architecture
+    :name: GS-client-architecture 
 
     **GS Client architecture**
 

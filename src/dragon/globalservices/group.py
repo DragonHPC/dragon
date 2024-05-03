@@ -77,7 +77,7 @@ def kill(identifier, sig=signal.SIGKILL):
     :raises GroupError: if there is no such group
     :raises GroupError: if the group has not yet started
     :raises NotImplementedError: if any other case not implemented
-    :return: Nothing if successful
+    :return: GSGroupKillResponse.desc
     """
     if isinstance(identifier, str):
         req_msg = dmsg.GSGroupKill(tag=das.next_tag(), p_uid=this_process.my_puid,
@@ -90,7 +90,6 @@ def kill(identifier, sig=signal.SIGKILL):
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupKillResponse)
-
     ec = dmsg.GSGroupKillResponse.Errors
 
     if reply_msg.err in {ec.SUCCESS, ec.ALREADY}:

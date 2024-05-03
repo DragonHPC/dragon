@@ -4,14 +4,14 @@ CFLAGS ?= -fPIC -Wall -Ofast -fomit-frame-pointer
 INCLUDE = -I $(DRAGON_INCLUDE_DIR)
 LIBS = -L $(DRAGON_LIB_DIR)
 
-BIN_FILES = test_ch test_bch perf_fch test_send test_poll test_peek_pop test_channelsets test_wrong test_gateways test_gateway_messages test_fli
+BIN_FILES = test_ch test_bch perf_fch test_send test_poll test_peek_pop test_channelsets test_wrong test_gateways test_gateway_messages test_fli test_capnp
 
 %.c.o: %.c
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
 default: build
 
-build: test_ch test_bch perf_fch test_send test_poll test_channelsets test_wrong test_gateways test_gateway_messages test_fli
+build: test_ch test_bch perf_fch test_send test_poll test_channelsets test_wrong test_gateways test_gateway_messages test_fli test_capnp
 
 test_ch: test_ch.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_ch $< $(LIBS) -ldragon -ldl
@@ -45,6 +45,9 @@ test_gateway_messages: test_gateway_messages.c.o
 
 test_wrong: test_wrong.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_wrong $< $(LIBS) -ldragon -ldl
+
+test_capnp: test_capnp.cpp
+	g++ $(INCLUDE) -std=c++14 -o test_capnp $< $(LIBS) -ldragon -ldl
 
 clean:
 	rm -rf *.o $(BIN_FILES) core __pycache__

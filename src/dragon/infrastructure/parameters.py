@@ -61,7 +61,7 @@ def check_pool(pool):
     return pool in {dfacts.PATCHED, dfacts.NATIVE}
 
 
-def cast_wait_mode(wait_mode):
+def cast_wait_mode(wait_mode=dfacts.INFRASTRUCTURE_DEFAULT_WAIT_MODE):
     if isinstance(wait_mode, dtypes.WaitMode):
         return wait_mode
     if wait_mode == "IDLE_WAIT":
@@ -92,7 +92,7 @@ def cast_wait_mode(wait_mode):
 
 
 
-def cast_return_when_mode(return_when):
+def cast_return_when_mode(return_when=dfacts.INFRASTRUCTURE_DEFAULT_RETURN_WHEN_MODE):
     if isinstance(return_when, dtypes.ReturnWhen):
         return return_when
     if return_when == "WHEN_IMMEDIATE":
@@ -142,6 +142,7 @@ def check_base64(strdata):
 
     return decoded_ok
 
+typecast = lambda ty: lambda val: ty() if val == '' else ty(val)
 
 class LaunchParameters:
     """Launch Parameters for Dragon processes.
@@ -381,6 +382,9 @@ class LaunchParameters:
 LaunchParameters.init_class_vars()
 this_process = LaunchParameters.from_env()
 
+def reload_this_process():
+    global this_process
+    this_process = LaunchParameters.from_env()
 
 class Policy:
     """Used to encapsulate policy decisions.

@@ -9,6 +9,7 @@ from mpbridge.test_queue import TestQueue
 from mpbridge.test_condition import TestCondition
 from mpbridge.test_lock import TestDragonLocks
 from mpbridge.test_process import TestMPBridgeProcess
+from mpbridge.test_pool import TestMPBridgePool
 from mpbridge.test_api import TestMultiprocessingAPI, TestMultiprocessingInternalPatching
 # from mpbridge.test_barrier import TestBarrier
 

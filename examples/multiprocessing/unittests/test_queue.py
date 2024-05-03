@@ -6,12 +6,12 @@ import queue as pyqueue
 
 import test.support
 from test.support import hashlib_helper
-try:
+try: 
     from test.support.os_helper import temp_cwd
     from test.support.import_helper import DirsOnSysPath
 except ImportError:
     #location prior to Python 3.10
-    from test.support import temp_cwd
+    from test.support import temp_cwd 
     from test.support import DirsOnSysPath
 
 

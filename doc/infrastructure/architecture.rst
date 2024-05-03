@@ -14,7 +14,7 @@ not work in a distributed system. While very portable across time and operating 
 descriptor based approach doesn't offer the best performance and scalability.
 
 .. figure:: images/infrastructure.svg
-    :name: infra-schematic
+    :name: infra-schematic 
 
     **Dragon Runtime Architecture in a multi-node deployment**
 

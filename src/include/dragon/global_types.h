@@ -11,14 +11,18 @@
 extern "C" {
 #endif
 
+#define DRAGON_UUID_NELEM 16
+#define DRAGON_UUID_SIZE (DRAGON_UUID_NELEM * sizeof(uint8_t))
+
 /* standard types for use across the Dragon stack */
+typedef uint64_t dragonRT_UID_t;
 typedef uint64_t dragonC_UID_t;
 typedef uint64_t dragonP_UID_t;
 typedef uint64_t dragonM_UID_t;
 typedef uint64_t dragonQ_UID_t;
 typedef uint64_t dragonULInt;
 typedef uint32_t dragonUInt;
-typedef uint8_t dragonUUID[16];
+typedef uint8_t dragonUUID[DRAGON_UUID_NELEM];
 typedef struct timespec timespec_t;
 typedef struct timeval timeval_t;
 

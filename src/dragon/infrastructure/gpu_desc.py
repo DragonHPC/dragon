@@ -55,7 +55,7 @@ def find_accelerators() -> AcceleratorDescriptor:
     devices = find_nvidia()
     if devices is not None:
         acc = AcceleratorDescriptor(vendor=AccVendor.NVIDIA,
-                                    device_list=list(range(len(devices)-1)),
+                                    device_list=list(range(len(devices))),
                                     env_str=AccEnvStr.NVIDIA
                                     )
         return acc
@@ -85,7 +85,7 @@ def find_accelerators() -> AcceleratorDescriptor:
             n_devices += 1
 
     if n_devices > 0:
-        devices.device_list = list(range(n_devices-1))
+        devices.device_list = list(range(n_devices))
     else:
         return None
     

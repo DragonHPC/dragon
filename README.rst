@@ -65,49 +65,12 @@ If you wish to run multi-node or don't want to run in a container, you must set
 up your environment to run Dragon programs. Choose the version of Dragon to
 download that goes with your installed version of Python. Python 3.9+ is required
 to run Dragon. You must have Python installed and it must be in your path
-somewhere. A common choice is to use a Python virtual environment, which can be
-initialized from a base Python with:
+somewhere.
 
-.. code-block:: console
-
-    python3 -m venv --clear _env
-    . _env/bin/activate
-
-The untarred distribution file contains several subdirectories. All provided commands
-are relative to the directory that contains the README.rst.
-
-* The `dragon-*.whl` file must be pip3 installed once for your environment.
-
-.. code-block:: console
-
-    pip3 install --force-reinstall dragon-0.8-cp39-cp39-linux_x86_64.whl
-
-* Check and possibly update your `PATH` environment variable to include the location of
-  pip installed console scripts, such as ~/.local/bin if you're not using a virtual environment.
-
-.. code-block:: console
-
-    export PATH=~/.local/bin:${PATH}
-
-* You must set up the environment by loading the dragon module as follows.
-
-.. code-block:: console
-
-    module use [/path to dragon-0.8]/modulefiles
-    module load dragon
-
-If you intend to use Dragon on your own Linux VM or an image that you
-personally installed, you may need to enable module commands by adding the
-following command to your ~/.bashrc or other login script.
-
-.. code-block:: console
-
-    source /usr/share/modules/init/bash
-
-If you use a different shell, look in the `init` directory for a script for
-your shell.
-
-You have completed the prerequisites for running Dragon with multiprocessing programs.
+The untarred distribution file contains several subdirectories. Run the
+./dragon-install file in that root directory to create a python virtual
+environment and install two wheel files. For further details, follow the
+instructions that you find in that README.md file in the distribution directory.
 
 Running Dragon
 ==============

@@ -112,6 +112,9 @@ def manager_proc(pool_size: int, mowner_chnl_name: str) -> None:
     manager_kv = dict()
     manager_client_map = dict()
 
+    LOG.debug(f'{manager_pool_mem} ; {manager_pool_mem.muid=}')
+    LOG.debug(f'The pool free space is {manager_pool_mem.free_space} and utilization is {manager_pool_mem.utilization} percent.')
+
     serving = True
     while serving:
         try:

@@ -5,6 +5,7 @@ cdef class MemoryPool:
     cdef dragonMemoryPoolSerial_t _pool_ser
     cdef dragonMemoryPoolAttr_t _mattr
     cdef bint _serialized
+    cdef dragonM_UID_t _muid
 
     cdef inline dragonError_t get_pool_ptr(self, dragonMemoryPoolDescr_t * pool):
 

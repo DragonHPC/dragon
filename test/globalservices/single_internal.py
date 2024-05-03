@@ -114,7 +114,7 @@ class SingleInternal(unittest.TestCase):
         self.gs_stdout_rh, self.gs_stdout_wh = multiprocessing.Pipe(duplex=False)
         self.shep_input_rh, self.shep_input_wh = multiprocessing.Pipe(duplex=False)
         self.bela_input_rh, self.bela_input_wh = multiprocessing.Pipe(duplex=False)
-        self.node_sdesc = NodeDescriptor.make_for_current_node(is_primary=True).sdesc
+        self.node_sdesc = NodeDescriptor.get_localservices_node_conf(is_primary=True).sdesc
         self.dut = None
         self.tag = 0
 

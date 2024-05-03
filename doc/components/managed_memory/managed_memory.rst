@@ -31,7 +31,7 @@ Architecture
 ============
 
 .. figure:: images/managed_memory.svg
-    :name: managed-mem-arch
+    :name: managed-mem-arch 
 
     **Architecture of the Managed Memory component**
 

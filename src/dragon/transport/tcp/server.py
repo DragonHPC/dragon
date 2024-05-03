@@ -115,6 +115,8 @@ class Server(TaskMixin):
         await asyncio.to_thread(
             send_msg,
             req.channel_sd,
+            req.clientid,
+            req.hints,
             req.payload,
             req.deadline,
             getattr(req, 'mem_sd', None),
@@ -127,33 +129,15 @@ class Server(TaskMixin):
 
     @handle_request.register
     async def _(self, req: RecvRequest, addr: Address) -> None:
-        msg = await asyncio.to_thread(recv_msg, req.channel_sd, req.deadline, wait_mode=self._wait_mode)
+        clientid, hints, msg_bytes = await asyncio.to_thread(recv_msg, req.channel_sd, req.deadline, wait_mode=self._wait_mode)
         task = None  # Ensure task is defined for use in exception handler
-        destroy_callback = lambda t: msg.destroy()
         try:
-            # Create the response. Note the use of a memory view into the
-            # message payload! This means we need to take special care to not
-            # destroy the message until AFTER the response has been sent.
-            resp = RecvResponse(req.seqno, msg.bytes_memview())
-            # Create a background task to destroy the message after the
-            # response is sent.
-            task = asyncio.create_task(resp._io_event.wait())
-            self._background_tasks.add(task)
-            task.add_done_callback(self._background_tasks.discard)
-            # Add a callback to destroy the received message after it has been
-            # sent.
-            task.add_done_callback(destroy_callback)
+            # Create the response. Note the use of a bytearray for the
+            # response payload.
+            resp = RecvResponse(req.seqno, clientid, hints, msg_bytes)
             # Write the response
             self.transport.write_response(resp, addr)
         except:
-            # Remove the destroy_callback since we're going to immediately
-            # destroy it.
-            try:
-                if isinstance(task, asyncio.Task):
-                    task.remove_done_callback(destroy_callback)
-            except:
-                pass
-            msg.destroy()
             raise
 
     @handle_request.register

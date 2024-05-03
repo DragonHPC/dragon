@@ -71,6 +71,7 @@ class Policy:
         """
         Which type of device the affinity policy will apply to
         """
+
         CPU = enum.auto()
         GPU = enum.auto()
         DEFAULT = enum.auto()
@@ -94,6 +95,7 @@ class Policy:
     # TODO: Not implemented
     class WaitMode(enum.IntEnum):
         """Channel WaitMode type"""
+
         IDLE = enum.auto()
         SPIN = enum.auto()
         DEFAULT = enum.auto()

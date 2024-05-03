@@ -1,13 +1,18 @@
 """Dragon infrastructure messages are the internal API used for service communication.
 """
 
+import sys
 import enum
 import json
 import zlib
-import base64
 import subprocess
-from typing import Optional, Union
+import traceback
+from typing import Dict, List, Optional, Union
 from dataclasses import dataclass, asdict
+
+import ctypes
+from contextlib import contextmanager,redirect_stderr,redirect_stdout
+from os import devnull
 
 from ..infrastructure import channel_desc
 from ..infrastructure import pool_desc
@@ -16,8 +21,11 @@ from ..infrastructure import process_desc
 from ..infrastructure import parameters as parms
 from ..infrastructure import facts as dfacts
 from ..localservices import options as dso
-from ..infrastructure.util import to_str_iter
-from ..utils import B64
+from ..infrastructure.util import get_external_ip_addr, to_str_iter
+from ..utils import B64, b64encode, b64decode
+from ..rc import DragonError
+import capnp
+from ..infrastructure import message_defs_capnp as capnp_schema
 
 from ..globalservices.policy_eval import ResourceLayout, Policy
 
@@ -25,9 +33,11 @@ from ..infrastructure import group_desc
 # from ..infrastructure.policy import DefaultPolicy
 
 
+
+INT_NONE = 0 - 0X80000000
+
 # This enum class lists the type codes in infrastructure
 # messages.  The values are significant for interoperability.
-
 
 @enum.unique
 class MessageTypes(enum.Enum):
@@ -35,142 +45,194 @@ class MessageTypes(enum.Enum):
     These are the enumerated values of message type identifiers within
     the Dragon infrastructure messages.
     """
-    INVALID = 0  #:
-    GS_PROCESS_CREATE = 1  #:
-    GS_PROCESS_CREATE_RESPONSE = 2  #:
-    GS_PROCESS_LIST = 3  #:
-    GS_PROCESS_LIST_RESPONSE = 4  #:
-    GS_PROCESS_QUERY = 5  #:
-    GS_PROCESS_QUERY_RESPONSE = 6  #:
-    GS_PROCESS_KILL = 7  #:
-    GS_PROCESS_KILL_RESPONSE = 8  #:
-    GS_PROCESS_JOIN = 9  #:
-    GS_PROCESS_JOIN_RESPONSE = 10  #:
-    GS_CHANNEL_CREATE = 11  #:
-    GS_CHANNEL_CREATE_RESPONSE = 12  #:
-    GS_CHANNEL_LIST = 13  #:
-    GS_CHANNEL_LIST_RESPONSE = 14  #:
-    GS_CHANNEL_QUERY = 15  #:
-    GS_CHANNEL_QUERY_RESPONSE = 16  #:
-    GS_CHANNEL_DESTROY = 17  #:
-    GS_CHANNEL_DESTROY_RESPONSE = 18  #:
-    GS_CHANNEL_JOIN = 19  #:
-    GS_CHANNEL_JOIN_RESPONSE = 20  #:
-    GS_CHANNEL_DETACH = 21  #:
-    GS_CHANNEL_DETACH_RESPONSE = 22  #:
-    GS_CHANNEL_GET_SENDH = 23  #:
-    GS_CHANNEL_GET_SENDH_RESPONSE = 24  #:
-    GS_CHANNEL_GET_RECVH = 25  #:
-    GS_CHANNEL_GET_RECVH_RESPONSE = 26  #:
-    ABNORMAL_TERMINATION = 27  #:
-    GS_STARTED = 28  #:
-    GS_PING_SH = 29  #:
-    GS_IS_UP = 30  #:
-    GS_HEAD_EXIT = 31  #:
-    GS_CHANNEL_RELEASE = 32  #:
-    GS_HALTED = 33  #:
-    SH_PROCESS_CREATE = 34  #:
-    SH_PROCESS_CREATE_RESPONSE = 35  #:
-    SH_PROCESS_KILL = 36  #:
-    SH_PROCESS_EXIT = 37  #:
-    SH_CHANNEL_CREATE = 38  #:
-    SH_CHANNEL_CREATE_RESPONSE = 39  #:
-    SH_CHANNEL_DESTROY = 40  #:
-    SH_CHANNEL_DESTROY_RESPONSE = 41  #:
-    SH_LOCK_CHANNEL = 42  #:
-    SH_LOCK_CHANNEL_RESPONSE = 43  #:
-    SH_ALLOC_MSG = 44  #:
-    SH_ALLOC_MSG_RESPONSE = 45  #:
-    SH_ALLOC_BLOCK = 46  #:
-    SH_ALLOC_BLOCK_RESPONSE = 47  #:
-    SH_IS_UP = 48  #:
-    SH_CHANNELS_UP = 49  #:
-    SH_PING_GS = 50  #:
-    SH_HALTED = 51  #:
-    SH_FWD_INPUT = 52  #:
-    SH_FWD_INPUT_ERR = 53  #:
-    SH_FWD_OUTPUT = 54  #:
-    GS_TEARDOWN = 55  #:
-    SH_TEARDOWN = 56  #:
-    SH_PING_BE = 57  #:
-    BE_PING_SH = 58  #:
-    TA_PING_SH = 59  #:
-    SH_HALT_TA = 60  #:
-    TA_HALTED = 61  #:
-    SH_HALT_BE = 62  #:
-    BE_HALTED = 63  #:
-    TA_UP = 64  #:
-    GS_PING_PROC = 65  #:
-    GS_DUMP = 66  #:
-    SH_DUMP = 67  #:
-    LA_BROADCAST = 68  #:
-    LA_PASSTHRU_FB = 69  #:
-    LA_PASSTHRU_BF = 70  #:
-    GS_POOL_CREATE = 71  #:
-    GS_POOL_CREATE_RESPONSE = 72  #:
-    GS_POOL_DESTROY = 73  #:
-    GS_POOL_DESTROY_RESPONSE = 74  #:
-    GS_POOL_LIST = 75  #:
-    GS_POOL_LIST_RESPONSE = 76  #:
-    GS_POOL_QUERY = 77  #:
-    GS_POOL_QUERY_RESPONSE = 78  #:
-    SH_POOL_CREATE = 79  #:
-    SH_POOL_CREATE_RESPONSE = 80  #:
-    SH_POOL_DESTROY = 81  #:
-    SH_POOL_DESTROY_RESPONSE = 82  #:
-    SH_EXEC_MEM_REQUEST = 83  #:
-    SH_EXEC_MEM_RESPONSE = 84  #:
-    GS_UNEXPECTED = 85  #:
-    LA_SERVER_MODE = 86  #:
-    LA_SERVER_MODE_EXIT = 87  #:
-    LA_PROCESS_DICT = 88  #:
-    LA_PROCESS_DICT_RESPONSE = 89  #:
-    LA_DUMP = 90  #:
-    BE_NODEINDEX_SH = 91  #:
-    LA_CHANNELS_INFO = 92  #:
-    SH_PROCESS_KILL_RESPONSE = 93  #:
-    BREAKPOINT = 94  #:
-    GS_PROCESS_JOIN_LIST = 95  #:
-    GS_PROCESS_JOIN_LIST_RESPONSE = 96  #:
-    GS_NODE_QUERY = 97  #:
-    GS_NODE_QUERY_RESPONSE = 98  #:
-    LOGGING_MSG = 99  #:
-    LOGGING_MSG_LIST = 100  #:
-    LOG_FLUSHED = 101  #:
-    GS_NODE_LIST = 102  #:
-    GS_NODE_LIST_RESPONSE = 103  #:
-    GS_NODE_QUERY_TOTAL_CPU_COUNT = 104  #:
-    GS_NODE_QUERY_TOTAL_CPU_COUNT_RESPONSE = 105  #:
-    BE_IS_UP = 106  #:
-    FE_NODE_IDX_BE = 107  #:
-    HALT_OVERLAY = 108  #:
-    HALT_LOGGING_INFRA = 109
-    OVERLAY_PING_BE = 110  #:
-    OVERLAY_PING_LA = 111  #:
-    LA_HALT_OVERLAY = 112  #:
-    BE_HALT_OVERLAY = 113  #:
-    OVERLAY_HALTED = 114  #:
-    EXCEPTIONLESS_ABORT = 115  #: Communicate abnormal termination without raising exception
-    LA_EXIT = 116  #:
-    GS_GROUP_LIST = 117 #:
-    GS_GROUP_LIST_RESPONSE = 118 #:
-    GS_GROUP_QUERY = 119 #:
-    GS_GROUP_QUERY_RESPONSE = 120 #:
-    GS_GROUP_DESTROY = 121 #:
-    GS_GROUP_DESTROY_RESPONSE = 122 #:
-    GS_GROUP_ADD_TO = 123 #:
-    GS_GROUP_ADD_TO_RESPONSE = 124 #:
-    GS_GROUP_REMOVE_FROM = 125 #:
-    GS_GROUP_REMOVE_FROM_RESPONSE = 126 #:
-    GS_GROUP_CREATE = 127 #:
-    GS_GROUP_CREATE_RESPONSE = 128 #:
-    GS_GROUP_KILL = 129 #:
-    GS_GROUP_KILL_RESPONSE = 130 #:
-    GS_GROUP_CREATE_ADD_TO = 131 #:
-    GS_GROUP_CREATE_ADD_TO_RESPONSE = 132 #:
-    GS_GROUP_DESTROY_REMOVE_FROM = 133 #:
-    GS_GROUP_DESTROY_REMOVE_FROM_RESPONSE = 134 #:
-    HSTA_UPDATE_NODES = 135  #:
+    DRAGON_MSG = 0 #: Deliberately invalid
+    GS_PROCESS_CREATE = enum.auto() #:
+    GS_PROCESS_CREATE_RESPONSE = enum.auto() #:
+    GS_PROCESS_LIST = enum.auto() #:
+    GS_PROCESS_LIST_RESPONSE = enum.auto() #:
+    GS_PROCESS_QUERY = enum.auto() #:
+    GS_PROCESS_QUERY_RESPONSE = enum.auto() #:
+    GS_PROCESS_KILL = enum.auto() #:
+    GS_PROCESS_KILL_RESPONSE = enum.auto() #:
+    GS_PROCESS_JOIN = enum.auto() #:
+    GS_PROCESS_JOIN_RESPONSE = enum.auto() #:
+    GS_CHANNEL_CREATE = enum.auto() #:
+    GS_CHANNEL_CREATE_RESPONSE = enum.auto() #:
+    GS_CHANNEL_LIST = enum.auto() #:
+    GS_CHANNEL_LIST_RESPONSE = enum.auto() #:
+    GS_CHANNEL_QUERY = enum.auto() #:
+    GS_CHANNEL_QUERY_RESPONSE = enum.auto() #:
+    GS_CHANNEL_DESTROY = enum.auto() #:
+    GS_CHANNEL_DESTROY_RESPONSE = enum.auto() #:
+    GS_CHANNEL_JOIN = enum.auto() #:
+    GS_CHANNEL_JOIN_RESPONSE = enum.auto() #:
+    GS_CHANNEL_DETACH = enum.auto() #:
+    GS_CHANNEL_DETACH_RESPONSE = enum.auto() #:
+    GS_CHANNEL_GET_SENDH = enum.auto() #:
+    GS_CHANNEL_GET_SENDH_RESPONSE = enum.auto() #:
+    GS_CHANNEL_GET_RECVH = enum.auto() #:
+    GS_CHANNEL_GET_RECVH_RESPONSE = enum.auto() #:
+    ABNORMAL_TERMINATION = enum.auto() #:
+    GS_STARTED = enum.auto() #:
+    GS_PING_SH = enum.auto() #:
+    GS_IS_UP = enum.auto() #:
+    GS_HEAD_EXIT = enum.auto() #:
+    GS_CHANNEL_RELEASE = enum.auto() #:
+    GS_HALTED = enum.auto() #:
+    SH_PROCESS_CREATE = enum.auto() #:
+    SH_PROCESS_CREATE_RESPONSE = enum.auto() #:
+    SH_MULTI_PROCESS_CREATE = enum.auto() #:
+    SH_MULTI_PROCESS_CREATE_RESPONSE = enum.auto() #:
+    SH_PROCESS_KILL = enum.auto() #:
+    SH_PROCESS_EXIT = enum.auto() #:
+    SH_CHANNEL_CREATE = enum.auto() #:
+    SH_CHANNEL_CREATE_RESPONSE = enum.auto() #:
+    SH_CHANNEL_DESTROY = enum.auto() #:
+    SH_CHANNEL_DESTROY_RESPONSE = enum.auto() #:
+    SH_LOCK_CHANNEL = enum.auto() #:
+    SH_LOCK_CHANNEL_RESPONSE = enum.auto() #:
+    SH_ALLOC_MSG = enum.auto() #:
+    SH_ALLOC_MSG_RESPONSE = enum.auto() #:
+    SH_ALLOC_BLOCK = enum.auto() #:
+    SH_ALLOC_BLOCK_RESPONSE = enum.auto() #:
+    SH_CHANNELS_UP = enum.auto() #:
+    SH_PING_GS = enum.auto() #:
+    SH_HALTED = enum.auto() #:
+    SH_FWD_INPUT = enum.auto() #:
+    SH_FWD_INPUT_ERR = enum.auto() #:
+    SH_FWD_OUTPUT = enum.auto() #:
+    GS_TEARDOWN = enum.auto() #:
+    SH_TEARDOWN = enum.auto() #:
+    SH_PING_BE = enum.auto() #:
+    BE_PING_SH = enum.auto() #:
+    TA_PING_SH = enum.auto() #:
+    SH_HALT_TA = enum.auto() #:
+    TA_HALTED = enum.auto() #:
+    SH_HALT_BE = enum.auto() #:
+    BE_HALTED = enum.auto() #:
+    TA_UP = enum.auto() #:
+    GS_PING_PROC = enum.auto() #:
+    GS_DUMP_STATE = enum.auto() #:
+    SH_DUMP_STATE = enum.auto() #:
+    LA_BROADCAST = enum.auto() #:
+    LA_PASS_THRU_FB = enum.auto() #:
+    LA_PASS_THRU_BF = enum.auto() #:
+    GS_POOL_CREATE = enum.auto() #:
+    GS_POOL_CREATE_RESPONSE = enum.auto() #:
+    GS_POOL_DESTROY = enum.auto() #:
+    GS_POOL_DESTROY_RESPONSE = enum.auto() #:
+    GS_POOL_LIST = enum.auto() #:
+    GS_POOL_LIST_RESPONSE = enum.auto() #:
+    GS_POOL_QUERY = enum.auto() #:
+    GS_POOL_QUERY_RESPONSE = enum.auto() #:
+    SH_POOL_CREATE = enum.auto() #:
+    SH_POOL_CREATE_RESPONSE = enum.auto() #:
+    SH_POOL_DESTROY = enum.auto() #:
+    SH_POOL_DESTROY_RESPONSE = enum.auto() #:
+    SH_CREATE_PROCESS_LOCAL_CHANNEL = enum.auto() #:
+    SH_CREATE_PROCESS_LOCAL_CHANNEL_RESPONSE = enum.auto() #:
+    SH_PUSH_KVL = enum.auto() #:
+    SH_PUSH_KVL_RESPONSE = enum.auto() #:
+    SH_POP_KVL = enum.auto() #:
+    SH_POP_KVL_RESPONSE = enum.auto() #:
+    SH_GET_KVL = enum.auto() #:
+    SH_GET_KVL_RESPONSE = enum.auto() #:
+    SH_SET_KV = enum.auto() #:
+    SH_SET_KV_RESPONSE = enum.auto()
+    SH_GET_KV = enum.auto()
+    SH_GET_KV_RESPONSE = enum.auto()
+    SH_EXEC_MEM_REQUEST = enum.auto() #:
+    SH_EXEC_MEM_RESPONSE = enum.auto() #:
+    GS_UNEXPECTED = enum.auto() #:
+    LA_SERVER_MODE = enum.auto() #:
+    LA_SERVER_MODE_EXIT = enum.auto() #:
+    LA_PROCESS_DICT = enum.auto() #:
+    LA_PROCESS_DICT_RESPONSE = enum.auto() #:
+    LA_DUMP_STATE = enum.auto() #:
+    BE_NODE_IDX_SH = enum.auto() #:
+    LA_CHANNELS_INFO = enum.auto() #:
+    SH_PROCESS_KILL_RESPONSE = enum.auto() #:
+    BREAKPOINT = enum.auto() #:
+    GS_PROCESS_JOIN_LIST = enum.auto() #:
+    GS_PROCESS_JOIN_LIST_RESPONSE = enum.auto() #:
+    GS_NODE_QUERY = enum.auto() #:
+    GS_NODE_QUERY_RESPONSE = enum.auto() #:
+    LOGGING_MSG = enum.auto() #:
+    LOGGING_MSG_LIST = enum.auto() #:
+    LOG_FLUSHED = enum.auto() #:
+    GS_NODE_LIST = enum.auto() #:
+    GS_NODE_LIST_RESPONSE = enum.auto() #:
+    GS_NODE_QUERY_TOTAL_CPU_COUNT = enum.auto() #:
+    GS_NODE_QUERY_TOTAL_CPU_COUNT_RESPONSE = enum.auto() #:
+    BE_IS_UP = enum.auto() #:
+    FE_NODE_IDX_BE = enum.auto() #:
+    HALT_OVERLAY = enum.auto() #:
+    HALT_LOGGING_INFRA = enum.auto() #:
+    OVERLAY_PING_BE = enum.auto() #:
+    OVERLAY_PING_LA = enum.auto() #:
+    LA_HALT_OVERLAY = enum.auto() #:
+    BE_HALT_OVERLAY = enum.auto() #:
+    OVERLAY_HALTED = enum.auto() #:
+    EXCEPTIONLESS_ABORT = enum.auto() #: Communicate abnormal termination without raising exception
+    LA_EXIT = enum.auto() #:
+    GS_GROUP_LIST = enum.auto() #:
+    GS_GROUP_LIST_RESPONSE = enum.auto() #:
+    GS_GROUP_QUERY = enum.auto() #:
+    GS_GROUP_QUERY_RESPONSE = enum.auto() #:
+    GS_GROUP_DESTROY = enum.auto() #:
+    GS_GROUP_DESTROY_RESPONSE = enum.auto() #:
+    GS_GROUP_ADD_TO = enum.auto() #:
+    GS_GROUP_ADD_TO_RESPONSE = enum.auto() #:
+    GS_GROUP_REMOVE_FROM = enum.auto() #:
+    GS_GROUP_REMOVE_FROM_RESPONSE = enum.auto() #:
+    GS_GROUP_CREATE = enum.auto() #:
+    GS_GROUP_CREATE_RESPONSE = enum.auto() #:
+    GS_GROUP_KILL = enum.auto() #:
+    GS_GROUP_KILL_RESPONSE = enum.auto() #:
+    GS_GROUP_CREATE_ADD_TO = enum.auto() #:
+    GS_GROUP_CREATE_ADD_TO_RESPONSE = enum.auto() #:
+    GS_GROUP_DESTROY_REMOVE_FROM = enum.auto() #:
+    GS_GROUP_DESTROY_REMOVE_FROM_RESPONSE = enum.auto() #:
+    TA_UPDATE_NODES = enum.auto() #:
+    RUNTIME_DESC = enum.auto() #:
+    USER_HALT_OOB = enum.auto() #:
+    DD_REGISTER_CLIENT = enum.auto() #:
+    DD_REGISTER_CLIENT_RESPONSE = enum.auto() #:
+    DD_DESTROY = enum.auto() #:
+    DD_DESTROY_RESPONSE = enum.auto() #:
+    DD_REGISTER_MANAGER = enum.auto() #:
+    DD_REGISTER_MANAGER_RESPONSE = enum.auto() #:
+    DD_REGISTER_CLIENT_ID = enum.auto() #:
+    DD_REGISTER_CLIENT_ID_RESPONSE = enum.auto() #:
+    DD_DESTROY_MANAGER = enum.auto() #:
+    DD_DESTROY_MANAGER_RESPONSE = enum.auto() #:
+    DD_PUT = enum.auto() #:
+    DD_PUT_RESPONSE = enum.auto() #:
+    DD_GET = enum.auto() #:
+    DD_GET_RESPONSE = enum.auto() #:
+    DD_POP = enum.auto() #:
+    DD_POP_RESPONSE = enum.auto() #:
+    DD_CONTAINS = enum.auto() #:
+    DD_CONTAINS_RESPONSE = enum.auto() #:
+    DD_GET_LENGTH = enum.auto() #:
+    DD_GET_LENGTH_RESPONSE = enum.auto() #:
+    DD_CLEAR = enum.auto() #:
+    DD_CLEAR_RESPONSE = enum.auto() #:
+    DD_GET_ITERATOR = enum.auto() #:
+    DD_GET_ITERATOR_RESPONSE = enum.auto() #:
+    DD_ITERATOR_NEXT = enum.auto() #:
+    DD_ITERATOR_NEXT_RESPONSE = enum.auto() #:
+    DD_KEYS = enum.auto() #:
+    DD_KEYS_RESPONSE = enum.auto() #:
+    DD_DEREGISTER_CLIENT = enum.auto() #:
+    DD_DEREGISTER_CLIENT_RESPONSE = enum.auto() #:
+    DD_CREATE = enum.auto() #:
+    DD_CREATE_RESPONSE = enum.auto() #:
+    DD_CONNECT_TO_MANAGER = enum.auto() #:
+    DD_CONNECT_TO_MANAGER_RESPONSE = enum.auto() #:
+    DD_GET_RANDOM_MANAGER = enum.auto() #:
+    DD_GET_RANDOM_MANAGER_RESPONSE = enum.auto() #:
+
 
 @enum.unique
 class FileDescriptor(enum.Enum):
@@ -195,21 +257,37 @@ class AbnormalTerminationError(Exception):
     def __repr__(self):
         return f"{str(__class__)}({repr(self._msg)})"
 
+
 @dataclass
-class PMIInfo():
+class PMIGroupInfo():
     """
     Required information to enable the launching of pmi based applications.
     """
 
     job_id: int
-    lrank: int
-    ppn: int
-    nid: int
     nnodes: int
     nranks: int
     nidlist: list[int]
     hostlist: list[str]
     control_port: int
+
+    @classmethod
+    def fromdict(cls, d):
+        try:
+            return cls(**d)
+        except Exception as exc:
+            raise ValueError(f'Error deserializing {cls.__name__} {d=}') from exc
+
+
+@dataclass
+class PMIProcessInfo():
+    """
+    Required information to enable the launching of pmi based applications.
+    """
+
+    lrank: int
+    ppn: int
+    nid: int
     pid_base: int
 
     @classmethod
@@ -220,7 +298,7 @@ class PMIInfo():
             raise ValueError(f'Error deserializing {cls.__name__} {d=}') from exc
 
 
-class _MsgBase(object):
+class InfraMsg(object):
     """Common base for all messages.
 
         This common base type for all messages sets up the
@@ -228,7 +306,7 @@ class _MsgBase(object):
         now.
     """
 
-    _tc = MessageTypes.INVALID  # deliberately invalid value, overridden
+    _tc = MessageTypes.DRAGON_MSG  # deliberately invalid value, overridden
 
     @enum.unique
     class Errors(enum.Enum):
@@ -299,11 +377,15 @@ class _MsgBase(object):
     def from_sdict(cls, sdict):
         return cls(**sdict)
 
+    @classmethod
+    def deserialize(cls, msg):
+        raise ValueError('Called deserialize on InfraMsg base class which should not happen.')
+
     def uncompressed_serialize(self):
         return json.dumps(self.get_sdict())
 
     def serialize(self):
-        return base64.b64encode(zlib.compress(json.dumps(self.get_sdict()).encode('utf-8'))).decode('ascii')
+        return b64encode(zlib.compress(json.dumps(self.get_sdict()).encode('utf-8')))
 
     def __str__(self):
         cn = self.__class__.__name__
@@ -322,6 +404,1130 @@ class _MsgBase(object):
         return f'{self.__class__.__name__}({fs})'
 
 
+class CapNProtoMsg:
+    """Common base for all capnproto messages.
+
+        This common base type for all messages sets up the
+        default fields and the serialization strategy for
+        messages to be exchanged between C and Python.
+    """
+    Errors = DragonError
+
+    _tc = MessageTypes.DRAGON_MSG  # deliberately invalid value, overridden
+
+    def __init__(self, tag):
+        self._tag = tag
+
+    @classmethod
+    def from_sdict(cls, sdict):
+        return cls(**sdict)
+
+    @classmethod
+    def deserialize(cls, msg_str):
+        msg = capnp_schema.MessageDef.from_bytes_packed(msg_str)
+        sdict = msg.to_dict()
+        flattened_dict = {}
+        typecode = sdict['tc']
+        del sdict['tc']
+        tag = sdict['tag']
+        del sdict['tag']
+        if 'value' in sdict['responseOption']:
+            flattened_dict.update(sdict['responseOption']['value'])
+        del sdict['responseOption']
+        for msg_type in sdict:
+            for field in sdict[msg_type]:
+                flattened_dict[field] = sdict[msg_type][field]
+        flattened_dict['tag'] = tag
+        if 'none' in flattened_dict:
+            del flattened_dict['none']
+
+        return mt_dispatch[typecode].from_sdict(flattened_dict)
+
+    def serialize(self):
+        cap_msg = self.builder()
+        return cap_msg.to_bytes_packed()
+
+    def get_sdict(self):
+        rv = {'_tc': self._tc.value,
+              'tag': self.tag}
+        return rv
+
+    def builder(self):
+        cap_msg = capnp_schema.MessageDef.new_message()
+        cap_msg.tc = self._tc.value
+        cap_msg.tag = self._tag
+        return cap_msg
+
+    def __repr__(self):
+        fields_to_set = self.get_sdict()
+        del fields_to_set['_tc']
+        fs = ', '.join([f'{k!s}={v!r}' for k, v in fields_to_set.items()])
+        return f'{self.__class__.__name__}({fs})'
+
+    @property
+    def capnp_name(self):
+        name = self.__class__.__name__
+        return name[:2].lower()+name[2:]
+
+    @property
+    def tc(self):
+        return self._tc
+
+    @property
+    def tag(self):
+        return self._tag
+
+class CapNProtoResponseMsg(CapNProtoMsg):
+    """Common base for all capnproto response messages.
+
+        This provides some support for code common
+        to all response messages.
+    """
+    def __init__(self, tag, ref, err, errInfo):
+        super().__init__(tag)
+        self._ref = ref
+        self._err = err
+        self._errInfo = errInfo
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['ref'] = self._ref
+        rv['err'] = self._err
+        rv['errInfo'] = self._errInfo
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        resp_msg = cap_msg.init('responseOption').init('value')
+        resp_msg.ref = self._ref
+        resp_msg.err = DragonError(self._err).value
+        resp_msg.errInfo = self._errInfo
+        return cap_msg
+
+    @property
+    def ref(self):
+        return self._ref
+
+    @property
+    def err(self):
+        return self._err
+
+    @property
+    def errInfo(self):
+        return self._errInfo
+
+
+class SHCreateProcessLocalChannel(CapNProtoMsg):
+
+    _tc = MessageTypes.SH_CREATE_PROCESS_LOCAL_CHANNEL
+
+    def __init__(self, tag, puid, respFLI):
+        super().__init__(tag)
+        self._puid = puid
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['puid'] = self._puid
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.puid = self._puid
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+    @property
+    def puid(self):
+        return self._puid
+
+class SHCreateProcessLocalChannelResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.SH_CREATE_PROCESS_LOCAL_CHANNEL_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo='', serChannel=''):
+        super().__init__(tag, ref, err, errInfo)
+        self._serChannel = serChannel
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['serChannel'] = self._serChannel
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.serChannel = self._serChannel
+        return cap_msg
+
+    @property
+    def serialized_channel(self):
+        return self._serChannel
+
+class SHPushKVL(CapNProtoMsg):
+    _tc = MessageTypes.SH_PUSH_KVL
+
+    def __init__(self, tag, key, value, respFLI):
+        super().__init__(tag)
+        self._key = key
+        self._value = value
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['key'] = self._key
+        rv['value'] = self._value
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.key = self._key
+        client_msg.value = self._value
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def key(self):
+        return self._key
+
+    @property
+    def value(self):
+        return self._value
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+class SHPushKVLResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.SH_PUSH_KVL_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class SHPopKVL(CapNProtoMsg):
+    _tc = MessageTypes.SH_POP_KVL
+
+    def __init__(self, tag, key, value, respFLI):
+        super().__init__(tag)
+        self._key = key
+        self._value = value
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['key'] = self._key
+        rv['value'] = self._value
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.key = self._key
+        client_msg.value = self._value
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def key(self):
+        return self._key
+
+    @property
+    def value(self):
+        return self._value
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class SHPopKVLResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.SH_POP_KVL_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class SHGetKVL(CapNProtoMsg):
+    _tc = MessageTypes.SH_GET_KVL
+
+    def __init__(self, tag, key, respFLI):
+        super().__init__(tag)
+        self._key = key
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['key'] = self._key
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.key = self._key
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def key(self):
+        return self._key
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class SHGetKVLResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.SH_GET_KVL_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo='', values=[]):
+        super().__init__(tag, ref, err, errInfo)
+        self._values = values
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['values'] = self._values
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        values = client_msg.init('values', len(self._values))
+        for i in range(len(self._values)):
+            values[i] = self._values[i]
+        return cap_msg
+
+    @property
+    def values(self):
+        return self._values
+
+class SHSetKV(CapNProtoMsg):
+    _tc = MessageTypes.SH_SET_KV
+
+    def __init__(self, tag, key, value, respFLI):
+        super().__init__(tag)
+        self._key = key
+        self._value = value
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['key'] = self._key
+        rv['value'] = self._value
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.key = self._key
+        client_msg.value = self._value
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def key(self):
+        return self._key
+
+    @property
+    def value(self):
+        return self._value
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+class SHSetKVResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.SH_SET_KV_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+
+class SHGetKV(CapNProtoMsg):
+    _tc = MessageTypes.SH_GET_KV
+
+    def __init__(self, tag, key, respFLI):
+        super().__init__(tag)
+        self._key = key
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['key'] = self._key
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.key = self._key
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def key(self):
+        return self._key
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class SHGetKVResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.SH_GET_KV_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo='', value=None):
+        super().__init__(tag, ref, err, errInfo)
+        self._value = value
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['value'] = self._value
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.value = self._value
+        return cap_msg
+
+    @property
+    def value(self):
+        return self._value
+
+class DDCreate(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_CREATE
+
+    def __init__(self, tag, respFLI, args):
+        super().__init__(tag)
+        self._respFLI = respFLI
+        self._args = args
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['respFLI'] = self._respFLI
+        rv['args'] = self._args
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.respFLI = self._respFLI
+        client_msg.args = self._args
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+    @property
+    def args(self):
+        return self._args
+
+class DDCreateResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_CREATE_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDGetRandomManager(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_GET_RANDOM_MANAGER
+
+    def __init__(self, tag, respFLI):
+        super().__init__(tag)
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+class DDGetRandomManagerResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_GET_RANDOM_MANAGER_RESPONSE
+
+    def __init__(self, tag, ref, err, manager, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+        self._manager = manager
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['manager'] = self._manager
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.manager = self._manager
+        return cap_msg
+
+    @property
+    def manager(self):
+        return self._manager
+
+class DDRegisterClient(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_REGISTER_CLIENT
+
+    def __init__(self, tag, respFLI, bufferedRespFLI):
+        super().__init__(tag)
+        self._respFLI = respFLI
+        self._bufferedRespFLI = bufferedRespFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['respFLI'] = self._respFLI
+        rv['bufferedRespFLI'] = self._bufferedRespFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.respFLI = self._respFLI
+        client_msg.bufferedRespFLI = self._bufferedRespFLI
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+    @property
+    def bufferedRespFLI(self):
+        return self._bufferedRespFLI
+
+class DDRegisterClientResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_REGISTER_CLIENT_RESPONSE
+
+    def __init__(self, tag, ref, err, clientID, numManagers, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+        self._clientID = clientID
+        self._num_managers = numManagers
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        rv['numManagers'] = self._num_managers
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        client_msg.numManagers = self._num_managers
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+    @property
+    def numManagers(self):
+        return self._num_managers
+
+class DDConnectToManager(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_CONNECT_TO_MANAGER
+
+    def __init__(self, tag, clientID, managerID):
+        super().__init__(tag)
+        self._clientID = clientID
+        self._managerID = managerID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        rv['managerID'] = self._managerID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        client_msg.managerID = self._managerID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+    @property
+    def managerID(self):
+        return self._managerID
+
+class DDConnectToManagerResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_CONNECT_TO_MANAGER_RESPONSE
+
+    def __init__(self, tag, ref, err, manager, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+        self._manager = manager
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['manager'] = self._manager
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.manager = self._manager
+        return cap_msg
+
+    @property
+    def manager(self):
+        return self._manager
+
+class DDDestroy(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_DESTROY
+
+    def __init__(self, tag, clientID, respFLI):
+        super().__init__(tag)
+        self._clientID = clientID
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        client_msg.respFLI = self.respFLI
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+class DDDestroyResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_DESTROY_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDRegisterManager(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_REGISTER_MANAGER
+
+    def __init__(self, tag, mainFLI, respFLI):
+        super().__init__(tag)
+        self._mainFLI = mainFLI
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['mainFLI'] = self._mainFLI
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.mainFLI = self._mainFLI
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def mainFLI(self):
+        return self._mainFLI
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+class DDRegisterManagerResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_REGISTER_MANAGER_RESPONSE
+
+    def __init__(self, tag, ref, err, managerID, errInfo='', managers=[]):
+        super().__init__(tag, ref, err, errInfo)
+        self._managers = managers
+        self._managerID = managerID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['managers'] = self._managers
+        rv['managerID'] = self._managerID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.managerID = self._managerID
+        msg_mgrs = client_msg.init('managers', len(self._managers))
+        for i in range(len(self._managers)):
+            msg_mgrs[i] = self._managers[i]
+        return cap_msg
+
+    @property
+    def managerID(self):
+        return self._managerID
+
+    @property
+    def managers(self):
+        return self._managers
+
+class DDRegisterClientID(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_REGISTER_CLIENT_ID
+
+    def __init__(self, tag, clientID, respFLI, bufferedRespFLI):
+        super().__init__(tag)
+        self._clientID = clientID
+        self._respFLI = respFLI
+        self._bufferedRespFLI = bufferedRespFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        rv['respFLI'] = self._respFLI
+        rv['bufferedRespFLI'] = self._bufferedRespFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        client_msg.respFLI = self._respFLI
+        client_msg.bufferedRespFLI = self._bufferedRespFLI
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+    @property
+    def bufferedRespFLI(self):
+        return self._bufferedRespFLI
+
+class DDRegisterClientIDResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_REGISTER_CLIENT_ID_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDDestroyManager(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_DESTROY_MANAGER
+
+    def __init__(self, tag, respFLI):
+        super().__init__(tag)
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+class DDDestroyManagerResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_DESTROY_MANAGER_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDPut(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_PUT
+
+    def __init__(self, tag, clientID):
+        super().__init__(tag)
+        self._clientID = clientID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+class DDPutResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_PUT_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDGet(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_GET
+
+    def __init__(self, tag, clientID):
+        super().__init__(tag)
+        self._clientID = clientID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+class DDGetResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_GET_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDPop(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_POP
+
+    def __init__(self, tag, clientID):
+        super().__init__(tag)
+        self._clientID = clientID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+class DDPopResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_POP_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDContains(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_CONTAINS
+
+    def __init__(self, tag, clientID):
+        super().__init__(tag)
+        self._clientID = clientID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+class DDContainsResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_CONTAINS_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDGetLength(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_GET_LENGTH
+
+    def __init__(self, tag, clientID):
+        super().__init__(tag)
+        self._clientID = clientID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+class DDGetLengthResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_GET_LENGTH_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo='', length=0):
+        super().__init__(tag, ref, err, errInfo)
+        self._length = length
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['length'] = self._length
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.length = self._length
+        return cap_msg
+
+    @property
+    def length(self):
+        return self._length
+
+class DDClear(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_CLEAR
+
+    def __init__(self, tag, clientID):
+        super().__init__(tag)
+        self._clientID = clientID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+class DDClearResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_CLEAR_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDGetIterator(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_GET_ITERATOR
+
+    def __init__(self, tag, clientID):
+        super().__init__(tag)
+        self._clientID = clientID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+class DDGetIteratorResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_GET_ITERATOR_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo='', iterID=0):
+        super().__init__(tag, ref, err, errInfo)
+        self._iter_id = iterID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['iterID'] = self._iter_id
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.iterID = self._iter_id
+        return cap_msg
+
+    @property
+    def iterID(self):
+        return self._iter_id
+
+class DDIteratorNext(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_ITERATOR_NEXT
+
+    def __init__(self, tag, clientID, iterID):
+        super().__init__(tag)
+        self._clientID = clientID
+        self._iterID = iterID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        rv['iterID'] = self._iterID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        client_msg.iterID = self._iterID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+    @property
+    def iterID(self):
+        return self._iterID
+
+class DDIteratorNextResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_ITERATOR_NEXT_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDKeys(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_KEYS
+
+    def __init__(self, tag, clientID):
+        super().__init__(tag)
+        self._clientID = clientID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+class DDKeysResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_KEYS_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
+class DDDeregisterClient(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_DEREGISTER_CLIENT
+
+    def __init__(self, tag, clientID, respFLI):
+        super().__init__(tag)
+        self._clientID = clientID
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['clientID'] = self._clientID
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+    @respFLI.setter
+    def respFLI(self, respFLI):
+        self._respFLI = respFLI
+
+class DDDeregisterClientResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_DEREGISTER_CLIENT_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=''):
+        super().__init__(tag, ref, err, errInfo)
+
 # class setup methodology:
 # 1) the _tc class variable has the value of the typecode
 # for this class.
@@ -339,7 +1545,7 @@ class _MsgBase(object):
 #    in the serialization the typecode is gotten from the
 #    class attribute _tc.
 
-class GSProcessCreate(_MsgBase):
+class GSProcessCreate(InfraMsg):
     """
         Refer to :ref:`definition<gsprocesscreate>`
         and :ref:`Common Fields<cfs>` for a description of
@@ -385,8 +1591,8 @@ class GSProcessCreate(_MsgBase):
         if _pmi_info is None:
             self._pmi_info = None
         elif isinstance(_pmi_info, dict):
-            self._pmi_info = PMIInfo.fromdict(_pmi_info)
-        elif isinstance(_pmi_info, PMIInfo):
+            self._pmi_info = PMIProcessInfo.fromdict(_pmi_info)
+        elif isinstance(_pmi_info, PMIProcessInfo):
             self._pmi_info = _pmi_info
         else:
             raise ValueError(f'GS unsupported _pmi_info value {_pmi_info=}')
@@ -450,7 +1656,7 @@ class GSProcessCreate(_MsgBase):
         return super().__str__() + f'{self.exe} {self.args}'
 
 
-class GSProcessCreateResponse(_MsgBase):
+class GSProcessCreateResponse(InfraMsg):
     """
         Refer to :ref:`definition<gsprocesscreateresponse>`
         and :ref:`Common Fields<cfs>` for a
@@ -497,7 +1703,7 @@ class GSProcessCreateResponse(_MsgBase):
         return rv
 
 
-class GSProcessList(_MsgBase):
+class GSProcessList(InfraMsg):
     """
         Refer to :ref:`definition<gsprocesslist>` and :ref:`Common Fields<cfs>` for a description of
         the message structure.
@@ -517,7 +1723,7 @@ class GSProcessList(_MsgBase):
         return rv
 
 
-class GSProcessListResponse(_MsgBase):
+class GSProcessListResponse(InfraMsg):
     """
         Refer to :ref:`definition<gsprocesslistresponse>` and :ref:`Common Fields<cfs>` for a
         description of the message structure.
@@ -544,7 +1750,7 @@ class GSProcessListResponse(_MsgBase):
         return rv
 
 
-class GSProcessQuery(_MsgBase):
+class GSProcessQuery(InfraMsg):
     """
         Refer to :ref:`definition<gsprocessquery>` and :ref:`Common Fields<cfs>`
         for a description of the message structure.
@@ -578,7 +1784,7 @@ class GSProcessQuery(_MsgBase):
         return rv
 
 
-class GSProcessQueryResponse(_MsgBase):
+class GSProcessQueryResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsprocessqueryresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -627,7 +1833,7 @@ class GSProcessQueryResponse(_MsgBase):
         return rv
 
 
-class GSProcessKill(_MsgBase):
+class GSProcessKill(InfraMsg):
     """
             Refer to :ref:`definition<gsprocesskill>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -658,7 +1864,7 @@ class GSProcessKill(_MsgBase):
         return rv
 
 
-class GSProcessKillResponse(_MsgBase):
+class GSProcessKillResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsprocesskillresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -691,7 +1897,7 @@ class GSProcessKillResponse(_MsgBase):
         return rv
 
 
-class GSProcessJoin(_MsgBase):
+class GSProcessJoin(InfraMsg):
     """
             Refer to :ref:`definition<gsprocessjoin>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -727,7 +1933,7 @@ class GSProcessJoin(_MsgBase):
         return first + f' {self.t_p_uid}:{self.user_name}'
 
 
-class GSProcessJoinResponse(_MsgBase):
+class GSProcessJoinResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsprocessjoinresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -773,7 +1979,7 @@ class GSProcessJoinResponse(_MsgBase):
         return msg
 
 
-class GSProcessJoinList(_MsgBase):
+class GSProcessJoinList(InfraMsg):
     """
             Refer to :ref:`definition<gsprocessjoinlist>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -782,7 +1988,11 @@ class GSProcessJoinList(_MsgBase):
 
     _tc = MessageTypes.GS_PROCESS_JOIN_LIST
 
-    def __init__(self, tag, p_uid, r_c_uid, timeout=-1, t_p_uid_list=None, user_name_list=None, join_all=False, _tc=None):
+    def __init__(self, tag, p_uid, r_c_uid, timeout=-1,
+                 t_p_uid_list=None, user_name_list=None,
+                 join_all=False, return_on_bad_exit=False,
+                 _tc=None):
+
         super().__init__(tag)
         self.p_uid = int(p_uid)
         self.r_c_uid = int(r_c_uid)
@@ -794,6 +2004,7 @@ class GSProcessJoinList(_MsgBase):
         self.user_name_list = user_name_list
         self.timeout = timeout
         self.join_all = join_all
+        self.return_on_bad_exit = return_on_bad_exit
 
     def get_sdict(self):
         rv = super().get_sdict()
@@ -801,6 +2012,7 @@ class GSProcessJoinList(_MsgBase):
         rv['r_c_uid'] = self.r_c_uid
         rv['timeout'] = self.timeout
         rv['join_all'] = self.join_all
+        rv['return_on_bad_exit'] = self.return_on_bad_exit
         if self.t_p_uid_list:
             rv['t_p_uid_list'] = self.t_p_uid_list
         if self.user_name_list:
@@ -808,12 +2020,13 @@ class GSProcessJoinList(_MsgBase):
 
         return rv
 
-    def __str__(self):
-        first = super().__str__()
-        return first + f' {self.t_p_uid_list}:{self.user_name_list}'
+    # TODO AICI-1422 Implement verbose logging options
+    # def __str__(self):
+    #     first = super().__str__()
+    #     return first + f' {self.t_p_uid_list}:{self.user_name_list}'
 
 
-class GSProcessJoinListResponse(_MsgBase):
+class GSProcessJoinListResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsprocessjoinlistresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -847,7 +2060,7 @@ class GSProcessJoinListResponse(_MsgBase):
         return msg
 
 
-class GSPoolCreate(_MsgBase):
+class GSPoolCreate(InfraMsg):
     """
             Refer to :ref:`definition<gspoolcreate>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -891,7 +2104,7 @@ class GSPoolCreate(_MsgBase):
         return rv
 
 
-class GSPoolCreateResponse(_MsgBase):
+class GSPoolCreateResponse(InfraMsg):
     """
             Refer to :ref:`definition<gspoolcreateresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -940,7 +2153,7 @@ class GSPoolCreateResponse(_MsgBase):
         return rv
 
 
-class GSPoolList(_MsgBase):
+class GSPoolList(InfraMsg):
     """
             Refer to :ref:`definition<gspoollist>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -962,7 +2175,7 @@ class GSPoolList(_MsgBase):
         return rv
 
 
-class GSPoolListResponse(_MsgBase):
+class GSPoolListResponse(InfraMsg):
     """
             Refer to :ref:`definition<gspoollistresponse>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -989,7 +2202,7 @@ class GSPoolListResponse(_MsgBase):
         return rv
 
 
-class GSPoolQuery(_MsgBase):
+class GSPoolQuery(InfraMsg):
     """
             Refer to :ref:`definition<gspoolquery>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -1024,7 +2237,7 @@ class GSPoolQuery(_MsgBase):
         return rv
 
 
-class GSPoolQueryResponse(_MsgBase):
+class GSPoolQueryResponse(InfraMsg):
     """
             Refer to :ref:`definition<gspoolqueryresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1073,7 +2286,7 @@ class GSPoolQueryResponse(_MsgBase):
         return rv
 
 
-class GSPoolDestroy(_MsgBase):
+class GSPoolDestroy(InfraMsg):
     """
             Refer to :ref:`definition<gspooldestroy>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -1102,7 +2315,7 @@ class GSPoolDestroy(_MsgBase):
         return rv
 
 
-class GSPoolDestroyResponse(_MsgBase):
+class GSPoolDestroyResponse(InfraMsg):
     """
             Refer to :ref:`definition<gspooldestroyresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1135,7 +2348,7 @@ class GSPoolDestroyResponse(_MsgBase):
         return rv
 
 
-class GSGroupCreate(_MsgBase):
+class GSGroupCreate(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupcreate>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -1161,6 +2374,16 @@ class GSGroupCreate(_MsgBase):
             self.policy = Policy(**policy)
         elif isinstance(policy, Policy):
             self.policy = policy
+        elif isinstance(policy, list):
+            temp_policies = []
+            for p in policy:
+                if isinstance(p, Policy):
+                    temp_policies.append(p)
+                elif isinstance(p, dict):
+                    temp_policies.append(Policy(**p))
+                else:
+                    raise ValueError(f'GS Groups unsupported policy value {p=}')
+            self.policy = temp_policies
         else:
             raise ValueError(f'GS Groups unsupported policy value {policy=}')
 
@@ -1170,13 +2393,16 @@ class GSGroupCreate(_MsgBase):
         rv['p_uid'] = self.p_uid
         rv['r_c_uid'] = self.r_c_uid
         rv['items'] = self.items
-        rv['policy'] = self.policy.get_sdict()
+        if isinstance(self.policy, list):
+            rv['policy'] = [policy.get_sdict() if isinstance(policy, Policy) else policy for policy in self.policy]
+        else:
+            rv['policy'] = self.policy.get_sdict()
         rv['user_name'] = self.user_name
 
         return rv
 
 
-class GSGroupCreateResponse(_MsgBase):
+class GSGroupCreateResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupcreateresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1209,7 +2435,7 @@ class GSGroupCreateResponse(_MsgBase):
         rv['desc'] = None if self.desc is None else self.desc.get_sdict()
         return rv
 
-class GSGroupList(_MsgBase):
+class GSGroupList(InfraMsg):
     """
             Refer to :ref:`definition<gsgrouplist>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -1230,7 +2456,7 @@ class GSGroupList(_MsgBase):
         return rv
 
 
-class GSGroupListResponse(_MsgBase):
+class GSGroupListResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsgrouplistresponse>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -1257,7 +2483,7 @@ class GSGroupListResponse(_MsgBase):
         return rv
 
 
-class GSGroupQuery(_MsgBase):
+class GSGroupQuery(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupquery>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -1292,7 +2518,7 @@ class GSGroupQuery(_MsgBase):
         return rv
 
 
-class GSGroupQueryResponse(_MsgBase):
+class GSGroupQueryResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupqueryresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1341,7 +2567,7 @@ class GSGroupQueryResponse(_MsgBase):
         return rv
 
 
-class GSGroupKill(_MsgBase):
+class GSGroupKill(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupkill>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -1372,7 +2598,7 @@ class GSGroupKill(_MsgBase):
         return rv
 
 
-class GSGroupKillResponse(_MsgBase):
+class GSGroupKillResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupkillresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1420,7 +2646,7 @@ class GSGroupKillResponse(_MsgBase):
         return rv
 
 
-class GSGroupDestroy(_MsgBase):
+class GSGroupDestroy(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupdestroy>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -1449,7 +2675,7 @@ class GSGroupDestroy(_MsgBase):
         return rv
 
 
-class GSGroupDestroyResponse(_MsgBase):
+class GSGroupDestroyResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupdestroyresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1496,7 +2722,7 @@ class GSGroupDestroyResponse(_MsgBase):
         return rv
 
 
-class GSGroupAddTo(_MsgBase):
+class GSGroupAddTo(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupaddto>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -1532,7 +2758,7 @@ class GSGroupAddTo(_MsgBase):
         return rv
 
 
-class GSGroupAddToResponse(_MsgBase):
+class GSGroupAddToResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupaddtoresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1581,7 +2807,7 @@ class GSGroupAddToResponse(_MsgBase):
 
         return rv
 
-class GSGroupCreateAddTo(_MsgBase):
+class GSGroupCreateAddTo(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupcreateaddto>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -1627,7 +2853,7 @@ class GSGroupCreateAddTo(_MsgBase):
         return rv
 
 
-class GSGroupCreateAddToResponse(_MsgBase):
+class GSGroupCreateAddToResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupcreateaddtoresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1676,7 +2902,7 @@ class GSGroupCreateAddToResponse(_MsgBase):
         return rv
 
 
-class GSGroupRemoveFrom(_MsgBase):
+class GSGroupRemoveFrom(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupremovefrom>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -1712,7 +2938,7 @@ class GSGroupRemoveFrom(_MsgBase):
         return rv
 
 
-class GSGroupRemoveFromResponse(_MsgBase):
+class GSGroupRemoveFromResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupremovefromresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1761,7 +2987,7 @@ class GSGroupRemoveFromResponse(_MsgBase):
         return rv
 
 
-class GSGroupDestroyRemoveFrom(_MsgBase):
+class GSGroupDestroyRemoveFrom(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupdestroyremovefrom>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -1797,7 +3023,7 @@ class GSGroupDestroyRemoveFrom(_MsgBase):
         return rv
 
 
-class GSGroupDestroyRemoveFromResponse(_MsgBase):
+class GSGroupDestroyRemoveFromResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsgroupdestroyremovefromresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -1846,7 +3072,7 @@ class GSGroupDestroyRemoveFromResponse(_MsgBase):
         return rv
 
 
-class GSChannelCreate(_MsgBase):
+class GSChannelCreate(InfraMsg):
     """
             Refer to :ref:`definition<gschannelcreate>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -1888,7 +3114,7 @@ class GSChannelCreate(_MsgBase):
             self._options = channel_desc.ChannelOptions.from_sdict(value)
 
 
-class GSChannelCreateResponse(_MsgBase):
+class GSChannelCreateResponse(InfraMsg):
     """
         Refer to :ref:`definition<gschannelcreateresponse>` and :ref:`Common Fields<cfs>` for a
         description of the message structure.
@@ -1933,7 +3159,7 @@ class GSChannelCreateResponse(_MsgBase):
         return rv
 
 
-class GSChannelList(_MsgBase):
+class GSChannelList(InfraMsg):
     """
         Refer to :ref:`definition<gschannellist>` and to
         :ref:`Common Fields<cfs>` for a description of the message structure.
@@ -1953,7 +3179,7 @@ class GSChannelList(_MsgBase):
         return rv
 
 
-class GSChannelListResponse(_MsgBase):
+class GSChannelListResponse(InfraMsg):
     """
         Refer to :ref:`definition<gschannellistresponse>` and :ref:`Common Fields<cfs>` for a
         description of the message structure.
@@ -1979,7 +3205,7 @@ class GSChannelListResponse(_MsgBase):
         return rv
 
 
-class GSChannelQuery(_MsgBase):
+class GSChannelQuery(InfraMsg):
     """
             Refer to :ref:`definition<gschannelquery>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -2016,7 +3242,7 @@ class GSChannelQuery(_MsgBase):
         return rv
 
 
-class GSChannelQueryResponse(_MsgBase):
+class GSChannelQueryResponse(InfraMsg):
     """
             Refer to :ref:`definition<gschannelqueryresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -2067,7 +3293,7 @@ class GSChannelQueryResponse(_MsgBase):
         return rv
 
 
-class GSChannelDestroy(_MsgBase):
+class GSChannelDestroy(InfraMsg):
     """
             Refer to :ref:`definition<gschanneldestroy>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -2101,7 +3327,7 @@ class GSChannelDestroy(_MsgBase):
         return rv
 
 
-class GSChannelDestroyResponse(_MsgBase):
+class GSChannelDestroyResponse(InfraMsg):
     """
             Refer to :ref:`definition<gschanneldestroyresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -2130,7 +3356,7 @@ class GSChannelDestroyResponse(_MsgBase):
         return rv
 
 
-class GSChannelJoin(_MsgBase):
+class GSChannelJoin(InfraMsg):
     """
             Refer to :ref:`definition<gschanneljoin>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -2155,7 +3381,7 @@ class GSChannelJoin(_MsgBase):
         return rv
 
 
-class GSChannelJoinResponse(_MsgBase):
+class GSChannelJoinResponse(InfraMsg):
     """
             Refer to :ref:`definition<gschanneljoinresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -2198,7 +3424,7 @@ class GSChannelJoinResponse(_MsgBase):
         return rv
 
 
-class GSChannelDetach(_MsgBase):
+class GSChannelDetach(InfraMsg):
     """
             Refer to :ref:`definition<gschanneldetach>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -2221,7 +3447,7 @@ class GSChannelDetach(_MsgBase):
         return rv
 
 
-class GSChannelDetachResponse(_MsgBase):
+class GSChannelDetachResponse(InfraMsg):
     """
             Refer to :ref:`definition<gschanneldetachresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -2245,7 +3471,7 @@ class GSChannelDetachResponse(_MsgBase):
         return rv
 
 
-class GSChannelGetSendH(_MsgBase):
+class GSChannelGetSendH(InfraMsg):
     """
             Refer to :ref:`definition<gschannelgetsendh>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -2270,7 +3496,7 @@ class GSChannelGetSendH(_MsgBase):
         return rv
 
 
-class GSChannelGetSendHResponse(_MsgBase):
+class GSChannelGetSendHResponse(InfraMsg):
     """
             Refer to :ref:`definition<gschannelgetsendhresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -2321,7 +3547,7 @@ class GSChannelGetSendHResponse(_MsgBase):
         return rv
 
 
-class GSChannelGetRecvH(_MsgBase):
+class GSChannelGetRecvH(InfraMsg):
     """
             Refer to :ref:`definition<gschannelgetrecvh>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -2346,7 +3572,7 @@ class GSChannelGetRecvH(_MsgBase):
         return rv
 
 
-class GSChannelGetRecvHResponse(_MsgBase):
+class GSChannelGetRecvHResponse(InfraMsg):
     """
             Refer to :ref:`definition<gschannelgetrecvhresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -2396,7 +3622,7 @@ class GSChannelGetRecvHResponse(_MsgBase):
         return rv
 
 
-class GSNodeList(_MsgBase):
+class GSNodeList(InfraMsg):
     """
     *type enum*
         GS_NODE_LIST (= 102)
@@ -2432,7 +3658,7 @@ class GSNodeList(_MsgBase):
         return rv
 
 
-class GSNodeListResponse(_MsgBase):
+class GSNodeListResponse(InfraMsg):
     """
     *type enum*
         GS_NODE_LIST_RESPONSE (= 103)
@@ -2472,7 +3698,7 @@ class GSNodeListResponse(_MsgBase):
         return rv
 
 
-class GSNodeQuery(_MsgBase):
+class GSNodeQuery(InfraMsg):
     """
             Refer to :ref:`definition<gsnodequery>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -2499,7 +3725,7 @@ class GSNodeQuery(_MsgBase):
         return rv
 
 
-class GSNodeQueryResponse(_MsgBase):
+class GSNodeQueryResponse(InfraMsg):
     """
             Refer to :ref:`definition<gsnodequeryresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -2550,7 +3776,7 @@ class GSNodeQueryResponse(_MsgBase):
         return rv
 
 
-class GSNodeQueryTotalCPUCount(_MsgBase):
+class GSNodeQueryTotalCPUCount(InfraMsg):
     """
     *type enum*
         GS_NODE_QUERY_TOTAL_CPU_COUNT (= 104)
@@ -2580,7 +3806,7 @@ class GSNodeQueryTotalCPUCount(_MsgBase):
         return rv
 
 
-class GSNodeQueryTotalCPUCountResponse(_MsgBase):
+class GSNodeQueryTotalCPUCountResponse(InfraMsg):
     """
     *type enum*
         GS_NODE_QUERY_TOTAL_CPU_COUNT_RESPONSE (= 105)
@@ -2647,7 +3873,7 @@ class GSNodeQueryTotalCPUCountResponse(_MsgBase):
         return rv
 
 
-class AbnormalTermination(_MsgBase):
+class AbnormalTermination(InfraMsg):
     """
             Refer to :ref:`definition<abnormaltermination>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -2656,13 +3882,15 @@ class AbnormalTermination(_MsgBase):
 
     _tc = MessageTypes.ABNORMAL_TERMINATION
 
-    def __init__(self, tag, err_info='', _tc=None):
+    def __init__(self, tag, err_info='', host_id=0,  _tc=None):
         super().__init__(tag)
         self.err_info = err_info
+        self.host_id = host_id
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['err_info'] = self.err_info
+        rv['host_id'] = self.host_id
         return rv
 
     def __str__(self):
@@ -2673,7 +3901,7 @@ class AbnormalTermination(_MsgBase):
         return str(super())
 
 
-class ExceptionlessAbort(_MsgBase):
+class ExceptionlessAbort(InfraMsg):
     """
             Refer to :ref:`definition<exceptionlessabort>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -2690,7 +3918,7 @@ class ExceptionlessAbort(_MsgBase):
         return rv
 
 
-class GSStarted(_MsgBase):
+class GSStarted(InfraMsg):
     """
             Refer to :ref:`definition<gsstarted>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -2709,7 +3937,7 @@ class GSStarted(_MsgBase):
         return rv
 
 
-class GSPingSH(_MsgBase):
+class GSPingSH(InfraMsg):
     """
             Refer to :ref:`definition<gspingsh>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -2726,7 +3954,7 @@ class GSPingSH(_MsgBase):
         return rv
 
 
-class GSIsUp(_MsgBase):
+class GSIsUp(InfraMsg):
     """
             Refer to :ref:`definition<gsisup>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -2743,7 +3971,7 @@ class GSIsUp(_MsgBase):
         return rv
 
 
-class GSPingProc(_MsgBase):
+class GSPingProc(InfraMsg):
     """
             Refer to :ref:`definition<gspingproc>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -2768,14 +3996,14 @@ class GSPingProc(_MsgBase):
         return rv
 
 
-class GSDump(_MsgBase):
+class GSDumpState(InfraMsg):
     """
-            Refer to :ref:`definition<gsdump>` and :ref:`Common Fields<cfs>` for a description of the
+            Refer to :ref:`definition<gsdumpstate>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
 
     """
 
-    _tc = MessageTypes.GS_DUMP
+    _tc = MessageTypes.GS_DUMP_STATE
 
     def __init__(self, tag, filename, _tc=None):
         super().__init__(tag)
@@ -2787,7 +4015,7 @@ class GSDump(_MsgBase):
         return rv
 
 
-class GSHeadExit(_MsgBase):
+class GSHeadExit(InfraMsg):
     """
             Refer to :ref:`definition<gsheadexit>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -2806,7 +4034,7 @@ class GSHeadExit(_MsgBase):
         return rv
 
 
-class GSTeardown(_MsgBase):
+class GSTeardown(InfraMsg):
     """
             Refer to :ref:`definition<gsteardown>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -2823,7 +4051,7 @@ class GSTeardown(_MsgBase):
         return rv
 
 
-class GSUnexpected(_MsgBase):
+class GSUnexpected(InfraMsg):
     """
             Refer to :ref:`definition<gsunexpected>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -2840,7 +4068,7 @@ class GSUnexpected(_MsgBase):
         return rv
 
 
-class GSChannelRelease(_MsgBase):
+class GSChannelRelease(InfraMsg):
     """
             Refer to :ref:`definition<gschannelrelease>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -2857,7 +4085,7 @@ class GSChannelRelease(_MsgBase):
         return rv
 
 
-class GSHalted(_MsgBase):
+class GSHalted(InfraMsg):
     """
             Refer to :ref:`definition<gshalted>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -2874,7 +4102,7 @@ class GSHalted(_MsgBase):
         return rv
 
 
-class SHProcessCreate(_MsgBase):
+class SHProcessCreate(InfraMsg):
     """
             Refer to :ref:`definition<shprocesscreate>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -2889,9 +4117,10 @@ class SHProcessCreate(_MsgBase):
 
     _tc = MessageTypes.SH_PROCESS_CREATE
 
-    def __init__(self, tag, p_uid, r_c_uid, t_p_uid, exe, args, env=None, rundir='', options=None, initial_stdin='',
-                 stdin=None, stdout=None, stderr=None, group=None, user=None, umask=- 1, pipesize=None,
-                 stdin_msg=None, stdout_msg=None, stderr_msg=None, pmi_info=None, layout=None, _tc=None):
+    def __init__(self, tag, p_uid, r_c_uid, t_p_uid, exe, args, env=None, rundir='', options=None,
+                 initial_stdin='', stdin=None, stdout=None, stderr=None, group=None, user=None,
+                 umask=- 1, pipesize=None, stdin_msg=None, stdout_msg=None, stderr_msg=None,
+                 pmi_info=None, layout=None, gs_ret_chan_msg=None, _tc=None):
         super().__init__(tag)
 
         if options is None:
@@ -2934,8 +4163,8 @@ class SHProcessCreate(_MsgBase):
         if pmi_info is None:
             self.pmi_info = None
         elif isinstance(pmi_info, dict):
-            self.pmi_info = PMIInfo.fromdict(pmi_info)
-        elif isinstance(pmi_info, PMIInfo):
+            self.pmi_info = PMIProcessInfo.fromdict(pmi_info)
+        elif isinstance(pmi_info, PMIProcessInfo):
             self.pmi_info = pmi_info
         else:
             raise ValueError(f'LS unsupported pmi_info value {pmi_info=}')
@@ -2948,6 +4177,11 @@ class SHProcessCreate(_MsgBase):
             self.layout = layout
         else:
             raise ValueError(f'LS unsupported layout value {layout=}')
+
+        if gs_ret_chan_msg is None or isinstance(gs_ret_chan_msg, SHChannelCreate):
+            self.gs_ret_chan_msg = gs_ret_chan_msg
+        else:
+            self.gs_ret_chan_msg = SHChannelCreate.from_sdict(gs_ret_chan_msg)
 
     @property
     def options(self):
@@ -2985,10 +4219,11 @@ class SHProcessCreate(_MsgBase):
         rv['stderr_msg'] = (None if self.stderr_msg is None else self.stderr_msg.get_sdict())
         rv['pmi_info'] = None if self.pmi_info is None else asdict(self.pmi_info)
         rv['layout'] = None if self.layout is None else asdict(self.layout)
+        rv['gs_ret_chan_msg'] = (None if self.gs_ret_chan_msg is None else self.gs_ret_chan_msg.get_sdict())
         return rv
 
 
-class SHProcessCreateResponse(_MsgBase):
+class SHProcessCreateResponse(InfraMsg):
     """
             Refer to :ref:`definition<shprocesscreateresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -3002,7 +4237,8 @@ class SHProcessCreateResponse(_MsgBase):
         SUCCESS = 0  #:
         FAIL = 1  #:
 
-    def __init__(self, tag, ref, err, err_info='', stdin_resp=None, stdout_resp=None, stderr_resp=None, _tc=None):
+    def __init__(self, tag, ref, err, err_info='', stdin_resp=None, stdout_resp=None,
+                 stderr_resp=None, gs_ret_chan_resp = None, _tc=None):
         super().__init__(tag, ref, err)
         self.err_info = err_info
 
@@ -3022,6 +4258,11 @@ class SHProcessCreateResponse(_MsgBase):
         else:
             self.stderr_resp = SHChannelCreateResponse.from_sdict(stderr_resp)
 
+        if gs_ret_chan_resp is None or isinstance(gs_ret_chan_resp, SHChannelCreateResponse):
+            self.gs_ret_chan_resp = gs_ret_chan_resp
+        else:
+            self.gs_ret_chan_resp = SHChannelCreateResponse.from_sdict(gs_ret_chan_resp)
+
     def get_sdict(self):
         rv = super().get_sdict()
         if self.Errors.FAIL == self.err:
@@ -3029,10 +4270,11 @@ class SHProcessCreateResponse(_MsgBase):
         rv['stdin_resp'] = (None if self.stdin_resp is None else self.stdin_resp.get_sdict())
         rv['stdout_resp'] = (None if self.stdout_resp is None else self.stdout_resp.get_sdict())
         rv['stderr_resp'] = (None if self.stderr_resp is None else self.stderr_resp.get_sdict())
+        rv['gs_ret_chan_resp'] = (None if self.gs_ret_chan_resp is None else self.gs_ret_chan_resp.get_sdict())
         return rv
 
 
-class SHProcessKill(_MsgBase):
+class SHProcessKill(InfraMsg):
     """
             Refer to :ref:`definition<shprocesskill>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -3057,7 +4299,7 @@ class SHProcessKill(_MsgBase):
         return rv
 
 
-class SHProcessKillResponse(_MsgBase):
+class SHProcessKillResponse(InfraMsg):
     _tc = MessageTypes.SH_PROCESS_KILL_RESPONSE
 
     @enum.unique
@@ -3077,7 +4319,7 @@ class SHProcessKillResponse(_MsgBase):
         return rv
 
 
-class SHProcessExit(_MsgBase):
+class SHProcessExit(InfraMsg):
     """
         Refer to :ref:`definition<shprocessexit>` and to
         :ref:`Common Fields<cfs>` for a description of
@@ -3103,7 +4345,91 @@ class SHProcessExit(_MsgBase):
         return rv
 
 
-class SHPoolCreate(_MsgBase):
+class SHMultiProcessCreate(InfraMsg):
+
+    _tc = MessageTypes.SH_MULTI_PROCESS_CREATE
+
+    def __init__(self, tag, r_c_uid, procs : List[Union[Dict, SHProcessCreate]],
+                 pmi_group_info : Optional[PMIGroupInfo] = None, _tc=None):
+        super().__init__(tag)
+        self.r_c_uid = int(r_c_uid)
+
+        if pmi_group_info is None:
+            self.pmi_group_info = None
+        elif isinstance(pmi_group_info, dict):
+            self.pmi_group_info = PMIGroupInfo.fromdict(pmi_group_info)
+        elif isinstance(pmi_group_info, PMIGroupInfo):
+            self.pmi_group_info = pmi_group_info
+        else:
+            raise ValueError(f'GS unsupported pmi_group_info value {pmi_group_info=}')
+
+        self.procs = []
+        for proc in procs:
+            if isinstance(proc, SHProcessCreate):
+                self.procs.append(proc)
+            elif isinstance(proc, dict):
+                self.procs.append(SHProcessCreate.from_sdict(proc))
+            else:
+                raise ValueError(f'proc is not a supported type %s', type(proc))
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['r_c_uid'] = self.r_c_uid
+        rv['pmi_group_info'] = None if self.pmi_group_info is None else asdict(self.pmi_group_info)
+        rv["procs"] = [proc.get_sdict() for proc in self.procs]
+        return rv
+
+
+class SHMultiProcessCreateResponse(InfraMsg):
+
+    _tc = MessageTypes.SH_MULTI_PROCESS_CREATE_RESPONSE
+
+    @enum.unique
+    class Errors(enum.Enum):
+        SUCCESS = 0
+        FAIL = 1
+
+    def __init__(
+        self,
+        tag,
+        ref,
+        err,
+        err_info="",
+        exit_code=0,
+        responses: List[Union[Dict, SHProcessCreateResponse]] = None,
+        failed: bool = False,
+        _tc=None,
+    ):
+        super().__init__(tag, ref, err)
+        self.err_info = err_info
+        self.exit_code = exit_code
+
+        self.failed = failed
+        self.responses = []
+        for response in responses:
+            if isinstance(response, SHProcessCreateResponse):
+                self.responses.append(response)
+            elif isinstance(response, dict):
+                self.responses.append(SHProcessCreateResponse.from_sdict(response))
+            else:
+                raise ValueError(f'response is not a supported type %s', type(response))
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['exit_code'] = self.exit_code
+
+        if self.err == self.Errors.SUCCESS:
+            rv['failed'] = self.failed
+            rv["responses"] = [response.get_sdict() for response in self.responses]
+        elif self.err == self.Errors.FAIL:
+            rv['err_info'] = self.err_info
+        else:
+            raise NotImplementedError('close case')
+
+        return rv
+
+
+class SHPoolCreate(InfraMsg):
     """
         Refer to :ref:`definition<shpoolcreate>` and
         :ref:`Common Fields<cfs>` for a description of the message structure.
@@ -3133,7 +4459,7 @@ class SHPoolCreate(_MsgBase):
         return rv
 
 
-class SHPoolCreateResponse(_MsgBase):
+class SHPoolCreateResponse(InfraMsg):
     """
         Refer to :ref:`definition<shpoolcreateresponse>` and
         :ref:`Common Fields<cfs>` for a description of the message structure.
@@ -3169,7 +4495,7 @@ class SHPoolCreateResponse(_MsgBase):
         return rv
 
 
-class SHPoolDestroy(_MsgBase):
+class SHPoolDestroy(InfraMsg):
     """
         Refer to :ref:`definition<shpooldestroy>` and to
         the :ref:`Common Fields<cfs>` for a description of
@@ -3193,7 +4519,7 @@ class SHPoolDestroy(_MsgBase):
         return rv
 
 
-class SHPoolDestroyResponse(_MsgBase):
+class SHPoolDestroyResponse(InfraMsg):
     """
         Refer to :ref:`definition<shpooldestroyresponse>` and :ref:`Common Fields<cfs>` for a
         description of the message structure.
@@ -3219,7 +4545,7 @@ class SHPoolDestroyResponse(_MsgBase):
         return rv
 
 
-class SHExecMemRequest(_MsgBase):
+class SHExecMemRequest(InfraMsg):
     """
             Refer to :ref:`definition<shexecmemrequest>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -3250,7 +4576,7 @@ class SHExecMemRequest(_MsgBase):
         return rv
 
 
-class SHExecMemResponse(_MsgBase):
+class SHExecMemResponse(InfraMsg):
     """
             Refer to :ref:`definition<shexecmemresponse>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -3282,7 +4608,7 @@ class SHExecMemResponse(_MsgBase):
         return rv
 
 
-class SHChannelCreate(_MsgBase):
+class SHChannelCreate(InfraMsg):
     """
         Refer to :ref:`definition<shchannelcreate>` and :ref:`Common Fields<cfs>`
         for a description of the message structure.
@@ -3324,7 +4650,7 @@ class SHChannelCreate(_MsgBase):
             self._options = dso.ChannelOptions.from_sdict(value)
 
 
-class SHChannelCreateResponse(_MsgBase):
+class SHChannelCreateResponse(InfraMsg):
     """
         Refer to :ref:`definition<shchannelcreateresponse>` and :ref:`Common Fields<cfs>` for a
         description of the message structure.
@@ -3354,7 +4680,7 @@ class SHChannelCreateResponse(_MsgBase):
         return rv
 
 
-class SHChannelDestroy(_MsgBase):
+class SHChannelDestroy(InfraMsg):
     """
             Refer to :ref:`definition<shchanneldestroy>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -3378,7 +4704,7 @@ class SHChannelDestroy(_MsgBase):
         return rv
 
 
-class SHChannelDestroyResponse(_MsgBase):
+class SHChannelDestroyResponse(InfraMsg):
     """
             Refer to :ref:`definition<shchanneldestroyresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -3404,7 +4730,7 @@ class SHChannelDestroyResponse(_MsgBase):
         return rv
 
 
-class SHLockChannel(_MsgBase):
+class SHLockChannel(InfraMsg):
     """
             Refer to :ref:`definition<shlockchannel>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -3425,7 +4751,7 @@ class SHLockChannel(_MsgBase):
         return rv
 
 
-class SHLockChannelResponse(_MsgBase):
+class SHLockChannelResponse(InfraMsg):
     """
             Refer to :ref:`definition<shlockchannelresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -3448,7 +4774,7 @@ class SHLockChannelResponse(_MsgBase):
         return rv
 
 
-class SHAllocMsg(_MsgBase):
+class SHAllocMsg(InfraMsg):
     """
             Refer to :ref:`definition<shallocmsg>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3469,7 +4795,7 @@ class SHAllocMsg(_MsgBase):
         return rv
 
 
-class SHAllocMsgResponse(_MsgBase):
+class SHAllocMsgResponse(InfraMsg):
     """
             Refer to :ref:`definition<shallocmsgresponse>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -3490,7 +4816,7 @@ class SHAllocMsgResponse(_MsgBase):
         return rv
 
 
-class SHAllocBlock(_MsgBase):
+class SHAllocBlock(InfraMsg):
     """
             Refer to :ref:`definition<shallocblock>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -3511,7 +4837,7 @@ class SHAllocBlock(_MsgBase):
         return rv
 
 
-class SHAllocBlockResponse(_MsgBase):
+class SHAllocBlockResponse(InfraMsg):
     """
             Refer to :ref:`definition<shallocblockresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -3546,7 +4872,7 @@ class SHAllocBlockResponse(_MsgBase):
         return rv
 
 
-class SHChannelsUp(_MsgBase):
+class SHChannelsUp(InfraMsg):
     """
             Refer to :ref:`definition<shchannelsup>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -3576,7 +4902,7 @@ class SHChannelsUp(_MsgBase):
         return rv
 
 
-class SHPingGS(_MsgBase):
+class SHPingGS(InfraMsg):
     """
             Refer to :ref:`definition<shpinggs>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3597,7 +4923,7 @@ class SHPingGS(_MsgBase):
 
         return rv
 
-class SHTeardown(_MsgBase):
+class SHTeardown(InfraMsg):
     """
             Refer to :ref:`definition<shteardown>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3614,7 +4940,7 @@ class SHTeardown(_MsgBase):
         return rv
 
 
-class SHPingBE(_MsgBase):
+class SHPingBE(InfraMsg):
     """
             Refer to :ref:`definition<shpingbe>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3622,7 +4948,7 @@ class SHPingBE(_MsgBase):
     """
 
     _tc = MessageTypes.SH_PING_BE
-    EMPTY = B64.bytes_to_str(b'')
+    EMPTY = b64encode(b'')
 
     def __init__(self, tag, shep_cd=EMPTY, be_cd=EMPTY, gs_cd=EMPTY,
                  default_pd=EMPTY, inf_pd=EMPTY, _tc=None):
@@ -3643,7 +4969,7 @@ class SHPingBE(_MsgBase):
         return rv
 
 
-class SHHaltTA(_MsgBase):
+class SHHaltTA(InfraMsg):
     """
             Refer to :ref:`definition<shhaltta>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3660,7 +4986,7 @@ class SHHaltTA(_MsgBase):
         return rv
 
 
-class SHHaltBE(_MsgBase):
+class SHHaltBE(InfraMsg):
     """
             Refer to :ref:`definition<shhaltbe>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3677,7 +5003,7 @@ class SHHaltBE(_MsgBase):
         return rv
 
 
-class SHHalted(_MsgBase):
+class SHHalted(InfraMsg):
     """
             Refer to :ref:`definition<shhalted>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3696,7 +5022,7 @@ class SHHalted(_MsgBase):
         return rv
 
 
-class SHFwdInput(_MsgBase):
+class SHFwdInput(InfraMsg):
     """
             Refer to :ref:`definition<shfwdinput>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3728,7 +5054,7 @@ class SHFwdInput(_MsgBase):
         return rv
 
 
-class SHFwdInputErr(_MsgBase):
+class SHFwdInputErr(InfraMsg):
     """
             Refer to :ref:`definition<shfwdinputerr>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -3756,7 +5082,7 @@ class SHFwdInputErr(_MsgBase):
         return rv
 
 
-class SHFwdOutput(_MsgBase):
+class SHFwdOutput(InfraMsg):
     """
             Refer to :ref:`definition<shfwdoutput>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3800,14 +5126,14 @@ class SHFwdOutput(_MsgBase):
         return f'{super().__str__()}, self.data={self.data!r}, self.p_uid={self.p_uid!r}, self.pid={self.pid!r}, self.fd_num={self.fd_num!r}'
 
 
-class SHDumpState(_MsgBase):
+class SHDumpState(InfraMsg):
     """
             Refer to :ref:`definition<shdumpstate>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
 
     """
 
-    _tc = MessageTypes.SH_DUMP
+    _tc = MessageTypes.SH_DUMP_STATE
 
     def __init__(self, tag, filename=None, _tc=None):
         super().__init__(tag)
@@ -3819,14 +5145,14 @@ class SHDumpState(_MsgBase):
         return rv
 
 
-class BENodeIdxSH(_MsgBase):
+class BENodeIdxSH(InfraMsg):
     """
             Refer to :ref:`definition<benodeidxsh>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
 
     """
 
-    _tc = MessageTypes.BE_NODEINDEX_SH
+    _tc = MessageTypes.BE_NODE_IDX_SH
 
     def __init__(self, tag, node_idx, host_name=None, ip_addrs=None,
                  primary=None, logger_sdesc=None, _tc=None):
@@ -3861,7 +5187,7 @@ class BENodeIdxSH(_MsgBase):
         return rv
 
 
-class BEPingSH(_MsgBase):
+class BEPingSH(InfraMsg):
     """
             Refer to :ref:`definition<bepingsh>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3878,7 +5204,7 @@ class BEPingSH(_MsgBase):
         return rv
 
 
-class BEHalted(_MsgBase):
+class BEHalted(InfraMsg):
     """
             Refer to :ref:`definition<behalted>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3895,7 +5221,7 @@ class BEHalted(_MsgBase):
         return rv
 
 
-class LABroadcast(_MsgBase):
+class LABroadcast(InfraMsg):
     """
             Refer to :ref:`definition<labroadcast>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -3917,14 +5243,14 @@ class LABroadcast(_MsgBase):
         return rv
 
 
-class LAPassThruFB(_MsgBase):
+class LAPassThruFB(InfraMsg):
     """
             Refer to :ref:`definition<lapassthrufb>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
 
     """
 
-    _tc = MessageTypes.LA_PASSTHRU_FB
+    _tc = MessageTypes.LA_PASS_THRU_FB
 
     def __init__(self, tag, c_uid, data, _tc=None):
         super().__init__(tag)
@@ -3938,14 +5264,14 @@ class LAPassThruFB(_MsgBase):
         return rv
 
 
-class LAPassThruBF(_MsgBase):
+class LAPassThruBF(InfraMsg):
     """
             Refer to :ref:`definition<lapassthrubf>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
 
     """
 
-    _tc = MessageTypes.LA_PASSTHRU_BF
+    _tc = MessageTypes.LA_PASS_THRU_BF
 
     def __init__(self, tag, data, _tc=None):
         super().__init__(tag)
@@ -3957,7 +5283,7 @@ class LAPassThruBF(_MsgBase):
         return rv
 
 
-class LAServerMode(_MsgBase):
+class LAServerMode(InfraMsg):
     """
             Refer to :ref:`definition<laservermode>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -4004,7 +5330,7 @@ class LAServerMode(_MsgBase):
 
 # TODO FIXME: if messages are in this hierarchy they must follow the rules.
 #   This one does not; the spec needs fixing too.
-class LAServerModeExit(_MsgBase):
+class LAServerModeExit(InfraMsg):
     """
             Refer to :ref:`definition<laservermodeexit>` and :ref:`Common Fields<cfs>` for a description
             of the message structure.
@@ -4028,7 +5354,7 @@ class LAServerModeExit(_MsgBase):
         return rv
 
 
-class LAProcessDict(_MsgBase):
+class LAProcessDict(InfraMsg):
     """
             Refer to :ref:`definition<laprocessdict>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -4045,7 +5371,7 @@ class LAProcessDict(_MsgBase):
         return rv
 
 
-class LAProcessDictResponse(_MsgBase):
+class LAProcessDictResponse(InfraMsg):
     """
             Refer to :ref:`definition<laprocessdictresponse>` and :ref:`Common Fields<cfs>` for a
             description of the message structure.
@@ -4072,14 +5398,14 @@ class LAProcessDictResponse(_MsgBase):
         return rv
 
 
-class LADumpState(_MsgBase):
+class LADumpState(InfraMsg):
     """
             Refer to :ref:`definition<ladumpstate>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
 
     """
 
-    _tc = MessageTypes.LA_DUMP
+    _tc = MessageTypes.LA_DUMP_STATE
 
     def __init__(self, tag, filename=None, _tc=None):
         super().__init__(tag)
@@ -4091,7 +5417,7 @@ class LADumpState(_MsgBase):
         return rv
 
 
-class LAChannelsInfo(_MsgBase):
+class LAChannelsInfo(InfraMsg):
     """
             Refer to :ref:`definition<lachannelsinfo>` and :ref:`Common Fields<cfs>` for a description of
             the message structure.
@@ -4107,6 +5433,10 @@ class LAChannelsInfo(_MsgBase):
         self.gs_cd = gs_cd
         self.transport = dfacts.TransportAgentOptions.from_str(transport)
         self.num_gw_channels = num_gw_channels
+        try:
+            self.fe_ext_ip_addr = get_external_ip_addr()
+        except OSError:
+            self.fe_ext_ip_addr = None
 
         self.nodes_desc = {}
         for key in nodes_desc.keys():
@@ -4130,7 +5460,7 @@ class LAChannelsInfo(_MsgBase):
         return rv
 
 
-class LoggingMsg(_MsgBase):
+class LoggingMsg(InfraMsg):
     """
             Refer to :ref:`definition<loggingmsg>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4179,7 +5509,7 @@ class LoggingMsg(_MsgBase):
         return rv
 
 
-class LoggingMsgList(_MsgBase):
+class LoggingMsgList(InfraMsg):
     """
             Refer to :ref:`definition<loggingmsglist>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4212,7 +5542,7 @@ class LoggingMsgList(_MsgBase):
         return rv
 
 
-class LogFlushed(_MsgBase):
+class LogFlushed(InfraMsg):
     """
             Refer to :ref:`definition<logflushed>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4229,7 +5559,7 @@ class LogFlushed(_MsgBase):
         return rv
 
 
-class TAPingSH(_MsgBase):
+class TAPingSH(InfraMsg):
     """
             Refer to :ref:`definition<tapingsh>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4246,7 +5576,7 @@ class TAPingSH(_MsgBase):
         return rv
 
 
-class TAHalted(_MsgBase):
+class TAHalted(InfraMsg):
     """
             Refer to :ref:`definition<tahalted>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4263,7 +5593,7 @@ class TAHalted(_MsgBase):
         return rv
 
 
-class TAUp(_MsgBase):
+class TAUp(InfraMsg):
     """
             Refer to :ref:`definition<taup>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4289,7 +5619,7 @@ class TAUp(_MsgBase):
         return rv
 
 
-class Breakpoint(_MsgBase):
+class Breakpoint(InfraMsg):
     _tc = MessageTypes.BREAKPOINT
 
     def __init__(self, tag, p_uid, index, out_desc, in_desc, _tc=None):
@@ -4308,7 +5638,7 @@ class Breakpoint(_MsgBase):
         return rv
 
 
-class BEIsUp(_MsgBase):
+class BEIsUp(InfraMsg):
     """
             Refer to :ref:`definition<beisup>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4328,7 +5658,7 @@ class BEIsUp(_MsgBase):
         return rv
 
 
-class FENodeIdxBE(_MsgBase):
+class FENodeIdxBE(InfraMsg):
     """
             Refer to :ref:`definition<fenodeidxbe>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4388,7 +5718,7 @@ class FENodeIdxBE(_MsgBase):
         return rv
 
 
-class HaltLoggingInfra(_MsgBase):
+class HaltLoggingInfra(InfraMsg):
     """
             Refer to :ref:`definition<haltlogginginfra>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4405,7 +5735,7 @@ class HaltLoggingInfra(_MsgBase):
         return rv
 
 
-class HaltOverlay(_MsgBase):
+class HaltOverlay(InfraMsg):
     """
             Refer to :ref:`definition<haltoverlay>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4422,7 +5752,7 @@ class HaltOverlay(_MsgBase):
         return rv
 
 
-class OverlayHalted(_MsgBase):
+class OverlayHalted(InfraMsg):
     """
             Refer to :ref:`definition<overlayhalted>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4438,7 +5768,7 @@ class OverlayHalted(_MsgBase):
         return rv
 
 
-class BEHaltOverlay(_MsgBase):
+class BEHaltOverlay(InfraMsg):
     """
             Refer to :ref:`definition<behaltoverlay>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4454,7 +5784,7 @@ class BEHaltOverlay(_MsgBase):
         return rv
 
 
-class LAHaltOverlay(_MsgBase):
+class LAHaltOverlay(InfraMsg):
     """
             Refer to :ref:`definition<lahaltoverlay>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4470,7 +5800,7 @@ class LAHaltOverlay(_MsgBase):
         return rv
 
 
-class OverlayPingBE(_MsgBase):
+class OverlayPingBE(InfraMsg):
     """
             Refer to :ref:`definition<overlaypingbe>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4486,7 +5816,7 @@ class OverlayPingBE(_MsgBase):
         return rv
 
 
-class OverlayPingLA(_MsgBase):
+class OverlayPingLA(InfraMsg):
     """
             Refer to :ref:`definition<overlaypingla>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4502,7 +5832,7 @@ class OverlayPingLA(_MsgBase):
         return rv
 
 
-class LAExit(_MsgBase):
+class LAExit(InfraMsg):
     """
             Refer to :ref:`definition<laexit>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
@@ -4519,14 +5849,61 @@ class LAExit(_MsgBase):
         rv['sigint'] = self.sigint
         return rv
 
+class RuntimeDesc(InfraMsg):
+    """
+            Refer to :ref:`definition<bsinfo>` and :ref:`Common Fields<cfs>` for a description of the
+            message structure.
+    """
+    _tc = MessageTypes.RUNTIME_DESC
 
-class TAUpdateNodes(_MsgBase):
+    def __init__(self, tag, gs_cd, gs_ret_cd, ls_cd, ls_ret_cd, fe_ext_ip_addr, head_node_ip_addr, oob_port, env, _tc=None):
+        super().__init__(tag)
+        self.gs_cd = gs_cd
+        self.gs_ret_cd = gs_ret_cd
+        self.ls_cd = ls_cd
+        self.ls_ret_cd = ls_ret_cd
+        # should we add "username" to the sdesc?
+        self.fe_ext_ip_addr = fe_ext_ip_addr
+        self.head_node_ip_addr = head_node_ip_addr
+        self.oob_port = oob_port
+        self.env = json.dumps(dict(env))
+        # add something to help deal with differences in dir structure?
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['gs_cd'] = self.gs_cd
+        rv['gs_ret_cd'] = self.gs_ret_cd
+        rv['ls_cd'] = self.ls_cd
+        rv['ls_ret_cd'] = self.ls_ret_cd
+        rv['fe_ext_ip_addr'] = self.fe_ext_ip_addr
+        rv['head_node_ip_addr'] = self.head_node_ip_addr
+        rv['oob_port'] = self.oob_port
+        rv['env'] = json.loads(self.env)
+        return rv
+
+class UserHaltOOB(InfraMsg):
+    """
+            Refer to :ref:`definition<shhaltta>` and :ref:`Common Fields<cfs>` for a description of the
+            message structure.
+
+    """
+
+    _tc = MessageTypes.USER_HALT_OOB
+
+    def __init__(self, tag, _tc=None):
+        super().__init__(tag)
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        return rv
+
+class TAUpdateNodes(InfraMsg):
     """
             Refer to :ref:`definition<taupdatenodes>` and :ref:`Common Fields<cfs>` for a description of the
             message structure.
 
     """
-    _tc = MessageTypes.HSTA_UPDATE_NODES
+    _tc = MessageTypes.TA_UPDATE_NODES
 
     def __init__(self, tag,
                  nodes: list[Union[NodeDescriptor, dict]],
@@ -4554,182 +5931,79 @@ class TAUpdateNodes(_MsgBase):
         return rv
 
 
-all_message_classes = [GSProcessCreate,
-                       GSProcessCreateResponse,
-                       GSProcessList,
-                       GSProcessListResponse,
-                       GSProcessQuery,
-                       GSProcessQueryResponse,
-                       GSProcessKill,
-                       GSProcessKillResponse,
-                       GSProcessJoin,
-                       GSProcessJoinResponse,
-                       GSChannelCreate,
-                       GSChannelCreateResponse,
-                       GSChannelList,
-                       GSChannelListResponse,
-                       GSChannelQuery,
-                       GSChannelQueryResponse,
-                       GSChannelDestroy,
-                       GSChannelDestroyResponse,
-                       GSChannelJoin,
-                       GSChannelJoinResponse,
-                       GSChannelDetach,
-                       GSChannelDetachResponse,
-                       GSChannelGetSendH,
-                       GSChannelGetSendHResponse,
-                       GSChannelGetRecvH,
-                       GSChannelGetRecvHResponse,
-                       AbnormalTermination,
-                       GSStarted,
-                       GSPingSH,
-                       GSIsUp,
-                       GSHeadExit,
-                       GSChannelRelease,
-                       GSHalted,
-                       SHProcessCreate,
-                       SHProcessCreateResponse,
-                       SHProcessKill,
-                       SHProcessExit,
-                       SHChannelCreate,
-                       SHChannelCreateResponse,
-                       SHChannelDestroy,
-                       SHChannelDestroyResponse,
-                       SHLockChannel,
-                       SHLockChannelResponse,
-                       SHAllocMsg,
-                       SHAllocMsgResponse,
-                       SHAllocBlock,
-                       SHAllocBlockResponse,
-                       SHChannelsUp,
-                       SHPingGS,
-                       SHHalted,
-                       SHFwdInput,
-                       SHFwdInputErr,
-                       SHFwdOutput,
-                       SHDumpState,
-                       GSTeardown,
-                       SHTeardown,
-                       SHPingBE,
-                       BEPingSH,
-                       BENodeIdxSH,
-                       TAPingSH,
-                       SHHaltTA,
-                       TAHalted,
-                       SHHaltBE,
-                       BEHalted,
-                       TAUp,
-                       GSPingProc,
-                       GSDump,
-                       LABroadcast,
-                       LAChannelsInfo,
-                       LAPassThruBF,
-                       LAPassThruFB,
-                       LAServerMode,
-                       LAServerModeExit,
-                       LAProcessDict,
-                       LAProcessDictResponse,
-                       LADumpState,
-                       GSPoolList,
-                       GSPoolListResponse,
-                       GSPoolCreate,
-                       GSPoolCreateResponse,
-                       GSPoolDestroy,
-                       GSPoolDestroyResponse,
-                       GSPoolQuery,
-                       GSPoolQueryResponse,
-                       SHPoolCreate,
-                       SHPoolCreateResponse,
-                       SHPoolDestroy,
-                       SHPoolDestroyResponse,
-                       SHExecMemRequest,
-                       SHExecMemResponse,
-                       GSUnexpected,
-                       SHProcessKillResponse,
-                       Breakpoint,
-                       GSProcessJoinList,
-                       GSProcessJoinListResponse,
-                       GSNodeList,
-                       GSNodeListResponse,
-                       GSNodeQuery,
-                       GSNodeQueryResponse,
-                       GSNodeQueryTotalCPUCount,
-                       GSNodeQueryTotalCPUCountResponse,
-                       LoggingMsg,
-                       LoggingMsgList,
-                       LogFlushed,
-                       BEIsUp,
-                       FENodeIdxBE,
-                       HaltOverlay,
-                       HaltLoggingInfra,
-                       OverlayPingBE,
-                       OverlayPingLA,
-                       LAHaltOverlay,
-                       BEHaltOverlay,
-                       OverlayHalted,
-                       ExceptionlessAbort,
-                       LAExit,
-                       GSGroupCreate,
-                       GSGroupCreateResponse,
-                       GSGroupList,
-                       GSGroupQuery,
-                       GSGroupListResponse,
-                       GSGroupCreateResponse,
-                       GSGroupQueryResponse,
-                       GSGroupKill,
-                       GSGroupKillResponse,
-                       GSGroupDestroy,
-                       GSGroupDestroyResponse,
-                       GSGroupAddTo,
-                       GSGroupAddToResponse,
-                       GSGroupRemoveFrom,
-                       GSGroupRemoveFromResponse,
-                       GSGroupCreateAddTo,
-                       GSGroupCreateAddToResponse,
-                       GSGroupDestroyRemoveFrom,
-                       GSGroupDestroyRemoveFromResponse,
-                       TAUpdateNodes]
+PREDETERMINED_CAPS = {'GS':'GS', 'SH':'SH', 'TA':'TA', 'BE':'BE', 'FE':'FE', 'LA':'LA', 'BF':'BF',
+                      'FB':'FB', 'DD':'DD', 'SENDH':'SendH', 'RECVH':'RecvH', 'CPU': 'CPU', 'ID':'ID',
+                      'OOB':'OOB', 'KVL':'KVL', 'KV':'KV'}
+
+MSG_TYPES_WITHOUT_CLASSES = {MessageTypes.DRAGON_MSG}
+
+def type_filter(the_msg_types):
+    msg_types = set(the_msg_types) - MSG_TYPES_WITHOUT_CLASSES
+    return msg_types
+
+def camel_case_msg_name(msg_id):
+
+    lst = msg_id.split('.')[1].split('_')
+    cased = []
+
+    for word in lst:
+        if word in PREDETERMINED_CAPS:
+            cased.append(PREDETERMINED_CAPS[word])
+        else:
+            cased.append(word[0].upper()+word[1:].lower())
+
+    converted = "".join(cased)
+    return converted
+
+def mk_all_message_classes_set():
+    result = set()
+    for msg_id in type_filter(MessageTypes):
+        try:
+            class_name = camel_case_msg_name(str(msg_id))
+            class_def = getattr(sys.modules[__name__],class_name)
+            result.add(class_def)
+        except:
+            raise TypeError(f'Unable to find corresponding class {class_name} for message id {msg_id}.')
+
+    return result
+
+all_message_classes = mk_all_message_classes_set()
 
 mt_dispatch = {cls._tc.value: cls for cls in all_message_classes}
 
-
-def parse(jstring, restrict=None):
-
+def parse(serialized, restrict=None):
     try:
         # if a compressed message, decompress to get the service message
-        jstring = zlib.decompress(base64.b64decode(jstring))
-    except zlib.error as zerr:
-        pass
+        try:
+            decoded = b64decode(serialized)
+        except:
+            decoded = serialized
 
-    try:
+        try:
+            jstring = zlib.decompress(decoded)
+        except zlib.error:
+            jstring = decoded
+
+
         sdict = json.loads(jstring)
-    except TypeError as e:
-        raise TypeError(f'The message "{jstring}" could not be parsed.') from e
+        typecode = sdict['_tc']
+        if restrict:
+            assert typecode in restrict
 
-    typecode = sdict['_tc']
-
-    if restrict:
-        assert typecode in restrict
-
-    return mt_dispatch[typecode].from_sdict(sdict)
+        return mt_dispatch[typecode].from_sdict(sdict)
 
 
-# types of all the messages that global services can receive
-all_gs_messages = {GSProcessCreate, GSProcessList, GSProcessQuery,
-                   GSProcessKill, GSProcessJoin, GSChannelCreate,
-                   GSChannelList, GSChannelQuery, GSChannelDestroy,
-                   GSChannelJoin, GSChannelDetach, GSChannelGetSendH,
-                   GSChannelGetRecvH, GSChannelRelease, SHProcessCreateResponse,
-                   SHProcessExit, SHChannelCreateResponse,
-                   SHChannelDestroyResponse, SHLockChannelResponse,
-                   SHAllocMsgResponse, SHAllocBlockResponse,
-                   SHPingGS, GSTeardown, GSDump, GSPoolList, GSPoolCreate, GSPoolQuery,
-                   GSPoolDestroy, SHProcessKillResponse,
-                   GSPoolListResponse, GSPoolDestroyResponse, GSPoolCreateResponse,
-                   GSPoolQueryResponse, GSTeardown,
-                   SHPoolCreateResponse, SHPoolDestroyResponse, GSProcessJoinList,
-                   GSNodeList, GSNodeQuery, GSNodeQueryTotalCPUCount,
-                   GSGroupList, GSGroupCreate, GSGroupQuery,
-                   GSGroupListResponse, GSGroupDestroy, GSGroupAddTo,
-                   GSGroupRemoveFrom, GSGroupCreateAddTo,
-                   GSGroupKill, GSGroupDestroyRemoveFrom}
+    except Exception as json_exception:
+        try:
+            # A DecodeError probaby indicates this is a CapnProto message so we'll
+            # try parsing it that way before returning
+
+            msg = CapNProtoMsg.deserialize(serialized)
+
+            if restrict:
+                assert msg.tc in restrict
+
+            return msg
+        except Exception as ex:
+            tb = traceback.format_exc()
+            raise TypeError(f'The message "{serialized}" could not be parsed.\nJSON Parsing Error Message:{json_exception}\nCapnProto Parsing Error Message:{ex}\n Traceback {tb}')

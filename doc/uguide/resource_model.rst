@@ -50,7 +50,7 @@ Object Hierarchy
 
 .. figure:: images/dragon_object_hierarchy.png
    :scale: 15%
-   :name: dragon-obj-hierarchy
+   :name: dragon-obj-hierarchy 
 
    **A representation of the Dragon object hierarchy across Dragon Native API and Client API. Not all derived objects are shown.**
 

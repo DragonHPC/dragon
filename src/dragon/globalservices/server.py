@@ -294,7 +294,7 @@ class GlobalContext(object):
             assert msg.layout.h_uid in self.node_table.keys()
             index = self.node_table[msg.layout.h_uid].ls_index
 
-        log.info(f"choose shepherd {index} for {msg}")
+        log.debug("choose shepherd %d for %s", index, msg)
         return index
 
 
@@ -450,7 +450,8 @@ class GlobalContext(object):
         gspjlr = dmsg.GSProcessJoinListResponse
         timed_out = self.pending_join_list.get_timed_out()
         for join_request in timed_out:
-            log.debug(f'multi-join timed out: {join_request}')
+            # TODO AICI-1422 Implement verbose logging options
+            # log.debug('multi-join timed out: %s', join_request)
             p_uid_list, req_msg = join_request # p_uid_list is a frozenset
             reply_channel = self.get_reply_handle(req_msg)
             for p_uid in p_uid_list:
@@ -458,7 +459,6 @@ class GlobalContext(object):
             rm = gspjlr(tag=self.tag_inc(), ref=req_msg.tag, puid_status=self.puid_join_list_status[(req_msg.tag, req_msg.p_uid)])
             reply_channel.send(rm.serialize())
             self.pending_join_list.remove_one(p_uid_list, req_msg)
-            log.debug(f'timed out multi-join response to {req_msg!s}: {rm!s}')
             del self.puid_join_list_status[(req_msg.tag, req_msg.p_uid)] # we are done with this msg req
 
         gscjr = dmsg.GSChannelJoinResponse
@@ -870,6 +870,7 @@ class GlobalContext(object):
 
         # helper function which updates the puid_join_list_status dict with the status of each puid
         def proc_join_list_helper(target_uid, found, errmsg, success_num, item):
+            nonzero_exit = False
             if not found:
                 self.puid_join_list_status[join_key][item] = (gspjlr.Errors.UNKNOWN.value, errmsg)
                 log.debug(f'unknown target_uid: {item}')
@@ -881,6 +882,9 @@ class GlobalContext(object):
                 pdesc = pctx.descriptor
                 if process_desc.ProcessDescriptor.State.DEAD == pdesc.state:
                     self.puid_join_list_status[join_key][target_uid] = (gspjlr.Errors.SUCCESS.value, pdesc.ecode)
+                    if pdesc.ecode != 0:
+                        nonzero_exit = True
+                        log.debug(f'non-zero exit {pdesc.ecode} for target_uid: {target_uid}')
                     success_num += 1
                     log.debug(f'process dead, target_uid: {target_uid}')
                 else:
@@ -889,26 +893,40 @@ class GlobalContext(object):
                     else:
                         pending_puid.append(target_uid)
                         self.puid_join_list_status[join_key][target_uid] = (gspjlr.Errors.PENDING.value, None)
-            return success_num
+            return success_num, nonzero_exit
+
+        def continue_to_wait(join_all, success_num, pending_puid, return_on_bad_exit, nonzero_exit):
+
+            # Always send a message if we are told to return on bad exit and have a non-zero exit code
+            if return_on_bad_exit and nonzero_exit:
+                return False
+            # Otherwise use the original logic
+            else:
+                due_to_join_all = bool(join_all and pending_puid)
+                due_to_partial_complete = bool(not success_num and pending_puid)
+                log.debug(f'due_to_join_all -> {due_to_join_all} | due_to_partial_complete -> {due_to_partial_complete}')
+            return due_to_partial_complete or due_to_join_all
 
         if msg.t_p_uid_list:
             for item in msg.t_p_uid_list:
                 item = int(item)
                 target_uid, found, errmsg = self.resolve_puid(None, item)
-                success_num = proc_join_list_helper(target_uid, found, errmsg, success_num, item)
+                success_num, nonzero_exit = proc_join_list_helper(target_uid, found, errmsg, success_num, item)
         if msg.user_name_list:
             for item in msg.user_name_list:
                 target_uid, found, errmsg = self.resolve_puid(item, None)
-                success_num = proc_join_list_helper(target_uid, found, errmsg, success_num, item)
+                success_num, nonzero_exit = proc_join_list_helper(target_uid, found, errmsg, success_num, item)
 
         # Do not send a message if all the processes are still pending
         # if no exits no timeouts, or, 'all' option and some are pending (even though some may have exited)
-        if (not success_num and pending_puid) or (msg.join_all and pending_puid):
+        if continue_to_wait(msg.join_all, success_num, pending_puid, msg.return_on_bad_exit, nonzero_exit):
             self.pending_join_list.put(frozenset(pending_puid), msg, timeout=timeout)
-            log.debug(f'join stored for target_uid: {pending_puid} timeout {timeout}')
+            # TODO AICI-1422 Implement verbose logging options
+            # log.debug('join stored for target_uid: %s timeout %s', pending_puid, timeout)
         else:
             rm = gspjlr(tag=self.tag_inc(), ref=msg.tag, puid_status=self.puid_join_list_status[join_key])
             reply_channel.send(rm.serialize())
+            log.debug('send join list response')
             del self.puid_join_list_status[join_key]
 
     @dutil.route(dmsg.SHProcessExit, DTBL)
@@ -959,7 +977,8 @@ class GlobalContext(object):
                            err=gspjr.Errors.SUCCESS,
                            exit_code=ctx.descriptor.ecode)
                 reply_channel.send(rm.serialize())
-                log.debug(f'join response to {join_req}: {rm}')
+                # TODO AICI-1422 Implement verbose logging options
+                # log.debug('join response to %s: %s', join_req, rm)
             self.pending_join.remove(msg.p_uid)
 
         to_be_erased = []
@@ -971,13 +990,15 @@ class GlobalContext(object):
                     join_key = (join_req.tag, join_req.p_uid)
                     self.puid_join_list_status[join_key][msg.p_uid] = (gspjlr.Errors.SUCCESS.value, ctx.descriptor.ecode)
 
-                    # if this is multi_join on 'any' processes request, or, set with a single member
-                    if not join_req.join_all or len(puid_set) == 1:
+                    # if this is multi_join on 'any' processes request, or, set with a single member or there was a bad exit
+                    # and a request to respond on it
+                    if (not join_req.join_all or len(puid_set) == 1) or (join_req.return_on_bad_exit and ctx.descriptor.ecode != 0):
                         reply_channel = self.get_reply_handle(join_req)
                         rm = gspjlr(tag=self.tag_inc(), ref=join_req.tag,
                                     puid_status=self.puid_join_list_status[join_key])
                         reply_channel.send(rm.serialize())
-                        log.debug(f'join response to {join_req}: {rm}')
+                        # TODO AICI-1422 Implement verbose logging options
+                        # log.debug('join response to %s: %s', join_req, rm)
 
                         # we are done with this join request, so let's clean things up
                         del self.puid_join_list_status[join_key]
@@ -1167,10 +1188,12 @@ class GlobalContext(object):
     @dutil.route(dmsg.GSChannelQuery, DTBL)
     def handle_channel_query(self, msg):
         log = self._channel_logger
-        # log.debug(f'handling {msg}')
+        # TODO AICI-1422 Implement verbose logging options
+        # log.debug('handling %s', msg)
 
         reply_channel = self.get_reply_handle(msg)
-        # log.debug(f'channel query to {msg.user_name} - {msg.c_uid}')
+        # TODO AICI-1422 Implement verbose logging options
+        # log.debug('channel query to %s - %s', msg.user_name, msg.c_uid)
         target_uid, found, errmsg = self.resolve_cuid(msg.user_name, msg.c_uid)
 
         if not found:
@@ -1189,10 +1212,12 @@ class GlobalContext(object):
             rm = dmsg.GSChannelQueryResponse(tag=self.tag_inc(), ref=msg.tag,
                                              err=dmsg.GSChannelQueryResponse.Errors.SUCCESS,
                                              desc=cdesc)
-            # log.debug(f'found descriptor: {cdesc}')
+            # TODO AICI-1422 Implement verbose logging options
+            # log.debug('found descriptor: %s', cdesc)
 
         reply_channel.send(rm.serialize())
-        # log.debug(f'response to {msg!s}: {rm!s}')
+        # TODO AICI-1422 Implement verbose logging options
+        # log.debug('response to %s: %s', msg, rm)
 
 
     @dutil.route(dmsg.GSChannelJoin, DTBL)
@@ -1240,7 +1265,7 @@ class GlobalContext(object):
             log.debug(f'channel join stored for {target_uid}: {msg} timeout {the_timeout}')
 
 
-    @dutil.route(dmsg.GSDump, DTBL)
+    @dutil.route(dmsg.GSDumpState, DTBL)
     def handle_dump(self, msg):
         log = self._process_logger
         log.debug(f'dumping to {msg.filename}')
@@ -1313,6 +1338,16 @@ class GlobalContext(object):
 
         reply_channel.send(rm.serialize())
         log.debug(f'response to {msg!s}: {rm!s}')
+
+
+    @dutil.route(dmsg.SHMultiProcessCreateResponse, DTBL)
+    def handle_sh_group_create_response(self, msg):
+        log = self._node_logger
+        log.debug('handling %s', msg)
+
+        for proc_create_response in msg.responses:
+            log.info("proc_create_response=%s", str(proc_create_response))
+            self.handle_process_create_response(proc_create_response)
 
 
     @dutil.route(dmsg.GSGroupCreate, DTBL)

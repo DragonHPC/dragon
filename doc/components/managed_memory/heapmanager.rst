@@ -21,7 +21,7 @@ An Example of Malloc and Free
 =============================
 
 .. figure:: images/heapallocations.png
-    :name: heap-allocations
+    :name: heap-allocations 
 
     **A Sample Heap with Allocations**
 
@@ -55,7 +55,7 @@ size.
 .. code-block:: C
     :linenos:
     :caption: **Heap Initialization**
-    :name: heap-init
+    :name: heap-init 
 
     // make a heap of size 1K with 32 byte segments as minimum block size. How much space
     // is required? This call determines how much space is required for a heap with
@@ -99,7 +99,7 @@ The algorithm doesn't consider anything further, but because segment 0 is in a b
 block is part of a block of 64 bytes, they could not be joined either (at this point anyway).
 
 .. figure:: images/heapfree1.png
-    :name: heap-free-green
+    :name: heap-free-green 
 
     **After Freeing the Green Block**
 
@@ -112,7 +112,7 @@ are three free blocks that are available in the heap. The segment 1 is a 32 byte
 make up a 64 byte free block. Finally, the segments 4-6 make up a 128 byte free block.
 
 .. figure:: images/heapfree2.png
-    :name: heap-free-purple
+    :name: heap-free-purple 
 
     **After Freeing the Purple Block**
 
@@ -123,7 +123,7 @@ The 512 byte block starting at segment 16 is freed next and results in once agai
 segment 0. Again, segment 0 is not free and no further joining of blocks is possible.
 
 .. figure:: images/heapfree3.png
-    :name: heap-free-yellow
+    :name: heap-free-yellow 
 
     **After Freeing the Yellow Block**
 
@@ -142,7 +142,7 @@ At this point there are two free blocks: a 256 byte block starting at segment 0 
 at segment 16.
 
 .. figure:: images/heapfree4.png
-    :name: heap-free-orange
+    :name: heap-free-orange 
 
     **After Freeing the Orange Block**
 
@@ -155,7 +155,7 @@ but since its buddy is also free and the same size, the two 512 byte blocks are 
 block.
 
 .. figure:: images/heapfree5.png
-    :name: heap-free-maroon
+    :name: heap-free-maroon 
 
     **After Freeing the Maroon Block**
 
@@ -168,7 +168,7 @@ two bit sets, the block set and the free set. There is also a lock associated wi
 multi-processing compatible.
 
 .. figure:: images/metadata.png
-    :name: metadata
+    :name: metadata 
 
     **Meta-Data and Handle Structure**
 

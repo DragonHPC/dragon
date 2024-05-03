@@ -324,6 +324,54 @@ class MemoryPoolAllocTest(unittest.TestCase):
         with self.assertRaises(TypeError):
             _ = self.mpool.alloc("512")
 
+    def test_alloc_hash(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        self.assertGreaterEqual(hash(mem),0)
+
+    def test_alloc_hash2(self):
+        mem = self.mpool.alloc(15)
+        memview = mem.get_memview()
+        memview[:15] = b'hellohellohello'
+        self.assertGreaterEqual(hash(mem),0)
+
+    def test_alloc_equals(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        mem2 = self.mpool.alloc(15)
+        memview2 = mem2.get_memview()
+        memview2[:15] = b'hellohellohello'
+        self.assertNotEqual(mem, mem2)
+
+    def test_alloc_eq(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        mem2 = self.mpool.alloc(5)
+        memview2 = mem2.get_memview()
+        memview2[:5] = b'hello'
+        self.assertEqual(mem,mem2)
+
+    def test_alloc_eq2(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        mem2 = self.mpool.alloc(15)
+        memview2 = mem2.get_memview()
+        memview2[:5] = b'hello'
+        self.assertNotEqual(mem,mem2)
+
+    def test_alloc_eq3(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        mem2 = self.mpool.alloc(15)
+        memview2 = mem2.get_memview()
+        memview2[:15] = b'hellohellohello'
+        self.assertNotEqual(mem,mem2)
+
     def test_alloc_negative(self):
         with self.assertRaises(Exception):
             _ = self.mpool.alloc(-1)

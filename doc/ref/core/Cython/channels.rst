@@ -1,7 +1,7 @@
 .. _DragonCoreChannelsCython:
 
 Channels
-++++++++
++++++++++++++
 
 This is the Dragon channels interface for Python
 
@@ -10,11 +10,11 @@ This is the Dragon channels interface for Python
     :local:
     :backlinks: entry
 
-Classes 
+Classes
 =======
 
 .. automodule:: dragon.channels
-    :members: Message, ChannelSendH, ChannelRecvH, Channel, Peer2PeerReadingChannelFile, Many2ManyReadingChannelFile, Many2ManyWritingChannelFile, GatewayMessage   
+    :members: Message, ChannelSendH, ChannelRecvH, Channel, Peer2PeerReadingChannelFile, Many2ManyReadingChannelFile, Many2ManyWritingChannelFile, GatewayMessage
 
 Functions
 =========

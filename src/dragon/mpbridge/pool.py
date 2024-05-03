@@ -1,10 +1,10 @@
 """Dragon's replacement for Multiprocessing Pool.
 
-By default this uses a patched version of the dragon native pool and sets
-`DRAGON_BASEPOOL="NATIVE"`. The private api for this class is still under
-development. To revert to the version based on the `multiprocessing.Pool` class
-with a patched terminate_pool method, set `DRAGON_BASEPOOL="PATCHED"` in the
-environment.
+By default this uses the dragon native pool and sets
+`DRAGON_BASEPOOL="NATIVE"`. The private api for this class is still under 
+development. To revert to the version based on the `multiprocessing.Pool` class 
+with a patched terminate_pool method, set `DRAGON_BASEPOOL="PATCHED"` in the 
+environment. 
 """
 import multiprocessing.pool
 from multiprocessing import get_start_method
@@ -127,13 +127,14 @@ class DragonPoolPatched(multiprocessing.pool.Pool):  # Dummy
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
+
 class WrappedDragonProcess:  # Dummy
 
     def __init__(self, process, ident):
         self._puid = ident
         if process is None:
             self._process = Process(None, ident=self._puid)
-
+    
     def start(self) -> None:
         """Start the process represented by the underlying process object."""
         self._process.start()
@@ -144,7 +145,11 @@ class WrappedDragonProcess:  # Dummy
         :return: True if the process is running, False otherwise
         :rtype: bool
         """
-        return self._process.is_alive
+        try:
+            stat = self._process.is_alive
+        except Exception:
+            stat = False
+        return stat
 
     def join(self, timeout: float = None) -> int:
         """Wait for the process to finish.
@@ -154,7 +159,7 @@ class WrappedDragonProcess:  # Dummy
         :return: exit code of the process, None if timeout occurs
         :rtype: int
         :raises: ProcessError
-        """
+    """
         return self._process.join()
 
     def terminate(self) -> None:
@@ -177,7 +182,7 @@ class WrappedDragonProcess:  # Dummy
     def pid(self):
         """Process puid. Globally unique"""
         return self._puid
-
+    
     @property
     def name(self) -> str:
         """gets serialized descriptors name for the process
@@ -186,7 +191,7 @@ class WrappedDragonProcess:  # Dummy
         :rtype: str
         """
         return self._process.name
-
+    
     @property
     def exitcode(self) -> int:
         """When the process has terminated, return exit code. None otherwise."""
@@ -195,15 +200,15 @@ class WrappedDragonProcess:  # Dummy
     @property
     def sentinel(self):
         raise NotImplementedError
-
+    
     @property
     def authkey(self):
         raise NotImplementedError
-
+    
     @property
     def daemon(self):
         raise NotImplementedError
-
+    
     @property
     def close(self):
         raise NotImplementedError
@@ -264,7 +269,7 @@ class DragonPool(NativePool):
 
     def __init__(self, *args, context=None, **kwargs):
         super().__init__(*args, **kwargs)
-
+        
     @property
     def _pool(self):
         puids = self._pg.puids
@@ -275,22 +280,21 @@ class DragonPool(NativePool):
         # add a wrapped proc that has an interface like what mp is expecting
         for puid in puids:
             pool_procs.append(WrappedDragonProcess(None, ident=puid))
-        return pool_procs
+        return pool_procs  
 
     def _repopulate_pool(self):
-        # repopulate pool by shutting PG down and then starting new PG
+        # repopulate pool by shutting PG down and then starting new PG 
         if self._close_thread is not None:
             raise RuntimeError("Trying to repopulate a pool that was previously closed. This pattern is not supported.")
         if not self._pg.status == "Stop":
             self._pg.kill(signal.SIGTERM)
             self._pg.join()
             self._pg.stop()
-
+        del self._pg
         self._pg = ProcessGroup(restart=True, ignore_error_on_exit=True)
         self._pg.add_process(self._processes, self._template)
         self._pg.init()
         self._pg.start()
-
 
     def apply_async(
         self,

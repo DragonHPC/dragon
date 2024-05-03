@@ -1,5 +1,7 @@
 from dragon.dtypes_inc cimport *
 import enum
+import sys
+
 
 ################################
 # Begin Cython definitions
@@ -123,6 +125,37 @@ cdef class MemoryAlloc:
         if self._is_serial == 1:
             dragon_memory_serial_free(&self._mem_ser)
 
+    def __hash__(self):
+        """
+        Get a hash value for the underlying memory
+
+        :return: an integer hash value.
+        """
+        cdef:
+            dragonError_t derr
+            dragonULInt hash_val
+
+        derr = dragon_memory_hash(&self._mem_descr, &hash_val)
+        if derr != DRAGON_SUCCESS:
+            raise DragonMemoryError(derr, "Could not get memory hash")
+
+        return hash_val
+
+    def __eq__(self, MemoryAlloc other):
+        cdef:
+            dragonError_t derr
+            bool result
+
+        # not sure this is needed, but doesn't hurt.
+        if (type(other) is not MemoryAlloc):
+                raise DragonMemoryError(DRAGON_INVALID_OPERATION, "Cannot compare MemoryAlloc with value of different type.")
+
+        derr = dragon_memory_equal(&self._mem_descr, &other._mem_descr, &result)
+        if derr != DRAGON_SUCCESS:
+            raise DragonMemoryError(derr, "Could not compare memory allocations")
+
+        return result
+
     def get_memview(self):
         """
         Get a memoryview of the underlying memory
@@ -232,6 +265,7 @@ cdef class MemoryAlloc:
         cdef:
             dragonError_t derr
 
+
         # @MCB TODO: Does this still make sense?
         if self._is_attach == 0:
             raise RuntimeError("cannot detach from memory not attached to")
@@ -243,15 +277,87 @@ cdef class MemoryAlloc:
         self._is_attach = 0
 
     def free(self):
+        """
+        Free the managed memory allocation.
+
+        :return: None
+        :raises: DragonMemoryError
+        """
         cdef dragonError_t derr
 
-        derr = dragon_memory_free(&self._mem_descr)
+        with nogil:
+            derr = dragon_memory_free(&self._mem_descr)
         if derr != DRAGON_SUCCESS:
             raise DragonMemoryError(derr, "could not free allocation")
 
+    def copy(self, pool:MemoryPool, timeout=None):
+        """
+        Copy an allocation into a pool
+
+        :param pool: The pool in which to copy it.
+        :return: A new memory allocation
+        :raises: DragonMemoryError
+        """
+
+        cdef:
+            dragonError_t err
+            dragonMemoryDescr_t to_mem
+            dragonMemorySerial_t ser_mem
+            timespec_t timer
+            timespec_t* time_ptr
+
+        if timeout is None:
+            time_ptr = NULL
+        elif isinstance(timeout, int) or isinstance(timeout, float):
+            if timeout < 0:
+                raise ValueError('Cannot provide timeout < 0')
+            # Anything > 0 means use that as seconds for timeout.
+            time_ptr = &timer
+            timer.tv_sec =  int(timeout)
+            timer.tv_nsec = int((timeout - timer.tv_sec)*1000000000)
+        else:
+            raise ValueError('The timeout must be a float or int')
+
+        err = dragon_memory_copy(&self._mem_descr, &to_mem, &pool._pool_hdl, time_ptr)
+        if err != DRAGON_SUCCESS:
+            raise DragonMemoryError(err, "Could not copy memory.")
+
+        mem_alloc_obj = MemoryAlloc.cinit(to_mem)
+        return mem_alloc_obj
+
     @property
     def size(self):
+        """
+        Return the size of the allocation
+
+        return: the size in bytes of the memory allocation
+        """
         return self._mem_size
+
+    @property
+    def pool(self):
+        """
+        Return the pool of this memory allocation.
+
+        :return: pool where this resides.
+        :raises: DragonMemoryError
+        """
+        cdef:
+            dragonError_t err
+            dragonMemoryPoolDescr_t pool_descr
+            dragonMemoryPoolSerial_t ser_pool
+            dragonULInt muid
+
+        err = dragon_memory_get_pool(&self._mem_descr, &pool_descr)
+        if err != DRAGON_SUCCESS:
+            raise DragonMemoryError(err, "Could not retrieve the pool for the memory allocation.")
+
+        err = dragon_memory_pool_serialize(&ser_pool, &pool_descr)
+        if err != DRAGON_SUCCESS:
+            raise DragonPoolError(err, "Could not serialize pool")
+
+        # Returns a python copy of the serializer
+        return MemoryPool.attach(ser_pool.data[:ser_pool.len])
 
 
 cdef class MemoryAllocations:
@@ -262,7 +368,8 @@ cdef class MemoryAllocations:
     cdef dragonMemoryPoolAllocations_t allocs
 
     def __del__(self):
-        dragon_memory_pool_allocations_destroy(&self.allocs)
+        with nogil:
+            dragon_memory_pool_allocations_destroy(&self.allocs)
 
     # @MCB Note: Cython gets really mad if we try to pass in C structs to __cinit__, so this will
     #  do for now
@@ -318,10 +425,10 @@ cdef class MemoryPool:
         self._serialized = 0
 
     def __getstate__(self):
-        return (self.serialize(),)
+        return (self.serialize(), self._muid)
 
     def __setstate__(self, state):
-        (serialized_bytes,) = state
+        (serialized_bytes, self._muid) = state
         self.attach(serialized_bytes, existing_memory_pool=self)
 
     def __del__(self):
@@ -353,6 +460,8 @@ cdef class MemoryPool:
 
         if not isinstance(uid, int):
             raise TypeError(f"Pool uid must be int, got type {type(uid)}")
+
+        self._muid = uid
 
         derr = dragon_memory_attr_init(&self._mattr)
         if derr != DRAGON_SUCCESS:
@@ -418,6 +527,7 @@ cdef class MemoryPool:
             dragonMemoryPoolSerial_t _ser
             const unsigned char[:] cdata = pool_ser
             MemoryPool mpool
+            dragonULInt the_muid
 
         if existing_memory_pool is None:
             mpool = cls.__new__(cls) # Create an empty instance of MemoryPool
@@ -436,6 +546,12 @@ cdef class MemoryPool:
         if derr != DRAGON_SUCCESS:
             raise DragonPoolAttachFail(derr, "Could not attach to serialized pool")
 
+        derr = dragon_memory_pool_muid(&mpool._pool_hdl, &the_muid)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve muid of pool.")
+
+        mpool._muid = the_muid
+
         return mpool
 
     def destroy(self):
@@ -444,7 +560,9 @@ cdef class MemoryPool:
         """
         cdef dragonError_t derr
 
-        derr = dragon_memory_pool_destroy(&self._pool_hdl)
+        with nogil:
+            derr = dragon_memory_pool_destroy(&self._pool_hdl)
+
         if derr != DRAGON_SUCCESS:
             raise DragonPoolError(derr, "Could not destroy pool")
 
@@ -496,6 +614,7 @@ cdef class MemoryPool:
         cdef:
             dragonError_t derr
             dragonMemoryDescr_t mem
+            size_t sz
 
         if not isinstance(size, int):
             raise TypeError(f"Allocation size must be int, got type {type(size)}")
@@ -504,7 +623,10 @@ cdef class MemoryPool:
         if size < 1:
             raise RuntimeError("Size cannot be less than 1 for memory allocations")
 
-        derr = dragon_memory_alloc(&mem, &self._pool_hdl, size)
+        sz = size
+
+        with nogil:
+            derr = dragon_memory_alloc(&mem, &self._pool_hdl, sz)
 
         if derr == DRAGON_DYNHEAP_REQUESTED_SIZE_NOT_AVAILABLE:
             raise DragonPoolAllocationNotAvailable(derr, f"An allocation of size={size} is not available.")
@@ -587,7 +709,8 @@ cdef class MemoryPool:
             dragonError_t derr
             dragonMemoryPoolAllocations_t allocs
 
-        derr = dragon_memory_pool_get_allocations(&self._pool_hdl, &allocs)
+        with nogil:
+            derr = dragon_memory_pool_get_allocations(&self._pool_hdl, &allocs)
         if derr != DRAGON_SUCCESS:
             raise DragonPoolError(derr, "Could not retrieve allocation list from pool")
 
@@ -604,9 +727,15 @@ cdef class MemoryPool:
         cdef:
             dragonError_t derr
             int flag
+            dragonMemoryAllocationType_t tyval
+            dragonULInt alid
 
-        derr = dragon_memory_pool_allocation_exists(&self._pool_hdl, alloc_type.value,
-                                                    alloc_id, &flag)
+        tyval = alloc_type.value
+        alid = alloc_id
+
+        with nogil:
+            derr = dragon_memory_pool_allocation_exists(&self._pool_hdl, tyval,
+                                                        alid, &flag)
         if derr != DRAGON_SUCCESS:
             raise DragonPoolError(derr, "Error checking allocation existence")
 
@@ -625,9 +754,15 @@ cdef class MemoryPool:
             dragonError_t derr
             dragonMemoryDescr_t mem_descr
             size_t mem_size
+            dragonMemoryAllocationType_t tyval
+            dragonULInt alid
 
-        derr = dragon_memory_get_alloc_memdescr(&mem_descr, &self._pool_hdl,
-                                                alloc_type.value, alloc_id, 0, NULL)
+        tyval = alloc_type.value
+        alid = alloc_id
+
+        with nogil:
+            derr = dragon_memory_get_alloc_memdescr(&mem_descr, &self._pool_hdl,
+                                                    tyval, alid, 0, NULL)
         if derr != DRAGON_SUCCESS:
             raise DragonPoolError(derr, "Could not retrieve memory descriptor of provided ID and Type")
 
@@ -646,3 +781,58 @@ cdef class MemoryPool:
     def is_local(self):
         return dragon_memory_pool_is_local(&self._pool_hdl)
 
+    @property
+    def muid(self):
+        return self._muid
+
+    @property
+    def free_space(self):
+        cdef:
+            dragonError_t derr
+            uint64_t sz
+
+        with nogil:
+            derr = dragon_memory_pool_get_free_size(&self._pool_hdl, &sz)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve the pool's free space.")
+
+        return sz
+
+    @property
+    def size(self):
+        cdef:
+            dragonError_t derr
+            uint64_t sz
+
+        with nogil:
+            derr = dragon_memory_pool_get_total_size(&self._pool_hdl, &sz)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve the pool's total size.")
+
+        return sz
+
+    @property
+    def utilization(self):
+        cdef:
+            dragonError_t derr
+            double pct
+
+        with nogil:
+            derr = dragon_memory_pool_get_utilization_pct(&self._pool_hdl, &pct)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve the pool's percent utilized space.")
+
+        return pct
+
+    @property
+    def rt_uid(self):
+        cdef:
+            dragonError_t derr
+            dragonULInt rtuid
+
+        with nogil:
+            derr = dragon_memory_pool_get_rt_uid(&self._pool_hdl, &rtuid)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Error getting pool's rt_uid")
+
+        return rtuid

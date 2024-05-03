@@ -1,4 +1,4 @@
-"""The Dragon native pool manages a pool of child processes.
+"""The Dragon native pool manages a pool of child processes. 
 """
 
 from __future__ import annotations
@@ -16,8 +16,8 @@ import time
 import dragon
 
 from .queue import Queue
-from .process import TemplateProcess
-from .process_group import ProcessGroup
+from .process import ProcessTemplate
+from .process_group import ProcessGroup, DragonProcessGroupError
 from .event import Event
 from .process import current as current_process
 from .machine import System
@@ -280,7 +280,7 @@ class Pool:
             raise ValueError("Number of processes must be at least 1")
 
         # starts a process group with nproc workers
-        self._template = TemplateProcess(
+        self._template = ProcessTemplate(
             self._worker_function,
             args=(self._inqueue, self._outqueue, self._initializer, self._initargs, self._maxtasksperchild),
         )
@@ -364,22 +364,36 @@ class Pool:
         if self._map_launch_thread is not None:
             self._map_launch_thread.join()
 
-        if not self._pg.status == "Stop":
+        if self._pg.status != "Stop":
             self._pg.join()
-            self._pg.stop()
+            try:
+                # This extra step makes sure the infrastructure related to managing the processgroup exits cleanly
+                self._pg.stop()
+            except DragonProcessGroupError:
+                pass
         self._results_handler.join()
 
     @staticmethod
     def _worker_function(inqueue, outqueue, initializer=None, initargs=(), maxtasks=None):
-        myp = current_process()
 
         # handles shutdown signal
-        termflag = False
+        class Value:
+            def __init__(self, val):
+                self._val = val
+
+            @property
+            def val(self):
+                return self._val
+
+            @val.setter
+            def val(self, val):
+                self._val = val
+
+        termflag = Value(False)
 
         def handler(signum, frame):
             LOGGER.debug("_worker_function SIGTERM handler saw signal")
-            nonlocal termflag
-            termflag = True
+            termflag.val = True
 
         signal.signal(signal.SIGTERM, handler)
 
@@ -391,7 +405,7 @@ class Pool:
 
         completed_tasks = 0
 
-        while not termflag and (maxtasks is None or (maxtasks and completed_tasks < maxtasks)):
+        while not termflag.val and (maxtasks is None or (maxtasks and completed_tasks < maxtasks)):
             # get work item
             LOGGER.debug(f"getting work from inqueue on node {socket.gethostname()}")
             try:
@@ -403,8 +417,6 @@ class Pool:
             except TimeoutError:
                 time.sleep(POLL_FREQUENCY)
                 continue
-
-            LOGGER.debug(f"{task} task received by {myp.ident} on {socket.gethostname()}")
 
             job, i, func, args, kwargs = task
             LOGGER.debug(f"job={job}, i={i}, func={func}, args={args}, kwargs={kwargs}")
@@ -426,8 +438,6 @@ class Pool:
                 LOGGER.debug("Possible encoding error while sending result: %s" % (wrapped))
                 outqueue.put((job, i, (False, wrapped)))
             completed_tasks += 1
-
-        LOGGER.debug(f"{myp.ident} returning from worker_function")
 
     @classmethod
     def _handle_results(cls, outqueue, cache, end_event):

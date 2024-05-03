@@ -171,7 +171,6 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         # Join on the frontend thread
         fe_proc.join()
 
-    @unittest.skip('HSTA not currently supported in open source.')
     @catch_thread_exceptions
     @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
     @patch('dragon.launcher.frontend.start_overlay_network')
@@ -192,7 +191,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         la_info = self.do_bringup(mock_overlay, mock_launch)
 
         # Check we launched the backend with default transport
-        self.assertEqual(la_info.transport, TransportAgentOptions.HSTA)
+        self.assertEqual(la_info.transport, TransportAgentOptions.TCP)
 
         # Receive GSProcessCreate
         handle_gsprocesscreate_error(self.primary_conn)
@@ -205,7 +204,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert exceptions_caught_in_threads['Frontend Server']['exception']['type'] == RuntimeError
         assert str(exceptions_caught_in_threads['Frontend Server']['exception']['value']) == 'Abnormal exit detected'
 
-    @unittest.skip('HSTA not currently supported in open source.')
+    @unittest.skip('Not supported in open source')
     @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
     @patch('dragon.launcher.frontend.start_overlay_network')
     def test_clean_exit_with_hsta_launch(self, mock_overlay, mock_launch):

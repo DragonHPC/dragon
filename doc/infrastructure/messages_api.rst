@@ -150,7 +150,7 @@ GS Process Messages
 1. **GSProcessCreate**
 
     *type enum*
-        GS_PROCESS_CREATE  (= 1)
+        GS_PROCESS_CREATE
 
     *purpose*
         Request to global services to create a new managed process.
@@ -207,7 +207,7 @@ GS Process Messages
 2. **GSProcessCreateResponse**
 
     *type enum*
-        GS_PROCESS_CREATE_RESPONSE  (= 2)
+        GS_PROCESS_CREATE_RESPONSE
 
     *purpose*
         Response to process creation request.
@@ -252,7 +252,7 @@ GS Process Messages
 3. **GSProcessList**
 
     *type enum*
-        GS_PROCESS_LIST  (= 3)
+        GS_PROCESS_LIST
 
     *purpose*
         Return a list of the p_uid for all the processes
@@ -276,7 +276,7 @@ GS Process Messages
 4. **GSProcessListResponse**
 
     *type enum*
-        GS_PROCESS_LIST_RESPONSE  (= 4)
+        GS_PROCESS_LIST_RESPONSE
 
     *purpose*
         Responds with a list of the p_uid for all the
@@ -299,7 +299,7 @@ GS Process Messages
 5. **GSProcessQuery**
 
     *type enum*
-        GS_PROCESS_QUERY  (= 5)
+        GS_PROCESS_QUERY
 
     *purpose*
         Request the ProcessDescriptor for a managed process
@@ -330,7 +330,7 @@ GS Process Messages
 6. **GSProcessQueryResponse**
 
     *type enum*
-        GS_PROCESS_QUERY_RESPONSE  (= 6)
+        GS_PROCESS_QUERY_RESPONSE
 
     *purpose*
         Response to request for ProcessDescriptor for a managed process
@@ -366,7 +366,7 @@ GS Process Messages
 7. **GSProcessKill**
 
     *type enum*
-        GS_PROCESS_KILL  (= 7)
+        GS_PROCESS_KILL
 
     *purpose*
         Request a managed process get killed
@@ -402,7 +402,7 @@ GS Process Messages
 8. **GSProcessKillResponse**
 
     *type enum*
-        GS_PROCESS_KILL_RESPONSE  (= 8)
+        GS_PROCESS_KILL_RESPONSE
 
     *purpose*
         Response to GSProcessKill message
@@ -449,7 +449,7 @@ GS Process Messages
 9. **GSProcessJoin**
 
     *type enum*
-        GS_PROCESS_JOIN  (= 9)
+        GS_PROCESS_JOIN
 
     *purpose*
         Request notification when a given process exits
@@ -486,7 +486,7 @@ GS Process Messages
 10. **GSProcessJoinResponse**
 
     *type enum*
-        GS_PROCESS_JOIN_RESPONSE  (= 10)
+        GS_PROCESS_JOIN_RESPONSE
 
     *purpose*
         Response to request for notification when a process exits.
@@ -528,7 +528,7 @@ GS Process Messages
 95. **GSProcessJoinList**
 
     *type enum*
-        GS_PROCESS_JOIN_LIST  (= 95)
+        GS_PROCESS_JOIN_LIST
 
     *purpose*
         Request notification when any/all process from a given list exits.
@@ -569,7 +569,7 @@ GS Process Messages
 96. **GSProcessJoinListResponse**
 
     *type enum*
-        GS_PROCESS_JOIN_LIST_RESPONSE  (= 96)
+        GS_PROCESS_JOIN_LIST_RESPONSE
 
     *purpose*
         Response to request for notification when any/all process from a given list exits.
@@ -640,7 +640,7 @@ ID number, the 'memory UID' normally abbreviated as ``m_uid``.
 71. **GSPoolCreate**
 
     *type enum*
-        GS_POOL_CREATE (= 71)
+        GS_POOL_CREATE
 
     *purpose*
         Requests that a new user memory pool be created.
@@ -682,7 +682,7 @@ ID number, the 'memory UID' normally abbreviated as ``m_uid``.
 72. **GSPoolCreateResponse**
 
     *type enum*
-        GS_POOL_CREATE_RESPONSE (= 72)
+        GS_POOL_CREATE_RESPONSE
 
     *purpose*
         Response to request for a pool creation
@@ -739,7 +739,7 @@ ID number, the 'memory UID' normally abbreviated as ``m_uid``.
 73. **GSPoolDestroy**
 
     *type enum*
-        GS_POOL_DESTROY  (= 73)
+        GS_POOL_DESTROY
 
     *purpose*
         Request destruction of a managed memory pool.
@@ -772,7 +772,7 @@ ID number, the 'memory UID' normally abbreviated as ``m_uid``.
 74. **GSPoolDestroyResponse**
 
     *type enum*
-        GS_POOL_DESTROY_RESPONSE  (= 74)
+        GS_POOL_DESTROY_RESPONSE
 
     *purpose*
         Response to GSPoolDestroy message
@@ -826,7 +826,7 @@ ID number, the 'memory UID' normally abbreviated as ``m_uid``.
 75. **GSPoolList**
 
     *type enum*
-        GS_POOL_LIST  (= 75)
+        GS_POOL_LIST
 
     *purpose*
         Return a list of tuples of ``m_uid`` for all pools currently alive.
@@ -850,7 +850,7 @@ ID number, the 'memory UID' normally abbreviated as ``m_uid``.
 76. **GSPoolListResponse**
 
     *type enum*
-        GS_POOL_LIST_RESPONSE  (= 76)
+        GS_POOL_LIST_RESPONSE
 
     *purpose*
         Responds with a list of ``m_uid`` for all the
@@ -874,7 +874,7 @@ ID number, the 'memory UID' normally abbreviated as ``m_uid``.
 77. **GSPoolQuery**
 
     *type enum*
-        GS_POOL_QUERY  (= 77)
+        GS_POOL_QUERY
 
     *purpose*
         Request the PoolDescriptor for a managed memory pool.
@@ -905,7 +905,7 @@ ID number, the 'memory UID' normally abbreviated as ``m_uid``.
 78. **GSPoolQueryResponse**
 
     *type enum*
-        GS_POOL_QUERY_RESPONSE  (= 78)
+        GS_POOL_QUERY_RESPONSE
 
     *purpose*
         Response to request for PoolDescriptor for a managed memory pool.   This object
@@ -954,7 +954,7 @@ which itself has its own ``m_uid``.
 11. **GSChannelCreate**
 
     *type enum*
-        GS_CHANNEL_CREATE (= 11)
+        GS_CHANNEL_CREATE
 
     *purpose*
         Requests that a new channel be created.
@@ -993,7 +993,7 @@ which itself has its own ``m_uid``.
 12. **GSChannelCreateResponse**
 
     *type enum*
-        GS_CHANNEL_CREATE_RESPONSE (= 12)
+        GS_CHANNEL_CREATE_RESPONSE
 
     *purpose*
         Response to channel creation request.
@@ -1037,7 +1037,7 @@ which itself has its own ``m_uid``.
 13. **GSChannelList**
 
     *type enum*
-        GS_CHANNEL_LIST (= 13)
+        GS_CHANNEL_LIST
 
     *purpose*
         Request list of currently active channels.
@@ -1061,7 +1061,7 @@ which itself has its own ``m_uid``.
 14. **GSChannelListResponse**
 
     *type enum*
-        GS_CHANNEL_LIST_RESPONSE (= 14)
+        GS_CHANNEL_LIST_RESPONSE
 
     *purpose*
         Response to request to list of currently active channels
@@ -1087,7 +1087,7 @@ which itself has its own ``m_uid``.
 15. **GSChannelQuery**
 
     *type enum*
-        GS_CHANNEL_QUERY (= 15)
+        GS_CHANNEL_QUERY
 
     *purpose*
         Request the descriptor for an already created channel by
@@ -1124,7 +1124,7 @@ which itself has its own ``m_uid``.
 16. **GSChannelQueryResponse**
 
     *type enum*
-        GS_CHANNEL_QUERY_RESPONSE (= 16)
+        GS_CHANNEL_QUERY_RESPONSE
 
     *purpose*
         Response to request for a channel descriptor
@@ -1155,7 +1155,7 @@ which itself has its own ``m_uid``.
 17. **GSChannelDestroy**
 
     *type enum*
-        GS_CHANNEL_DESTROY (= 17)
+        GS_CHANNEL_DESTROY
 
     *purpose*
         Request that a channel be destroyed or a refcount on the channel be released.
@@ -1197,7 +1197,7 @@ which itself has its own ``m_uid``.
 18. **GSChannelDestroyResponse**
 
     *type enum*
-        GS_CHANNEL_DESTROY_RESPONSE (= 18)
+        GS_CHANNEL_DESTROY_RESPONSE
 
     *purpose*
         Response to request to destroy a channel.
@@ -1248,7 +1248,7 @@ which itself has its own ``m_uid``.
         and its response and ride all this on top of GSChannelQuery by adding a timeout.
 
     *type enum*
-        GS_CHANNEL_JOIN (= 19)
+        GS_CHANNEL_JOIN
 
     *purpose*
         Sometimes two processes want to communicate through a channel but we
@@ -1278,7 +1278,7 @@ which itself has its own ``m_uid``.
 
 
     *type enum*
-        GS_CHANNEL_JOIN_RESPONSE (= 20)
+        GS_CHANNEL_JOIN_RESPONSE
 
     *purpose*
         Response to request to join a channel
@@ -1318,7 +1318,7 @@ which itself has its own ``m_uid``.
     handles currently acquired.
 
     *type enum*
-        GS_CHANNEL_DETACH (= 21)
+        GS_CHANNEL_DETACH
 
     *purpose*
         Request local detachment from channel.
@@ -1345,7 +1345,7 @@ which itself has its own ``m_uid``.
     PLACEHOLDER
 
     *type enum*
-        GS_CHANNEL_DETACH_RESPONSE (= 22)
+        GS_CHANNEL_DETACH_RESPONSE
 
     *purpose*
         Response to request to detach from a channel.
@@ -1382,7 +1382,7 @@ which itself has its own ``m_uid``.
     PLACEHOLDER
 
     *type enum*
-        GS_CHANNEL_GET_SENDH (= 23)
+        GS_CHANNEL_GET_SENDH
 
     *purpose*
         Request send handle for channel
@@ -1410,7 +1410,7 @@ which itself has its own ``m_uid``.
     PLACEHOLDER
 
     *type enum*
-        GS_CHANNEL_GET_SENDH_RESPONSE (= 24)
+        GS_CHANNEL_GET_SENDH_RESPONSE
 
     *purpose*
         Response to request to get a channel send handle
@@ -1458,7 +1458,7 @@ which itself has its own ``m_uid``.
     PLACEHOLDER
 
     *type enum*
-        GS_CHANNEL_GET_RECVH (= 25)
+        GS_CHANNEL_GET_RECVH
 
     *purpose*
         Request recv handle for channel
@@ -1486,7 +1486,7 @@ which itself has its own ``m_uid``.
     PLACEHOLDER
 
     *type enum*
-        GS_CHANNEL_GET_RECVH_RESPONSE (= 26)
+        GS_CHANNEL_GET_RECVH_RESPONSE
 
     *purpose*
         Response to request to get a channel recv handle
@@ -1536,7 +1536,7 @@ querying the number of cpus in the system.
 102. **GSNodeList**
 
     *type enum*
-        GS_NODE_LIST (= 102)
+        GS_NODE_LIST
 
     *purpose*
         Return a list of tuples of ``h_uid`` for all nodes currently registered.
@@ -1560,7 +1560,7 @@ querying the number of cpus in the system.
 103. **GSNodeListResponse**
 
     *type enum*
-        GS_NODE_LIST_RESPONSE (= 103)
+        GS_NODE_LIST_RESPONSE
 
     *purpose*
         Responds with a list of ``h_uid`` for all the
@@ -1583,7 +1583,7 @@ querying the number of cpus in the system.
 97. **GSNodeQuery**
 
     *type enum*
-        GS_NODE_QUERY (= 97)
+        GS_NODE_QUERY
 
     *purpose*
         Ask Global Services for a node descriptor of the hardware Dragon
@@ -1611,7 +1611,7 @@ querying the number of cpus in the system.
 98. **GSNodeQueryResponse**
 
     *type enum*
-        GS_NODE_QUERY_RESPONSE (= 98)
+        GS_NODE_QUERY_RESPONSE
 
     *purpose*
          Return the machine descriptor after a GSNodeQuery.
@@ -1640,7 +1640,7 @@ querying the number of cpus in the system.
 104. **GSNodeQueryTotalCPUCount**
 
     *type enum*
-        GS_NODE_QUERY_TOTAL_CPU_COUNT (= 104)
+        GS_NODE_QUERY_TOTAL_CPU_COUNT
 
     *purpose*
         Asks GS to return the total number of CPUS beloging to all of the registered nodes.
@@ -1658,7 +1658,7 @@ querying the number of cpus in the system.
 105. **GSNodeQueryTotalCPUCountResponse**
 
     *type enum*
-        GS_NODE_QUERY_TOTAL_CPU_COUNT_RESPONSE (= 105)
+        GS_NODE_QUERY_TOTAL_CPU_COUNT_RESPONSE
 
     *purpose*
          Return the total number of CPUS beloging to all of the registered nodes.
@@ -1689,7 +1689,7 @@ querying the number of cpus in the system.
 121. **GSGroupDestroy**
 
     *type enum*
-        GS_GROUP_DESTROY (= 121)
+        GS_GROUP_DESTROY
 
     *purpose*
         Ask Global Services to destroy a group of resources. This means destroy all the member-resources, as well as the container/group.
@@ -1714,7 +1714,7 @@ querying the number of cpus in the system.
 122. **GSGroupDestroyResponse**
 
     *type enum*
-        GS_GROUP_DESTROY_RESPONSE (= 122)
+        GS_GROUP_DESTROY_RESPONSE
 
     *purpose*
         Response to GSGroupDestroy message
@@ -1758,7 +1758,7 @@ querying the number of cpus in the system.
 123. **GSGroupAddTo**
 
     *type enum*
-        GS_GROUP_DESTROY (= 123)
+        GS_GROUP_DESTROY
 
     *purpose*
         Ask Global Services to add specific resources to an existing group of resources. The resources are already created.
@@ -1787,7 +1787,7 @@ querying the number of cpus in the system.
 124. **GSGroupAddToResponse**
 
     *type enum*
-        GS_GROUP_ADD_TO_RESPONSE (= 124)
+        GS_GROUP_ADD_TO_RESPONSE
 
     *purpose*
         Response to GSGroupAddTo message
@@ -1838,7 +1838,7 @@ querying the number of cpus in the system.
 125. **GSGroupRemoveFrom**
 
     *type enum*
-        GS_GROUP_REMOVE_FROM (= 125)
+        GS_GROUP_REMOVE_FROM
 
     *purpose*
         Ask Global Services to remove specific resources from an existing group of resources.
@@ -1867,7 +1867,7 @@ querying the number of cpus in the system.
 126. **GSGroupRemoveFromResponse**
 
     *type enum*
-        GS_GROUP_REMOVE_FROM_RESPONSE (= 126)
+        GS_GROUP_REMOVE_FROM_RESPONSE
 
     *purpose*
         Response to GSGroupRemoveFrom message
@@ -1918,7 +1918,7 @@ querying the number of cpus in the system.
 127. **GSGroupCreate**
 
     *type enum*
-        GS_GROUP_CREATE (= 127)
+        GS_GROUP_CREATE
 
     *purpose*
         Ask Global Services to create a group of resources.
@@ -1948,7 +1948,7 @@ querying the number of cpus in the system.
 128. **GSGroupCreateResponse**
 
     *type enum*
-        GS_GROUP_CREATE_RESPONSE (= 128)
+        GS_GROUP_CREATE_RESPONSE
 
     *purpose*
         Response to GSGroupCreate message
@@ -1969,7 +1969,7 @@ querying the number of cpus in the system.
 129. **GSGroupKill**
 
     *type enum*
-        GS_GROUP_KILL (= 129)
+        GS_GROUP_KILL
 
     *purpose*
         Ask Global Services to send the processes belonging to a specified group a specified signal.
@@ -1998,7 +1998,7 @@ querying the number of cpus in the system.
 130. **GSGroupKillResponse**
 
     *type enum*
-        GS_GROUP_KILL_RESPONSE (= 130)
+        GS_GROUP_KILL_RESPONSE
 
     *purpose*
         Response to GSGroupKill message
@@ -2049,7 +2049,7 @@ querying the number of cpus in the system.
 131. **GSGroupCreateAddTo**
 
     *type enum*
-        GS_GROUP_CREATE_ADD_TO (= 131)
+        GS_GROUP_CREATE_ADD_TO
 
     *purpose*
         Ask Global Services to create and add resources to an existing group of resources.
@@ -2081,7 +2081,7 @@ querying the number of cpus in the system.
 132. **GSGroupCreateAddToResponse**
 
     *type enum*
-        GS_GROUP_CREATE_ADD_TO_RESPONSE (= 132)
+        GS_GROUP_CREATE_ADD_TO_RESPONSE
 
     *purpose*
         Response to GSGroupCreateAddTo message
@@ -2125,7 +2125,7 @@ querying the number of cpus in the system.
 133. **GSGroupDestroyRemoveFrom**
 
     *type enum*
-        GS_GROUP_DESTROY_REMOVE_FROM (= 133)
+        GS_GROUP_DESTROY_REMOVE_FROM
 
     *purpose*
         Ask Global Services to destroy and remove specific resources from an existing group of resources.
@@ -2154,7 +2154,7 @@ querying the number of cpus in the system.
 134. **GSGroupDestroyRemoveFromResponse**
 
     *type enum*
-        GS_GROUP_REMOVE_FROM_RESPONSE (= 134)
+        GS_GROUP_REMOVE_FROM_RESPONSE
 
     *purpose*
         Response to GSGroupDestroyRemoveFrom message
@@ -2205,7 +2205,7 @@ querying the number of cpus in the system.
 117. **GSGroupList**
 
     *type enum*
-        GS_GROUP_LIST (= 117)
+        GS_GROUP_LIST
 
     *purpose*
         Request a list of the g_uid for all the groups of resources
@@ -2229,7 +2229,7 @@ querying the number of cpus in the system.
 118. **GSGroupListResponse**
 
     *type enum*
-        GS_GROUP_LIST_RESPONSE (= 118)
+        GS_GROUP_LIST_RESPONSE
 
     *purpose*
         Response to GSGroupList message
@@ -2248,7 +2248,7 @@ querying the number of cpus in the system.
 119. **GSGroupQuery**
 
     *type enum*
-        GS_GROUP_QUERY  (= 119)
+        GS_GROUP_QUERY
 
     *purpose*
         Request the GroupDescriptor for a managed group of resources
@@ -2279,7 +2279,7 @@ querying the number of cpus in the system.
 120. **GSGroupQueryResponse**
 
     *type enum*
-        GS_GROUP_QUERY_RESPONSE  (= 120)
+        GS_GROUP_QUERY_RESPONSE
 
     *purpose*
         Response to request for GroupDescriptor for a managed group
@@ -2321,7 +2321,7 @@ for example ones related to sequencing runtime startup and teardown.
 27. **AbnormalTermination**
 
     *type enum*
-        ABNORMAL_TERMINATION (= 27)
+        ABNORMAL_TERMINATION
 
     *purpose*
         Error result for startup and teardown messages, as well
@@ -2347,7 +2347,7 @@ for example ones related to sequencing runtime startup and teardown.
 28. **GSStarted**
 
     *type enum*
-        GS_STARTED (= 28)
+        GS_STARTED
 
     *purpose*
         Confirm to Launcher that the Global Services process (and if
@@ -2364,7 +2364,7 @@ for example ones related to sequencing runtime startup and teardown.
 29. **GSPingSH**
 
     *type enum*
-        GS_PING_SH (= 29)
+        GS_PING_SH
 
     *purpose*
         Confirm to Shepherd(s) that Global Services has started and
@@ -2383,7 +2383,7 @@ for example ones related to sequencing runtime startup and teardown.
 30. **GSIsUp**
 
     *type enum*
-        GS_IS_UP (= 30)
+        GS_IS_UP
 
     *purpose*
         Confirm to Launcher that Global Services is completely up
@@ -2398,7 +2398,7 @@ for example ones related to sequencing runtime startup and teardown.
 31. **GSHeadExit**
 
     *type enum*
-        GS_HEAD_EXIT (= 31)
+        GS_HEAD_EXIT
 
     *purpose*
         Notify Launcher that the head process has exited. At this point
@@ -2416,7 +2416,7 @@ for example ones related to sequencing runtime startup and teardown.
 32. **GSChannelRelease**
 
     *type enum*
-        GS_CHANNEL_RELEASE (= 32)
+        GS_CHANNEL_RELEASE
 
     *purpose*
         Tell the Shepherd(s) that Global Services is exiting and will
@@ -2432,7 +2432,7 @@ for example ones related to sequencing runtime startup and teardown.
 33. **GSHalted**
 
     *type enum*
-        GS_HALTED (= 33)
+        GS_HALTED
 
     *purpose*
         Notify Launcher that Global Services is halted.  The Global
@@ -2450,7 +2450,7 @@ for example ones related to sequencing runtime startup and teardown.
 55. **GSTeardown**
 
     *type enum*
-        GS_TEARDOWN (= 55)
+        GS_TEARDOWN
 
     *purpose*
         Direct Global Services to do a clean exit - clean up any remaining
@@ -2468,7 +2468,7 @@ for example ones related to sequencing runtime startup and teardown.
 65. **GSPingProc**
 
     *type enum*
-        GS_PING_PROC (= 65)
+        GS_PING_PROC
 
     *purpose*
         When a new managed process wanting to use Global Services
@@ -2503,10 +2503,10 @@ for example ones related to sequencing runtime startup and teardown.
 
 .. _gsdump:
 
-66. **GSDump**
+66. **GSDumpState**
 
     *type enum*
-        GS_DUMP (= 66)
+        GS_DUMP_STATE
 
     *purpose*
         Primarily debugging.  Makes global services dump its state in
@@ -2520,14 +2520,14 @@ for example ones related to sequencing runtime startup and teardown.
             - string
             - file to open and write the dump to
 
-    *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSDump>`
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSDumpState>`
 
 .. _gsunexpected:
 
 85. **GSUnexpected**
 
     *type enum*
-        GS_UNEXPECTED (= 85)
+        GS_UNEXPECTED
 
     *purpose*
         Whenever GS gets a message that is not expected as an input to GS
@@ -2558,7 +2558,7 @@ for example ones related to sequencing runtime startup and teardown.
 27. **ExceptionlessAbort**
 
     *type enum*
-        EXCEPTIONLESS_ABORT (= 115)
+        EXCEPTIONLESS_ABORT
 
     *purpose*
         It can be benefical to pass a message through the services runtime that
@@ -2593,7 +2593,7 @@ LS Process Messages
 34. **SHProcessCreate**
 
     *type enum*
-        SH_PROCESS_CREATE (= 34)
+        SH_PROCESS_CREATE
 
     *purpose*
         Request to Shepherd to launch a process locally.
@@ -2648,7 +2648,7 @@ LS Process Messages
 35. **SHProcessCreateResponse**
 
     *type enum*
-        SH_PROCESS_CREATE_RESPONSE (= 35)
+        SH_PROCESS_CREATE_RESPONSE
 
     *purpose*
         Response to process creation request.
@@ -2677,7 +2677,7 @@ LS Process Messages
 36. **SHProcessKill**
 
     *type enum*
-        SH_PROCESS_KILL (= 36)
+        SH_PROCESS_KILL
 
     *purpose*
         Request to kill a process owned by this shepherd, with
@@ -2703,13 +2703,72 @@ LS Process Messages
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.SHProcessKill>`
 
+.. _shmultiprocesscreate:
 
-.. _shprocesskillresponse:
+138. **SHMultiProcessCreate**
+
+    *type enum*
+        SH_MULTI_PROCESS_CREATE
+
+    *purpose*
+        Request to Shepherd to launch multiple processes locally.
+
+    *fields*
+        **pmi_group_info**
+            - Optional PMIGroupInfo structure.
+            - Contains common PMI/MPI values needed to start the requested PMI enabled
+              applications, including the nid_list, host_list.
+        **procs**
+            - list of SHProcessCreate messages representing the processes
+              to be started.
+
+    *response*
+        SHMultiProcessCreateResponse
+
+    *see also*
+        SHProcessKill
+
+        refer to the :ref:`cfs` section for additional request message fields
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.SHMultiProcessCreate>`
+
+.. _shmultiprocesscreateresponse:
+
+139. **SHMultiProcessCreateResponse**
+
+    *type enum*
+        SH_MULTI_PROCESS_CREATE_RESPONSE
+
+    *purpose*
+        Response to multi process creation request.
+
+    *fields*
+        Alternatives on ``err``:
+
+        SUCCESS (= 0)
+            **responses**
+                - list of SHProcessCreateResponse messages for each previously
+                  requested process.
+
+        FAIL (= 1)
+            **err_info**
+                - string
+                - what went wrong
+
+    *request*
+        SHMultiProcessCreate
+
+    *see also*
+        SHProcessKill
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.SHMultiProcessCreateResponse>`
+
+    .. _shprocesskillresponse:
 
 93. **SHProcessKillResponse**
 
     *type enum*
-        SH_PROCESS_KILL_RESPONSE (= 93)
+        SH_PROCESS_KILL_RESPONSE
 
     *purpose*
         Response to request to kill a process owned by this shepherd.
@@ -2744,7 +2803,7 @@ LS Process Messages
 37. **SHProcessExit**
 
     *type enum*
-        SH_PROCESS_EXIT (= 37)
+        SH_PROCESS_EXIT
 
     *purpose*
         This message is sent to Global Services when a managed process exits.
@@ -2778,7 +2837,7 @@ OS resources.
 79. **SHPoolCreate**
 
     *type enum*
-        SH_POOL_CREATE (= 79)
+        SH_POOL_CREATE
 
     *purpose*
         Create a new memory pool.
@@ -2817,7 +2876,7 @@ OS resources.
 80. **SHPoolCreateResponse**
 
     *type enum*
-        SH_POOL_CREATE_RESPONSE (= 80)
+        SH_POOL_CREATE_RESPONSE
 
     *purpose*
         Response to request to create a new memory pool.
@@ -2854,7 +2913,7 @@ OS resources.
 81.  **SHPoolDestroy**
 
     *type enum*
-        SH_POOL_DESTROY (= 81)
+        SH_POOL_DESTROY
 
     *purpose*
         Request to destroy a memory pool.
@@ -2877,7 +2936,7 @@ OS resources.
 82.  **SHPoolDestroyResponse**
 
     *type enum*
-        SH_POOL_DESTROY_RESPONSE (= 82)
+        SH_POOL_DESTROY_RESPONSE
 
     *purpose*
         Response to request to destroy a memory pool
@@ -2909,7 +2968,7 @@ OS resources.
 83.  **SHExecMemRequest**
 
     *type enum*
-        SH_EXEC_MEM_REQUEST (= 83)
+        SH_EXEC_MEM_REQUEST
 
     *purpose*
         Request to execute a memory request.   This message contains a serialized
@@ -2939,7 +2998,7 @@ OS resources.
 84.  **SHExecMemResponse**
 
     *type enum*
-        SH_EXEC_MEM_RESPONSE (= 84)
+        SH_EXEC_MEM_RESPONSE
 
     *purpose*
         Response to request to execute a memory request.  Note that there is no
@@ -2984,7 +3043,7 @@ Channel Messages
 38. **SHChannelCreate**
 
     *type enum*
-        SH_CHANNEL_CREATE (= 38)
+        SH_CHANNEL_CREATE
 
     *purpose*
         Request to create a channel in a memory pool known to this shepherd.
@@ -3020,7 +3079,7 @@ Channel Messages
 39. **SHChannelCreateResponse**
 
     *type enum*
-        SH_CHANNEL_CREATE_RESPONSE (= 39)
+        SH_CHANNEL_CREATE_RESPONSE
 
     *purpose*
         Response to channel allocation request.
@@ -3049,7 +3108,7 @@ Channel Messages
 40. **SHChannelDestroy**
 
     *type enum*
-        SH_CHANNEL_DESTROY (= 40)
+        SH_CHANNEL_DESTROY
 
     *purpose*
         Request to free a previously allocated channel.
@@ -3072,7 +3131,7 @@ Channel Messages
 41. **SHChannelDestroyResponse**
 
     *type enum*
-        SH_CHANNEL_DESTROY_RESPONSE (= 41)
+        SH_CHANNEL_DESTROY_RESPONSE
 
     *purpose*
         Response to request to free a previously allocated channel.
@@ -3101,7 +3160,7 @@ Channel Messages
     PLACEHOLDER
 
     *type enum*
-        SH_LOCK_CHANNEL (= 42)
+        SH_LOCK_CHANNEL
 
     *purpose*
         Request to lock a channel
@@ -3133,7 +3192,7 @@ Channel Messages
     PLACEHOLDER
 
     *type enum*
-        SH_LOCK_CHANNEL_RESPONSE (= 43)
+        SH_LOCK_CHANNEL_RESPONSE
 
     *purpose*
         Response to request to lock a channel
@@ -3165,7 +3224,7 @@ Memory Allocation Messages
     PLACEHOLDER - maybe OBE
 
     *type enum*
-        SH_ALLOC_MSG (= 44)
+        SH_ALLOC_MSG
 
     *purpose*
         Request a shared memory allocation for a large message
@@ -3188,7 +3247,7 @@ Memory Allocation Messages
     PLACEHOLDER - OBE?
 
     *type enum*
-        SH_ALLOC_MSG_RESPONSE (= 45)
+        SH_ALLOC_MSG_RESPONSE
 
     *purpose*
         Response to a requested allocation for a large message
@@ -3215,7 +3274,7 @@ Memory Allocation Messages
 
 
     *type enum*
-        SH_ALLOC_BLOCK (= 46)
+        SH_ALLOC_BLOCK
 
     *purpose*
         Request a shared memory allocation for generic memory
@@ -3250,7 +3309,7 @@ Memory Allocation Messages
     PLACEHOLDER - OBE?
 
     *type enum*
-        SH_ALLOC_BLOCK_RESPONSE (= 47)
+        SH_ALLOC_BLOCK_RESPONSE
 
     *purpose*
         Response to a requested allocation for generic memory
@@ -3311,7 +3370,7 @@ value 0 in the single node case.
 49. **SHChannelsUp**
 
     *type enum*
-        SH_CHANNELS_UP (= 49)
+        SH_CHANNELS_UP
 
     *purpose*
         Notify Launcher that this Shepherd has allocated the shared
@@ -3342,7 +3401,7 @@ value 0 in the single node case.
 50. **SHPingGS**
 
     *type enum*
-        SH_PING_GS (= 50)
+        SH_PING_GS
 
     *purpose*
         Acknowledge to Global Services that this Shepherd is up and
@@ -3368,7 +3427,7 @@ value 0 in the single node case.
 51. **SHHalted**
 
     *type enum*
-        SH_HALTED (= 51)
+        SH_HALTED
 
     *purpose*
         Notify launcher that this Shepherd is halted.
@@ -3387,7 +3446,7 @@ value 0 in the single node case.
 56. **SHTeardown**
 
     *type enum*
-        SH_TEARDOWN (= 56)
+        SH_TEARDOWN
 
     *purpose*
         Direct Shepherd to do a clean teardown.
@@ -3403,7 +3462,7 @@ value 0 in the single node case.
 57. **SHPingBE**
 
     *type enum*
-        SH_PING_BE (= 57)
+        SH_PING_BE
 
     *purpose*
         Shepherd handshake with MRNet backend
@@ -3437,7 +3496,7 @@ value 0 in the single node case.
 62. **SHHaltBE**
 
     *type enum*
-        SH_HALT_BE (= 62)
+        SH_HALT_BE
 
     *purpose*
         Shepherd telling the MRNet backend to exit.
@@ -3452,7 +3511,7 @@ value 0 in the single node case.
 52. **SHFwdInput**
 
     *type enum*
-        SH_FWD_INPUT (= 52)
+        SH_FWD_INPUT
 
     *purpose*
         Message carrying data intended to be written into the
@@ -3486,7 +3545,7 @@ value 0 in the single node case.
 53. **SHFwdInputErr**
 
     *type enum*
-        SH_FWD_INPUT (= 53)
+        SH_FWD_INPUT
 
     *purpose*
         Error response to a forward input message. This message
@@ -3530,7 +3589,7 @@ value 0 in the single node case.
 54. **SHFwdOutput**
 
     *type enum*
-        SH_FWD_OUTPUT (= 54)
+        SH_FWD_OUTPUT
 
     *purpose*
         Message carrying data from either stdout or stderr of a process
@@ -3570,7 +3629,7 @@ value 0 in the single node case.
 60. **SHHaltTA**
 
     *type enum*
-        SH_HALT_TA (= 60)
+        SH_HALT_TA
 
     *purpose*
         Message coming from Launcher to the Shepherd, telling it to tell TA to halt.
@@ -3586,7 +3645,7 @@ value 0 in the single node case.
 67. **SHDumpState**
 
     *type enum*
-        SH_DUMP (= 67)
+        SH_DUMP_STATE
 
     *purpose*
         Primarily debugging.  Makes the Shepherd dump its state in
@@ -3615,7 +3674,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 
     *type enum*
 
-        LA_BROADCAST (= 68)
+        LA_BROADCAST
 
     *purpose*
 
@@ -3645,7 +3704,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 
     *type enum*
 
-        LA_PASSTHRU_FB (= 69)
+        LA_PASS_THRU_FB
 
     *purpose*
 
@@ -3684,7 +3743,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 
     *type enum*
 
-        LA_PASSTHRU_BF (= 70)
+        LA_PASS_THRU_BF
 
     *purpose*
 
@@ -3716,7 +3775,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 
     *type enum*
 
-        LA_SERVER_MODE (= 86)
+        LA_SERVER_MODE
 
     *purpose*
 
@@ -3755,7 +3814,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 
     *type enum*
 
-    LA_SERVER_MODE_EXIT (= 87)
+    LA_SERVER_MODE_EXIT
 
     *purpose*
 
@@ -3775,7 +3834,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 74. **LAProcessDict**
 
     *type enum*
-        LA_PROCESS_DICT  (= 88)
+        LA_PROCESS_DICT
 
     *purpose*
         Return a dictionary of process information  for all the processes
@@ -3797,7 +3856,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 75. **LAProcessDictResponse**
 
     *type enum*
-        LA_PROCESS_DICT_RESPONSE  (= 89)
+        LA_PROCESS_DICT_RESPONSE
 
     *purpose*
         Responds with a dictionary for all the processes
@@ -3820,7 +3879,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 76. **LADumpState**
 
     *type enum*
-        LA_DUMP (= 90)
+        LA_DUMP_STATE
 
     *purpose*
         Primarily debugging.  Makes the Launcher dump its state in
@@ -3840,7 +3899,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 77. **LANodeIdxSH**
 
     *type enum*
-        LA_NODEINDEX_SH (= 91)
+        LA_NODEINDEX_SH
 
     *purpose*
         Communicates the node index from the Launcher Back End to the
@@ -3860,7 +3919,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 78. **LAChannelsInfo**
 
     *type_enum*
-        LA_CHANNELS_INFO (=92)
+        LA_CHANNELS_INFO
 
     *purpose*
         Broadcast to all nodes to provide hostnames, node indices,
@@ -3900,7 +3959,7 @@ These messages go to the :ref:`Launcher` frontend in standard and server mode vi
 94. **Breakpoint**
 
      *type_enum*
-         BREAKPOINT (=94)
+         BREAKPOINT
 
      *purpose*
          Inform front end that a managed process has reached a breakpoint for the first time
@@ -3938,7 +3997,7 @@ the launcher in both regular and server mode. They are communicated through the 
 106. **BEIsUp**
 
     *type enum*
-        BE_IS_UP (= 106)
+        BE_IS_UP
 
     *purpose*
         Confirm to Launcher Frontend that the Backend is up and send its serialized
@@ -3964,7 +4023,7 @@ the launcher in both regular and server mode. They are communicated through the 
 58. **BEPingSH**
 
     *type enum*
-        BE_PING_SH (= 58)
+        BE_PING_SH
 
     *purpose*
         MRNet backend handshake with Shepherd
@@ -3979,7 +4038,7 @@ the launcher in both regular and server mode. They are communicated through the 
 63. **BEHalted**
 
     *type enum*
-        BE_HALTED (= 63)
+        BE_HALTED
 
     *purpose*
         Indicate that the MRNet backend instance on this node has exited normally.
@@ -3995,7 +4054,7 @@ the launcher in both regular and server mode. They are communicated through the 
 91. **BENodeIdxSH**
 
     *type enum*
-        BE_NODEINDEX_SH (= 91)
+        BE_NODE_IDX_SH
 
     *purpose*
 
@@ -4042,7 +4101,7 @@ the launcher in both regular and server mode.
 107. **FENodeIdxBE**
 
     *type enum*
-        FE_NODE_IDX_BE (= 107)
+        FE_NODE_IDX_BE
 
     *purpose*
         The Frontend sends the node index to the Backend, based on the backend's host_id.
@@ -4061,7 +4120,7 @@ the launcher in both regular and server mode.
 108. **HaltOverlay**
 
     *type enum*
-        HALT_OVERLAY (= 108)
+        HALT_OVERLAY
 
     *purpose*
         Indicate that monitoring of the overlay network should cease
@@ -4076,7 +4135,7 @@ the launcher in both regular and server mode.
 109. **HaltLoggingInfra**
 
     *type enum*
-        HALT_LOGGING_INFRA (= 109)
+        HALT_LOGGING_INFRA
 
     *purpose*
         Indicate that monitoring of logging messages from the backend should cease
@@ -4092,7 +4151,7 @@ the launcher in both regular and server mode.
 116. **LAExit**
 
     *type enum*
-        LA_EXIT (= 116)
+        LA_EXIT
 
     *purpose*
         Indicate the launcher should exit. Use in case the launcher teardown was unable to
@@ -4120,7 +4179,7 @@ logged to file or terminal.
 97. **LoggingMsg**
 
     *type enum*
-        LOGGING_MSG (= 97)
+        LOGGING_MSG
 
     *purpose*
         To take logging strings provided via python logging (``eg: log.info('message')``)
@@ -4175,7 +4234,7 @@ logged to file or terminal.
 98. **LoggingMsgList**
 
     *type enum*
-        LOGGING_MSG_LIST (= 98)
+        LOGGING_MSG_LIST
 
     *purpose*
         Takes a list of :ref:`LoggingMsg <loggingmsg>` and aggregates them into a single
@@ -4193,7 +4252,7 @@ logged to file or terminal.
 99. **LogFlushed**
 
     *type enum*
-        LOG_FLUSHED (= 99)
+        LOG_FLUSHED
 
     *purpose*
         Sent by MRNet server backend to frontend after it has completed its final
@@ -4219,7 +4278,7 @@ related to setup and teardown control through the *TA Channel*.
 59. **TAPingSH**
 
     *type enum*
-        TA_PING_SH (= 59)
+        TA_PING_SH
 
     *purpose*
         Indicate that the TA instance on this node has come up and
@@ -4236,7 +4295,7 @@ related to setup and teardown control through the *TA Channel*.
 61. **TAHalted**
 
     *type enum*
-        TA_HALTED (= 61)
+        TA_HALTED
 
     *purpose*
         Indicate that the TA instance on this node has exited normally.
@@ -4253,7 +4312,7 @@ related to setup and teardown control through the *TA Channel*.
 64. **TAUp**
 
     *type enum*
-        TA_UP (= 64)
+        TA_UP
 
     *purpose*
         Indicate that the TA instance on this node is up and ready.
@@ -4268,7 +4327,7 @@ related to setup and teardown control through the *TA Channel*.
 109. **OverlayPingBE**
 
     *type enum*
-        OVERLAY_PING_BE (= 109)
+        OVERLAY_PING_BE
 
     *purpose*
         Indicate that the Overlay instance on this backend node is up and ready.
@@ -4283,7 +4342,7 @@ related to setup and teardown control through the *TA Channel*.
 110. **OverlayPingLA**
 
     *type enum*
-        OVERLAY_PING_LA (= 110)
+        OVERLAY_PING_LA
 
     *purpose*
         Indicate that the Overlay instance on this frontend node is up and ready.
@@ -4299,7 +4358,7 @@ related to setup and teardown control through the *TA Channel*.
 112. **LAHaltOverlay**
 
     *type enum*
-        LA_HALT_OVERLAY (= 112)
+        LA_HALT_OVERLAY
 
     *purpose*]
         Launcher frontend requests a shutdown of Overlay agent
@@ -4314,7 +4373,7 @@ related to setup and teardown control through the *TA Channel*.
 113. **BEHaltOverlay**
 
     *type enum*
-        BE_HALT_OVERLAY (= 113)
+        BE_HALT_OVERLAY
 
     *purpose*]
         This backend node requests a shutdown of its Overlay agent
@@ -4329,7 +4388,7 @@ related to setup and teardown control through the *TA Channel*.
 114. **OverlayHalted**
 
     *type enum*
-        OVERLAY_HALTED (= 114)
+        OVERLAY_HALTED
 
     *purpose*]
         This overlay instance has shutdown

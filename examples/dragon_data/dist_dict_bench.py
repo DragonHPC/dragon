@@ -17,7 +17,6 @@ class DictOp(enum.Enum):
 
 def do_dict_ops(_keys, _dict, client_id, iterations, msg_size, result_link, dict_op):
     """Function used to execute operations on the shared Dragon dictionary
-
     :param _keys: List of all the keys of the dictionary
     :type _keys: list
     :param _dict: A dragon dictionary object
@@ -67,7 +66,6 @@ def do_dict_ops(_keys, _dict, client_id, iterations, msg_size, result_link, dict
 
 def generate_keys(dict_size=100):
     """Generate a list including the keys that will be used for the dictionary.
-
     :param dict_size: Total number of keys to be populated in the dicitonary
     :type dict_size: int
     :return: List of keys to be stored along with values in the dictionary
@@ -77,8 +75,9 @@ def generate_keys(dict_size=100):
     letters = string.ascii_letters
 
     for _ in range(dict_size):
-        # each key is 30 characters long
-        key = ''.join(random.choice(letters) for i in range(30)) # characters can be repeated
+        # each key is 8 characters long
+        key = ''.join(random.choice(letters) for i in range(8)) # characters can be repeated
+
         my_keys.append(key)
 
     assert len(my_keys) == dict_size
@@ -88,7 +87,6 @@ def generate_keys(dict_size=100):
 def assign_keys(_dict, keys, value_size):
     """Initiate the dictionary. Assign the values to each key in the provided list.
     Each value is a string of msg_size characters long.
-
     :param _dict: A dragon dictionary object
     :type _dict: dragon dictionary
     :param keys: List of keys to assign values in the dictionary
@@ -188,6 +186,7 @@ if __name__ == "__main__":
 
     for ii in range(len(dict_ops)):
         result_links = [mp.Pipe(duplex=False) for _ in range(num_clients)]
+        print(f'======================= start client operations ==============================')
         try:
             procs = []
             for i in range(num_clients):

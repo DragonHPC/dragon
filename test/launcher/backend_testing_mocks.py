@@ -673,9 +673,9 @@ class BackendOverlay:
         self.log.debug(f"send_OverlayPingBE sent {overlay_ping_be=}")
 
     def recv_TAUpdateNodes(self):
-        be_hsta_update_nodes = get_with_blocking(self.be_ta_conn)
-        assert isinstance(be_hsta_update_nodes, dmsg.TAUpdateNodes), "expected TAUpdateNodes"
-        self.log.debug(f"recv_TAUpdateNodes got {be_hsta_update_nodes=}")
+        be_ta_update_nodes = get_with_blocking(self.be_ta_conn)
+        assert isinstance(be_ta_update_nodes, dmsg.TAUpdateNodes), "expected TAUpdateNodes"
+        self.log.debug(f"recv_TAUpdateNodes got {be_ta_update_nodes=}")
 
     def recv_BEHaltOverlay(self):  # M22
         be_halt_overlay = get_with_blocking(self.be_ta_conn)

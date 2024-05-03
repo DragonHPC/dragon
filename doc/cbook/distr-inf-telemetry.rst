@@ -211,7 +211,7 @@ in :numref:`single-prompt-response`.
 .. figure:: images/llm-grafana-telem-data.jpg
     :scale: 60%
     :name: node-telemetry
-
+    
     **Node telemetry data that is visualized using Grafana GUI and highlights the load balanced nature of this example**
 
 

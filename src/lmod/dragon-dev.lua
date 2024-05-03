@@ -36,7 +36,7 @@ local DRAGON_BASE_DIR = capture(base_dir):gsub("\n$", "")
 
 -- environment modifications --
 
-setenv("DRAGON_VERSION", "0.8")
+setenv("DRAGON_VERSION", "0.9")
 
 -- get project dir
 setenv("DRAGON_BASE_DIR", DRAGON_BASE_DIR)

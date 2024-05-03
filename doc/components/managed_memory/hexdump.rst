@@ -21,7 +21,7 @@ an indentation string.
 
 .. code-block:: C
     :caption: **Hex Dump Example Code**
-    :name: hex-dump-example-code
+    :name: hex-dump-example-code 
 
     hex_dump_to_fd(fd, "BITS",(void*)set->data,num_bytes,indent);
 
@@ -32,7 +32,7 @@ string to print before each line of the dump.
 
 .. code-block:: text
     :caption: **Hex Dump Sample Output**
-    :name: hex-dump-example-output
+    :name: hex-dump-example-output 
 
     *  BITS:
     *    00007FCF60C97070 80 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................

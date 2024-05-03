@@ -24,7 +24,7 @@ sys.path.insert(0, os.path.abspath("."))
 # -- Project information -----------------------------------------------------
 
 project = "Dragon"
-DragonVersion = "0.8"
+DragonVersion = "0.9"
 copyright = "2024, Hewlett Packard Enterprise"
 author = "Michael Burke, Eric Cozzi, Zach Crisler, Julius Donnert, Veena Ghorakavi, Nick Hill, Maria Kalantzi, Ben Keen, Kent D. Lee, Pete Mendygral, Davin Potts and Nick Radcliffe"
 
@@ -121,5 +121,19 @@ class AutoDocstringOnly(autodoc.MethodDocumenter):
     def add_directive_header(self, sig):
         pass
 
+autodoc_default_flags = ['members', 'private-members', 'special-members',
+                         #'undoc-members',
+                         'show-inheritance']
+
+def autodoc_skip_member(app, what, name, obj, skip, options):
+    # Ref: https://stackoverflow.com/a/21449475/
+    exclusions = ('__weakref__', '__new__', # special-members
+                  '__doc__', '__module__', '__dict__',  # undoc-members
+                  )
+    exclude = name in exclusions
+    # return True if (skip or exclude) else None  # Can interfere with subsequent skip functions.
+    return True if exclude else None
+
 def setup(app):
+    app.connect('autodoc-skip-member', autodoc_skip_member)
     app.add_autodocumenter(AutoDocstringOnly)

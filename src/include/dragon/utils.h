@@ -12,6 +12,9 @@
 extern "C" {
 #endif
 
+dragonULInt
+dragon_get_local_rt_uid();
+
 dragonError_t
 dragon_set_procname(char * name);
 
@@ -55,13 +58,28 @@ dragonError_t
 dragon_timespec_remaining(const timespec_t * deadline, timespec_t * remaining_timeout);
 
 char*
-dragon_base64_encode(uint8_t *data, size_t input_length, size_t *output_length);
+dragon_base64_encode(uint8_t *data, size_t input_length);
 
 uint8_t*
-dragon_base64_decode(const char *data, size_t input_length, size_t *output_length);
+dragon_base64_decode(const char *data, size_t *output_length);
 
 dragonULInt
 dragon_hash_ulint(dragonULInt x);
+
+dragonULInt
+dragon_hash(void* ptr, size_t num_bytes);
+
+bool
+dragon_bytes_equal(void* ptr1, void* ptr2, size_t ptr1_numbytes, size_t ptr2_numbytes);
+
+dragonError_t
+dragon_ls_set_kv(const unsigned char* key, const unsigned char* value, const timespec_t* timeout);
+
+dragonError_t
+dragon_ls_get_kv(const unsigned char* key, char** value, const timespec_t* timeout);
+
+uint64_t
+dragon_sec_to_nsec(uint64_t sec);
 
 #ifdef __cplusplus
 }

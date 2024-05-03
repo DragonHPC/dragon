@@ -45,12 +45,12 @@ Architecture
 ============
 
 .. figure:: images/shepherd.svg
-    :name: shepherd
+    :name: shepherd 
 
     **Internal Shepherd Structure**
 
 .. figure:: images/shepherdstructure.png
-    :name: shepherdstructure
+    :name: shepherdstructure 
 
     **Internal Shepherd Structure**
 
@@ -121,7 +121,7 @@ Process Management
 ==================
 
 .. figure:: images/processstates.png
-    :name: processstates
+    :name: processstates 
 
     **Process State Transition Diagram**
 
@@ -154,7 +154,7 @@ all notifications about output on standard output and error, while the Global Se
 notification of the termination of the process.
 
 .. figure:: images/managedservices.png
-    :name: managedservices
+    :name: managedservices 
 
     **Managed Process services provided by Local Services**
 
@@ -190,7 +190,7 @@ The Local Services/Global Services Integration
 ========================================
 
 .. figure:: images/gsmonitor.png
-    :name: gsmonitor
+    :name: gsmonitor 
 
     **The Global Services Monitor**
 

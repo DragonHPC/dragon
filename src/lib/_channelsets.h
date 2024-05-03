@@ -28,6 +28,7 @@ typedef struct dragonChannelSet_st {
     int num_channels;
     bool first_poll_call;
     uint8_t event_mask;
+    pthread_t tid;
 } dragonChannelSet_t;
 
 typedef struct dragonChannelSetCallbackArg_st {

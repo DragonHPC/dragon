@@ -156,7 +156,7 @@ attach_to_parent_channel(dragonChannelDescr_t *parent_ch,
 
     dragonChannelSerial_t parent_ch_ser;
 
-    parent_ch_ser.data = dragon_base64_decode(tmp, strlen(tmp), &parent_ch_ser.len);
+    parent_ch_ser.data = dragon_base64_decode(tmp, &parent_ch_ser.len);
 
     dragonError_t err = DRAGON_SUCCESS;
 

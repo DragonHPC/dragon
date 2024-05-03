@@ -23,10 +23,13 @@ The untarred distribution file contains several subdirectories directories
 including the following. All provided commands are relative to the directory
 that contains this README.md.
 
+* The pycapnp-*.whl file must be pip3 installed once for your environment.
+
+        pip3 install --force-reinstall pycapnp-*.whl
 
 * The dragon-*.whl file must be pip3 installed once for your environment.
 
-        pip3 install --force-reinstall dragon-0.8-*.whl
+        pip3 install --force-reinstall dragon-0.9-*.whl
 
 * Check and possibly update that `$PATH` has the location of pip installed
   console scripts, such as ~/.local/bin
@@ -36,7 +39,7 @@ that contains this README.md.
 * modulefiles - This contains module files that are needed when using Dragon.
   You must set up the environment by loading the dragon module as follows.
 
-        module use [/path to dragon-0.8]/modulefiles
+        module use [/path to dragon-0.9]/modulefiles
         module load dragon
 
   If you intend to use Dragon on your own Linux VM or an image that you
@@ -56,7 +59,7 @@ that contains this README.md.
   itself. Also under this directory are the standard Python multiprocessing unit
   tests packaged for easier use with Dragon (these have been developed for
   Python 3.9 but are still in progress for Python 3.10 and 3.11.) There is a
-  README.md in the `examples` directory with more information about these
+  README.md in the `examples` directory with more information about these 
   demonstration programs.
 
 * dragon_unittests - This directory contains a selection of Dragon-specific unit
@@ -73,7 +76,7 @@ that contains this README.md.
   of Dragon.
 
 After doing the `pip3 install` and the
-`module use [/path to dragon-0.8]/modulefiles && module load dragon` you have
+`module use [/path to dragon-0.9]/modulefiles && module load dragon` you have
 completed the prerequisites for running Dragon multiprocessing programs.
 
 Running a Program using Dragon

@@ -11,15 +11,15 @@ import gc
 import unittest
 import test.support
 
-try:
-    from test.support.os_helper import fd_count
-    from test.support.os_helper import TESTFN
-    from test.support.os_helper import unlink
+try: 
+    from test.support.os_helper import fd_count 
+    from test.support.os_helper import TESTFN 
+    from test.support.os_helper import unlink 
 except ImportError:
     #location prior to Python 3.10
     from test.support import fd_count
-    from test.support import TESTFN
-    from test.support import unlink
+    from test.support import TESTFN 
+    from test.support import unlink 
 
 
 import threading
