@@ -2,7 +2,7 @@
 
 This is Dragon's specialized implementations of a Queue, working
 in both single and multi node settings. The API is similar to Multiprocessing.Queue
-but has a number of extentions and simplifications.
+but has a number of extensions and simplifications.
 
 The implementation relies on Dragon GS Client API and the Dragon runtime libraries.
 """
