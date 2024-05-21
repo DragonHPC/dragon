@@ -122,7 +122,7 @@ class dragon.mpbridge.queues.PatchedDragonNativeQueue {
     - _reset()
     - _on_queue_feeder_error()
 }
-note right: "Implements Multiprocessing specific \nextentions/changes to our native API"
+note right: "Implements Multiprocessing specific \nextensions/changes to our native API"
 dragon.mpbridge.queues.PatchedDragonNativeQueue --|> dragon.native.queue.Queue
 
 class dragon.native.queue.Queue {

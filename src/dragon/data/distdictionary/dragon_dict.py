@@ -300,7 +300,7 @@ class DragonDict:
         # Wait on the client channel to receive the message from the manager
         ret_val = message.read_message()
         if not ret_val:
-            LOG.debug(f"Failed: Dictionay does not contain the key: {key}.")
+            LOG.debug(f"Failed: Dictionary does not contain the key: {key}.")
         return ret_val
 
     def pop(self, key: object) -> object:

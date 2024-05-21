@@ -4,7 +4,7 @@ Creating and Using a Queue in Dragon Native
 The Dragon Native Queue implementation is Dragon's specialized
 implementation of a Queue, working in both single and multi node settings. 
 It is interoperable in all supported languages. The API is similar to Python's
-Multiprocessing.Queue in many ways, but has a number of extentions and
+Multiprocessing.Queue in many ways, but has a number of extensions and
 simplifications. In particular, the queue can be initialized as joinable, which
 allows to join on the completion of an item.
 
