@@ -33,7 +33,7 @@ extern "C" {
 #define DRAGON_MEMORY_POOL_UMAP_SEED 7
 #define DRAGON_MEMORY_MEM_UMAP_SEED 9
 
-#define DRAGON_MEMORY_POOLSER_NULINTS 4
+#define DRAGON_MEMORY_POOLSER_NULINTS 5
 #define DRAGON_MEMORY_POOL_MAX_SERIALIZED_LEN (DRAGON_MEMORY_MAX_FILE_NAME_LENGTH + (sizeof(dragonULInt) * DRAGON_MEMORY_POOLSER_NULINTS))
 #define DRAGON_MEMORY_MAX_SERIALIZED_LEN (DRAGON_MEMORY_POOL_MAX_SERIALIZED_LEN + (DRAGON_MEMORY_MEMSER_NULINTS * (sizeof(dragonULInt))))
 #define DRAGON_MEMORY_MEMSER_NULINTS 4
@@ -71,6 +71,7 @@ typedef struct dragonMemoryPoolHeader_st {
    be able to serialize a remote memory pool */
 typedef struct dragonRemoteMemoryPoolInfo_st {
     dragonULInt hostid;
+    dragonULInt rt_uid;
     dragonULInt m_uid;
     dragonULInt mem_type;
     dragonULInt manifest_len;
@@ -88,6 +89,7 @@ typedef struct dragonMemoryPool_st {
     int mfd; // Manifest file descriptor
     size_t data_requested_size;
     size_t manifest_requested_size; // the max number of manifest records
+    bool runtime_is_local;
     void * local_dptr; // Data blob pointer, if == NULL then this pool is non-local.
     void * mptr; // Manifest blob pointer
     dragonMemoryPoolHeap_t heap;

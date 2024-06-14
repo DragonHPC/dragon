@@ -328,7 +328,14 @@ class Connection:
                 self.read_adapter.advance_raw_header(msg_len)
                 buf = bytearray(msg_len)
                 self.read_adapter.readinto(memoryview(buf))
-                obj = pickle.loads(buf)
+                # The following try-except is here so we can receive unpickled raw data through
+                # this recv and it is there only as long as we have infrastructure processes
+                # sending unpickled data through channels while it is being received here. This
+                # presently occurs when sending messages from C/C++ to infrastructure components.
+                try:
+                    obj = pickle.loads(buf)
+                except pickle.UnpicklingError:
+                    return buf
             else:
                 obj = pickle.load(self.read_adapter)
         except EOFError:

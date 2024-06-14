@@ -16,6 +16,7 @@ from ..infrastructure import messages as dmsg
 from ..infrastructure import connection as dconn
 from ..infrastructure import parameters as dp
 from ..infrastructure import util as dutil
+from ..infrastructure import policy as dpolicy
 from ..utils import B64
 
 LOG = logging.getLogger('process:')
@@ -33,6 +34,7 @@ class ProcessContext:
         self.server = server
         self.request = request
         self.reply_channel = reply_channel
+        self.node = node
         self.exit_msg = None
         self.destroy_request = None
         self.gs_ret_channel_context = None
@@ -75,6 +77,16 @@ class ProcessContext:
             capacity = None
         else:
             capacity = self.request.pipesize
+
+        if self.request.options.make_inf_channels:
+            req_msg = dmsg.GSChannelCreate(tag=self.server.tag_inc(), p_uid=0, r_c_uid=0,
+                                           m_uid=dfacts.infrastructure_pool_muid_from_index(which_node))
+            _, _, self.gs_ret_channel_context = channel_int.ChannelContext.construct(self.server, req_msg, fake_reply_channel,
+                                node_override=self.process_parms.index, send_msg=False)
+            self.gs_ret_channel_context.incref()
+            gs_ret_chan_msg = self.gs_ret_channel_context.shchannelcreate_msg
+        else:
+            gs_ret_chan_msg = None
 
         if self.request.stdin == dmsg.PIPE:
             puid = self.process_parms.my_puid
@@ -136,7 +148,9 @@ class ProcessContext:
                                     stdin_msg=stdin_msg,
                                     stdout_msg=stdout_msg,
                                     stderr_msg=stderr_msg,
-                                    pmi_info=self.request._pmi_info)  #pylint: disable=protected-access
+                                    pmi_info=self.request._pmi_info,
+                                    layout=self.request.layout,
+                                    gs_ret_chan_msg=gs_ret_chan_msg)  #pylint: disable=protected-access
 
     def mk_sh_proc_kill(self, the_tag, the_sig=signal.SIGKILL):
         return dmsg.SHProcessKill(tag=the_tag,
@@ -190,6 +204,10 @@ class ProcessContext:
         if not msg.user_name:
             msg.user_name = auto_name
 
+        # If a policy was passed through but has not been evaluated into a layout, do so now
+        if msg.layout is None and msg.policy is not None:
+            msg.layout = server.policy_eval.evaluate([msg.policy])[0]
+
         which_node = server.choose_shepherd(msg)
 
         context = cls(server=server, request=msg, reply_channel=reply_channel,
@@ -204,62 +222,37 @@ class ProcessContext:
 
         outbound_tag = None
 
-        # start making the infrastructure channels if they are needed,
-        # otherwise just start the process directly.
-        if msg.options.make_inf_channels:
-            LOG.debug(f'making inf channels for {which_node}')
-            fake_reply_channel = dutil.AbsorbingChannel()
-            gsr_msg = dmsg.GSChannelCreate(tag=server.tag_inc(), p_uid=0, r_c_uid=0,
-                                           m_uid=dfacts.infrastructure_pool_muid_from_index(which_node))
+        context.gs_ret_channel_context = None
+        outbound_tag, context.shprocesscreate_msg = context.send_start(send_msg)
 
-            issued, tag, chan_context = channel_int.ChannelContext.construct(server, gsr_msg,
-                                                                             fake_reply_channel)
+        # if it does not belong to a group issue a pending completion now
+        if not belongs_to_group:
+            server.pending[outbound_tag] = context.complete_construction
 
-            context.gs_ret_channel_context = chan_context
+        return True, outbound_tag, context
 
-            if not issued:
-                LOG.info(f'failed creating gs ret channel for puid {this_puid}')
-                context.descriptor.state = process_desc.ProcessDescriptor.State.DEAD
-                err_msg = 'gs channel create fail'
-                if send_msg:
-                    rm = dmsg.GSProcessCreateResponse(tag=server.tag_inc(),
-                                                      ref=msg.tag,
-                                                      err=dmsg.GSProcessCreateResponse.Errors.FAIL,
-                                                      err_info=err_msg)
-                    context.reply_channel.send(rm.serialize())
-                return False, err_msg, context
-            else:
-                server.pending[tag] = context.check_channel_const
-                return False, None, context
-        else:
-            context.gs_ret_channel_context = None
-            outbound_tag = context.send_start()
-
-            # if it does not belong to a group issue a pending completion now
-            if not belongs_to_group:
-                server.pending[outbound_tag] = context.complete_construction
-
-            return True, outbound_tag, context
-
-    def send_start(self):
-        # send request to shep, remember pending process.
-        shep_hdl = self.server.shep_inputs[self.descriptor.node]
+    def send_start(self, send_msg):
 
         outbound_tag = self.server.tag_inc()
         shep_req = self._mk_sh_proc_create(outbound_tag, self._descriptor.node)
 
-        # In cases where we are sending a large amount of
-        # messages, such as with the GSGroupCreate handler,
-        # we can fill the GS Input Queue with responses and
-        # basically cause the GS / TA / LS to be unable to
-        # send/receive any messages. To prevent this, we'll
-        # enqueue pending sends and interleave sending and
-        # receiving messages to allow us to process responses
-        # on the input queue.
+        if send_msg:
+            # In cases where we are sending a large amount of
+            # messages, such as with the GSGroupCreate handler,
+            # we can fill the GS Input Queue with responses and
+            # basically cause the GS / TA / LS to be unable to
+            # send/receive any messages. To prevent this, we'll
+            # enqueue pending sends and interleave sending and
+            # receiving messages to allow us to process responses
+            # on the input queue.
 
-        self.server.pending_sends.put((shep_hdl, shep_req.serialize()))
-        LOG.debug(f'request {shep_req} to shep')
-        return outbound_tag
+            # send request to shep, remember pending process.
+            shep_hdl = self.server.shep_inputs[self.descriptor.node]
+
+            self.server.pending_sends.put((shep_hdl, shep_req.serialize()))
+            LOG.debug(f'request {shep_req} to shep')
+
+        return outbound_tag, shep_req
 
     def check_channel_const(self, msg):
         """This is the channel construction message - see if that worked and if so
@@ -340,6 +333,21 @@ class ProcessContext:
         """
         if dmsg.SHProcessCreateResponse.Errors.SUCCESS == msg.err:
             self.descriptor.state = process_desc.ProcessDescriptor.State.ACTIVE
+
+            if self.gs_ret_channel_context is not None:
+                channel_constructed = self.gs_ret_channel_context.complete_construction(msg.gs_ret_chan_resp)
+
+                if not channel_constructed:
+                    err_msg = f'Failed to create GS return channel for {self.descriptor.p_uid}.'
+                    LOG.info(err_msg)
+                    self.descriptor.state = process_desc.ProcessDescriptor.State.DEAD
+                    if send_msg:
+                        rm = dmsg.GSProcessCreateResponse(tag=self.server.tag_inc(),
+                                                          ref=self.request.tag,
+                                                          err=dmsg.GSProcessCreateResponse.Errors.FAIL,
+                                                          err_info=err_msg)
+                        self.reply_channel.send(rm.serialize())
+                    return False
 
             if self.stdin_context is not None:
                 channel_constructed = self.stdin_context.complete_construction(msg.stdin_resp)

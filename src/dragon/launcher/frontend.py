@@ -7,8 +7,8 @@ import signal
 import subprocess
 from enum import Enum
 from shlex import quote
-
 from functools import total_ordering
+from typing import Optional
 
 from ..utils import B64
 from ..channels import Channel, ChannelError, ChannelEmpty, register_gateways_from_env, discard_gateways
@@ -19,7 +19,7 @@ from ..dlogging.util import DragonLoggingServices as dls
 from ..dlogging.util import _get_dragon_log_device_level, LOGGING_OUTPUT_DEVICE_DRAGON_FILE
 from ..dlogging.logger import DragonLogger, DragonLoggingError
 
-from ..infrastructure.util import route
+from ..infrastructure.util import route, get_external_ip_addr, rt_uid_from_ip_addrs
 from ..infrastructure.parameters import POLICY_INFRASTRUCTURE, this_process
 from ..infrastructure.connection import Connection, ConnectionOptions
 from ..infrastructure.node_desc import NodeDescriptor
@@ -34,6 +34,7 @@ from .wlm import WLM
 from .wlm.ssh import SSHSubprocessPopen
 
 LAUNCHER_FAIL_EXIT = 1
+LAUNCHER_SUCCESS_EXIT = 0
 
 
 class LauncherImmediateExit(Exception):
@@ -140,6 +141,8 @@ class LauncherFrontEnd():
 
         self.args_map = args_map
         self.nnodes = args_map.get('node_count', 0)
+        self.n_idle = args_map.get('idle_count', 0)
+        self.ntree_nodes = this_process.overlay_fanout
         self.network_prefix = args_map.get('network_prefix', dfacts.DEFAULT_TRANSPORT_NETIF)
         self.port = args_map.get('port', dfacts.DEFAULT_TRANSPORT_PORT)
         self._config_from_file = args_map.get('network_config', None)
@@ -164,8 +167,17 @@ class LauncherFrontEnd():
 When using SSH to execute dragon jobs, the TCP transport agent is the only allowed agent.
 Please resubmit your dragon launch command with the `--transport tcp` option set.
 '''
-            print(msg)
+            print(msg, flush=True)
             sys.exit(LAUNCHER_FAIL_EXIT)
+
+        # Handle some sanity checks on the resilient mode
+
+        # If using resilient mode, confirm --nodes or --idle is set.
+        # Checks on a sane node count occur in the frontend code
+        self.resilient = args_map.get('resilient', False)
+        if self.resilient:
+            if self.nnodes == 0 and self.n_idle == 0:
+                raise RuntimeError("resilient flag requires setting of '--nodes' or '--idle'")
 
         # Variety of other state trackers:
         self._sigint_count = 0
@@ -205,7 +217,10 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
 
     def __exit__(self, exc_type, exc_value, traceback):
 
+        log = logging.getLogger(dls.LA_FE).getChild('_cleanup')
+        log.debug('doing __exit__ cleanup')
         self._cleanup()
+        log.debug('exiting frontend via __exit__')
 
     def _kill_backend(self):
         '''Simple function for transmitting SIGKILL to backend with helpful message'''
@@ -506,10 +521,10 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         # Make sure we don't manage to call this more than once
         self._bumpy_exit.clear()
 
-    def sigint_handler(self, *args):
+    def _sigint_handler(self, *args):
         """Handler for SIGINT signals for graceful teardown
         """
-        log = logging.getLogger('sigint_handler')
+        log = logging.getLogger('_sigint_handler')
         log.debug('Entered sigint handler')
         self.sigint_log = logging.getLogger('sigint_route')
         self._sigint_count = self._sigint_count + 1
@@ -525,6 +540,25 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
             self._STBL[self._STATE.value][0](self)
         else:
             log.warning(f'SIGINT detected in {self._STATE} and no routing exists for it')
+
+
+    def _sighup_handler(self, *args):
+        log = logging.getLogger('_sighup_handler')
+        # needed for logging of set_quick_teardown path
+        self.sigint_log = logging.getLogger('sighup_route')
+        self._sigint_count = 2 
+
+        print("Frontend detected SIGHUP or SIGTERM from WLM. Attempting to clean up...", flush=True)
+        log.debug('caught sighup or sigterm on frontend')
+        self._set_quick_teardown()
+    
+        if self._STATE.value in LauncherFrontEnd._STBL:
+            self._STBL[self._STATE.value][0](self)
+        else:
+            log.warning(f'SIGHUP or SIGTERM detected in {self._STATE} and no routing exists for it')
+
+    def _sigterm_handler(self, *args):
+        self._dragon_cleanup_bumpy_exit()
 
     @route(FrontendState.NET_CONFIG.value, _STBL)
     def _sigint_net_config(self):
@@ -621,7 +655,6 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         the_env = dict(os.environ)
         the_env['DRAGON_NETWORK_CONFIG'] = self.net.compress()
 
-
         # TODO: The differentiation between the SSH path vs. other paths
         #       is clunky. Ideally, this could be abstracted to make the
         #       if/else disappear
@@ -673,11 +706,204 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
 
         return wlm_proc
 
-    def run_startup(self):
+    def construct_bcast_tree(self, net_conf, conn_policy, be_ups, frontend_sdesc):
+
+        log = logging.getLogger(dls.LA_FE).getChild('construct_bcast_tree')
+
+        # Pack up all of our node descriptors for the backend:
+        forwarding = {}
+        for be_up in be_ups:
+            assert isinstance(be_up, dmsg.BEIsUp), 'la_fe received invalid be up'
+            # TODO: VERIFY WE GET A UNIQUE CUID: keep a set of seen cuids.
+            # After attaching, get the cuid and compare it against the set
+            # of already seen cuids. Throw an exception if already seen.
+            # Delete the set after this loop.
+            log.debug(f'received descriptor: {be_up.be_ch_desc} and host_id: {be_up.host_id}')
+            for key, node_desc in net_conf.items():
+                if str(be_up.host_id) == str(node_desc.host_id):
+                    forwarding[key] = NodeDescriptor(host_id=int(node_desc.host_id),
+                                                     ip_addrs=node_desc.ip_addrs,
+                                                     overlay_cd=be_up.be_ch_desc)
+                    break
+
+        # Send out the FENodeIdx to the child nodes I own
+        conn_outs = {}  # key is the node_index and value is the Connection object
+        fe_node_idx_msg = dmsg.FENodeIdxBE(tag=dlutil.next_tag(),
+                                           node_index=0,
+                                           forward=forwarding,
+                                           send_desc=frontend_sdesc)
+
+        # Create a counter that increments to ensure there's an increment of 1 for each
+        # active node index. Otherwise, there may be problems in the bcast algorithm
+        fe_node_index = 0
+        for idx in range(len(net_conf) - 1):
+
+            # If we haven't grabbed enough nodes, do so and make sure they're active
+            if fe_node_index < this_process.overlay_fanout and net_conf[str(idx)].state is NodeDescriptor.State.ACTIVE:
+                log.debug(f'constructing FENodeIdxBE for {net_conf[str(idx)]} (idx = {idx} | fe_node_index = {fe_node_index})')
+                try:
+                    be_sdesc = B64.from_str(forwarding[str(idx)].overlay_cd)
+                    be_ch = Channel.attach(be_sdesc.decode(), mem_pool=self.fe_mpool)
+                    conn_options = ConnectionOptions(default_pool=self.fe_mpool, min_block_size=2 ** 16)
+                    conn_out = Connection(outbound_initializer=be_ch,
+                                          options=conn_options,
+                                          policy=conn_policy)
+                    conn_out.ghost = True
+
+                    # Update the node index to the one we're talking to
+                    fe_node_idx_msg.node_index = fe_node_index
+                    log.debug(f'sending {fe_node_idx_msg.uncompressed_serialize()}')
+                    conn_out.send(fe_node_idx_msg.serialize())
+
+                    conn_outs[fe_node_index] = conn_out
+                    fe_node_index = fe_node_index + 1
+
+                except ChannelError as ex:
+                    log.fatal(f'could not connect to BE channel with host_id {be_up.host_id}')
+                    raise RuntimeError('Connection with BE failed') from ex
+
+        log.info('sent all FENodeIdxBE msgs')
+
+        return conn_outs
+
+    def _set_node_to_down_state(self,
+                                host_id: int):
+        """Given a host ID, update the Net conf, setting the node to a down state
+
+        :param host_id: host ID of down node
+        :type host_id: int
+        """
+
+        log = logging.getLogger(dls.LA_FE).getChild('_set_node_to_down_state')
+
+        for index, node in self.net_conf.items():
+            if node.host_id == host_id:
+                log.debug(f'setting node index {index}, hostname {node.host_name} to down')
+                node.state = NodeDescriptor.State.DOWN
+
+    def _define_node_pools(self,
+                           net_conf: dict):
+        """Make net config match what we know about our node pools
+
+        :param net_conf: backend network configuration made of NodeDescriptor objects index by string integer
+        :type net_conf: dict
+        """
+
+        log = logging.getLogger(dls.LA_FE).getChild('_define_node_pools')
+
+        # Work out logic for our node counts:
+        nnodes = len(net_conf) - 1  # Remove the frontend from consideration
+        all_avail_nodes = nnodes
+        log.debug(f'requested {self.nnodes} and got {nnodes}')
+        if self.nnodes > 0:
+            if self.nnodes > nnodes:
+                log.exception('too many nodes requested')
+                raise ValueError('Not enough backend nodes allocated to match requested')
+            nnodes = self.nnodes
+        else:
+            self.nnodes = nnodes
+
+        # If doing resilient training, do some sanity checks on requested # nodes, idle nodes
+        if self.resilient:
+            # Confirm the number of idle nodes requested agrees with nnodes
+            if self.n_idle != 0:
+                if all_avail_nodes - (self.nnodes + self.n_idle) < 0:
+                    msg = f"Sum of requested active ({self.nnodes}) and idle ({self.n_idle}) nodes is greater than available ({all_avail_nodes})"
+                    raise RuntimeError(msg)
+            else:
+                self.n_idle = all_avail_nodes - self.nnodes
+            log.debug(f"Executing resilient mode with {self.n_idle} idle nodes")
+
+        # Make sure the number of active/idle nodes matches what's been requested
+        n_active = len([node for index, node in net_conf.items()
+                       if index != 'f' and node.state is NodeDescriptor.State.ACTIVE])
+
+        n_down = len([node for index, node in net_conf.items()
+                     if index != 'f' and node.state is NodeDescriptor.State.DOWN])
+        log.debug(f'currently have {n_active} active nodes against {n_down} down and {self.n_idle} idle')
+        if n_active != self.nnodes or n_down != 0:
+            current_active = 0
+            for index, node in net_conf.items():
+                if index == 'f':
+                    continue
+                elif current_active != self.nnodes and node.state is not NodeDescriptor.State.DOWN:
+                    if node.state in [NodeDescriptor.State.IDLE, NodeDescriptor.State.ACTIVE]:
+                        node.state = NodeDescriptor.State.ACTIVE
+                        current_active = current_active + 1
+                elif node.state != NodeDescriptor.State.DOWN:
+                    node.state = NodeDescriptor.State.IDLE
+
+            log.debug(f'Updated active list has {current_active} active nodes')
+            # Make sure the number of active nodes is not 0
+            if current_active == 0:
+                raise RuntimeError('No available backend hardware resources to use')
+
+            # Log if there are fewer than requested nodes available because too many have been
+            # marked as down
+            if current_active != self.nnodes:
+                self.nnodes = current_active
+                msg = '''There are fewer available backend nodes than requested.
+Will continue using the available nodes until all resources are exhausted.
+Performance may be suboptimal.'''
+                log.warning(msg)
+
+        # Make sure there is a designated primary node in the configuration and select one if there isn't
+        primary_election = [index for index, node in net_conf.items()
+                            if node.state is NodeDescriptor.State.ACTIVE and node.is_primary]
+
+        # Make sure there is just 1 primary node in case something screwy happened
+        if len(primary_election) != 1:
+            prim_set = False
+            for node in net_conf.values():
+                if node.state is NodeDescriptor.State.ACTIVE and not prim_set:
+                    log.debug(f'node {node} is now primary')
+                    node.is_primary = True
+                    prim_set = True
+                elif node.is_primary and prim_set:
+                    node.is_primary = False
+
+        return net_conf
+
+    def _define_overlay_network(self,
+                                net_conf: dict,
+                                fe_host_id: int,
+                                fe_ip_addr: str):
+        """Extract backend IP addresses, hostnames, and host IDs for overlay network comms
+
+        :param net_conf: Network configuration dict of NodeDescriptors keyed by string node index
+        :type net_conf: dict
+        :param fe_host_id: Host ID of frontend node
+        :type fe_host_id: int
+        :param fe_ip_addr: IP address of frontend node
+        :type fe_ip_addr: str
+        """
+
+        # Add as many as needed to meet the requested node count.
+        # We also find the minimum number of network interface cards
+        # per node.
+        min_nics_per_node = 99999
+        host_ids = [fe_host_id]
+        ip_addrs = [fe_ip_addr]
+        hostnames = []
+
+        for index, node in net_conf.items():
+            if index != 'f' and node.state is NodeDescriptor.State.ACTIVE:
+                min_nics_per_node = min(min_nics_per_node, len(net_conf[index].ip_addrs))
+                host_ids.append(str(net_conf[index].host_id))
+                ip_addrs.append(net_conf[index].ip_addrs[0])
+                hostnames.append(net_conf[index].host_name)
+
+        return host_ids, ip_addrs, hostnames, min_nics_per_node
+
+    def run_startup(self,
+                    net_conf: Optional[dict] = None):
         """Complete bring up of runtime services
+
+
+        :param net_conf: Net config for overlay network. Used if resiliency has been requested at initializationq, defaults to None
+        :type net_conf: dict, optional
         """
         log = logging.getLogger(dls.LA_FE).getChild('run_startup')
-
 
         # This is set here for the overlay network.
         this_process.set_num_gateways_per_node(dfacts.DRAGON_OVERLAY_DEFAULT_NUM_GW_CHANNELS_PER_NODE)
@@ -686,8 +912,16 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         self._STATE = FrontendState.NET_CONFIG
 
         try:
-            self._orig_sigint = signal.signal(signal.SIGINT, self.sigint_handler)
+            # Catch ctrl+c events
+            self._orig_sigint = signal.signal(signal.SIGINT, self._sigint_handler)
+
+            # Catch WLM killing off the backend
+            self._orig_sighup = signal.signal(signal.SIGHUP, self._sighup_handler)
+            
+            self._orig_sigterm = signal.signal(signal.SIGTERM, self._sigterm_handler)
+
             log.debug("got signal handling in place")
+
         except ValueError:
             # this error is thrown if we are running inside a child thread
             # which we do for unit tests. So pass on this
@@ -696,37 +930,56 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         self.la_fe_stdin = dlutil.OverlayNetLaFEQueue()
         self.la_fe_stdout = dlutil.LaOverlayNetFEQueue()
 
-        # Get the node config for the backend
-        log.debug('Getting the node config for the backend.')
-        if self._config_from_file is not None:
-            try:
-                log.info(f"Acquiring network config from file {self._config_from_file}")
-                self.net = NetworkConfig.from_file(self._config_from_file)
-            except Exception:
-                raise RuntimeError("Unable to acquire backend network configuration from input file.")
+        # If we have the config via an earlier frontend, don't do it all over again
+        if net_conf is None:
+            # Get the node config for the backend
+            log.debug('Getting the node config for the backend.')
+
+            if self._config_from_file is not None:
+                try:
+                    log.info(f"Acquiring network config from file {self._config_from_file}")
+                    self.net = NetworkConfig.from_file(self._config_from_file)
+                except Exception:
+                    raise RuntimeError("Unable to acquire backend network configuration from input file.")
+            else:
+                try:
+                    log.info("Acquiring network config via WLM queries")
+                    # This sigint trigger is -2 and -1 cases
+                    self.net = NetworkConfig.from_wlm(workload_manager=self._wlm,
+                                                      port=dfacts.DEFAULT_OVERLAY_NETWORK_PORT,
+                                                      network_prefix=dfacts.DEFAULT_TRANSPORT_NETIF,
+                                                      hostlist=self.hostlist,
+                                                      sigint_trigger=self._sigint_trigger)
+                except Exception:
+                    raise RuntimeError("Unable to acquire backend network configuration via workload manager")
+
+            self.net_conf = self.net.get_network_config()
         else:
-            try:
-                log.info("Acquiring network config via WLM queries")
-                # This sigint trigger is -2 and -1 cases
-                self.net = NetworkConfig.from_wlm(workload_manager=self._wlm,
-                                                  port=dfacts.DEFAULT_OVERLAY_NETWORK_PORT,
-                                                  network_prefix=dfacts.DEFAULT_TRANSPORT_NETIF,
-                                                  hostlist=self.hostlist,
-                                                  sigint_trigger=self._sigint_trigger)
-            except Exception:
-                raise RuntimeError("Unable to acquire backend network configuration via workload manager")
-        net_conf = self.net.get_network_config()
-        log.debug(f"net_conf = {net_conf}")
+            self.net_conf = net_conf
 
         if self._sigint_trigger == 0:
             signal.raise_signal(signal.SIGINT)
 
         # Add the frontend config
-        net_conf['f'] = NodeDescriptor.get_local_node_network_conf(network_prefix=self.network_prefix,
-                                                                   port_range=dfacts.DEFAULT_FRONTEND_PORT)
-        fe_host_id = str(net_conf['f'].host_id)
-        fe_ip_addr = net_conf['f'].ip_addrs[0]  # it includes the port
-        log.debug(f'node config: {net_conf}')
+        self.net_conf['f'] = NodeDescriptor.get_local_node_network_conf(network_prefix=self.network_prefix,
+                                                                        port_range=dfacts.DEFAULT_FRONTEND_PORT)
+        fe_host_id = str(self.net_conf['f'].host_id)
+        fe_ip_addr = self.net_conf['f'].ip_addrs[0]  # it includes the port
+        log.debug(f'network config: {self.net_conf}')
+        
+        # this will raise an OSError when the frontend is run on a compute node w/o external access 
+        try:
+            fe_ext_ip_addr = get_external_ip_addr().split(':')[0]
+        except OSError:
+            fe_ext_ip_addr = None
+
+        # this will exist even w/o external access 
+        head_node_ip_addr = self.net_conf['0'].ip_addrs[0].split(':')[0]
+        os.environ['DRAGON_HEAD_NODE_IP_ADDR'] = head_node_ip_addr
+        
+        if fe_ext_ip_addr is not None: 
+            os.environ['DRAGON_FE_EXTERNAL_IP_ADDR'] = fe_ext_ip_addr
+            os.environ['DRAGON_RT_UID'] = str(rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr))
 
         # Create my memory pool
         conn_options = ConnectionOptions(min_block_size=2 ** 16)
@@ -784,40 +1037,17 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         os.environ[dfacts.GW_ENV_PREFIX + str(dfacts.DRAGON_OVERLAY_DEFAULT_NUM_GW_CHANNELS_PER_NODE)] = encoded_ser_gw_str
         register_gateways_from_env()
 
-        # start my transport agent
-        nnodes = len(net_conf) - 1  # Exclude the frontend node from this
-        log.debug(f'requested {self.nnodes} and got {nnodes}')
-        if self.nnodes > 0:
-            if self.nnodes > nnodes:
-                log.exception('too many nodes requested')
-                raise ValueError('Not enough backend nodes allocated to match requested')
-            nnodes = self.nnodes
-        else:
-            self.nnodes = nnodes
-
-        log.debug(f'main has {nnodes} nodes')
+        # If we have any mods we need to make to the net_conf, do it now
+        self.net_conf = self._define_node_pools(self.net_conf)
 
         # Acquire the primary node and add
         # the frontend info to host_ids and ip_addrs, so the TA functions
-        host_ids = [str(net_conf['0'].host_id)] + [fe_host_id]
-        ip_addrs = [net_conf['0'].ip_addrs[0]] + [fe_ip_addr]
-        hostnames = [net_conf['0'].name]
+        host_ids, ip_addrs, hostnames, min_nics_per_node = self._define_overlay_network(self.net_conf,
+                                                                                        fe_host_id,
+                                                                                        fe_ip_addr)
 
-        # Add as many as needed to meet the requested node count.
-        # We also find the minimum number of network interface cards
-        # per node.
-        min_nics_per_node = 99999
-        for node_index in range(nnodes):
-            sindex = str(node_index)
-            min_nics_per_node = min(min_nics_per_node, len(net_conf[sindex].ip_addrs))
-            if not net_conf[sindex].is_primary:
-                host_ids.append(str(net_conf[sindex].host_id))
-                ip_addrs.append(net_conf[sindex].ip_addrs[0])
-                hostnames.append(net_conf[sindex].host_name)
-
-        log.debug(f"ip_addrs={ip_addrs}, host_ids={host_ids}")
+        log.debug(f"ip_addrs={ip_addrs}, host_ids={host_ids}, hostnames={hostnames}")
         log.debug(f'Found {min_nics_per_node} NICs per node.')
-
         log.debug(f'standing up tcp agent with gw: {encoded_ser_gw_str}')
 
         self._STATE = FrontendState.OVERLAY_STARTING
@@ -878,7 +1108,7 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         self._STATE = FrontendState.STARTUP
 
         try:
-            self.wlm_proc = self._launch_backend(nnodes=nnodes,
+            self.wlm_proc = self._launch_backend(nnodes=self.nnodes,
                                                  nodelist=hostnames,
                                                  fe_ip_addr=fe_ip_addr,
                                                  fe_host_id=fe_host_id,
@@ -896,48 +1126,28 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
             signal.raise_signal(signal.SIGINT)
 
         # Receive BEIsUp msg - Try getting a backend channel descriptor
-        be_ups = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(nnodes)]
+        be_ups = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
         assert len(be_ups) == self.nnodes
 
-        self.conn_outs = {}  # key is the node_index and value is the Connection object
-        for be_up in be_ups:
-            assert isinstance(be_up, dmsg.BEIsUp), 'la_fe received invalid be up'
-            log.debug(f'received descriptor: {be_up.be_ch_desc} and host_id: {be_up.host_id}')
-            try:
-                # TODO: VERIFY WE GET A UNIQUE CUID: keep a set of seen cuids.
-                # After attaching, get the cuid and compare it against the set
-                # of already seen cuids. Throw an exception if already seen.
-                # Delete the set after this loop.
-                be_sdesc = B64.from_str(be_up.be_ch_desc)
-                be_ch = Channel.attach(be_sdesc.decode(), mem_pool=self.fe_mpool)
-                conn_options = ConnectionOptions(default_pool=self.fe_mpool, min_block_size=2 ** 16)
-                conn_out = Connection(outbound_initializer=be_ch,
-                                      options=conn_options,
-                                      policy=conn_policy)
-                conn_out.ghost = True
-            except ChannelError as ex:
-                log.fatal(f'could not connect to BE channel with host_id {be_up.host_id}')
-                raise RuntimeError('Connection with BE failed') from ex
-
-            # Send node_index to backend - FENodeIdxBE msg
-            for key, node_desc in net_conf.items():
-                if str(be_up.host_id) == str(node_desc.host_id):
-                    fe_node_idx = dmsg.FENodeIdxBE(tag=dlutil.next_tag(), node_index=key)
-                    conn_out.send(fe_node_idx.serialize())
-                    self.conn_outs[int(key)] = conn_out
-                    log.debug(f"this is node_index: {key} with host_id: {be_up.host_id}")
-                    break
+        # Construct the number of backend connections based on
+        # the hierarchical bcast info and send FENodeIdxBE to those
+        # nodes
+        log.info(f'received {self.nnodes} BEIsUp msgs')
+        self.conn_outs = self.construct_bcast_tree(self.net_conf,
+                                                   conn_policy,
+                                                   be_ups,
+                                                   encoded_inbound_str)
         del be_ups
-        log.info(f'received {nnodes} BEIsUp msgs and sent {nnodes} FENodeIdxBE msgs')
 
-        chs_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(nnodes)]
+        chs_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
         for ch_up in chs_up:
             assert isinstance(ch_up, dmsg.SHChannelsUp), 'la_fe received invalid channel up'
-        log.info(f'received {nnodes} SHChannelsUP msgs')
+        log.info(f'received {self.nnodes} SHChannelsUP msgs')
 
+        nodes_desc = {ch_up.idx: ch_up.node_desc for ch_up in chs_up}
         gs_cds = [ch_up.gs_cd for ch_up in chs_up if ch_up.gs_cd is not None]
         if len(gs_cds) == 0:
-            print('The Global Services CD was not returned by any of the SHChannelsUp messages. Launcher Exiting.')
+            print('The Global Services CD was not returned by any of the SHChannelsUp messages. Launcher Exiting.', flush=True)
             sys.exit(LAUNCHER_FAIL_EXIT)
         gs_cd = gs_cds[0]
 
@@ -952,14 +1162,25 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         # will have one NIC per node and one gateway per node used
         # (for now anyway - eventually the number of gateways may not
         # be tied to multiple NIC support).
-        #FIXME-MULTI-NIC: force one nic per node for now
-        if (min_nics_per_node > 1) and self.pals_lib_present and (self.transport is dfacts.TransportAgentOptions.HSTA) and False:
+        if (min_nics_per_node > 1) and self.pals_lib_present and (self.transport is dfacts.TransportAgentOptions.HSTA):
             num_gw_channels = min_nics_per_node
         else:
             num_gw_channels = 1
 
+        if 'DRAGON_HSTA_FABRIC_BACKEND' in os.environ:
+            if os.environ['DRAGON_HSTA_FABRIC_BACKEND'] != 'ofi_rma':
+                num_gw_channels = 1
+        else:
+            # TODO: default fabric backend
+            # assume default fabric backend is ofi_p2p for now
+            num_gw_channels = 1
+
+        # HSTA uses NUM_GW_TYPES gateways per agent
+        if self.transport is dfacts.TransportAgentOptions.HSTA:
+            num_gw_channels *= dfacts.NUM_GW_TYPES
+
         # Send LAChannelsInfo in a test environment or to all
-        la_ch_info = dmsg.LAChannelsInfo(tag=dlutil.next_tag(), nodes_desc=chs_up,
+        la_ch_info = dmsg.LAChannelsInfo(tag=dlutil.next_tag(), nodes_desc=nodes_desc,
                                          gs_cd=gs_cd, num_gw_channels=num_gw_channels,
                                          port=self.port,
                                          transport=str(self.transport))
@@ -969,10 +1190,10 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         self.la_fe_stdout.send("A", la_ch_info.serialize())
         log.info('sent LACHannelsInfo to overlaynet fe')
 
-        self.tas_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(nnodes)]
+        self.tas_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
         for ta_up in self.tas_up:
             assert isinstance(ta_up, dmsg.TAUp), 'la_fe received invalid channel up'
-        log.info(f'received {nnodes} TAUp messages')
+        log.info(f'received {self.nnodes} TAUp messages')
 
         if self._sigint_trigger == 6:
             signal.raise_signal(signal.SIGINT)
@@ -985,6 +1206,8 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
 
         # Infrastructure is up
         self._STATE = FrontendState.STOOD_UP
+
+        return self.net_conf
 
     def run_app(self):
         """Start user app execution via GSProcessCreate or SHProcessCreate
@@ -1012,6 +1235,8 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
             if self._sigint_trigger == 7:
                 signal.raise_signal(signal.SIGINT)
             log.info('transmitted GSProcessCreate')
+
+        return self.net_conf
 
     def run_msg_server(self):
         """Process messages from backend after user app starts
@@ -1068,6 +1293,8 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
         # Set state so our exit method correctly executes.
         self._STATE = FrontendState.LAUNCHER_DOWN
 
+        return self.net_conf
+
     def probe_teardown(self):
         """Check on whether to begin teardown based on received backend messages"""
         # Global services is up and we're using it
@@ -1097,7 +1324,8 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
     def handle_sh_fwd_output(self, msg: dmsg.SHFwdOutput):
         msg_out = self.build_stdmsg(msg, self.args_map,
                                     msg.fd_num == dmsg.SHFwdOutput.FDNum.STDOUT.value)
-        print(msg_out, end="")
+        self.msg_log.debug(f'{msg}')
+        print(msg_out, end="", flush=True)
 
     @route(dmsg.LAExit, _DTBL)
     def handle_la_exit(self, msg: dmsg.LAExit):
@@ -1120,9 +1348,13 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
 
     @route(dmsg.GSProcessCreateResponse, _DTBL)
     def handle_gs_proc_create_response(self, msg: dmsg.GSProcessCreateResponse):
-        self.msg_log.info('The GSProcessCreateResponse was received in the launcher front end')
-        self._gs_process_create_resp_received = True
-        self.probe_teardown()
+        if dmsg.GSProcessCreateResponse.Errors.SUCCESS == msg.err:
+            self._gs_process_create_resp_received = True
+            self.msg_log.info('The GSProcessCreateResponse was received in the launcher front end')
+            self.probe_teardown()
+        elif dmsg.GSProcessCreateResponse.Errors.FAIL == msg.err:
+            self.msg_log.warning(f'Unable to start the head process {msg.err_info}')
+            self._cleanup_abnormal_state(sigint=False)
 
     @route(dmsg.SHProcessCreateResponse, _DTBL)
     def handle_sh_proc_create_response(self, msg: dmsg.SHProcessCreateResponse):
@@ -1230,18 +1462,18 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
 
         Args:
             target (str): "A" for all backend nodes. "P" for primary node only
-            msg (dmsg._MsgBase): non-serialized message to send
+            msg (dmsg.InfraMsg): non-serialized message to send
         """
         try:
             self.la_fe_stdout.send(target, msg.serialize())
         except Exception:
             raise RuntimeError("Unable to send message to overlaynet send thread")
 
-    def _overlay_bcast(self, msg: dmsg._MsgBase):
+    def _overlay_bcast(self, msg: dmsg.InfraMsg):
         '''Send bcast of message to all backend nodes via overlay network
 
         :param msg: Message to send
-        :type msg: dmsg._MsgBase
+        :type msg: dmsg.InfraMsg
         '''
 
         for conn_out in self.conn_outs.values():
@@ -1310,11 +1542,17 @@ Please resubmit your dragon launch command with the `--transport tcp` option set
                 # the get_with_timeout is a decorated function (i.e. wrapped function
                 # in a function) that filters out all the log messages coming up through
                 # overlaynet. So we don't worry about them here. See dlutil for details.
-                try:
-                    be_msg = dlutil.get_with_blocking(self.conn_in)
-                except AbnormalTerminationError:
+                be_msg = dlutil.get_with_blocking_frontend_server(self.conn_in)
+
+                if isinstance(be_msg, dmsg.AbnormalTermination):
                     # I need to get this to the main thread without throwing an exception
                     self._abnormal_termination.set()
+
+                    # Update the network configuration to reflect the down state of whatever node
+                    # we got this error from
+                    log.debug(f'Abort found from backend node: {be_msg.host_id}')
+                    self._set_node_to_down_state(be_msg.host_id)
+
                     if self._STATE < FrontendState.TEARDOWN:
                         be_msg = dmsg.ExceptionlessAbort(tag=dlutil.next_tag())
                     else:

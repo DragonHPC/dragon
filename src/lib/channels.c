@@ -9,12 +9,13 @@
 #include <stdlib.h>
 #include <time.h>
 
-static int dg_num_gateways = 0;
 static dragonMap_t* dg_channels = NULL;
 static dragonList_t* dg_gateways = NULL;
 
 /* used to verify header assignment in channels */
 static bool _header_checked = false;
+
+static const int dg_num_gateway_types = 3;
 
 /* below are macros that cover locking and unlocking the UT and OT locks with
  * error handling */
@@ -86,30 +87,31 @@ _channel_from_descr(const dragonChannelDescr_t* ch_descr, dragonChannel_t** ch)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid channel descriptor");
 
     /* find the entry in our pool map for this descriptor */
-    dragonError_t err = dragon_umap_getitem(dg_channels, ch_descr->_idx, (void*)ch);
+    dragonError_t err = dragon_umap_getitem_multikey(dg_channels, ch_descr->_rt_idx, ch_descr->_idx, (void*)ch);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to find item in channels umap");
 
     no_err_return(DRAGON_SUCCESS);
 }
 
-/* given a c_uid, check if we already are attached to that channel and update
- * the descriptor for use */
+/* given an rt_uid and c_uid, check if we already are attached to that channel and
+ *  update the descriptor for use */
 static dragonError_t
-_channel_descr_from_c_uid(const dragonC_UID_t c_uid, dragonChannelDescr_t* ch_descr)
+_channel_descr_from_uids(const dragonRT_UID_t rt_uid, const dragonC_UID_t c_uid, dragonChannelDescr_t* ch_descr)
 {
     if (ch_descr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid channel descriptor");
 
     /* find the entry in our pool map for this descriptor */
     dragonChannel_t* channel;
-    dragonError_t err = dragon_umap_getitem(dg_channels, c_uid, (void*)&channel);
+    dragonError_t err = dragon_umap_getitem_multikey(dg_channels, rt_uid, c_uid, (void*)&channel);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to find item in channels umap");
 
     /* update the descriptor with the m_uid key and note this cannot be original
      */
     // ch_descr->_original = 0; /* @MCB: Not used yet */
+    ch_descr->_rt_idx = rt_uid;
     ch_descr->_idx = c_uid;
 
     no_err_return(DRAGON_SUCCESS);
@@ -135,7 +137,7 @@ _add_umap_channel_entry(const dragonChannelDescr_t* ch, const dragonChannel_t* n
             append_err_return(err, "failed to create umap for channels");
     }
 
-    err = dragon_umap_additem(dg_channels, ch->_idx, newch);
+    err = dragon_umap_additem_multikey(dg_channels, ch->_rt_idx, ch->_idx, newch);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to insert item into channels umap");
 
@@ -156,39 +158,37 @@ _add_umap_channel_entry(const dragonChannelDescr_t* ch, const dragonChannel_t* n
  * @returns DRAGON_SUCCESS or an error indicating the problem.
 */
 static dragonError_t
-_register_gateway(const dragonChannel_t* ch)
+_register_gateway(const dragonChannel_t* ch, dragonList_t** gateways)
 {
     dragonError_t err;
 
     /* register this channel in our umap */
-    if (dg_gateways == NULL) {
+    if (*gateways == NULL) {
         /* this is a process-global variable and has no specific call to be
          * destroyed */
-        dg_gateways = malloc(sizeof(dragonList_t));
-        if (dg_gateways == NULL)
+        *gateways = malloc(sizeof(dragonList_t));
+        if (*gateways == NULL)
             err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Cannot allocate ulist for gateway channels.");
 
-        err = dragon_ulist_create(dg_gateways);
+        err = dragon_ulist_create(*gateways);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "failed to create ulist for gateway channels");
     }
 
-    err = dragon_ulist_additem(dg_gateways, ch);
+    err = dragon_ulist_additem(*gateways, ch);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to insert item into gateway channels list");
-
-    ++dg_num_gateways;
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 static dragonError_t
-_unregister_gateway(const dragonChannel_t* ch)
+_unregister_gateway(const dragonChannel_t* ch, dragonList_t *gateways)
 {
-    if (dg_gateways == NULL)
+    if (gateways == NULL)
         err_return(DRAGON_CHANNEL_NO_GATEWAYS, "no gateways have been registered");
 
-    dragonError_t err = dragon_ulist_delitem(dg_gateways, ch);
+    dragonError_t err = dragon_ulist_delitem(gateways, ch);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to delete item from gateway channels list");
 
@@ -310,7 +310,7 @@ _assign_header(const dragonC_UID_t c_uid, const dragonChannelAttr_t* attr, drago
     dragonError_t err;
 
     // clang-format off
-    *(ch->header.c_uid)                     = (dragonULInt)c_uid;
+    *(ch->header.c_uid)                     = (dragonC_UID_t)c_uid;
     *(ch->header.bytes_per_msg_block)       = (dragonULInt)attr->bytes_per_msg_block;
     *(ch->header.capacity)                  = (dragonULInt)attr->capacity;
     *(ch->header.lock_type)                 = (dragonULInt)attr->lock_type;
@@ -1341,7 +1341,7 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
         channel_full = true;
 
     /* This is used in implementing the blocking receive and must be done here
-       to trigger a blocked sender if one exists */
+       to trigger a blocked receiver if one exists */
     dragon_bcast_trigger_one(&channel->recv_bcast, NULL, NULL, 0);
 
     /* This must be done here to prevent the event bcast list from changing
@@ -1497,6 +1497,7 @@ _get_msg(dragonChannel_t* channel, dragonMessage_t* msg_recv, timespec_t* end_ti
             dragonMemorySerial_t mem_ser;
             mem_ser.data = (uint8_t*)channel->msg_blks_ptrs[mblk];
             mem_ser.len = src_bytes;
+
             err = dragon_memory_attach(&mem_descr, &mem_ser);
             if (err != DRAGON_SUCCESS) {
                 _release_ot_lock(channel);
@@ -1583,6 +1584,7 @@ _get_msg(dragonChannel_t* channel, dragonMessage_t* msg_recv, timespec_t* end_ti
         dragonMemorySerial_t mem_ser;
         mem_ser.len = src_bytes;
         mem_ser.data = (uint8_t*)channel->msg_blks_ptrs[mblk];
+
         err = dragon_memory_attach(msg_mem, &mem_ser);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "cannot attach to payload memory");
@@ -1718,6 +1720,7 @@ _peek_msg(dragonChannel_t* channel, dragonMessage_t* msg_peek)
         dragonMemorySerial_t mem_ser;
         mem_ser.len = src_bytes;
         mem_ser.data = (uint8_t*)channel->msg_blks_ptrs[mblk];
+
         err = dragon_memory_attach(&msg_mem_descr, &mem_ser);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "cannot attach to payload memory");
@@ -1956,7 +1959,34 @@ _channel_is_masquerading(const dragonChannelDescr_t* ch)
 }
 
 static dragonError_t
-_get_gw_idx(const dragonChannelDescr_t *ch, int *gw_idx)
+_attach_to_gateway(char *ip_addrs_key, dragonChannelDescr_t *gw_ch)
+{
+    dragonError_t err;
+    char err_str[400];
+
+    char *gw_str = getenv(ip_addrs_key);
+
+    if (gw_str == NULL) {
+        snprintf(err_str, 399, "NULL gateway descriptor for key=%s", ip_addrs_key);
+        err_return(DRAGON_INVALID_ARGUMENT, err_str);
+    }
+
+    dragonChannelSerial_t gw_ser;
+    gw_ser.data = dragon_base64_decode(gw_str, &gw_ser.len);
+    if (gw_ser.data == NULL) {
+        err_return(DRAGON_INVALID_ARGUMENT, "failed to decode string specifying gateway descriptor");
+    }
+
+    err = dragon_channel_attach(&gw_ser, gw_ch);
+    if (err != DRAGON_SUCCESS) {
+        append_err_return(DRAGON_INVALID_ARGUMENT, err_str);
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+static dragonError_t
+_get_gw_idx(const dragonChannelDescr_t *ch, dragonChannelOpType_t op_type, int *gw_idx)
 {
     dragonULInt target_hostid;
 
@@ -1964,7 +1994,100 @@ _get_gw_idx(const dragonChannelDescr_t *ch, int *gw_idx)
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to obtain hostid for target channel.");
 
-    *gw_idx = dragon_hash_ulint(target_hostid) % dg_num_gateways;
+    /* For tcp agents, there is always 1 gateway and the index is hence always 0.
+     * For hsta agents, there will be a multiple of dg_num_gateway_types gateways,
+     * and a group of dg_num_gateway_types for each nic in the multi-nic case.
+     *
+     * Example with 4 nics
+     * -------------------
+     *
+     * send_msg get_msg poll  send_msg get_msg poll  send_msg get_msg poll  send_msg get_msg poll
+     * \______/ \_____/ \__/  \______/ \_____/ \__/  \______/ \_____/ \__/  \______/ \_____/ \__/
+     *   gw 0     gw 1  gw 2    gw 3     gw 4  gw 5    gw 6     gw 7  gw 8    gw 9    gw 10  gw 11
+     * \___________________/  \___________________/  \___________________/  \___________________/
+     *         nic 0                  nic 1                  nic 2                  nic 3
+     */
+    size_t num_gws = dragon_ulist_get_size(dg_gateways);
+
+    if (num_gws == 1) {
+        *gw_idx = 0;
+    } else {
+        int num_gw_groups = num_gws / dg_num_gateway_types;
+        int my_gw_group = dragon_hash_ulint(target_hostid) % num_gw_groups;
+        *gw_idx = (dg_num_gateway_types * my_gw_group) + op_type;
+    }
+
+    if (*gw_idx < 0 || num_gws <= *gw_idx) {
+        char err_str[100];
+        snprintf(err_str, 99,
+                "Invalid gateway index: gateway idx=%d, num gateways=%lu.",
+                *gw_idx, num_gws);
+        append_err_return(err, err_str);
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+static dragonError_t
+_get_gateway(const dragonChannelDescr_t *ch_descr, dragonChannelOpType_t op_type, dragonChannel_t** gw_channel)
+{
+    dragonError_t err;
+    dragonChannel_t *channel = NULL;
+    bool runtime_is_local;
+
+    err = _channel_from_descr(ch_descr, &channel);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get channel from descriptor.");
+
+    err = dragon_memory_pool_runtime_is_local(&channel->pool, &runtime_is_local);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not determine if channel is hosted by local runtime.");
+
+    if (runtime_is_local) {
+        int gw_idx;
+
+        if (dg_gateways == NULL) {
+            char err_str[400];
+            dragonULInt rt_uid;
+
+            err = dragon_memory_pool_get_rt_uid(&channel->pool, &rt_uid);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not get pool's rt_uid.");
+
+            snprintf(err_str, 399,
+                     "There are no registered gateway channels and the channel is not local, "
+                     "local and remote runtime ip addrs: %lu and %lu",
+                     dragon_get_local_rt_uid(),
+                     rt_uid);
+            err_return(DRAGON_CHANNEL_NO_GATEWAYS, err_str);
+        }
+
+        err = _get_gw_idx(ch_descr, op_type, &gw_idx);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get a gateway index.");
+
+        err = dragon_ulist_get_by_idx(dg_gateways, gw_idx, (void **) gw_channel);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get gateway channel.");
+    } else {
+        dragonULInt rt_uid;
+        dragonChannelDescr_t gw_ch;
+        char ip_addrs_key[64];
+
+        err = dragon_memory_pool_get_rt_uid(&channel->pool, &rt_uid);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get pool's rt_uid.");
+
+        sprintf(ip_addrs_key, "DRAGON_RT_UID__%lu", rt_uid);
+
+        err = _attach_to_gateway(ip_addrs_key, &gw_ch);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not attach to gateway channel.");
+
+        err = _channel_from_descr(&gw_ch, gw_channel);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get gateway channel from descriptor.");
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2165,7 +2288,7 @@ dragon_channel_create(dragonChannelDescr_t* ch, const dragonC_UID_t c_uid,
 
     /* the memory pool must be locally addressable */
     if (!dragon_memory_pool_is_local(pool_descr))
-        append_err_return(DRAGON_INVALID_ARGUMENT, "cannot directly access memory pool for channel creation");
+        err_return(DRAGON_INVALID_ARGUMENT, "cannot directly access memory pool for channel creation");
 
     /* if the attrs are NULL populate a default one */
     dragonChannelAttr_t def_attr;
@@ -2173,7 +2296,7 @@ dragon_channel_create(dragonChannelDescr_t* ch, const dragonC_UID_t c_uid,
 
         err = dragon_channel_attr_init(&def_attr);
         if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not intialize channel attributes.");
+            append_err_return(err, "Could not initialize channel attributes.");
 
         attr = &def_attr;
     } else {
@@ -2199,8 +2322,7 @@ dragon_channel_create(dragonChannelDescr_t* ch, const dragonC_UID_t c_uid,
     size_t alloc_size = _channel_allocation_size(attr);
 
     /* allocate the space using the alloc type interface with a channel type */
-    err = dragon_memory_alloc_type(&newch->main_mem, &newch->pool, alloc_size, DRAGON_MEMORY_ALLOC_CHANNEL,
-                                   c_uid);
+    err = dragon_memory_alloc_type(&newch->main_mem, &newch->pool, alloc_size, DRAGON_MEMORY_ALLOC_CHANNEL, c_uid);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("unable to allocate memory for channel from memory pool");
         goto ch_fail;
@@ -2253,6 +2375,7 @@ dragon_channel_create(dragonChannelDescr_t* ch, const dragonC_UID_t c_uid,
 
     /* register this channel in our umap using the c_uid as the key */
     ch->_idx = c_uid;
+    ch->_rt_idx = dragon_get_local_rt_uid();
 
     err = _add_umap_channel_entry(ch, newch);
     if (err != DRAGON_SUCCESS) {
@@ -2314,7 +2437,7 @@ dragon_channel_destroy(dragonChannelDescr_t* ch)
     int allocation_exists;
 
     err = dragon_memory_pool_allocation_exists(&channel->pool, DRAGON_MEMORY_ALLOC_CHANNEL,
-                                   *channel->header.c_uid, &allocation_exists);
+                                   (dragonULInt) *channel->header.c_uid, &allocation_exists);
 
     if (allocation_exists == 0) {
         err_return(DRAGON_CHANNEL_ALREADY_DESTROYED, "This channel allocation does not exist and was likely already destroyed.");
@@ -2344,7 +2467,7 @@ dragon_channel_destroy(dragonChannelDescr_t* ch)
         append_err_return(err, "cannot free the serialized descriptor");
 
     /* remove the item from the umap */
-    err = dragon_umap_delitem(dg_channels, ch->_idx);
+    err = dragon_umap_delitem_multikey(dg_channels, ch->_rt_idx, ch->_idx);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to delete item from channels umap");
 
@@ -2396,7 +2519,7 @@ dragon_channel_serialize(const dragonChannelDescr_t* ch, dragonChannelSerial_t* 
 /**
  * @brief Free the internal resources of a serialized channel descriptor
  *
- * This frees internal structures of a serialized memory descriptor. It does not
+ * This frees internal structures of a serialized channel descriptor. It does not
  * destroy the channel itself.
  *
  * @param ch_ser is a serialized channel descriptor.
@@ -2451,8 +2574,46 @@ dragon_channel_attach(const dragonChannelSerial_t* ch_ser, dragonChannelDescr_t*
     dragonC_UID_t c_uid = (dragonC_UID_t)*sptr;
     sptr++;
 
-    /* check if we have already attached to the c_uid */
-    dragonError_t err = _channel_descr_from_c_uid(c_uid, ch);
+    /* we'll need to construct a new channel structure (freed in either
+     * channel_destroy or channel_detach) */
+    dragonChannel_t* channel = malloc(sizeof(dragonChannel_t));
+    if (channel == NULL)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "unable to allocate new channel structure");
+
+    /* These are create attributes only. So attaching in a different process
+       should not inherit the flags specified when the channel was created. */
+    channel->proc_flags = DRAGON_CHANNEL_FLAGS_NONE;
+
+    /* attach to the memory descriptor */
+    dragonError_t err;
+    dragonMemorySerial_t mem_ser;
+
+    mem_ser.len = ch_ser->len - DRAGON_CHANNEL_CHSER_NULINTS * sizeof(dragonULInt);
+    mem_ser.data = (uint8_t*)sptr;
+
+    err = dragon_memory_attach(&channel->main_mem, &mem_ser);
+    if (err != DRAGON_SUCCESS) {
+        append_err_noreturn("cannot attach to memory with serialized descriptor");
+        goto ch_attach_fail;
+    }
+
+    /* get the pool descriptor and pointer from the memory descriptor */
+    err = dragon_memory_get_pool(&channel->main_mem, &channel->pool);
+    if (err != DRAGON_SUCCESS) {
+        append_err_noreturn("cannot get memory pool from memory descriptor");
+        goto ch_attach_mem_fail;
+    }
+
+    dragonRT_UID_t rt_uid;
+
+    err = dragon_memory_pool_get_rt_uid(&channel->pool, &rt_uid);
+    if (err != DRAGON_SUCCESS) {
+        append_err_noreturn("cannot get rt_uid from memory pool");
+        goto ch_attach_mem_fail;
+    }
+
+    /* check if we have already attached to the rt_uid/c_uid pair */
+    err = _channel_descr_from_uids(rt_uid, c_uid, ch);
     if (err == DRAGON_SUCCESS) {
         dragonChannel_t* channel;
         _channel_from_descr(ch, &channel);
@@ -2462,33 +2623,6 @@ dragon_channel_attach(const dragonChannelSerial_t* ch_ser, dragonChannelDescr_t*
         channel->proc_flags = DRAGON_CHANNEL_FLAGS_NONE;
         atomic_fetch_add_explicit(&(channel->ref_cnt), 1, memory_order_acq_rel);
         no_err_return(DRAGON_SUCCESS);
-    }
-
-    /* we'll need to construct a new channel structure (freed in either
-     * channel_destroy or channel_detach) */
-    dragonChannel_t* channel = malloc(sizeof(dragonChannel_t));
-    if (channel == NULL)
-        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "unable to allocate new channel structure");
-
-    /* attach to the memory descriptor */
-    dragonMemorySerial_t mem_ser;
-    mem_ser.len = ch_ser->len - DRAGON_CHANNEL_CHSER_NULINTS * sizeof(dragonULInt);
-    mem_ser.data = (uint8_t*)sptr;
-    err = dragon_memory_attach(&channel->main_mem, &mem_ser);
-    if (err != DRAGON_SUCCESS) {
-        append_err_noreturn("cannot attach to memory with serialized descriptor");
-        goto ch_attach_fail;
-    }
-
-    /* These are create attributes only. So attaching in a different process
-       should not inherit the flags specified when the channel was created. */
-    channel->proc_flags = DRAGON_CHANNEL_FLAGS_NONE;
-
-    /* get the pool descriptor and pointer from the memory descriptor */
-    err = dragon_memory_get_pool(&channel->main_mem, &channel->pool);
-    if (err != DRAGON_SUCCESS) {
-        append_err_noreturn("cannot get memory pool from memory descriptor");
-        goto ch_attach_mem_fail;
     }
 
     if (dragon_memory_pool_is_local(&channel->pool)) {
@@ -2539,7 +2673,9 @@ dragon_channel_attach(const dragonChannelSerial_t* ch_ser, dragonChannelDescr_t*
     atomic_store(&(channel->ref_cnt), 1);
 
     /* register this channel in our umap using the c_uid as the key */
+    ch->_rt_idx = rt_uid;
     ch->_idx = c_uid;
+
     err = _add_umap_channel_entry(ch, channel);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("failed to insert item into channels umap");
@@ -2603,6 +2739,7 @@ dragon_channel_detach(dragonChannelDescr_t* ch)
         append_err_return(err, "invalid channel descriptor");
 
     long int ref_cnt = atomic_fetch_sub_explicit(&(channel->ref_cnt), 1, memory_order_acq_rel) - 1;
+
     if (ref_cnt > 0)
         no_err_return(DRAGON_SUCCESS);
 
@@ -2637,7 +2774,7 @@ dragon_channel_detach(dragonChannelDescr_t* ch)
     }
 
     // remove channel from umap
-    err = dragon_umap_delitem(dg_channels, ch->_idx);
+    err = dragon_umap_delitem_multikey(dg_channels, ch->_rt_idx, ch->_idx);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not remove channel from umap");
 
@@ -2648,6 +2785,32 @@ dragon_channel_detach(dragonChannelDescr_t* ch)
         append_err_return(err, "cannot free the serialized descriptor");
 
     free(channel);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Clone a channel descriptor
+ *
+ * Calling this will copy a channel descriptor from one location to another. This does not
+ * copy the channel. It is used only for making a copy of a channel descriptor inside a process.
+ *
+ * @param newch_descr is the channel descriptor space to copy into.
+ *
+ * @param oldch_descr is the existing descriptor to clone.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_descr_clone(dragonChannelDescr_t * newch_descr, const dragonChannelDescr_t * oldch_descr)
+{
+    if (oldch_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Cannot clone from NULL descriptor.");
+
+    if (newch_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Cannot clone to NULL descriptor.");
+
+    *newch_descr = *oldch_descr;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2863,24 +3026,16 @@ dragon_channel_sendh(const dragonChannelDescr_t* ch, dragonChannelSendh_t* ch_sh
 
     if (dragon_channel_is_local(ch)) {
         ch_sh->_gw._idx = 0;
+        ch_sh->_gw._rt_idx = 0;
     } else {
         dragonChannel_t* gw_channel;
 
-        if (dg_gateways == NULL)
-            err_return(DRAGON_CHANNEL_NO_GATEWAYS, "There are no registered gateway channels and the channel "
-                                                   "is not local.");
-
-        int gw_idx;
-
-        err = _get_gw_idx(&ch_sh->_ch, &gw_idx);
+        err = _get_gateway(&ch_sh->_ch, DRAGON_OP_TYPE_SEND_MSG, &gw_channel);
         if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not get a gateway index.");
-
-        err = dragon_ulist_get_by_idx(dg_gateways, gw_idx, (void **) &gw_channel);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not get gateway channel.");
+            append_err_return(err, "Could not get a gateway channel.");
 
         ch_sh->_gw._idx = *((dragonC_UID_t*)gw_channel->header.c_uid);
+        ch_sh->_gw._rt_idx = dragon_get_local_rt_uid();
     }
 
     /* TODO: at the moment, there are no data structures associated with the
@@ -3040,24 +3195,16 @@ dragon_channel_recvh(const dragonChannelDescr_t* ch, dragonChannelRecvh_t* ch_rh
 
     if (dragon_channel_is_local(ch)) {
         ch_rh->_gw._idx = 0;
+        ch_rh->_gw._rt_idx = 0;
     } else {
         dragonChannel_t* gw_channel;
 
-        if (dg_gateways == NULL)
-            err_return(DRAGON_CHANNEL_NO_GATEWAYS, "There are no registered gateway channels and the channel "
-                                                   "is not local.");
-
-        int gw_idx;
-
-        err = _get_gw_idx(&ch_rh->_ch, &gw_idx);
+        err = _get_gateway(&ch_rh->_ch, DRAGON_OP_TYPE_GET_MSG, &gw_channel);
         if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not get a gateway index.");
-
-        err = dragon_ulist_get_by_idx(dg_gateways, gw_idx, (void **) &gw_channel);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not get gateway channel.");
+            append_err_return(err, "Could not get a gateway channel.");
 
         ch_rh->_gw._idx = *((dragonC_UID_t*)gw_channel->header.c_uid);
+        ch_rh->_gw._rt_idx = dragon_get_local_rt_uid();
     }
 
     /* TODO: at the moment, there are no data structures associated with the
@@ -3354,9 +3501,9 @@ dragon_chsend_send_msg(const dragonChannelSendh_t* ch_sh, const dragonMessage_t*
         dragonMemoryDescr_t req_mem;
 
         err = _channel_from_descr(&ch_sh->_gw, &gw_channel);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not resolved gateway channel "
-                                   "descriptor while sending a message.");
+        if (err != DRAGON_SUCCESS) {
+            append_err_return(err, "Could not resolve gateway channel descriptor while sending a message.");
+        }
 
         /* it is not a local channel so we interact with the gateway channel
          * instead */
@@ -3527,8 +3674,9 @@ dragon_chrecv_get_msg_blocking(const dragonChannelRecvh_t* ch_rh, dragonMessage_
     // providing the NOTIMEOUT constant means providing a NULL pointer to the
     // bcast in the end_time_ptr pointer below.
     if (timer->tv_nsec == DRAGON_CHANNEL_BLOCKING_NOTIMEOUT.tv_nsec &&
-        timer->tv_sec == DRAGON_CHANNEL_BLOCKING_NOTIMEOUT.tv_sec)
+        timer->tv_sec == DRAGON_CHANNEL_BLOCKING_NOTIMEOUT.tv_sec) {
         timer = NULL;
+    }
 
     timespec_t* end_time_ptr = NULL;
     timespec_t* remaining_time_ptr = NULL;
@@ -3691,7 +3839,7 @@ dragon_chrecv_get_msg_blocking(const dragonChannelRecvh_t* ch_rh, dragonMessage_
 
         err = dragon_channel_gatewaymessage_client_get_cmplt(&gw_msg, msg_recv, ch_rh->_attrs.wait_mode);
         if (err != DRAGON_SUCCESS)
-            err_return(err, "non-zero completion of remote get_msg");
+            append_err_return(err, "non-zero completion of remote get_msg");
     }
 
     no_err_return(DRAGON_SUCCESS);
@@ -4050,15 +4198,10 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
         dragonGatewayMessageSerial_t gw_ser_msg;
         dragonMessage_t req_msg;
         dragonMemoryDescr_t req_mem;
-        int gw_idx;
 
-        err = _get_gw_idx(ch, &gw_idx);
+        err = _get_gateway(ch, DRAGON_OP_TYPE_POLL, &gw_channel);
         if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not get a gateway index.");
-
-        err = dragon_ulist_get_by_idx(dg_gateways, gw_idx, (void **) &gw_channel);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not get gateway channel.");
+            append_err_return(err, "Could not get a gateway channel.");
 
         timespec_t* end_time_ptr = NULL;
         timespec_t* remaining_time_ptr = NULL;
@@ -4110,7 +4253,9 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
             append_err_return(err, "Could not initialize message to send to "
                                    "transport service via gateway channel.");
 
-        err = _channel_descr_from_c_uid(*((dragonC_UID_t*)gw_channel->header.c_uid), &gw_descr);
+        dragonRT_UID_t rt_uid = dragon_get_local_rt_uid();
+
+        err = _channel_descr_from_uids(rt_uid, *((dragonC_UID_t*)gw_channel->header.c_uid), &gw_descr);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not get gateway channel descriptor.");
 
@@ -4359,7 +4504,7 @@ dragon_channel_register_gateways_from_env()
         }
 
         dragonChannelSerial_t gw_ser;
-        gw_ser.data = dragon_base64_decode(gw_str, strlen(gw_str), &gw_ser.len);
+        gw_ser.data = dragon_base64_decode(gw_str, &gw_ser.len);
         if (gw_ser.data == NULL) {
             snprintf(err_str, 400,
                         "The environment variable %s was not a valid "
@@ -4377,6 +4522,8 @@ dragon_channel_register_gateways_from_env()
                         name);
             append_err_return(DRAGON_INVALID_ARGUMENT, err_str);
         }
+
+        dragon_channel_serial_free(&gw_ser);
 
         err = dragon_channel_register_gateway(&gw_ch);
         if (err != DRAGON_SUCCESS) {
@@ -4460,7 +4607,7 @@ dragon_channel_register_gateway(dragonChannelDescr_t* ch)
 
     dragon_generate_uuid(channel->proc_gw_sendhid);
 
-    err = _register_gateway(channel);
+    err = _register_gateway(channel, &dg_gateways);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "There was an error registering this channel as a gateway.");
 
@@ -4501,7 +4648,7 @@ dragon_channel_unregister_gateway(dragonChannelDescr_t* ch)
         err_return(DRAGON_INVALID_ARGUMENT, "Cannot unregister non-local channel as gateway. This "
                                             "shouldn't have happened, ever.");
 
-    err = _unregister_gateway(channel);
+    err = _unregister_gateway(channel, dg_gateways);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Cannot unregister channel as a gateway due to some unknown error.");
 

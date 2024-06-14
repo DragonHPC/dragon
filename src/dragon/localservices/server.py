@@ -9,11 +9,11 @@ import subprocess
 import json
 import collections
 import selectors
-import signal
-import socket
 
 from .. import channels as dch
 from .. import managed_memory as dmm
+from .. import fli
+from ..rc import DragonError
 
 from .. import pmod
 from .. import utils as dutils
@@ -24,9 +24,11 @@ from ..infrastructure import parameters as parms
 from ..infrastructure import connection as dconn
 from ..infrastructure import parameters as dp
 
+
 from ..dlogging import util as dlog
 from ..dlogging.util import DragonLoggingServices as dls
-from ..utils import B64
+from ..utils import B64, b64encode, b64decode
+from typing import Optional
 
 _TAG = 0
 _TAG_LOCK = threading.Lock()
@@ -40,17 +42,32 @@ def get_new_tag():
 
 ProcessProps = collections.namedtuple('ProcessProps', ['p_uid', 'critical', 'r_c_uid',
                                       'stdin_req', 'stdout_req', 'stderr_req',
-                                      'stdin_connector', 'stdout_connector', 'stderr_connector'])
+                                      'stdin_connector', 'stdout_connector', 'stderr_connector',
+                                      'layout', 'local_cuids'])
 
 class PopenProps(subprocess.Popen):
 
     def __init__(self, props: ProcessProps, *args, **kwds):
         assert isinstance(props, ProcessProps)
-        super().__init__(*args, **kwds)
         self.props = props
-        # TODO Add affinity control to the process options. To be on the safe
-        # TODO side for now, open affinity to all cores.
+        # if your kwds are going to have a non-None env then it needs to be edited before the process is initialized
+        if props.layout is not None:
+            if props.layout.gpu_core and props.layout.accelerator_env:
+                    # gpu_core list must be turned into a string in the form "0,1,2" etc
+                    if isinstance(kwds["env"], dict):
+                        kwds["env"][props.layout.accelerator_env] = ",".join(str(core) for core in props.layout.gpu_core)
+                    else:
+                        # this might be unnecessary because the environment might always be a dict.
+                        os.environ[props.layout.accelevator_env] = ",".join(str(core) for core in props.layout.gpu_core)
+        super().__init__(*args, **kwds)
+        # Assuming this is basically a free call, default the afinity to "everything" just in case
         os.sched_setaffinity(self.pid, range(os.cpu_count()))
+        if props.layout is not None:
+            if props.layout.cpu_core:
+                os.sched_setaffinity(self.pid, props.layout.cpu_core)
+
+
+
         # XXX Affinity settings are only inherited by grandchild processes
         # XXX created after this point in time. Any grandchild processes
         # XXX started when the child process starts up most certainly will
@@ -218,6 +235,14 @@ class OutputConnector:
 
         str_data = io_data.decode()
 
+        # This is temporary and code to ignore warnings coming from capnproto. The
+        # capnproto library has been modified to not send the following warning.
+        # kj/filesystem-disk-unix.c++:1703: warning: PWD environment variable ...
+        # The warning does not show up normally but does in our build pipeline for
+        # now until the pycapnp project is updated. So we eliminate it here for now.
+        if 'kj/' in str_data and ': warning:' in str_data:
+            return False
+
         if not is_stderr and self._puid == dfacts.GS_PUID:
             raise TerminationException(str_data)
         else:
@@ -321,6 +346,47 @@ def mk_input_connection_over_channel(ch_desc):
     return dconn.Connection(inbound_initializer=the_channel,
                             options=dconn.ConnectionOptions(min_block_size=512), policy=dp.POLICY_INFRASTRUCTURE)
 
+class AvailableLocalCUIDS:
+    """ Internal only class that manages Process Local CUIDs
+    """
+
+    # We reserve dfacts.MAX_NODES cuids for the main channel for each local services.
+    LOCAL_CUID_RANGE = (dfacts.BASE_SHEP_CUID + dfacts.RANGE_SHEP_CUID) - dfacts.MAX_NODES
+    AVAILABLE_PER_NODE = LOCAL_CUID_RANGE // dfacts.MAX_NODES
+    def __init__(self, node_index):
+        if node_index >= dfacts.MAX_NODES: # 0 <= node_index < MAX_NODES
+            raise RuntimeError(f'A Local Services nodes has {node_index=} which is greater than max allowed.')
+
+        self._node_index = node_index
+        self._active = set()
+        self._initial_cuid = dfacts.BASE_SHEP_CUID + dfacts.MAX_NODES + node_index * AvailableLocalCUIDS.AVAILABLE_PER_NODE
+        self._next_available_cuid = self._initial_cuid
+        self._last_available = self._initial_cuid + AvailableLocalCUIDS.AVAILABLE_PER_NODE - 1
+
+    @property
+    def next(self):
+        if len(self._active) == AvailableLocalCUIDS.AVAILABLE_PER_NODE:
+            raise RuntimeError(f'Ran out of Process Local CUIDs. Limit is {AvailableLocalCUIDS.AVAILABLE_PER_NODE}')
+
+        found_free_cuid = False
+        while not found_free_cuid:
+            cuid = (self._next_available_cuid - self._initial_cuid) % AvailableLocalCUIDS.AVAILABLE_PER_NODE + self._initial_cuid
+            if not cuid in self._active:
+                found_free_cuid = True
+        self._next_available_cuid += 1
+        self._active.add(cuid)
+        return cuid
+
+    def reclaim(self, cuids):
+        self._active.difference_update(cuids)
+
+def send_fli_response(resp_msg, ser_resp_fli):
+
+    resp_fli = fli.FLInterface.attach(b64decode(ser_resp_fli))
+    sendh = resp_fli.sendh()
+    sendh.send_bytes(resp_msg.serialize())
+    sendh.close()
+    resp_fli.detach()
 
 class LocalServer:
     """Handles shepherd messages in normal processing.
@@ -346,6 +412,9 @@ class LocalServer:
         self.exited_channel_output_monitors = queue.SimpleQueue()
         self.hostname = hostname
         self.cuid_to_input_connector = {}
+        self.node_index = parms.this_process.index
+        self.local_cuids = AvailableLocalCUIDS(self.node_index)
+        self.def_muid = dfacts.default_pool_muid_from_index(self.node_index)
 
         if channels is None:
             self.channels = {}  # key c_uid value channel
@@ -355,6 +424,10 @@ class LocalServer:
             self.pools = {}  # key m_uid value memory pool
         else:
             self.pools = pools
+
+        # This is the local services key/value store used for
+        # bootstrapping on-node code.
+        self.kvs = {}
 
         self.apt = {}  # active process table. key: pid, value PopenProps obj
         self.puid2pid = {}  # key: p_uid, value pid
@@ -377,6 +450,13 @@ class LocalServer:
         traceback.print_exception(ex_type, ex_value, ex_tb, file=wrap)
         log.error(f'from {thread.name}:\n{buf.getvalue().decode()}')
         self._abnormal_termination(f'from {thread.name}:\n{buf.getvalue().decode()}')
+
+    def make_local_channel(self):
+        cuid = self.local_cuids.next
+        def_pool = self.pools[self.def_muid]
+        ch = dch.Channel(mem_pool=def_pool, c_uid=cuid)
+        self.channels[cuid] = ch
+        return ch
 
     def set_shutdown(self, msg):
         log = logging.getLogger('shutdown event')
@@ -599,10 +679,10 @@ class LocalServer:
             if msg_pre is None:
                 continue
 
-            if isinstance(msg_pre, str):
+            if isinstance(msg_pre, str) or isinstance(msg_pre, bytearray):
                 try:
                     msg = dmsg.parse(msg_pre)
-                except (json.JSONDecodeError, KeyError, NotImplementedError, ValueError) as err:
+                except (json.JSONDecodeError, KeyError, NotImplementedError, ValueError, TypeError) as err:
                     self._abnormal_termination(f'msg\n{msg_pre}\nfailed parse!\n{err!s}')
                     continue
             else:
@@ -706,7 +786,7 @@ class LocalServer:
 
         if error:
             log.warning(error)
-            resp_msg=fail(error)
+            resp_msg = fail(error)
         else:
             self.channels[msg.c_uid] = ch
             encoded_desc = B64.bytes_to_str(ch.serialize())
@@ -714,6 +794,30 @@ class LocalServer:
             log.info("Received and Created a channel via SHChannelCreate")
 
         return resp_msg
+
+    @dutil.route(dmsg.SHCreateProcessLocalChannel, _DTBL)
+    def create_process_local_channel(self, msg: dmsg.SHCreateProcessLocalChannel) -> None:
+        log = logging.getLogger('create local channel')
+        log.info("Received an SHCreateProcessLocalChannel")
+
+        if not msg.puid in self.puid2pid:
+            resp_msg = dmsg.SHCreateProcessLocalChannelResponse(tag=get_new_tag(), ref=msg.tag, err=DragonError.INVALID_ARGUMENT, errInfo='Cannot create channel for non-existent local process on node.')
+            send_fli_response(resp_msg, msg.respFLI)
+            return
+
+        try:
+            ch = self.make_local_channel()
+            self.apt[self.puid2pid[msg.puid]].props.local_cuids.add(ch.cuid)
+        except dch.ChannelError as cex:
+            error = f'{msg!r} failed: {cex!s}'
+            resp_msg = dmsg.SHCreateProcessLocalChannelResponse(tag=get_new_tag(), ref=msg.tag, err=DragonError.INVALID_OPERATION, errInfo=error)
+            send_fli_response(resp_msg, msg.respFLI)
+            return
+
+        encoded_desc = b64encode(ch.serialize())
+        resp_msg = dmsg.SHCreateProcessLocalChannelResponse(tag=get_new_tag(), ref=msg.tag, err=DragonError.SUCCESS, serChannel=encoded_desc)
+        log.info("Received and Created a channel via SHCreateProcessLocalChannel")
+        send_fli_response(resp_msg, msg.respFLI)
 
     @dutil.route(dmsg.SHChannelDestroy, _DTBL)
     def destroy_channel(self, msg: dmsg.SHChannelDestroy) -> None:
@@ -739,8 +843,25 @@ class LocalServer:
 
         return resp_msg
 
+    @dutil.route(dmsg.SHMultiProcessCreate, _DTBL)
+    def create_group(self, msg: dmsg.SHMultiProcessCreate) -> None:
+        log = logging.getLogger('create_group')
+        success, fail = mk_response_pairs(dmsg.SHMultiProcessCreateResponse, msg.tag)
+
+        responses = []
+        failed = False
+        for process_create_msg in msg.procs:
+            response = self.create_process(process_create_msg, msg.pmi_group_info)
+            responses.append(response)
+            if response.err == dmsg.SHProcessCreateResponse.Errors.FAIL:
+                failed = True
+
+        # always return success
+        resp_msg = success(responses=responses, failed=failed)
+        return resp_msg
+
     @dutil.route(dmsg.SHProcessCreate, _DTBL)
-    def create_process(self, msg: dmsg.SHProcessCreate) -> None:
+    def create_process(self, msg: dmsg.SHProcessCreate, pmi_group_info: Optional[dmsg.PMIGroupInfo] = None) -> None:
         log = logging.getLogger('create process')
         success, fail = mk_response_pairs(dmsg.SHProcessCreateResponse, msg.tag)
 
@@ -763,6 +884,12 @@ class LocalServer:
         the_env = dict(os.environ)
         the_env.update(req_env)
 
+        # Add in the local services return serialized channel descriptor.
+        shep_return_ch = self.make_local_channel()
+        shep_return_cd = b64encode(shep_return_ch.serialize())
+        the_env[dfacts.env_name(dfacts.SHEP_RET_CD)] = shep_return_cd
+
+        gs_ret_chan_resp = None
         stdin_conn = None
         stdin_resp = None
         stdout_conn = None
@@ -771,6 +898,14 @@ class LocalServer:
         stderr_resp = None
         stdout_root = False
         stderr_root = False
+
+        if msg.gs_ret_chan_msg is not None:
+            gs_ret_chan_resp = self.create_channel(msg.gs_ret_chan_msg)
+            if gs_ret_chan_resp.err != dmsg.SHChannelCreateResponse.Errors.SUCCESS:
+                resp_msg = fail(f'Failed creating the GS ret channel for new process: {stdin_resp.err_info}')
+                return resp_msg
+            desc = gs_ret_chan_resp.desc
+            the_env[dfacts.ENV_GS_RET_CD] = desc
 
         if msg.stdin_msg is not None:
             stdin_resp = self.create_channel(msg.stdin_msg)
@@ -832,12 +967,13 @@ class LocalServer:
             if msg.stderr == subprocess.STDOUT:
                 stderr = subprocess.STDOUT
 
-            if msg.pmi_info:
-                log.debug(f'{msg.pmi_info}')
+            if pmi_group_info and msg.pmi_info:
+                log.debug('pmi_group_info=%s', str(pmi_group_info))
+                log.debug('pmi_process_info=%s', str(msg.pmi_info))
                 log.info(f'p_uid {msg.t_p_uid} looking up pmod launch cuid')
                 pmod_launch_cuid = dfacts.pmod_launch_cuid_from_jobinfo(
                     dutils.host_id(),
-                    msg.pmi_info.job_id,
+                    pmi_group_info.job_id,
                     msg.pmi_info.lrank
                 )
 
@@ -848,32 +984,36 @@ class LocalServer:
                 the_env['DRAGON_PMOD_CHILD_CHANNEL'] = str(dutils.B64(pmod_launch_ch.serialize()))
 
                 log.info(f'p_uid {msg.t_p_uid} Setting required PMI environment variables')
-                the_env['PMI_CONTROL_PORT'] = str(msg.pmi_info.control_port)
+                # For PBS, we need to tell PMI to not use a FD to get PALS info:
+                try:
+                    del the_env['PMI_CONTROL_FD']
+                except KeyError:
+                    pass
+
+                the_env['PMI_CONTROL_PORT'] = str(pmi_group_info.control_port)
                 the_env['MPICH_OFI_CXI_PID_BASE'] = str(msg.pmi_info.pid_base)
                 the_env['DL_PLUGIN_RESILIENCY'] = "1"
                 the_env['LD_PRELOAD'] = 'libdragon.so'
                 the_env['_DRAGON_PALS_ENABLED'] = '1'
                 the_env['FI_CXI_RX_MATCH_MODE'] = 'hybrid'
-                # the_env['DRAGON_DEBUG'] = '1'
-                # the_env['PMI_DEBUG'] = '1'
 
             stdin_connector = InputConnector(stdin_conn)
 
-            stdout_connector = OutputConnector(be_in = self.be_in, puid=msg.t_p_uid,
-                    hostname=self.hostname, out_err=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                    conn=stdout_conn, root_proc=stdout_root, critical_proc=False)
+            stdout_connector = OutputConnector(be_in=self.be_in, puid=msg.t_p_uid,
+                                               hostname=self.hostname, out_err=dmsg.SHFwdOutput.FDNum.STDOUT.value,
+                                               conn=stdout_conn, root_proc=stdout_root, critical_proc=False)
 
-            stderr_connector = OutputConnector(be_in = self.be_in, puid=msg.t_p_uid,
-                    hostname=self.hostname, out_err=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                    conn=stderr_conn, root_proc=stderr_root, critical_proc=False)
+            stderr_connector = OutputConnector(be_in=self.be_in, puid=msg.t_p_uid,
+                                               hostname=self.hostname, out_err=dmsg.SHFwdOutput.FDNum.STDERR.value,
+                                               conn=stderr_conn, root_proc=stderr_root, critical_proc=False)
 
             with self.apt_lock:  # race with death watcher; hold lock to get process in table.
                 # The stdout_conn and stderr_conn will be filled in just below.
                 the_proc = PopenProps(
                     ProcessProps(p_uid=msg.t_p_uid, critical=False, r_c_uid=msg.r_c_uid,
-                        stdin_req=msg.stdin, stdout_req=msg.stdout, stderr_req=msg.stderr,
-                        stdin_connector=stdin_connector, stdout_connector=stdout_connector,
-                        stderr_connector=stderr_connector),
+                                 stdin_req=msg.stdin, stdout_req=msg.stdout, stderr_req=msg.stderr,
+                                 stdin_connector=stdin_connector, stdout_connector=stdout_connector,
+                                 stderr_connector=stderr_connector, layout=msg.layout, local_cuids=set([shep_return_ch.cuid])),
                     real_args,
                     bufsize=0,
                     stdin=subprocess.PIPE,
@@ -900,11 +1040,11 @@ class LocalServer:
                 pmod.PMOD(
                     msg.pmi_info.ppn,
                     msg.pmi_info.nid,
-                    msg.pmi_info.nnodes,
-                    msg.pmi_info.nranks,
-                    msg.pmi_info.nidlist,
-                    msg.pmi_info.hostlist,
-                    msg.pmi_info.job_id
+                    pmi_group_info.nnodes,
+                    pmi_group_info.nranks,
+                    pmi_group_info.nidlist,
+                    pmi_group_info.hostlist,
+                    pmi_group_info.job_id
                 ).send_mpi_data(msg.pmi_info.lrank, pmod_launch_ch)
                 log.info(f'p_uid {msg.t_p_uid} DONE: sending mpi data for {msg.pmi_info.lrank}')
 
@@ -918,7 +1058,8 @@ class LocalServer:
                 proc_stdin_send.send(msg.initial_stdin)
                 log.info('The provided string was written to stdin of the process by local services.')
 
-            resp_msg = success(stdin_resp=stdin_resp, stdout_resp=stdout_resp, stderr_resp=stderr_resp)
+            resp_msg = success(stdin_resp=stdin_resp, stdout_resp=stdout_resp, stderr_resp=stderr_resp,
+                               gs_ret_chan_resp=gs_ret_chan_resp)
         except (OSError, ValueError) as popen_err:
             error = f'{msg!r} encountered {popen_err}'
             log.warning(error)
@@ -997,6 +1138,30 @@ class LocalServer:
                 resp_msg = success()
 
             return resp_msg
+
+    @dutil.route(dmsg.SHSetKV, _DTBL)
+    def handle_set_kv(self, msg: dmsg.SHSetKV) -> None:
+        log = logging.getLogger('set key-value')
+        if msg.value == '':
+            if msg.key in self.kvs:
+                del self.kvs[msg.key]
+        else:
+            self.kvs[msg.key] = msg.value
+        resp_msg = dmsg.SHSetKVResponse(tag=get_new_tag(), ref=msg.tag, err=DragonError.SUCCESS)
+        log.info("Received SHSetKV message and processed it.")
+        send_fli_response(resp_msg, msg.respFLI)
+
+    @dutil.route(dmsg.SHGetKV, _DTBL)
+    def handle_get_kv(self, msg: dmsg.SHSetKV) -> None:
+        log = logging.getLogger('get key-value')
+        if not msg.key in self.kvs:
+            resp_msg = dmsg.SHGetKVResponse(tag=get_new_tag(), ref=msg.tag, value='', err=DragonError.NOT_FOUND)
+        else:
+            val = self.kvs[msg.key]
+            resp_msg = dmsg.SHGetKVResponse(tag=get_new_tag(), ref=msg.tag, value=val, err=DragonError.SUCCESS)
+        log.info("Received SHSetKV message and processed it.")
+        send_fli_response(resp_msg, msg.respFLI)
+
 
     @dutil.route(dmsg.AbnormalTermination, _DTBL)
     def handle_abnormal_term(self, msg: dmsg.AbnormalTermination) -> None:
@@ -1088,6 +1253,21 @@ class LocalServer:
                         r_c_uid = proc.props.r_c_uid
                         self._send_response(target_uid=r_c_uid, msg=resp)
                         log.info(f'transmit {repr(resp)} via _send_response')
+
+                # Delete process local channels and reclaim their cuids.
+                for cuid in proc.props.local_cuids:
+                    try:
+                        self.channels[cuid].destroy()
+                    except Exception as ex:
+                        log.info(f'Could not destroy process local channel on process exit. Error:{repr(ex)}')
+
+                    try:
+                        del self.channels[cuid]
+                    except Exception as ex:
+                        log.info(f'Could not remove process local channel on process exit. Error:{repr(ex)}')
+
+                self.local_cuids.reclaim(proc.props.local_cuids)
+                proc.props.local_cuids.clear()
 
                 # If we haven't received SHTeardown yet
                 if proc.props.critical and not self.check_shutdown():

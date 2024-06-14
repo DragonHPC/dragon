@@ -20,8 +20,6 @@ import queue as pyqueue
 import unittest
 import unittest.mock
 import test.support
-import test.support.script_helper
-from test import support
 from test.support import hashlib_helper
 from test.support import socket_helper
 
@@ -617,7 +615,7 @@ class TestCloseFds(unittest.TestCase):
 class TestIgnoreEINTR(unittest.TestCase):
 
     # Sending CONN_MAX_SIZE bytes into a multiprocessing pipe must block
-    CONN_MAX_SIZE = max(support.PIPE_MAX_SIZE, support.SOCK_MAX_SIZE)
+    CONN_MAX_SIZE = max(test.support.PIPE_MAX_SIZE, test.support.SOCK_MAX_SIZE)
 
     @classmethod
     def _test_ignore(cls, conn):
@@ -817,7 +815,7 @@ class TestResourceTracker(unittest.TestCase):
                 p.terminate()
                 p.wait()
 
-                deadline = time.monotonic() + support.LONG_TIMEOUT
+                deadline = time.monotonic() + test.support.LONG_TIMEOUT
                 while time.monotonic() < deadline:
                     time.sleep(0.5)
                     try:
@@ -845,7 +843,7 @@ class TestResourceTracker(unittest.TestCase):
         pid = _resource_tracker._pid
         if pid is not None:
             os.kill(pid, signal.SIGKILL)
-            support.wait_process(pid, exitcode=-signal.SIGKILL)
+            test.support.wait_process(pid, exitcode=-signal.SIGKILL)
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
             _resource_tracker.ensure_running()
@@ -1047,7 +1045,7 @@ class TestPoolNotLeakOnFailure(unittest.TestCase):
 
         @classmethod
         def setUpClass(cls):
-            support.reap_children()
+            test.support.reap_children()
 
         tearDownClass = setUpClass
 
@@ -1064,7 +1062,7 @@ class TestPoolNotLeakOnFailure(unittest.TestCase):
                 dt = time.monotonic() - start_time
                 if dt >= 5.0:
                     test.support.environment_altered = True
-                    support.print_warning(
+                    test.support.print_warning(
                         f"multiprocessing.Manager still has "
                         f"{multiprocessing.active_children()} "
                         f"active children after {dt} seconds"
@@ -1247,9 +1245,15 @@ class TestPoolNotLeakOnFailure(unittest.TestCase):
 class MiscTestCase(unittest.TestCase):
     def test__all__(self):
         # Just make sure names in blacklist are excluded
-        support.check__all__(
-            self, multiprocessing, extra=multiprocessing.__all__, blacklist=["SUBDEBUG", "SUBWARNING"]
-        )
+        try: 
+            test.support.check__all__(
+                self, multiprocessing, extra=multiprocessing.__all__, not_exported=["SUBDEBUG", "SUBWARNING"]
+            )
+        except TypeError:
+            #kwargs prior to Python 3.10
+            test.support.check__all__(
+                self, multiprocessing, extra=multiprocessing.__all__, blacklist=["SUBDEBUG", "SUBWARNING"]
+            )
 
 
 #

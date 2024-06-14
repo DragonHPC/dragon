@@ -13,8 +13,9 @@ call to a trigger function. The payload is optional. The BCast object provides a
 synchronization/communication structure.
 
 .. figure:: images/bcast.png
-
-    **Figure 1: An Any to Many Broadcast Synchronization Object**
+    :name: bcast-any-to-many 
+    
+    **An Any to Many Broadcast Synchronization Object**
 
 A BCast object is meant to be shared by multiple threads/processes. The object is first created by a process.
 Then a serialized descriptor to it can be shared with other processes. Via this serialized descriptor other
@@ -48,10 +49,11 @@ Triggering processes may trigger one or all processes that are waiting on a BCas
 
 .. figure:: images/bcastflow.srms1.png
     :scale: 75%
+    :name: ops-on-bcast 
 
-    **Figure 2: Operations on a BCast Object**
+    **Operations on a BCast Object**
 
-The flow diagram in Figure 2 shows an interaction with a BCast object and points out a few features/semantics of these
+The flow diagram in :numref:`ops-on-bcast` shows an interaction with a BCast object and points out a few features/semantics of these
 synchronization/communication objects. The flow of interaction proceeds as follows:
 
     #. The process T1 creates the BCast object and through some means, communicates its location to all the other
@@ -317,7 +319,7 @@ This creates a BCast object. FIXME - This example is not complete. Placeholder o
 
 .. code-block:: C
     :linenos:
-    :caption: **Figure 1: A BCast Example**
+    :caption: **A BCast Example**
 
     #include <dragon/bcast.h>
     #include <dragon/return_codes.h>

@@ -13,8 +13,6 @@ import random
 import gc
 
 import test.support
-from test import support
-import test.support.script_helper
 from test.support import hashlib_helper
 
 import dragon  # DRAGON import before multiprocessing

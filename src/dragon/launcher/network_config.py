@@ -307,7 +307,7 @@ def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF,
         raise RuntimeError("Unable to acquire backend network configuration")
 
     # Dump to stdout
-    print(json.dumps(node_info.get_sdict()))
+    print(json.dumps(node_info.get_sdict()), flush=True)
 
 
 def get_args(inputs=None):

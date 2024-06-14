@@ -24,8 +24,9 @@ Components
 
 .. figure:: images/mpbridge_architecture.svg
     :scale: 75%
+    :name: mpbridge-architecture 
 
-    **Figure 1: MPBridge architecture**
+    **MPBridge architecture**
 
 Designing the MPBridge component, we had the following goals in mind:
 
@@ -58,8 +59,9 @@ DragonQueue that wraps the same private method.
 Next we show a class diagram of Dragons queue implementation and how it is inserted into the Multiprocessing package.
 
 .. figure:: images/mpbridge_class_diagram.svg
+   :name: dragon-mpbridge-queue-impl 
 
-    **Figure 2: Class diagram of the mpbridge.queue implementation.**
+    **Class diagram of the mpbridge.queue implementation.**
 
 Dragon's native queue implementation resides in ``dragon.native.queue.Queue``. Its public interface is the sum
 of the public interface of the three Python Multiprocessing Queues: ``Queue``, ``JoinableQueue`` and

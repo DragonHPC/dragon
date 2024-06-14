@@ -99,9 +99,9 @@ class SendRequestTestCase(TransmittableTestCase):
         cls.msg = messages.SendRequest(
             seqno=1, timeout=0.5, channel_sd=b'channel desc',
             return_mode=messages.SendReturnMode.WHEN_BUFFERED, sendhid=uuid4(),
-            payload=b'payload',
+            payload=b'payload', hints=0, clientid=0
         )
-        cls.data = b'\x01\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x02' + cls.msg.sendhid.bytes + b'\x00\x00\x00\x00\x00\x00\x00\x07payload'
+        cls.data = b'\x01\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x02' + cls.msg.sendhid.bytes + b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07payload'
 
 class SendMemoryRequestTestCase(TransmittableTestCase):
 
@@ -110,9 +110,9 @@ class SendMemoryRequestTestCase(TransmittableTestCase):
         cls.msg = messages.SendMemoryRequest(
             seqno=1, timeout=0.5, channel_sd=b'channel desc',
             return_mode=messages.SendReturnMode.WHEN_BUFFERED, sendhid=uuid4(),
-            payload=b'payload', mem_sd=b'memory desc',
+            payload=b'payload', mem_sd=b'memory desc', clientid=0, hints=0
         )
-        cls.data = b'\x02\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x02' + cls.msg.sendhid.bytes + b'\x00\x00\x00\x00\x00\x00\x00\x07payload\x00\x0bmemory desc'
+        cls.data = b'\x02\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x02' + cls.msg.sendhid.bytes + b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07payload\x00\x0bmemory desc'
 
 
 class RecvRequestTestCase(TransmittableTestCase):
@@ -150,8 +150,8 @@ class RecvResponseTestCase(TransmittableTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.msg = messages.RecvResponse(seqno=1, payload=b'payload')
-        cls.data = b'\xfc\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x07payload'
+        cls.msg = messages.RecvResponse(seqno=1, payload=b'payload', clientid=0, hints=0)
+        cls.data = b'\xfc\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07payload'
 
 
 class EventResponseTestCase(TransmittableTestCase):

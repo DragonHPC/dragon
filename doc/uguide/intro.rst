@@ -16,8 +16,9 @@ independently of where processes and Dragon resources are placed.
 .. figure:: images/overview_queue_doc.jpg
     :align: center
     :scale: 25%
+    :name: overview-queue-doc 
 
-    **Figure 1: Dragon Object Location Transparency**
+    **Dragon Object Location Transparency**
 
 Dragon provides synchronization and communication :term:`objects<Dragon Object>`
 as well as process management to a parallel distributed program. And it manages
@@ -25,7 +26,7 @@ doing this with complete :term:`transparency<Transparency>` to the application.
 While the placement of data, :term:`Dragon objects<Dragon Object>`, and
 processes may be controlled by the application, it is not required.  And, the
 communication between nodes that is required to make all this work is done
-automatically by the Dragon run-time services. In figure 1 above you should
+automatically by the Dragon run-time services. In :numref:`overview-queue-doc` above you should
 notice that Process A is running on a different node than the queue it is
 receiving from. At the same time, both A and B are sharing a queue on-node.
 Process D is sending to a queue off-node. The :term:`transparency<Transparency>`

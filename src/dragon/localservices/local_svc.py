@@ -13,7 +13,6 @@ import dragon.utils as dutils
 
 from ..infrastructure.node_desc import NodeDescriptor
 from ..transport import start_transport_agent
-from ..launcher.launchargs import TransportAgentOptions
 
 from ..infrastructure import connection as dconn
 from ..infrastructure import facts as dfacts
@@ -66,7 +65,8 @@ def maybe_start_gs(gs_args: Optional[list], gs_env: Optional[dict], hostname: st
                 ProcessProps(p_uid=dfacts.GS_PUID, critical=True, r_c_uid=None,
                              stdin_req=None, stdout_req=None, stderr_req=None,
                              stdin_connector=None, stdout_connector=stdout_connector,
-                             stderr_connector=stderr_connector),
+                             stderr_connector=stderr_connector, layout=None,
+                             local_cuids=set()),
                 gs_args,
                 bufsize=0,
                 stdin=subprocess.PIPE,
@@ -197,9 +197,6 @@ def single(make_infrastructure_resources: bool = True,
         assert msg.node_idx == 0, 'single node'
         node_index = msg.node_idx
 
-        node_sdesc = NodeDescriptor.make_for_current_node(is_primary=True).sdesc
-        log.info(f"Node: {str(node_sdesc)}")
-
         if make_infrastructure_resources:
             assert not any((gs_input, la_input, shep_input, ta_input))
             start_pools, start_channels, shep_input, la_input, ta_input_descr, ta_input, gs_input = mk_inf_resources(node_index)
@@ -218,10 +215,14 @@ def single(make_infrastructure_resources: bool = True,
         assert isinstance(msg, dmsg.BEPingSH), 'startup expectation on shep input'
         log.info('got BEPingSH')
 
-        ch_up_msg = dmsg.SHChannelsUp(tag=get_new_tag(), host_name='localhost',
-                                      host_id=dutils.host_id(), ip_addrs=['127.0.0.1'],
-                                      shep_cd=dparms.this_process.local_shep_cd,
+        ls_node_desc = NodeDescriptor.get_localservices_node_conf(host_name='localhost',
+                                                                  name='localhost',
+                                                                  ip_addrs=['127.0.0.1'], 
+                                                                  is_primary=True)
+        ch_up_msg = dmsg.SHChannelsUp(tag=get_new_tag(),
+                                      node_desc=ls_node_desc,
                                       gs_cd=dparms.this_process.gs_cd)
+
         la_input.send(ch_up_msg.serialize())
         log.info('sent SHChannelsUp')
         gs_proc = maybe_start_gs(gs_args, gs_env, hostname='localhost', be_in=la_input)
@@ -233,7 +234,7 @@ def single(make_infrastructure_resources: bool = True,
         LocalServer.clean_pools(start_pools, log)
         raise RuntimeError('startup fatal error') from rte
 
-    gs_input.send(dmsg.SHPingGS(tag=get_new_tag(), node_sdesc=node_sdesc).serialize())
+    gs_input.send(dmsg.SHPingGS(tag=get_new_tag(), node_sdesc=ls_node_desc.sdesc).serialize())
 
     server = LocalServer(channels=start_channels, pools=start_pools, hostname='localhost')
 
@@ -298,8 +299,6 @@ def multinode(make_infrastructure_resources: bool = True,
         setup_BE_logging(service=dls.LS, logger_sdesc=logger_sdesc, fname=fname)
         log.debug(f'dragon logging initiated on pid={os.getpid()}')
 
-        node_sdesc = NodeDescriptor.make_for_current_node(ip_addrs=ip_addrs, name=hostname, is_primary=is_primary).sdesc
-
         if make_infrastructure_resources:
             assert not any((gs_input, la_input, ls_input, ta_input))
             start_pools, start_channels, ls_input, la_input, ta_input_descr, ta_input, gs_input = mk_inf_resources(node_index)
@@ -324,9 +323,15 @@ def multinode(make_infrastructure_resources: bool = True,
         assert isinstance(msg, dmsg.BEPingSH), 'startup expectation on shep input'
         log.info('got BEPingSH')
 
-        ch_up_msg = dmsg.SHChannelsUp(tag=get_new_tag(), host_name=hostname, host_id=dutils.host_id(),
-                                      ip_addrs=ip_addrs, shep_cd=dparms.this_process.local_shep_cd,
-                                      gs_cd=gs_cd, idx=node_index)
+        # Create a node descriptor for this node I'm running on
+        ls_node_desc = NodeDescriptor.get_localservices_node_conf(host_name=hostname,
+                                                                  name=hostname,
+                                                                  ip_addrs=ip_addrs,
+                                                                  is_primary=is_primary)
+        ch_up_msg = dmsg.SHChannelsUp(tag=get_new_tag(),
+                                      node_desc=ls_node_desc,
+                                      gs_cd=gs_cd,
+                                      idx=node_index)
 
         la_input.send(ch_up_msg.serialize())
         log.info('sent SHChannelsUp')
@@ -400,7 +405,9 @@ def multinode(make_infrastructure_resources: bool = True,
                 stderr_connector=None,
                 stdin_req=None,
                 stdout_req=None,
-                stderr_req=None
+                stderr_req=None,
+                layout=None,
+                local_cuids=set()
             )
         except Exception as e:
             logging.getLogger(dls.LS).getChild('start_ta').fatal(f'transport agent launch failed on {node_index}')
@@ -464,7 +471,7 @@ def multinode(make_infrastructure_resources: bool = True,
             log.info('ls received GSPingSH from gs - m10')
 
             # Send response to GS
-            gs_in_wh.send(dmsg.SHPingGS(tag=get_new_tag(), idx=node_index, node_sdesc=node_sdesc).serialize())
+            gs_in_wh.send(dmsg.SHPingGS(tag=get_new_tag(), idx=node_index, node_sdesc=ls_node_desc.sdesc).serialize())
             log.info('ls sent SHPingGS - m11')
     except (OSError, EOFError, json.JSONDecodeError, AssertionError, RuntimeError) as rte:
         log.fatal('startup failed')

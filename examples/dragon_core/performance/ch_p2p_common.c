@@ -30,7 +30,6 @@ attach_to_memory_pool(char *b64_mpool_data, dragonMemoryPoolDescr_t *pdragon_mpo
     DEBUG_PRINT(("Decoding memory pool's serialized descriptor\n"));
     dragon_mpool_serial.data = dragon_base64_decode(
         b64_mpool_data,
-        strlen(b64_mpool_data),
         &dragon_mpool_serial.len);
 
     DEBUG_PRINT(("Attaching to memory pool\n"));

@@ -10,6 +10,9 @@
 #define likely(x)      __builtin_expect(!!(x), 1)
 #define unlikely(x)    __builtin_expect(!!(x), 0)
 
+#define LOCK_DESTROYED 0xDEADDEADDEADDEAD
+#define LOCK_INITD 0x0101010101010101
+
 /* @MCB: Lock sizes.
    First uint64_t size is to avoid compiler-specific enum sizes.
    Second uint64_t is to avoid architecture-specific size_t sizes.
@@ -350,6 +353,27 @@ dragon_lock_state(dragonLock_t * lock, dragonLockState_t * state)
     }
 }
 
+bool
+dragon_lock_is_valid(dragonLock_t * lock)
+{
+    if (lock == NULL)
+        return false;
+
+    switch(lock->kind) {
+    case DRAGON_LOCK_FIFO:
+        return dragon_fifo_lock_is_valid(lock->ptr.fifo);
+
+    case DRAGON_LOCK_FIFO_LITE:
+        return dragon_fifolite_lock_is_valid(lock->ptr.fifo_lite);
+
+    case DRAGON_LOCK_GREEDY:
+        return dragon_greedy_lock_is_valid(lock->ptr.greedy);
+
+    default:
+        return false;
+    }
+}
+
 /* map a new dragonLock_t to a block of memory and optionally initialize it */
 dragonError_t
 dragon_fifo_lock_init(dragonFIFOLock_t * dlock, void * ptr)
@@ -363,10 +387,10 @@ dragon_fifo_lock_init(dragonFIFOLock_t * dlock, void * ptr)
 
     dragonError_t derr;
     derr = dragon_fifo_lock_attach(dlock, ptr);
-    if (derr != DRAGON_SUCCESS)
-        append_err_return(derr,"");
+    if (derr != DRAGON_OBJECT_DESTROYED)
+        append_err_return(DRAGON_LOCK_ALREADY_INITD,"");
 
-    *(dlock->initd) = 1UL; // Make note for destroy
+    *(dlock->initd) = LOCK_INITD; // Make note for destroy
 
     *(dlock->lock_size) = dragonFIFOLockSize;
     *(dlock->now_serving) = 0UL;
@@ -394,11 +418,10 @@ dragon_fifolite_lock_init(dragonFIFOLiteLock_t * dlock, void * ptr)
 
     dragonError_t derr;
     derr = dragon_fifolite_lock_attach(dlock, ptr);
-    if (derr != DRAGON_SUCCESS)
-        append_err_return(derr,"");
+    if (derr != DRAGON_OBJECT_DESTROYED)
+        append_err_return(DRAGON_LOCK_ALREADY_INITD,"");
 
-    *(dlock->initd) = 1UL; // Make note for destroy
-
+    *(dlock->initd) = LOCK_INITD; // Make note for destroy
     *(dlock->lock_size) = dragonFIFOLiteLockSize;
     *(dlock->now_serving) = 0UL;
     *(dlock->ticket_counter) = 0UL;
@@ -411,18 +434,19 @@ dragon_fifo_lock_attach(dragonFIFOLock_t * dlock, void * ptr)
 {
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
+
     if (ptr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 
     ptr += sizeof(uint64_t);
-
     dlock->lock_size = (uint64_t *)ptr;
+
     ptr += sizeof(uint64_t);
-
     dlock->initd = (dragonLockType_t *)ptr;
-    ptr += sizeof(dragonLockType_t);
 
+    ptr += sizeof(dragonLockType_t);
     dlock->now_serving = (dragonLockType_t *)ptr;
+
     ptr += DRAGON_LOCK_CL_PADDING;
     dlock->ticket_counter = (dragonLockType_t *)ptr;
     ptr += DRAGON_LOCK_CL_PADDING;
@@ -466,6 +490,9 @@ dragon_fifo_lock_attach(dragonFIFOLock_t * dlock, void * ptr)
         append_err_return(derr,"");
     }
 
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "The Dragon object was already destroyed and cannot be attached.");
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -491,6 +518,9 @@ dragon_fifolite_lock_attach(dragonFIFOLiteLock_t * dlock, void * ptr)
     dlock->ticket_counter = (dragonLockType_t *)ptr;
     ptr += DRAGON_LOCK_CL_PADDING;
 
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "The Dragon object was already destroyed and cannot be attached.");
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -511,7 +541,7 @@ dragon_fifo_lock_detach(dragonFIFOLock_t * dlock)
         free(dlock->nodes_ticket_counter);
 
     dragonError_t derr = dragon_fifolite_lock_destroy(&dlock->thr_lock);
-    if (derr != DRAGON_SUCCESS)
+    if (derr != DRAGON_SUCCESS && derr != DRAGON_OBJECT_DESTROYED)
         append_err_return(derr,"");
     if (dlock->thr_lock_dptr != NULL)
         free(dlock->thr_lock_dptr);
@@ -544,11 +574,10 @@ dragon_greedy_lock_init(dragonGreedyLock_t * dlock, void * ptr)
     *(uint64_t*)ptr = (uint64_t)DRAGON_LOCK_GREEDY;
     dragonError_t derr;
     derr = dragon_greedy_lock_attach(dlock, ptr);
-    if (derr != DRAGON_SUCCESS)
-        append_err_return(derr,"");
+    if (derr != DRAGON_OBJECT_DESTROYED)
+        append_err_return(DRAGON_LOCK_ALREADY_INITD,"");
 
-
-    *(dlock->initd) = 1UL; // Make note for destroy
+    *(dlock->initd) = LOCK_INITD;
 
     *(dlock->lock_size) = dragonGreedyLockSize;
 
@@ -567,18 +596,20 @@ dragon_greedy_lock_attach(dragonGreedyLock_t * dlock, void * ptr)
 {
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
-
     if (ptr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 
     ptr += sizeof(uint64_t);
-
     dlock->lock_size = (uint64_t *)ptr;
+
     ptr += sizeof(uint64_t);
     dlock->initd = (dragonLockType_t *)ptr;
-    ptr += sizeof(dragonLockType_t);
 
+    ptr += sizeof(dragonLockType_t);
     dlock->mutex = (pthread_mutex_t *)ptr;
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "The Dragon object was already destroyed and cannot be attached.");
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -603,15 +634,12 @@ dragon_fifo_lock_destroy(dragonFIFOLock_t * dlock)
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 
-    if (dlock->initd == NULL)
-        err_return(DRAGON_LOCK_NOT_INITD,"");
-
-    dragonLockType_t cur_initd, already_initd;
-    already_initd = 0UL;
-    cur_initd = atomic_exchange_explicit(dlock->initd, already_initd,
+    dragonLockType_t cur_initd, destroy;
+    destroy = LOCK_DESTROYED;
+    cur_initd = atomic_exchange_explicit(dlock->initd, destroy,
                                          DRAGON_LOCK_MEM_ORDER);
 
-    if (cur_initd == 0UL)
+    if (cur_initd != LOCK_INITD && cur_initd != LOCK_DESTROYED)
         err_return(DRAGON_LOCK_NOT_INITD,"");
 
     return dragon_fifo_lock_detach(dlock);
@@ -623,15 +651,12 @@ dragon_fifolite_lock_destroy(dragonFIFOLiteLock_t * dlock)
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 
-    if (dlock->initd == NULL)
-        err_return(DRAGON_LOCK_NOT_INITD,"");
-
-    dragonLockType_t cur_initd, already_initd;
-    already_initd = 0UL;
-    cur_initd = atomic_exchange_explicit(dlock->initd, already_initd,
+    dragonLockType_t cur_initd, destroy;
+    destroy = LOCK_DESTROYED;
+    cur_initd = atomic_exchange_explicit(dlock->initd, destroy,
                                          DRAGON_LOCK_MEM_ORDER);
 
-    if (cur_initd == 0UL)
+    if (cur_initd != LOCK_INITD && cur_initd != LOCK_DESTROYED)
         err_return(DRAGON_LOCK_NOT_INITD,"");
 
     return dragon_fifolite_lock_detach(dlock);
@@ -646,12 +671,12 @@ dragon_greedy_lock_destroy(dragonGreedyLock_t * dlock)
     if (dlock->initd == NULL)
         err_return(DRAGON_LOCK_NOT_INITD,"");
 
-    dragonLockType_t cur_initd, already_initd;
-    already_initd = 0UL;
-    cur_initd = atomic_exchange_explicit(dlock->initd, already_initd,
+    dragonLockType_t cur_initd, destroy;
+    destroy = LOCK_DESTROYED;
+    cur_initd = atomic_exchange_explicit(dlock->initd, destroy,
                                          DRAGON_LOCK_MEM_ORDER);
 
-    if (cur_initd == 0UL)
+    if (cur_initd != LOCK_INITD && cur_initd != LOCK_DESTROYED)
         err_return(DRAGON_LOCK_NOT_INITD,"");
 
     if (pthread_mutex_destroy(dlock->mutex) != 0)
@@ -666,6 +691,12 @@ dragon_fifo_lock(dragonFIFOLock_t * dlock)
 {
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
+
+    if (dlock->initd == NULL)
+        err_return(DRAGON_LOCK_NOT_INITD,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
 
     /* get the local thread lock */
     dragonError_t derr = dragon_fifolite_lock(&dlock->thr_lock);
@@ -710,6 +741,12 @@ dragon_fifolite_lock(dragonFIFOLiteLock_t * dlock)
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 
+    if (dlock->initd == NULL)
+        err_return(DRAGON_LOCK_NOT_INITD,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
+
     /* now contend for the main lock */
     dragonLockType_t my_ticket;
     my_ticket = atomic_fetch_add_explicit(dlock->ticket_counter, 1UL,
@@ -735,6 +772,12 @@ dragon_greedy_lock(dragonGreedyLock_t * dlock)
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 
+    if (dlock->initd == NULL)
+        err_return(DRAGON_LOCK_NOT_INITD,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
+
     int ierr = pthread_mutex_lock(dlock->mutex);
     if (unlikely(ierr != 0))
         err_return(DRAGON_LOCK_PTHREAD_MUTEX_LOCK,"");
@@ -751,6 +794,12 @@ dragon_fifo_try_lock(dragonFIFOLock_t * dlock, int *locked)
 
     if (locked == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
+
+    if (dlock->initd == NULL)
+        err_return(DRAGON_LOCK_NOT_INITD,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
 
     *locked = 0;
 
@@ -823,6 +872,12 @@ dragon_fifolite_try_lock(dragonFIFOLiteLock_t * dlock, int *locked)
     if (locked == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 
+    if (dlock->initd == NULL)
+        err_return(DRAGON_LOCK_NOT_INITD,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
+
     *locked = 0;
 
     dragonLockType_t cticket, now_serve;
@@ -860,6 +915,12 @@ dragon_greedy_try_lock(dragonGreedyLock_t * dlock, int *locked)
 
     if (locked == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
+
+    if (dlock->initd == NULL)
+        err_return(DRAGON_LOCK_NOT_INITD,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
 
     int ierr = pthread_mutex_trylock(dlock->mutex);
 
@@ -960,4 +1021,40 @@ dragon_greedy_lock_state(dragonGreedyLock_t* dlock, dragonLockState_t* state)
         *state = DRAGON_LOCK_STATE_LOCKED;
 
     no_err_return(DRAGON_SUCCESS);
+}
+
+bool
+dragon_fifolite_lock_is_valid(dragonFIFOLiteLock_t * dlock)
+{
+    if (dlock == NULL)
+        return false;
+
+    if (dlock->initd == NULL)
+        return false;
+
+    return *dlock->initd == LOCK_INITD;
+}
+
+bool
+dragon_fifo_lock_is_valid(dragonFIFOLock_t * dlock)
+{
+    if (dlock == NULL)
+        return false;
+
+    if (dlock->initd == NULL)
+        return false;
+
+    return *dlock->initd == LOCK_INITD;
+}
+
+bool
+dragon_greedy_lock_is_valid(dragonGreedyLock_t* dlock)
+{
+    if (dlock == NULL)
+        return false;
+
+    if (dlock->initd == NULL)
+        return false;
+
+    return *dlock->initd == LOCK_INITD;
 }

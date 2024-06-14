@@ -13,25 +13,27 @@ user application decides to directly spawn processes itself, it retains the resp
 resources they use.
 
 .. figure:: images/deployment_single_node.svg
+    :name: deploy-single-node 
 
-    **Figure 1: Deployment diagram a single node**
+    **Deployment diagram a single node**
 
 .. figure:: images/singlenodeoverview.png
+    :name: singlenode-overview 
 
-    **Figure 2: Single-Node Overview of Dragon Services**
+    **Single-Node Overview of Dragon Services**
 
 .. FIXME: NOTE: In the single-node case the :ref:`Launcher` serves as both frontned and backend component. So the launcher sends and receives several backend messages during bringup and teardown.
 
 **FIXME**: Adapt UML Diagram to be correct
 
-In the single-node case, as depicted in figures 1 + 2, there is no :ref:`TransportAgent`, :ref:`MRNet` tree,
-or :ref:`Launcher` backend service.  :ref:`Channels` in figure 2 are represented by the colored arrows. The
+In the single-node case, as depicted in :numref:`deploy-single-node` + :numref:`singlenode-overview`, there is no :ref:`TransportAgent`, :ref:`MRNet` tree,
+or :ref:`Launcher` backend service.  :ref:`Channels` in :numref:`singlenode-overview` are represented by the colored arrows. The
 :ref:`Launcher` steps into the place of the Backend and the Shepherd communicates directly with the Launcher
 instead of going  through the Backend and the :ref:`MRNet` tree. The :ref:`TransportAgent` is not started
 since there is no off-node communication in this case. However, :ref:`LocalServices` and :ref:`GlobalServices`
 still are present to provide the same level of service that is present in the multi-node case. While the
 bringup and teardown of the Dragon :ref:`Services` is significantly different in the single-node and
-multi-node cases, from figures 1 and 2 the overall structure is similar.
+multi-node cases, from :numref:`deploy-single-node` and :numref:`singlenode-overview` the overall structure is similar.
 
 .. _SingleNodeBringup:
 
@@ -39,10 +41,11 @@ Single Node Bringup
 ===================
 
 .. figure:: images/startup_seq_single_node.svg
+    :name: startup-seq-single-node 
 
-    **Figure 3: Startup Sequence on a single node**
+    **Startup Sequence on a single node**
 
-The bringup of the Dragon run-time services is detailed in figure 3 and below, where also message descriptions
+The bringup of the Dragon run-time services is detailed in :numref:`startup-seq-single-node` and below, where also message descriptions
 are given.
 
 During single node bringup the Shepherd is started by the Launcher and a pipe is used to provide the initial
@@ -645,7 +648,7 @@ infrastructure starting with activity 5 and message 4 in the diagram below.
 Transaction diagram
 -------------------
 
-Figure 4 depicts the normal single node teardown sequence and is also included
+:numref:`teardown-seq-single-node` depicts the normal single node teardown sequence and is also included
 in :ref:`SingleNodeTeardown` where message defintions are given in more
 detail. The tear down is initiated by Global Services. The Shepherd shuts down
 as a result of the *SHTakedown* message sent from the launcher but the sequence
@@ -658,8 +661,9 @@ the teardown of the Dragon Services.
 
     .. figure:: images/single_teardown.srms1.png
         :scale: 75%
+        :name: teardown-seq-single-node 
 
-        **Figure 4: Single-Node Teardown Sequence**
+        **Single-Node Teardown Sequence**
 
 Activities
 ^^^^^^^^^^

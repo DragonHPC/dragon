@@ -20,6 +20,7 @@ char * dragon_getlasterrstr();
 
 /* This can be modified during debugging if desired */
 #define no_err_return(err) ({\
+    _set_errstr(NULL);\
     return err;\
 })
 

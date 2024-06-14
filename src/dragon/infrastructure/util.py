@@ -29,7 +29,8 @@ import time
 import logging
 from warnings import warn
 from .parameters import this_process
-from socket import socket, AF_INET, SOCK_STREAM
+from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM, gethostname, inet_aton
+import struct
 from .facts import FIRST_PUID
 
 
@@ -45,20 +46,20 @@ def _get_access_modes(f):
 class NewlineStreamWrapper:
     """Helper class for sending json objects through streams.
 
-        This class sends newline-delimited newline-free strings
-        through streams with an interface similar to multiprocessing.Connection.
+    This class sends newline-delimited newline-free strings
+    through streams with an interface similar to multiprocessing.Connection.
 
-        It is used for sending around JSON-encoded infrastructure
-        messages through streams and in testing.
+    It is used for sending around JSON-encoded infrastructure
+    messages through streams and in testing.
 
-        TODO: consider whether this belongs in base code.  It feels more
-        like something that should only be in a test bench.
+    TODO: consider whether this belongs in base code.  It feels more
+    like something that should only be in a test bench.
     """
 
     def __init__(self, stream, read_intent=None, write_intent=None):
         """
-            read_intent and write_intent are used to ensure
-            clients are using the right operations on the stream.
+        read_intent and write_intent are used to ensure
+        clients are using the right operations on the stream.
         """
         try:
             readable, writeable = _get_access_modes(stream)
@@ -69,9 +70,9 @@ class NewlineStreamWrapper:
         self.read_intent = bool(readable if read_intent is None else read_intent)
         self.write_intent = bool(writeable if write_intent is None else write_intent)
         if self.read_intent and not readable:
-            warn(f'Intend to read a stream not open for reading: {stream}')
+            warn(f"Intend to read a stream not open for reading: {stream}")
         if self.write_intent and not writeable:
-            warn(f'Intend to write a stream not open for writing: {stream}')
+            warn(f"Intend to write a stream not open for writing: {stream}")
         self.stream = stream
 
     def send(self, data):
@@ -83,9 +84,9 @@ class NewlineStreamWrapper:
         :type data: string
         """
         try:
-            assert self.write_intent, 'sending to a read wrap'
+            assert self.write_intent, "sending to a read wrap"
             assert isinstance(data, str)
-            msg_str = data.strip().replace('\n', ' ') + '\n'
+            msg_str = data.strip().replace("\n", " ") + "\n"
 
             # try to tolerate if the stream is a text mode stream
             if isinstance(self.stream, io.TextIOBase):
@@ -104,7 +105,7 @@ class NewlineStreamWrapper:
         """Perform the read operation on the stream. Assert that the read_intent
         is set, ensuring the client is using the right operation on the stream.
         """
-        assert self.read_intent, 'receiving from a write wrap'
+        assert self.read_intent, "receiving from a write wrap"
         line = self.stream.readline()
 
         # try to tolerate if the stream is a text stream
@@ -116,7 +117,7 @@ class NewlineStreamWrapper:
         return stuff
 
     def poll(self, timeout=0):
-        """ Poll for the read I/O events on the registered file objects of type stream.
+        """Poll for the read I/O events on the registered file objects of type stream.
         Collect the selector if already set and its associated events, else the default
         selector and register with the read event, to wait upon. Also, assert that the
         ride_intent is set, ensuring the client is using the right operation on the stream.
@@ -134,7 +135,6 @@ class NewlineStreamWrapper:
             return self.stream.poll(timeout=timeout)
         except AttributeError:
             pass
-
 
         try:
             sel = self.selector
@@ -163,13 +163,13 @@ class NewlineStreamWrapper:
 class PriorityMultiMap:
     """Class combining a multimap with a priority queue to allow timeouts.
 
-        Correct behavior relies on keys never being reused.
+    Correct behavior relies on keys never being reused.
 
-        This is used in Global Services to manage requests for timeout
-        notification from multiple sources.
+    This is used in Global Services to manage requests for timeout
+    notification from multiple sources.
 
-        TODO: this needs some unit tests
-        TODO: consider reimplementing in terms of a collections.Counter object!
+    TODO: this needs some unit tests
+    TODO: consider reimplementing in terms of a collections.Counter object!
     """
 
     def __init__(self):
@@ -177,7 +177,7 @@ class PriorityMultiMap:
         self.dead_keys = set()
         self.timeout_keys = set()
         self.timeout_pq = list()
-        self.deadlines = dict() # key: (key,value), value: deadline
+        self.deadlines = dict()  # key: (key,value), value: deadline
 
     def put(self, key, value, timeout=None):
         """Store (key, value) pair to the map (internal items), used by the global requests
@@ -349,13 +349,14 @@ def survey_dev_shm():
     """
 
     my_id = os.getuid()
-    with os.scandir('/dev/shm') as it:
+    with os.scandir("/dev/shm") as it:
         # during a certain shutdown race condition, FileNotFoundError may be raised.
         try:
             rv = {entry.name for entry in it if entry.stat().st_uid == my_id}
             return rv
         except FileNotFoundError:
             pass
+
 
 def compare_dev_shm(previous):
     """Warns if there are files owned by current user in /dev/shm not previously seen
@@ -373,14 +374,14 @@ def compare_dev_shm(previous):
     remaining = now - previous
 
     if remaining:
-        print(f'warning: {len(remaining)} leftover files in /dev/shm: ')
+        print(f"warning: {len(remaining)} leftover files in /dev/shm: ")
 
     for fn in remaining:
         print(fn)
 
 
 def route(msg_type, routing_table, metadata=None):
-    """ Decorator routing adapter.
+    """Decorator routing adapter.
 
     This is a function decorator used to accumulate handlers for a particular
     kind of message into a routing table indexed by type, used
@@ -407,16 +408,17 @@ def route(msg_type, routing_table, metadata=None):
 
 # TODO: PE-37739, the full on client debug hookup story.
 def mk_fifo_debugger(basename, *, override_bph=False, quiet=False):
-    dbg_in_fn = basename + '_dbg_in'
-    dbg_out_fn = basename + '_dbg_out'
+    dbg_in_fn = basename + "_dbg_in"
+    dbg_out_fn = basename + "_dbg_out"
     os.mkfifo(dbg_in_fn)
     os.mkfifo(dbg_out_fn)
     if not quiet:
-        print(f'fifos made: in: {dbg_in_fn} out: {dbg_out_fn}; waiting on open')
+        print(f"fifos made: in: {dbg_in_fn} out: {dbg_out_fn}; waiting on open")
     sys.stdout.flush()
-    in_fifo = open(dbg_in_fn, 'r')
-    out_fifo = open(dbg_out_fn, 'w')
+    in_fifo = open(dbg_in_fn, "r")
+    out_fifo = open(dbg_out_fn, "w")
     import pdb
+
     debugger = pdb.Pdb(stdin=in_fifo, stdout=out_fifo)
 
     if override_bph:
@@ -428,8 +430,8 @@ def mk_fifo_debugger(basename, *, override_bph=False, quiet=False):
 def to_str(x):
     """Convert anything to a string"""
     if x is None:
-        return ''
-    if hasattr(x, 'decode'):
+        return ""
+    if hasattr(x, "decode"):
         return x.decode()
     return str(x)
 
@@ -467,7 +469,9 @@ def to_str_iter(seq):
         yield from map(to_str, seq)
 
 
-def range_expr(s: str, prog: re.Pattern = re.compile(r'(?P<start>\d+)(?:-(?P<stop>\d+)(?::(?P<step>\d+))?)?$')) -> Iterable[int]:
+def range_expr(
+    s: str, prog: re.Pattern = re.compile(r"(?P<start>\d+)(?:-(?P<stop>\d+)(?::(?P<step>\d+))?)?$")
+) -> Iterable[int]:
     """Return iterable corresponding to the given range expression of
     the form START[-STOP[:STEP]][,...].
 
@@ -482,14 +486,16 @@ def range_expr(s: str, prog: re.Pattern = re.compile(r'(?P<start>\d+)(?:-(?P<sto
     {0, 2, 3, 4, 6, 8, 9, 10}
     """
     iters = []
-    for expr in s.split(','):
+    for expr in s.split(","):
         m = prog.match(expr)
         if m is None:
-            raise ValueError(f'Invalid range: {expr}')
+            raise ValueError(f"Invalid range: {expr}")
         args = list(map(int, filter(None, m.groups())))
         if len(args) == 1:
             # Singular value specified
-            args.append(args[0]+1,)
+            args.append(
+                args[0] + 1,
+            )
         else:
             # Add one to stop value, to make the range inclusive
             args[1] += 1
@@ -503,7 +509,7 @@ def enable_logging(level=logging.DEBUG):
 
 def user_print(*args, **kwargs):
     if this_process.my_puid >= FIRST_PUID:
-        kwargs['flush'] = True
+        kwargs["flush"] = True
         print(*args, **kwargs)
 
 
@@ -520,13 +526,24 @@ def port_check(ip_port):
         return True
 
 
+def get_port():
+    host = gethostname()
+    min_port = 1025; max_port = 65536
+
+    for port in range(min_port, max_port + 1):
+        if port_check((host, port)):
+            return port
+
+    raise RuntimeError('No available ports')
+
+
 def get_host_info(network_prefix) -> tuple[str, str, list[str]]:
     """Return username, hostname, and list of IP addresses."""
     from dragon.transport.ifaddrs import getifaddrs, InterfaceAddressFilter
     from ..dlogging.util import DragonLoggingServices as dls
 
-    log = logging.getLogger(dls.LA_BE).getChild('get_host_info')
-    _user = os.environ.get('USER', str(os.getuid()))
+    log = logging.getLogger(dls.LA_BE).getChild("get_host_info")
+    _user = os.environ.get("USER", str(os.getuid()))
 
     ifaddr_filter = InterfaceAddressFilter()
     ifaddr_filter.af_inet(inet6=False)  # Disable IPv6 for now
@@ -534,10 +551,10 @@ def get_host_info(network_prefix) -> tuple[str, str, list[str]]:
     try:
         ifaddrs = list(filter(ifaddr_filter, getifaddrs()))
     except OSError:
-        log.exception('Failed to get network interface addresses')
+        log.exception("Failed to get network interface addresses")
         raise
     if not ifaddrs:
-        _msg = 'No network interface with an AF_INET address was found'
+        _msg = "No network interface with an AF_INET address was found"
         log.error(_msg)
         raise RuntimeError(_msg)
 
@@ -550,11 +567,79 @@ def get_host_info(network_prefix) -> tuple[str, str, list[str]]:
 
     ifaddr_filter.clear()
     ifaddr_filter.name_re(re.compile(re_prefix))
-    ip_addrs = [ifa['addr']['addr'] for ifa in filter(ifaddr_filter, ifaddrs)]
+    ip_addrs = [ifa["addr"]["addr"] for ifa in filter(ifaddr_filter, ifaddrs)]
     if not ip_addrs:
-        _msg = f'No IP addresses found matching regex pattern: {network_prefix}'
+        _msg = f"No IP addresses found matching regex pattern: {network_prefix}"
         log.error(_msg)
         raise RuntimeError(_msg)
     log.info(f"Found IP addresses: {','.join(ip_addrs)}")
 
     return _user, ip_addrs
+
+
+class stack:
+    """This provides a traditional stack implementation for use in the dragon infrastructure."""
+
+    def __init__(self, initial_items=[]):
+        # A stack can be given an initial contents. The first item in initial_items will be on the bottom of the constructed stack.
+        self.items = []
+        for item in initial_items:
+            self.push(item)
+
+    def pop(self):
+        # Pop returns the last item pushed and raises a RuntimeError if the stack is currently empty.
+        if self.isEmpty():
+            raise RuntimeError("Attempt to pop an empty stack")
+
+        topIdx = len(self.items) - 1
+        item = self.items[topIdx]
+        del self.items[topIdx]
+        return item
+
+    def push(self, item):
+        # pushes an item onto the top of the stack
+        self.items.append(item)
+
+    def top(self):
+        # Top returns the top item of the stack or raises an RuntimeError if the stack is currently empty.
+        if self.isEmpty():
+            raise RuntimeError("Attempt to get top of empty stack")
+
+        topIdx = len(self.items) - 1
+        return self.items[topIdx]
+
+    def isEmpty(self):
+        # isEmpty returns true when the stack is not empty and false otherwise.
+        return len(self.items) == 0
+
+    def clear(self):
+        # Clears the stack of all items, resetting it to an empty stack.
+        self.items = []
+
+
+# get external IP address
+def get_external_ip_addr():
+    s = socket(AF_INET, SOCK_DGRAM)
+    s.settimeout(0)
+    connected = False
+    try:
+        # doesn't even have to be reachable
+        s.connect(('10.254.254.254', 1))
+        connected = True
+        ip_addr = s.getsockname()[0]
+        s.close()
+        return ip_addr
+    except Exception:
+        if connected:
+            s.close
+        raise
+
+
+def rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr):
+    fe_ext_packed_ip = inet_aton(fe_ext_ip_addr)
+    head_node_packed_ip = inet_aton(head_node_ip_addr)
+
+    fe_ext_int = struct.unpack("!L", fe_ext_packed_ip)[0]
+    head_node_int = struct.unpack("!L", head_node_packed_ip)[0]
+
+    return (fe_ext_int << 32) | head_node_int

@@ -166,7 +166,8 @@ typedef struct dragonMemoryPoolAttr_st {
  */
 typedef struct dragonMemoryPoolDescr_st {
     int _original;
-    dragonULInt _idx;
+    dragonM_UID_t _idx;
+    dragonRT_UID_t _rt_idx;
 } dragonMemoryPoolDescr_t;
 
 /**
@@ -249,10 +250,19 @@ dragonError_t
 dragon_memory_pool_attach_from_env(dragonMemoryPoolDescr_t * pool_descr, const char * env_var);
 
 dragonError_t
+dragon_memory_pool_attach_default(dragonMemoryPoolDescr_t* pool);
+
+dragonError_t
 dragon_memory_pool_detach(dragonMemoryPoolDescr_t * pool_descr);
 
 dragonError_t
 dragon_memory_pool_get_hostid(dragonMemoryPoolDescr_t * pool_descr, dragonULInt * hostid);
+
+dragonError_t
+dragon_memory_pool_runtime_is_local(dragonMemoryPoolDescr_t *pool_descr, bool *runtime_is_local);
+
+dragonError_t
+dragon_memory_pool_get_rt_uid(dragonMemoryPoolDescr_t *pool_descr, dragonULInt *rt_uid);
 
 dragonError_t
 dragon_memory_pool_get_uid_fname(const dragonMemoryPoolSerial_t * pool_ser, dragonULInt * uid_out, char ** fname_out);
@@ -284,6 +294,24 @@ dragon_memory_pool_get_allocations(const dragonMemoryPoolDescr_t * pool_descr, d
 dragonError_t
 dragon_memory_pool_get_type_allocations(const dragonMemoryPoolDescr_t * pool_descr, const dragonMemoryAllocationType_t type,
                                         dragonMemoryPoolAllocations_t * allocs);
+
+dragonError_t
+dragon_memory_pool_muid(dragonMemoryPoolDescr_t* pool_descr, dragonULInt* muid);
+
+dragonError_t
+dragon_memory_pool_get_free_size(dragonMemoryPoolDescr_t* pool_descr, uint64_t* free_size);
+
+dragonError_t
+dragon_memory_pool_get_total_size(dragonMemoryPoolDescr_t* pool_descr, uint64_t* total_size);
+
+dragonError_t
+dragon_memory_pool_get_utilization_pct(dragonMemoryPoolDescr_t* pool_descr, double* utilization_pct);
+
+dragonError_t
+dragon_memory_pool_get_pointer(const dragonMemoryPoolDescr_t * pool_descr, void **base_ptr);
+
+dragonError_t
+dragon_memory_pool_get_size(const dragonMemoryPoolDescr_t * pool_descr, size_t *size);
 
 dragonError_t
 dragon_memory_alloc(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr, const size_t bytes);
@@ -332,6 +360,15 @@ dragon_memory_descr_clone(dragonMemoryDescr_t * newmem_descr, const dragonMemory
 
 dragonError_t
 dragon_memory_modify_size(dragonMemoryDescr_t * mem_descr, const size_t new_size);
+
+dragonError_t
+dragon_memory_hash(dragonMemoryDescr_t* mem_descr, dragonULInt* hash_value);
+
+dragonError_t
+dragon_memory_equal(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result);
+
+dragonError_t
+dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout);
 
 #ifdef __cplusplus
 }

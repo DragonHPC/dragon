@@ -1,12 +1,35 @@
-# Dragon Open Source Release
-Dragon is now open source and available for download. The open source version
-comes with the full implementation of Dragon using the TCP transport agent.
+# Dragon 0.9 Release Summary
+This release augments scalability and performance for launching 10k or more processes and greatly improves distributed dictionary
+performanace. Other highlighted features:
 
-Optional Dragon extensions that further enhance Dragon's performance in HPC
-environments exist; please see the FAQ on the Dragon documentation website.
+- Improvements to ProcessGroup to provide better user experience and performance
+- Improve launch time for large numbers of processes by enabling batch launch
+- New implementation for distributed dictionary that improves performances and scalability
+- Support for placement of processes via Policy API
+- Bug fix for launching a Pool of pools
+
+# Dragon 0.8 Release Summary
+This package introduces new features that enhance portability, further optimize performance at scale, and increase usability with packages that rely on Python multiprocessing derivatives. Highlighted new features are:
+
+- Ability for high speed transport agent to use multiple NICs
+- Use of libfabric for high speed transport RDMA operations
+- Improved performance of launcher start up time for allocations of more than ~100 nodes.
+- Enhanced testing pipeline for Python 3.10 and 3.11
+- Added documentation for Overlay Network and a cookbook entry for using the PyTorch native Dataloader over a Distributed Dictionary
+- Fixed PMI patching for PBS/Pals, Overlay Network port conflict and exit signaling, detach/destroy of memory pools.
+- Fixed numpy scaling test to be able to efficiently scale to 64+ nodes
+
+# Dragon 0.7 Release Summary
+This package introduces a number of key features to Dragon in addition to many bug fixes, improved robustness, and
+addition/refinements to documentation. Highlighted new features are:
+
+- Ability to support running Dragon in multinode mode on an allocation of up to 1024 nodes.
+- Ability to establish policies for CPU and GPU placement when starting a Dragon Process or Dragon ProcessGroup
+- Enhanced support for Conda python environments
+- The Dragon GlobalServices API for Dragon process Groups now supports List and Query operations
+- Documentation updates explaining how to run Dragon multinode using generic SSH launch
 
 # Dragon 0.6 and 0.61 Release Summary
-
 This package is the first to extend Dragon beyond support for Python
 multiprocessing. The key new feature is support for running collections of
 executables, including executables that require support for PMI (e.g., MPI). PMI
@@ -32,7 +55,7 @@ addition/refinements to documentation. Highlighted new features are:
 - mp.Value
 - Significantly improved launcher stability and ctrl-c handling
 - Preview release of a distributed dictionary
-- Documentation cookbook entries for an LLM inference service, Jupyter notebooks, and distributed dictionary
+- documentation cookbook entries for an llm inference service, jupyter notebooks, and distributed dictionary
 
 Note: Dragon 0.52 was released to fix a significant cosmetic bug that when triggered made it appear Dragon did not exit
 cleanly. It also corrects an install issue with the distributed dictionary preview component.

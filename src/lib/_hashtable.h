@@ -35,7 +35,8 @@ extern "C" {
 
 typedef struct dragonHashtableHeader_st {
     uint64_t num_slots;
-    uint64_t* count_ptr;
+    uint64_t* num_kvs;
+    uint64_t* num_placeholders;
     uint64_t key_len;
     uint64_t value_len;
     uint64_t* armor1;

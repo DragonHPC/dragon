@@ -50,12 +50,13 @@ Object Hierarchy
 
 .. figure:: images/dragon_object_hierarchy.png
    :scale: 15%
+   :name: dragon-obj-hierarchy 
 
-   **Figure 1: A representation of the Dragon object hierarchy across Dragon Native API and Client API. Not all derived objects are shown.**
+   **A representation of the Dragon object hierarchy across Dragon Native API and Client API. Not all derived objects are shown.**
 
 All Dragon objects are built from four :term:`primary objects <Primary Object>` on top of the
 :ref:`Dragon Client API <pguide/stack:The API Stack>` that represent fundamental
-:term:`resource<System Resource>` abstractions (see figure 1):
+:term:`resource<System Resource>` abstractions (see :numref:`dragon-obj-hierarchy`):
 
 1. **Process**: A POSIX process that is tracked by the Dragon run-time services.
 2. **Memory pool**: A block of shared memory managed by the Dragon run-time services that programs can allocate from.

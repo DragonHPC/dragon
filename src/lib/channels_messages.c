@@ -7,7 +7,7 @@
 
 #define DRAGON_CHANNEL_GWHEADER_NULINTS ((sizeof(dragonGatewayMessageHeader_t)/sizeof(dragonULInt*))-1)
 //#define DRAGON_CHANNEL_EXTRA_CHECKS
-static timespec_t TRANSPORT_PATIENCE_ON_CLIENT_COMPLETE = {0,100000};
+static timespec_t TRANSPORT_PATIENCE_ON_CLIENT_COMPLETE = {0,1000000};
 
 static dragonError_t
 _gateway_message_bcast_size(size_t payload_sz, size_t * bcast_nbytes)
@@ -921,6 +921,7 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
     err = _assign_gateway_message_header_send(gmsg, target_hostid, deadline, target_ch_ser.len, cleanup_payload_required,
                                               msg_nbytes, msg_ser_nbytes, dest_mem_ser_nbytes, return_mode,
                                               send_attr->sendhid, mattr.clientid, mattr.hints);
+
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not assign values into gateway message header.");
         goto gwmsg_alloc_fail;
@@ -1616,6 +1617,7 @@ dragon_channel_gatewaymessage_transport_get_cmplt(dragonGatewayMessage_t * gmsg,
     dragonError_t err;
     dragonMemoryDescr_t msg_mem;
     dragonMemorySerial_t msg_mem_ser;
+    dragonMessageAttr_t msg_attrs;
 
     if (gmsg == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "GatewayMessage cannot be NULL.");
@@ -1678,10 +1680,16 @@ dragon_channel_gatewaymessage_transport_get_cmplt(dragonGatewayMessage_t * gmsg,
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Unable to serialize message memory for transport get complete operation.");
 
+        err = dragon_channel_message_getattr(msg_recv, &msg_attrs);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Unable to retrieve attributes from message.");
+
         void * obj_ptr = gmsg->_obj_ptr + *(gmsg->_header.dest_mem_descr_ser_offset);
 
         memcpy(obj_ptr, msg_mem_ser.data, msg_mem_ser.len);
         *(gmsg->_header.dest_mem_descr_ser_nbytes) = msg_mem_ser.len;
+        *(gmsg->_header.send_hints) = msg_attrs.hints;
+        *(gmsg->_header.send_clientid) = msg_attrs.clientid;
     }
 
     err = dragon_bcast_trigger_all(&gmsg->_cmplt_bcast, NULL, NULL, 0);
@@ -1728,6 +1736,7 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
     dragonMemoryDescr_t msg_mem;
     dragonMemorySerial_t msg_mem_ser;
     dragonError_t get_rc;
+    dragonMessageAttr_t msg_attrs;
 
     if (gmsg == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The gateway message cannot be NULL");
@@ -1756,7 +1765,17 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not attach serialized message memory in client get complete gateway operation.");
 
-        err = dragon_channel_message_init(msg_recv, &msg_mem, NULL);
+        err = dragon_channel_message_attr_init(&msg_attrs);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not initialize message attributes in get completion of gateway receive.");
+
+        size_t sz;
+        dragon_memory_get_size(&msg_mem, &sz);
+
+        msg_attrs.hints = *(gmsg->_header.send_hints);
+        msg_attrs.clientid = *(gmsg->_header.send_clientid);
+
+        err = dragon_channel_message_init(msg_recv, &msg_mem, &msg_attrs);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not initialize message in get completion of gateway receive.");
     } else {

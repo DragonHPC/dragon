@@ -47,7 +47,7 @@ processes:
     from dragon.globalservices import node
     from dragon.globalservices.process import multi_join
     from dragon.infrastructure.connection import Connection
-    from dragon.native.process import MSG_PIPE, MSG_DEVNULL, Process, TemplateProcess
+    from dragon.native.process import MSG_PIPE, MSG_DEVNULL, Process, ProcessTemplate
     from dragon.native.process_group import ProcessGroup
 
     logging.basicConfig(level=logging.INFO)
@@ -81,13 +81,13 @@ processes:
         # Pipe the stdout output from the head process to a Dragon connection
         grp.add_process(
             nproc=1,
-            template=TemplateProcess(target=exe, args=args, cwd=run_dir, stdout=MSG_PIPE)
+            template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=MSG_PIPE)
         )
 
         # All other ranks should have their output go to DEVNULL
         grp.add_process(
             nproc=num_ranks-1,
-            template=TemplateProcess(target=exe, args=args, cwd=run_dir, stdout=MSG_DEVNULL)
+            template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=MSG_DEVNULL)
         )
 
         grp.init()

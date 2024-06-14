@@ -13,6 +13,7 @@ from native.test_event import TestEvent
 from native.test_lock import TestLock
 from native.test_queue import TestQueue
 from native.test_redirection import TestIORedirection
+from native.test_ddict import TestDDict
 
 
 if __name__ == "__main__":

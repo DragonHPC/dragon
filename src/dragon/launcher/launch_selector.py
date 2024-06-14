@@ -1,5 +1,6 @@
 import os
 import re
+import sys
 import shutil
 
 
@@ -156,8 +157,8 @@ def main():
     from dragon import _patch_multiprocessing
     _patch_multiprocessing()
     dl = get_launcher()
-    dl.main()
+    return dl.main()
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

@@ -31,8 +31,9 @@ Architecture
 ============
 
 .. figure:: images/managed_memory.svg
+    :name: managed-mem-arch 
 
-    **Figure 1: Architecture of the Managed Memory component**
+    **Architecture of the Managed Memory component**
 
 **MISSING Description of Request Handler and Pools**
 

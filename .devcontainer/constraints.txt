@@ -1,5 +1,5 @@
 alabaster==0.7.12
-attrs==22.1.0
+attrs==23.1.0
 Babel==2.11.0
 black==22.10.0
 breathe==4.34.0

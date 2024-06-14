@@ -131,6 +131,7 @@ _copy_out(const dragonHashtable_t* ht, char* dest, const char* source, const uin
     no_err_return(DRAGON_SUCCESS);
 }
 
+#ifdef HT_DEBUG
 static void
 _strcat_key(char* destination, dragonHashtable_t* ht, const char* key) {
     char key_str[80];
@@ -145,7 +146,6 @@ _strcat_key(char* destination, dragonHashtable_t* ht, const char* key) {
     }
 }
 
-#ifdef HT_DEBUG
 static void
 _print_key(dragonHashtable_t* ht, char* key) {
     char key_str[80];
@@ -208,134 +208,73 @@ _print_chain(dragonHashtable_t* ht, uint64_t idx) {
 #endif
 
 static dragonError_t
-_hashtable_add(dragonHashtable_t* ht, const char* key, const char* value, bool replace)
-{
+_rehash(dragonHashtable_t* ht) {
+    dragonError_t err;
+
     if (ht == NULL)
         err_return(DRAGON_HASHTABLE_NULL_POINTER,"The dragonHashtable handle is NULL.");
 
-    if (key == NULL)
-        err_return(DRAGON_HASHTABLE_NULL_POINTER,"The key is NULL.");
-
-    if (value == NULL)
-        err_return(DRAGON_HASHTABLE_NULL_POINTER,"The value is NULL.");
-
-    if (!replace && (*ht->header.count_ptr >= ht->header.num_slots/2))
-        err_return(DRAGON_HASHTABLE_FULL, "Hashtable is full.");
-
-    _check_armor(ht);
-
-    uint64_t idx = _hash(key, ht->header.key_len) % ht->header.num_slots;
-
     uint64_t entry_len = (ht->header.key_len + ht->header.value_len)*sizeof(uint64_t);
-    uint64_t loc = max_uint64;
-    char* key_ptr = NULL;
-    char* value_ptr = NULL;
-    bool searching = true;
-    dragonError_t bit_rc;
-    dragonError_t rc;
-    key_ptr = ht->slots + entry_len * idx;
+    uint64_t num_kvs = *ht->header.num_kvs;
+    char* copy = malloc(entry_len * num_kvs);
+    if (copy == NULL)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate memory for rehash of hashtable.");
 
-    while (searching) {
-        unsigned char allocated;
-        unsigned char placeholder;
+    char* current = copy;
+    uint64_t num_copied = 0;
+    uint64_t idx = 0;
+    unsigned char allocated;
+    unsigned char placeholder;
+    char* entry_ptr;
+    char* key;
+    char* value;
 
-        bit_rc = dragon_bitset_get(&ht->allocated, idx, &allocated);
+    while (num_copied < num_kvs) {
+        if (idx > ht->header.num_slots)
+            err_return(DRAGON_FAILURE, "The rehash did not find the expected number of key/value pairs.");
 
-        if (bit_rc != DRAGON_SUCCESS) {
-            append_err_return(bit_rc, "Could not add entry into hashtable.");
+        err = dragon_bitset_get(&ht->allocated, idx, &allocated);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not rehash entry in hashtable.");
+
+        err = dragon_bitset_get(&ht->placeholder, idx, &placeholder);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not rehash entry in hashtable.");
+
+        if (allocated && !placeholder) {
+            entry_ptr = ht->slots + entry_len * idx;
+            err = _copy_out(ht, current, entry_ptr, entry_len);
+            current += entry_len;
+            num_copied += 1;
         }
 
-        if (!allocated) {
-            searching = false;
-        } else {
-            bit_rc = dragon_bitset_get(&ht->placeholder, idx, &placeholder);
-
-            if (bit_rc != DRAGON_SUCCESS) {
-                append_err_return(bit_rc, "Could not add entry into hashtable.");
-            }
-
-            if ((placeholder == 1) && (loc == max_uint64)) {
-                loc = idx;
-            } else {
-                // It is not a placeholder and it is allocated so see if keys are equal
-                if (_keys_equal(key_ptr, key, ht->header.key_len)) {
-                    // already in the hashtable
-                    if (replace) {
-                        // replace it
-                        value_ptr = key_ptr + ht->header.key_len * sizeof(uint64_t);
-                        rc = _copy_in(ht, value_ptr, value, ht->header.value_len);
-                        if (rc != DRAGON_SUCCESS)
-                            append_err_return(rc, "There was an error on copy.");
-                        no_err_return(DRAGON_SUCCESS);
-                    }
-
-                    // otherwise, replace was false so return an error
-                    char err_str[200];
-                    char key_str[80];
-                    strcpy(key_str,"");
-                    _strcat_key(key_str, ht, key);
-                    snprintf(err_str, 200, "Duplicate key detected for key %s", key_str);
-                    err_return(DRAGON_HASHTABLE_DUPLICATE_KEY, err_str);
-                }
-            }
-        }
-
-        if (searching) {
-            // advance idx mod length of the slots array avoiding multiplication in the loop.
-            idx = idx + 1;
-            if (idx == ht->header.num_slots) {
-                idx = 0;
-                key_ptr = ht->slots;
-            } else {
-                key_ptr = key_ptr + entry_len;
-            }
-        }
+        idx += 1;
     }
 
-    if (loc == max_uint64) {
-        loc = idx;
+    err = dragon_bitset_clear(&ht->allocated);
+    if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not clear the allocated set.");
+
+    err = dragon_bitset_clear(&ht->placeholder);
+    if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not clear the placeholder set.");
+
+    *ht->header.num_placeholders = 0;
+    *ht->header.num_kvs = 0;
+
+    key = copy;
+    value = key + ht->header.key_len * sizeof(uint64_t);
+
+    for (uint64_t k=0;k<num_kvs;k++) {
+        err = dragon_hashtable_add(ht, key, value);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "dragon hash table is corrupted since rehashing could not be completed.");
+
+        key += entry_len;
+        value += entry_len;
     }
 
-    /* if replacing and it was not found, then allow it to be added as
-       long as there is room */
-    if (*ht->header.count_ptr >= ht->header.num_slots/2)
-        err_return(DRAGON_HASHTABLE_FULL, "Hashtable is full.");
-
-    key_ptr = ht->slots + entry_len * loc;
-    value_ptr = key_ptr + ht->header.key_len * sizeof(uint64_t);
-
-    rc = _copy_in(ht, key_ptr, key, ht->header.key_len);
-    if (rc != DRAGON_SUCCESS)
-        append_err_return(rc, "There was an error on copy.");
-
-    rc = _copy_in(ht, value_ptr, value, ht->header.value_len);
-    if (rc != DRAGON_SUCCESS)
-        append_err_return(rc, "There was an error on copy.");
-
-    /* mark the location allocated */
-    bit_rc = dragon_bitset_set(&ht->allocated, loc);
-
-    if (bit_rc != DRAGON_SUCCESS) {
-        append_err_return(bit_rc, "Could not add entry into hashtable.");
-    }
-
-    /* location may have been marked a placeholder. If so reset */
-    bit_rc = dragon_bitset_reset(&ht->placeholder, loc);
-
-    if (bit_rc != DRAGON_SUCCESS) {
-        append_err_return(bit_rc, "Could not add entry into hashtable.");
-    }
-
-#ifdef HT_DEBUG
-    if (len > 0) {
-        printf("<++++++++++++++++++++++ The chain length was %lu during add. Here are keys\n", len);
-        _print_chain(ht, start_idx);
-    }
-#endif
-
-    *ht->header.count_ptr = *ht->header.count_ptr + 1;
-
-    _check_armor(ht);
+    free(copy);
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -368,13 +307,11 @@ dragon_hashtable_size(const uint64_t max_entries, const uint64_t key_len, const 
     if (size == NULL)
         err_return(DRAGON_HASHTABLE_NULL_POINTER,"The size pointer was NULL.");
 
-    if (key_len%sizeof(uint64_t) != 0) {
+    if (key_len%sizeof(uint64_t) != 0)
         err_return(DRAGON_HASHTABLE_KEY_SIZE_ERROR,"The key length must be a multiple of 8 bytes.");
-    }
 
-    if (value_len%sizeof(uint64_t) != 0) {
+    if (value_len%sizeof(uint64_t) != 0)
         err_return(DRAGON_HASHTABLE_VALUE_SIZE_ERROR,"The value length must be a multiple of 8 bytes.");
-    }
 
     size_t bitset_size;
 
@@ -386,9 +323,8 @@ dragon_hashtable_size(const uint64_t max_entries, const uint64_t key_len, const 
             bitset_size * DRAGON_HASHTABLE_BITSET_COUNT +
             (key_len + value_len) * num_slots;
 
-    if (*size > thirty_two_gb) {
+    if (*size > thirty_two_gb)
         err_return(DRAGON_HASHTABLE_TOO_BIG,"The hashtable would be too big.");
-    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -445,6 +381,11 @@ dragon_hashtable_init(char* ptr, dragonHashtable_t* ht, const uint64_t max_entri
     blob_ptr += sizeof(uint64_t);
 
     // Set the count of entries in the hashtable.
+    ui_ptr = (uint64_t*) blob_ptr;
+    *ui_ptr = 0;
+    blob_ptr += sizeof(uint64_t);
+
+    // Set the count of placeholders in the hashtable.
     ui_ptr = (uint64_t*) blob_ptr;
     *ui_ptr = 0;
     blob_ptr += sizeof(uint64_t);
@@ -520,6 +461,11 @@ dragon_hashtable_destroy(dragonHashtable_t* ht)
     if (derr != DRAGON_SUCCESS)
         append_err_return(derr, "Could not destroy hashtable");
 
+    /* Must be reset to allow using same space later. */
+    *ht->header.armor1 = 0;
+    *ht->header.armor2 = 0;
+    *ht->header.armor3 = 0;
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -555,7 +501,12 @@ dragon_hashtable_attach(char* ptr, dragonHashtable_t* ht)
 
     // Get the pointer to the count of entries in the hashtable.
     ui_ptr = (uint64_t*) blob_ptr;
-    ht->header.count_ptr = ui_ptr;
+    ht->header.num_kvs = ui_ptr;
+    blob_ptr += sizeof(uint64_t);
+
+    // Store the number of placeholder values in the table.
+    ui_ptr = (uint64_t*) blob_ptr;
+    ht->header.num_placeholders = ui_ptr;
     blob_ptr += sizeof(uint64_t);
 
     // Get the key_len
@@ -626,7 +577,7 @@ dragon_hashtable_detach(dragonHashtable_t* ht)
 
     // Not really necessary, but if there were an illegal access after a
     // destroy this will cause a segfault.
-    ht->header.count_ptr = NULL;
+    ht->header.num_kvs = NULL;
     ht->slots = NULL;
 
     // return success
@@ -636,8 +587,10 @@ dragon_hashtable_detach(dragonHashtable_t* ht)
 /** @brief Add a key, value pair to the hash table.
  *
  *  This will add a key, value pair to the hash table. If the hash table is full
- *  then a new pair cannot be added. If the key is already in the hash table then
- *  this add will be rejected.
+ *  then a new pair cannot be added. The key must not already exist in the hash
+ *  table. No check is made to prevent corruption in this case to keep adding
+ *  entries as fast as possible. If you don't know the key is unique, use replace
+ *  instead.
  *
  *  @param ht A valid handle to a hash table.
  *  @param key A pointer to a key of length key_len (provided when inited)
@@ -647,19 +600,102 @@ dragon_hashtable_detach(dragonHashtable_t* ht)
 dragonError_t
 dragon_hashtable_add(dragonHashtable_t* ht, const char* key, const char* value)
 {
-    // add with no replace
-    dragonError_t derr = _hashtable_add(ht, key, value, false);
+    if (ht == NULL)
+        err_return(DRAGON_HASHTABLE_NULL_POINTER,"The dragonHashtable handle is NULL.");
 
-    if (derr != DRAGON_SUCCESS)
-        append_err_return(derr, "Could not add key value pair to hashtable.");
+    if (key == NULL)
+        err_return(DRAGON_HASHTABLE_NULL_POINTER,"The key is NULL.");
+
+    if (value == NULL)
+        err_return(DRAGON_HASHTABLE_NULL_POINTER,"The value is NULL.");
+
+    if (*ht->header.num_kvs >= ht->header.num_slots/2)
+        err_return(DRAGON_HASHTABLE_FULL, "Hashtable is full.");
+
+    _check_armor(ht);
+
+    /* If we have gotten to this point, cleanup by rehashing. */
+    if (*ht->header.num_placeholders > ht->header.num_slots/2)
+        _rehash(ht);
+
+    uint64_t idx = _hash(key, ht->header.key_len) % ht->header.num_slots;
+    uint64_t start_idx = idx;
+
+    uint64_t entry_len = (ht->header.key_len + ht->header.value_len)*sizeof(uint64_t);
+    char* key_ptr = NULL;
+    char* value_ptr = NULL;
+    bool searching = true;
+    dragonError_t bit_rc;
+    dragonError_t rc;
+    unsigned char allocated = 0;
+    unsigned char placeholder = 0;
+
+    while (searching) {
+        bit_rc = dragon_bitset_get(&ht->allocated, idx, &allocated);
+        if (bit_rc != DRAGON_SUCCESS)
+            append_err_return(bit_rc, "Could not add entry into hashtable.");
+
+        bit_rc = dragon_bitset_get(&ht->placeholder, idx, &placeholder);
+        if (bit_rc != DRAGON_SUCCESS)
+            append_err_return(bit_rc, "Could not add entry into hashtable.");
+
+        if (!allocated || placeholder)
+            searching = false;
+
+        if (searching) {
+            // advance idx mod length of the slots array avoiding multiplication in the loop.
+            idx = (idx + 1) % ht->header.num_slots;
+
+            // check that we have not gone all the way around. This should not happen, but
+            // if it did we should catch it here.
+            if (idx == start_idx)
+                err_return(DRAGON_FAILURE, "There was an error in the hashtable add function.");
+        }
+    }
+
+    key_ptr = ht->slots + entry_len * idx;
+    value_ptr = key_ptr + ht->header.key_len * sizeof(uint64_t);
+
+    rc = _copy_in(ht, key_ptr, key, ht->header.key_len);
+    if (rc != DRAGON_SUCCESS)
+        append_err_return(rc, "There was an error on copy.");
+
+    rc = _copy_in(ht, value_ptr, value, ht->header.value_len);
+    if (rc != DRAGON_SUCCESS)
+        append_err_return(rc, "There was an error on copy.");
+
+    /* mark the location allocated */
+    bit_rc = dragon_bitset_set(&ht->allocated, idx);
+    if (bit_rc != DRAGON_SUCCESS)
+        append_err_return(bit_rc, "Could not add entry into hashtable.");
+
+    if (placeholder) {
+        /* if it was a placeholder, it now is not. */
+        bit_rc = dragon_bitset_reset(&ht->placeholder, idx);
+        if (bit_rc != DRAGON_SUCCESS)
+            append_err_return(bit_rc, "Could not add entry into hashtable.");
+
+        *ht->header.num_placeholders -= 1;
+    }
+
+    *ht->header.num_kvs = *ht->header.num_kvs + 1;
+
+#ifdef HT_DEBUG
+    if (len > 0) {
+        printf("<++++++++++++++++++++++ The chain length was %lu during add. Here are keys\n", len);
+        _print_chain(ht, start_idx);
+    }
+#endif
+
+    _check_armor(ht);
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 /** @brief Replace a key, value pair in the hash table.
  *
- *  This will replace a key, value pair in the hash table. If the key is not in the hash table, then
- *  the replace will fail.
+ *  This will replace a key, value pair in the hash table if it exists and add it
+ *  otherwise.
  *
  *  @param ht A valid handle to a hash table.
  *  @param key A pointer to a key of length key_len (provided when inited)
@@ -669,8 +705,10 @@ dragon_hashtable_add(dragonHashtable_t* ht, const char* key, const char* value)
 dragonError_t
 dragon_hashtable_replace(dragonHashtable_t* ht, const char* key, const char* value)
 {
-    // add with replace
-    dragonError_t derr = _hashtable_add(ht, key, value, true);
+    // we don't care if it was actually there or not.
+    dragon_hashtable_remove(ht, key);
+
+    dragonError_t derr = dragon_hashtable_add(ht, key, value);
 
     if (derr != DRAGON_SUCCESS)
         append_err_return(derr, "Could not add key value pair to hashtable.");
@@ -698,83 +736,78 @@ dragon_hashtable_remove(dragonHashtable_t* ht, const char* key)
 
     _check_armor(ht);
 
+    /* If we have gotten to this point, cleanup by rehashing. */
+    if (*ht->header.num_placeholders > ht->header.num_slots/2)
+        _rehash(ht);
+
     uint64_t idx = _hash(key, ht->header.key_len) % ht->header.num_slots;
+    uint64_t start_idx = idx;
     uint64_t entry_len = (ht->header.key_len + ht->header.value_len) * sizeof(uint64_t);
     char* key_ptr = NULL;
     bool searching = true;
-    key_ptr = ht->slots + entry_len * idx;
 
     while (searching) {
         unsigned char allocated;
         unsigned char placeholder;
 
         dragonError_t bit_rc = dragon_bitset_get(&ht->allocated, idx, &allocated);
-
-        if (bit_rc != DRAGON_SUCCESS) {
+        if (bit_rc != DRAGON_SUCCESS)
            append_err_return(bit_rc, "Unable to remove hashtable entry.");
-        }
 
         if (!allocated) {
             searching = false;
         } else {
             bit_rc = dragon_bitset_get(&ht->placeholder, idx, &placeholder);
-            if (bit_rc != DRAGON_SUCCESS) {
+            if (bit_rc != DRAGON_SUCCESS)
                 append_err_return(bit_rc, "unable to remove hashtable entry");
-            }
 
-            if (!placeholder && _keys_equal(key,key_ptr,ht->header.key_len)) {
+            key_ptr = ht->slots + entry_len * idx;
+            if (!placeholder && _keys_equal(key, key_ptr, ht->header.key_len)) {
                 uint64_t next_idx = (idx + 1) % ht->header.num_slots;
                 bit_rc = dragon_bitset_get(&ht->allocated, next_idx, &allocated);
                 if (bit_rc != DRAGON_SUCCESS) {
-                    append_err_return(bit_rc, "Unable to remove hashtable entry.");                }
+                    append_err_return(bit_rc, "Unable to remove hashtable entry.");
+                                 }
                 if (allocated) {
                     // if entry to the right is allocated, then we don't
                     // want to break the chain so make this entry a placeholder
                     bit_rc = dragon_bitset_set(&ht->placeholder, idx);
-                    if (bit_rc != DRAGON_SUCCESS) {
+                    if (bit_rc != DRAGON_SUCCESS)
                         append_err_return(bit_rc, "Unable to remove hashtable entry.");
-                    }
+
+                    *ht->header.num_placeholders += 1;
+
                 } else {
                     // Mark this entry as not allocated because it was removed
                     // and the entry to the right is not allocated so it is
                     // the end of a chain if one exists.
                     bit_rc = dragon_bitset_reset(&ht->allocated, idx);
-                        if (bit_rc != DRAGON_SUCCESS) {
-                            append_err_return(bit_rc, "Unable to remove hashtable entry.");
-                    }
+                    if (bit_rc != DRAGON_SUCCESS)
+                        append_err_return(bit_rc, "Unable to remove hashtable entry.");
 
                     // if the entry to the right is not allocated, then
                     // we'll make all placeholders to the left of it
                     // not allocated too since we are at the end of a chain.
-                    uint64_t prev_idx = idx;
+                    uint64_t prev_idx = ((int64_t)idx - 1) % ht->header.num_slots;
                     bool moving_left = true;
-                    if (prev_idx == 0) {
-                        prev_idx = ht->header.num_slots-1;
-                    } else {
-                        prev_idx -= 1;
-                    }
+
                     while (moving_left) {
                         bit_rc = dragon_bitset_get(&ht->placeholder, prev_idx, &placeholder);
-                        if (bit_rc != DRAGON_SUCCESS) {
+                        if (bit_rc != DRAGON_SUCCESS)
                             append_err_return(bit_rc, "Unable to remove hashtable entry.");
-                        }
 
                         if (placeholder) {
                             bit_rc = dragon_bitset_reset(&ht->placeholder, prev_idx);
-                            if (bit_rc != DRAGON_SUCCESS) {
+                            if (bit_rc != DRAGON_SUCCESS)
                                 append_err_return(bit_rc, "Unable to remove hashtable entry.");
-                            }
+
+                            *ht->header.num_placeholders -= 1;
 
                             bit_rc = dragon_bitset_reset(&ht->allocated, prev_idx);
-                            if (bit_rc != DRAGON_SUCCESS) {
+                            if (bit_rc != DRAGON_SUCCESS)
                                 append_err_return(bit_rc, "Unable to remove hashtable entry.");
-                            }
 
-                            if (prev_idx == 0) {
-                                prev_idx = ht->header.num_slots-1;
-                            } else {
-                                prev_idx -= 1;
-                            }
+                            prev_idx = ((int64_t)prev_idx - 1) % ht->header.num_slots;
                         }
                         else {
                             moving_left = false;
@@ -782,7 +815,7 @@ dragon_hashtable_remove(dragonHashtable_t* ht, const char* key)
                     }
                 }
 
-                *(ht->header.count_ptr) -= 1;
+                *(ht->header.num_kvs) -= 1;
 
 #ifdef HT_DEBUG
                 if (idx - start_idx > 0) {
@@ -798,14 +831,14 @@ dragon_hashtable_remove(dragonHashtable_t* ht, const char* key)
             }
         }
 
-        // advance idx mod length of the slots array avoiding multiplication in the loop.
-        idx = idx + 1;
-        if (idx == ht->header.num_slots) {
-            idx = 0;
-            key_ptr = ht->slots;
-        } else {
-            key_ptr = key_ptr + entry_len;
-        }
+        // advance idx mod length of the slots array.
+        idx = (idx + 1) % ht->header.num_slots;
+
+        // check that we have not gone all the way around. This should not happen, but
+        // if it did we should catch it here.
+        if (idx == start_idx)
+            err_return(DRAGON_FAILURE, "There was an error in the hashtable remove function.");
+
     }
 
     err_return(DRAGON_HASHTABLE_KEY_NOT_FOUND, "Hashtable key not found.");
@@ -837,11 +870,11 @@ dragon_hashtable_get(const dragonHashtable_t* ht, const char* key, char* value)
     _check_armor(ht);
 
     uint64_t idx = _hash(key, ht->header.key_len) % ht->header.num_slots;
+    uint64_t start_idx = idx;
     uint64_t entry_len = (ht->header.key_len + ht->header.value_len) * sizeof(uint64_t);
     char* key_ptr = NULL;
     char* value_ptr = NULL;
     bool searching = true;
-    key_ptr = ht->slots + entry_len * idx;
     dragonError_t rc;
 
     while (searching) {
@@ -862,7 +895,8 @@ dragon_hashtable_get(const dragonHashtable_t* ht, const char* key, char* value)
                 append_err_return(bit_rc, "Unable to look up key.");
             }
 
-            if (!placeholder && _keys_equal(key,key_ptr,ht->header.key_len)) {
+            key_ptr = ht->slots + entry_len * idx;
+            if (!placeholder && _keys_equal(key, key_ptr, ht->header.key_len)) {
                 value_ptr = key_ptr + ht->header.key_len * sizeof(uint64_t);
                 rc = _copy_out(ht, value, value_ptr, ht->header.value_len);
                 if (rc != DRAGON_SUCCESS)
@@ -874,13 +908,12 @@ dragon_hashtable_get(const dragonHashtable_t* ht, const char* key, char* value)
         }
 
         // advance idx mod length of the slots array avoiding multiplication in the loop.
-        idx = idx + 1;
-        if (idx == ht->header.num_slots) {
-            idx = 0;
-            key_ptr = ht->slots;
-        } else {
-            key_ptr = key_ptr + entry_len;
-        }
+        idx = (idx + 1) % ht->header.num_slots;
+
+        // check that we have not gone all the way around. This should not happen, but
+        // if it did we should catch it here.
+        if (idx == start_idx)
+            err_return(DRAGON_FAILURE, "There was an error in the hashtable get function.");
     }
 
     err_return(DRAGON_HASHTABLE_KEY_NOT_FOUND, "Hashtable key not found.");
@@ -978,9 +1011,9 @@ dragon_hashtable_stats(const dragonHashtable_t* ht, dragonHashtableStats_t* stat
     if (stats == NULL)
         err_return(DRAGON_HASHTABLE_NULL_POINTER,"The stats structure pointer is NULL.");
 
-    stats->load_factor = *ht->header.count_ptr / ((double)ht->header.num_slots);
+    stats->load_factor = *ht->header.num_kvs / ((double)ht->header.num_slots);
     stats->capacity = ht->header.num_slots * (max_load_factor / 100.0);
-    stats->num_items = *ht->header.count_ptr;
+    stats->num_items = *ht->header.num_kvs;
     stats->key_len = ht->header.key_len * sizeof(uint64_t);
     stats->value_len = ht->header.value_len * sizeof(uint64_t);
 
@@ -1028,10 +1061,10 @@ dragon_hashtable_stats(const dragonHashtable_t* ht, dragonHashtableStats_t* stat
             max_chain_length = chain_length;
         }
     }
-    if (*ht->header.count_ptr == 0) {
+    if (*ht->header.num_kvs == 0) {
         stats->avg_chain_length = 0.0;
     } else {
-        stats->avg_chain_length = ((double)total_chain_length) / (*ht->header.count_ptr);
+        stats->avg_chain_length = ((double)total_chain_length) / (*ht->header.num_kvs);
     }
 
     stats->max_chain_length = max_chain_length;
@@ -1094,7 +1127,7 @@ dragon_hashtable_dump_to_fd(FILE* fd, const char* title, const dragonHashtable_t
     fprintf(fd, "%s%s\n",indent,title);
     fprintf(fd, "%sNumber of slots: %lu\n",indent,ht->header.num_slots);
     fprintf(fd, "%sCapacity: %lu\n", indent, stats.capacity);
-    fprintf(fd, "%sFilled slots: %lu\n", indent, *ht->header.count_ptr);
+    fprintf(fd, "%sFilled slots: %lu\n", indent, *ht->header.num_kvs);
     fprintf(fd, "%sLoad Factor: %f\n", indent, stats.load_factor);
     fprintf(fd, "%sKey length: %lu\n", indent, ht->header.key_len*sizeof(uint64_t));
     fprintf(fd, "%sValue length: %lu\n", indent, ht->header.value_len*sizeof(uint64_t));

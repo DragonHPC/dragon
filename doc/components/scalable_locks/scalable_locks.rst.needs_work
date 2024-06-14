@@ -21,8 +21,9 @@ Architecture
 ============
 
 .. figure:: images/scalable_locks.svg
+    :name: scalable-locks 
 
-    **Figure 1: Architecture of the Scalable Locks component**
+    **Architecture of the Scalable Locks component**
 
 Dragons scalable locks implementation provides access to
 

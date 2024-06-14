@@ -10,7 +10,17 @@ import gc
 
 import unittest
 import test.support
-from test import support
+
+try: 
+    from test.support.os_helper import fd_count 
+    from test.support.os_helper import TESTFN 
+    from test.support.os_helper import unlink 
+except ImportError:
+    #location prior to Python 3.10
+    from test.support import fd_count
+    from test.support import TESTFN 
+    from test.support import unlink 
+
 
 import threading
 
@@ -117,7 +127,7 @@ class WithProcessesTestProcess(BaseTestCase, ProcessesMixin, unittest.TestCase):
         p = self.Process(target=self._test_create_grandchild_process, args=(wconn,))
         p.start()
 
-        if not rconn.poll(timeout=support.LONG_TIMEOUT):
+        if not rconn.poll(timeout=test.support.LONG_TIMEOUT):
             raise AssertionError("Could not communicate with child process")
         parent_process_status = rconn.recv()
         self.assertEqual(parent_process_status, "alive")
@@ -125,7 +135,7 @@ class WithProcessesTestProcess(BaseTestCase, ProcessesMixin, unittest.TestCase):
         p.terminate()
         p.join()
 
-        if not rconn.poll(timeout=support.LONG_TIMEOUT):
+        if not rconn.poll(timeout=test.support.LONG_TIMEOUT):
             raise AssertionError("Could not communicate with child process")
         parent_process_status = rconn.recv()
         self.assertEqual(parent_process_status, "not alive")
@@ -141,7 +151,7 @@ class WithProcessesTestProcess(BaseTestCase, ProcessesMixin, unittest.TestCase):
         from multiprocessing.process import parent_process
 
         wconn.send("alive" if parent_process().is_alive() else "not alive")
-        parent_process().join(timeout=support.SHORT_TIMEOUT)
+        parent_process().join(timeout=test.support.SHORT_TIMEOUT)
         wconn.send("alive" if parent_process().is_alive() else "not alive")
 
     def test_process(self):
@@ -423,7 +433,7 @@ class WithProcessesTestProcess(BaseTestCase, ProcessesMixin, unittest.TestCase):
 
     @classmethod
     def _test_child_fd_inflation(self, evt, q):
-        q.put(test.support.fd_count())
+        q.put(fd_count())
         evt.wait()
 
     def test_child_fd_inflation(self):
@@ -625,8 +635,8 @@ class TestSubclassingProcess(BaseTestCase, ProcessesMixin, unittest.TestCase):
         if self.TYPE == "threads":
             self.skipTest("test not appropriate for {}".format(self.TYPE))
 
-        testfn = test.support.TESTFN
-        self.addCleanup(test.support.unlink, testfn)
+        testfn = TESTFN
+        self.addCleanup(unlink, testfn)
         proc = self.Process(target=self._test_stderr_flush, args=(testfn,))
         proc.start()
         proc.join()
@@ -655,8 +665,8 @@ class TestSubclassingProcess(BaseTestCase, ProcessesMixin, unittest.TestCase):
         if self.TYPE == "threads":
             self.skipTest("test not appropriate for {}".format(self.TYPE))
 
-        testfn = test.support.TESTFN
-        self.addCleanup(test.support.unlink, testfn)
+        testfn = TESTFN
+        self.addCleanup(unlink, testfn)
 
         for reason in (
             [1, 2, 3],
@@ -764,7 +774,7 @@ class WithThreadsTestProcess(BaseTestCase, ThreadsMixin, unittest.TestCase):
         p = self.Process(target=self._test_create_grandchild_process, args=(wconn,))
         p.start()
 
-        if not rconn.poll(timeout=support.LONG_TIMEOUT):
+        if not rconn.poll(timeout=test.support.LONG_TIMEOUT):
             raise AssertionError("Could not communicate with child process")
         parent_process_status = rconn.recv()
         self.assertEqual(parent_process_status, "alive")
@@ -772,7 +782,7 @@ class WithThreadsTestProcess(BaseTestCase, ThreadsMixin, unittest.TestCase):
         p.terminate()
         p.join()
 
-        if not rconn.poll(timeout=support.LONG_TIMEOUT):
+        if not rconn.poll(timeout=test.support.LONG_TIMEOUT):
             raise AssertionError("Could not communicate with child process")
         parent_process_status = rconn.recv()
         self.assertEqual(parent_process_status, "not alive")
@@ -788,7 +798,7 @@ class WithThreadsTestProcess(BaseTestCase, ThreadsMixin, unittest.TestCase):
         from multiprocessing.process import parent_process
 
         wconn.send("alive" if parent_process().is_alive() else "not alive")
-        parent_process().join(timeout=support.SHORT_TIMEOUT)
+        parent_process().join(timeout=test.support.SHORT_TIMEOUT)
         wconn.send("alive" if parent_process().is_alive() else "not alive")
 
     @unittest.skip("bug filed PE-40908")
@@ -1075,7 +1085,7 @@ class WithThreadsTestProcess(BaseTestCase, ThreadsMixin, unittest.TestCase):
 
     @classmethod
     def _test_child_fd_inflation(self, evt, q):
-        q.put(test.support.fd_count())
+        q.put(fd_count())
         evt.wait()
 
     @unittest.skip("DRAGON: Semlock not implemented")

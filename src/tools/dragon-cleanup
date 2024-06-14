@@ -33,7 +33,8 @@ echo $pids | xargs -r kill -9
 if [ $# -eq 0 ]; then
     pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk -F ' ' '{print $2}'`
 else
-    pids=`ps -U $me -ux  | grep python | awk '$0 !~ /test_launcher/' | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk -F ' ' '{print $2}'`
+    pids=`ps -U $me -ux  | grep python | awk '$0 !~ /test_launcher/' | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | \
+                           awk '$0 !~ /code-server/' | awk -F ' ' '{print $2}'`
 fi
 echo "Here are the Python PIDS to kill on login node": $pids
 echo $pids | xargs -r kill -9

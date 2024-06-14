@@ -1,6 +1,6 @@
 import dragon
 
-from dragon.native.process import Process, TemplateProcess, Popen
+from dragon.native.process import Process, ProcessTemplate, Popen
 from dragon.native.process_group import ProcessGroup
 
 import logging
@@ -71,7 +71,7 @@ class DragonMPIExecutor(ParslExecutor, RepresentationMixin):
         # Pipe stdin and stdout from the head process to Dragon connections
         grp.add_process(
             nproc=1,
-            template=TemplateProcess(
+            template=ProcessTemplate(
                 target=target_exe, args=mpi_args, cwd=run_dir, stdout=Popen.PIPE, stdin=Popen.PIPE
             ),
         )
@@ -79,7 +79,7 @@ class DragonMPIExecutor(ParslExecutor, RepresentationMixin):
         # All other ranks should have their output go to DEVNULL
         grp.add_process(
             nproc=num_ranks - 1,
-            template=TemplateProcess(target=target_exe, args=mpi_args, cwd=run_dir, stdout=Popen.DEVNULL),
+            template=ProcessTemplate(target=target_exe, args=mpi_args, cwd=run_dir, stdout=Popen.DEVNULL),
         )
         grp.init()
         grp.start()

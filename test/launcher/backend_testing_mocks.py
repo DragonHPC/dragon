@@ -9,6 +9,7 @@ from dragon.channels import Channel, ChannelError
 from dragon.infrastructure import facts as dfacts
 from dragon.infrastructure import messages as dmsg
 from dragon.infrastructure import process_desc
+from dragon.infrastructure.node_desc import NodeDescriptor
 from dragon.infrastructure.connection import Connection, ConnectionOptions
 from dragon.infrastructure.parameters import this_process, POLICY_INFRASTRUCTURE
 from dragon.infrastructure.messages import AbnormalTerminationError
@@ -71,12 +72,14 @@ def mock_start_localservices_wrapper(func):
 class LauncherBackendHelper:
 
     def __init__(self,
-                 network_config,
+                 network_config_file,
                  node_index,
                  ip_addrs,
                  fe_host_id,
                  be_host_id):
-        self.network_config = network_config
+        self.network_config_file = network_config_file
+        self.network_config = \
+            NetworkConfig.from_file(self.network_config_file).get_network_config()
         self.node_index = node_index
         self.ip_addrs = ip_addrs
         self.fe_host_id = fe_host_id
@@ -132,15 +135,16 @@ class LauncherBackendHelper:
         self.launcher_fe.connect_to_be()
         self.launcher_fe.send_FENodeIdxBE()  # M9
 
+        self.be_overlay_tsta.recv_TAUpdateNodes()
+
         # Get generated LS stdin/stdout file descriptors. Turn them into newline stream wrappers
         _, self.ls_stdin_queue, self.ls_stdout_queue = mock_start_localservices
 
     def handle_network_and_frontend_start(self, mock_network_config):
         '''Define the mocked up network and frontend'''
-        net = NetworkConfig.from_file(self.network_config)
-        mock_network_config.return_value = net.get_network_config()[str(self.node_index)]
+        mock_network_config.return_value = self.network_config[str(self.node_index)]
 
-        self.launcher_fe = LauncherFrontEnd(self.node_index, self.fe_host_id)
+        self.launcher_fe = LauncherFrontEnd(self.node_index, self.fe_host_id, self.network_config)
 
         args_map = get_args_map(
             self.network_config,
@@ -156,7 +160,8 @@ class LauncherBackendHelper:
                  mock_start_localservices,
                  garble_shchannelsup=False,
                  garble_lachannelsinfo=False,
-                 abort_lachannelsinfo=False):
+                 abort_lachannelsinfo=False,
+                 accelerator_present=False):
 
         self.handle_overlay_start(mock_overlay, mock_start_localservices)
 
@@ -172,6 +177,8 @@ class LauncherBackendHelper:
         if garble_shchannelsup:
             self.localservices.send_SHChannelsUP(custom_msg=json.dumps(self.garbage_dict))
             return
+        elif accelerator_present:
+            self.localservices.send_SHChannelsUP(accelerator_present=accelerator_present)  # M13
         else:
             self.localservices.send_SHChannelsUP()  # M13
 
@@ -192,10 +199,15 @@ class LauncherBackendHelper:
 
         self.localservices.recv_LAChannelsInfo()  # M16
 
-    def clean_startup(self, log, mock_overlay, mock_network_config, mock_start_localservices):
+    def clean_startup(self,
+                      log,
+                      mock_overlay,
+                      mock_network_config,
+                      mock_start_localservices,
+                      accelerator_present=False):
         '''Execute a clean bringup and exit of all backend services'''
 
-        self.start_ls(mock_overlay, mock_start_localservices)
+        self.start_ls(mock_overlay, mock_start_localservices, accelerator_present=accelerator_present)
 
         # A11 Local Services spawns TA
 
@@ -357,10 +369,11 @@ class LauncherBackendHelper:
 
 
 class LauncherFrontEnd:
-    def __init__(self, node_index, host_id):
+    def __init__(self, node_index, host_id, network_config):
         self.log = logging.getLogger("_launcher_fe")
         self.node_index = node_index
         self.host_id = host_id
+        self.network_config = network_config
 
         self.port = dfacts.DEFAULT_TRANSPORT_PORT
         self.num_gw_channels = dfacts.DRAGON_OVERLAY_DEFAULT_NUM_GW_CHANNELS_PER_NODE
@@ -469,7 +482,21 @@ class LauncherFrontEnd:
         self.log.debug("connected to be")
 
     def send_FENodeIdxBE(self):
-        fe_node_idx = dmsg.FENodeIdxBE(tag=next_tag(), node_index=self.node_index)
+        # Pack up all of our node descriptors for the backend:
+        forwarding = {}
+        for be_up in [self.be_is_up]:
+            assert isinstance(be_up, dmsg.BEIsUp), 'la_fe received invalid be up'
+            for key, node_desc in self.network_config.items():
+                if str(be_up.host_id) == str(node_desc.host_id):
+                    forwarding[key] = NodeDescriptor(host_id=int(node_desc.host_id),
+                                                     ip_addrs=node_desc.ip_addrs,
+                                                     overlay_cd=be_up.be_ch_desc)
+                    break
+        fe_node_idx = dmsg.FENodeIdxBE(
+            tag=next_tag(),
+            node_index=self.node_index,
+            forward=forwarding,
+            send_desc=self.encoded_inbound)
         self.conn_out.send(fe_node_idx.serialize())
         self.log.debug(f"send_FENodeIdxBE sent {fe_node_idx=}")
 
@@ -497,8 +524,9 @@ class LauncherFrontEnd:
     def send_LAChannelsInfo(self, custom_msg: str = None):
 
         if custom_msg is None:
+            nodes_desc = {ch_up.idx: ch_up.node_desc for ch_up in self.chs_up}
             la_ch_info = dmsg.LAChannelsInfo(tag=next_tag(),
-                                             nodes_desc=self.chs_up,
+                                             nodes_desc=nodes_desc,
                                              gs_cd=self.gs_cd,
                                              num_gw_channels=self.num_gw_channels,
                                              port=self.port,
@@ -644,6 +672,11 @@ class BackendOverlay:
         self.be_ta_conn.send(overlay_ping_be.serialize())
         self.log.debug(f"send_OverlayPingBE sent {overlay_ping_be=}")
 
+    def recv_TAUpdateNodes(self):
+        be_ta_update_nodes = get_with_blocking(self.be_ta_conn)
+        assert isinstance(be_ta_update_nodes, dmsg.TAUpdateNodes), "expected TAUpdateNodes"
+        self.log.debug(f"recv_TAUpdateNodes got {be_ta_update_nodes=}")
+
     def recv_BEHaltOverlay(self):  # M22
         be_halt_overlay = get_with_blocking(self.be_ta_conn)
         assert isinstance(be_halt_overlay, dmsg.BEHaltOverlay), "expected BEHaltOverlay"
@@ -748,16 +781,26 @@ class LocalServices:
         assert isinstance(self.be_node_idx_sh, dmsg.BENodeIdxSH), "expected BENodeIdxSH"
         self.log.debug(f"recv_BENodeIdxSH got {self.be_node_idx_sh=}")
 
-    def send_SHChannelsUP(self, custom_msg=None):
+    @patch("dragon.infrastructure.gpu_desc.find_nvidia")
+    def send_SHChannelsUP(self,
+                          mock_find_nvidia,
+                          custom_msg=None,
+                          accelerator_present=False):
 
         if custom_msg:
             self.la_input.send(custom_msg)
         else:
+            mock_find_nvidia.return_value = None
+            if accelerator_present:
+                mock_find_nvidia.return_value = (0, 1, 2, 3)
+
+            node_desc = NodeDescriptor.get_localservices_node_conf(host_name=self.be_node_idx_sh.host_name,
+                                                                   name=self.be_node_idx_sh.host_name,
+                                                                   host_id=self.host_id,
+                                                                   ip_addrs=self.be_node_idx_sh.ip_addrs,
+                                                                   shep_cd=this_process.local_shep_cd)
             ch_up_msg = dmsg.SHChannelsUp(tag=next_tag(),
-                                          host_name=self.be_node_idx_sh.host_name,
-                                          host_id=self.host_id,
-                                          ip_addrs=self.be_node_idx_sh.ip_addrs,
-                                          shep_cd=this_process.local_shep_cd,
+                                          node_desc=node_desc,
                                           gs_cd=self.gs_cd,
                                           idx=self.be_node_idx_sh.node_idx)
 

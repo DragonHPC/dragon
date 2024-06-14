@@ -36,7 +36,7 @@ local DRAGON_BASE_DIR = capture(base_dir):gsub("\n$", "")
 
 -- environment modifications --
 
-setenv("DRAGON_VERSION", "0.61")
+setenv("DRAGON_VERSION", "0.9")
 
 -- get project dir
 setenv("DRAGON_BASE_DIR", DRAGON_BASE_DIR)
@@ -50,6 +50,8 @@ setenv("DRAGON_BASE_DIR", DRAGON_BASE_DIR)
 
 load("craype-x86-rome")
 load("PrgEnv-gnu");
+-- it's possible (e.g. on pinoak) to load PrgEnv-gnu but not get the gcc module
+load("gcc")
 load("cray-python")
 
 

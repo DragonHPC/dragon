@@ -21,18 +21,19 @@ An Example of Malloc and Free
 =============================
 
 .. figure:: images/heapallocations.png
+    :name: heap-allocations 
 
-    **Figure 1: A Sample Heap with Allocations**
+    **A Sample Heap with Allocations**
 
 Consider a 1K heap with a minimum block size of 32 bytes. The smallest allocatable block size is called a
-segment. The 1K heap is made up of 32 segments, each of 32 bytes each. Figure 1 shows a heap with allocations
+segment. The 1K heap is made up of 32 segments, each of 32 bytes each. :numref:`heap-allocations` shows a heap with allocations
 in colors. The first allocation was for 16 bytes, which resulted in a 32 byte allocation (the smallest
 possible size for this heap) and was allocated to segment 0. The second allocation was for 500 bytes (actually
 512 bytes) which resulted in the allocation of segments 16-31. Then came an allocation of 64 bytes which went
 into segments 2 and 3. The allocation of segments 8-15 was for a request of 222 bytes but allocated 256 bytes
 since that is the nearest power of 2. Finally, the purple allocation from segments 4-7 resulted from a request
 of 112 bytes but again resulted in an allocation of 4 segments and a size of 128 bytes. So the mallocs that
-lead to the allocations in figure 1 might be as follows.
+lead to the allocations in :numref:`heap-allocations` might be as follows.
 
     * 32 bytes
     * 512 bytes
@@ -46,14 +47,15 @@ powers. Each split operation is O(1). In this example, the maximum number of spl
 there were 5 splits required on the first allocation. The second allocation required 0 splits. The third
 required two splits. The fourth 0 splits. The fifth and final allocation required 0 splits.
 
-A heap with this maximum block size and minimum block size is initialized as shown in figure 2. Since the heap
+A heap with this maximum block size and minimum block size is initialized as shown in :numref:`heap-init`. Since the heap
 manager always manages blocks sizes of powers of 2, a heap is initialized by providing the maximum and minimum
-block size powers. In figure 2 the 10 is the 1024 byte maximum block size and 5 is the 32 byte minimum block
+block size powers. In :numref:`heap-init` the 10 is the 1024 byte maximum block size and 5 is the 32 byte minimum block
 size.
 
 .. code-block:: C
     :linenos:
-    :caption: **Figure 2: Heap Initialization**
+    :caption: **Heap Initialization**
+    :name: heap-init 
 
     // make a heap of size 1K with 32 byte segments as minimum block size. How much space
     // is required? This call determines how much space is required for a heap with
@@ -83,7 +85,7 @@ size.
 
 As blocks are freed, they are joined together into large free blocks if the block and its buddy are free. The
 buddy of a block is a block whose address differs from its address by a power of 2 size. For instance, segment
-0 in the allocation of figure 1 has segment 1 as its buddy because they are at index 0 and index 1 of the list
+0 in the allocation of :numref:`heap-allocations` has segment 1 as its buddy because they are at index 0 and index 1 of the list
 of segments. The block starting at segment 2 has its buddy starting at index 0, but since index 0 is currently
 split, the buddy of the green block is not available for joining to it once it is freed. To illustrate this
 joining of blocks, consider the following sequence of free requests.
@@ -97,8 +99,9 @@ The algorithm doesn't consider anything further, but because segment 0 is in a b
 block is part of a block of 64 bytes, they could not be joined either (at this point anyway).
 
 .. figure:: images/heapfree1.png
+    :name: heap-free-green 
 
-    **Figure 3: After Freeing the Green Block**
+    **After Freeing the Green Block**
 
 Freeing the Purple Block Starting at Segment 4
 ----------------------------------------------
@@ -109,8 +112,9 @@ are three free blocks that are available in the heap. The segment 1 is a 32 byte
 make up a 64 byte free block. Finally, the segments 4-6 make up a 128 byte free block.
 
 .. figure:: images/heapfree2.png
+    :name: heap-free-purple 
 
-    **Figure 4: After Freeing the Purple Block**
+    **After Freeing the Purple Block**
 
 Freeing the Yellow Block Starting at Segment 16
 -----------------------------------------------
@@ -119,8 +123,9 @@ The 512 byte block starting at segment 16 is freed next and results in once agai
 segment 0. Again, segment 0 is not free and no further joining of blocks is possible.
 
 .. figure:: images/heapfree3.png
+    :name: heap-free-yellow 
 
-    **Figure 5: After Freeing the Yellow Block**
+    **After Freeing the Yellow Block**
 
 Freeing the Orange Block Starting at Segment 0
 ----------------------------------------------
@@ -137,8 +142,9 @@ At this point there are two free blocks: a 256 byte block starting at segment 0 
 at segment 16.
 
 .. figure:: images/heapfree4.png
+    :name: heap-free-orange 
 
-    **Figure 6: After Freeing the Orange Block**
+    **After Freeing the Orange Block**
 
 Freeing the Maroon Block Starting at Segment 8
 ----------------------------------------------
@@ -149,8 +155,9 @@ but since its buddy is also free and the same size, the two 512 byte blocks are 
 block.
 
 .. figure:: images/heapfree5.png
+    :name: heap-free-maroon 
 
-    **Figure 7: After Freeing the Maroon Block**
+    **After Freeing the Maroon Block**
 
 Meta-Data and Handles
 =====================
@@ -161,8 +168,9 @@ two bit sets, the block set and the free set. There is also a lock associated wi
 multi-processing compatible.
 
 .. figure:: images/metadata.png
+    :name: metadata 
 
-    **Figure 8: Meta-Data and Handle Structure**
+    **Meta-Data and Handle Structure**
 
 In the meta-data the *Segments Ptr* is necessary because there might be padding between the *Free Lists* and
 the beginning of the segments, depending on the requested alignment of the segments when the heap is
@@ -173,7 +181,7 @@ re-compute the starting segments address.
 
 .. code-block:: C
     :linenos:
-    :caption: **Figure 9: C Handle Definition**
+    :caption: **C Handle Definition**
 
     typedef void dragonDynHeapSegment_t;
 

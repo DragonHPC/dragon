@@ -5,15 +5,16 @@ Before you start programming with Dragon, you need to decide which API you want
 to program to. The runtime provides a stack of interfaces abstracting 
 :term:`resources <System Resource>` of a distributed system, ranging from low-level shared
 memory to a distributed dictionary. It is *composable*, meaning the APIs are
-built on top of each other (see figure 1). We deliberately expose the whole
+built on top of each other (see :numref:`dragon-api-stack`). We deliberately expose the whole
 stack of APIs so that you can choose if you want to interact with the complete
 runtime or want to use only parts of it. For an overview, see table 1 in the 
 :ref:`reference section <ref/ref:API Reference>`.
 
 .. figure:: images/dragon_api_stack.png
    :scale: 25%
+   :name: dragon-api-stack 
 
-   **Figure 1: The Dragon API stack**
+   **The Dragon API stack**
 
 
 Lower level interfaces yield less convenient objects. Thus new and experienced
@@ -50,10 +51,11 @@ Architecture of a Dragon Program
 
 .. figure:: images/api_use_python.svg
    :scale: 75%
+   :name: api-use-python 
   
-   **Figure 2: Architecture of a user program using Dragon with Python Multiprocessing or Dragon Native. Internal Dragon APIs are not shown.**
+   **Architecture of a user program using Dragon with Python Multiprocessing or Dragon Native. Internal Dragon APIs are not shown.**
 
-In figure 2 we show a component diagram of the architecture of a Dragon program
+In :numref:`api-use-python` we show a component diagram of the architecture of a Dragon program
 using either the Python Multiprocessing with Dragon API, or the Dragon Native
 API.
 
@@ -73,10 +75,11 @@ Architecture of Advanced Use Cases
 
 .. figure:: images/api_use_core.svg
    :scale: 75%
+   :name: api-use-core 
 
-   **Figure 3: Architecture of advanced use cases for the Dragon runtime. Internal APIs are not shown.**
+   **Architecture of advanced use cases for the Dragon runtime. Internal APIs are not shown.**
 
-In figure 3 we show a component diagram of the architecture of advanced use cases for Dragon.
+In :numref:`api-use-core` we show a component diagram of the architecture of advanced use cases for Dragon.
 Note that these use cases are not supported yet.
 
 * User programs using :term:`unmanaged <Unmanaged Object>` Dragon native objects directly call into

@@ -20,17 +20,19 @@ Hex Dump has an easy to use interface. You provide a pointer and a length to it 
 an indentation string.
 
 .. code-block:: C
-    :caption: **Figure 1: Hex Dump Example Code**
+    :caption: **Hex Dump Example Code**
+    :name: hex-dump-example-code 
 
     hex_dump_to_fd(fd, "BITS",(void*)set->data,num_bytes,indent);
 
-When invoked, The output looks something like that found in figure 2. Note how lines with 0's are suppressed.
+When invoked, The output looks something like that found in :numref:`hex-dump-example-output`. Note how lines with 0's are suppressed.
 The *fd* is a file, which includes the possibility of using *stdout* or *stderr*. A title comes second
 followed by a pointer to the data and the number of bytes to dump. Finally, the *indent* is a null-terminated
 string to print before each line of the dump.
 
 .. code-block:: text
-    :caption: **Figure 2: Hex Dump Sample Output**
+    :caption: **Hex Dump Sample Output**
+    :name: hex-dump-example-output 
 
     *  BITS:
     *    00007FCF60C97070 80 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00  ................

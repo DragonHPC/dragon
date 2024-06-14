@@ -15,9 +15,11 @@ Prerequisites
 
 You need to have the following software packages installed on your system:
 
-- Python 3.9 (e.g., module load cray-python)
+- Python 3.9, 3.10, or 3.11 corresponding to your whl file (e.g., module load cray-python)
 - GCC 9 or later
-- Slurm or PBS+PALS (for multi-node Dragon)
+- Slurm or PBS+PALS (for multi-node Dragon on a super computer) OR
+- A cluster with configured passwordless ssh keys and an MPI-like hostfile (to run multi-node
+  on a cluster)
 
 Download Dragon
 ===================
@@ -28,50 +30,65 @@ Install Dragon
 ===================
 
 Before you can run programs using Dragon, you must set up the run-time for your
-environment. You must have Python 3.9 installed and it must be in your path
-somewhere. A common choice is to use a Python virtual environment, which can be initialized
-from a base Python 3.9+ with:
+environment. The untarred distribution file contains several subdirectories. All
+provided commands are relative to the directory that contains the README.md. The
+`dragon-*.whl` file must be pip3 installed once for your environment. The
+`capnp-*.whl` file is also required. Some setup may be required to use module
+support to load module files which set a few environment variables. The steps
+are outlined for you in the rest of this section.
+
+You must have Python 3.9 installed and it must be in your path somewhere.
+
+A common choice for running Python programs is to use a Python virtual
+environment. An install script is supplied in the distribution that performs the
+install step(s) for you and creates and activates a virtual environment. You will
+find this install script in the untarred distribution file at the root level.
 
 .. code-block:: console
 
-    python3 -m venv --clear _env
+    ./dragon-install
+
+You have completed the prerequisites for running Dragon with multiprocessing programs.
+
+If there was an error about loading modules, then you need to enable module loading. In
+that case, see the subsection below on *Enabling Module Support*.
+
+If you have already installed and want to come back and use your install at a later
+time you may have to reactivate your environment. Execute this from the same directory.
+
+.. code-block:: console
+
     . _env/bin/activate
 
-The untarred distribution file contains several subdirectories. All provided commands
-are relative to the directory that contains the README.md.
-
-* The `dragon-*.whl` file must be pip3 installed once for your environment.
+Along with reactivating your environment you will also need to load the dragon
+module.
 
 .. code-block:: console
 
-    pip3 install --force-reinstall dragon-0.61-cp39-cp39-linux_x86_64.whl
+    module use $PWD/modulefiles
+    module load dragon
 
-* Check and possibly update that `$PATH` is has the location of pip installed
-  console scripts, such as ~/.local/bin if you're not using a virtual environment.
+If you are NOT using a virtual environment then check and possibly update the
+`$PATH` so it has the location of pip installed console scripts, such as
+~/.local/bin. If using a virtual environment, this step is not necessary.
 
 .. code-block:: console
 
     export PATH=~/.local/bin:${PATH}
 
-* You must set up the environment by loading the dragon module as follows.
+Enabling Module Support
+--------------------------
 
-.. code-block:: console
-
-    module use [/path to dragon-0.61]/modulefiles
-    module load dragon
-
-If you intend to use Dragon on your own Linux VM or an image that you
-personally installed, you may need to enable module commands by adding the
-following command to your ~/.bashrc or other login script.
+If you intend to use Dragon on your own Linux VM or an image that you personally
+installed, you may need to enable module commands first by adding the following
+command to your ~/.bashrc or other login script.
 
 .. code-block:: console
 
     source /usr/share/modules/init/bash
 
-If you use a different shell, look in the `init` directory for a script for
-your shell.
-
-You have completed the prerequisites for running Dragon with multiprocessing programs.
+If you use a different shell, look in the `init` directory for a script for your
+shell.
 
 Running Dragon
 ==============

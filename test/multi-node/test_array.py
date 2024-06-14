@@ -14,7 +14,7 @@ import multiprocessing as mp
 import random
 
 
-def process_function(event, array, queue, max_val, idx,):
+def process_function(event, array, queue, max_val, idx, barrier,):
 
     p = mp.current_process()
     mypuid = p.pid
@@ -23,10 +23,11 @@ def process_function(event, array, queue, max_val, idx,):
     event.wait()
 
     array[idx] = 1
+    barrier.wait()
 
     #while the value is less than max_value
     while array[idx] < max_val:
-      with array.get_lock():
+        with array.get_lock():
             array[idx] += 1
             array_list = array[:]
             array_list.append(random.randint(-sys.maxsize - 1, sys.maxsize))
@@ -71,9 +72,10 @@ class TestArrayMultiNode(unittest.TestCase):
         array = mp.Array("i", range(128+nproc), lock=True,)
         queue = mp.Queue()
         event = mp.Event()
+        barrier = mp.Barrier(nproc)
 
         for idx in range(nproc):
-            p = mp.Process(target=process_function,args=(event, array, queue, max_val, idx,),)
+            p = mp.Process(target=process_function,args=(event, array, queue, max_val, idx, barrier,),)
             p.start()
             procs.append(p)
             puid_dict[p.pid] = 0
@@ -81,22 +83,19 @@ class TestArrayMultiNode(unittest.TestCase):
         # parent sets event for children processes to work at same time
         event.set()
 
-        cnt = 0
-
-        for idx in range(0,max_val,):
-            puid, val, = (queue.get())
-            # check that the array from child process is valid
-            cnt += 1
-            # increment each time child puid returns array
-            puid_dict[puid] += 1
+        for _ in range(1, max_val):
+            for pidx in range(nproc):
+                puid, val, = (queue.get(timeout=10))
+                # increment each time child puid returns array
+                puid_dict[puid] += 1
 
         numpy_puids = np.array(list(puid_dict.values()))
 
         # print minimum, maximum, mean, and median from puids_dict
         (puids_max,puids_min,puids_mean,puids_median,) = (np.max(numpy_puids),np.min(numpy_puids),np.mean(numpy_puids),np.median(numpy_puids),)
 
-        print(f"Lock acquisition, {max_val/nproc} tries / proc, {nproc} processes:")
-        print(f"    Maximum: {puids_max}, Minimum: {puids_min}, Mean: {puids_mean}, Median: {puids_median}")
+        print(f"Lock acquisition, {max_val/nproc} tries / proc, {nproc} processes:", flush=True)
+        print(f"    Maximum: {puids_max}, Minimum: {puids_min}, Mean: {puids_mean}, Median: {puids_median}", flush=True)
 
         # check that the child process exited cleanly in parent process
         for p in procs:

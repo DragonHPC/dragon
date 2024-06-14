@@ -32,8 +32,6 @@ extern "C" {
 #define DRAGON_CHANNEL_NUM_POLL_BCASTS 5
 #define DRAGON_CHANNEL_DEFAULT_MAX_EVENT_BCASTS 8
 #define DRAGON_CHANNEL_DEFAULT_MAX_GW_ENV_NAME_LENGTH 200
-/* This following string must be identical in dfacts.py */
-#define DRAGON_NUM_GW_ENV_VAR "DRAGON_NUM_GW_CHANNELS_PER_NODE"
 
 /* attributes and header info embedded into a Channel */
 /* NOTE: This must match the pointers assigned

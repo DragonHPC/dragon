@@ -4,40 +4,33 @@ shared objects are separated out from the Dragon Python wheel file.  This is to 
 Dragon runtime environment from other languages, such as Fortran/C/C++.
 
 Before you can run programs using Dragon, you must set up the run-time for your
-environment. You must have Python 3.9 installed and it must be in your path
-somewhere. A common choice is to use a Python virtual environment, which can be initialized
-from a base Python 3.9+ with:
+environment. You must have Python 3.9, 3.10, or 3.11 installed and it must correspond to the version of the Dragon package that was downloaded. A common choice for running Python programs is to use a Python virtual
+environment. An install script is supplied in the distribution that performs the
+install step(s) for you and creates and activates a virtual environment. You will
+find this install script in the untarred distribution file at the root level.
+    
+    ./dragon-install 
 
-        python3 -m venv --clear _env
-        . _env/bin/activate
+You have completed the prerequisites for running Dragon with multiprocessing programs. If you are not in the virtual environment, you may need to navigate to the untarred distribution file at the root level and follow the commands below for activating the virtual environment. 
 
+If you have already installed and want to come back and use your install at a later
+time you may have to reactivate your environment. Execute this from the same directory as the install was run from above.
 
-The untarred distribution file contains several subdirectories. All provided commands
-are relative to the directory that contains the README.md.
+    . _env/bin/activate
 
-The `dragon-*.whl` file must be pip3 installed once for your environment.
+Along with reactivating your environment you will also need to load the dragon
+module.
 
-        pip3 install --force-reinstall dragon-0.61-cp39-cp39-linux_x86_64.whl
+    module use $PWD/modulefiles
+    module load dragon
 
+If you are NOT using a virtual environment then check and possibly update the
+`$PATH` so it has the location of pip installed console scripts, such as
+~/.local/bin. If using a virtual environment, this step is not necessary.
 
-Check and possibly update that `$PATH` is has the location of pip installed
-console scripts, such as ~/.local/bin if you're not using a virtual environment.
+    export PATH=~/.local/bin:${PATH}
 
-        export PATH=~/.local/bin:${PATH}
-
-
-Set up the path to the Dragon module
-
-        module use [/absolute path to directory with this INSTALL.md file]/modulefiles
-
-
-Load the Dragon module
-
-        module load dragon
-
-
-Test your configuration using the point-to-point latency test.  You should see output similar to below after the
-`dragon` command.
+You can test your configuration using the point-to-point latency test.  You should see output similar to below after the `dragon` command for a single node allocation.
 ```
 cd examples/multiprocessing
 

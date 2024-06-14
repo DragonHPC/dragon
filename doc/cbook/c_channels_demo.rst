@@ -200,7 +200,6 @@ captured by Dragon, any error messages are displayed back to the user.
         dragonMessage_t msg;
         char* send_ser_encoded;
         char* final_ser_encoded;
-        size_t send_ser_len;
 
         /* This function is necessary for off-node communication and relies on the
         * Dragon run-time services to supply gateway channels in the
@@ -232,7 +231,7 @@ captured by Dragon, any error messages are displayed back to the user.
         * Dragon provides both base64 encoding and decoding for
         * interoperability between languages. */
 
-        recv_chser.data = dragon_base64_decode(argv[3], strlen(argv[3]), &recv_chser.len);
+        recv_chser.data = dragon_base64_decode(argv[3], &recv_chser.len);
 
         /* With a valid serialized descriptor you can attach to a channel. This
         * attach here occurs on an off-node channel (except in the one node
@@ -317,7 +316,7 @@ captured by Dragon, any error messages are displayed back to the user.
                 return -1;
             }
 
-            send_ser_encoded = dragon_base64_encode(send_chser.data, send_chser.len, &send_ser_len);
+            send_ser_encoded = dragon_base64_encode(send_chser.data, send_chser.len);
 
             err = dragon_memory_pool_detach(&pool_descr);
             if (err != DRAGON_SUCCESS) {
@@ -340,7 +339,7 @@ captured by Dragon, any error messages are displayed back to the user.
             send_ser_encoded = argv[4];
             final_ser_encoded = argv[5];
 
-            send_chser.data = dragon_base64_decode(send_ser_encoded, strlen(send_ser_encoded), &send_chser.len);
+            send_chser.data = dragon_base64_decode(send_ser_encoded, &send_chser.len);
 
             err = dragon_channel_attach(&send_chser, &send_ch);
             if (err != DRAGON_SUCCESS) {
@@ -355,7 +354,7 @@ captured by Dragon, any error messages are displayed back to the user.
                 return -1;
             }
 
-            final_chser.data = dragon_base64_decode(final_ser_encoded, strlen(final_ser_encoded), &final_chser.len);
+            final_chser.data = dragon_base64_decode(final_ser_encoded, &final_chser.len);
 
             err = dragon_channel_attach(&final_chser, &final_ch);
             if (err != DRAGON_SUCCESS) {

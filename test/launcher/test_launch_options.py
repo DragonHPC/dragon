@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import unittest
+import time
 import logging
 import threading
 from os import environ, path
@@ -123,6 +124,7 @@ class LaunchOptionsTest(unittest.TestCase):
     def setUp(self):
         self.test_dir = path.dirname(path.realpath(__file__))
         self.network_config = path.join(self.test_dir, 'slurm_primary.yaml')
+        self.big_network_config = path.join(self.test_dir, 'slurm_big.yaml')
 
     @catch_thread_exceptions
     @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
@@ -146,6 +148,79 @@ class LaunchOptionsTest(unittest.TestCase):
         assert exceptions_caught_in_threads['Frontend Server']['exception']['type'] == ValueError
         assert str(exceptions_caught_in_threads['Frontend Server']['exception']['value']) \
             == 'Not enough backend nodes allocated to match requested'
+
+    @catch_thread_exceptions
+    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
+    @patch('dragon.launcher.frontend.start_overlay_network')
+    def test_resilient_launch_no_nodes_requested(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
+        """What happens when a user requests resilient launch but doesn't specify # nodes"""
+
+        args_map = get_args_map(self.network_config,
+                                arg1=['--resilient'])
+
+        # get startup going in another thread. Note: need to do threads in order to use
+        # all our mocks
+        fe_proc = threading.Thread(name='Frontend Server',
+                                   target=run_frontend,
+                                   args=(args_map,),
+                                   daemon=False)
+        fe_proc.start()
+        fe_proc.join()
+
+        assert 'Frontend Server' in exceptions_caught_in_threads  # there was an exception in thread  1
+        assert exceptions_caught_in_threads['Frontend Server']['exception']['type'] == RuntimeError
+        assert str(exceptions_caught_in_threads['Frontend Server']['exception']['value']) \
+            == "resilient flag requires setting of '--nodes' or '--idle'"
+
+    @catch_thread_exceptions
+    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
+    @patch('dragon.launcher.frontend.start_overlay_network')
+    def test_resilient_launch_bad_nidle_requested(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
+        """What happens when a user requests resilient launch but request too many idle nodes"""
+
+        args_map = get_args_map(self.network_config,
+                                arg1=['--resilient'],
+                                arg2=['--idle', '1000000'])
+
+        # get startup going in another thread. Note: need to do threads in order to use
+        # all our mocks
+        fe_proc = threading.Thread(name='Frontend Server',
+                                   target=run_frontend,
+                                   args=(args_map,),
+                                   daemon=False)
+        fe_proc.start()
+        fe_proc.join()
+
+        assert 'Frontend Server' in exceptions_caught_in_threads  # there was an exception in thread  1
+        assert exceptions_caught_in_threads['Frontend Server']['exception']['type'] == RuntimeError
+        assert "is greater than available" in \
+               str(exceptions_caught_in_threads['Frontend Server']['exception']['value'])
+
+    @catch_thread_exceptions
+    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
+    @patch('dragon.launcher.frontend.start_overlay_network')
+    def test_resilient_launch_bad_nidle_nnodes_requested(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
+        """What happens when a user requests resilient launch but requests too many idle nodes for nnodes"""
+
+        self.network_config = self.big_network_config
+        args_map = get_args_map(self.network_config,
+                                arg1=['--resilient'],
+                                arg2=['--idle', '13'],
+                                arg3=['--nodes', '4'])
+
+        # get startup going in another thread. Note: need to do threads in order to use
+        # all our mocks
+        fe_proc = threading.Thread(name='Frontend Server',
+                                   target=run_frontend,
+                                   args=(args_map,),
+                                   daemon=False)
+        fe_proc.start()
+        fe_proc.join()
+
+        assert 'Frontend Server' in exceptions_caught_in_threads  # there was an exception in thread  1
+        assert exceptions_caught_in_threads['Frontend Server']['exception']['type'] == RuntimeError
+        assert "is greater than available" in \
+               str(exceptions_caught_in_threads['Frontend Server']['exception']['value'])
 
     @patch('sys.stderr', new_callable=StringIO)
     def test_nonint_nodes_requested(self, mock_stderr):

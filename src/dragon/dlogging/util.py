@@ -127,7 +127,9 @@ class DragonLoggingServices(str, enum.Enum):
         :GS: 'GS'
         :TA: 'TA'
         :ON: 'ON'
+        :OOB: 'OOB'
         :LS: 'LS'
+        :DD: 'DD'
         :TEST: 'TEST'
         :PERF: 'PERF'
     """
@@ -136,7 +138,9 @@ class DragonLoggingServices(str, enum.Enum):
     GS = 'GS'
     TA = 'TA'
     ON = "ON"
+    OOB = 'OOB'
     LS = 'LS'
+    DD = 'DD'
     TEST = 'TEST'
     PERF = 'PERF'
 

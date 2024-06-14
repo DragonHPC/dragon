@@ -1,4 +1,4 @@
-# AI-in-the-loop workflow with Dragon 
+# Parsl MPI application with Dragon
 
 ## Introduction
 This shows an example workflow using Parsl with Dragon. In this example we use a Dragon implementation of the `@mpi_app` decorator and the `DragonMPIExecutor`. The executor expects five arguments to be returned from the decorated function: the executable, the directory containing the executable, the policy for process placement, the number of MPI processes to launch, and the arguments to pass to the executable. The arguments are expected to be returned in this order. The executor returns a future thats result is a dictionary containing a connection to stdin and stdout to rank 0.

@@ -4,6 +4,8 @@ import time
 import unittest
 import os
 import multiprocessing as mp
+import dragon.infrastructure.parameters as dparms
+from dragon.utils import B64
 from dragon.channels import Channel, Message, ChannelSendH, ChannelRecvH, ChannelError, ChannelSendError, \
     ChannelRecvError, OwnershipOnSend, LockType, FlowControl, ChannelFull, ChannelEmpty, ChannelHandleNotOpenError, \
     ChannelRecvTimeout, ChannelSendTimeout, EventType, ChannelBarrierBroken, ChannelBarrierReady, MASQUERADE_AS_REMOTE, \
@@ -15,11 +17,11 @@ BARRIER_CHANNEL_CAPACITY = 5
 MAX_SPINNERS = 5
 
 def worker_attach_detach(ch_ser, pool_ser):
-    ch = Channel.attach(ch_ser)
+    mpool = MemoryPool.attach(pool_ser)
+    ch = Channel.attach(ch_ser, mpool)
     sendh = ch.sendh()
     sendh.open()
 
-    mpool = MemoryPool.attach(pool_ser)
     msg = Message.create_alloc(mpool, 512)
     mview = msg.bytes_memview()
     mview[0:5] = b"Hello"
@@ -46,10 +48,9 @@ def worker_pickled_attach(ch, mpool):
 
 def worker_send_recv(id, ch_ser, ch2_ser, pool_ser):
     try:
-        ch = Channel.attach(ch_ser)
-        ch2 = Channel.attach(ch2_ser)
         mpool = MemoryPool.attach(pool_ser)
-
+        ch = Channel.attach(ch_ser, mpool)
+        ch2 = Channel.attach(ch2_ser, mpool)
         sendh = ch.sendh(wait_mode=SPIN_WAIT)
         sendh.open()
 
@@ -68,16 +69,15 @@ def worker_send_recv(id, ch_ser, ch2_ser, pool_ser):
         sys.exit(0)
 
     except Exception as ex:
-        print(repr(ex))
+        print(ex)
         sys.exit(1)
 
 def worker_fill_poll_empty(ch_ser, pool_ser):
     try:
-        ch = Channel.attach(ch_ser)
+        mpool = MemoryPool.attach(pool_ser)
+        ch = Channel.attach(ch_ser, mpool)
         sendh = ch.sendh()
         sendh.open()
-
-        mpool = MemoryPool.attach(pool_ser)
 
         for j in range(3):
             for i in range(BARRIER_CHANNEL_CAPACITY):
@@ -92,7 +92,7 @@ def worker_fill_poll_empty(ch_ser, pool_ser):
 
 
     except Exception as ex:
-        print(repr(ex))
+        print(ex)
         sys.exit(1)
 
 def worker_empty_poll_full(ch_ser):
@@ -114,7 +114,7 @@ def worker_empty_poll_full(ch_ser):
                     sys.exit(1)
 
     except Exception as ex:
-        print(repr(ex))
+        print(ex)
         sys.exit(1)
 
 
@@ -148,8 +148,8 @@ def worker_barrier_wait(ch_ser):
         sys.exit(2)
 
     except Exception as ex:
-        #print("There was an exception while running the barrier wait process.", flush=True)
-        #print(repr(ex), flush=True)
+        print("There was an exception while running the barrier wait process.", flush=True)
+        print(ex, flush=True)
         sys.exit(1)
 
 
@@ -460,10 +460,17 @@ class ChannelTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        pool_name = f"pydragon_channel_test_{os.getpid}"
+        pool_name = f"pydragon_channel_test_{os.getpid()}"
         pool_size = 1073741824  # 1GB
         pool_uid = 1
         cls.mpool = MemoryPool(pool_size, pool_name, pool_uid)
+
+        # This is wrong below. There appears to be a problem where the check for whether a pool
+        # is local in a channel is not returning true when it should. This may be based on hostid.
+        # # This must be done because the channels attach expects to find
+        # # an environment where it can find a default pool to attach to.
+        # pool_ser = B64.bytes_to_str(cls.mpool.serialize())
+        # os.environ[dparms.this_process.default_pd] = pool_ser
 
     @classmethod
     def tearDownClass(cls):
@@ -564,7 +571,8 @@ class ChannelTests(unittest.TestCase):
                 for i in range(BARRIER_CHANNEL_CAPACITY*2):
                     proc_list[i].join()
                     self.assertEqual(proc_list[i].exitcode, 0, 'Non-zero exitcode from barrier proc')
-        except:
+        except Exception as ex:
+            print(ex)
             print('**** Error in test_poll_barrier2')
             print(f'*** Receivers={self.ch2.blocked_receivers}')
             print(f'*** Number of messages={self.ch2.num_msgs}')
@@ -613,7 +621,7 @@ class ChannelTests(unittest.TestCase):
             self.ch2.poll(event_mask=EventType.POLLRESET)
 
         except Exception as ex:
-            print(repr(ex))
+            print(ex)
             print('**** Error in test_poll_barrier3_with_abort')
             print(f'*** Receivers={self.ch2.blocked_receivers}')
             print(f'*** Number of messages={self.ch2.num_msgs}')
@@ -1040,8 +1048,9 @@ class MessageTest(unittest.TestCase):
             msg.bytes_memview()
 
     def test_zero_size(self):
-        with self.assertRaises(ChannelError):
-            Message.create_alloc(self.mpool, 0)
+        msg = Message.create_alloc(self.mpool, 0)
+        self.assertEqual(len(msg.tobytes()), 0)
+        self.assertEqual(len(msg.bytes_memview()), 0)
 
     def test_negative_size(self):
         with self.assertRaises(OverflowError):
@@ -1062,11 +1071,11 @@ def worker_send_to_chset(ch_ser, pool_ser):
     # polling on the channel set
 
     try:
-        ch = Channel.attach(ch_ser)
+        mpool = MemoryPool.attach(pool_ser)
+        ch = Channel.attach(ch_ser, mpool)
         sendh = ch.sendh()
         sendh.open()
 
-        mpool = MemoryPool.attach(pool_ser)
         msg = Message.create_alloc(mpool, 32)
         mview = msg.bytes_memview()
         mview[0:5] = b"Hello"
@@ -1076,14 +1085,14 @@ def worker_send_to_chset(ch_ser, pool_ser):
         sendh.close()
 
     except Exception as ex:
-        print(repr(ex))
+        print(ex)
 
 
 class ChannelSetTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        pool_name = f"pydragon_channelset_test_{os.getpid}"
+        pool_name = f"pydragon_channelset_test_{os.getpid()}"
         pool_size = 1073741824  # 1GB
         pool_uid = 1
         cls.mpool = MemoryPool(pool_size, pool_name, pool_uid)

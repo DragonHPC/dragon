@@ -26,7 +26,7 @@ DEFAULT_UID = 123456
 def mk_remote_mem_ser(local_mem_ser):
     mem_ser_array = bytearray(local_mem_ser)
     mem_ser_array[8] = 99 # change m_uid
-    mem_ser_array[16] = 99 # change hostid
+    mem_ser_array[16] = mem_ser_array[16] ^ 99 # change hostid
     mem_ser_remote = bytes(mem_ser_array)
     return mem_ser_remote
 
@@ -39,7 +39,7 @@ def mk_remote_mem_ser(local_mem_ser):
 def mk_remote_pool_ser(local_pool_ser):
     pool_ser_array = bytearray(local_pool_ser)
     pool_ser_array[0] = 99 # change m_uid
-    pool_ser_array[8] = 99 # change hostid
+    pool_ser_array[8] = pool_ser_array[8] ^ 99 # change hostid
     pool_ser_remote = bytes(pool_ser_array)
     return pool_ser_remote
 
@@ -323,6 +323,54 @@ class MemoryPoolAllocTest(unittest.TestCase):
     def test_alloc_string(self):
         with self.assertRaises(TypeError):
             _ = self.mpool.alloc("512")
+
+    def test_alloc_hash(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        self.assertGreaterEqual(hash(mem),0)
+
+    def test_alloc_hash2(self):
+        mem = self.mpool.alloc(15)
+        memview = mem.get_memview()
+        memview[:15] = b'hellohellohello'
+        self.assertGreaterEqual(hash(mem),0)
+
+    def test_alloc_equals(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        mem2 = self.mpool.alloc(15)
+        memview2 = mem2.get_memview()
+        memview2[:15] = b'hellohellohello'
+        self.assertNotEqual(mem, mem2)
+
+    def test_alloc_eq(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        mem2 = self.mpool.alloc(5)
+        memview2 = mem2.get_memview()
+        memview2[:5] = b'hello'
+        self.assertEqual(mem,mem2)
+
+    def test_alloc_eq2(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        mem2 = self.mpool.alloc(15)
+        memview2 = mem2.get_memview()
+        memview2[:5] = b'hello'
+        self.assertNotEqual(mem,mem2)
+
+    def test_alloc_eq3(self):
+        mem = self.mpool.alloc(5)
+        memview = mem.get_memview()
+        memview[:5] = b'hello'
+        mem2 = self.mpool.alloc(15)
+        memview2 = mem2.get_memview()
+        memview2[:15] = b'hellohellohello'
+        self.assertNotEqual(mem,mem2)
 
     def test_alloc_negative(self):
         with self.assertRaises(Exception):

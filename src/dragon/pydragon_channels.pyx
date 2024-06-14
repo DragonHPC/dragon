@@ -1,6 +1,7 @@
 from dragon.dtypes_inc cimport *
 from dragon.channels cimport *
 from dragon.managed_memory cimport *
+from dragon.rc import DragonError
 import dragon.dtypes as dtypes
 import dragon.infrastructure.parameters as dparms
 from dragon.utils import B64
@@ -215,16 +216,31 @@ cdef class Message:
     # @MCB: Should this and create_alloc be combined into a regular __init__()?
     # create_empty is only used by Receive Handle objects
     @staticmethod
-    def create_from_mem(MemoryAlloc mem):
+    def create_from_mem(MemoryAlloc mem, hints = 0, clientid = 0):
         """
         Create a new Message object with no memory backing
 
         :return: New Message Object
         """
-        cdef dragonError_t derr
+        cdef:
+            dragonError_t derr
+            dragonMessageAttr_t attrs
 
         msg = Message()
-        derr = dragon_channel_message_init(&msg._msg, &mem._mem_descr, NULL)
+        derr = dragon_channel_message_attr_init(&attrs);
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not create default message attributes", derr)
+
+        if (not type(hints) is int) or hints < 0:
+            raise ChannelError("The hints argument must be a non-negative integer.", DragonError.INVALID_ARGUMENT)
+
+        if (not type(clientid) is int) or clientid < 0:
+            raise ChannelError("The clientid argument must be a non-negative integer.", DragonError.INVALID_ARGUMENT)
+
+        attrs.hints = hints
+        attrs.clientid = clientid
+
+        derr = dragon_channel_message_init(&msg._msg, &mem._mem_descr, &attrs)
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Could not create empty message", derr)
         msg._allocated = 0
@@ -250,7 +266,7 @@ cdef class Message:
         return msg
 
     @staticmethod
-    def create_alloc(MemoryPool mpool, size_t nbytes, timeout=None):
+    def create_alloc(MemoryPool mpool, size_t nbytes, hints = 0, clientid = 0, timeout=None):
         """
         Allocate memory and a new message object for inserting data into and sending
 
@@ -264,7 +280,20 @@ cdef class Message:
             dragonMemoryDescr_t * mem
             timespec_t alloc_timeout
             timespec_t timer
-            timespec_t* time_ptr
+            dragonMessageAttr_t attrs
+
+        derr = dragon_channel_message_attr_init(&attrs);
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not create default message attributes", derr)
+
+        if (not type(hints) is int) or hints < 0:
+            raise ChannelError("The hints argument must be a non-negative integer.", DragonError.INVALID_ARGUMENT)
+
+        if (not type(clientid) is int) or clientid < 0:
+            raise ChannelError("The clientid argument must be a non-negative integer.", DragonError.INVALID_ARGUMENT)
+
+        attrs.hints = hints
+        attrs.clientid = clientid
 
         time_ptr = _compute_timeout(timeout, NULL, &timer)
 
@@ -281,7 +310,7 @@ cdef class Message:
         if merr != DRAGON_SUCCESS:
             raise ChannelError("Could not get size memory descriptor", merr)
 
-        derr = dragon_channel_message_init(&msg._msg, mem, NULL)
+        derr = dragon_channel_message_init(&msg._msg, mem, &attrs)
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Could not create message", derr)
 
@@ -348,6 +377,68 @@ cdef class Message:
         # @MCB: Doesn't feel quite right?
         mview = self.bytes_memview()
         return mview.tobytes()
+
+    @property
+    def hints(self):
+        cdef:
+            dragonError_t derr
+            dragonMessageAttr_t attrs
+
+        derr = dragon_channel_message_getattr(&self._msg, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not get message attributes", derr)
+
+        return attrs.hints
+
+    @hints.setter
+    def hints(self, value):
+        cdef:
+            dragonError_t derr
+            dragonMessageAttr_t attrs
+
+        if (not type(value) is int) or value < 0:
+            raise ChannelError("The hints attribute must be a non-negative integer.", DragonError.INVALID_ARGUMENT)
+
+        derr = dragon_channel_message_getattr(&self._msg, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not get message attributes", derr)
+
+        attrs.hints = value
+
+        derr = dragon_channel_message_setattr(&self._msg, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not set message attributes", derr)
+
+    @property
+    def clientid(self):
+        cdef:
+            dragonError_t derr
+            dragonMessageAttr_t attrs
+
+        derr = dragon_channel_message_getattr(&self._msg, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not get message attributes", derr)
+
+        return attrs.clientid
+
+    @clientid.setter
+    def clientid(self, value):
+        cdef:
+            dragonError_t derr
+            dragonMessageAttr_t attrs
+
+        if (not type(value) is int) or value < 0:
+            raise ChannelError("The clientid attribute must be a non-negative integer.", DragonError.INVALID_ARGUMENT)
+
+        derr = dragon_channel_message_getattr(&self._msg, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not get message attributes", derr)
+
+        attrs.clientid = value
+
+        derr = dragon_channel_message_setattr(&self._msg, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not set message attributes", derr)
 
 
 cpdef enum OwnershipOnSend:
@@ -942,6 +1033,68 @@ cdef class Channel:
         return empty_channel._attach(serialized_bytes, mem_pool)
 
 
+    @classmethod
+    def make_process_local(cls, timeout=None):
+        """
+        Create a process local channel which is a channel that exists for the
+        sole purpose of use by the current process. The channel is unique
+        to all nodes and may be shared with other processes but is
+        managed with the life-cycle of the current process. When the
+        current process, the one calling this function, exits, the
+        process local channel it created via this call will also be
+        destroyed.
+
+        This is especially useful for processes that need a channel to receive
+        requests or need to have a place where responses to requests of
+        other processes can be sent. Most likely calls to this function
+        will exist inside of some other API.
+
+        :param timeout: Default is None which means to block without timeout until the
+            channel is made. This should not timeout and should be processed quickly. If a
+            timeout value is specified, it is the number of seconds to wait which may be a
+            float.
+
+        :return: A new channel object.
+
+        :raises: ChannelError if there was an error. Note that the Dragon run-time
+            must be running to use this function as it interacts with Local Services on the
+            node on which it is called.
+        """
+        cdef:
+            dragonError_t derr
+            timespec_t * time_ptr
+            timespec_t val_timeout
+            dragonChannelDescr_t ch
+            dragonChannelSerial_t ser
+
+        if timeout is None:
+            time_ptr = NULL
+        elif isinstance(timeout, int) or isinstance(timeout, float):
+            if timeout < 0:
+                raise ValueError('Cannot provide timeout < 0 to make_process_local operation')
+            # Anything > 0 means use that as seconds for timeout.
+            time_ptr = & val_timeout
+            val_timeout.tv_sec =  int(timeout)
+            val_timeout.tv_nsec = int((timeout - val_timeout.tv_sec)*1000000000)
+        else:
+            raise ValueError('make_process_local timeout must be a float or int')
+
+        with nogil:
+            derr = dragon_create_process_local_channel(&ch, time_ptr)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not create process local channel", derr)
+
+        derr = dragon_channel_serialize(&ch, &ser)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not serialize channel", derr)
+
+        py_obj = ser.data[:ser.len]
+
+        derr = dragon_channel_serial_free(&ser)
+
+        # This inits the rest of the object given the channel descriptor above.
+        return Channel.attach(py_obj)
+
     def destroy(self):
         """
         Destroys the channel.
@@ -1398,6 +1551,14 @@ cdef _ConnMsgHeader_parse(uint8_t * first_bytes, size_t length):
     elif first_bytes[0] == _ConnMsgHeader_PROTOCOL_5_FIRSTB and first_bytes[1] == _ConnMsgHeader_PROTOCOL_5_NEXTB:
         return ChannelAdapterMsgTypes.PICKLE_PROT_5, None
     elif first_bytes[0] == _ConnMsgHeader_RAW_BYTE_MSG_FIRSTB and length >= _ConnMsgHeader_RAW_HDR_SZ:
+        # The following if statement is temporary code. It is needed to allow
+        # C/C++ code to send byte encoded CapNProto messages to connections.
+        # This code is only needed until we switch over to FLI adapters for
+        # infrastructure connections. This is needed because the size of
+        # the CapNProto message is not known until it is written.
+        if decoded_length == 0xFFFFFFFFFFFFFF:
+            decoded_length = length - _ConnMsgHeader_RAW_HDR_SZ
+
         return ChannelAdapterMsgTypes.RAW_BYTES, decoded_length
     else:
         raise ConnectionError(f'unexpected header: {first_bytes[:8]}')
@@ -2588,6 +2749,20 @@ cdef class GatewayMessage:
             return self._gmsg.send_payload_message._attr.sendhid[:16]
         else:
             raise ChannelError('Attempt to get the sendhid of a non-send Gateway message')
+
+    @property
+    def send_payload_message_attr_clientid(self):
+        if self.is_send_kind:
+            return self._gmsg.send_payload_message._attr.clientid
+        else:
+            raise ChannelError('Attempt to get the clientid of a non-send Gateway message')
+
+    @property
+    def send_payload_message_attr_hints(self):
+        if self.is_send_kind:
+            return self._gmsg.send_payload_message._attr.hints
+        else:
+            raise ChannelError('Attempt to get the hints of a non-send Gateway message')
 
     @property
     def send_dest_mem_descr_ser(self):

@@ -1,0 +1,34 @@
+8 7
+begin components
+c "User Program"
+orc "Orchestrator"
+m1 "Manager 1"
+m2 "Manager 2"
+ls "Local Services (one per node)"
+end;
+ltext@ c "Program is reponsible for destroying distributed dictionary and initiates it.";
+;
+c orc "DDDestroy(clientID, BufferedRespFLI)";
+orc m1 "DDDestroyManager";
+orc m2 "DDDestroyManager";
+m1 ls "SHSetKV(orcMainFLI, '') results in deleting key";
+ls m1 "SHSetKVResponse";
+m1 orc "DDDestroyManagerResponse";
+;
+ctext@ m1 "Manager 1 frees channels and pools";
+ctext@ m1 "Manager 1 exits";
+;
+m2 ls "SHSetKV(orcMainFLI, '')";
+ls m2 "SHSetKVResponse";
+m2 orc "DDDestroyManagerResponse";
+;
+ctext@ m2 "Manager 2 frees channels and pools";
+ctext@ m2 "Manager 2 exits";
+;
+orc c "DDDestroyResponse";
+;
+ctext@ orc "Orchestrator frees channels";
+ctext@ orc "Orchestrator exits";
+;
+
+ltext@ c "Disributed Dictionary is now destroyed";

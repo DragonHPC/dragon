@@ -261,6 +261,16 @@ class SendRequest(Request, typeid=b'\x01'):
     concurrency is limited based on target channel and the send handle ID.
     """
 
+    clientid: uint64
+    """The ``clientid`` attribute is a user supplied
+    attribute of a message that does not affect the payload.
+    """
+
+    hints: uint64
+    """The ``hints`` attribute is a user supplied  attribute
+    of a message that does not affect the payload.
+    """
+
     payload: varbytes
     """Message payload."""
 
@@ -323,6 +333,16 @@ class SendResponse(Response, typeid=b'\xfe'):
 @dataclass
 class RecvResponse(Response, typeid=b'\xfc'):
     """Response to a `RecvRequest`."""
+
+    clientid: uint64
+    """The ``clientid`` attribute is a user supplied
+    attribute of a message that does not affect the payload.
+    """
+
+    hints: uint64
+    """The ``hints`` attribute is a user supplied  attribute
+    of a message that does not affect the payload.
+    """
 
     payload: varbytes
     """Message payload."""

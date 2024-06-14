@@ -28,6 +28,7 @@ Python Components
    messages
    node_desc
    parameters
+   policy
    pool_desc
    process_desc
    standalone_conn
@@ -48,10 +49,11 @@ Architecture
 
 .. figure:: images/infrastructure_architecture.svg
    :scale: 75%
+   :name: dragon-inf-api-architecture 
 
-   **Figure 1: Architecture of the Dragon Infrastructure API**
+   **Architecture of the Dragon Infrastructure API**
 
-Figure 1 shows a UML2 component diagram of the Dragon infrastructure API and its components.
+:numref:`dragon-inf-api-architecture` shows a UML2 component diagram of the Dragon infrastructure API and its components.
 
 The infrastructure API is consumed by Dragon Services: Local Services, Global
 Services, Launcher Backend, and the Transport Agents. It consists mostly of conventions, like message types and common IDs.

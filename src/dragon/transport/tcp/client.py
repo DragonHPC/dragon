@@ -5,6 +5,8 @@ from typing import Optional
 
 from ...channels import GatewayMessage, Channel, ChannelEmpty, ChannelRecvTimeout
 from ...dtypes import WaitMode, DEFAULT_WAIT_MODE
+from ...infrastructure.node_desc import NodeDescriptor
+
 from .errno import get_errno, DRAGON_TIMEOUT
 from .io import UUIDBytesIO
 from .messages import ErrorResponse, EventRequest, EventResponse, \
@@ -107,6 +109,18 @@ class Client(TaskMixin):
         finally:
             msg.destroy()
 
+    def update_nodes(self, node_update_map: dict[int, Address]):
+        """Update the node dictionary for routing gateway requests
+
+        :param nodes: Nodes to add to our internal data
+        :type nodes: list[NodeDescriptor]
+        """
+        try:
+            self.nodes.update(node_update_map)
+        except Exception:
+            LOGGER.critical(f'Failed to update client node-address mapping')
+            raise
+
     def process(self, msg: GatewayMessage) -> asyncio.Task:
         # Look up destination node address
         try:
@@ -181,7 +195,7 @@ class Client(TaskMixin):
         """Handle RecvResponse messages."""
         assert msg.is_get_kind
         try:
-            msg_recv = await asyncio.to_thread(create_msg, resp.payload, self._channel, msg.deadline, msg.get_dest_mem_descr_ser)
+            msg_recv = await asyncio.to_thread(create_msg, resp.payload, resp.clientid, resp.hints, self._channel, msg.deadline, msg.get_dest_mem_descr_ser)
         except BaseException as e:
             try:
                 msg.complete_error(get_errno(e))
@@ -210,12 +224,14 @@ def create_request(msg: GatewayMessage) -> Request:
         else:
             raise ValueError('Unsupported send return mode')
         sendhid = UUIDBytesIO.decode(msg.send_payload_message_attr_sendhid)
+        clientid = msg.send_payload_message_attr_clientid
+        hints = msg.send_payload_message_attr_hints
         payload = msg.send_payload_message
         mem_sd = msg.send_dest_mem_descr_ser
         if mem_sd is None:
-            cls = partial(SendRequest, return_mode=send_return_mode, sendhid=sendhid, payload=payload)
+            cls = partial(SendRequest, return_mode=send_return_mode, sendhid=sendhid, clientid=clientid, hints=hints, payload=payload)
         else:
-            cls = partial(SendMemoryRequest, return_mode=send_return_mode, sendhid=sendhid, payload=payload, mem_sd=mem_sd)
+            cls = partial(SendMemoryRequest, return_mode=send_return_mode, sendhid=sendhid, clientid=clientid, hints=hints, payload=payload, mem_sd=mem_sd)
     elif msg.is_get_kind:
         cls = RecvRequest
     elif msg.is_event_kind:

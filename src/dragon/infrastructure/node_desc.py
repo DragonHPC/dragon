@@ -8,12 +8,13 @@ allocations/elasticity aka The Cloud (TM) and more complex node properties
 import enum
 import re
 import os
-from socket import gethostname, socket, AF_INET, SOCK_STREAM
+from socket import gethostname
 from typing import Optional
 
 from .facts import DEFAULT_TRANSPORT_NETIF, DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_PORT_RANGE
 from ..utils import host_id as get_host_id
 from .util import port_check
+from .gpu_desc import AcceleratorDescriptor, find_accelerators
 
 
 class NodeDescriptor:
@@ -25,7 +26,9 @@ class NodeDescriptor:
         DISCOVERABLE = enum.auto()
         PENDING = enum.auto()
         ACTIVE = enum.auto()
+        IDLE = enum.auto()
         ERROR = enum.auto()
+        DOWN = enum.auto()
 
     # TODO: this is a stub (PE-42397). How do we deal with:
     #   * networks and their encryption ?
@@ -47,7 +50,10 @@ class NodeDescriptor:
         is_primary: bool = False,
         host_id: int = None,
         shep_cd: str = '',
-        host_name: str = ''
+        overlay_cd: str = '',
+        host_name: str = '',
+        cpu_devices: Optional[list[int]] = None,
+        accelerators: Optional[AcceleratorDescriptor] = None
     ):
         self.h_uid = h_uid
         self.name = name
@@ -58,65 +64,102 @@ class NodeDescriptor:
 
         self.host_name = host_name
         self.shep_cd = shep_cd
+        self.overlay_cd = overlay_cd
         self.host_id = host_id
+        self.cpu_devices = cpu_devices
+        self.accelerators = accelerators
 
         # Not a very accurate measure since we don't know when a policy group is done,
         #  but it gives some manner of tracking for block application
         # TODO: This might be useful later when we can GC finished policy jobs
         self.num_policies = 0
 
-        # Get a list of available CPUs on the node
-        self.cpu_devices = list(os.sched_getaffinity(0))
-
-        # Get a list of available GPUs on the node
-        # TODO: Currently all I'm finding is to use a tensorflow library
-        #       Maybe exec a bash command? lspci | grep ' VGA '
-        # NOTE: Apparently there is a py-lspci that might do this more easily for us
-
         if port is not None:
             self.ip_addrs = [f'{ip_addr}:{port}' for ip_addr in ip_addrs]
         else:
             self.ip_addrs = ip_addrs
 
+    def __repr__(self) -> str:
+        return f"name:{self.name}, host_id:{self.host_id} at {self.ip_addrs}, state:{self.state.name}"
+
     def __str__(self):
         return f"name:{self.name}, host_id:{self.host_id} at {self.ip_addrs}, state:{self.state.name}"
 
-
     @classmethod
-    def make_for_current_node(cls, name: Optional[str] = None, ip_addrs: Optional[list[str]] = None, is_primary: bool = False):
-        """Create a serialized node descriptor for the node this Shepherd is running on.
-        Can only be used to send to GS, as h_uid will be None in the descriptor.
+    def get_localservices_node_conf(cls,
+                                    name: Optional[str] = None,
+                                    host_name: Optional[str] = None,
+                                    host_id: Optional[int] = None,
+                                    is_primary: bool = False,
+                                    ip_addrs: Optional[list[str]] = None,
+                                    shep_cd: Optional[str] = None,
+                                    cpu_devices: Optional[list[int]] = None,
+                                    accelerators: Optional[AcceleratorDescriptor] = None):
+        """Return a NodeDescriptor object for Local Services to pass into its SHChannelsUp message
 
-        :param name: hostname of this node, defaults to None
-        :type name: str, optional
-        :param ip_addrs: List of the IP addresses for this node, defaults to ["127.0.0.1"]
-        :type ip_addrs: list[str], optional
+        Populates the values in a NodeDescriptor object that Local Services needs to provide to the
+        launcher frontend as part of infrastructure bring-up
+
+
+        :param name: Name for node. Often resorts to hostname, defaults to None
+        :type name: Optional[str], optional
+        :param host_name: Hostname for the node, defaults to gethostname()
+        :type host_name: Optional[str], optional
+        :param host_id: unique host ID of this node, defaults to get_host_id()
+        :type host_id: Optional[int], optional
         :param is_primary: denote if this is the primary node running GS, defaults to False
         :type is_primary: bool, optional
-        :return: serialized Node descruptor
-        :rtype: dict
+        :param ip_addrs: IP addresses used for backend messaging by transport agents, defaults to ["127.0.0.1"]
+        :type ip_addrs: Optional[list[str]], optional
+        :param shep_cd: Channel descriptor for this node's Local Services, defaults to None
+        :type shep_cd: Optional[str], optional
+        :param cpu_devices: List of CPUs and IDs on this node, defaults to list(os.sched_getaffinity(0))
+        :type cpu_devices: Optional[list[int]], optional
+        :param accelerators: List of any accelerators available on this node, defaults to find_accelerators()
+        :type accelerators: Optional[AcceleratorDescriptor], optional
         """
 
-        state = cls.State.ACTIVE
+        from dragon.infrastructure import parameters as dparms
 
-        huid = get_host_id() # will become h_uid in GS
+        if host_name is None:
+            host_name = gethostname()
 
-        if name is None:
-            name = f"Node-{huid}"
+        if host_id is None:
+            host_id = get_host_id()
+
+        if cpu_devices is None:
+            cpu_devices = list(os.sched_getaffinity(0))
+
+        if accelerators is None:
+            accelerators = find_accelerators()
 
         if ip_addrs is None:
             ip_addrs = ["127.0.0.1"]
+        
+        state = cls.State.ACTIVE
 
+        if name is None:
+            name = f"Node-{host_id}"
+        
+        if shep_cd is None:
+            shep_cd = dparms.this_process.local_shep_cd
+        
         num_cpus = os.cpu_count()
         physical_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-        host_name = gethostname()
 
-        desc = cls(
-            state=state, name=name, ip_addrs=ip_addrs, num_cpus=num_cpus,
-            physical_mem=physical_mem, is_primary=is_primary, host_id=huid, host_name=host_name
-        )
 
-        return desc
+        return cls(state=state,
+                   name=name,
+                   host_name=host_name,
+                   ip_addrs=ip_addrs,
+                   host_id=host_id,
+                   shep_cd=shep_cd,
+                   is_primary=is_primary,
+                   num_cpus=num_cpus,
+                   physical_mem=physical_mem,
+                   cpu_devices=cpu_devices,
+                   accelerators=accelerators)
+
 
     @classmethod
     def get_local_node_network_conf(cls,
@@ -204,11 +247,26 @@ class NodeDescriptor:
             "num_cpus": self.num_cpus,
             "physical_mem": self.physical_mem,
             "shep_cd": self.shep_cd,
+            "overlay_cd": self.overlay_cd,
+            "cpu_devices": self.cpu_devices,
+            "state": self.state
         }
+
+        # Account for a NULL accelerator giving us a None for now
+        try:
+            rv["accelerators"] = self.accelerators.get_sdict()
+        except AttributeError:
+            rv["accelerators"] = None
 
         return rv
 
     @classmethod
     def from_sdict(cls, sdict):
         sdict["state"] = NodeDescriptor.State(sdict["state"])
+        try:
+            if sdict["accelerators"] is not None:
+                sdict["accelerators"] = AcceleratorDescriptor.from_sdict(sdict["accelerators"]) 
+        except KeyError:
+            sdict["accelerators"] = None
+
         return NodeDescriptor(**sdict)

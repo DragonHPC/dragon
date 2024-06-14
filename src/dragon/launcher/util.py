@@ -134,6 +134,47 @@ def queue_monitor(func: Callable, *, log_test_queue=None):
     return wrapper
 
 
+def no_error_queue_monitor(func: Callable, *, log_test_queue=None):
+    """Decorator to pull logging or abnormal messages out launch communications queues
+
+    Take messages out of callback queue and puts into a separate logging queue to be dealt
+    with later, thereby allowing us to immediately handle infrastructure
+
+    Args:
+        func (Callable): Callable that emits messages
+
+        log_test_queue (queue, optional): Queue to drop log messages into. Used for internal
+            unit testing. Defaults to None.
+
+    Returns:
+        function: The decorator wrapper function
+    """
+
+    if func is None:
+        return partial(queue_monitor, log_test_queue=log_test_queue)
+
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        while True:
+            msg = func(*args, **kwargs)
+            if isinstance(msg, dmsg.LoggingMsgList):
+                if log_test_queue:
+                    log_test_queue.put(msg)
+                else:
+                    for record in msg.records:
+                        log = logging.getLogger(record.name)
+                        log.log(record.level, record.msg, extra=record.get_logging_dict())
+            elif isinstance(msg, dmsg.LoggingMsg):
+                if log_test_queue:
+                    log_test_queue.put(msg)
+                else:
+                    log = logging.getLogger(msg.name)
+                    log.log(msg.level, msg.msg, extra=msg.get_logging_dict())
+            else:
+                return msg
+    return wrapper
+
+
 @queue_monitor
 def get_with_timeout(handle, timeout=TIMEOUT_PATIENCE):
     """Function for getting messages from a queue given a timeout"""
@@ -157,6 +198,19 @@ def get_with_timeout(handle, timeout=TIMEOUT_PATIENCE):
 
 @queue_monitor
 def get_with_blocking(handle):
+    """Function for getting messages from the queue while blocking"""
+    try:
+        msg = handle.recv()
+        if isinstance(msg, tuple):
+            return msg
+        else:
+            return dmsg.parse(msg)
+    except Exception:
+        raise
+
+
+@no_error_queue_monitor
+def get_with_blocking_frontend_server(handle):
     """Function for getting messages from the queue while blocking"""
     try:
         msg = handle.recv()

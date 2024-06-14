@@ -132,7 +132,7 @@ _bcast_init_obj(void* obj_ptr, size_t alloc_sz, size_t max_payload_sz, size_t ma
     size_t diff = (((void*)header->payload_area) + max_payload_sz) - obj_ptr;
     if (diff > alloc_sz) {
         char err_str[300];
-        sprintf((char*)&err_str, "The provided size was %lu bytes and the required size was %lu bytes.\nThere is not enough room to allocate the requested bcast object.", alloc_sz, diff);
+        snprintf(err_str, 299, "The provided size was %lu bytes and the required size was %lu bytes.\nThere is not enough room to allocate the requested bcast object.", alloc_sz, diff);
         err_return(DRAGON_INVALID_ARGUMENT, err_str);
     }
 
@@ -356,6 +356,9 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
     atomic_uint expected = 0UL;
     timespec_t now_time;
 
+    /* Assume we will find a spot. This makes sure we don't miss a spinner later. */
+    atomic_fetch_add(handle->header.spin_list_count, 1L);
+
     while ((found == false) && (idx < *(handle->header.spin_list_sz))) {
         if (atomic_compare_exchange_strong(&(handle->header.spin_list[idx]), &expected, 1UL))
             found = true;
@@ -372,19 +375,19 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
            switch over to idle wait when a process can't get a spot in the spin list. This will
            lead to the process waiting until all other spin waiters are done, but there is no
            guaranteed ordering among spin waiters either. */
+        atomic_fetch_add(handle->header.spin_list_count, -1L);
         return _idle_wait(handle, num_waiting_ptr, end_time, release_fun, release_arg, NULL);
     }
 
     /* increment the num_waiting atomically, but also get the new value for num_waiting */
-    dragonULInt my_num_waiting = atomic_fetch_add(handle->header.num_waiting, 1L) + 1;
+    dragonULInt my_num_waiting = atomic_fetch_add(handle->header.num_waiting, 1UL) + 1;
 
     if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting > *(handle->header.sync_num)) {
         atomic_fetch_add(handle->header.num_waiting, -1L);
         atomic_store(&handle->header.spin_list[idx], 0UL);
+        atomic_fetch_add(handle->header.spin_list_count, -1L);
         err_return(DRAGON_INVALID_OPERATION, "There cannot be more waiters than the specified sync number on a synchronized bcast");
     }
-
-    atomic_fetch_add(handle->header.spin_list_count, 1L);
 
     /* When the process is now officially waiting, the resource release (back in the caller) can occur. The
     resource release is optional. */
@@ -437,9 +440,12 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
 
             if (wait_mode != NULL && *wait_mode == DRAGON_ADAPTIVE_WAIT && number_of_yields == DRAGON_BCAST_ADAPTIVE_WAIT_TO_IDLE) {
                 /* We did a spin wait for a bit, now it's time for idle wait. */
-                atomic_store(&handle->header.spin_list[idx], 0UL);
-                atomic_fetch_add(handle->header.spin_list_count, -1L);
-                return _idle_wait(handle, num_waiting_ptr, end_time, release_fun, release_arg, &my_num_waiting);
+                expected = 1UL;
+                if (atomic_compare_exchange_strong(&(handle->header.spin_list[idx]), &expected, 0UL)) {
+                    atomic_fetch_add(handle->header.spin_list_count, -1L);
+                    return _idle_wait(handle, num_waiting_ptr, end_time, release_fun, release_arg, &my_num_waiting);
+                } else
+                    break;
             }
 
             sched_yield();
@@ -1487,6 +1493,8 @@ dragon_bcast_notify_signal(dragonBCastDescr_t* bd, const dragonWaitMode_t wait_m
 
     /* signal notification is requested. */
     dragonBCastSignalArg_t* arg = malloc(sizeof(dragonBCastSignalArg_t));
+    if (arg == NULL)
+        err_return (DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for malloc'ed thread argument.");
 
     if (payload_sz == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The BCast notify payload_sz argument cannot be NULL when signal notification is requested.");
@@ -1627,7 +1635,7 @@ dragon_bcast_notify_callback(dragonBCastDescr_t* bd, void* user_def_ptr, const d
  *
  *  @param bd The BCast's descriptor handle.
  *
- *  @param timer A timeout value. If the triggerd process does not complete its triggering within the timeout
+ *  @param timer A timeout value. If the triggered process does not complete its triggering within the timeout
  *  period, this process will get a DRAGON_TIMEOUT return code. A value of NULL means to wait
  *  forever for triggering to complete.
  *
@@ -1645,6 +1653,9 @@ dragon_bcast_trigger_one(dragonBCastDescr_t* bd, const timespec_t* timer, const 
 {
     dragonError_t err;
     err = dragon_bcast_trigger_some(bd, 1, timer, payload, payload_sz);
+
+    if (err == DRAGON_BCAST_NO_WAITERS)
+        no_err_return(DRAGON_BCAST_NO_WAITERS);
 
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Call to trigger some of 1 did not succeed.");
@@ -1763,36 +1774,29 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
        will change in the object as spinners wake up */
     size_t current_spinner_count = (atomic_uint)*handle->header.spin_list_count;
     int idx = 0;
+    atomic_uint expected = 0UL;
 
     while ((num_spinners < current_spinner_count) && (idx < *(handle->header.spin_list_sz)) && (num_spinners < num_to_trigger)) {
-        if (atomic_load(&handle->header.spin_list[idx]) == 1UL) {
+        expected = 1UL;
+        if (atomic_compare_exchange_strong(&(handle->header.spin_list[idx]), &expected, 2UL))
             num_spinners+=1;
-            handle->header.spin_list[idx] = 2UL;
-        }
         idx += 1;
-    }
-
-    if (num_spinners < num_to_trigger) {
-        uint32_t num_to_wake = num_to_trigger - num_spinners;
-        *handle->header.allowable_count = num_to_wake;
-
-        // long num_woke =
-        syscall(SYS_futex, triggering_ptr, FUTEX_WAKE, *handle->header.allowable_count, NULL, NULL, 0);
-        // It would be nice to make this check below but we can't rely on the value of
-        // num_woke, because there may be idle waiting processes that don't actually
-        // make it to the futex wait before the futex wake was executed above. That's
-        // perfectly OK, but it means that num_woke may be less than num_to_wake.
-        // if (num_to_wake != num_woke) {
-        //     char err_str[200];
-        //     snprintf(err_str, 199, "BCast object failed to wake %ld idle waiters. It woke %ld instead.", num_to_wake, num_woke);
-        //     err_return(DRAGON_FAILURE, err_str);
-        // }
     }
 
     /* the while loop below waits for all the triggered to pick up their payload. */
     size_t check_timeout_when_0 = 1;
+    uint32_t num_to_wake = num_to_trigger - num_spinners;
 
-    while ((atomic_load(num_triggered_ptr) < num_to_trigger) && (atomic_load(handle->header.num_waiting) > 0)) {
+    /* As each process wakes up it will decrement allowable count. */
+    *handle->header.allowable_count = num_to_wake;
+
+    while ((atomic_load(num_triggered_ptr) < num_to_trigger) && (atomic_load(handle->header.num_waiting) > 0UL)) {
+
+        if (num_to_wake > 0) {
+            long num_woke = syscall(SYS_futex, triggering_ptr, FUTEX_WAKE, num_to_wake, NULL, NULL, 0);
+            num_to_wake = num_to_wake - num_woke;
+        }
+
         if (timer != NULL) {
             if (check_timeout_when_0 == 0) {
                 clock_gettime(CLOCK_MONOTONIC, &now_time);
@@ -1861,8 +1865,14 @@ dragon_bcast_trigger_all(dragonBCastDescr_t* bd, const timespec_t* timer, const 
 
     err = dragon_bcast_trigger_some(bd, INT_MAX, timer, payload, payload_sz);
 
-    if (err != DRAGON_SUCCESS)
-        err_return(err, "Call to trigger some with INT_MAX failed.");
+    if (err == DRAGON_BCAST_NO_WAITERS)
+        no_err_return(DRAGON_BCAST_NO_WAITERS);
+
+    if (err != DRAGON_SUCCESS) {
+        char err_str[200];
+        snprintf(err_str, 199, "Call to trigger some with INT_MAX failed with %s.", dragon_get_rc_string(err));
+        err_return(err, err_str);
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }

@@ -17,7 +17,7 @@ cdef class DragonLock:
     cdef dragonLock_t _lock
 
     def _handle_err(self, derr, err_msg):
-        raise RuntimeError(err_msg + f" (Dragon Lock Error Code={derr})")
+        raise RuntimeError(err_msg + f" (Dragon Lock Error Code={dragon_get_rc_string(derr)})")
 
     @staticmethod
     def size(kind):
@@ -95,7 +95,7 @@ cdef class GreedyLock:
     cdef dragonGreedyLock_t _lock
 
     def _handle_err(self, derr, err_msg):
-        raise RuntimeError(err_msg + f" (Dragon Lock Error Code={derr})")
+        raise RuntimeError(err_msg + f" (Dragon Lock Error Code={dragon_get_rc_string(derr)})")
 
     @staticmethod
     def size():
@@ -174,7 +174,7 @@ cdef class FIFOLock:
     cdef dragonFIFOLock_t _lock
 
     def _handle_err(self, derr, err_msg):
-        raise RuntimeError(err_msg + f" (Dragon Shared Lock Error Code={derr})")
+        raise RuntimeError(err_msg + f" (Dragon Shared Lock Error Code={dragon_get_rc_string(derr)})")
 
     @staticmethod
     def size():

@@ -1,10 +1,12 @@
 import asyncio
 import logging
 import os
+import socket
 import ssl
+from collections import defaultdict
 from typing import Union
 
-from ...channels import Channel
+from ...channels import Channel, register_gateways_from_env
 from ...infrastructure import messages as dmsg
 from ...infrastructure.connection import Connection, ConnectionOptions
 from ...infrastructure.facts import GW_ENV_PREFIX, DEFAULT_TRANSPORT_PORT, FRONTEND_HOSTID
@@ -29,6 +31,11 @@ default, {DEFAULT_OVERLAY_NETWORK_PORT} is used for runtime infrastructure
 or {DEFAULT_TRANSPORT_PORT} for backend communiction'''
 
 LOGGER = logging.getLogger('dragon.transport.tcp.__main__')
+
+user_initiated = False
+infrastructure = False
+out_of_band_connect = False
+out_of_band_accept = False
 
 
 def single_recv(ch_sdesc: bytes) -> Union[tuple(dmsg.all_message_classes)]:
@@ -78,8 +85,15 @@ async def tcp_transport_agent(node_index: str = None,
                               max_threads: int = None,
                               host_ids: list[str] = None,
                               ip_addrs: list[str] = None,
-                              infrastructure: bool = False,
+                              oob_ip_addr: str = None,
+                              oob_port: str = None,
                               frontend: bool = False) -> None:
+
+    # TODO: get rid of globals from proxy-api work (when possible)
+    global user_initiated
+    global infrastructure
+    global out_of_band_connect
+    global out_of_band_accept
 
     from ...dlogging.util import DragonLoggingServices
     if infrastructure:
@@ -90,11 +104,13 @@ async def tcp_transport_agent(node_index: str = None,
         else:
             up_msg = dmsg.OverlayPingBE(next_tag())
             halt_msg = dmsg.BEHaltOverlay
-
-    else:
+    elif user_initiated:
         LOGGER = logging.getLogger(DragonLoggingServices.TA).getChild('transport.tcp.__main__')
         up_msg = dmsg.TAPingSH(next_tag())
         halt_msg = dmsg.SHHaltTA
+    else:
+        LOGGER = logging.getLogger(DragonLoggingServices.OOB).getChild('transport.tcp.__main__')
+        halt_msg = dmsg.UserHaltOOB
 
     if max_threads is not None:
         # Set a new default executor that limits the maximum number of worker
@@ -108,7 +124,7 @@ async def tcp_transport_agent(node_index: str = None,
         loop.set_default_executor(executor)
 
     # Initial receive from input channel to get LAChannelsInfo message
-    if not infrastructure:
+    if user_initiated:
         la_channels_info = await asyncio.to_thread(single_recv, ch_in_sdesc.decode())
         assert isinstance(la_channels_info, dmsg.LAChannelsInfo), "Did not receive LAChannelsInfo from local services"
 
@@ -136,10 +152,18 @@ async def tcp_transport_agent(node_index: str = None,
             except Exception:
                 LOGGER.critical(f'Failed to build node-address mapping from LAChannelsInfo.nodes_desc: {la_channels_info.nodes_desc}')
                 raise
-
-    # If infrastructure, create same data structures as above, but use information input
-    # since there's no LAChannelsInfo for us
+    elif out_of_band_connect:
+        # If this agent is connecting to another dragon instance to allow out-of-band
+        # communication, then all host_ids should map to the same target address
+        addr = Address.from_netloc(f'{oob_ip_addr}:{oob_port}')
+        nodes = defaultdict(lambda: addr)
+    elif out_of_band_accept:
+        # If this agent is accepting connections from remote dragon instances to allow
+        # out-of-band communication, then it can have an empty nodes dict
+        nodes = {}
     else:
+        # If infrastructure, create same data structures as above, but use information input
+        # since there's no LAChannelsInfo for us
         nodes = {}
         for ip_addr, host_id in zip(ip_addrs, host_ids):
             try:
@@ -154,24 +178,35 @@ async def tcp_transport_agent(node_index: str = None,
 
     try:
         # Establish connection for command-and-control
-        if not infrastructure:
+        if user_initiated:
             ch_out_sdesc = B64.from_str(node_desc.shep_cd)
         control = await asyncio.to_thread(open_connection, ch_in_sdesc.decode(), ch_out_sdesc.decode())
     except Exception:
-        if not infrastructure:
+        if user_initiated:
             LOGGER.critical(f'Failed to initialize the control connection: Requires valid input and output channel descriptors for node index {node_index}: input_channel={ch_in_sdesc}, output_channel={ch_out_sdesc}, LAChannelsInfo={la_channels_info.get_sdict()}')
-        else:
+        elif infrastructure:
             LOGGER.critical(f'Failed to initialize the control connection: Requires valid input and output channel descriptors: input_channel={ch_in_sdesc}, output_channel={ch_out_sdesc}')
         raise
 
     try:
         # Create transport
-        if not infrastructure:
+        if user_initiated:
             transport = StreamTransport(nodes[int(node_desc.host_id)])
             wait_mode = DEFAULT_WAIT_MODE
-        else:
+        elif infrastructure:
             transport = StreamTransport(nodes[int(get_host_id())])
             wait_mode = IDLE_WAIT
+        else:
+            hostname = socket.gethostname()
+            ip_addr = socket.gethostbyname(hostname)
+            local_addr = Address.from_netloc(f'{ip_addr}:{oob_port}')
+            transport = StreamTransport(local_addr)
+            if out_of_band_connect:
+                transport._oob_connect = True
+            else:
+                transport._oob_accept = True
+            wait_mode = IDLE_WAIT
+
         LOGGER.info(f'Created transport: {transport.addr} with wait mode {wait_mode}')
 
         if tls_enabled:
@@ -196,11 +231,19 @@ async def tcp_transport_agent(node_index: str = None,
         async with Agent(transport, nodes, wait_mode=wait_mode) as agent:
             LOGGER.info('Created agent')
 
+            n_gw = 0
+
             # Create clients for each gateway channel
-            if not infrastructure:
+            if user_initiated:
                 n_gw = la_channels_info.num_gw_channels
-            else:
+            elif infrastructure:
                 n_gw = DRAGON_OVERLAY_DEFAULT_NUM_GW_CHANNELS_PER_NODE
+            elif out_of_band_connect:
+                rt_uid = os.environ['DRAGON_REMOTE_RT_UID']
+                encoded_channel_sdesc = os.environ[f'DRAGON_RT_UID__{rt_uid}']
+                channel_sdesc = B64.from_str(encoded_channel_sdesc).decode()
+                agent.new_client(channel_sdesc)
+                LOGGER.debug(f'Created client for OOB gateway channel')
 
             for i in range(n_gw):
                 encoded_channel_sdesc = os.environ[GW_ENV_PREFIX + str(i+1)]
@@ -210,8 +253,9 @@ async def tcp_transport_agent(node_index: str = None,
 
             # Send TAPingSH to local services to acknowledge transport is active
             # XXX What is tag?
-            await asyncio.to_thread(control.send, up_msg.serialize())
-            LOGGER.info(f'Sent {type(up_msg)} reply')
+            if user_initiated or infrastructure:
+                await asyncio.to_thread(control.send, up_msg.serialize())
+                LOGGER.info(f'Sent {type(up_msg)} reply')
 
             while agent.is_running():
                 LOGGER.debug('Agent is running, polling control')
@@ -229,6 +273,10 @@ async def tcp_transport_agent(node_index: str = None,
                     if isinstance(msg, halt_msg):
                         LOGGER.info(f'Received {type(msg)}')
                         break
+                    elif isinstance(msg, dmsg.TAUpdateNodes):
+                        agent.update_nodes(msg.nodes)
+                        LOGGER.info(f'Received {type(msg)}')
+                        continue
                     LOGGER.warning(f'Received unsupported control message: {msg}')
 
             LOGGER.debug('Agent is not running, terminating')
@@ -248,7 +296,7 @@ def main(args=None):
     from distutils.util import strtobool
 
     from ...dlogging.util import DragonLoggingServices, setup_BE_logging
-    from ...infrastructure.facts import PROCNAME_OVERLAY_TA, PROCNAME_TCP_TA
+    from ...infrastructure.facts import PROCNAME_OVERLAY_TA, PROCNAME_TCP_TA, PROCNAME_OOB_TA
     from ...infrastructure.util import range_expr
     from ...utils import set_procname
 
@@ -258,6 +306,8 @@ def main(args=None):
                         help="Set to use for runtime infrastructure rather than backend communiction")
     parser.add_argument('--ip-addrs', metavar='FRONTEND_IP', dest='ip_addrs', nargs='+',
                         type=str, help=FRONTEND_HELP)
+    parser.add_argument('--oob-ip-addr', type=str, help="Target IP address for out-of-band communication")
+    parser.add_argument('--oob-port', type=str, help="Listening port at target for out-of-band communication")
     parser.add_argument('--ch-in-sdesc',
                         type=B64.from_str,
                         help="Base64 encoded serialized input channel descriptor")
@@ -340,19 +390,43 @@ def main(args=None):
 
     args = parser.parse_args()
 
+    global user_initiated
+    global infrastructure
+    global out_of_band_connect
+    global out_of_band_accept
+
+    if args.oob_ip_addr != None:
+        out_of_band_connect = True
+    elif args.oob_port != None:
+        out_of_band_accept = True
+    elif args.infrastructure:
+        infrastructure = True
+    else:
+        user_initiated = True
+
     if args.frontend:
         set_host_id(FRONTEND_HOSTID)
 
-    if not args.infrastructure:
+    if user_initiated:
         set_procname(PROCNAME_TCP_TA)
-    else:
+    elif infrastructure:
         set_procname(PROCNAME_OVERLAY_TA)
+    else:
+        set_procname(PROCNAME_OOB_TA)
+
+    # In the OOB accept case, the sendmsg/getmsg/poll used for the local
+    # channel operation can (and frequently will) target an off-node channel
+    if out_of_band_accept:
+        register_gateways_from_env()
 
     if args.dragon_logging and args.log_sdesc is not None:
-        if not args.infrastructure:
+        if user_initiated:
             service = DragonLoggingServices.TA
-        else:
+        elif infrastructure:
             service = DragonLoggingServices.ON
+        else:
+            service = DragonLoggingServices.OOB
+
         log_level, _ = setup_BE_logging(service=service,
                                         logger_sdesc=args.log_sdesc)
         # We will ignore the argument level because we want a unified setting
@@ -387,7 +461,8 @@ def main(args=None):
                                        args.max_threads,
                                        args.host_ids,
                                        args.ip_addrs,
-                                       args.infrastructure,
+                                       args.oob_ip_addr,
+                                       args.oob_port,
                                        args.frontend
         ))
     except Exception:
@@ -395,13 +470,14 @@ def main(args=None):
         raise
 
     # Send exit control message
-    if args.infrastructure:
-        down_msg = dmsg.OverlayHalted(tag=next_tag())
-    else:
+    if user_initiated:
         down_msg = dmsg.TAHalted(tag=next_tag())
+    elif infrastructure:
+        down_msg = dmsg.OverlayHalted(tag=next_tag())
 
     try:
-        control.send(down_msg.serialize())
+        if user_initiated or infrastructure:
+            control.send(down_msg.serialize())
     except Exception:
         LOGGER.exception('Failed to send TAHalted')
         raise

@@ -29,23 +29,22 @@ in the Dragon Native API.
 Processes
 =========
 
-With version 0.5 Dragon only supports round robin placement of processes. Each new process will be placed on the next
-node that Dragon is running on. Future releases of Dragon will allow for two levels of control that improve upon the
-current behavior. The first will be the ability to control the default policy, and the second will be explicit
-placement control for each process.
+Dragon, by default, does a round robin placement of processes. Each new process will be placed on the next
+node that Dragon is running on. Dragon also allows for two levels of control that improve upon the
+current behavior. The first is the ability to control the default policy, and the second is explicit placement control for each process.
 
 Round Robin Placement
 ---------------------
 
 .. figure:: images/roundrobin.svg
     :scale: 75%
+    :name: roundrobin 
 
-    **Figure 1: UML deployment diagram of round robin placement with 4 processes on a distributed system with 3 compute nodes and one login node**
+    **UML deployment diagram of round robin placement with 4 processes on a distributed system with 3 compute nodes and one login node**
 
-Figure 1 shows how processes will be placed across nodes in your allocation with the current round-robin placement
+:numref:`roundrobin` shows how processes will be placed across nodes in your allocation with the current round-robin placement
 policy. Any two processes started consecutively will be placed on unique nodes unless there is only a single node
 within your Slurm allocation.
-
 
 Managed Memory
 ==============

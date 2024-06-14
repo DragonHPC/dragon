@@ -299,7 +299,7 @@ def test_connection_override(test_gs_input=None, test_gs_return=None,
             _SHEP_RETURN = _connect_shep_return()
 
 
-def connect_to_infrastructure():
+def connect_to_infrastructure(force=False):
     global _GS_INPUT
     global _GS_RETURN
     global _SHEP_INPUT
@@ -311,10 +311,11 @@ def connect_to_infrastructure():
     # variables. This is done first to enable
     # off-node communication from this process
     # as soon as possible.
-
+    if force:
+        dp.reload_this_process()
 
     with _GS_API_LOCK:
-        if _INFRASTRUCTURE_CONNECTED:
+        if not force and _INFRASTRUCTURE_CONNECTED:
             return
 
         LOG.info(f'We are registering gateways for this process. {dp.this_process.num_gw_channels_per_node=}')
@@ -327,6 +328,9 @@ def connect_to_infrastructure():
         _SHEP_INPUT = _connect_shep_input()
         _SHEP_RETURN = _connect_shep_return()
         _INFRASTRUCTURE_CONNECTED = True
+
+        if force:
+            return
 
         LOG.debug('waiting for handshake')
 

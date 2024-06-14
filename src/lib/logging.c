@@ -275,8 +275,9 @@ dragon_logging_serialize(const dragonLoggingDescr_t * logger, dragonLoggingSeria
 
     // Copy in serialized channel data
     *sptr = ch_ser.len;
-    sptr += sizeof(size_t);
+    sptr = (dragonULInt *) ((char *)sptr + sizeof(size_t));
     memcpy(sptr, ch_ser.data, ch_ser.len);
+    sptr = (dragonULInt *) ((char *)sptr + ch_ser.len);
 
     // Release malloc since we have a copy now
     err = dragon_channel_serial_free(&ch_ser);
@@ -334,10 +335,10 @@ dragon_logging_attach(const dragonLoggingSerial_t * log_ser, dragonLoggingDescr_
 
     dragonULInt * sptr = (dragonULInt*)log_ser->data;
     dragonChannelSerial_t ch_ser;
-    ch_ser.len = *(size_t*)sptr;
-    sptr += sizeof(size_t);
-    ch_ser.data = (uint8_t*)sptr;
-    sptr += ch_ser.len;
+    ch_ser.len = *(size_t *)sptr;
+    sptr = (dragonULInt *) ((char *)sptr + sizeof(size_t));
+    ch_ser.data = (uint8_t *)sptr;
+    sptr = (dragonULInt *) ((char *)sptr + ch_ser.len);
 
     dragonError_t err = dragon_channel_attach(&ch_ser, &(logger->ch));
     if (err != DRAGON_SUCCESS)

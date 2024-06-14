@@ -42,10 +42,11 @@ usage: dragon ai-in-the-loop.py
 
 ## Installation 
 
-After installing dragon, the only other dependency is on PyTorch. The PyTorch version and corresponding pip command can be found here (https://pytorch.org/get-started/locally/). 
+After installing dragon, the only other dependency is on PyTorch and SciPy. The PyTorch version and corresponding pip command can be found here (https://pytorch.org/get-started/locally/). 
 
 ```
-> pip install torch torchvision torchaudio
+> pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+> pip install scipy
 ```
 
 ### Description of the system used

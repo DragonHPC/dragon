@@ -13,17 +13,18 @@ def get_slurm_launch_be_args(args_map=None):
 
 class SlurmNetworkConfig(BaseNetworkConfig):
 
-    SRUN_COMMAND_LINE = "srun --nodes={nnodes} --ntasks={nnodes} --cpu_bind=none -u -l"
+    SRUN_COMMAND_LINE = "srun --nodes={nnodes} --ntasks={nnodes} --cpu_bind=none -u -l -W 0"
 
     def __init__(self, network_prefix, port, hostlist):
 
-        if not os.environ.get("SLURM_JOB_ID"):
+        self.job_id =  os.environ.get("SLURM_JOB_ID")
+        if not self.job_id:
             msg = """Requesting a slurm network config outside of slurm job allocation.
 Resubmit as part of a 'salloc' or 'sbatch' execution."""
             raise RuntimeError(msg)
 
         super().__init__(
-            network_prefix, port, int(os.environ.get("SLURM_JOB_NUM_NODES"))
+            'slurm', network_prefix, port, int(os.environ.get("SLURM_JOB_NUM_NODES"))
         )
 
         self.SRUN_ARGS = self.SRUN_COMMAND_LINE.format(nnodes=self.NNODES).split()
@@ -31,6 +32,12 @@ Resubmit as part of a 'salloc' or 'sbatch' execution."""
     @classmethod
     def check_for_wlm_support(cls) -> bool:
         return shutil.which("srun")
+
+    def _get_wlm_job_id(self) -> str:
+        return self.job_id
+
+    def _supports_net_conf_cache(self) -> bool:
+        return False
 
     def _launch_network_config_helper(self) -> subprocess.Popen:
         srun_launch_args = self.SRUN_ARGS[:]

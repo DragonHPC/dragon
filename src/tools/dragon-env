@@ -1,0 +1,218 @@
+#!/usr/bin/python3
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+
+from pathlib import Path
+
+def remove_suffix(string_w_suffix, suffix):
+    if suffix and string_w_suffix.endswith(suffix):
+        return string_w_suffix[:-len(suffix)]
+    else:
+        return string_w_suffix
+
+# get args
+
+parser = argparse.ArgumentParser(
+    prog='dragon-env',
+    description='Configure the build and runtime environments for Dragon in regards to 3rd party libraries. This is currently only needed for building with GPU support, but the number of uses will increase in future releases, including runtime configuration for libraries.'
+)
+
+add_help = 'Add a colon-separated list of key-value pairs (key=value) to configure include and library paths for Dragon. '
+add_help += 'Possible keys: cuda-include, hip-include, ze-include'
+
+parser.add_argument(
+    '-a', '--add',
+    help='Add a colon-separated list of key-value pairs (key=value) to configure include and library paths for Dragon. Possible keys: cuda-include, hip-include, ze-include.'
+)
+parser.add_argument(
+    '-c', '--clear',
+    help='Clear all key-value pairs.',
+    action='store_true'
+)
+parser.add_argument(
+    '-p', '--pity',
+    help='Take pity on the new user. Specifically, this gives a best-effort string that can be supplied to the --add command.',
+    action='store_true'
+)
+parser.add_argument(
+    '-s', '--serialize',
+    help='Serialize all key-value pairs currently in the configuration file into a single, colon-separated string that can be passed to the --add command.',
+    action='store_true'
+)
+
+args = parser.parse_args()
+
+# set base dir and other paths
+
+try:
+    base_dir = os.environ['DRAGON_BASE_DIR']
+except:
+    base_dir = ""
+
+try:
+    home_dir = str(Path.home())
+    dragon_dir = f'{home_dir}/.dragon'
+
+    if os.path.exists(home_dir) and not os.path.exists(dragon_dir):
+        os.makedirs(dragon_dir)
+
+    env_path = f'{dragon_dir}/dragon-env.json'
+    makefile_path = f'{base_dir}/.dragon-config.mk'
+except:
+    env_path = ""
+    makefile_path = ""
+
+# handle pity command
+# TODO: only handling GPU vendor headers at this point, but we should
+# also handle libfabric, PMI, MPI, etc. headers this way
+
+if args.pity:
+    pity_str = ""
+    the_first_one = True
+
+    try:
+        suffix = 'cuda_runtime.h'
+
+        cuda_include = subprocess.check_output(
+            f'find /opt /usr -name cuda_runtime.h | grep -m 1 "{suffix}"',
+            stderr=subprocess.PIPE,
+            shell=True,
+            encoding='utf-8'
+        ).strip()
+
+        cuda_include = remove_suffix(cuda_include, suffix)
+
+        if the_first_one:
+            pity_str += f'cuda-include={cuda_include}'
+            the_first_one = False
+        else:
+            pity_str += f':cuda-include={cuda_include}'
+    except:
+        pass
+
+    try:
+        suffix = 'hip/hip_runtime.h'
+
+        hip_include = subprocess.check_output(
+            f'find /opt /usr -name hip_runtime.h | grep -m 1 "{suffix}"',
+            stderr=subprocess.PIPE,
+            shell=True,
+            encoding='utf-8'
+        ).strip()
+
+        hip_include = remove_suffix(hip_include, suffix)
+
+        if the_first_one:
+            pity_str += f'hip-include={hip_include}'
+            the_first_one = False
+        else:
+            pity_str += f':hip-include={hip_include}'
+    except:
+        pass
+
+    try:
+        suffix = "ze_api.h"
+
+        ze_include = subprocess.check_output(
+            f'find /opt /usr -name ze_api.h | grep -m 1 "{suffix}"',
+            stderr=subprocess.PIPE,
+            shell=True,
+            encoding='utf-8'
+        ).strip()
+
+        ze_include = remove_suffix(ze_include, suffix)
+
+        if the_first_one:
+            pity_str += f'ze-include={ze_include}'
+            the_first_one = False
+        else:
+            pity_str += f':ze-include={ze_include}'
+    except:
+        pass
+
+    print(pity_str, flush=True)
+
+# handle serialize command before updating anything
+
+if args.serialize:
+    if env_path == "":
+        print('failed to serialize environment: unable to find environment file', flush=True)
+        sys.exit()
+
+    if os.path.isfile(env_path):
+        with open(env_path) as env_file:
+            env_dict = json.load(env_file)
+
+        ser_config = ''
+        the_first_one = True
+        for key in env_dict:
+            if the_first_one:
+                ser_config += f'{key}={env_dict[key]}'
+                the_first_one = False
+            else:
+                ser_config += f':{key}={env_dict[key]}'
+        print(ser_config, flush=True)
+    else:
+        print('no environment configuration available', flush=True)
+
+# handle 'clear' command (do this first, so clear+set acts as a reset)
+
+if args.clear:
+    if env_path == "" or makefile_path == "":
+        print('failed to clear environment: unable to find environment file(s)', flush=True)
+        sys.exit()
+
+    try:
+        os.remove(env_path)
+        os.remove(makefile_path)
+    except:
+        pass
+
+# handle 'add' command
+
+if args.add is not None:
+    if base_dir == "":
+        print('failed to update environment: DRAGON_BASE_DIR not set, try hack/setup', flush=True)
+        sys.exit()
+
+    if env_path == "" or makefile_path == "":
+        print('failed to update environment: unable to find environment file(s)', flush=True)
+
+    if os.path.isfile(env_path):
+        with open(env_path) as env_file:
+            env_dict = json.load(env_file)
+    else:
+        env_dict = {}
+
+    user_input = args.add.split(':')
+    new_env = dict(kv.split('=', 1) for kv in user_input)
+    env_dict.update(new_env)
+
+    with open(env_path, 'w') as env_file:
+        json.dump(env_dict, env_file)
+
+    with open(makefile_path, 'w') as make_file:
+        for key in env_dict:
+            if 'include' in key:
+                path = env_dict[key]
+                make_file.write(f'CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n')
+
+            if 'cuda' in key:
+                path = env_dict[key]
+                make_file.write(f'CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/cuda.cpp\n')
+                make_file.write(f'CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_CUDA_INCLUDE\n')
+
+            if 'hip' in key:
+                path = env_dict[key]
+                make_file.write(f'CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/hip.cpp\n')
+                make_file.write(f'CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_HIP_INCLUDE\n')
+
+            if 'ze' in key:
+                path = env_dict[key]
+                make_file.write(f'CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/ze.cpp\n')
+                make_file.write(f'CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_ZE_INCLUDE\n')
+
