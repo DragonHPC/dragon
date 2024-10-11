@@ -3,7 +3,7 @@
         "dockerfile": "Dockerfile"
     },
     "runArgs": [
-        // "--privileged", // so gdb can attach to processes
+        "--privileged", // so gdb can attach to processes
         "--shm-size=6gb", // 4GB user pool, 1GB inf pool, 1GB extra pool
         "--cpus=2", // explicit hard limits for CPUs and mem
         "--memory=8GB",

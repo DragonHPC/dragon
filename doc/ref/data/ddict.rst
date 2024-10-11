@@ -1,3 +1,5 @@
+.. _distdictdesign:
+
 Distributed Dictionary
 ========================
 
@@ -8,6 +10,13 @@ on one node. It also distributes access to the key-value store so that there is
 no bottlekneck in accessing or storing values. Access to the store is distributed
 according to an evenly distributed hashing algorithm, thus statististically
 spreading the data evenly over all the nodes of the store.
+
+The next section describes the design of the Distributed Dictionary followed
+by :ref:`Performance Tips <ddictperformance>` which offers some tips and pointers to things to read
+on how to get the best performance from the Distributed Dictionary in your
+application.
+
+.. _ddictdesign:
 
 Design
 _________
@@ -114,11 +123,49 @@ The Orchestrator creates the specified number of Managers, providing each with t
 orchestrator response FLI and its main FLI. The orchestrator receives registration
 requests by each manager and responds to each manager on the manager's resposne FLI.
 
+.. _ddictperformance:
+
+Performance Considerations
+____________________________________________
+
+Because of the way the Distributed Dictionary is designed, there are several knobs
+that can be used to optimize performance. Depending on your application and the
+system you are running on, you may get the best performance while using one or more
+of these optimizations.
+
+    * On machines where there is more than on NIC (network interface card), you will
+      likely obtain better performance by having more than one manager per node. This
+      is because clients can access each manager completely in parallel when two NICs
+      are present. When starting the dictionary you can specify the number of managers
+      per node. If you benchmark your application you can play with this knob to see
+      how it affects performance in your application. Even on machines without two NICs
+      you may find that increasing the number of managers per node helps performance
+      since each manager is doing work on its local shard of the dictionary and likely is
+      not driving a single NIC to it maximum throughput.
+
+    * In applications where data is purposefully sharded across multiple workers you can
+      get much better performance if colocating workers with data is possible in your
+      application. This is possible using the technique presented in :ref:`Design <ddictdesign>`. The
+      idea is that you write a wrapper class for your keys as shown in :numref:`user_hash`.
+      The hash function would then return the manager id of the local manager. Consult the
+      reference guide for the Python or C interface to see how to get the local manager's
+      id.
+
+    * Checkpointing, covered in :ref:`Checkpointing <ddictcheckpointing>`, is an effective way to use the
+      dictionary to store generations of data and allow workers to be working with
+      different generations. Unlike a database where there is only one version of data
+      at any point in time, the Distributed Dictionary allows you to store more than one
+      version corresponding to a checkpoint. What's more, clients can work with different
+      checkpoints at the same time which increases the amount of parallelism provided by
+      workers since they don't have to all be in lock step with each other. There are limits
+      on the number of checkpoints that can be active at any point in time. This is called the
+      working set size. If your code could benefit from checkpointing, playing with the working
+      set size is a knob you can turn to tune performance.
+
+.. _ddictcheckpointing:
+
 Checkpointing
 _________________
-
-*CAVEAT - Checkpointing is not presently implemented. This section is presently
-a design document.*
 
 When using a distributed dictionary it may be desirable to checkpoint operations
 within the dictionary. Checkpointing is designed to minimize the interaction
@@ -158,6 +205,89 @@ for every *persist_freq* number of checkpoints. When persisted, an argument,
 *persist_base* will provide the base filename. A unique filename for the
 checkpoint id and the particular manager id is constructed and used when
 persisting a checkpoint.
+
+Example
+------------
+
+Here is sample code for computing :math:`\pi` which makes use of, and
+demonstrates, distributed dictionary checkpointing. The complete code is
+available at example/dragon_data/ddict/ddict_checkpoint_pi.py. In this program,
+we generate a set of random points within a square with a side length of 2. There
+is a circle inside the square with a radius of 1. The square and circle are
+centered at the origin of the coordinate system. We calculate the approximation
+of :math:`\pi/4`` by the ratio of points that fall within the circle to the total
+number of points generated inside the square.
+
+.. figure:: images/circlesquare.png
+    :scale: 25%
+    :name: circlesquare
+
+    **The Unit Circle Inscribed in a Square**
+
+The derivation of the approach for approximating :math:`\pi` focuses on the area
+of a circle vs the area of an enclosing square as depicted in
+:numref:`circlesquare`. The square has area 4 which is computed from the side
+length of 2 which is the radius of the circle times 2 (i.e. the unit circle in
+this instance). For the square, :math:`Area_{square} =(2r)^2 = 4r^2`. The area of
+a circle is :math:`Area_{circle} =\pi r^2`. Counting random points and whether
+they land inside the circle, we approximate the probability of landing
+inside the circle. Every point generated lands inside the square so those that
+also land inside the circle gives us the ratio of points that land inside the
+circle over those that land inside the square (i.e. all points). The formula for
+the ratio is :math:`(\pi r^2 / (4r^2)) = \pi / 4`. In our example, :math:`r=1`
+but we are computing a ratio so it would work with any :math:`r`. It takes a lot
+of points to accurately compute :math:`\pi`. The algorithm provided here computes
+it to the point where it is converging slower than the number of decimal places
+provided.
+
+.. literalinclude:: ../../../examples/dragon_data/ddict/ddict_checkpoint_pi.py
+    :name: checkpointex
+    :linenos:
+    :caption: **ddict_checkpoint_pi.py: Approximation of PI Using Checkpointing in the Distributed Dictionary**
+
+The code in :numref:`checkpointex` makes use of a distributed dictionary with a
+working set size of 4. This means that up to 4 checkpoints can exist in each
+manager of the distributed dictionary. In addition, the *wait_for_keys* being
+specified means that clients, i.e. the *proc_function*, will remain synchronized
+as they progress through their iterations since each client depends on the results
+of the other clients as it computes.
+
+The use of the multiprocessing pool is a scalable means of creating the clients of
+this simulation. Each instance of the proc_function will compute and return its
+local average value. As seen in :numref:`checkpointex`, an equivalent method would
+have been to retrieve the result from the distributed dictionary, but for this final
+result in this program, collecting the results via the *starmap* multiprocessing
+map function is more efficient.
+
+.. code-block:: Python
+    :linenos:
+    :name: ddict_pi_demo_run
+    :caption: **Running the Checkpointing Demo**
+
+    (_env) .../hpc-pe-dragon-dragon/examples/dragon_data/ddict $ dragon ddict_checkpoint_pi.py --trace
+    chkpt 0, client 1 local_avg=0.78423
+    chkpt 0, client 0 local_avg=0.78617
+    ...
+    chkpt 1, client 0 local_avg=0.7857033333333333
+    chkpt 1, client 2 local_avg=0.7857378787878788
+    chkpt 1, client 5 local_avg=0.785789393939394
+    ...
+    chkpt 39, client 9 local_avg=0.7856719183793902
+    chkpt 39, client 10 local_avg=0.785670221021504
+    chkpt 39, client 28 local_avg=0.7856690040479251
+    pi simulation result = 3.1426821260796105
+    ...
+    Globally there were 40 checkpoints that were performed.
+    The result is 3.1426821261
+    Stats of ddict: [DDictManagerStats(manager_id=0, total_bytes=2147483648, total_used_bytes=745472, bytes_for_dict=2147483648, dict_used_bytes=745472, overhead_used_bytes=0, num_keys=91), DDictManagerStats(manager_id=1, total_bytes=2147483648, total_used_bytes=581632, bytes_for_dict=2147483648, dict_used_bytes=581632, overhead_used_bytes=0, num_keys=71)]
+    +++ head proc exited, code 0
+
+Running this demo program as shown in the abbreviated output of
+:numref:`ddict_pi_demo_run` shows that the thirty-nine checkpoints where
+generated globally in the application (i.e. across the two managers) and the data
+was distributed as shown in the output with 91 keys stored at manager 0 and 71
+keys stored at manager 1. The *trace* option displays output as the clients run
+helping to illustrate what the code is doing.
 
 Dictionary Creation
 ______________________
@@ -437,8 +567,8 @@ If the key is deleted it is removed from the checkpoint dictionary if it exists
 and if the key exists in an older checkpoint, then it is also added to the set of
 deleted_keys for the checkpoint.
 
-If a put or delete is targeting a checkpoint that no longer exists in the working
-set then it updates the oldest copy.
+If a put or delete is targeting a checkpoint that no longer exists then the
+operation is rejected.
 
 For non-persistent puts, the checkpoint id must be in the working set or newer.
 If it is older than the working set then the put operation is rejected. If it is
@@ -602,8 +732,6 @@ _________________
     :recursive:
 
     ddict
-    orchestrator
-    manager
 
 .. _DragonDDictCClient:
 
@@ -822,6 +950,14 @@ ___________
         **num_managers**
             - uint32
             - number of managers in the dictionary.
+
+        **manager_id**
+            - uint32
+            - id of of the main manager to the client.
+
+        **timeout**
+            - uint32
+            - timeout of the dictionary, same as the timeout in the initialization.
 
     *see also*
         DDRegisterClient
@@ -1084,6 +1220,10 @@ ___________
         **chkpt_id**
             - uint64
             - The checkpoint identifier for this operation.
+
+        **persist**
+            - bool
+            - Persistent or non-persisting key.
 
         *NOTE* The key and value are written separately from the message using the fli api.
 

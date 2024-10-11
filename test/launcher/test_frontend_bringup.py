@@ -13,6 +13,7 @@ from dragon.launcher.util import next_tag
 from dragon.launcher.launchargs import get_parser
 from dragon.launcher.network_config import NetworkConfig
 
+from dragon.infrastructure import facts as dfacts
 from dragon.infrastructure import messages as dmsg
 from dragon.launcher.wlm import WLM
 from dragon.channels import ChannelError
@@ -159,8 +160,11 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         # Get backend up
         la_info = self.do_bringup(mock_overlay, mock_launch)
 
-        # Check we launched the backend with default transport
-        self.assertEqual(la_info.transport, TransportAgentOptions.TCP)
+        # Check we launched the backend with default transport (if it exists)
+        if dfacts.HSTA_BINARY.is_file():
+            self.assertEqual(la_info.transport, TransportAgentOptions.HSTA)
+        else:
+            self.assertEqual(la_info.transport, TransportAgentOptions.TCP)
 
         # Receive GSProcessCreate
         handle_gsprocesscreate(self.primary_conn)
@@ -190,8 +194,11 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         # Get backend up
         la_info = self.do_bringup(mock_overlay, mock_launch)
 
-        # Check we launched the backend with default transport
-        self.assertEqual(la_info.transport, TransportAgentOptions.TCP)
+        # Check we launched the backend with default transport (if it exists)
+        if dfacts.HSTA_BINARY.is_file():
+            self.assertEqual(la_info.transport, TransportAgentOptions.HSTA)
+        else:
+            self.assertEqual(la_info.transport, TransportAgentOptions.TCP)
 
         # Receive GSProcessCreate
         handle_gsprocesscreate_error(self.primary_conn)
@@ -224,8 +231,11 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         # Get backend up
         la_info = self.do_bringup(mock_overlay, mock_launch)
 
-        # Check we launched the backend with default transport
-        self.assertEqual(la_info.transport, TransportAgentOptions.HSTA)
+        # Check we launched the backend with default transport (if it exists)
+        if dfacts.HSTA_BINARY.is_file():
+            self.assertEqual(la_info.transport, TransportAgentOptions.HSTA)
+        else:
+            self.assertEqual(la_info.transport, TransportAgentOptions.TCP)
 
         # Receive GSProcessCreate
         handle_gsprocesscreate(self.primary_conn)
@@ -797,6 +807,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         arg_list = ['-l', 'dragon_file=DEBUG',
                     '--network-prefix', '^(eth|hsn)',
                     'hello_world.py']
+
         args = parser.parse_args(args=arg_list)
         if args.basic_label or args.verbose_label:
             args.no_label = False

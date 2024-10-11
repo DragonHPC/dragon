@@ -28,18 +28,24 @@ class Event:
     _BYTEORDER = "big"
 
     def _cleanup(self) -> None:
-        if not self._closed:
-            self._closed = True
-            try:
+        try:
+            if not self._closed:
                 self._reader.close()
                 self._writer.close()
                 self._channel.detach()
                 release_refcnt(self._cuid)
-            except Exception:
-                pass  # all of those may fail if the channel has disappeared during shutdown
+        except Exception:
+            pass  # all of those may fail if the channel has disappeared during shutdown
+        self._closed = True
 
     def __del__(self):
-        self._cleanup()
+        try:
+            self._cleanup()
+            del self._reader
+            del self._writer
+            del self._channel
+        except:
+            pass
 
     def __init__(self, m_uid: int = _DEF_MUID):
         """Initialize an event object
@@ -151,3 +157,18 @@ class Event:
 
         except ChannelEmpty:
             pass
+
+    def destroy(self):
+        '''Destroys the underlying Dragon resources so the space can be re-used.
+
+        Destroys underlying Dragon resource. Only do this when you know all
+        references to the object have been deleted.
+
+        :return: None
+        :rtype: NoneType
+        '''
+        try:
+            self._channel.destroy()
+        except:
+            pass
+

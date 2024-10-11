@@ -7,15 +7,12 @@ import string
 import random
 import traceback
 import sys
-import os
 
 from dragon.infrastructure.parameters import this_process
 from dragon.native.queue import Queue
 from dragon.native.process_group import ProcessGroup
 from dragon.native.process import ProcessTemplate
-from dragon.data.ddict.ddict import DDict
-
-pid = os.getpid()
+from dragon.data.ddict import DDict
 
 @enum.unique
 class DictOp(enum.Enum):
@@ -179,7 +176,7 @@ if __name__ == "__main__":
         grp.init()
         grp.start()
         grp.join()
-        grp.stop()
+        grp.close()
 
     length = len(ddict)
     print(f'Length of the dictionary is {length}', flush=True)
@@ -226,7 +223,7 @@ if __name__ == "__main__":
             print(f"Msglen [B]   Rate\n{value_size}  {rate}\n ", flush=True)
 
             grp.join()
-            grp.stop()
+            grp.close()
 
 
         except Exception as ex:

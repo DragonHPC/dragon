@@ -5,11 +5,10 @@ import subprocess
 
 from .base import BaseNetworkConfig
 
-PBS_PALS_LAUNCH_BE_ARGS = 'mpiexec --np {nnodes} --ppn 1 --cpu-bind none --hosts {nodelist} --line-buffer'
 
-
-def get_pbs_pals_launch_be_args(args_map=None):
-    return PBS_PALS_LAUNCH_BE_ARGS
+def get_pbs_pals_launch_be_args(args_map, launch_args):
+    pbs_pals_launch_be_args = ['mpiexec', '--np', str(args_map['nnodes']), '--ppn', '1', '--cpu-bind', 'none', '--hosts', args_map['nodelist'], '--line-buffer']
+    return pbs_pals_launch_be_args + launch_args
 
 
 def get_nodefile_node_count(filename) -> int:
@@ -23,6 +22,7 @@ def get_nodefile_node_count(filename) -> int:
 class PBSPalsNetworkConfig(BaseNetworkConfig):
 
     MPIEXEC_COMMAND_LINE = "mpiexec --np {nnodes} -ppn 1 -l"
+    ENV_PBS_JOB_ID = "PBS_JOBID"
 
     def __init__(self, network_prefix, port, hostlist):
 
@@ -38,14 +38,27 @@ Resubmit as part of a 'qsub' execution"""
             get_nodefile_node_count(os.environ.get("PBS_NODEFILE")),
         )
 
-        self.job_id = os.environ.get("PBS_JOBID")
+        self.job_id = os.environ.get(self.ENV_PBS_JOB_ID)
         self.MPIEXEC_ARGS = self.MPIEXEC_COMMAND_LINE.format(nnodes=self.NNODES).split()
 
     @classmethod
     def check_for_wlm_support(cls) -> bool:
-        if (mpiexec := shutil.which("mpiexec")):
-            return re.match('.*/pals/.*', mpiexec)
-        return False
+        # Look for qstat which is part of PBS
+        qstat = shutil.which("qstat")
+        if not qstat or re.match('.*/pbs/.*', qstat) is None:
+            return False
+
+        # Now to see if we have a supported version of mpiexec
+        if mpiexec := shutil.which("mpiexec"):
+            if re.match('.*/pals/.*', mpiexec) is None:
+                raise RuntimeError("PBS has been detected on the system. However, Dragon is only compatible with a PALS mpiexec and it was not found.")
+            return True
+
+        raise RuntimeError("PBS was detected on the system, but Dragon cannot find the mpiexec command.")
+
+    @classmethod
+    def check_for_allocation(cls) -> bool:
+        return os.environ.get(cls.ENV_PBS_JOB_ID) is not None
 
     def _get_wlm_job_id(self) -> str:
         return self.job_id

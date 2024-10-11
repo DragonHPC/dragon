@@ -4,6 +4,7 @@ import logging
 import json
 import enum
 import zlib
+import socket
 from typing import Optional
 from base64 import b64encode, b64decode
 
@@ -14,7 +15,7 @@ from ..dlogging import util as dlog
 
 from .launchargs import HOSTFILE_HELP, HOSTLIST_HELP, WLM_HELP
 from .launchargs import SplitArgsAtComma, parse_hosts
-from .wlm import WLM
+from .wlm import WLM, wlm_cls_dict
 from .wlm import SlurmNetworkConfig, PBSPalsNetworkConfig, SSHNetworkConfig
 
 
@@ -31,16 +32,11 @@ class ConfigOutputType(enum.Enum):
 class NetworkConfig():
     """Class for constructing network configurations for backend compute"""
 
-    wlm_cls_dict = {
-        WLM.SLURM: SlurmNetworkConfig,
-        WLM.PBS_PALS: PBSPalsNetworkConfig,
-        WLM.SSH: SSHNetworkConfig
-    }
-
     def __init__(self):
         """Initializer for class. Assumes a Slurm workload manager presently"""
 
         self.network_config = {}
+        self.allocation_nnodes = 0
 
     def get_network_config(self):
         """Get the object's stored network configuration
@@ -116,7 +112,12 @@ class NetworkConfig():
         """
         self.network_config = {}
         for key, val in serialized_dict.items():
-            self.network_config[key] = NodeDescriptor.from_sdict(val)
+            if isinstance(val, dict):
+                self.network_config[key] = NodeDescriptor.from_sdict(val)
+            elif isinstance(val, NodeDescriptor):
+                self.network_config[key] = val
+            else:
+                raise ValueError(f"Unable to initialize NetworkConfig with {type(val)}")
 
     def _set_primary_index_to_zero(self, ref_key):
         """Make sure the primary node is indexed to 0"""
@@ -171,26 +172,27 @@ class NetworkConfig():
                  sigint_trigger=None):
         """Obtain a network configuration for a given worklaod manager
 
-        Args:
-            workload_manager (WLM, optional): Workload manager to be used to obtain info.
-                Defaults to WLM.SLURM.
-            network_prefix (str, optional): Network prefix to select for backend to frontend
-                communication. Defaults to dragon.infrastructure.facts.DEFAULT_TRANSPORT_NETIF.
-            port (str, optional): Port to use for listening. Defaults to
-                dragon.infrastructure.facts.DEFAULT_OVERLAY_NETWORK_PORT.
-            primary_hostname (str, optional): Hostname desired to be selected as primary. Defaults
-                to None, in which case host with smallest host ID is selected.
-            sigint_trigger (int, optional): Conditional location to raise a SIGINT for testing
-                purposes
+        :param workload_manager: Workload manager to be used to obtain info, defaults to WLM.SLURM
+        :type workload_manager: WLM, optional
+        :param network_prefix: Network prefix to select for backend to frontend communication,
+                               defaults to DEFAULT_TRANSPORT_NETIF
+        :type network_prefix: str, optional
+        :param port: Port to use for listening, defaults to DEFAULT_OVERLAY_NETWORK_PORT
+        :type port: str, optional
+        :param primary_hostname: Hostname desired to be selected as primary. Defaults
+                                 to None, in which case host with smallest host ID is selected.
+        :type primary_hostname: str, optional
+        :param hostlist: list of hosts to use, defaults to None
+        :type hostlist: list[str], optional
+        :param sigint_trigger: Conditional location to raise a SIGINT for testing purposes, defaults to None
+        :type sigint_trigger: [type], optional
 
-        Returns:
-            NetworkConfig: object with complete network configuration
         """
 
         obj = cls()
-        wlm_generator = obj.wlm_cls_dict.get(workload_manager)(network_prefix, port, hostlist)
+        wlm_generator = wlm_cls_dict.get(workload_manager)(network_prefix, port, hostlist)
         obj.network_config = wlm_generator.get_network_config(sigint_trigger=sigint_trigger)
-
+        obj.allocation_nnodes = wlm_generator.get_allocation_node_count()
         # If coming from the workload manager, we need to use the host ID to select the primary
         # node (unless overruled by user input) and assign a node index
         obj._select_primary(primary_hostname=primary_hostname)
@@ -271,8 +273,9 @@ class NetworkConfig():
         Returns:
             NetworkConfig: object with complete network configuration
         """
-        obj = cls.__new__(cls)
+        obj = cls()
         obj._initialize_from_sdict(serialized_dict)
+
         return obj
 
 
@@ -357,12 +360,12 @@ def get_args(inputs=None):
 
     wlm = vars(args).get('wlm', None)
     if not wlm:
-        try:
-            for wlm, cls in NetworkConfig.wlm_cls_dict.items():
-                if cls.check_for_wlm_support():
-                    print(f'Detected a {str(wlm)} environment.')
-                    break
-        except Exception:
+        for wlm, cls in wlm_cls_dict.items():
+            if cls.check_for_wlm_support():
+                print(f'Detected a {str(wlm)} environment.')
+                break
+
+        if not wlm:
             raise RuntimeError('Could not detect a supported WLM environment.')
 
     # Handle the ssh case

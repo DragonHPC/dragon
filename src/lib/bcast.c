@@ -29,7 +29,8 @@ bool is_pointer_valid(void *p) {
     return ret ? ret : errno != ENOMEM;
 }
 
-static dragonMap_t * dg_bcast = NULL;
+/* dragon globals */
+DRAGON_GLOBAL_MAP(bcast);
 
 static dragonError_t
 _bcast_validate_attrs(dragonBCastAttr_t* attrs) {
@@ -54,10 +55,10 @@ static dragonError_t
 _bcast_add_umap_entry(dragonBCastDescr_t * bd, const dragonBCast_t * handle)
 {
     /* register this channel in our umap */
-    if (dg_bcast == NULL) {
+    if (*dg_bcast == NULL) {
         /* this is a process-global variable and has no specific call to be destroyed */
-        dg_bcast = malloc(sizeof(dragonMap_t));
-        if (dg_bcast == NULL)
+        *dg_bcast = malloc(sizeof(dragonMap_t));
+        if (*dg_bcast == NULL)
             err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Cannot allocate umap for BCast objects.");
 
         dragonError_t uerr = dragon_umap_create(dg_bcast, DRAGON_BCAST_UMAP_SEED);
@@ -533,6 +534,19 @@ _bcast_notify_signal(void * ptr)
     free(arg);
 
     return NULL;
+}
+
+/*
+ * NOTE: This should only be called from dragon_set_thread_local_mode
+ */
+void
+_set_thread_local_mode_bcast(bool set_thread_local)
+{
+    if (set_thread_local) {
+        dg_bcast = &_dg_thread_bcast;
+    } else {
+        dg_bcast = &_dg_proc_bcast;
+    }
 }
 
 /****************************************************************************

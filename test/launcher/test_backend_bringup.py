@@ -35,7 +35,7 @@ def start_backend(args):
     for key, value in args.items():
         if value is not None:
             log.info(f"args: {key}: {value}")
-    with LauncherBackEnd(args["transport_test"], args["network_prefix"]) as be_server:
+    with LauncherBackEnd(args["transport_test"], args["network_prefix"], args["overlay_port"]) as be_server:
         be_server.run_startup(args["ip_addrs"], args["host_ids"], args["frontend_sdesc"], level, fname)
         be_server.run_msg_server()
 
@@ -149,8 +149,6 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         # Clean up local services
         self.be_helper.cleanup()
 
-        log = logging.getLogger('test_local_services_launch_exception')
-        log.info(f'exceptions: {exceptions_caught_in_threads}')
         assert mock_start_localservices.call_count == 1
         assert 'Backend Server' in exceptions_caught_in_threads
         assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
@@ -182,7 +180,6 @@ class BackendBringUpTeardownTest(unittest.TestCase):
 
         # At this point, our LS mock should throw its side-effect:
         self.be_thread.join()
-        log.debug(f'exceptions: {exceptions_caught_in_threads}')
         assert 'Backend Server' in exceptions_caught_in_threads
         assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
         assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == 'Abnormal exit detected'
@@ -214,7 +211,6 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         # At this point, our LS mock should throw its side-effect:
         self.be_thread.join()
 
-        log.info(f'exceptions: {exceptions_caught_in_threads}')
         assert 'Backend Server' in exceptions_caught_in_threads
         assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
         assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == 'Abnormal exit detected'
@@ -243,13 +239,10 @@ class BackendBringUpTeardownTest(unittest.TestCase):
 
         # Clean up local services
         self.be_helper.cleanup()
-        log.debug('cleaned up backend helpers')
 
         # Should be able to join here
         self.be_thread.join()
-        log.debug('cleaned up backend')
 
-        log.info(f'exceptions: {exceptions_caught_in_threads}')
         assert 'Backend Server' in exceptions_caught_in_threads
         assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
         assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == 'Abnormal exit detected'
@@ -311,7 +304,6 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         # Should be able to join here
         self.be_thread.join()
 
-        log.info(f'exceptions: {exceptions_caught_in_threads}')
         assert 'Backend Server' in exceptions_caught_in_threads
         assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
         assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == 'Abnormal exit detected'

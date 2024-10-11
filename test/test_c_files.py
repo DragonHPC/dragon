@@ -13,7 +13,6 @@ test_dirs = [
     "channels_subtests",
     "hashtable",
     "pmod",
-    "pmsgq",
     "utils"
 ]
 

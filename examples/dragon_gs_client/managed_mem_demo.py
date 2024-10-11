@@ -134,8 +134,6 @@ def main():
     dgchan.destroy(input_channel.c_uid)
     dgchan.destroy(output_channel.c_uid)
 
-    mpool.destroy()
-
 
 if __name__ == "__main__":
     try:

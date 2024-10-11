@@ -6,6 +6,7 @@ from itertools import groupby
 from io import BufferedIOBase, TextIOBase
 from os import environ, getcwd
 from shlex import quote
+from typing import Dict, List
 
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.parameters import this_process
@@ -13,48 +14,54 @@ from .base import BaseNetworkConfig
 
 # TODO: we're propagating environment variables to make sure
 #       the SSH envionment has the same envrionment as the
-#       frontend. This works if there's a shared filesystem.
-#       It's garbage otherwise. Longterm, we have to figure out
-#       how to propagate Dragon out absent a shared filesystem.
+#       frontend. This works if there's a shared filesystem
+#       or a homogeneous (duplicated) filesystem.  It can
+#       also work through thoughtful manipulation of env vars
+#       such as PATH on the head node, but this requires
+#       documentation/explanation for users.  Ultimately we
+#       wish to propagate Dragon out absent a shared filesystem.
 ENV_VARS = None
+BASE_ENV_VARNAMES = (
+    'DRAGON_BASE_DIR',
+    'DRAGON_VERSION',
+    'DRAGON_HSTA_DEBUG',
+    'PATH',
+    'PYTHONPATH',
+    'LD_LIBRARY_PATH',
+    'PYTHONSTARTUP',
+    'VIRTUAL_ENV',
+    'DRAGON_FE_EXTERNAL_IP_ADDR',
+    'DRAGON_HEAD_NODE_IP_ADDR',
+    'DRAGON_RT_UID'
+)
 
-
-def get_ssh_env_vars(args_map=None) -> list[str]:
+def get_ssh_env_vars(args_map=None, propagate_base=BASE_ENV_VARNAMES) -> None:
 
     global ENV_VARS
-    ENV_VARS = f"""DRAGON_BASE_DIR={environ.get('DRAGON_BASE_DIR','')} \
-                   DRAGON_VERSION={environ.get('DRAGON_VERSION', '')} \
-                   DRAGON_HSTA_DEBUG={environ.get('DRAGON_HSTA_DEBUG',"")} \
-                   PATH={environ.get('PATH', '')} \
-                   PYTHONPATH={environ.get('PYTHONPATH', '')} \
-                   LD_LIBRARY_PATH={environ.get('LD_LIBRARY_PATH', '')} \
-                   PYTHONSTARTUP={environ.get('PYTHONSTARTUP', '')} \
-                   VIRTUAL_ENV={environ.get('VIRTUAL_ENV', '')} \
-                """
-    local_env = ENV_VARS
+    ENV_VARS = [
+        f'{varname}={environ.get(varname, "")}' for varname in propagate_base
+    ]
+
     # Make sure we propogate the device logging
     try:
-        for log_device, log_level in args_map['log_device_level_map'].items():
-
-            local_env = " ".join([local_env, f"{log_device}={log_level}"])
+        local_env = [f"{log_device}={log_level}" for log_device, log_level in args_map['log_device_level_map'].items()]
     except (KeyError, TypeError):
-        pass
+        local_env = []
+    ENV_VARS.extend(local_env)
 
     # Construct a list of all the environment variables
-    all_envs = [f'{var}={quote(val)}' for var, val in this_process.env().items()]
-    all_envs.append(local_env)
-
-    ENV_VARS = all_envs
+    this_process_envs = [f'{var}={quote(val)}' for var, val in this_process.env().items()]
+    ENV_VARS.extend(this_process_envs)
 
 
-def get_ssh_launch_be_args(hostname=None, args_map=None) -> str:
+def get_ssh_launch_be_args(args_map : Dict, launch_args : Dict) -> List:
 
     global ENV_VARS
     if ENV_VARS is None or args_map is not None:
         get_ssh_env_vars(args_map=args_map)
 
-    be_args = " ".join(["ssh -oBatchMode=yes {hostname}", f"/bin/bash -c cd {getcwd()} &&"] + ENV_VARS)
-    return be_args
+    bash_cmd =f"cd {getcwd()} && {' '.join(ENV_VARS + launch_args)}"
+    return ["ssh", "-oBatchMode=yes", args_map['hostname'], bash_cmd]
 
 
 class SSHIOStream(BufferedIOBase):
@@ -247,7 +254,11 @@ class SSHNetworkConfig(BaseNetworkConfig):
 
     @classmethod
     def check_for_wlm_support(cls) -> bool:
-        return shutil.which("ssh")
+        return shutil.which("ssh") is not None
+
+    @classmethod
+    def check_for_allocation(cls) -> bool:
+        return True
 
     def _get_wlm_job_id(self) -> str:
         raise RuntimeError('SSHNetworkConfig does not implement _get_wlm_job_id')
@@ -259,10 +270,8 @@ class SSHNetworkConfig(BaseNetworkConfig):
         popen_dict = {}
 
         for host in self.hostlist:
-
-            ssh_args = get_ssh_launch_be_args(hostname=host)
-            ssh_args = ssh_args.format(hostname=host).split()
-            ssh_args.extend(self.NETWORK_CFG_HELPER_LAUNCH_SHELL_CMD)
+            args_map = { 'hostname': host }
+            ssh_args = get_ssh_launch_be_args(args_map=args_map, launch_args=self.NETWORK_CFG_HELPER_LAUNCH_SHELL_CMD)
             self.LOGGER.debug(f"Launching config with: {ssh_args}")
 
             popen_dict[host] = subprocess.Popen(

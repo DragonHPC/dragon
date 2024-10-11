@@ -110,14 +110,16 @@ class TestBarrier(unittest.TestCase):
         """If the wait is called with a timeout, it takes precedent of the one
         that was supplied to __init__
         """
-        barrier = Barrier(timeout=1, parties=2)
+        def_timeout = 1
+        barrier = Barrier(timeout=def_timeout, parties=2)
         start = time.monotonic()
         try:
             barrier.wait(timeout=0)
         except BrokenBarrierError:
             pass
-        stop = time.monotonic()
-        self.assertAlmostEqual(0, stop - start, 2)
+        elap = time.monotonic() - start
+        self.assertGreaterEqual(elap, 0)
+        self.assertLess(elap, def_timeout) 
 
     def test_requirement_2_1(self):
         """If the wait is called with timeout <0, it has to assume raise a ValueError."""

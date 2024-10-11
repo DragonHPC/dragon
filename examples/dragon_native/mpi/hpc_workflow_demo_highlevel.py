@@ -76,6 +76,7 @@ def producer_proc(producer_id: int, num_ranks: int, result_queue: mp.Queue) -> N
         parser_proc.join()
 
     grp.stop()
+    grp.close()
 
     log.info("Done")
 

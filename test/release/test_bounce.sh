@@ -6,19 +6,24 @@
 # The following bounce test involves running "hello world" from 512 nodes. Dragon is stressed to see how it behaves under high load conditions.
 # The following bounce timings are completed with 512 nodes. 
 
-#./test_bounce.sh
+# time ./test_bounce.sh
 # Cold start
 # Hello world
 
-# real    0m26.281s
-# user    0m10.906s
-# sys     0m2.862s
+# real    0m27.236s
+# user    0m10.855s
+# sys     0m3.460s
 # Warm start
 # Hello world
 
-# real    0m17.046s
-# user    0m7.506s
-# sys     0m2.127s
+# real    0m14.061s
+# user    0m6.471s
+# sys     0m2.189s
+
+# Overall Time for Execution
+# real    0m41.322s
+# user    0m17.327s
+# sys     0m5.658s
 
 # The following line of code can be run to allocate the number of nodes needed:
 # salloc --nodes=512 --exclusive -t 01:00:00

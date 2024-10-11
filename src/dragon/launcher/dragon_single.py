@@ -155,7 +155,9 @@ def main():
         gs_in_wh = dconn.Connection(outbound_initializer=gs_in_ch, policy=dparm.POLICY_INFRASTRUCTURE)
 
         ls_in_wh.send(dmsg.BEPingSH(tag=dlutil.next_tag()).serialize())
-        ch_up = dlutil.get_with_timeout(la_in_rh)
+
+        # Set a long timeout for DST
+        ch_up = dlutil.get_with_timeout(la_in_rh, timeout=120)
 
         assert isinstance(ch_up, dmsg.SHChannelsUp)
     except (AssertionError, dch.ChannelError, TimeoutError) as err:
@@ -167,9 +169,10 @@ def main():
     try:  # gs startup
         gs_thread = threading.Thread(name='global services', target=dgs.single_thread,
                                      args=(ls_in_wh,), daemon=True)
-
         gs_thread.start()
-        gs_up = dlutil.get_with_timeout(la_in_rh)
+
+        # Set a long timeout for DST
+        gs_up = dlutil.get_with_timeout(la_in_rh, timeout=120)
         assert isinstance(gs_up, dmsg.GSIsUp)
         gs_in_wh.send(start_msg.serialize())
     except (AssertionError, TimeoutError) as err:

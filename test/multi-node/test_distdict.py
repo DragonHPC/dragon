@@ -1,14 +1,32 @@
 #!/usr/bin/env python3
 
 import unittest
+import socket
+import cloudpickle
 
 import dragon.infrastructure.messages as dmsg
 import dragon.channels as dch
 from dragon.utils import b64encode, b64decode
-from dragon.data.ddict.ddict import DDict
+from dragon.data.ddict import DDict
 from dragon.globalservices.node import get_list
 import multiprocessing as mp
 from dragon.rc import DragonError
+from dragon.data.ddict import DDictManagerFull
+from dragon.native.queue import Queue
+from dragon.native.machine import System, Node
+from dragon.native.process import Process
+from dragon.infrastructure.policy import Policy
+
+def fillit(d):
+    i = 0
+    key = "abc"
+    try:
+        while True:
+            d[key] = key
+            i+=1
+            key += "abc"*i
+    except DDictManagerFull:
+        pass
 
 def register_and_detach(d):
     d.detach()
@@ -32,6 +50,9 @@ def contains_ops(d, client_id):
     key1 = 'hello' + str(client_id)
     assert key1 in d
     d.detach()
+
+def check_local_manager(d, q, counter):
+    q.put((d.local_manager(), d.main_manager(), d.manager_nodes(), counter))
 
 class TestDDict(unittest.TestCase):
     @classmethod
@@ -74,7 +95,8 @@ class TestDDict(unittest.TestCase):
         self.assertIsInstance(newmsg, dmsg.DDRegisterClient)
 
     def test_ddict_client_response_message(self):
-        msg = dmsg.DDRegisterClientResponse(42, 43, DragonError.SUCCESS, 0, 2, 'this is dragon error info')
+        manager_nodes = b64encode(cloudpickle.dumps([Node(ident=socket.gethostname()) for _ in range(2)]))
+        msg = dmsg.DDRegisterClientResponse(42, 43, DragonError.SUCCESS, 0, 2, 3, manager_nodes, 10, 'this is dragon error info')
         ser = msg.serialize()
         newmsg = dmsg.parse(ser)
         self.assertIsInstance(newmsg, dmsg.DDRegisterClientResponse)
@@ -286,6 +308,56 @@ class TestDDict(unittest.TestCase):
 
         d.destroy()
 
+    def test_attach_ddict(self):
+        d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size)
+        d['hello'] = 'world'
+        d_serialized = d.serialize()
+        new_d = DDict.attach(d_serialized)
+        self.assertEqual(new_d['hello'], 'world')
+        d.detach()
+        new_d.destroy()
+
+    def test_fill(self):
+        d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size)
+        procs = []
+        for i in range(self._num_clients):
+            client_proc = mp.Process(target=fillit, args=(d,))
+            client_proc.start()
+            procs.append(client_proc)
+        for i in range(self._num_clients):
+            procs[i].join()
+        d.destroy()
+
+    def test_placement(self):
+
+        my_alloc = System()
+        num_nodes_to_use = int(my_alloc.nnodes/2)
+        node_list = my_alloc.nodes
+
+        dict_nodes = node_list[:num_nodes_to_use]
+        dict_policies = [Policy(placement=Policy.Placement.HOST_ID, host_id=huid) for huid in dict_nodes]
+        d = DDict(None,  None, self._total_mem_size, managers_per_policy=self._managers_per_node, policy=dict_policies)
+        procs = []
+        q = Queue()
+        proc_policies = [Policy(placement=Policy.Placement.HOST_ID, host_id=huid) for huid in node_list]
+
+        for i, policy in enumerate(proc_policies):
+            client_proc = Process(target=check_local_manager, args=(d, q, i), policy=policy)
+            client_proc.start()
+            procs.append(client_proc)
+
+        for i in range(len(procs)):
+            local_manager, main_manager, manager_nodes, counter = q.get()
+            self.assertIn(main_manager, list(range(self._managers_per_node*len(dict_policies))))
+            self.assertSetEqual(set(dict_nodes), set([node.h_uid for node in manager_nodes]))
+            if counter < num_nodes_to_use:
+                self.assertIsNotNone(local_manager)
+            else:
+                self.assertIsNone(local_manager)
+
+        for i in range(len(procs)):
+            procs[i].join()
+        d.destroy()
 
 if __name__ == "__main__":
     unittest.main()

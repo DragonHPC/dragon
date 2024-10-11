@@ -325,6 +325,22 @@ cdef class MemoryAlloc:
         mem_alloc_obj = MemoryAlloc.cinit(to_mem)
         return mem_alloc_obj
 
+    def clear(self, start=0, stop=None):
+        cdef:
+            dragonError_t derr
+            size_t stop_idx
+
+
+        if stop is None:
+            # The API will self adjust down to allowable stop.
+            stop_idx = 0xffffffffffffffff
+        else:
+            stop_idx = stop
+
+        derr = dragon_memory_clear(&self._mem_descr, start, stop_idx)
+        if derr != DRAGON_SUCCESS:
+            raise DragonMemoryError(derr, "could not clear memory allocation.")
+
     @property
     def size(self):
         """
@@ -554,6 +570,32 @@ cdef class MemoryPool:
 
         return mpool
 
+    @classmethod
+    def attach_default(cls):
+        """
+        Attach to the default pool.
+        :return: default memory pool object
+        :raises: DragonPoolAttachFail
+        """
+        cdef:
+            dragonError_t derr
+            MemoryPool mpool
+            dragonULInt the_muid
+
+        mpool = cls.__new__(cls)
+
+        derr = dragon_memory_pool_attach_default(&mpool._pool_hdl)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolAttachFail(derr, "Could not attach to serialized pool")
+
+        derr = dragon_memory_pool_muid(&mpool._pool_hdl, &the_muid)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve muid of pool.")
+
+        mpool._muid = the_muid
+
+        return mpool
+
     def destroy(self):
         """
         Destroy the pool created by this object.
@@ -619,9 +661,8 @@ cdef class MemoryPool:
         if not isinstance(size, int):
             raise TypeError(f"Allocation size must be int, got type {type(size)}")
 
-        # @MCB TODO: What do we want to make the minimum size?
-        if size < 1:
-            raise RuntimeError("Size cannot be less than 1 for memory allocations")
+        if size < 0:
+            raise RuntimeError("Size cannot be less than 0 for memory allocations")
 
         sz = size
 
@@ -823,6 +864,54 @@ cdef class MemoryPool:
             raise DragonPoolError(derr, "Could not retrieve the pool's percent utilized space.")
 
         return pct
+
+    @property
+    def num_block_sizes(self):
+        """
+        Return the total number of block sizes.
+
+        :return: number of block sizes of the pool.
+        """
+        cdef:
+            dragonError_t derr
+            size_t num_block_sizes
+
+        derr = dragon_memory_pool_get_num_block_sizes(&self._pool_hdl, &num_block_sizes)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve the pool's number of block sizes.")
+
+        return num_block_sizes
+
+    @property
+    def free_blocks(self):
+        """
+        Return the number of free blocks with different block sizes.
+
+        :return: A dictionary with keys as block sizes and values as the number of blocks with the size.
+        """
+        cdef:
+            dragonError_t derr
+            dragonHeapStatsAllocationItem_t *free_blocks
+
+        num_block_sizes = self.num_block_sizes
+
+        free_blocks = <dragonHeapStatsAllocationItem_t*>malloc(sizeof(dragonHeapStatsAllocationItem_t) * num_block_sizes)
+        if free_blocks == NULL:
+            raise DragonPoolError(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for stats.")
+
+        with nogil:
+            derr = dragon_memory_pool_get_free_blocks(&self._pool_hdl, free_blocks)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve the pool's free blocks.")
+
+        free_blocks_map = {}
+        for i in range(num_block_sizes):
+            free_blocks_map[ free_blocks[i].block_size ] = free_blocks[i].num_blocks
+
+        free(free_blocks)
+        free_blocks = NULL
+
+        return free_blocks_map
 
     @property
     def rt_uid(self):

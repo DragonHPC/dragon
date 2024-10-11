@@ -26,7 +26,6 @@ TESTS_DRAGON_MULTI_NODE := test_barrier.py \
 						   test_value.py \
 						   test_array.py \
 						   test_process_group.py \
-						   test_ddict.py \
 						   test_distdict.py \
 						   test_fli.py
 

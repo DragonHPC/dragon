@@ -13,7 +13,7 @@ import logging
 
 from dragon.dtypes import DragonError
 
-LOG = logging.getLogger('channel:')
+LOG = logging.getLogger('GS.channel:')
 
 
 class ChannelContext:

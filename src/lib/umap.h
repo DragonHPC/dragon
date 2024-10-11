@@ -16,31 +16,31 @@ typedef struct dragonMap_st {
 } dragonMap_t;
 
 dragonError_t
-dragon_umap_create(dragonMap_t * dmap, uint64_t seed);
+dragon_umap_create(dragonMap_t **dmap_in, uint64_t seed);
 
 dragonError_t
-dragon_umap_destroy(dragonMap_t * dmap);
+dragon_umap_destroy(dragonMap_t **dmap_in);
 
 dragonError_t
-dragon_umap_additem(dragonMap_t * dmap, const uint64_t key, const void * data);
+dragon_umap_additem(dragonMap_t **dmap_in, const uint64_t key, const void *data);
 
 dragonError_t
-dragon_umap_additem_multikey(dragonMap_t * dmap, const uint64_t key0, const uint64_t key1, const void * data);
+dragon_umap_additem_multikey(dragonMap_t **dmap_in, const uint64_t key0, const uint64_t key1, const void *data);
 
 dragonError_t
-dragon_umap_additem_genkey(dragonMap_t * dmap, const void * data, uint64_t * new_key);
+dragon_umap_additem_genkey(dragonMap_t **dmap_in, const void *data, uint64_t *new_key);
 
 dragonError_t
-dragon_umap_getitem(dragonMap_t * dmap, const uint64_t key, void ** data);
+dragon_umap_getitem(dragonMap_t **dmap_in, const uint64_t key, void **data);
 
 dragonError_t
-dragon_umap_getitem_multikey(dragonMap_t * dmap, const uint64_t key0, const uint64_t key1, void ** data);
+dragon_umap_getitem_multikey(dragonMap_t **dmap_in, const uint64_t key0, const uint64_t key1, void **data);
 
 dragonError_t
-dragon_umap_delitem(dragonMap_t * dmap, const uint64_t key);
+dragon_umap_delitem(dragonMap_t **dmap_in, const uint64_t key);
 
 dragonError_t
-dragon_umap_delitem_multikey(dragonMap_t * dmap, const uint64_t key0, const uint64_t key1);
+dragon_umap_delitem_multikey(dragonMap_t **dmap_in, const uint64_t key0, const uint64_t key1);
 
 #ifdef __cplusplus
 }

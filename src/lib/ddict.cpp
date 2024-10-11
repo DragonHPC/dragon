@@ -1,12 +1,14 @@
 #include <dragon/ddict.h>
 #include "_ddict.h"
+#include "_utils.h"
 #include <dragon/messages.hpp>
 #include <dragon/utils.h>
 #include "err.h"
 
 
-static dragonMap_t * dg_ddict_adapters = NULL;
-static dragonMap_t * dg_ddict_reqs = NULL;
+/* dragon globals */
+DRAGON_GLOBAL_MAP(ddict_adapters);
+DRAGON_GLOBAL_MAP(ddict_reqs);
 
 static uint64_t tag = 42; /* Tag is not needed in the messages, but is there for
                              compatibility should multiple messages need to be
@@ -20,11 +22,11 @@ _send_receive(dragonFLIDescr_t* sendto_fli, DragonMsg* send_msg, dragonFLIDescr_
     dragonFLISendHandleDescr_t sendh;
     dragonFLIRecvHandleDescr_t recvh;
 
-    err = dragon_fli_open_send_handle(sendto_fli, &sendh, NULL, timeout);
+    err = dragon_fli_open_send_handle(sendto_fli, &sendh, NULL, NULL, timeout);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not open send handle.");
 
-    err = dragon_fli_open_recv_handle(recvfrom_fli, &recvh, NULL, timeout);
+    err = dragon_fli_open_recv_handle(recvfrom_fli, &recvh, NULL, NULL, timeout);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not open recv handle.");
 
@@ -52,9 +54,9 @@ _add_umap_ddict_entry(dragonDDictDescr_t * ddict, dragonDDict_t * new_ddict)
 {
     dragonError_t err;
 
-    if (dg_ddict_adapters == NULL) {
-        dg_ddict_adapters = (dragonMap_t*)malloc(sizeof(dragonMap_t));
-        if (dg_ddict_adapters == NULL)
+    if (*dg_ddict_adapters == NULL) {
+        *dg_ddict_adapters = (dragonMap_t*)malloc(sizeof(dragonMap_t));
+        if (*dg_ddict_adapters == NULL)
             err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate umap for ddict");
 
         err = dragon_umap_create(dg_ddict_adapters, DRAGON_DDICT_UMAP_SEED);
@@ -89,9 +91,9 @@ _add_umap_ddict_req_entry(const dragonDDictRequestDescr_t * descr, const dragonD
 {
     // dragonError_t err;
 
-    // if (dg_ddict_reqs == NULL) {
-    //     dg_ddict_reqs = malloc(sizeof(dragonMap_t));
-    //     if (dg_ddict_reqs == NULL)
+    // if (*dg_ddict_reqs == NULL) {
+    //     *dg_ddict_reqs = malloc(sizeof(dragonMap_t));
+    //     if (*dg_ddict_reqs == NULL)
     //         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate umap for ddict requests");
 
     //     err = dragon_umap_create(dg_ddict_reqs, DRAGON_DDICT_UMAP_SEED);
@@ -199,7 +201,7 @@ _send_key(dragonDDictReq_t * req)
     //     append_err_return(err, "Failed to retrieve ddict");
     // dragonFLIDescr_t fli = ddict->manager_flis[req->key_hash % ddict->num_managers];
 
-    // err = dragon_fli_open_send_handle(&fli, &req->sendh, NULL, NULL);
+    // err = dragon_fli_open_send_handle(&fli, &req->sendh, NULL, NULL, NULL);
     // if (err != DRAGON_SUCCESS)
     //     append_err_return(err, "Failed to open send handle");
 
@@ -211,6 +213,23 @@ _send_key(dragonDDictReq_t * req)
     // no_err_return(DRAGON_SUCCESS);
     return DRAGON_NOT_IMPLEMENTED;
 }
+
+/*
+ * NOTE: This should only be called from dragon_set_thread_local_mode
+ */
+void
+_set_thread_local_mode_ddict(bool set_thread_local)
+{
+    if (set_thread_local) {
+        dg_ddict_adapters = &_dg_thread_ddict_adapters;
+        dg_ddict_reqs = &_dg_thread_ddict_reqs;
+    } else {
+        dg_ddict_adapters = &_dg_proc_ddict_adapters;
+        dg_ddict_reqs = &_dg_proc_ddict_reqs;
+    }
+}
+
+// BEGIN USER API
 
 dragonError_t
 dragon_ddict_serialize(const dragonDDictDescr_t * dd, dragonDDictSerial_t * dd_ser)

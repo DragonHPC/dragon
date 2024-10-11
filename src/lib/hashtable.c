@@ -23,6 +23,9 @@
             a hashtable. They make sure the chain remains unbroken.
         char[] The slots array for the hashtable follows. This is 8 byte boundary aligned
             assuming the memory on which it is mapped is 8 byte boundary aligned.
+        char[] The rehash_space is used when rehashing becomes necessary. While we originally
+            malloced this space, it is now included inside the object to avoid malloc and free
+            of the space.
 
     A user initializes a handle when a hashtable is created. The user may also attach to the
     hashtable. In either case, the init and attach both initialize a handle for the hashtable.
@@ -207,20 +210,18 @@ _print_chain(dragonHashtable_t* ht, uint64_t idx) {
 }
 #endif
 
-static dragonError_t
-_rehash(dragonHashtable_t* ht) {
+static dragonError_t _rehash(dragonHashtable_t* ht) {
     dragonError_t err;
 
     if (ht == NULL)
         err_return(DRAGON_HASHTABLE_NULL_POINTER,"The dragonHashtable handle is NULL.");
 
+    if (ht->rehash_space == NULL)
+        err_return(DRAGON_OBJECT_DESTROYED, "The hashtable was destroyed or detached and cannot be rehashed.");
+
     uint64_t entry_len = (ht->header.key_len + ht->header.value_len)*sizeof(uint64_t);
     uint64_t num_kvs = *ht->header.num_kvs;
-    char* copy = malloc(entry_len * num_kvs);
-    if (copy == NULL)
-        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate memory for rehash of hashtable.");
-
-    char* current = copy;
+    char* current = ht->rehash_space;
     uint64_t num_copied = 0;
     uint64_t idx = 0;
     unsigned char allocated;
@@ -262,7 +263,7 @@ _rehash(dragonHashtable_t* ht) {
     *ht->header.num_placeholders = 0;
     *ht->header.num_kvs = 0;
 
-    key = copy;
+    key = ht->rehash_space;
     value = key + ht->header.key_len * sizeof(uint64_t);
 
     for (uint64_t k=0;k<num_kvs;k++) {
@@ -273,8 +274,6 @@ _rehash(dragonHashtable_t* ht) {
         key += entry_len;
         value += entry_len;
     }
-
-    free(copy);
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -321,7 +320,7 @@ dragon_hashtable_size(const uint64_t max_entries, const uint64_t key_len, const 
 
     *size = sizeof(uint64_t) * DRAGON_HASHTABLE_HEADER_NULINTS +
             bitset_size * DRAGON_HASHTABLE_BITSET_COUNT +
-            (key_len + value_len) * num_slots;
+            (key_len + value_len) * num_slots * 2; // include space for rehashing
 
     if (*size > thirty_two_gb)
         err_return(DRAGON_HASHTABLE_TOO_BIG,"The hashtable would be too big.");
@@ -433,6 +432,9 @@ dragon_hashtable_init(char* ptr, dragonHashtable_t* ht, const uint64_t max_entri
     // Init the armor2 value
     *ui_ptr = armorval;
     blob_ptr += sizeof(uint64_t);
+
+    // Skip past the rehash space. Not used here, but left here as a comment.
+    // blob_ptr += num_slots * entry_len;
 
     // attach the handle to the hashtable
     dragon_hashtable_attach(ptr, ht);
@@ -554,6 +556,10 @@ dragon_hashtable_attach(char* ptr, dragonHashtable_t* ht)
     ht->header.armor2 = ui_ptr;
     blob_ptr += sizeof(uint64_t);
 
+    // set the rehash_space pointer
+    ht->rehash_space = blob_ptr;
+    blob_ptr += ht->header.num_slots * entry_len;
+
     _check_armor(ht);
 
     // return success
@@ -579,6 +585,7 @@ dragon_hashtable_detach(dragonHashtable_t* ht)
     // destroy this will cause a segfault.
     ht->header.num_kvs = NULL;
     ht->slots = NULL;
+    ht->rehash_space = NULL;
 
     // return success
     no_err_return(DRAGON_SUCCESS);

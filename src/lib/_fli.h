@@ -36,6 +36,7 @@ typedef struct dragonFLISendBufAlloc_st {
     size_t num_bytes;
     size_t offset; /* used only on received buffered bytes */
     uint64_t arg; /* used only on received buffered bytes */
+    bool free_data;
     struct dragonFLISendBufAlloc_st* next;
 } dragonFLISendBufAlloc_t;
 
@@ -59,9 +60,11 @@ typedef struct dragonFLISendHandle_st {
     dragonFLI_t* adapter;
     dragonChannelDescr_t strm_channel;
     dragonChannelSendh_t chan_sendh;
+    dragonMemoryPoolDescr_t dest_pool;
     dragonFLISendBufAlloc_t* buffered_allocations;
     uint64_t buffered_arg;
     size_t total_bytes;
+    bool has_dest_pool;
     bool user_supplied;
     pthread_t tid; /* used to keep track of send or receive file descriptors */
     int pipe[2];
@@ -78,6 +81,8 @@ typedef struct dragonFLIRecvHandle_st {
     dragonFLI_t* adapter;
     dragonChannelDescr_t strm_channel;
     dragonChannelRecvh_t chan_recvh;
+    dragonMemoryPoolDescr_t dest_pool;
+    bool has_dest_pool;
     bool user_supplied;
     bool stream_received;
     bool EOT_received;

@@ -23,7 +23,7 @@ import logging
 import copy
 import signal
 
-LOG = logging.getLogger('group:')
+LOG = logging.getLogger('GS.group:')
 
 
 class PMIJobHelper:
@@ -234,7 +234,8 @@ class GroupContext:
                                                 # destroyed after having received all the SHProcessKillResponse messages
         self._descriptor = group_desc.GroupDescriptor(g_uid=g_uid,
                                                       name=request.user_name,
-                                                      policy=policy)
+                                                      policy=policy,
+                                                      resilient=server.resilient_groups)
 
     def __str__(self):
         return f"[[{self.__class__.__name__}]] desc:{self.descriptor!r} req:{self.request!r}"
@@ -354,8 +355,8 @@ class GroupContext:
         # Policy Evaluator wants a list of policies, one for each member
         total_members = sum([n for n, _ in msg.items])
         # With discussion this can be cleaned up and either always be a list
-        # or policy merging logic for process level policies and PG level 
-        # policies could happen here 
+        # or policy merging logic for process level policies and PG level
+        # policies could happen here
         if isinstance(policy, list):
             for pol in policy:
                 assert isinstance(pol, Policy)
@@ -429,7 +430,7 @@ class GroupContext:
                                 LOG.info('%s', resource_copy._pmi_info)
 
                         success, outbound_tag, proc_context = ProcessContext.construct(server, resource_copy, reply_channel,
-                                                                                       head=False, send_msg=False,
+                                                                                       send_msg=False,
                                                                                        belongs_to_group=True)
 
                         server.resource_to_group_map[proc_context.descriptor.p_uid] = (this_guid, (tuple_idx, item_idx))
@@ -480,9 +481,9 @@ class GroupContext:
                 raise GroupError('The Group should include at least one member in each subgroup.')
 
         # If PMI is required, we need to send these common PMI options.
-        # By sending them as part of the SHMultiProcessCreate message, 
+        # By sending them as part of the SHMultiProcessCreate message,
         # we limit the duplication of these common vaules in each embedded
-        # SHProcessCreate message, reducing the overall message size. 
+        # SHProcessCreate message, reducing the overall message size.
         pmi_group_info : dmsg.PMIGroupInfo = None
         if pmi_job_helper:
             pmi_group_info : dmsg.PMIGroupInfo = dmsg.PMIGroupInfo(
@@ -828,7 +829,7 @@ class GroupContext:
                             # this is where we're actually starting the creation of the group members
                             if isinstance(resource_msg, dmsg.GSProcessCreate):
                                 success, outbound_tag, proc_context = ProcessContext.construct(server, resource_copy, reply_channel,
-                                                                                               head=False, send_msg=False,
+                                                                                               send_msg=False,
                                                                                                belongs_to_group=True,
                                                                                                addition=True)
 
@@ -1117,6 +1118,8 @@ class GroupContext:
                     reply_channel.send(response.serialize())
                     LOG.debug(f'DestroyRemoveFrom response sent, tag {response.tag} ref {response.ref}')
                 else:
+                    ls_kill_context_map : Dict[int, List[ProcessContext]] = defaultdict(list)
+
                     # proceed with destroying the resources
                     for puid, lst_idx, item_idx in groupctx.destroy_remove_success_ids:
                         item = groupdesc.sets[lst_idx][item_idx]
@@ -1128,10 +1131,12 @@ class GroupContext:
                             # this process will be removed from the group after the completion of the pending
                             # SHKillProcess request and this happens in complete_kill()
                             resource_msg = groupctx._mk_gs_proc_kill(item.uid)
-                            issued, outbound_tag = ProcessContext.kill(server, resource_msg, dutil.AbsorbingChannel())
+                            issued, outbound_tag = ProcessContext.kill(server, resource_msg, dutil.AbsorbingChannel(), send_msg=False)
                             pctx = server.process_table[item.uid]
 
                             if issued:
+                                ls_kill_context_map[pctx.node].append(pctx)
+
                                 # we need to issue a pending operation related to this process
                                 groupdesc.sets[lst_idx][item_idx].state = process_desc.ProcessDescriptor.State.PENDING
                                 groupdesc.sets[lst_idx][item_idx].desc.state = process_desc.ProcessDescriptor.State.PENDING
@@ -1145,6 +1150,17 @@ class GroupContext:
                                 # update the member's state accordingly
                                 groupdesc.sets[lst_idx][item_idx].state = pctx.descriptor.state
                                 groupdesc.sets[lst_idx][item_idx].desc.state = pctx.descriptor.state
+
+                    for node, contexts in ls_kill_context_map.items():
+                        procs = [context.shep_kill_msg for context in contexts]
+                        shep_req = dmsg.SHMultiProcessKill(
+                            tag=server.tag_inc(),
+                            r_c_uid=dfacts.GS_INPUT_CUID,
+                            procs=procs
+                        )
+                        shep_hdl = server.shep_inputs[node]
+                        server.pending_sends.put((shep_hdl, shep_req.serialize()))
+                        LOG.debug(f'request %s to shep %d', shep_req, node)
 
                 # in this case, all the processes were already dead or no pending continuation
                 # was issued and we need to send a response to the client
@@ -1164,10 +1180,10 @@ class GroupContext:
             else:
                 raise NotImplementedError('close case')
 
-    def _mk_gs_proc_kill(self, puid, sig=signal.SIGKILL):
+    def _mk_gs_proc_kill(self, puid, sig=signal.SIGKILL, hide_stderr=False):
         return dmsg.GSProcessKill(tag=das.next_tag(), p_uid=this_process.my_puid,
                                   r_c_uid=dfacts.GS_INPUT_CUID,
-                                  t_p_uid=puid, sig=int(sig))
+                                  t_p_uid=puid, sig=int(sig), hide_stderr=hide_stderr)
 
     @staticmethod
     def kill(server, msg, reply_channel):
@@ -1226,6 +1242,8 @@ class GroupContext:
                 groupctx.destroy_request = msg
                 groupctx.reply_channel = reply_channel
 
+                ls_kill_context_map: Dict[int, List[ProcessContext]] = defaultdict(list)
+
                 # init sending the signal to any processes belonging to the group
                 issued_pendings = False
                 for lst_idx, lst in enumerate(groupdesc.sets):
@@ -1233,11 +1251,12 @@ class GroupContext:
                         # if this is not a process, do nothing
                         if isinstance(item.desc, process_desc.ProcessDescriptor):
                             if item.state != process_desc.ProcessDescriptor.State.DEAD:
-                                resource_msg = groupctx._mk_gs_proc_kill(item.uid, sig=msg.sig)
-                                issued, outbound_tag = ProcessContext.kill(server, resource_msg, dutil.AbsorbingChannel())
+                                resource_msg = groupctx._mk_gs_proc_kill(item.uid, sig=msg.sig, hide_stderr=msg.hide_stderr)
+                                issued, outbound_tag = ProcessContext.kill(server, resource_msg, dutil.AbsorbingChannel(), send_msg=False)
                                 pctx = server.process_table[item.uid]
 
                                 if issued:
+                                    ls_kill_context_map[pctx.node].append(pctx)
                                     # we need to issue a pending operation related to this process
                                     groupdesc.sets[lst_idx][item_idx].state = process_desc.ProcessDescriptor.State.PENDING
                                     groupdesc.sets[lst_idx][item_idx].desc.state = process_desc.ProcessDescriptor.State.PENDING
@@ -1251,7 +1270,18 @@ class GroupContext:
                                     # update the member's state accordingly
                                     groupdesc.sets[lst_idx][item_idx].state = pctx.descriptor.state
                                     groupdesc.sets[lst_idx][item_idx].desc.state = pctx.descriptor.state
-                if not issued_pendings:
+                if issued_pendings:
+                    for node, contexts in ls_kill_context_map.items():
+                        procs = [context.shep_kill_msg for context in contexts]
+                        shep_req = dmsg.SHMultiProcessKill(
+                            tag=server.tag_inc(),
+                            r_c_uid=dfacts.GS_INPUT_CUID,
+                            procs=procs
+                        )
+                        shep_hdl = server.shep_inputs[node]
+                        server.pending_sends.put((shep_hdl, shep_req.serialize()))
+                        LOG.debug(f'request %s to shep %d', shep_req, node)
+                else:
                     # there were no pending requests issued and we need to send a response to the client
                     # We consider this case as a success; for example, all the processes were already dead
                     rm = gsgkr(tag=server.tag_inc(),
@@ -1419,6 +1449,8 @@ class GroupContext:
 
                 server.group_destroy_resource_count[target_uid] = []
 
+                ls_kill_context_map : Dict[int, List[ProcessContext]] = defaultdict(list)
+
                 # init the destruction of the group's members
                 for lst_idx, lst in enumerate(groupdesc.sets):
                     server.group_destroy_resource_count[target_uid].append(0)
@@ -1432,9 +1464,12 @@ class GroupContext:
                         if item.state != process_desc.ProcessDescriptor.State.DEAD:
                             # first, call kill to send a kill request
                             resource_msg = groupctx._mk_gs_proc_kill(item.uid, sig=signal.SIGKILL)
-                            issued, outbound_tag = ProcessContext.kill(server, resource_msg, dutil.AbsorbingChannel())
+                            issued, outbound_tag = ProcessContext.kill(server, resource_msg, dutil.AbsorbingChannel(), send_msg=False)
+                            pctx = server.process_table[item.uid]
 
                             if issued:
+                                ls_kill_context_map[pctx.node].append(pctx)
+
                                 # there has been a pending operation related to this process
                                 groupdesc.sets[lst_idx][item_idx].state = process_desc.ProcessDescriptor.State.PENDING
                                 groupdesc.sets[lst_idx][item_idx].desc.state = process_desc.ProcessDescriptor.State.PENDING
@@ -1453,6 +1488,18 @@ class GroupContext:
                                 # the process is either unknown or dead or pending
                                 groupdesc.sets[lst_idx][item_idx].state = process_desc.ProcessDescriptor.State.DEAD
                                 groupdesc.sets[lst_idx][item_idx].desc.state = process_desc.ProcessDescriptor.State.DEAD
+
+                for node, contexts in ls_kill_context_map.items():
+                     procs = [context.shep_kill_msg for context in contexts]
+                     shep_req = dmsg.SHMultiProcessKill(
+                         tag=server.tag_inc(),
+                         r_c_uid=dfacts.GS_INPUT_CUID,
+                         procs=procs
+                     )
+                     shep_hdl = server.shep_inputs[node]
+                     server.pending_sends.put((shep_hdl, shep_req.serialize()))
+                     LOG.debug(f'request %s to shep %d', shep_req, node)
+
                 # in this case, all the processes were already dead or no pending continuation
                 # was issued and we need to send a response to the client
                 # e.g., kill was called prior to destroy and the kill request completed successully (SHProcessExit was sent)

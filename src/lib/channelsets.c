@@ -1,11 +1,14 @@
 #include "_channelsets.h"
+#include "_utils.h"
 #include <dragon/channels.h>
 #include "umap.h"
 #include "err.h"
 #include <stdlib.h>
 #include <pthread.h>
 
-dragonMap_t * dg_channelsets = NULL;
+/* dragon globals */
+DRAGON_GLOBAL_MAP(channelsets);
+
 static size_t throw_away_payload_sz;
 
 // CHANNELSET INTERNAL FUNCTIONS
@@ -61,10 +64,10 @@ _add_umap_channelset_entry(dragonChannelSetDescr_t * chset, const dragonChannelS
     dragonError_t err;
 
     /* register this channel in our umap */
-    if (dg_channelsets == NULL) {
+    if (*dg_channelsets == NULL) {
         /* this is a process-global variable and has no specific call to be destroyed */
-        dg_channelsets = malloc(sizeof(dragonMap_t));
-        if (dg_channelsets == NULL)
+        *dg_channelsets = malloc(sizeof(dragonMap_t));
+        if (*dg_channelsets == NULL)
             err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate umap for channel sets.");
 
         err = dragon_umap_create(dg_channelsets, DRAGON_CHANNELSET_UMAP_SEED);
@@ -119,7 +122,20 @@ _channelset_sync(void * ptr)
     return NULL;
 }
 
-// USER API
+/*
+ * NOTE: This should only be called from dragon_set_thread_local_mode
+ */
+void
+_set_thread_local_mode_channelsets(bool set_thread_local)
+{
+    if (set_thread_local) {
+        dg_channelsets = &_dg_thread_channelsets;
+    } else {
+        dg_channelsets = &_dg_proc_channelsets;
+    }
+}
+
+// BEGIN USER API
 
 /** @brief Initialize a ChannelSet attributes structure
  *

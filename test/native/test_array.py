@@ -12,7 +12,13 @@ from dragon.globalservices.process import create, multi_join
 from dragon.infrastructure.process_desc import ProcessOptions
 from dragon.native.array import Array, _TYPECODE_TO_TYPE, _SUPPORTED_TYPES
 from dragon.native.queue import Queue
+from dragon.native.lock import Lock
 import dragon.utils as du
+from ctypes import Structure, c_double
+
+
+class Point(Structure):
+    _fields_ = [("x", c_double), ("y", c_double)]
 
 
 def create_array_assignment(type):
@@ -20,7 +26,12 @@ def create_array_assignment(type):
     if type is ctypes.c_char:
         return [b"0", b"1", bytes(str(random.choice(string.ascii_letters)).encode("utf-8"))]
     elif type is ctypes.c_wchar:
-        return ["0", "1", str(random.choice(string.ascii_letters))]
+        # wchar can take up to 4 bytes on most machines. We need to test at least up to 4 charcters
+        return ["0", "1",
+                str(random.choice(string.ascii_letters)),
+                ''.join(str(random.choice(string.ascii_letters)) for i in range(2)),
+                ''.join(str(random.choice(string.ascii_letters)) for i in range(3)),
+                ''.join(str(random.choice(string.ascii_letters)) for i in range(4))]
     elif type in [ctypes.c_double, ctypes.c_float]:
         return [
             0.0,
@@ -34,7 +45,6 @@ def create_array_assignment(type):
 
 
 def test_array(args):
-
     bytes = du.B64.str_to_bytes(args)
     array, array_assignment, parent_queue, child_queue = pickle.loads(bytes)
 
@@ -55,22 +65,40 @@ class TestArray(unittest.TestCase):
 
     def test_array_assignment(self):
         """check array assignment"""
+        # Do test for input list
         self.assertEqual(Array("i", [1, 2, 3])[:], [1, 2, 3])
+
+        # Do test for iterator
         arr = Array("i", 10)
         arr[:] = range(10)
         self.assertEqual(list(arr), list(range(10)))
+
+    def test_structure(self):
+        """tests that Structure works in array"""
+        lock = Lock()
+
+        A = Array(Point, [(1.875, -6.25), (-5.75, 2.0), (2.375, 9.5)], lock=lock)
+
+        for a in A:
+            a.x **= 2
+            a.y **= 2
+
+        self.assertEqual(
+            [(a.x, a.y) for a in A],
+            [(3.515625, 39.0625), (33.0625, 4.0), (5.640625, 90.25)],
+            "Array assignment does not work for structure",
+        )
 
     def test_ping_pong(self):
         """queue ping pong between 2 processes that tests array assignment in
         parent and child processes"""
 
         for type in _SUPPORTED_TYPES:
-
             # Create a list of values to be tested array_assignment: bytes, char, int, and float
             array_assignment = create_array_assignment(type)
 
             # Create a array of type
-            array = Array(typecode_or_type=type, size_or_initializer=[])
+            array = Array(typecode_or_type=type, size_or_initializer=len(array_assignment))
 
             # Start a process, hand over v, a queue q and the array to be tested array_assignment
             cmd = sys.executable
@@ -98,7 +126,7 @@ class TestArray(unittest.TestCase):
             for i in range(len(array)):
                 self.assertEqual(array[i], array_assignment[i])
 
-            #put True into the queue q.put(True)
+            # put True into the queue q.put(True)
             parent_queue.put(True)
 
             puids.append(proc.p_uid)

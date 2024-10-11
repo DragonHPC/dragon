@@ -7,7 +7,7 @@ import dragon.infrastructure.messages as dmsg
 
 import logging
 
-LOG = logging.getLogger('pool:')
+LOG = logging.getLogger('GS.pool:')
 
 
 class PoolContext:

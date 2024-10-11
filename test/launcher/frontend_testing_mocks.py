@@ -83,6 +83,7 @@ def open_backend_comms(frontend_sdesc: str,
 
         be_nodes = {}
         log.info(f'net_conf in open_backend_comms: {net_conf}')
+        net_conf_key_mapping = list(net_conf.keys())
         for idx, node in net_conf.items():
 
             if node.state == NodeDescriptor.State.ACTIVE:
@@ -102,6 +103,8 @@ def open_backend_comms(frontend_sdesc: str,
                                           'ip_addrs': node.ip_addrs,
                                           'state': node.state,
                                           'node_index': idx,
+                                          'net_conf_key_mapping': net_conf_key_mapping,
+                                          'net_conf_key': str(idx),
                                           'is_primary': node.is_primary}
                 log.debug(f'constructed backend node: {be_nodes[node.host_id]}')
 
@@ -166,7 +169,8 @@ def send_shchannelsup(nodes, mpool):
         ch_up_msg = dmsg.SHChannelsUp(tag=next_tag(),
                                       node_desc=node_desc,
                                       gs_cd=gs_cd,
-                                      idx=node['node_index'])
+                                      idx=node['node_index'],
+                                      net_conf_key=node['net_conf_key'])
         log.info(f'construct SHChannelsUp: {ch_up_msg}')
         node['conn'].send(ch_up_msg.serialize())
         log.info(f'sent SHChannelsUp for {node["node_index"]}')

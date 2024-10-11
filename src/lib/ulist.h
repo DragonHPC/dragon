@@ -17,28 +17,28 @@ typedef struct dragonList_st {
 } dragonList_t;
 
 dragonError_t
-dragon_ulist_create(dragonList_t * dlist);
+dragon_ulist_create(dragonList_t **dlist_in);
 
 dragonError_t
-dragon_ulist_destroy(dragonList_t * dlist);
+dragon_ulist_destroy(dragonList_t **dlist_in);
 
 dragonError_t
-dragon_ulist_additem(dragonList_t * dlist, const void * item);
+dragon_ulist_additem(dragonList_t **dlist_in, const void *item);
 
 dragonError_t
-dragon_ulist_delitem(dragonList_t * dlist, const void * item);
+dragon_ulist_delitem(dragonList_t **dlist_in, const void *item);
 
 dragonError_t
-dragon_ulist_get_current_advance(dragonList_t * dlist, void ** item);
+dragon_ulist_get_current_advance(dragonList_t **dlist_in, void **item);
 
 dragonError_t
-dragon_ulist_get_by_idx(dragonList_t * dlist, int idx, void ** item);
+dragon_ulist_get_by_idx(dragonList_t **dlist_in, int idx, void **item);
 
 bool
-dragon_ulist_contains(dragonList_t * dlist, const void * item);
+dragon_ulist_contains(dragonList_t **dlist_in, const void *item);
 
 size_t
-dragon_ulist_get_size(dragonList_t * dlist);
+dragon_ulist_get_size(dragonList_t **dlist_in);
 
 #ifdef __cplusplus
 }
