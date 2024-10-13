@@ -479,10 +479,12 @@ _create_map_data_shm(dragonMemoryPool_t * pool, const char * dfile, dragonMemory
         err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() data file");
     }
 
-    struct bitmask *mask = numa_allocate_nodemask();
-    numa_bitmask_setall(mask);
-    numa_interleave_memory(pool->local_dptr, attr->total_data_size, mask);
-    numa_free_nodemask(mask);
+    if (numa_available() != -1) {
+        struct bitmask *mask = numa_allocate_nodemask();
+        numa_bitmask_setall(mask);
+        numa_interleave_memory(pool->local_dptr, attr->total_data_size, mask);
+        numa_free_nodemask(mask);
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
