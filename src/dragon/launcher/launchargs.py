@@ -72,6 +72,12 @@ WLM_HELP = f"""Specify what workload manager is used. Currently supported WLMs a
 PORT_HELP = '''PORT specifies the port to be used for multinode communication. By
 default, 7575 is used.'''
 
+OVERLAY_PORT_HELP = '''OVERLAY_PORT specifies the port to be used for the dragon overlay network communication. By
+default, 6565 is used.'''
+
+FRONTEND_PORT_HELP = '''FRONTEND_PORT specifies the port to be used by the Overlay transport agent running on the
+Dragon frontend node. By default, 6566 is used.'''
+
 LOGGING_HELP = '''The Dragon runtime enables the output of diagnostic log messages to multiple
 different output devices. Diagnotic log messages can be seen on the Dragon stderr
 console, via a combined 'dragon_*.log' file, or via individual log files created by
@@ -110,6 +116,16 @@ EXHAUST_HELP = '''When used with --resilient execution, the Dragon runtime will 
 the user application in the event of any number of localized hardware errors until there are 0
 nodes available for computation. If not used, the default behavior of executing until the number
 of nodes available is less than those requested via the --nodes argument'''
+
+TELEMETRY_HELP = f''' The Dragon runtime enables native and user defined telemetry. By default, the Dragon runtime disables all telemetry. Passing one of 1, 2, 3, 4, or 5 to this option, the Dragon runtime will enable the specified telemetry verbosity.'''
+
+
+def strtobool(value: str) -> bool:
+  value = value.lower()
+  if value in ("y", "yes", "on", "1", "true", "t"):
+    return True
+  return False
+
 
 class SplitArgsAtComma(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -182,7 +198,8 @@ def get_parser():
                         type=str, help=NETWORK_CONFIG_HELP)
     parser.add_argument('--wlm', '-w', metavar='WORKLOAD_MANAGER', type=WLM.from_str, choices=list(WLM), help=WLM_HELP)
     parser.add_argument('-p', '--port', metavar='PORT', type=valid_port_int, help=PORT_HELP)
-
+    parser.add_argument('--overlay-port', metavar='OVERLAY_PORT', type=valid_port_int, help=OVERLAY_PORT_HELP)
+    parser.add_argument('--frontend-port', metavar='FRONTEND_PORT', type=valid_port_int, help=FRONTEND_PORT_HELP)
     parser.add_argument('--transport', '-t', metavar='TRANSPORT_AGENT',
                         type=TransportAgentOptions.from_str, choices=list(TransportAgentOptions), help=TRANSPORT_HELP)
 
@@ -201,6 +218,10 @@ def get_parser():
                         type=non_negative_int, help=IDLE_HELP)
     parser.add_argument('-e', '--exhaust-resources', action='store_true', help=EXHAUST_HELP)
 
+    parser.add_argument('-T', '--telemetry-level', metavar='TELEM_LEVEL',
+                        dest='telemetry_level', type=non_negative_int, default=0, help=TELEMETRY_HELP)
+
+
 
     parser.add_argument('--no-label', action='store_true', default=True)
     parser.add_argument('--basic-label', action='store_true')
@@ -214,6 +235,8 @@ def get_parser():
 
     parser.set_defaults(
         transport=TransportAgentOptions.TCP,
+        single_node_override=strtobool(os.environ.get("DRAGON_SINGLE_NODE_OVERRIDE", "False")),
+        multi_node_override=strtobool(os.environ.get("DRAGON_MULTI_NODE_OVERRIDE", "False"))
     )
 
     return parser

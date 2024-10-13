@@ -83,6 +83,7 @@ class MessageTypes(enum.Enum):
     SH_PROCESS_CREATE_RESPONSE = enum.auto() #:
     SH_MULTI_PROCESS_CREATE = enum.auto() #:
     SH_MULTI_PROCESS_CREATE_RESPONSE = enum.auto() #:
+    SH_MULTI_PROCESS_KILL = enum.auto() #:
     SH_PROCESS_KILL = enum.auto() #:
     SH_PROCESS_EXIT = enum.auto() #:
     SH_CHANNEL_CREATE = enum.auto() #:
@@ -151,12 +152,15 @@ class MessageTypes(enum.Enum):
     LA_DUMP_STATE = enum.auto() #:
     BE_NODE_IDX_SH = enum.auto() #:
     LA_CHANNELS_INFO = enum.auto() #:
+    SH_MULTI_PROCESS_KILL_RESPONSE = enum.auto() #:
     SH_PROCESS_KILL_RESPONSE = enum.auto() #:
     BREAKPOINT = enum.auto() #:
     GS_PROCESS_JOIN_LIST = enum.auto() #:
     GS_PROCESS_JOIN_LIST_RESPONSE = enum.auto() #:
     GS_NODE_QUERY = enum.auto() #:
     GS_NODE_QUERY_RESPONSE = enum.auto() #:
+    GS_NODE_QUERY_ALL = enum.auto() #:
+    GS_NODE_QUERY_ALL_RESPONSE = enum.auto() #:
     LOGGING_MSG = enum.auto() #:
     LOGGING_MSG_LIST = enum.auto() #:
     LOG_FLUSHED = enum.auto() #:
@@ -193,6 +197,8 @@ class MessageTypes(enum.Enum):
     GS_GROUP_CREATE_ADD_TO_RESPONSE = enum.auto() #:
     GS_GROUP_DESTROY_REMOVE_FROM = enum.auto() #:
     GS_GROUP_DESTROY_REMOVE_FROM_RESPONSE = enum.auto() #:
+    GS_GROUP_REBOOT_RUNTIME = enum.auto() #:
+    GS_GROUP_REBOOT_RUNTIME_RESPONSE = enum.auto() #:
     TA_UPDATE_NODES = enum.auto() #:
     RUNTIME_DESC = enum.auto() #:
     USER_HALT_OOB = enum.auto() #:
@@ -232,6 +238,23 @@ class MessageTypes(enum.Enum):
     DD_CONNECT_TO_MANAGER_RESPONSE = enum.auto() #:
     DD_GET_RANDOM_MANAGER = enum.auto() #:
     DD_GET_RANDOM_MANAGER_RESPONSE = enum.auto() #:
+    DD_MANAGER_STATS = enum.auto() #:
+    DD_MANAGER_STATS_RESPONSE = enum.auto() #:
+    DD_MANAGER_GET_NEWEST_CHKPT_ID = enum.auto() #:
+    DD_MANAGER_GET_NEWEST_CHKPT_ID_RESPONSE = enum.auto() #:
+    PG_REGISTER_CLIENT = enum.auto() #:
+    PG_UNREGISTER_CLIENT = enum.auto() #:
+    PG_CLIENT_RESPONSE = enum.auto() #:
+    PG_SET_PROPERTIES = enum.auto() #:
+    PG_STOP_RESTART = enum.auto() #:
+    PG_ADD_PROCESS_TEMPLATES = enum.auto() #:
+    PG_START = enum.auto() #:
+    PG_JOIN = enum.auto() #:
+    PG_SIGNAL = enum.auto() #:
+    PG_STATE = enum.auto() #:
+    PG_PUIDS = enum.auto() #:
+    PG_STOP = enum.auto() #:
+    PG_CLOSE = enum.auto() #:
 
 
 @enum.unique
@@ -245,6 +268,8 @@ PIPE = subprocess.PIPE
 STDOUT = subprocess.STDOUT
 DEVNULL = subprocess.DEVNULL
 
+# 500 years, we'll all be dead
+NO_TIMEOUT_VALUE = 15768000000
 
 class AbnormalTerminationError(Exception):
 
@@ -926,15 +951,28 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
 
     _tc = MessageTypes.DD_REGISTER_CLIENT_RESPONSE
 
-    def __init__(self, tag, ref, err, clientID, numManagers, errInfo=''):
+    def __init__(self, tag, ref, err, clientID, numManagers, managerID, managerNodes, timeout, errInfo=''):
         super().__init__(tag, ref, err, errInfo)
         self._clientID = clientID
         self._num_managers = numManagers
+        self._managerID = managerID
+        self._managerNodes = managerNodes
+        # The timeout conversion is needed for capnproto.
+        if timeout is None:
+            timeout = NO_TIMEOUT_VALUE
+        self._timeout = timeout
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['clientID'] = self._clientID
         rv['numManagers'] = self._num_managers
+        rv['managerID'] = self._managerID
+        rv['managerNodes'] = self._managerNodes
+        if self._timeout == NO_TIMEOUT_VALUE:
+            rv['timeout'] = None
+        else:
+            rv['timeout'] = self._timeout
+
         return rv
 
     def builder(self):
@@ -942,6 +980,11 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
         client_msg.numManagers = self._num_managers
+        client_msg.managerID = self._managerID
+        msg_mgr_nodes = client_msg.init('managerNodes', len(self._managerNodes))
+        for i in range(len(self._managerNodes)):
+            msg_mgr_nodes[i] = self._managerNodes[i]
+        client_msg.timeout = self._timeout
         return cap_msg
 
     @property
@@ -951,6 +994,18 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
     @property
     def numManagers(self):
         return self._num_managers
+
+    @property
+    def managerID(self):
+        return self._managerID
+
+    @property
+    def managerNodes(self):
+        return self._managerNodes
+
+    @property
+    def timeout(self):
+        return self._timeout
 
 class DDConnectToManager(CapNProtoMsg):
 
@@ -1046,15 +1101,17 @@ class DDRegisterManager(CapNProtoMsg):
 
     _tc = MessageTypes.DD_REGISTER_MANAGER
 
-    def __init__(self, tag, mainFLI, respFLI):
+    def __init__(self, tag, mainFLI, respFLI, hostID):
         super().__init__(tag)
         self._mainFLI = mainFLI
         self._respFLI = respFLI
+        self._hostID = hostID
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['mainFLI'] = self._mainFLI
         rv['respFLI'] = self._respFLI
+        rv['hostID'] = self._hostID
         return rv
 
     def builder(self):
@@ -1062,6 +1119,7 @@ class DDRegisterManager(CapNProtoMsg):
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.mainFLI = self._mainFLI
         client_msg.respFLI = self._respFLI
+        client_msg.hostID = self._hostID
         return cap_msg
 
     @property
@@ -1072,18 +1130,24 @@ class DDRegisterManager(CapNProtoMsg):
     def respFLI(self):
         return self._respFLI
 
+    @property
+    def hostID(self):
+        return self._hostID
+
 class DDRegisterManagerResponse(CapNProtoResponseMsg):
 
     _tc = MessageTypes.DD_REGISTER_MANAGER_RESPONSE
 
-    def __init__(self, tag, ref, err, managerID, errInfo='', managers=[]):
+    def __init__(self, tag, ref, err, managerID, errInfo='', managers=[], managerNodes=[]):
         super().__init__(tag, ref, err, errInfo)
         self._managers = managers
+        self._managerNodes = managerNodes
         self._managerID = managerID
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['managers'] = self._managers
+        rv['managerNodes'] = self._managerNodes
         rv['managerID'] = self._managerID
         return rv
 
@@ -1092,8 +1156,10 @@ class DDRegisterManagerResponse(CapNProtoResponseMsg):
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.managerID = self._managerID
         msg_mgrs = client_msg.init('managers', len(self._managers))
+        msg_mgr_nodes = client_msg.init('managerNodes', len(self._managerNodes))
         for i in range(len(self._managers)):
             msg_mgrs[i] = self._managers[i]
+            msg_mgr_nodes[i] = self._managerNodes[i]
         return cap_msg
 
     @property
@@ -1103,6 +1169,10 @@ class DDRegisterManagerResponse(CapNProtoResponseMsg):
     @property
     def managers(self):
         return self._managers
+
+    @property
+    def managerNodes(self):
+        return self._managerNodes
 
 class DDRegisterClientID(CapNProtoMsg):
 
@@ -1182,24 +1252,38 @@ class DDPut(CapNProtoMsg):
 
     _tc = MessageTypes.DD_PUT
 
-    def __init__(self, tag, clientID):
+    def __init__(self, tag, clientID, chkptID=0, persist=True):
         super().__init__(tag)
         self._clientID = clientID
+        self._chkptID = chkptID
+        self._persist = persist
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['clientID'] = self._clientID
+        rv['chkptID'] = self._chkptID
+        rv['persist'] = self._persist
         return rv
 
     def builder(self):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
+        client_msg.chkptID = self._chkptID
+        client_msg.persist = self._persist
         return cap_msg
 
     @property
     def clientID(self):
         return self._clientID
+
+    @property
+    def chkptID(self):
+        return self._chkptID
+
+    @property
+    def persist(self):
+        return self._persist
 
 class DDPutResponse(CapNProtoResponseMsg):
 
@@ -1212,24 +1296,31 @@ class DDGet(CapNProtoMsg):
 
     _tc = MessageTypes.DD_GET
 
-    def __init__(self, tag, clientID):
+    def __init__(self, tag, clientID, chkptID=0):
         super().__init__(tag)
         self._clientID = clientID
+        self._chkptID = chkptID
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['clientID'] = self._clientID
+        rv['chkptID'] = self.chkptID
         return rv
 
     def builder(self):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
+        client_msg.chkptID = self._chkptID
         return cap_msg
 
     @property
     def clientID(self):
         return self._clientID
+
+    @property
+    def chkptID(self):
+        return self._chkptID
 
 class DDGetResponse(CapNProtoResponseMsg):
 
@@ -1242,24 +1333,31 @@ class DDPop(CapNProtoMsg):
 
     _tc = MessageTypes.DD_POP
 
-    def __init__(self, tag, clientID):
+    def __init__(self, tag, clientID, chkptID=0):
         super().__init__(tag)
         self._clientID = clientID
+        self._chkptID = chkptID
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['clientID'] = self._clientID
+        rv['chkptID'] = self._chkptID
         return rv
 
     def builder(self):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
+        client_msg.chkptID = self._chkptID
         return cap_msg
 
     @property
     def clientID(self):
         return self._clientID
+
+    @property
+    def chkptID(self):
+        return self._chkptID
 
 class DDPopResponse(CapNProtoResponseMsg):
 
@@ -1272,24 +1370,31 @@ class DDContains(CapNProtoMsg):
 
     _tc = MessageTypes.DD_CONTAINS
 
-    def __init__(self, tag, clientID):
+    def __init__(self, tag, clientID, chkptID=0):
         super().__init__(tag)
         self._clientID = clientID
+        self._chkptID = chkptID
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['clientID'] = self._clientID
+        rv['chkptID'] = self._chkptID
         return rv
 
     def builder(self):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
+        client_msg.chkptID = self._chkptID
         return cap_msg
 
     @property
     def clientID(self):
         return self._clientID
+
+    @property
+    def chkptID(self):
+        return self._chkptID
 
 class DDContainsResponse(CapNProtoResponseMsg):
 
@@ -1302,24 +1407,38 @@ class DDGetLength(CapNProtoMsg):
 
     _tc = MessageTypes.DD_GET_LENGTH
 
-    def __init__(self, tag, clientID):
+    def __init__(self, tag, clientID, respFLI, chkptID=0):
         super().__init__(tag)
         self._clientID = clientID
+        self._respFLI = respFLI
+        self._chkptID = chkptID
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['clientID'] = self._clientID
+        rv['respFLI'] = self._respFLI
+        rv['chkptID'] = self._chkptID
         return rv
 
     def builder(self):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
+        client_msg.respFLI = self._respFLI
+        client_msg.chkptID = self._chkptID
         return cap_msg
 
     @property
     def clientID(self):
         return self._clientID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+    @property
+    def chkptID(self):
+        return self._chkptID
 
 class DDGetLengthResponse(CapNProtoResponseMsg):
 
@@ -1348,24 +1467,38 @@ class DDClear(CapNProtoMsg):
 
     _tc = MessageTypes.DD_CLEAR
 
-    def __init__(self, tag, clientID):
+    def __init__(self, tag, clientID, chkptID, respFLI):
         super().__init__(tag)
         self._clientID = clientID
+        self._chkptID = chkptID
+        self._respFLI = respFLI
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['clientID'] = self._clientID
+        rv['chkptID'] = self._chkptID
+        rv['respFLI'] = self._respFLI
         return rv
 
     def builder(self):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
+        client_msg.chkptID = self._chkptID
+        client_msg.respFLI = self._respFLI
         return cap_msg
 
     @property
     def clientID(self):
         return self._clientID
+
+    @property
+    def chkptID(self):
+        return self._chkptID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
 
 class DDClearResponse(CapNProtoResponseMsg):
 
@@ -1374,28 +1507,134 @@ class DDClearResponse(CapNProtoResponseMsg):
     def __init__(self, tag, ref, err, errInfo=''):
         super().__init__(tag, ref, err, errInfo)
 
+class DDManagerStats(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_MANAGER_STATS
+
+    def __init__(self, tag, respFLI):
+        super().__init__(tag)
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+class DDManagerStatsResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_MANAGER_STATS_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo='', data=''):
+        super().__init__(tag, ref, err, errInfo)
+        self._data = data
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['data'] = self._data
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.data = self._data
+        return cap_msg
+
+    @property
+    def data(self):
+        return self._data
+
+class DDManagerGetNewestChkptID(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_MANAGER_GET_NEWEST_CHKPT_ID
+
+    def __init__(self, tag, respFLI):
+        super().__init__(tag)
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['respFLI'] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+class DDManagerGetNewestChkptIDResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_MANAGER_GET_NEWEST_CHKPT_ID_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo='', managerID=0, chkptID=0):
+        super().__init__(tag, ref, err, errInfo)
+        self._managerID = managerID
+        self._chkptID = chkptID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['managerID'] = self._managerID
+        rv['chkptID'] = self._chkptID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.chkptID = self._chkptID
+        client_msg.managerID = self._managerID
+        return cap_msg
+
+    @property
+    def chkptID(self):
+        return self._chkptID
+
+    @property
+    def managerID(self):
+        return self._managerID
+
 class DDGetIterator(CapNProtoMsg):
 
     _tc = MessageTypes.DD_GET_ITERATOR
 
-    def __init__(self, tag, clientID):
+    def __init__(self, tag, clientID, chkptID=0):
         super().__init__(tag)
         self._clientID = clientID
+        self._chkptID = chkptID
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['clientID'] = self._clientID
+        rv['chkptID'] = self._chkptID
         return rv
 
     def builder(self):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
+        client_msg.chkptID = self._chkptID
         return cap_msg
 
     @property
     def clientID(self):
         return self._clientID
+
+    @property
+    def chkptID(self):
+        return self._chkptID
 
 class DDGetIteratorResponse(CapNProtoResponseMsg):
 
@@ -1461,24 +1700,31 @@ class DDKeys(CapNProtoMsg):
 
     _tc = MessageTypes.DD_KEYS
 
-    def __init__(self, tag, clientID):
+    def __init__(self, tag, clientID, chkptID=0):
         super().__init__(tag)
         self._clientID = clientID
+        self._chkptID = chkptID
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['clientID'] = self._clientID
+        rv['chkptID'] = self._chkptID
         return rv
 
     def builder(self):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
+        client_msg.chkptID = self._chkptID
         return cap_msg
 
     @property
     def clientID(self):
         return self._clientID
+
+    @property
+    def chkptID(self):
+        return self._chkptID
 
 class DDKeysResponse(CapNProtoResponseMsg):
 
@@ -1557,7 +1803,8 @@ class GSProcessCreate(InfraMsg):
     def __init__(self, tag, p_uid, r_c_uid, exe, args, env=None, rundir='',
                  user_name='', options=None, stdin=None, stdout=None, stderr=None,
                  group=None, user=None, umask=- 1, pipesize=None, pmi_required=False,
-                 _pmi_info=None, layout=None, policy=None, _tc=None):
+                 _pmi_info=None, layout=None, policy=None, restart=False, resilient=False, head_proc=False,
+                 _tc=None):
 
         # Coerce args to a list of strings
         args = list(to_str_iter(args))
@@ -1585,6 +1832,9 @@ class GSProcessCreate(InfraMsg):
         self.user = user
         self.umask = umask
         self.pipesize = pipesize
+        self.head_proc = head_proc
+        self.restart = restart
+        self.resilient = resilient
 
         self.pmi_required = pmi_required
 
@@ -1645,10 +1895,13 @@ class GSProcessCreate(InfraMsg):
         rv['user'] = self.user
         rv['umask'] = self.umask
         rv['pipesize'] = self.pipesize
+        rv['head_proc'] = self.head_proc
         rv['pmi_required'] = self.pmi_required
         rv['_pmi_info'] = None if self._pmi_info is None else asdict(self._pmi_info)
         rv['layout'] = None if self.layout is None else asdict(self.layout)
         rv['policy'] = None if self.policy is None else asdict(self.policy)
+        rv['restart'] = self.restart
+        rv['resilient'] = self.resilient
 
         return rv
 
@@ -1842,19 +2095,21 @@ class GSProcessKill(InfraMsg):
 
     _tc = MessageTypes.GS_PROCESS_KILL
 
-    def __init__(self, tag, p_uid, r_c_uid, sig, t_p_uid=None, user_name='', _tc=None):
+    def __init__(self, tag, p_uid, r_c_uid, sig, t_p_uid=None, hide_stderr=False, user_name='', _tc=None):
         super().__init__(tag)
         self.p_uid = int(p_uid)
         self.r_c_uid = int(r_c_uid)
         self.t_p_uid = t_p_uid
         self.sig = int(sig)
         self.user_name = user_name
+        self.hide_stderr = hide_stderr
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['p_uid'] = self.p_uid
         rv['r_c_uid'] = self.r_c_uid
         rv['sig'] = self.sig
+        rv['hide_stderr'] = self.hide_stderr
 
         if self.t_p_uid is not None:
             rv['t_p_uid'] = self.t_p_uid
@@ -1974,7 +2229,7 @@ class GSProcessJoinResponse(InfraMsg):
         elif self.Errors.UNKNOWN == self.err:
             msg += f' unknown: {self.err_info}'
         else:
-            msg += f' timeout'
+            msg += ' timeout'
 
         return msg
 
@@ -2576,11 +2831,12 @@ class GSGroupKill(InfraMsg):
 
     _tc = MessageTypes.GS_GROUP_KILL
 
-    def __init__(self, tag, p_uid, r_c_uid, sig, g_uid=None, user_name='', _tc=None):
+    def __init__(self, tag, p_uid, r_c_uid, sig, g_uid=None, user_name='', hide_stderr=False, _tc=None):
         super().__init__(tag)
         self.p_uid = p_uid
         self.r_c_uid = int(r_c_uid)
         self.sig = int(sig)
+        self.hide_stderr = hide_stderr
         self.g_uid = g_uid
         self.user_name = user_name
 
@@ -2589,6 +2845,7 @@ class GSGroupKill(InfraMsg):
         rv['p_uid'] = self.p_uid
         rv['r_c_uid'] = self.r_c_uid
         rv['sig'] = self.sig
+        rv['hide_stderr'] = self.hide_stderr
 
         if self.g_uid is not None:
             rv['g_uid'] = self.g_uid
@@ -2718,6 +2975,54 @@ class GSGroupDestroyResponse(InfraMsg):
             rv['err_info'] = self.err_info
         if self.Errors.SUCCESS == self.err:
             rv['desc'] = None if self.desc is None else self.desc.get_sdict()
+
+        return rv
+
+
+class GSGroupRebootRuntime(InfraMsg):
+    """
+            Refer to :ref:`definition<gsgroupdestroy>` and :ref:`Common Fields<cfs>` for a description of
+            the message structure.
+
+    """
+
+    _tc = MessageTypes.GS_GROUP_REBOOT_RUNTIME
+
+    def __init__(self, tag, h_uid, r_c_uid, _tc=None):
+        super().__init__(tag)
+        self.r_c_uid = r_c_uid
+        self.h_uid = h_uid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['h_uid'] = self.h_uid
+        rv['r_c_uid'] = self.r_c_uid
+
+        return rv
+
+
+class GSGroupRebootRuntimeResponse(InfraMsg):
+    """
+            Refer to :ref:`definition<gsgroupdestroyresponse>` and :ref:`Common Fields<cfs>` for a
+            description of the message structure.
+
+    """
+
+    _tc = MessageTypes.GS_GROUP_REBOOT_RUNTIME_RESPONSE
+
+    @enum.unique
+    class Errors(enum.IntEnum):
+        SUCCESS = 0  #:
+        UNKNOWN = 1  #:
+        PENDING = 2  #:
+
+    def __init__(self, tag, ref, err, err_info='', desc=None, _tc=None):
+        super().__init__(tag, ref, err)
+        self.err_info = err_info
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['err_info'] = self.err_info
 
         return rv
 
@@ -3776,6 +4081,80 @@ class GSNodeQueryResponse(InfraMsg):
         return rv
 
 
+class GSNodeQueryAll(InfraMsg):
+    """
+            Refer to :ref:`definition<gsnodequeryall>` and :ref:`Common Fields<cfs>` for a description of
+            the message structure.
+
+    """
+
+    _tc = MessageTypes.GS_NODE_QUERY_ALL
+
+    def __init__(self, tag, p_uid:int, r_c_uid:int, _tc=None):
+
+        super().__init__(tag)
+        self.p_uid = int(p_uid)
+        self.r_c_uid = int(r_c_uid)
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        rv['r_c_uid'] = self.r_c_uid
+
+        return rv
+
+
+class GSNodeQueryAllResponse(InfraMsg):
+    """
+            Refer to :ref:`definition<gsnodequeryallresponse>` and :ref:`Common Fields<cfs>` for a
+            description of the message structure.
+
+    """
+
+    _tc = MessageTypes.GS_NODE_QUERY_ALL_RESPONSE
+
+    @enum.unique
+    class Errors(enum.Enum):
+        SUCCESS = 0  #:
+        UNKNOWN = 1  #:
+
+    def __init__(self, tag, ref, err, descriptors : Optional[List[Union[dict, NodeDescriptor]]]=None, err_info='', _tc=None):
+        super().__init__(tag, ref, err)
+
+        self.descriptors = []
+        self.err_info = err_info
+
+        if not descriptors:
+            descriptors = []
+
+        if self.Errors.SUCCESS == self.err:
+            for descriptor in descriptors:
+                if descriptor is None:
+                    # No idea why we have an empty descriptor, skip it.
+                    pass
+                elif isinstance(descriptor, dict):
+                    self.descriptors.append(NodeDescriptor.from_sdict(descriptor))
+                elif isinstance(descriptor, NodeDescriptor):
+                    self.descriptors.append(descriptor)
+                else:
+                    raise ValueError(f'GS unsupported descriptor value {descriptor=}')
+        elif self.Errors.UNKNOWN == self.err:
+            self.err_info = err_info
+        else:
+            raise NotImplementedError('open enum')
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        if self.Errors.SUCCESS == self.err:
+            rv['descriptors'] = [desc.get_sdict() for desc in self.descriptors]
+        elif self.Errors.UNKNOWN == self.err:
+            rv['err_info'] = self.err_info
+        else:
+            raise NotImplementedError('open enum')
+
+        return rv
+
+
 class GSNodeQueryTotalCPUCount(InfraMsg):
     """
     *type enum*
@@ -4283,12 +4662,13 @@ class SHProcessKill(InfraMsg):
 
     _tc = MessageTypes.SH_PROCESS_KILL
 
-    def __init__(self, tag, p_uid, r_c_uid, t_p_uid, sig, _tc=None):
+    def __init__(self, tag, p_uid, r_c_uid, t_p_uid, sig, hide_stderr=False, _tc=None):
         super().__init__(tag)
         self.p_uid = int(p_uid)
         self.r_c_uid = int(r_c_uid)
         self.t_p_uid = t_p_uid
         self.sig = sig
+        self.hide_stderr = hide_stderr
 
     def get_sdict(self):
         rv = super().get_sdict()
@@ -4296,6 +4676,7 @@ class SHProcessKill(InfraMsg):
         rv['r_c_uid'] = self.r_c_uid
         rv['t_p_uid'] = self.t_p_uid
         rv['sig'] = self.sig
+        rv['hide_stderr'] = self.hide_stderr
         return rv
 
 
@@ -4319,6 +4700,79 @@ class SHProcessKillResponse(InfraMsg):
         return rv
 
 
+class SHMultiProcessKill(InfraMsg):
+
+    _td = MessageTypes.SH_MULTI_PROCESS_KILL
+
+    def __init__(self, tag, r_c_uid, procs : List[Union[Dict, SHProcessKill]], _tc=None):
+        super().__init__(tag)
+        self.r_c_uid = int(r_c_uid)
+
+        self.procs = []
+        for proc in procs:
+            if isinstance(proc, SHProcessKill):
+                self.procs.append(proc)
+            elif isinstance(proc, dict):
+                self.procs.append(SHProcessKill.from_sdict(proc))
+            else:
+                raise ValueError(f'proc is not a supported type %s', type(proc))
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['r_c_uid'] = self.r_c_uid
+        rv["procs"] = [proc.get_sdict() for proc in self.procs]
+        return rv
+
+
+class SHMultiProcessKillResponse(InfraMsg):
+
+    _tc = MessageTypes.SH_MULTI_PROCESS_KILL_RESPONSE
+
+    @enum.unique
+    class Errors(enum.Enum):
+        SUCCESS = 0
+        FAIL = 1
+
+    def __init__(
+        self,
+        tag,
+        ref,
+        err,
+        err_info="",
+        exit_code=0,
+        responses: List[Union[Dict, SHProcessKillResponse]] = None,
+        failed: bool = False,
+        _tc=None,
+    ):
+        super().__init__(tag, ref, err)
+        self.err_info = err_info
+        self.exit_code = exit_code
+
+        self.failed = failed
+        self.responses = []
+        for response in responses:
+            if isinstance(response, SHProcessKillResponse):
+                self.responses.append(response)
+            elif isinstance(response, dict):
+                self.responses.append(SHProcessKillResponse.from_sdict(response))
+            else:
+                raise ValueError(f'response is not a supported type %s', type(response))
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['exit_code'] = self.exit_code
+
+        if self.err == self.Errors.SUCCESS:
+            rv['failed'] = self.failed
+            rv["responses"] = [response.get_sdict() for response in self.responses]
+        elif self.err == self.Errors.FAIL:
+            rv['err_info'] = self.err_info
+        else:
+            raise NotImplementedError('close case')
+
+        return rv
+
+
 class SHProcessExit(InfraMsg):
     """
         Refer to :ref:`definition<shprocessexit>` and to
@@ -4333,15 +4787,17 @@ class SHProcessExit(InfraMsg):
         SUCCESS = 0  #:
         UNKNOWN = 1  #:
 
-    def __init__(self, tag, p_uid, exit_code=0, _tc=None):
+    def __init__(self, tag, p_uid, creation_msg_tag=None, exit_code=0, _tc=None):
         super().__init__(tag)
         self.p_uid = int(p_uid)
         self.exit_code = exit_code
+        self.creation_msg_tag = creation_msg_tag
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv['exit_code'] = self.exit_code
         rv['p_uid'] = self.p_uid
+        rv['creation_msg_tag'] = self.creation_msg_tag
         return rv
 
 
@@ -4881,10 +5337,11 @@ class SHChannelsUp(InfraMsg):
 
     _tc = MessageTypes.SH_CHANNELS_UP
 
-    def __init__(self, tag, node_desc, gs_cd, idx=0, _tc=None):
+    def __init__(self, tag, node_desc, gs_cd, idx=0, net_conf_key=0, _tc=None):
         super().__init__(tag)
 
         self.idx = idx
+        self.net_conf_key = net_conf_key
         if isinstance(node_desc, dict):
             self.node_desc = NodeDescriptor.from_sdict(node_desc)
         elif isinstance(node_desc, NodeDescriptor):
@@ -4899,6 +5356,7 @@ class SHChannelsUp(InfraMsg):
         rv['node_desc'] = self.node_desc.get_sdict()
         rv['gs_cd'] = self.gs_cd
         rv['idx'] = self.idx
+        rv['net_conf_key'] = self.net_conf_key
         return rv
 
 
@@ -5155,13 +5613,14 @@ class BENodeIdxSH(InfraMsg):
     _tc = MessageTypes.BE_NODE_IDX_SH
 
     def __init__(self, tag, node_idx, host_name=None, ip_addrs=None,
-                 primary=None, logger_sdesc=None, _tc=None):
+                 primary=None, logger_sdesc=None, net_conf_key=None, _tc=None):
         super().__init__(tag)
         self.node_idx = node_idx
         self.host_name = host_name
         self.ip_addrs = ip_addrs
         self.primary = primary
         self.logger_sdesc = logger_sdesc
+        self.net_conf_key = net_conf_key
 
     @property
     def logger_sdesc(self):
@@ -5177,6 +5636,7 @@ class BENodeIdxSH(InfraMsg):
     def get_sdict(self):
         rv = super().get_sdict()
         rv['node_idx'] = self.node_idx
+        rv['net_conf_key'] = self.net_conf_key
         rv['host_name'] = self.host_name
         rv['ip_addrs'] = self.ip_addrs
         rv['primary'] = self.primary
@@ -5426,15 +5886,16 @@ class LAChannelsInfo(InfraMsg):
 
     _tc = MessageTypes.LA_CHANNELS_INFO
 
-    def __init__(self, tag, nodes_desc, gs_cd, num_gw_channels, port=dfacts.DEFAULT_TRANSPORT_PORT,
-                 transport=str(dfacts.TransportAgentOptions.TCP), _tc=None):
+    def __init__(self, tag, nodes_desc, gs_cd, num_gw_channels, port=None,
+                 transport=str(dfacts.TransportAgentOptions.TCP), _tc=None,
+                 *, fe_ext_ip_addr=None):
         super().__init__(tag)
 
         self.gs_cd = gs_cd
         self.transport = dfacts.TransportAgentOptions.from_str(transport)
         self.num_gw_channels = num_gw_channels
         try:
-            self.fe_ext_ip_addr = get_external_ip_addr()
+            self.fe_ext_ip_addr = fe_ext_ip_addr if fe_ext_ip_addr else get_external_ip_addr()
         except OSError:
             self.fe_ext_ip_addr = None
 
@@ -5669,6 +6130,7 @@ class FENodeIdxBE(InfraMsg):
     def __init__(self,
                  tag,
                  node_index,
+                 net_conf_key_mapping = None,
                  forward: Optional[dict['str', Union[NodeDescriptor, dict]]] = None,
                  send_desc: Optional[Union[B64, str]] = None,
                  _tc=None):
@@ -5677,6 +6139,9 @@ class FENodeIdxBE(InfraMsg):
         self.node_index = int(node_index)
         self.forward = forward
         self.send_desc = send_desc
+        if net_conf_key_mapping is None:
+            net_conf_key_mapping = []
+        self.net_conf_key_mapping = net_conf_key_mapping
 
     @property
     def forward(self):
@@ -5715,6 +6180,7 @@ class FENodeIdxBE(InfraMsg):
         except AttributeError:
             rv['forward'] = self.forward
         rv['send_desc'] = str(self.send_desc)
+        rv['net_conf_key_mapping'] = self.net_conf_key_mapping
         return rv
 
 
@@ -5930,16 +6396,232 @@ class TAUpdateNodes(InfraMsg):
 
         return rv
 
+class PGRegisterClient(InfraMsg):
+    """
+            Refer to :ref:`definition<laexit>` and :ref:`Common Fields<cfs>` for a description of the
+            message structure.
+
+    """
+    _tc = MessageTypes.PG_REGISTER_CLIENT
+
+    def __init__(self, tag, p_uid, resp_cd, _tc=None):
+        super().__init__(tag)
+        self.resp_cd = resp_cd
+        self.p_uid = p_uid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['resp_cd'] = self.resp_cd
+        rv['p_uid'] = self.p_uid
+        return rv
+
+class PGUnregisterClient(InfraMsg):
+    """
+            Refer to :ref:`definition<laexit>` and :ref:`Common Fields<cfs>` for a description of the
+            message structure.
+
+    """
+    _tc = MessageTypes.PG_UNREGISTER_CLIENT
+
+    def __init__(self, tag, p_uid, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        return rv
+
+class PGClientResponse(InfraMsg):
+    """
+            Refer to :ref:`definition<laexit>` and :ref:`Common Fields<cfs>` for a description of the
+            message structure.
+
+    """
+    _tc = MessageTypes.PG_CLIENT_RESPONSE
+
+    def __init__(self, tag, src_tag, error=None, ex=None, payload=None, _tc=None):
+        super().__init__(tag)
+        self.src_tag = src_tag
+        self.error = error
+        self.ex = ex
+        self.payload = payload
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['src_tag'] = self.src_tag
+        rv['error'] = self.error
+        rv['ex'] = self.ex
+        rv['payload'] = self.payload
+        return rv
+
+class PGSetProperties(InfraMsg):
+
+    _tc = MessageTypes.PG_SET_PROPERTIES
+
+    def __init__(self, tag, p_uid, props, _tc=None):
+        super().__init__(tag)
+        self.props = props
+        self.p_uid = p_uid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['props'] = self.props
+        rv['p_uid'] = self.p_uid
+        return rv
+
+class PGStopRestart(InfraMsg):
+
+    _tc = MessageTypes.PG_STOP_RESTART
+
+    def __init__(self, tag, p_uid, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        return rv
+
+
+class PGAddProcessTemplates(InfraMsg):
+
+    _tc = MessageTypes.PG_ADD_PROCESS_TEMPLATES
+
+    def __init__(self, tag, p_uid, templates, _tc=None):
+        super().__init__(tag)
+        self.templates = templates
+        self.p_uid = p_uid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['templates'] = self.templates
+        rv['p_uid'] = self.p_uid
+        return rv
+
+class PGStart(InfraMsg):
+
+    _tc = MessageTypes.PG_START
+
+    def __init__(self, tag, p_uid, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        return rv
+
+class PGJoin(InfraMsg):
+
+    _tc = MessageTypes.PG_JOIN
+
+    def __init__(self, tag, p_uid, timeout, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+        self.timeout = timeout
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        rv['timeout'] = self.timeout
+        return rv
+
+
+class PGSignal(InfraMsg):
+
+    _tc = MessageTypes.PG_SIGNAL
+
+    def __init__(self, tag, p_uid, sig, hide_stderr, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+        self.sig = sig
+        self.hide_stderr = hide_stderr
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        rv['sig'] = self.sig
+        rv['hide_stderr'] = self.hide_stderr
+        return rv
+
+
+class PGState(InfraMsg):
+
+    _tc = MessageTypes.PG_STATE
+
+    def __init__(self, tag, p_uid, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        return rv
+
+
+class PGStop(InfraMsg):
+
+    _tc = MessageTypes.PG_STOP
+
+    def __init__(self, tag, p_uid, patience, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+        self.patience = patience
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        rv['patience'] = self.patience
+        return rv
+
+
+class PGPuids(InfraMsg):
+
+    _tc = MessageTypes.PG_PUIDS
+
+    def __init__(self, tag, p_uid, active=True, inactive=False, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+        self.active = active
+        self.inactive = inactive
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        rv['active'] = self.active
+        rv['inactive'] = self.inactive
+        return rv
+
+
+class PGClose(InfraMsg):
+
+    _tc = MessageTypes.PG_CLOSE
+
+    def __init__(self, tag, p_uid, patience, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+        self.patience = patience
+
+    def get_sdict(self):
+
+        rv = super().get_sdict()
+        rv['p_uid'] = self.p_uid
+        rv['patience'] = self.patience
+        return rv
+
 
 PREDETERMINED_CAPS = {'GS':'GS', 'SH':'SH', 'TA':'TA', 'BE':'BE', 'FE':'FE', 'LA':'LA', 'BF':'BF',
                       'FB':'FB', 'DD':'DD', 'SENDH':'SendH', 'RECVH':'RecvH', 'CPU': 'CPU', 'ID':'ID',
-                      'OOB':'OOB', 'KVL':'KVL', 'KV':'KV'}
+                      'OOB':'OOB', 'KVL':'KVL', 'KV':'KV', 'PG':'PG'}
 
 MSG_TYPES_WITHOUT_CLASSES = {MessageTypes.DRAGON_MSG}
+
 
 def type_filter(the_msg_types):
     msg_types = set(the_msg_types) - MSG_TYPES_WITHOUT_CLASSES
     return msg_types
+
 
 def camel_case_msg_name(msg_id):
 
@@ -5955,28 +6637,30 @@ def camel_case_msg_name(msg_id):
     converted = "".join(cased)
     return converted
 
+
 def mk_all_message_classes_set():
     result = set()
     for msg_id in type_filter(MessageTypes):
         try:
             class_name = camel_case_msg_name(str(msg_id))
-            class_def = getattr(sys.modules[__name__],class_name)
+            class_def = getattr(sys.modules[__name__], class_name)
             result.add(class_def)
-        except:
+        except Exception:
             raise TypeError(f'Unable to find corresponding class {class_name} for message id {msg_id}.')
 
     return result
 
-all_message_classes = mk_all_message_classes_set()
 
+all_message_classes = mk_all_message_classes_set()
 mt_dispatch = {cls._tc.value: cls for cls in all_message_classes}
+
 
 def parse(serialized, restrict=None):
     try:
         # if a compressed message, decompress to get the service message
         try:
             decoded = b64decode(serialized)
-        except:
+        except Exception:
             decoded = serialized
 
         try:
@@ -5984,14 +6668,12 @@ def parse(serialized, restrict=None):
         except zlib.error:
             jstring = decoded
 
-
         sdict = json.loads(jstring)
         typecode = sdict['_tc']
         if restrict:
             assert typecode in restrict
 
         return mt_dispatch[typecode].from_sdict(sdict)
-
 
     except Exception as json_exception:
         try:

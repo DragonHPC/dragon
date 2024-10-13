@@ -27,7 +27,7 @@ int main(int argc, char* argv[]) {
             return -1;
         }
 
-        err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL);
+        err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, NULL);
         if (err != DRAGON_SUCCESS) {
             cout << "Failed to open send handle" << endl;
             cerr << "Failed to open send handle" << endl;

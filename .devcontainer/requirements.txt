@@ -14,7 +14,11 @@ Sphinx
 sphinx-fortran
 sphinx-rtd-theme
 sphinx-copybutton
+sphinxcontrib-plantuml
 vacuum
 wheel
 jupyter
 parsl
+gunicorn
+flask
+ciso8601

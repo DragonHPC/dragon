@@ -167,10 +167,12 @@ class DDRegisterClientResponseMsg: public DragonResponseMsg {
     public:
     static const MessageType TC = DD_REGISTER_CLIENT_RESPONSE;
 
-    DDRegisterClientResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t clientID, uint64_t numManagers);
+    DDRegisterClientResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t clientID, uint64_t numManagers, uint64_t managerID, uint64_t timeout);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     uint64_t clientID();
     uint64_t numManagers();
+    uint64_t managerID();
+    uint64_t timeout();
 
 
     protected:
@@ -179,6 +181,8 @@ class DDRegisterClientResponseMsg: public DragonResponseMsg {
     private:
     uint64_t mClientID;
     uint64_t mNumManagers;
+    uint64_t mManagerID;
+    uint64_t mTimeout;
 };
 
 class DDDestroyMsg: public DragonMsg {
@@ -292,6 +296,8 @@ class DDPutMsg: public DragonMsg {
 
     private:
     uint64_t mClientID;
+    uint64_t chkptID = 0;
+    bool persist = true;
 };
 
 class DDPutResponseMsg: public DragonResponseMsg {
@@ -315,6 +321,7 @@ class DDGetMsg: public DragonMsg {
 
     private:
     uint64_t mClientID;
+    uint64_t chkptID = 0;
 };
 
 class DDGetResponseMsg: public DragonResponseMsg {
@@ -338,6 +345,7 @@ class DDPopMsg: public DragonMsg {
 
     private:
     uint64_t mClientID;
+    uint64_t chkptID = 0;
 };
 
 class DDPopResponseMsg: public DragonResponseMsg {
@@ -361,6 +369,7 @@ class DDContainsMsg: public DragonMsg {
 
     private:
     uint64_t mClientID;
+    uint64_t chkptID = 0;
 };
 
 class DDContainsResponseMsg: public DragonResponseMsg {
@@ -384,6 +393,7 @@ class DDGetLengthMsg: public DragonMsg {
 
     private:
     uint64_t mClientID;
+    uint64_t chkptID = 0;
 };
 
 class DDGetLengthResponseMsg: public DragonResponseMsg {
@@ -414,6 +424,7 @@ class DDClearMsg: public DragonMsg {
 
     private:
     uint64_t mClientID;
+    uint64_t chkptID = 0;
 };
 
 class DDClearResponseMsg: public DragonResponseMsg {
@@ -437,6 +448,7 @@ class DDGetIteratorMsg: public DragonMsg {
 
     private:
     uint64_t mClientID;
+    uint64_t chkptID = 0;
 };
 
 class DDGetIteratorResponseMsg: public DragonResponseMsg {

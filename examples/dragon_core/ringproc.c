@@ -35,20 +35,6 @@ int main(int argc, char* argv[]) {
     char* send_ser_encoded;
     char* final_ser_encoded;
 
-    /* This function is necessary for off-node communication and relies on the
-     * Dragon run-time services to supply gateway channels in the
-     * environment. Gateway channels are automatically supplied by Dragon
-     * on multi-node allocations and this function works on both single
-     * and multi-node allocations, though on single-node allocations it
-     * does nothing. */
-
-    dragonError_t err = dragon_channel_register_gateways_from_env();
-    if (err != DRAGON_SUCCESS) {
-        fprintf(stderr, "Could not register gateway channels from environment with err=%s\n", dragon_get_rc_string(err));
-        fflush(stderr);
-        return -1;
-    }
-
     /*
      * When sending a message, the structure must be initialized first.
      */

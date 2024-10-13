@@ -8,13 +8,17 @@ allocations/elasticity aka The Cloud (TM) and more complex node properties
 import enum
 import re
 import os
+import sys
 from socket import gethostname
+from subprocess import CalledProcessError
 from typing import Optional
 
 from .facts import DEFAULT_TRANSPORT_NETIF, DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_PORT_RANGE
 from ..utils import host_id as get_host_id
 from .util import port_check
+from ..transport.util import get_fabric_ep_addrs
 from .gpu_desc import AcceleratorDescriptor, find_accelerators
+from typing import Union, Tuple
 
 
 class NodeDescriptor:
@@ -44,6 +48,9 @@ class NodeDescriptor:
         h_uid: Optional[int] = None,
         name: str = "",
         ip_addrs: Optional[list[str]] = None,
+        fabric_ep_addrs_available: bool = False,
+        fabric_ep_addrs: Optional[list[str]] = None,
+        fabric_ep_addr_lens: Optional[list[int]] = None,
         port: int = None,
         num_cpus: int = 0,
         physical_mem: int = 0,
@@ -70,7 +77,7 @@ class NodeDescriptor:
         self.accelerators = accelerators
 
         # Not a very accurate measure since we don't know when a policy group is done,
-        #  but it gives some manner of tracking for block application
+        # but it gives some manner of tracking for block application
         # TODO: This might be useful later when we can GC finished policy jobs
         self.num_policies = 0
 
@@ -78,6 +85,14 @@ class NodeDescriptor:
             self.ip_addrs = [f'{ip_addr}:{port}' for ip_addr in ip_addrs]
         else:
             self.ip_addrs = ip_addrs
+
+        if fabric_ep_addrs is None:
+            num_nics = len(ip_addrs)
+            self.fabric_ep_addrs_available, self.fabric_ep_addrs, self.fabric_ep_addr_lens = get_fabric_ep_addrs(num_nics, False)
+        else:
+            self.fabric_ep_addrs_available = fabric_ep_addrs_available
+            self.fabric_ep_addrs = fabric_ep_addrs
+            self.fabric_ep_addr_lens = fabric_ep_addr_lens
 
     def __repr__(self) -> str:
         return f"name:{self.name}, host_id:{self.host_id} at {self.ip_addrs}, state:{self.state.name}"
@@ -135,18 +150,20 @@ class NodeDescriptor:
 
         if ip_addrs is None:
             ip_addrs = ["127.0.0.1"]
-        
+
         state = cls.State.ACTIVE
 
         if name is None:
             name = f"Node-{host_id}"
-        
+
         if shep_cd is None:
             shep_cd = dparms.this_process.local_shep_cd
-        
+
         num_cpus = os.cpu_count()
         physical_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
 
+        num_nics = len(ip_addrs)
+        get_fabric_ep_addrs(num_nics, os.environ.get("DRAGON_HSTA_GET_FABRIC", "True").lower() == "true")
 
         return cls(state=state,
                    name=name,
@@ -160,20 +177,18 @@ class NodeDescriptor:
                    cpu_devices=cpu_devices,
                    accelerators=accelerators)
 
-
     @classmethod
     def get_local_node_network_conf(cls,
                                     network_prefix: str = DEFAULT_TRANSPORT_NETIF,
-                                    port_range: tuple[int, int] = (DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_OVERLAY_NETWORK_PORT+DEFAULT_PORT_RANGE)):
+                                    port_range: Union[Tuple[int, int], int] = (DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_OVERLAY_NETWORK_PORT+DEFAULT_PORT_RANGE)):
         """Return NodeDescriptor with IP for given network prefix, hostname, and host ID
 
         :param network_prefix: network prefix used to find IP address of this node. Defaults to DEFAULT_TRANSPORT_NETIF
         :type network_prefix: str, optional
 
-        :param port_range: Port range to use for communication. Defaults to (DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_OVERLAY_NETWORK_PORT+DEFAULT_PORT_RANGE)
-        :type port_range: tuple[int, int], optional
-
-        :raises RuntimeError:  RuntimeError: Unable to find network prefix matching requested
+        :param port_range: Port and port range to use for communication. Defaults to (DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_OVERLAY_NETWORK_PORT+DEFAULT_PORT_RANGE)
+            If just the port is passed as an int, the range will be assumed to be DEFAULT_PORT_RANGE
+        :type port_range: tuple[int, int] | int, optional
 
         :return: Filled with local network info for node of execution
         :rtype: NodeDescriptor
@@ -204,10 +219,19 @@ class NodeDescriptor:
         ifaddr_filter.name_re(re.compile(re_prefix))
         ip_addrs = [ifa['addr']['addr'] for ifa in filter(ifaddr_filter, ifaddrs)]
         if not ip_addrs:
-            _msg = f'No IP addresses found for {hostname} matching regex pattern: {network_prefix}'
-            raise ValueError(_msg)
+            _msg = f'No high speed NICs found for {hostname} with regex pattern {network_prefix}'
+            print(_msg, file=sys.stderr, flush=True)
+            node_info = cls(state=NodeDescriptor.State.ACTIVE,
+                            name=hostname,
+                            host_name=hostname,
+                            ip_addrs=ip_addrs,
+                            host_id=get_host_id(),
+                            port=port_range[0])
+            return node_info
+        else:
+            ip_addr = ip_addrs[0]
 
-        ip_addr = ip_addrs[0]
+
 
         # There is a small chance (very small) that the port could appear to be available
         # and then in the next second or so, something else could grab it. In that case
@@ -243,6 +267,9 @@ class NodeDescriptor:
             "host_name": self.host_name,
             "is_primary": self.is_primary,
             "ip_addrs": self.ip_addrs,
+            "fabric_ep_addrs_available": self.fabric_ep_addrs_available,
+            "fabric_ep_addrs": self.fabric_ep_addrs,
+            "fabric_ep_addr_lens": self.fabric_ep_addr_lens,
             "host_id": self.host_id,
             "num_cpus": self.num_cpus,
             "physical_mem": self.physical_mem,
@@ -265,7 +292,7 @@ class NodeDescriptor:
         sdict["state"] = NodeDescriptor.State(sdict["state"])
         try:
             if sdict["accelerators"] is not None:
-                sdict["accelerators"] = AcceleratorDescriptor.from_sdict(sdict["accelerators"]) 
+                sdict["accelerators"] = AcceleratorDescriptor.from_sdict(sdict["accelerators"])
         except KeyError:
             sdict["accelerators"] = None
 

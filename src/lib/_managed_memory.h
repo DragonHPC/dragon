@@ -46,18 +46,20 @@ typedef struct dragonMemoryPoolHeader_st {
     dragonULInt * anon_data_idx;
     dragonULInt * hostid;
     dragonULInt * allocatable_data_size; //< Size of the allocatable space in the original pool (no segments).
-    dragonULInt * total_data_size; //< Total size of the original data segment for the pool.
+    dragonULInt * total_data_size; //< Total size of the original data for the pool.
     dragonULInt * data_min_block_size;
     dragonULInt * manifest_allocated_size;
+    dragonULInt * manifest_heap_size;
+    dragonULInt * manifest_table_size;
     dragonULInt * segment_size;
     dragonULInt * max_size;
     dragonULInt * n_segments;
-    dragonULInt * minimum_data_alignment;
-    dragonULInt * lock_type;
     dragonULInt * mem_type;
+    dragonULInt * lock_type;
     dragonULInt * growth_type;
     dragonUInt  * mode;
     dragonULInt * npre_allocs;
+    void * heap;
     dragonULInt * pre_allocs;
     char * filenames;
     void * manifest_table;
@@ -99,6 +101,8 @@ typedef struct dragonMemoryPool_st {
     atomic_int_fast64_t ref_cnt;
     /* the following are only valid for non-local pools */
     dragonRemoteMemoryPoolInfo_t remote;
+    size_t num_blocks; // the number of minimum sized blocks in the pool
+    size_t min_block_size; // the minimum block size
 } dragonMemoryPool_t;
 
 /*

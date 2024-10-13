@@ -135,7 +135,7 @@ class Queue(object):
         if self._joinable:
 
             if self._ext_channel:
-                raise NotImplementedError(f"Joinable queues do not support testing with external channels")
+                raise NotImplementedError("Joinable queues do not support testing with external channels")
 
             the_options.local_opts.capacity = 1
             try:
@@ -240,7 +240,6 @@ class Queue(object):
                 pass
             self._closed = True
             raise QueueError(f"Could not deserialize queue\n{e}")
-
 
     def __del__(self):
         self._close()

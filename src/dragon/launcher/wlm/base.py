@@ -55,6 +55,10 @@ class BaseNetworkConfig(ABC):
     def check_for_wlm_support(cls) -> bool:
         raise NotImplementedError
 
+    @classmethod
+    def check_for_allocation(cls) -> bool:
+        raise NotImplementedError
+
     @abstractmethod
     def _get_wlm_job_id(self) -> str:
         raise NotImplementedError
@@ -67,7 +71,8 @@ class BaseNetworkConfig(ABC):
         last_node_descriptor_count = 0
         stdout_stream = NewlineStreamWrapper(self.config_helper.stdout)
         stderr_stream = NewlineStreamWrapper(self.config_helper.stderr)
-        while len(self.node_descriptors.keys()) != self.NNODES:
+        node_returns = 0
+        while node_returns != self.NNODES:
 
             lines = []
             node_descriptor_count = len(self.node_descriptors.keys())
@@ -82,11 +87,24 @@ class BaseNetworkConfig(ABC):
 
             while stdout_stream.poll():
                 line = stdout_stream.recv()
+                if stderr_stream.poll():
+                    err_line = stderr_stream.recv()
+                    if len(err_line) != 0:
+                        _, msg = err_line.split(": ", maxsplit=1)
+                        print(f'Network Config Error Detected: {msg}', flush=True)
                 # sattach returns an empty string if nothing to report. ignore
                 if line == "":
                     break
                 else:
                     lines.append(line)
+
+            while stderr_stream.poll():
+                err_line = stderr_stream.recv()
+                if err_line == "":
+                    break
+                else:
+                    _, msg = err_line.split(": ", maxsplit=1)
+                    print(f'Network Config Error Detected: {msg}', flush=True)
 
             for line in lines:
                 self.LOGGER.debug(f'{line=}')
@@ -95,9 +113,12 @@ class BaseNetworkConfig(ABC):
                     node_index = node_index.split(" ")[-1]
                 if str(node_index) not in self.node_descriptors.keys():
                     self.LOGGER.debug(json.loads(node_desc))
-                    self.node_descriptors[
+                    node = NodeDescriptor.from_sdict(json.loads(node_desc))
+                    node_returns += 1
+                    if len(node.ip_addrs) > 0:
+                        self.node_descriptors[
                         str(node_index)
-                    ] = NodeDescriptor.from_sdict(json.loads(node_desc))
+                        ] = node
 
         self.LOGGER.debug(f'received {self.NNODES} of {self.NNODES} expected NodeDescriptors')
 
@@ -160,6 +181,9 @@ class BaseNetworkConfig(ABC):
                 }
             }
             json.dump(data, outf, ensure_ascii=False, indent=4)
+
+    def get_allocation_node_count(self) -> int:
+        return self.NNODES
 
     def get_network_config(self, sigint_trigger=None) -> map:
 

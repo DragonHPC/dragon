@@ -1,5 +1,5 @@
 import dragon
-from dragon.data.ddict.ddict import DDict
+from dragon.data.ddict import DDict
 import multiprocessing as mp
 
 def client_function(d, client_id):
@@ -17,14 +17,14 @@ def main():
     # number of nodes = 1
     # total size of dictionary = 2000000
     # clients and managers will be on different node in round-robin fashion
-    d = DDict(2,1,2000000)
-    # create 10 clients, each of them implements client_function 
+    d = DDict(2,1,1*1024*1024*1024)
+    # create 10 clients, each of them implements client_function
     procs = []
     for i in range(10):
         proc = mp.Process(target=client_function, args=(d, i))
         procs.append(proc)
         proc.start()
-    
+
     # waiting for all client process to finish
     for i in range(10):
         procs[i].join()

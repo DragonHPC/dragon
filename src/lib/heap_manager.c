@@ -843,7 +843,7 @@ dragonError_t dragon_heap_init(void* ptr, dragonDynHeap_t* heap, const size_t ma
 
     // Now initialize all the bcast objects.
     void* bcast_ptr = heap->waiter_space;
-    for (unsigned int k = 0; k < heap->num_freelists; k++) {
+    for (k = 0; k < heap->num_freelists; k++) {
         derr = dragon_bcast_create_at(bcast_ptr, waiter_size, 0, 0, NULL, &heap->waiters[k]);
         if (derr != DRAGON_SUCCESS)
             append_err_return(derr, "Could not initialize the Heap Managers waiter objects.");
@@ -896,7 +896,7 @@ dragonError_t dragon_heap_init(void* ptr, dragonDynHeap_t* heap, const size_t ma
         err_return(DRAGON_DYNHEAP_OUT_OF_BOUNDS_INTERNAL_FAILURE, "The created and computed sizes of the heap do not match.");
 
     /* initialize the free list pointers found in the meta data */
-    for (unsigned int k = 0; k < heap->num_freelists; k++) {
+    for (k = 0; k < heap->num_freelists; k++) {
         heap->free_lists[k] = NULL_OFFSET;
         heap->preallocated_free_lists[k] = NULL_OFFSET;
     }
@@ -933,8 +933,9 @@ dragonError_t dragon_heap_init(void* ptr, dragonDynHeap_t* heap, const size_t ma
 
         int count = 0;
         int idx = 0;
+        int block_size_diff = ((int) max_block_size_power) - min_block_size_power - 1;
 
-        for (k=0; k<max_block_size_power-min_block_size_power-1; k++)
+        for (k=0; k<block_size_diff; k++)
             count += preallocated[k];
 
         void** allocations = malloc(sizeof(void*)*count);
@@ -943,7 +944,7 @@ dragonError_t dragon_heap_init(void* ptr, dragonDynHeap_t* heap, const size_t ma
             err_return(DRAGON_FAILURE, "Could not allocate internal memory for heap manager init.");
 
         size_t size = 1UL << max_block_size_power;
-        for (k=max_block_size_power-min_block_size_power-1; k>=0; k--) {
+        for (k=block_size_diff; k>=0; k--) {
             size = size >> 1;
 
             for (int n=0; n<preallocated[k]; n++) {
@@ -1215,6 +1216,11 @@ dragonError_t dragon_heap_malloc(dragonDynHeap_t* heap, const size_t size, void*
         err_return(DRAGON_DYNHEAP_INVALID_POINTER,"The heap handle was null.");
     }
 
+    if (heap->recovery_needed_ptr == NULL) {
+        // The heap has previously been destroyed
+        err_return(DRAGON_DYNHEAP_INVALID_HEAP, "The internal heap memory is invalid.");
+    }
+
     if (*heap->recovery_needed_ptr == TRUE) {
         /* If recovery is required, then the user must execute the
            dragon_heap_recover API call. Recovery is required when
@@ -1340,6 +1346,7 @@ dragonError_t dragon_heap_malloc(dragonDynHeap_t* heap, const size_t size, void*
 
     if ((void*)node + size - 1 > heap->end_ptr) {
         *ptr = NULL;
+        dragon_unlock(&(heap->dlock));
         err_return(DRAGON_DYNHEAP_OUT_OF_BOUNDS_INTERNAL_FAILURE, "There was an internal error in the dragon heap manager.");
     }
     size_t bit_index = ((void*)seg_ptr - (void*)heap->segments)/heap->segment_size;
@@ -1386,6 +1393,10 @@ dragon_heap_malloc_blocking(dragonDynHeap_t* heap, const size_t size, void** ptr
     dragonError_t alloc_err;
 
     alloc_err = dragon_heap_malloc(heap, size, ptr);
+
+    /* if the heap's underlying pointer is invalid, nothing more can be done */
+    if (alloc_err == DRAGON_DYNHEAP_INVALID_HEAP)
+        return alloc_err;
 
     /* if a zero timeout is supplied, then don't block. This is useful
        for the managed memory code */
@@ -1576,6 +1587,25 @@ dragonError_t dragon_heap_recover(dragonDynHeap_t* heap) {
 
     no_err_return(DRAGON_SUCCESS);
 }
+
+
+/** @brief Get the base pointer of the heap.
+ *
+ *  Calling this returns the base pointer of the heap (not including meta-data).
+ *  This may be used in making address translations to other address spaces.
+ *
+ *  @param heap A pointer to a handle for the heap.
+ *  @return the base pointer or NULL if there was an error.
+ */
+
+void* dragon_heap_base_ptr(dragonDynHeap_t* heap) {
+
+    if (heap == NULL)
+        return NULL;
+
+    return (void*)heap->segments;
+}
+
 
 /** @brief Retrieve statistics concerning the present utilization of a heap.
  *

@@ -4,6 +4,8 @@ import time
 import dragon  # DRAGON import before multiprocessing
 from dragon.native.pool import Pool
 
+TIMEOUT_DELTA_TOL = 1.0
+
 def sqr(x, wait=0.0):
     time.sleep(wait)
     return x * x
@@ -24,10 +26,11 @@ class TestDragonNativePool(unittest.TestCase):
    
         start = time.monotonic()
         result = res.get() 
-        stop = time.monotonic()
+        elap = time.monotonic() - start
   
         self.assertEqual(result, 49)
-        self.assertAlmostEqual(stop-start , test_timeout, 0)
+        self.assertGreaterEqual(elap, test_timeout)
+        self.assertLess(elap, (test_timeout+TIMEOUT_DELTA_TOL))
       
         pool.close()
         pool.join()

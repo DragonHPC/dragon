@@ -4,10 +4,44 @@
 #include <stdlib.h>
 #include <stdatomic.h>
 #include <time.h>
+#include <unistd.h>
 
+//Uncomment the next line when testing for client timeout and gateway message completion.
+//Currently only remote get_message has the sleep code, but other messages could. Better
+//to test one at a time or you may have one interfere with another.
+//#define TEST_GW_TIMEOUT
 #define DRAGON_CHANNEL_GWHEADER_NULINTS ((sizeof(dragonGatewayMessageHeader_t)/sizeof(dragonULInt*))-1)
 //#define DRAGON_CHANNEL_EXTRA_CHECKS
-static timespec_t TRANSPORT_PATIENCE_ON_CLIENT_COMPLETE = {0,1000000};
+static timespec_t TRANSPORT_PATIENCE_ON_CLIENT_COMPLETE = {30,0};
+static dragonULInt MY_PUID = 0UL;
+static dragonULInt MY_PID = 0UL;
+static bool init_constants = true;
+static bool silence_gw_timeout_msgs = false;
+
+static void _init_consts() {
+    init_constants = false;
+    MY_PUID = dragon_get_my_puid();
+    MY_PID = getpid();
+}
+
+static dragonULInt _get_my_puid() {
+    if (init_constants)
+        _init_consts();
+    return MY_PUID;
+}
+
+#ifdef TEST_GW_TIMEOUT
+static uint _get_test_sleep_secs() {
+    uint test_client_sleep = dragon_get_env_var_as_ulint(DRAGON_GW_TEST_SLEEP);
+    return test_client_sleep;
+}
+#endif
+
+static dragonULInt _getpid() {
+    if (init_constants)
+        _init_consts();
+    return MY_PID;
+}
 
 static dragonError_t
 _gateway_message_bcast_size(size_t payload_sz, size_t * bcast_nbytes)
@@ -73,22 +107,25 @@ _map_gateway_message_header(dragonGatewayMessage_t * gmsg)
     gmsg->_header.deadline_sec = &gulptr[3];
     gmsg->_header.deadline_nsec = &gulptr[4];
     gmsg->_header.client_cmplt = (atomic_int_fast64_t *)&gulptr[5];
-    gmsg->_header.cmplt_bcast_offset = &gulptr[6];
-    gmsg->_header.target_ch_ser_offset = &gulptr[7];
-    gmsg->_header.target_ch_ser_nbytes = &gulptr[8];
-    gmsg->_header.send_payload_cleanup_required = &gulptr[9];
-    gmsg->_header.send_payload_buffered = &gulptr[10];
-    gmsg->_header.send_payload_offset = &gulptr[11];
-    gmsg->_header.send_payload_nbytes = &gulptr[12];
-    gmsg->_header.send_clientid = &gulptr[13];
-    gmsg->_header.send_hints = &gulptr[14];
-    gmsg->_header.send_return_mode = &gulptr[15];
-    gmsg->_header.has_dest_mem_descr = &gulptr[16];
-    gmsg->_header.dest_mem_descr_ser_offset = &gulptr[17];
-    gmsg->_header.dest_mem_descr_ser_nbytes = &gulptr[18];
-    gmsg->_header.op_rc = &gulptr[19];
-    gmsg->_header.event_mask = &gulptr[20];
-    gmsg->_header.sendhid = (dragonUUID *)&gulptr[21];
+    gmsg->_header.transport_cmplt_timestamp = &gulptr[6];
+    gmsg->_header.client_pid = &gulptr[7];
+    gmsg->_header.client_puid = &gulptr[8];
+    gmsg->_header.cmplt_bcast_offset = &gulptr[9];
+    gmsg->_header.target_ch_ser_offset = &gulptr[10];
+    gmsg->_header.target_ch_ser_nbytes = &gulptr[11];
+    gmsg->_header.send_payload_cleanup_required = &gulptr[12];
+    gmsg->_header.send_payload_buffered = &gulptr[13];
+    gmsg->_header.send_payload_offset = &gulptr[14];
+    gmsg->_header.send_payload_nbytes = &gulptr[15];
+    gmsg->_header.send_clientid = &gulptr[16];
+    gmsg->_header.send_hints = &gulptr[17];
+    gmsg->_header.send_return_mode = &gulptr[18];
+    gmsg->_header.has_dest_mem_descr = &gulptr[19];
+    gmsg->_header.dest_mem_descr_ser_offset = &gulptr[20];
+    gmsg->_header.dest_mem_descr_ser_nbytes = &gulptr[21];
+    gmsg->_header.op_rc = &gulptr[22];
+    gmsg->_header.event_mask = &gulptr[23];
+    gmsg->_header.sendhid = (dragonUUID *)&gulptr[24];
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -114,6 +151,8 @@ _assign_gateway_message_header_send(dragonGatewayMessage_t * gmsg, dragonULInt t
     *(gmsg->_header.send_payload_cleanup_required) = payload_cleanup_required;
 
     *(gmsg->_header.client_cmplt) = 0UL;
+    *(gmsg->_header.client_pid) = _getpid();
+    *(gmsg->_header.client_puid) = _get_my_puid();
 
     if (payload_nbytes < payload_ser_nbytes)
         *(gmsg->_header.send_payload_buffered) = 1UL;
@@ -177,6 +216,8 @@ _assign_gateway_message_header_get(dragonGatewayMessage_t * gmsg, dragonULInt ta
     }
 
     *(gmsg->_header.client_cmplt) = 0UL;
+    *(gmsg->_header.client_pid) = _getpid();
+    *(gmsg->_header.client_puid) = _get_my_puid();
 
     dragonULInt last_offset = DRAGON_CHANNEL_GWHEADER_NULINTS * sizeof(dragonULInt) + sizeof(dragonUUID);
 
@@ -213,6 +254,8 @@ _assign_gateway_message_header_event(dragonGatewayMessage_t * gmsg, dragonULInt 
     }
 
     *(gmsg->_header.client_cmplt) = 0UL;
+    *(gmsg->_header.client_pid) = _getpid();
+    *(gmsg->_header.client_puid) = _get_my_puid();
 
     dragonULInt last_offset = DRAGON_CHANNEL_GWHEADER_NULINTS * sizeof(dragonULInt) + sizeof(dragonUUID);
 
@@ -463,20 +506,46 @@ _gateway_message_from_header(dragonGatewayMessage_t * gmsg)
     no_err_return(DRAGON_SUCCESS);
 }
 
+static void
+_get_deadline_for_cmplt(timespec_t *deadline)
+{
+    timespec_t now;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    dragon_timespec_add(deadline, &now, &TRANSPORT_PATIENCE_ON_CLIENT_COMPLETE);
+}
+
+static dragonError_t
+_check_client_cmplt(dragonGatewayMessage_t * gmsg, timespec_t *deadline)
+{
+    timespec_t now;
+
+    if (atomic_load(gmsg->_header.client_cmplt) == 0UL) {
+        clock_gettime(CLOCK_MONOTONIC, &now);
+        if (dragon_timespec_le(deadline, &now)) {
+            no_err_return(DRAGON_TIMEOUT);
+        } else {
+            no_err_return(DRAGON_EAGAIN);
+        }
+    } else {
+        no_err_return(DRAGON_SUCCESS);
+    }
+}
+
 static dragonError_t
 _wait_on_client_cmplt(dragonGatewayMessage_t * gmsg)
 {
     timespec_t deadline;
-    timespec_t now;
-    clock_gettime(CLOCK_MONOTONIC, &now);
-    dragon_timespec_add(&deadline, &now, &TRANSPORT_PATIENCE_ON_CLIENT_COMPLETE);
+    _get_deadline_for_cmplt(&deadline);
 
-    while (atomic_load(gmsg->_header.client_cmplt) == 0UL) {
-        clock_gettime(CLOCK_MONOTONIC, &now);
-        if (dragon_timespec_le(&deadline, &now))
-            err_return(DRAGON_TIMEOUT, "Timed out waiting for client to complete its gateway message processing");
+    dragonError_t err;
 
+    do {
+        err = _check_client_cmplt(gmsg, &deadline);
         PAUSE();
+    } while (err == DRAGON_EAGAIN);
+
+    if (err != DRAGON_SUCCESS && err != DRAGON_TIMEOUT) {
+        append_err_return(err, "Failure while waiting for client to complete its gateway message processing");
     }
 
     no_err_return(DRAGON_SUCCESS);
@@ -538,6 +607,7 @@ dragon_channel_message_attr_init(dragonMessageAttr_t * attr)
     attr->clientid = 0UL;
     attr->hints = 0UL;
     dragon_zero_uuid(attr->sendhid);
+    attr->send_transfer_ownership = false;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -806,6 +876,14 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
     if (gmsg == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The gmsg cannot be NULL.");
 
+    /* We allow dest_mem_descr to specify transfer of ownership. If it is passed that way, then
+       set it in the message attributes and reset the destination memory descriptor. */
+    if (dest_mem_descr == DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP) {
+        dragonMessage_t* modifiable_msg = (dragonMessage_t*) send_msg;
+        modifiable_msg->_attr.send_transfer_ownership = true;
+        dest_mem_descr = NULL;
+    }
+
     dragonChannelSendReturnWhen_t return_mode = send_attr->return_mode;
     if (deadline!=NULL && deadline->tv_sec == 0 && deadline->tv_nsec == 0 &&
         send_attr->return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED) {
@@ -825,7 +903,7 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to obtain hostid for target channel.");
 
-    if (dest_mem_descr != NULL && dest_mem_descr != DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP) {
+    if (dest_mem_descr != NULL) {
         dragonULInt dest_mem_host_id;
         dragonMemoryPoolDescr_t dest_mem_pool;
         err = dragon_memory_get_pool(dest_mem_descr, &dest_mem_pool);
@@ -859,10 +937,8 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
         append_err_return(err, "Failed to serialize target channel.");
 
     bool cleanup_payload_required = false;
-    if (dest_mem_descr == DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP) {
+    if (send_msg->_attr.send_transfer_ownership)
         cleanup_payload_required = true;
-        dest_mem_descr = NULL;
-    }
 
     size_t dest_mem_ser_nbytes = 0UL;
     if (dest_mem_descr != NULL)
@@ -1459,6 +1535,129 @@ dragon_channel_gatewaymessage_detach(dragonGatewayMessage_t * gmsg)
  */
 
 /**
+ * @brief Start the completion of a send operation from a transport agent.
+ *
+ * Once a transport agent has completed a send operation for the Gateway Message, this call is used to coordinate
+ * completion with the requesting client.
+ *
+ * This function is not intended for most Channels users.  It is used internally to support Channels operations
+ * on remote nodes and other purpose-built libraries.
+ *
+ * @param gmsg is a pointer to the Gateway Message for send to complete.
+ *
+ * @param op_err is an error code to propagate back to the client.
+ *
+ * @param deadline is the timeout for coordinating with the client.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_gatewaymessage_transport_start_send_cmplt(dragonGatewayMessage_t *gmsg, const dragonError_t op_err, timespec_t *deadline)
+{
+    dragonError_t err;
+
+    if (gmsg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "GatewayMessage cannot be NULL.");
+
+    if (deadline == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "deadline cannot be NULL.");
+
+    if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_DEPOSITED ||
+        gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_RECEIVED ||
+        (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED && *(gmsg->_header.send_payload_buffered) == 0UL)) {
+
+        if ((*(gmsg->_header.client_cmplt)) != 0UL)
+            err_return(DRAGON_INVALID_OPERATION, "Gateway transport send complete already called. Operation ignored.");
+
+        /* DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY and DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED
+           don't wait for the transport service to complete the send action so in those two cases
+           we skip this step. DRAGON_CHANNEL_SEND_RETURN_WHEN_NONE is only valid for get and event
+           gateway messages, so it is not checked here */
+
+        /* Store the return code in the shared gateway message object */
+        *(gmsg->_header.op_rc) = op_err;
+
+        /* Here we get the time for debugging purposes. We want to know the amount of time
+        from when the transport calls this trigger_all to when the client actually wakes
+        up and signals completion of the gateway message interaction. */
+        double time_val = dragon_get_current_time_as_double();
+        *((double*)gmsg->_header.transport_cmplt_timestamp) = time_val;
+
+        err = dragon_bcast_trigger_all(&gmsg->_cmplt_bcast, NULL, NULL, 0);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not trigger the completion bcast for the gateway message on behalf of the transport service.");
+    } else {
+
+        if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED &&
+            op_err != DRAGON_SUCCESS) {
+            /* If the message was buffered inside the gateway message, and
+               return when buffered was specified, then the transport agent
+               cannot communicate a non-zero return code back to the user
+               so the transport agent must report the error in that case. */
+            char err_str[200];
+            snprintf(err_str, 199, "The return code of %u was ignored by the channels gateway library because DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED was specified.", op_err);
+            err_return(DRAGON_INVALID_OPERATION, err_str);
+        }
+
+        if (gmsg->_send_immediate_buffered_complete)
+            err_return(DRAGON_INVALID_OPERATION, "Gateway transport send complete already called in this process. Operation ignored.");
+
+        gmsg->_send_immediate_buffered_complete = true;
+    }
+
+    _get_deadline_for_cmplt(deadline);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Check on the completion of a send operation from a transport agent.
+ *
+ * Once a transport agent has completed a send operation for the Gateway Message, this call is used to coordinate
+ * completion with the requesting client. The given Gateway Message is not usable after return from this call.
+ *
+ * This function is not intended for most Channels users.  It is used internally to support Channels operations
+ * on remote nodes and other purpose-built libraries.
+ *
+ * @param gmsg is a pointer to the Gateway Message for send to complete.
+ *
+ * @param deadline is the timeout for coordinating with the client.
+ *
+ * @return DRAGON_SUCCESS, DRAGON_EAGAIN, DRAGON_TIMEOUT, or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_gatewaymessage_transport_check_send_cmplt(dragonGatewayMessage_t *gmsg, timespec_t *deadline)
+{
+    dragonError_t err;
+
+    if (gmsg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "GatewayMessage cannot be NULL.");
+
+    if (deadline == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "deadline cannot be NULL.");
+
+    /* When the gmsg->_header.client_cmplt is set, the client has detached from the gateway message and we
+       can safely destroy the message */
+    err = _check_client_cmplt(gmsg, deadline);
+    if (err == DRAGON_TIMEOUT) {
+        dragonULInt desired = 1UL;
+        /* Try one more time, but also mark the flag so client knows no one is waiting. */
+        if (atomic_exchange(gmsg->_header.client_cmplt, desired))
+            err = DRAGON_SUCCESS;
+
+        if (err == DRAGON_TIMEOUT && !silence_gw_timeout_msgs) {
+            /* The completion interaction with the client timed out. We'll gather some more information. */
+            /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
+            char err_str[200];
+            snprintf(err_str, 199, "ERROR: GATEWAY SEND MSG COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
+            fprintf(stderr, "%s\n", err_str);
+        }
+    }
+
+    no_err_return(err);
+}
+
+/**
  * @brief Complete a send operation from a transport agent.
  *
  * Once a transport agent has completed a send operation for the Gateway Message, this call is used to coordinate
@@ -1477,55 +1676,23 @@ dragon_channel_gatewaymessage_detach(dragonGatewayMessage_t * gmsg)
 dragonError_t
 dragon_channel_gatewaymessage_transport_send_cmplt(dragonGatewayMessage_t * gmsg, const dragonError_t op_err)
 {
-    dragonError_t err;
+    dragonError_t err = DRAGON_SUCCESS;
+    timespec_t deadline;
 
-    if (gmsg == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "GatewayMessage cannot be NULL.");
-
-    if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_DEPOSITED ||
-        gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_RECEIVED ||
-        (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED && *(gmsg->_header.send_payload_buffered) == 0UL)) {
-
-        if ((*(gmsg->_header.client_cmplt)) != 0UL)
-            err_return(DRAGON_INVALID_OPERATION, "Gateway transport send complete already called. Operation ignored.");
-
-        /* DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY and DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED
-           don't wait for the transport service to complete the send action so in those two cases
-           we skip this step. DRAGON_CHANNEL_SEND_RETURN_WHEN_NONE is only valid for get and event
-           gateway messages, so it is not checked here */
-
-        /* Store the return code in the shared gateway message object */
-        *(gmsg->_header.op_rc) = op_err;
-
-        err = dragon_bcast_trigger_all(&gmsg->_cmplt_bcast, NULL, NULL, 0);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not trigger the completion bcast for the gateway message on behalf of the transport service.");
-    } else {
-
-        if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED &&
-            op_err != DRAGON_SUCCESS) {
-            /* If the message was buffered inside the gateway message, and
-               return when buffered was specified, then the transport agent
-               cannot communicate a non-zero return code back to the user
-               so the transport agent must report the error in that case. */
-            char err_str[200];
-            snprintf(err_str, 199, "The return code of %u was ignored by the channels gateway library because DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED was specified.", op_err);
-            err_return(DRAGON_INVALID_OPERATION, err_str);
-
-        }
-
-        if (gmsg->_send_immediate_buffered_complete)
-            err_return(DRAGON_INVALID_OPERATION, "Gateway transport send complete already called in this process. Operation ignored.");
-
-        gmsg->_send_immediate_buffered_complete = true;
-    }
-
-    /* When the gmsg->_header.client_cmplt is set, the client has detached from the gateway message and we
-       can safely destroy the message */
-    err = _wait_on_client_cmplt(gmsg);
+    err = dragon_channel_gatewaymessage_transport_start_send_cmplt(gmsg, op_err, &deadline);
     if (err != DRAGON_SUCCESS)
-        append_err_return(err, "The transport send completion timed out while waiting for the client completion");
+        append_err_return(err, "Could not start the completion of the gateway request.");
 
+    do {
+        err = dragon_channel_gatewaymessage_transport_check_send_cmplt(gmsg, &deadline);
+        PAUSE();
+    } while (err == DRAGON_EAGAIN);
+
+    if (err != DRAGON_SUCCESS && err != DRAGON_TIMEOUT)
+        append_err_return(err, "Problem while waiting on client during gateway completion handshake.");
+
+    /* Since we have logged the error we return success at the end because transport processing
+        is now complete. */
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -1547,7 +1714,7 @@ dragon_channel_gatewaymessage_transport_send_cmplt(dragonGatewayMessage_t * gmsg
 dragonError_t
 dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, const dragonWaitMode_t wait_mode)
 {
-    dragonError_t err;
+    dragonError_t err = DRAGON_SUCCESS;
     dragonError_t send_err;
 
     if (gmsg == NULL)
@@ -1570,8 +1737,6 @@ dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, c
            only valid for get and event gateway messages, so it is not checked here */
 
         err = dragon_bcast_wait(&gmsg->_cmplt_bcast, wait_mode, NULL, NULL, NULL, NULL, NULL);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not wait for the completion bcast for the gateway message on behalf of the client.");
 
         send_err = *(gmsg->_header.op_rc); /* get the return code from the send operation to return to client */
     } else {
@@ -1581,21 +1746,37 @@ dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, c
     if (send_err != DRAGON_SUCCESS)
         err_noreturn("The transport signaled a non-successful completion to the send request.");
 
-    atomic_store(gmsg->_header.client_cmplt, 1UL);
+    if (err == DRAGON_SUCCESS) {
+        dragonULInt desired = 1UL;
 
-    err = dragon_channel_gatewaymessage_detach(gmsg);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "The client send completion could not detach from the gateway message for some reason.");
+        /* Mark the transaction as complete to release the transport, but check that the transport
+        has not quit waiting. If it has, then we may not be able to trust the data. */
+        if (atomic_exchange(gmsg->_header.client_cmplt, desired) != 0UL)
+            err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
+    } else if (err == DRAGON_BCAST_DESTROYED)
+        err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
+
+    dragonError_t derr = dragon_channel_gatewaymessage_detach(gmsg);
+    if (send_err == DRAGON_SUCCESS && err == DRAGON_SUCCESS && derr != DRAGON_SUCCESS)
+        append_err_return(derr, "The client send completion could not detach from the gateway message for some reason.");
+
+    if (send_err == DRAGON_SUCCESS && err != DRAGON_SUCCESS) {
+        char err_str[200];
+        double end_time = dragon_get_current_time_as_double();
+        double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
+        double diff = end_time-start_time;
+        snprintf(err_str, 199, "The completion of the send gateway message, for process GW_PID=%lu, PID=%lu and GW_PUID(if available)=%lu,PUID=%lu , timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, _getpid(), *gmsg->_header.client_puid, _get_my_puid(),diff);
+        append_err_return(err, err_str);
+    }
 
     return send_err;
 }
 
 /**
- * @brief Complete a get operation from a transport agent.
+ * @brief Start the completion of a get operation from a transport agent.
  *
  * Once a transport agent has completed a get operation for the Gateway Message, this call is used to coordinate
- * completion with the requesting client.  This function will manage cleanup of the Gateway Message.  The given
- * Gateway Message is not usable after return from this call.
+ * completion with the requesting client.
  *
  * This function is not intended for most Channels users.  It is used internally to support Channels operations
  * on remote nodes and other purpose-built libraries.
@@ -1608,11 +1789,13 @@ dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, c
  * @param op_err is an error code to propagate back to the client. DRAGON_SUCCESS indicates the requested
  * message is returned. Otherwise, the error code reflects the error that occurred.
  *
+ * @param deadine is the timeout for coordination with the client
+ *
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred on the call.
  */
 dragonError_t
-dragon_channel_gatewaymessage_transport_get_cmplt(dragonGatewayMessage_t * gmsg, dragonMessage_t * msg_recv,
-                                                  const dragonError_t op_err)
+dragon_channel_gatewaymessage_transport_start_get_cmplt(dragonGatewayMessage_t *gmsg, dragonMessage_t *msg_recv,
+                                                        const dragonError_t op_err, timespec_t *deadline)
 {
     dragonError_t err;
     dragonMemoryDescr_t msg_mem;
@@ -1621,6 +1804,9 @@ dragon_channel_gatewaymessage_transport_get_cmplt(dragonGatewayMessage_t * gmsg,
 
     if (gmsg == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "GatewayMessage cannot be NULL.");
+
+    if (deadline == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "deadline cannot be NULL.");
 
     /* This is a global check that this gateway message processing is complete already */
     if ((*(gmsg->_header.client_cmplt)) != 0UL)
@@ -1664,8 +1850,36 @@ dragon_channel_gatewaymessage_transport_get_cmplt(dragonGatewayMessage_t * gmsg,
             if (err != DRAGON_SUCCESS)
                 append_err_return(err, "Could not get pointer to message memory for verification");
 
-            if (msg_mem_ptr != dest_mem_ptr)
+            if (dest_mem_ptr != NULL && msg_mem_ptr != dest_mem_ptr)
                 err_return(DRAGON_INVALID_ARGUMENT, "The client requested a destination for the message and the transport agent did not comply.");
+
+            if (dest_mem_ptr == NULL) {
+                /* This indicates a zero byte allocation was specified for the destination. In that
+                   case the pools should be identical. */
+                dragonMemoryPoolDescr_t dest_pool;
+                dragonMemoryPoolDescr_t msg_pool;
+                dragonULInt dest_pool_muid;
+                dragonULInt msg_pool_muid;
+
+                err = dragon_memory_get_pool(&dest_mem, &dest_pool);
+                if (err != DRAGON_SUCCESS)
+                    append_err_return(err, "Could not get memory pool of destination memory.");
+
+                err = dragon_memory_get_pool(&msg_mem, &msg_pool);
+                if (err != DRAGON_SUCCESS)
+                    append_err_return(err, "Could not get memory pool of message memory.");
+
+                err = dragon_memory_pool_muid(&dest_pool, &dest_pool_muid);
+                if (err != DRAGON_SUCCESS)
+                    append_err_return(err, "Could not get memory pool muid of destination memory.");
+
+                err = dragon_memory_pool_muid(&msg_pool, &msg_pool_muid);
+                if (err != DRAGON_SUCCESS)
+                    append_err_return(err, "Could not get memory pool muid of message memory.");
+
+                if (dest_pool_muid != msg_pool_muid)
+                    err_return(DRAGON_INVALID_ARGUMENT, "The client requested a destination pool for the message and the transport agent did not comply.");
+            }
 
             /****************************************************************************************/
             /* End of Extra Checks that could be factored out once we have a working, verified
@@ -1692,15 +1906,15 @@ dragon_channel_gatewaymessage_transport_get_cmplt(dragonGatewayMessage_t * gmsg,
         *(gmsg->_header.send_clientid) = msg_attrs.clientid;
     }
 
+    /* Here we get the time for debugging purposes. We want to know the amount of time
+       from when the transport calls this trigger_all to when the client actually wakes
+       up and signals completion of the gateway message interaction. */
+    double time_val = dragon_get_current_time_as_double();
+    *((double*)gmsg->_header.transport_cmplt_timestamp) = time_val;
+
     err = dragon_bcast_trigger_all(&gmsg->_cmplt_bcast, NULL, NULL, 0);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not trigger the completion bcast for the gateway message on behalf of the transport service.");
-
-    /* When the gmsg->_header.client_cmplt is set, the client has detached from the gateway message and we
-       can safely destroy the message */
-    err = _wait_on_client_cmplt(gmsg);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "The transport get completion timed out while waiting for the client completion");
 
     if (op_err == DRAGON_SUCCESS) {
         err = dragon_memory_serial_free(&msg_mem_ser);
@@ -1708,6 +1922,103 @@ dragon_channel_gatewaymessage_transport_get_cmplt(dragonGatewayMessage_t * gmsg,
             append_err_return(err, "The serialized descriptor could not be freed.");
     }
 
+    _get_deadline_for_cmplt(deadline);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Check on the completion of a get operation from a transport agent.
+ *
+ * Once a transport agent has completed a get operation for the Gateway Message, this call is used to coordinate
+ * completion with the requesting client. The given Gateway Message is not usable after a successful return from
+ * this call.
+ *
+ * This function is not intended for most Channels users. It is used internally to support Channels operations
+ * on remote nodes and other purpose-built libraries.
+ *
+ * @param gmsg is a pointer to the Gateway Message for get to complete.
+ *
+ * @param deadine is the timeout for coordination with the client
+ *
+ * @return DRAGON_SUCCESS, DRAGON_EAGAIN, DRAGON_TIMEOUT, or a return code to indicate what problem occurred on the call.
+ */
+dragonError_t
+dragon_channel_gatewaymessage_transport_check_get_cmplt(dragonGatewayMessage_t *gmsg, timespec_t *deadline)
+{
+    dragonError_t err;
+
+    if (gmsg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "GatewayMessage cannot be NULL.");
+
+    if (deadline == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "deadline cannot be NULL.");
+
+    if (gmsg->msg_kind != DRAGON_GATEWAY_MESSAGE_GET)
+        err_return(DRAGON_INVALID_ARGUMENT, "Attempt to call transport get complete on non-get kind of gateway message");
+
+    /* When the gmsg->_header.client_cmplt is set, the client has detached from the gateway message and we
+       can safely destroy the message */
+    err = _check_client_cmplt(gmsg, deadline);
+    if (err == DRAGON_TIMEOUT) {
+        dragonULInt desired = 1UL;
+        /* Try one more time, but also mark the flag so client knows no one is waiting. */
+        if (atomic_exchange(gmsg->_header.client_cmplt, desired))
+            err = DRAGON_SUCCESS;
+
+        if (err == DRAGON_TIMEOUT && !silence_gw_timeout_msgs) {
+            /* The completion interaction with the client timed out. We'll gather some more information. */
+            /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
+            char err_str[200];
+            snprintf(err_str, 199, "ERROR: GATEWAY GET MSG COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
+            fprintf(stderr, "%s\n", err_str);
+        }
+    }
+
+    no_err_return(err);
+}
+
+/**
+ * @brief Complete a get operation from a transport agent.
+ *
+ * Once a transport agent has completed a get operation for the Gateway Message, this call is used to coordinate
+ * completion with the requesting client.  This function will manage cleanup of the Gateway Message.  The given
+ * Gateway Message is not usable after return from this call.
+ *
+ * This function is not intended for most Channels users.  It is used internally to support Channels operations
+ * on remote nodes and other purpose-built libraries.
+ *
+ * @param gmsg is a pointer to the Gateway Message for get to complete.
+ *
+ * @param msg_recv is a pointer to the received Message that will be provided back to the client when the
+ * op_err argument is set to DRAGON_SUCCESS. Otherwise, it should be NULL.
+ *
+ * @param op_err is an error code to propagate back to the client. DRAGON_SUCCESS indicates the requested
+ * message is returned. Otherwise, the error code reflects the error that occurred.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred on the call.
+ */
+dragonError_t
+dragon_channel_gatewaymessage_transport_get_cmplt(dragonGatewayMessage_t * gmsg, dragonMessage_t * msg_recv,
+                                                  const dragonError_t op_err)
+{
+    dragonError_t err;
+    timespec_t deadline;
+
+    err = dragon_channel_gatewaymessage_transport_start_get_cmplt(gmsg, msg_recv, op_err, &deadline);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not start the completion of the gateway request.");
+
+    do {
+        err = dragon_channel_gatewaymessage_transport_check_get_cmplt(gmsg, &deadline);
+        PAUSE();
+    } while (err == DRAGON_EAGAIN);
+
+    if (err != DRAGON_SUCCESS && err != DRAGON_TIMEOUT)
+        append_err_return(err, "Problem while waiting on client during gateway completion handshake.");
+
+    /* Since we have logged the error we return success at the end because transport processing
+    is now complete. */
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -1737,6 +2048,7 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
     dragonMemorySerial_t msg_mem_ser;
     dragonError_t get_rc;
     dragonMessageAttr_t msg_attrs;
+    int called_path=0;
 
     if (gmsg == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The gateway message cannot be NULL");
@@ -1751,12 +2063,15 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
         err_return(DRAGON_INVALID_ARGUMENT, "Attempt to call client get complete on non-get kind of gateway message");
 
     err = dragon_bcast_wait(&gmsg->_cmplt_bcast, wait_mode, NULL, NULL, NULL, NULL, NULL);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not wait for the completion bcast for the gateway message on behalf of the client.");
 
     get_rc = *(gmsg->_header.op_rc);
+#ifdef TEST_BAD_HEADER
+    if(*gmsg->_header.client_pid != _getpid()) {
+        err_noreturn("The header was likely corrupted. The _header.client_pid did not match the process pid");
+    }
+#endif
 
-    if (get_rc == DRAGON_SUCCESS) {
+    if (get_rc == DRAGON_SUCCESS && err == DRAGON_SUCCESS) {
 
         msg_mem_ser.data = gmsg->_obj_ptr + *(gmsg->_header.dest_mem_descr_ser_offset);
         msg_mem_ser.len = *(gmsg->_header.dest_mem_descr_ser_nbytes);
@@ -1779,7 +2094,7 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not initialize message in get completion of gateway receive.");
     } else {
-        err_noreturn("There was an error returned from the remote side by the transport.");
+        err_noreturn("There was an error returned from the remote side by the transport or the local transport timed out while waiting for gateway message completion.");
         /* Since DRAGON_SUCCESS was not achieved, we'll init the message to empty */
         dragon_channel_message_init(msg_recv, NULL, NULL);
         /* We don't check the return code of this call to message_init because there
@@ -1787,13 +2102,145 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
            important to get that error code. Besides, the above call will not fail. */
     }
 
-    atomic_store(gmsg->_header.client_cmplt, 1UL);
+    if (err == DRAGON_SUCCESS) {
+        called_path=1;
+        dragonULInt desired = 1UL;
 
-    err = dragon_channel_gatewaymessage_detach(gmsg);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "The client get completion could not detach from the gateway message for some reason.");
+#ifdef TEST_GW_TIMEOUT
+        unsigned int sleep_secs = _get_test_sleep_secs();
+        if (sleep_secs > 0) {
+            sleep(sleep_secs);
+        }
+#endif
+
+        /* Mark the transaction as complete to release the transport, but check that the transport
+        has not quit waiting. If it has, then we may not be able to trust the data. */
+        if (atomic_exchange(gmsg->_header.client_cmplt, desired) != 0UL) {
+            err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
+        }
+    } else if (err == DRAGON_BCAST_DESTROYED) {
+        called_path=2;
+        err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
+    }
+
+    if (get_rc == DRAGON_SUCCESS && err != DRAGON_SUCCESS) {
+        char err_str[200];
+        double end_time = dragon_get_current_time_as_double();
+        double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
+        double diff = end_time-start_time;
+        snprintf(err_str, 199, "The completion of the get gateway message, for process PID=%lu and PUID(if available)=%lu, timed out in the transport  on path %d with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, called_path, diff);
+        dragon_channel_gatewaymessage_detach(gmsg);
+        append_err_return(err, err_str);
+    }
+
+    dragonError_t derr = dragon_channel_gatewaymessage_detach(gmsg);
+    if (get_rc == DRAGON_SUCCESS && derr != DRAGON_SUCCESS)
+        append_err_return(derr, "The client get completion could not detach from the gateway message for some reason.");
 
     no_err_return(get_rc);
+}
+
+/**
+ * @brief Start the completion of an event operation from a transport agent.
+ *
+ * Once a transport agent has completed an event operation for the Gateway Message, this call is used to coordinate
+ * completion with the requesting client.
+ *
+ * This function is not intended for most Channels users.  It is used internally to support Channels operations
+ * on remote nodes and other purpose-built libraries.
+ *
+ * @param gmsg is a pointer to the Gateway Message for event to complete.
+ *
+ * @param result is the result of calling the poll operation if there was a result to return. A valid result
+ * is only for those poll operations that return a result when the return value is DRAGON_SUCCESS.
+ *
+ * @param op_err is an error code to propagate back to the client.
+ *
+ * @param deadline is the timeout for the coordination with the client.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_gatewaymessage_transport_start_event_cmplt(dragonGatewayMessage_t *gmsg, const dragonULInt result,
+                                                          const dragonError_t op_err, timespec_t *deadline)
+{
+    dragonError_t err;
+
+    if (gmsg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "GatewayMessage cannot be NULL.");
+
+    if (deadline == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "deadline cannot be NULL.");
+
+    if (gmsg->msg_kind != DRAGON_GATEWAY_MESSAGE_EVENT)
+        err_return(DRAGON_INVALID_ARGUMENT, "Attempt to call transport event complete on non-get kind of gateway message");
+
+    if ((*(gmsg->_header.client_cmplt)) != 0UL)
+        err_return(DRAGON_INVALID_OPERATION, "Gateway transport event complete already called. Operation ignored.");
+
+    *(gmsg->_header.op_rc) = op_err; /* store the return code in shared memory of gateway message */
+    *(gmsg->_header.event_mask) = result; /* store the result of the event in the shared header. Re-use the event_mask field. */
+
+    /* Here we get the time for debugging purposes. We want to know the amount of time
+    from when the transport calls this trigger_all to when the client actually wakes
+    up and signals completion of the gateway message interaction. */
+    double time_val = dragon_get_current_time_as_double();
+    *((double*)gmsg->_header.transport_cmplt_timestamp) = time_val;
+
+    err = dragon_bcast_trigger_all(&gmsg->_cmplt_bcast, NULL, NULL, 0);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not trigger the completion bcast for the gateway message on behalf of the transport service.");
+
+    _get_deadline_for_cmplt(deadline);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Check on the completion of an event operation from a transport agent.
+ *
+ * Once a transport agent has completed an event operation for the Gateway Message, this call is used to coordinate
+ * completion with the requesting client. The given Gateway Message is not usable after return from this call.
+ *
+ * This function is not intended for most Channels users. It is used internally to support Channels operations
+ * on remote nodes and other purpose-built libraries.
+ *
+ * @param gmsg is a pointer to the Gateway Message for event to complete.
+ *
+ * @param deadline is the timeout for the coordination with the client.
+ *
+ * @return DRAGON_SUCCESS, DRAGON_EAGAIN, DRAGON_TIMEOUT, or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_gatewaymessage_transport_check_event_cmplt(dragonGatewayMessage_t *gmsg, timespec_t *deadline)
+{
+    dragonError_t err;
+
+    if (gmsg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "GatewayMessage cannot be NULL.");
+
+    if (deadline == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "deadline cannot be NULL.");
+
+    /* When the gmsg->_header.client_cmplt is set, the client has detached from the gateway message and we
+       can safely destroy the message */
+    err = _check_client_cmplt(gmsg, deadline);
+    if (err == DRAGON_TIMEOUT) {
+        dragonULInt desired = 1UL;
+        /* Try one more time, but also mark the flag so client knows no one is waiting. */
+        if (atomic_exchange(gmsg->_header.client_cmplt, desired))
+            err = DRAGON_SUCCESS;
+
+        if (err == DRAGON_TIMEOUT && !silence_gw_timeout_msgs) {
+            /* The completion interaction with the client timed out. We'll gather some more information. */
+            /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
+            char err_str[200];
+            snprintf(err_str, 199, "ERROR: GATEWAY EVENT COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
+            fprintf(stderr, "%s\n", err_str);
+        }
+    }
+
+    no_err_return(err);
 }
 
 /**
@@ -1820,29 +2267,22 @@ dragon_channel_gatewaymessage_transport_event_cmplt(dragonGatewayMessage_t * gms
                                                     const dragonError_t op_err)
 {
     dragonError_t err;
+    timespec_t deadline;
 
-    if (gmsg == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "GatewayMessage cannot be NULL.");
-
-    if (gmsg->msg_kind != DRAGON_GATEWAY_MESSAGE_EVENT)
-        err_return(DRAGON_INVALID_ARGUMENT, "Attempt to call transport event complete on non-get kind of gateway message");
-
-    if ((*(gmsg->_header.client_cmplt)) != 0UL)
-        err_return(DRAGON_INVALID_OPERATION, "Gateway transport event complete already called. Operation ignored.");
-
-    *(gmsg->_header.op_rc) = op_err; /* store the return code in shared memory of gateway message */
-    *(gmsg->_header.event_mask) = result; /* store the result of the event in the shared header. Re-use the event_mask field. */
-
-    err = dragon_bcast_trigger_all(&gmsg->_cmplt_bcast, NULL, NULL, 0);
+    err = dragon_channel_gatewaymessage_transport_start_event_cmplt(gmsg, result, op_err, &deadline);
     if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not trigger the completion bcast for the gateway message on behalf of the transport service.");
+        append_err_return(err, "Could not start the completion of the gateway request.");
 
-    /* When the gmsg->_header.client_cmplt is set, the client has detached from the gateway message and we
-       can safely destroy the message */
-    err = _wait_on_client_cmplt(gmsg);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "The transport event completion experienced a non-successful completion.");
+    do {
+        err = dragon_channel_gatewaymessage_transport_check_event_cmplt(gmsg, &deadline);
+        PAUSE();
+    } while (err == DRAGON_EAGAIN);
 
+    if (err != DRAGON_SUCCESS && err != DRAGON_TIMEOUT)
+        append_err_return(err, "Problem while waiting on client during gateway completion handshake.");
+
+    /* Since we have logged the error we return success at the end because transport processing
+    is now complete. */
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -1866,8 +2306,8 @@ dragon_channel_gatewaymessage_transport_event_cmplt(dragonGatewayMessage_t * gms
 dragonError_t
 dragon_channel_gatewaymessage_client_event_cmplt(dragonGatewayMessage_t * gmsg, dragonULInt * event_result, const dragonWaitMode_t wait_mode)
 {
-    dragonError_t err;
-    dragonError_t event_rc;
+    dragonError_t err = DRAGON_SUCCESS;
+    dragonError_t event_rc = DRAGON_SUCCESS;
 
     if (gmsg == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The gateway message cannot be NULL");
@@ -1879,19 +2319,34 @@ dragon_channel_gatewaymessage_client_event_cmplt(dragonGatewayMessage_t * gmsg, 
         err_return(DRAGON_INVALID_ARGUMENT, "Attempt to call client event complete on non-get kind of gateway message");
 
     err = dragon_bcast_wait(&gmsg->_cmplt_bcast, wait_mode, NULL, NULL, NULL, NULL, NULL);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not wait for the completion bcast for the gateway message on behalf of the client.");
 
-    *event_result = *(gmsg->_header.event_mask);
-    event_rc = *(gmsg->_header.op_rc);
-    if (event_rc != DRAGON_SUCCESS)
-        err_noreturn("There was a non-successful completion of the poll request.");
+    if (err == DRAGON_SUCCESS) {
+        *event_result = *(gmsg->_header.event_mask);
+        event_rc = *(gmsg->_header.op_rc);
+        if (event_rc != DRAGON_SUCCESS)
+            err_noreturn("There was a non-successful completion of the poll request.");
 
-    atomic_store(gmsg->_header.client_cmplt, 1UL);
+        dragonULInt desired = 1UL;
 
-    err = dragon_channel_gatewaymessage_detach(gmsg);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "The client event completion could not detach from the gateway message for some reason.");
+        /* Mark the transaction as complete to release the transport, but check that the transport
+        has not quit waiting. If it has, then we may not be able to trust the data. */
+        if (atomic_exchange(gmsg->_header.client_cmplt, desired) != 0UL)
+            err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
+    } else if (err == DRAGON_BCAST_DESTROYED)
+        err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
+
+    dragonError_t derr = dragon_channel_gatewaymessage_detach(gmsg);
+    if (event_rc == DRAGON_SUCCESS && err == DRAGON_SUCCESS && derr != DRAGON_SUCCESS)
+        append_err_return(derr, "The client event completion could not detach from the gateway message for some reason.");
+
+    if (event_rc == DRAGON_SUCCESS && err != DRAGON_SUCCESS) {
+        char err_str[200];
+        double end_time = dragon_get_current_time_as_double();
+        double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
+        double diff = end_time-start_time;
+        snprintf(err_str, 199, "The completion of the event gateway message, for process PID=%lu and PUID(if available)=%lu, timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, diff);
+        append_err_return(err, err_str);
+    }
 
     no_err_return(event_rc);
 }
@@ -2008,6 +2463,19 @@ dragonError_t
 dragon_gatewaymessage_client_rpc_cmplt(dragonGatewayMessage_t * gmsg, dragonMessage_t * result)
 {
     no_err_return(DRAGON_NOT_IMPLEMENTED);
+}
+
+/**
+ * @brief Silence Gateway Completion Timeouts
+ *
+ * Silence timeout messages that are printed to stderr by the transport
+ * agent when gateway message completion times out. While not necessary
+ * for HSTA, the TCP transport displays all these messages to the user
+ * and in general they are not helpful.
+ *
+ */
+void dragon_gatewaymessage_silence_timeouts() {
+    silence_gw_timeout_msgs = true;
 }
 
 /**

@@ -5,10 +5,10 @@ import logging
 import socket
 
 from .backend import LauncherBackEnd
-from .launchargs import NETWORK_HELP
+from .launchargs import NETWORK_HELP, OVERLAY_PORT_HELP
 
 from ..utils import B64
-from ..infrastructure.facts import PROCNAME_LA_BE, DEFAULT_TRANSPORT_NETIF, TRANSPORT_TEST_ENV
+from ..infrastructure.facts import PROCNAME_LA_BE, DEFAULT_TRANSPORT_NETIF, TRANSPORT_TEST_ENV, DEFAULT_OVERLAY_NETWORK_PORT
 from ..dlogging.util import setup_BE_logging
 from ..dlogging.util import DragonLoggingServices as dls
 from . import util as dlutil
@@ -42,16 +42,30 @@ def main(transport_test_env: bool = False):
                         help="File descriptor for communication to frontend")
     parser.add_argument('--transport-test', action='store_true', help="Run in transport test mode")
     parser.add_argument('--network-prefix', dest='network_prefix', type=str, help=NETWORK_HELP)
+    parser.add_argument('--overlay-port', dest='overlay_port', type=int, help=OVERLAY_PORT_HELP)
+    parser.add_argument('--backend-ip-addr', dest='backend_ip_addr', type=str, help='Force backend transport agent IP address')
+    parser.add_argument('--backend-hostname', dest='backend_hostname', type=str, help='Force backend hostname')
 
     parser.set_defaults(
         transport_test=bool(strtobool(os.environ.get(TRANSPORT_TEST_ENV, str(transport_test_env)))),
-        network_prefix=DEFAULT_TRANSPORT_NETIF
+        network_prefix=DEFAULT_TRANSPORT_NETIF,
+        overlay_port=DEFAULT_OVERLAY_NETWORK_PORT,
+        backend_ip_addr=None,
+        backend_hostname=None,
     )
     args = parser.parse_args()
 
-    with LauncherBackEnd(args.transport_test, args.network_prefix) as be_server:
+    with LauncherBackEnd(args.transport_test, args.network_prefix, args.overlay_port) as be_server:
         try:
-            be_server.run_startup(args.ip_addrs, args.host_ids, args.frontend_sdesc, level, fname)
+            be_server.run_startup(
+                args.ip_addrs,
+                args.host_ids,
+                args.frontend_sdesc,
+                level,
+                fname,
+                backend_ip_addr=args.backend_ip_addr,
+                backend_hostname=args.backend_hostname,
+            )
             be_server.run_msg_server()
 
         except Exception as err:  # pylint: disable=broad-except

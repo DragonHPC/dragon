@@ -60,12 +60,12 @@ SLOW_ECHO = str(path_to_slow_echo)
 
 def mk_sleep_msg(seconds, tag, p_uid, r_c_uid):
     return dmsg.GSProcessCreate(tag=tag, exe='/bin/sleep', args=[str(seconds)],
-                                p_uid=p_uid, r_c_uid=r_c_uid)
+                                p_uid=p_uid, r_c_uid=r_c_uid, head_proc=True)
 
 
 def mk_slow_echo_msg(seconds, msg, tag, p_uid, r_c_uid):
     return dmsg.GSProcessCreate(tag=tag, exe=SLOW_ECHO, args=[str(seconds), msg],
-                                p_uid=p_uid, r_c_uid=r_c_uid)
+                                p_uid=p_uid, r_c_uid=r_c_uid, head_proc=True)
 
 
 def start_ls(shep_stdin_queue, shep_stdout_queue, env_update, name_addition=''):
@@ -119,6 +119,7 @@ class GSLS(unittest.TestCase):
         self.proc_gs_return_rh = dconn.Connection(inbound_initializer=self.proc_gs_return_chan)
 
         self.chatty_teardown = False
+        self.proc_direct_test_failed = False
 
     def next_tag(self):
         tmp = self.tag
@@ -144,7 +145,7 @@ class GSLS(unittest.TestCase):
 
         self.ls_dut.start()
 
-        self.shep_stdin_wh.send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=0).serialize())
+        self.shep_stdin_wh.send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=0, net_conf_key="0").serialize())
 
         ping_be_msg = tsu.get_and_check_type(self.shep_stdout_rh, dmsg.SHPingBE)
 
@@ -228,6 +229,13 @@ class GSLS(unittest.TestCase):
         self.ls_dut.join()
         self.test_pool.destroy()
         dutil.compare_dev_shm(self.starting_shm)
+        if self.proc_direct_test_failed:
+            import glob
+            filepath = os.getcwd()+"/ls_GSLS_test_proc_direct_*.log"
+            txt = glob.glob(filepath)
+            for textfile in txt:
+                with open(textfile, 'r') as f:
+                    print(f.read())
 
     def kill_sleepy_head(self):
         msg = dmsg.GSProcessKill(tag=self.next_tag(), p_uid=dfacts.LAUNCHER_PUID,
@@ -263,12 +271,13 @@ class GSLS(unittest.TestCase):
 
     def test_proc_direct(self):
 
+        self.proc_direct_test_failed = True
         self.start_duts()
         echotxt = 'Hello World'
 
         msg = dmsg.GSProcessCreate(tag=self.next_tag(), exe='/bin/echo',
                                 args=[echotxt], p_uid=dfacts.LAUNCHER_PUID,
-                                r_c_uid=dfacts.BASE_BE_CUID)
+                                r_c_uid=dfacts.BASE_BE_CUID, head_proc=True)
 
         self.gs_input_wh.send(msg.serialize())
 
@@ -286,6 +295,7 @@ class GSLS(unittest.TestCase):
         if len(msgs[dmsg.SHFwdOutput]) > 0:
             output_msg, _ = msgs[dmsg.SHFwdOutput][0]
             self.assertEqual(echotxt + '\n', output_msg.data)
+        self.proc_direct_test_failed = False
 
     def test_sleepy_exit(self):
         self.start_duts()
@@ -684,9 +694,9 @@ class GSLSMulti(unittest.TestCase):
         chs_up = []
         for i in range(self.nls):
             if i == 0:
-                self.names[f'shep_stdin_wh_{i}'].send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=True).serialize())
+                self.names[f'shep_stdin_wh_{i}'].send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=True, net_conf_key=str(i)).serialize())
             else:
-                self.names[f'shep_stdin_wh_{i}'].send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=False).serialize())
+                self.names[f'shep_stdin_wh_{i}'].send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=False, net_conf_key=str(i)).serialize())
 
             ping_be_msg = tsu.get_and_check_type(self.names[f'shep_stdout_rh_{i}'], dmsg.SHPingBE)
             if self.chatty_teardown:

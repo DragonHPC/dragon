@@ -723,16 +723,18 @@ dragon_fifo_lock(dragonFIFOLock_t * dlock)
 
     uint64_t ntest = 0UL;
     while (my_ticket != *(dlock->now_serving)) {
-
         if (unlikely(ntest == DRAGON_LOCK_POLL_PRE_SLEEP_ITERS)) {
             usleep(DRAGON_LOCK_POLL_SLEEP_USEC);
             ntest = 0UL;
             PAUSE();
         }
         ntest++;
-     }
+    }
 
-     no_err_return(DRAGON_SUCCESS);
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
+
+    no_err_return(DRAGON_SUCCESS);
 }
 
 dragonError_t
@@ -754,14 +756,16 @@ dragon_fifolite_lock(dragonFIFOLiteLock_t * dlock)
 
     uint64_t ntest = 0UL;
     while (my_ticket > *(dlock->now_serving)) {
-
         if (unlikely(ntest == DRAGON_LOCK_POLL_PRE_SLEEP_ITERS)) {
             usleep(DRAGON_LOCK_POLL_SLEEP_USEC);
             ntest = 0UL;
             PAUSE();
         }
         ntest++;
-     }
+    }
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
 
      no_err_return(DRAGON_SUCCESS);
 }
@@ -781,6 +785,9 @@ dragon_greedy_lock(dragonGreedyLock_t * dlock)
     int ierr = pthread_mutex_lock(dlock->mutex);
     if (unlikely(ierr != 0))
         err_return(DRAGON_LOCK_PTHREAD_MUTEX_LOCK,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -846,6 +853,10 @@ dragon_fifo_try_lock(dragonFIFOLock_t * dlock, int *locked)
                                                               DRAGON_LOCK_MEM_ORDER,
                                                               DRAGON_LOCK_MEM_ORDER_FAIL);
             if (success == true) {
+
+                if (*dlock->initd != LOCK_INITD)
+                    err_return(DRAGON_OBJECT_DESTROYED, "");
+
                 *locked = 1;
                 no_err_return(DRAGON_SUCCESS);
             }
@@ -859,6 +870,9 @@ dragon_fifo_try_lock(dragonFIFOLock_t * dlock, int *locked)
                 append_err_return(derr,"");
         }
     }
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -899,10 +913,17 @@ dragon_fifolite_try_lock(dragonFIFOLiteLock_t * dlock, int *locked)
                                                           DRAGON_LOCK_MEM_ORDER,
                                                           DRAGON_LOCK_MEM_ORDER_FAIL);
         if (success == true) {
+
+            if (*dlock->initd != LOCK_INITD)
+                err_return(DRAGON_OBJECT_DESTROYED, "");
+
             *locked = 1;
             no_err_return(DRAGON_SUCCESS);
         }
     }
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -931,8 +952,11 @@ dragon_greedy_try_lock(dragonGreedyLock_t * dlock, int *locked)
 
     if (unlikely(ierr != 0))
         err_return(DRAGON_LOCK_PTHREAD_MUTEX_LOCK,"");
-    *locked = 1;
 
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
+
+    *locked = 1;
     no_err_return(DRAGON_SUCCESS);
 }
 

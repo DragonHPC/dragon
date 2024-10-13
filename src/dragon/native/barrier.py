@@ -36,7 +36,7 @@ class Barrier:
 
         """Initialize a barrier object
         :param parties: number of parties for the barrier to act upon
-        :type parties: int, optional, > 2
+        :type parties: int, optional, > 1
         :param action: class that the barrier calls upon
         :type callable: optional
         :param timeout: timeout for barrier
@@ -77,8 +77,14 @@ class Barrier:
     def __del__(self):
         try:
             cuid = self._channel.cuid
-            self._channel.detach()
-            release_refcnt(cuid)
+            try:
+                self._channel.detach()
+            except:
+                pass
+            try:
+                release_refcnt(cuid)
+            except:
+                pass
         except AttributeError:
             pass
 
@@ -141,6 +147,7 @@ class Barrier:
             # all but the last wait to pickup a message from receive handle
             msg = recvh.recv(timeout=rest_timeout)
             msg_val = int.from_bytes(msg.bytes_memview(), byteorder=sys.byteorder, signed=True)
+            msg.destroy()
 
             # -1 can come back if the Barrier has been broken. If this happens,
             # another process raised the BrokenBarrierException and we do not need to call abort().
@@ -188,7 +195,7 @@ class Barrier:
         :type timeout: float, optional
         :rtype: None
         """
-        LOGGER.debug(f"Barrier {self!r} wait with timeout{timeout!r}")
+        LOGGER.debug("Barrier wait with timeout %s", timeout)
         return self._wait(timeout=timeout)
 
     def reset(self) -> None:
@@ -214,6 +221,20 @@ class Barrier:
             self._channel.poll(event_mask=EventType.POLLBARRIER_ABORT, timeout=0)
         except Exception as ex:
             raise BrokenBarrierError(f"The abort failed with the error of {repr(ex)}.")
+
+    def destroy(self) -> None:
+        '''Destroys the underlying Dragon resources so the space can be re-used.
+
+        Destroys underlying Dragon resource. Only do this when you know all
+        references to the object have been deleted.
+
+        :return: None
+        :rtype: NoneType
+        '''
+        try:
+            self._channel.destroy()
+        except:
+            pass
 
     @property
     def parties(self):

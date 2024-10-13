@@ -4,20 +4,20 @@ import subprocess
 
 from .base import BaseNetworkConfig
 
-SLURM_LAUNCH_BE_ARGS = 'srun --nodes={nnodes} --ntasks={nnodes} --cpu_bind=none --nodelist={nodelist}'
 
-
-def get_slurm_launch_be_args(args_map=None):
-    return SLURM_LAUNCH_BE_ARGS
+def get_slurm_launch_be_args(args_map, launch_args):
+    slurm_launch_be_args = ['srun', f"--nodes={args_map['nnodes']}", f"--ntasks={args_map['nnodes']}", '--cpu_bind=none', f"--nodelist={args_map['nodelist']}"]
+    return slurm_launch_be_args + launch_args
 
 
 class SlurmNetworkConfig(BaseNetworkConfig):
 
     SRUN_COMMAND_LINE = "srun --nodes={nnodes} --ntasks={nnodes} --cpu_bind=none -u -l -W 0"
+    ENV_SLURM_JOB_ID = "SLURM_JOB_ID"
 
     def __init__(self, network_prefix, port, hostlist):
 
-        self.job_id =  os.environ.get("SLURM_JOB_ID")
+        self.job_id =  os.environ.get(self.ENV_SLURM_JOB_ID)
         if not self.job_id:
             msg = """Requesting a slurm network config outside of slurm job allocation.
 Resubmit as part of a 'salloc' or 'sbatch' execution."""
@@ -31,7 +31,11 @@ Resubmit as part of a 'salloc' or 'sbatch' execution."""
 
     @classmethod
     def check_for_wlm_support(cls) -> bool:
-        return shutil.which("srun")
+        return shutil.which("srun") is not None
+
+    @classmethod
+    def check_for_allocation(cls) -> bool:
+        return os.environ.get(cls.ENV_SLURM_JOB_ID) is not None
 
     def _get_wlm_job_id(self) -> str:
         return self.job_id

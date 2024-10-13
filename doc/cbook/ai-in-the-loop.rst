@@ -238,7 +238,7 @@ The code of the other files can be found in the release package, inside `example
                 # interval we uniformly sample training data from
                 # launch mpi job to generate data
                 data, target = generate_data(
-                    my_alloc.nnodes() * ranks_per_node, samples_per_rank, data_interval, number_of_times_trained
+                    my_alloc.nnodes * ranks_per_node, samples_per_rank, data_interval, number_of_times_trained
                 )
                 # train model
                 loss = train(model, optimizer, data, target)

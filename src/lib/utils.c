@@ -14,11 +14,13 @@
 #include <fcntl.h>
 #include <unistd.h>
 
-
 #define ONE_BILLION 1000000000
 #define ONE_MILLION 1000000
+#define NSEC_PER_SECOND 1000000000
 
+bool dg_enable_errstr = true;
 _Thread_local char * errstr = NULL;
+static _Thread_local bool dg_thread_local_mode = false;
 
 const char*
 dragon_get_rc_string(const dragonError_t rc)
@@ -89,6 +91,11 @@ dragon_getlasterrstr()
     return str;
 }
 
+void
+dragon_enable_errstr(bool enable_errstr)
+{
+    dg_enable_errstr = enable_errstr;
+}
 
 dragonError_t
 _lower_id(char *boot_id)
@@ -244,6 +251,77 @@ dragon_get_local_rt_uid()
     }
 
     return rt_uid;
+}
+
+dragonULInt
+dragon_get_my_puid()
+{
+    static dragonULInt local_get_puid = 0UL;
+    static bool get_puid_called = false;
+
+    if (get_puid_called)
+        return local_get_puid;
+
+    get_puid_called = true;
+
+    char* puid_str = getenv("DRAGON_MY_PUID");
+
+    if (puid_str != NULL)
+        local_get_puid = (dragonULInt) strtoul(puid_str, NULL, 10);
+
+    return local_get_puid;
+}
+
+dragonULInt
+dragon_get_env_var_as_ulint(char* env_key)
+{
+    dragonULInt ret_val = 0UL;
+
+    if (env_key == NULL)
+        return 0UL;
+
+    char* env_val = getenv(env_key);
+
+    if (env_val != NULL)
+        ret_val = (dragonULInt) strtoul(env_val, NULL, 10);
+
+    return ret_val;
+}
+
+dragonError_t
+dragon_set_env_var_as_ulint(char* env_key, dragonULInt val)
+{
+    if (env_key == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Cannot set NULL key");
+
+    char env_val[200];
+    snprintf(env_val, 199, "%lu", val);
+
+    int rc = setenv(env_key, env_val, 1);
+
+    if (rc != 0) {
+        char err_str[200];
+        snprintf(err_str, 199, "Error on setting env var with EC=%d", rc);
+        err_return(DRAGON_INVALID_OPERATION, err_str);
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+dragon_unset_env_var(char* env_key)
+{
+    if (env_key == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Cannot unset NULL key");
+
+    int rc = unsetenv(env_key);
+    if (rc != 0) {
+        char err_str[200];
+        snprintf(err_str, 199, "Error on unsetting env var with EC=%d", rc);
+        err_return(DRAGON_INVALID_OPERATION, err_str);
+    }
+
+    no_err_return(DRAGON_SUCCESS);
 }
 
 dragonError_t
@@ -483,6 +561,13 @@ dragon_timespec_remaining(const timespec_t * deadline, timespec_t * remaining_ti
     no_err_return(DRAGON_SUCCESS);
 }
 
+double dragon_get_current_time_as_double() {
+    timespec_t the_time;
+    clock_gettime(CLOCK_MONOTONIC, &the_time);
+    double time_val = the_time.tv_sec + ((double)the_time.tv_nsec) / NSEC_PER_SECOND;
+    return time_val;
+}
+
 void strip_newlines(const char* inout_str, size_t* input_length) {
     size_t idx = *input_length-1;
 
@@ -618,29 +703,29 @@ dragon_hash(void* ptr, size_t num_bytes)
     if (ptr == NULL)
         return 0;
 
-    dragonULInt alignment = sizeof(dragonULInt) - (dragonULInt)ptr % sizeof(dragonULInt);
+    size_t alignment = sizeof(dragonULInt) - ((dragonULInt)ptr) % sizeof(dragonULInt);
     if (alignment == sizeof(dragonULInt))
         alignment = 0;
 
-    long num_words = (num_bytes-alignment)/sizeof(dragonULInt);
+    size_t num_words = (num_bytes-alignment)/sizeof(dragonULInt);
 
-    long rem = (num_bytes-alignment)%sizeof(dragonULInt);
+    size_t rem = (num_bytes-alignment)%sizeof(dragonULInt);
 
     uint8_t* first_bytes = (uint8_t*) ptr;
-    dragonULInt* arr = (dragonULInt*) ptr + alignment;
+    dragonULInt* arr = (dragonULInt*) (first_bytes + alignment);
     uint8_t* last_bytes = (uint8_t*)&arr[num_words];
 
     dragonULInt hashVal = 0;
 
     long i;
     for (i=0;i<alignment;i++)
-        hashVal = hashVal + first_bytes[i];
+        hashVal = hashVal + first_bytes[i] * 0x9e3779b97f4a7c15;
 
     for (i=0;i<num_words;i++)
-        hashVal = hashVal + arr[i];
+        hashVal = hashVal + arr[i] * 0xbf58476d1ce4e5b9;
 
     for (i=0;i<rem;i++)
-        hashVal = hashVal + last_bytes[i];
+        hashVal = hashVal + last_bytes[i] * 0x94d049bb133111eb;
 
     return hashVal;
 }
@@ -680,5 +765,25 @@ uint64_t
 dragon_sec_to_nsec(uint64_t sec)
 {
     return sec * 1e9;
+}
+
+void
+dragon_set_thread_local_mode(bool set_thread_local)
+{
+    _set_thread_local_mode_channels(set_thread_local);
+    _set_thread_local_mode_channelsets(set_thread_local);
+    _set_thread_local_mode_managed_memory(set_thread_local);
+    _set_thread_local_mode_bcast(set_thread_local);
+    _set_thread_local_mode_ddict(set_thread_local);
+    _set_thread_local_mode_fli(set_thread_local);
+    _set_thread_local_mode_queues(set_thread_local);
+
+    dg_thread_local_mode = set_thread_local;
+}
+
+bool
+dragon_get_thread_local_mode()
+{
+    return dg_thread_local_mode;
 }
 

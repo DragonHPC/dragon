@@ -396,6 +396,11 @@ dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
  * As the constant indicates, the main channel will be used as the stream channel
  * in this special case.
  *
+ * @param dest_pool is a pool descriptor that can be used to indicate which pool
+ * will be used as the destination for sending data through a channel. This
+ * pool descriptor can be either a local or remote channel but must exist on
+ * the node where the
+ *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and
  * return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that indicates
@@ -405,7 +410,7 @@ dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
 **/
 dragonError_t
 dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandleDescr_t* send_handle,
-                            dragonChannelDescr_t* strm_ch, const timespec_t* timeout);
+                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, const timespec_t* timeout);
 
 /**
  * @brief Close a Send Handle
@@ -452,6 +457,12 @@ dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_handle,
  * As the constant indicates, the main channel will be used as the stream channel
  * in this special case.
  *
+ * @param dest_pool is a pool descriptor pointer that is used to copy the
+ * received message into when messages are received from the stream channel.
+ * While useful when using recv_mem, other receiving methods will use the pool
+ * as a transient space while receiving data and copy into process local
+ * storage while freeing the underlying pool data.
+ *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and
  * return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that indicates
@@ -461,7 +472,7 @@ dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_handle,
 **/
 dragonError_t
 dragon_fli_open_recv_handle(const dragonFLIDescr_t* adapter, dragonFLIRecvHandleDescr_t* recv_handle,
-                            dragonChannelDescr_t* strm_ch, const timespec_t* timeout);
+                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, const timespec_t* timeout);
 
 /**
  * @brief Close a Recv Handle

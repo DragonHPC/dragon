@@ -51,10 +51,9 @@ class LaunchSelectionTest(unittest.TestCase):
 
     @patch('sys.argv', ['dragon', 'dummy.py'])
     @patch('shutil.which')
-    @patch.dict(environ, {"SLURM_JOB_ID": ""})
     def test_multinode_auto_without_allocation_slurm(self, mock_which):
         """Raise exception due to slurm being present with no job allocation"""
-        mock_which.side_effect = ['/opt/slurm/bin/qstat', '/usr/bin/srun', None]
+        mock_which.side_effect = ['/opt/slurm/bin/qstat', '/usr/bin/srun']
         with self.assertRaises(RuntimeError) as e:
             dls.determine_environment()
         self.assertTrue('Executing in a Slurm environment, but with no job allocation' in str(e.exception))
@@ -64,11 +63,11 @@ class LaunchSelectionTest(unittest.TestCase):
     @patch.dict(environ, {"PBS_NODEFILE": ""})
     def test_multinode_auto_without_allocation_pbs_bad_mpiexec(self, mock_which):
         """Raise exception due to PBS  being present with no job allocation and a bad mpiexec in path"""
-        mock_which.side_effect = ['/opt/pbs/bin/qstat', None, '/usr/bin/mpiexec']
+        mock_which.side_effect = ['/opt/pbs/bin/qstat', '/usr/bin/mpiexec', None]
         with self.assertRaises(RuntimeError) as e:
             dls.determine_environment()
         print(f'{str(e.exception)}')
-        self.assertTrue('PBS has been detected on the system. However, Dragon is only' in str(e.exception))
+        self.assertTrue('PBS has been detected on the system. However, Dragon is only compatible with a PALS mpiexec' in str(e.exception))
 
     @patch('sys.argv', ['dragon', 'dummy.py'])
     @patch('shutil.which')
@@ -79,26 +78,25 @@ class LaunchSelectionTest(unittest.TestCase):
         with self.assertRaises(RuntimeError) as e:
             dls.determine_environment()
         print(f'{str(e.exception)}')
-        self.assertTrue('PBS has been detected on the system. However, Dragon is only' in str(e.exception))
+        self.assertTrue('PBS was detected on the system, but Dragon cannot find the mpiexec command.' in str(e.exception))
 
     @patch('sys.argv', ['dragon', 'dummy.py'])
     @patch('shutil.which')
-    @patch.dict(environ, {"PBS_NODEFILE": "/a/presumably/valid/path"})
+    @patch.dict(environ, {"PBS_JOBID": "123"})
     def test_multinode_auto_with_allocation_pbs_good_mpiexec(self, mock_which):
         """Correctly identify we're doing PBS and PALS"""
-        mock_which.side_effect = ['/opt/pbs/bin/qstat', None, '/opt/cray/pe/pals/default/bin/mpiexec']
+        mock_which.side_effect = ['/opt/pbs/bin/qstat', '/opt/cray/pe/pals/default/bin/mpiexec', None]
         multi_mode = dls.determine_environment()
         self.assertTrue(multi_mode)
 
     @patch('sys.argv', ['dragon', 'dummy.py'])
     @patch('shutil.which')
-    @patch.dict(environ, {"PBS_NODEFILE": ""})
     def test_multinode_auto_without_allocation_pbs_good_mpiexec(self, mock_which):
         """Correctly identify we're doing PBS and PALS"""
-        mock_which.side_effect = ['/opt/pbs/bin/qstat', None, '/opt/cray/pe/pals/default/bin/mpiexec']
+        mock_which.side_effect = ['/opt/pbs/bin/qstat', '/opt/cray/pe/pals/default/bin/mpiexec', None]
         with self.assertRaises(RuntimeError) as e:
             dls.determine_environment()
-        self.assertTrue('Using a supported PALS with PBS config. However, no active jobs allocation' in str(e.exception))
+        self.assertTrue("Using a supported PALS with PBS config. However, no active jobs allocation" in str(e.exception))
 
     @patch('sys.argv', ['dragon', '--single-node-override', 'dummy.py'])
     def test_single_node_override(self):
@@ -250,29 +248,21 @@ class LaunchOptionsTest(unittest.TestCase):
                          arg1=['--port', 'abcdef'])
         self.assertTrue("invalid valid_port_int value" in mock_stderr.getvalue())
 
-    @catch_thread_exceptions
     @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
     @patch('dragon.launcher.frontend.start_overlay_network')
-    def test_bad_network_prefix(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
+    @patch('sys.stderr', new_callable=StringIO)
+    def test_bad_network_prefix(self, mock_stderr, mock_overlay, mock_launch):
+
         """What happens when user requests a network prefix that doesn't exist"""
         args_map = get_args_map(self.network_config,
-                                network_prefix='garbage-prefix')
+                                network_prefix='garbage-prefix',
+                                args1=['-l', 'dragon_file=DEBUG'])
 
-        # get startup going in another thread. Note: need to do threads in order to use
-        # all our mocks
-        fe_proc = threading.Thread(name='Frontend Server',
-                                   target=run_frontend,
-                                   args=(args_map,),
-                                   daemon=False)
-        fe_proc.start()
-        fe_proc.join()
+        with self.assertRaises(RuntimeError):
+            run_frontend(args_map)
 
-        assert 'Frontend Server' in exceptions_caught_in_threads  # there was an exception in thread  1
-        assert exceptions_caught_in_threads['Frontend Server']['exception']['type'] == ValueError
-        self.assertTrue('No IP addresses found for' in
-                        str(exceptions_caught_in_threads['Frontend Server']['exception']['value']))
-        self.assertTrue('matching regex pattern: garbage-prefix' in
-                        str(exceptions_caught_in_threads['Frontend Server']['exception']['value']))
+        self.assertTrue('No high speed NICs found for' in mock_stderr.getvalue())
+        self.assertTrue('with regex pattern garbage-prefix' in mock_stderr.getvalue())
 
 
 if __name__ == '__main__':

@@ -1,10 +1,22 @@
 import os
-import re
 import sys
 import shutil
 
+from .wlm import WLM, wlm_cls_dict
+
 
 def determine_environment(args=None):
+    """
+    Determine if dragon should be started in multi-node or single-node mode.
+
+    Returns:
+        False if dragon should be started in single-node mode
+        True if dragon should be started in multi-node mode
+
+    Raises:
+        ValueError, RuntimeError
+    """
+
     from dragon.launcher import launchargs
 
     # Check if the user requested a specific launcher mode
@@ -35,14 +47,13 @@ Please specify only '--single-node-override' or '--multi-node-override'"""
     # Try to determine if we're on a supported multinode system
     if wlm != '':
         # only one of these will be true
-        is_pbs = wlm == 'pbs'
-        is_slurm = wlm == 'slurm'
-        is_ssh = wlm == 'ssh'
+        is_pbs = wlm == str(WLM.PBS_PALS)
+        is_slurm = wlm == str(WLM.SLURM)
+        is_ssh = wlm == str(WLM.SSH)
     else:
         # Likewise, only one of these will be true (unless somehow they have both PBS and slurm installed)
-        pbs = shutil.which('qstat')
-        is_pbs = re.match('.*/pbs/.*', str(pbs)) != None
-        is_slurm = shutil.which('srun') != None
+        is_pbs = wlm_cls_dict[WLM.PBS_PALS].check_for_wlm_support()
+        is_slurm = wlm_cls_dict[WLM.SLURM].check_for_wlm_support()
         is_ssh = False
 
     if is_ssh + is_pbs + is_slurm >= 2:
@@ -53,25 +64,17 @@ Please specify only '--single-node-override' or '--multi-node-override'"""
         return True
 
     if is_pbs:
-        # Next see if we have a PALS environment loaded -- ALPS isn't supported
-        mpiexec = shutil.which("mpiexec")
-        if mpiexec:
-            pals_mpiexec = re.match('.*/pals/.*', mpiexec)
-            if pals_mpiexec:
-                if not os.environ.get("PBS_NODEFILE"):
-                    msg = """Using a supported PALS with PBS config. However, no active jobs allocation
-        has been detected. Resubmit as part of a 'qsub' execution."""
-                    raise RuntimeError(msg)
+        if not wlm_cls_dict[WLM.PBS_PALS].check_for_allocation():
+            msg = """Using a supported PALS with PBS config. However, no active jobs allocation
+has been detected. Resubmit as part of a 'qsub' execution."""
+            raise RuntimeError(msg)
 
-                return True
-
-        msg = "PBS has been detected on the system. However, Dragon is only compatible with a PALS mpiexec and it was not found."
-        raise RuntimeError(msg)
+        return True
 
     if is_slurm:
         # Check if we have nodes allocated. If not, raise an
         # exception
-        if not os.environ.get("SLURM_JOB_ID"):
+        if not wlm_cls_dict[WLM.SLURM].check_for_allocation():
             msg = """Executing in a Slurm environment, but with no job allocation.
     Resubmit as part of an 'salloc' or 'sbatch' execution"""
             raise RuntimeError(msg)

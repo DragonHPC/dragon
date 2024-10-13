@@ -11,6 +11,8 @@ from mpbridge.test_lock import TestDragonLocks
 from mpbridge.test_process import TestMPBridgeProcess
 from mpbridge.test_pool import TestMPBridgePool
 from mpbridge.test_api import TestMultiprocessingAPI, TestMultiprocessingInternalPatching
+from mpbridge.test_array import TestArray
+from mpbridge.test_value import TestValue
 # from mpbridge.test_barrier import TestBarrier
 
 

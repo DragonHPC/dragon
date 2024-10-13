@@ -115,7 +115,7 @@ class Context:
         self.shep_dut.start()
 
         # start shepherd startup protocol for single node
-        self.shep_stdin_wh.send(dmsg.BENodeIdxSH(tag=self.la_tag_cnt, node_idx=0).serialize())
+        self.shep_stdin_wh.send(dmsg.BENodeIdxSH(tag=self.la_tag_cnt, node_idx=0, net_conf_key="0").serialize())
         self.la_tag_cnt += 1
 
         ping_be_msg = tsu.get_and_check_type(self.shep_stdout_rh, dmsg.SHPingBE)

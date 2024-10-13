@@ -28,7 +28,8 @@ def get_args_map(network_config, frontend_sdesc, host_id, ip_addrs):
         "host_ids": host_id,
         "frontend_sdesc": frontend_sdesc,
         "network_prefix": f"{network_prefix}",
-        "transport_test": False
+        "transport_test": False,
+        "overlay_port": 6565
     }
     return args_map
 
@@ -492,11 +493,13 @@ class LauncherFrontEnd:
                                                      ip_addrs=node_desc.ip_addrs,
                                                      overlay_cd=be_up.be_ch_desc)
                     break
+        net_conf_key_mapping = list(self.network_config.keys())
         fe_node_idx = dmsg.FENodeIdxBE(
             tag=next_tag(),
             node_index=self.node_index,
             forward=forwarding,
-            send_desc=self.encoded_inbound)
+            send_desc=self.encoded_inbound,
+            net_conf_key_mapping=net_conf_key_mapping)
         self.conn_out.send(fe_node_idx.serialize())
         self.log.debug(f"send_FENodeIdxBE sent {fe_node_idx=}")
 
@@ -802,7 +805,8 @@ class LocalServices:
             ch_up_msg = dmsg.SHChannelsUp(tag=next_tag(),
                                           node_desc=node_desc,
                                           gs_cd=self.gs_cd,
-                                          idx=self.be_node_idx_sh.node_idx)
+                                          idx=self.be_node_idx_sh.node_idx,
+                                          net_conf_key=self.be_node_idx_sh.net_conf_key)
 
             self.la_input.send(ch_up_msg.serialize())
             self.log.debug(f"send_SHChannelsUP sent {ch_up_msg=}")

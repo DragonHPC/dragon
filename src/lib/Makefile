@@ -9,7 +9,7 @@ CXX = g++
 CPPFLAGS = -I ../include -DDRAGON_DEBUG $(CONFIG_INCLUDE) $(CONFIG_DEFINES)
 CXXFLAGS = $(CFLAGS) $(CPPFLAGS) -std=c++14
 
-LIBRARIES := libdragon.so libpmsgqueue.so libpmod.so
+LIBRARIES := libdragon.so libpmod.so $(wildcard libdfabric_*.so)
 
 libdragon_HEADERS := $(wildcard *.h) \
                      $(wildcard gpu/*.hpp) \
@@ -41,7 +41,7 @@ message_defs.capnp.o:
 	$(MAKE) -C ../include $*
 
 libdragon.so: $(libdragon_OBJECTS)
-libdragon.so: LDLIBS += -lstdc++ -lrt
+libdragon.so: LDLIBS += -lstdc++ -lrt -lnuma
 
 libdragon.so: %.so:
 	$(LINK.c) -L . -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive libcapnp.a libkj.a -Wl,--no-whole-archive $(LDLIBS)
@@ -50,7 +50,7 @@ libpmod.so: libdragon.so
 	ln -sf libdragon.so libpmod.so
 
 .PHONY: $(filter-out libpmod.so, $(filter-out libdragon.so,$(LIBRARIES)))
-$(filter-out libpmod.so,$(filter-out libdragon.so,$(LIBRARIES))): lib%.so: ../dragon/launcher/src/lib%.so
+$(filter-out libpmod.so,$(filter-out libdragon.so,$(LIBRARIES))): lib%.so: ../dragon/transport/hsta/dfabric_lib/lib%.so
 	$(MAKE) -C $(<D) $(<F)
 	$(INSTALL) -m 755 -D $< $@
 
@@ -61,4 +61,3 @@ $(filter-out libpmod.so,$(filter-out libdragon.so,$(LIBRARIES))): lib%.so: ../dr
 .PHONY: clean
 clean:
 	$(RM) $(LIBRARIES) *.o libpmod.so *.capnp.c++ *.capnp.h *.capnp.o
-	$(MAKE) -C ../dragon/launcher/src clean

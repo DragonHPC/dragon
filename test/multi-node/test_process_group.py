@@ -9,15 +9,17 @@ import socket
 
 import dragon
 
+
 from dragon.native.process_group import ProcessGroup
 from dragon.native.process import ProcessTemplate, Process
-from dragon.native.queue import Queue 
-from dragon.native.machine import cpu_count, current, System, Node
+from dragon.native.queue import Queue
+from dragon.native.machine import cpu_count, System, Node
 
 from dragon.globalservices.process import query as process_query, kill, signal as dragon_signal
-from dragon.globalservices.node import query as node_query, get_list as node_get_list
+from dragon.globalservices.node import get_list as node_get_list
 from dragon.infrastructure.process_desc import ProcessOptions
-from dragon.infrastructure.policy import Policy, GS_DEFAULT_POLICY
+from dragon.infrastructure.policy import Policy
+
 
 def placement_info(q, vendor):
     hostname = socket.gethostname()
@@ -25,17 +27,20 @@ def placement_info(q, vendor):
     cpus_allowed_list = -1
     with open(f'/proc/{pid}/status') as f:
         for _, line in enumerate(f):
-                split_line = line.split(':')
-                if split_line[0] == "Cpus_allowed_list":    
-                    cpus_allowed_list = split_line[1].strip('\n').strip('\t')
-                    break
-    visible_devices=None
+            split_line = line.split(':')
+            if split_line[0] == "Cpus_allowed_list":
+                cpus_allowed_list = split_line[1].strip('\n').strip('\t')
+                break
+    visible_devices = None
     if vendor == 'Nvidia':
         visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
     elif vendor == 'AMD':
         visible_devices = os.getenv("ROCR_VISIBLE_DEVICES")
-    
+    elif vendor == 'Intel':
+        visible_devices = os.getenv("ZE_AFFINITY_MASK")
+
     q.put((hostname, cpus_allowed_list, visible_devices,))
+
 
 class TestProcessGroupMultiNode(unittest.TestCase):
     @classmethod
@@ -89,7 +94,7 @@ class TestProcessGroupMultiNode(unittest.TestCase):
 
         testtime = 10  # sec
 
-        pg = ProcessGroup(ignore_error_on_exit=True, policy=Policy())
+        pg = ProcessGroup(restart=True, ignore_error_on_exit=True, policy=Policy())
 
         count = 0
         for i in range(self.nproc):
@@ -105,7 +110,6 @@ class TestProcessGroupMultiNode(unittest.TestCase):
 
         pg.init()
 
-        man_proc = pg._manager._proc
         self._update_interval_sec = 0.1
 
         pg.start()
@@ -122,29 +126,22 @@ class TestProcessGroupMultiNode(unittest.TestCase):
             except Exception:  # maybe it disappeared already
                 pass
 
-            self.assertTrue(man_proc.is_alive)
-            self.assertTrue(pg.status != "Error")
+            self.assertTrue(pg._state != "Error")
 
             time.sleep(testtime // 10)
 
         puids = pg.puids
 
-        pg.kill(signal.SIGTERM)
+        pg.stop()
 
-        while not pg.status == "Idle":
-            self.assertTrue(pg.status != "Error")
-
-        self.assertTrue(man_proc.is_alive)
+        while not pg._state == "Idle":
+            self.assertTrue(pg._state != "Error")
 
         for puid in puids:
             gs_info = process_query(puid)
             self.assertTrue(gs_info.state == gs_info.State.DEAD)
 
-        pg.stop()
-
-        self.assertTrue(pg.status == "Stop")
-
-        man_proc.join()
+        pg.close()
 
     def test_walltime(self):
 
@@ -153,82 +150,84 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         # small number of procs, so that the startup overhead is minimal
         nproc = len(node_get_list())
 
-        pg = ProcessGroup(walltime=wtime)
+        pg = ProcessGroup(walltime=wtime, ignore_error_on_exit=True)
         pg.add_process(nproc, self.template)
         pg.init()
 
         pg.start()
-
         start = time.monotonic()
-        while not pg.status == "Idle":
-            self.assertFalse(pg.status == "Error")
+
+        while not pg._state == "Idle":
+            self.assertFalse(pg._state == "Error")
 
         stop = time.monotonic()
 
-        self.assertAlmostEqual(stop - start, wtime, 0)
+        self.assertAlmostEqual(stop - start, wtime, None, "Not within 1s tolerance for walltime test", 1)
 
         pg.stop()
-    
+        pg.close()
+
     def test_hostname_node_restriction(self):
         my_alloc = System()
         num_procs_per_node = 2
-        num_nodes_to_use = int(my_alloc.nnodes()/2)
+        num_nodes_to_use = int(my_alloc.nnodes/2)
         node_list = my_alloc.nodes
-        num_procs = num_nodes_to_use*num_procs_per_node 
+        num_procs = num_nodes_to_use*num_procs_per_node
         q = Queue()
         gpu_vendor = None
         args = (q, gpu_vendor)
         cwd = os.getcwd()
         grp = ProcessGroup(restart=False)
         acceptable_hostnames = []
-        
-        # create a process group that runs on a subset of nodes 
+
+        # create a process group that runs on a subset of nodes
         for node_num in range(num_nodes_to_use):
             node_name = Node(node_list[node_num]).hostname
             local_policy = Policy(placement=Policy.Placement.HOST_NAME,host_name=node_name)
             grp.add_process(nproc=num_procs_per_node, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd, policy=local_policy))
             acceptable_hostnames.append(node_name)
 
-        #init and start my process group 
+        # init and start my process group
         grp.init()
         grp.start()
 
         count = 0
-        while count < num_procs: 
+        while count < num_procs:
             hostname, _, _ = q.get()
             # check that proc is on a node it was meant to land on
             self.assertIn(hostname, acceptable_hostnames, msg=f'Got hostname {hostname} which is not in {acceptable_hostnames}')
             count += 1
-        
+
         # wait for workers to finish and shutdown process group
         grp.join()
         grp.stop()
-    
+        grp.close()
+
     def test_huid_node_restriction(self):
         my_alloc = System()
         num_procs_per_node = 2
-        num_nodes_to_use = int(my_alloc.nnodes()/2)
+        num_nodes_to_use = int(my_alloc.nnodes/2)
         node_list = my_alloc.nodes
-        num_procs = num_nodes_to_use*num_procs_per_node 
+        num_procs = num_nodes_to_use*num_procs_per_node
         q = Queue()
         gpu_vendor = None
         args = (q, gpu_vendor)
         cwd = os.getcwd()
         grp = ProcessGroup(restart=False)
         acceptable_huids = []
-        # create a process group that runs on a subset of nodes 
+        # create a process group that runs on a subset of nodes
         for index, huid in enumerate(node_list[:num_nodes_to_use]):
             node_huid = Node(node_list[index]).h_uid
             self.assertEqual(huid, node_huid, f'{huid} is not equal to {node_huid} from Node.h_uid')
             local_policy = Policy(placement=Policy.Placement.HOST_ID,host_id=huid)
             grp.add_process(nproc=num_procs_per_node, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd, policy=local_policy))
             acceptable_huids.append(huid)
-        #init and start my process group 
+        #init and start my process group
         grp.init()
         grp.start()
 
         count = 0
-        while count < num_procs: 
+        while count < num_procs:
             hostname, _, _ = q.get()
             host_id = Node(hostname).h_uid
             # check that proc is on a node it was meant to land on
@@ -236,14 +235,15 @@ class TestProcessGroupMultiNode(unittest.TestCase):
             count += 1
         grp.join()
         grp.stop()
+        grp.close()
 
 
     def test_policy_hierarchy(self):
         my_alloc = System()
         num_procs_per_node = 2
-        num_nodes_to_use = int(my_alloc.nnodes()/2)
+        num_nodes_to_use = int(my_alloc.nnodes/2)
         node_list = my_alloc.nodes
-        num_procs = num_nodes_to_use*num_procs_per_node 
+        num_procs = num_nodes_to_use*num_procs_per_node
         q = Queue()
         gpu_vendor = None
         args = (q, gpu_vendor)
@@ -251,21 +251,20 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         global_policy = Policy(placement=Policy.Placement.HOST_NAME,host_name=Node(node_list[num_nodes_to_use]).hostname)
         grp = ProcessGroup(restart=False, policy=global_policy)
         acceptable_hostnames = []
-        
-        # create a process group that runs on a subset of nodes 
+
+        # create a process group that runs on a subset of nodes
         for node_num in range(num_nodes_to_use):
             node_name = Node(node_list[node_num]).hostname
             local_policy = Policy(placement=Policy.Placement.HOST_NAME,host_name=node_name)
             grp.add_process(nproc=num_procs_per_node, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd, policy=local_policy))
             acceptable_hostnames.append(node_name)
 
-        #init and start my process group 
+        # init and start my process group
         grp.init()
         grp.start()
 
-
         count = 0
-        while count < num_procs: 
+        while count < num_procs:
             hostname, _, _ = q.get()
             # check that proc is on a node it was meant to land on
             self.assertIn(hostname, acceptable_hostnames, msg=f'Got hostname {hostname} which is not in {acceptable_hostnames}')
@@ -274,10 +273,11 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         # wait for workers to finish and shutdown process group
         grp.join()
         grp.stop()
-    
+        grp.close()
+
     def test_block_distribution(self):
         my_alloc = System()
-        num_procs = int(cpu_count()/my_alloc.nnodes())
+        num_procs = cpu_count() // my_alloc.nnodes - 1  # We subtract one because the Manager is already on the head node
         q = Queue()
         gpu_vendor = None
         args = (q, gpu_vendor)
@@ -286,28 +286,29 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         grp = ProcessGroup(restart=False, policy=global_policy)
         grp.add_process(nproc=num_procs, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd))
 
-        #init and start my process group 
+        # init and start my process group
         grp.init()
         grp.start()
 
         count = 0
-        while count < num_procs: 
+        acceptable_hostname = None
+        while count < num_procs:
             hostname, _, _ = q.get()
             if count > 0:
-            # check that proc is on a node it was meant to land on
-                self.assertEqual(hostname, acceptable_hostname, msg=f'Got hostname {hostname} which is not in {acceptable_hostname}')
+                # check that proc is on a node it was meant to land on
+                self.assertEqual(hostname, acceptable_hostname, msg=f'Got hostname {hostname} on proc {count} which is not in {acceptable_hostname}')
             else:
-                acceptable_hostname=hostname
+                acceptable_hostname = hostname
             count += 1
         # wait for workers to finish and shutdown process group
         grp.join()
         grp.stop()
-    
-    
+        grp.close()
+
     def test_roundrobin_distribution(self):
         my_alloc = System()
-        num_procs_per_node = 10 
-        num_procs = int(num_procs_per_node*my_alloc.nnodes())
+        num_procs_per_node = 10
+        num_procs = int(num_procs_per_node*my_alloc.nnodes)
         q = Queue()
         gpu_vendor = None
         args = (q, gpu_vendor)
@@ -316,18 +317,18 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         grp = ProcessGroup(restart=False, policy=global_policy)
         grp.add_process(nproc=num_procs, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd))
 
-        #init and start my process group 
+        # init and start my process group
         grp.init()
         grp.start()
 
         host_num_procs = {}
         count = 0
-        while count < num_procs: 
+        while count < num_procs:
             hostname, _, _ = q.get()
             try:
-                host_num_procs[hostname] += 1 
+                host_num_procs[hostname] += 1
             except KeyError:
-                host_num_procs[hostname] = 1 
+                host_num_procs[hostname] = 1
             count += 1
         for val in host_num_procs.values():
             self.assertEqual(val, num_procs_per_node)
@@ -335,45 +336,51 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         # wait for workers to finish and shutdown process group
         grp.join()
         grp.stop()
-    
+        grp.close()
+
     def test_gpu_affinity(self):
-        #there are a couple spots where we assume if a node has gpus that all do
+        # there are a couple spots where we assume if a node has gpus that all do
         my_alloc = System()
         node_list = my_alloc.nodes
-        nodes = {} 
-        has_gpus=False
+        nodes = {}
+        has_gpus = False
         for node_id in node_list:
             node = Node(node_id)
             nodes[node.hostname] = node
-            if node.gpus is not None:
-                has_gpus=True 
-
-        if not has_gpus:
-            print('System does not have GPUs to test gpu affinity with', flush=True)
-            return
 
         a_node = list(nodes.values())[0]
         num_use_devices = int(a_node.num_gpus/2)
-        devices_to_use = a_node.gpus[num_use_devices:]
-        correct_env_var =""
-        for i in devices_to_use:
-            correct_env_var +=str(i)+','
-        correct_env_var = correct_env_var.strip(',')
+        if num_use_devices > 0:
+            devices_to_use = a_node.gpus[num_use_devices:]
+            if a_node.gpu_vendor == 'Intel':
+                devices_to_use[0] = int(devices_to_use[0])
+                del devices_to_use[1]
+            correct_env_var =""
+            for i in devices_to_use:
+                correct_env_var +=str(i)+','
+            correct_env_var = correct_env_var.strip(',')
+        else:
+            correct_env_var = None
+            # check that if we use define GPUs to use with non-available that the env string is set to None
+            devices_to_use = ['5', '6']
 
-        self.assertIn(a_node.gpu_vendor, ['Nvidia', 'AMD'])
+        if num_use_devices == 0:
+            self.assertEqual(a_node.gpu_vendor, None)
+        else:
+            self.assertIn(a_node.gpu_vendor, ['Nvidia', 'AMD', 'Intel'])
         q = Queue()
         args = (q, a_node.gpu_vendor)
         cwd = os.getcwd()
-        global_policy = Policy(device=Policy.Device.GPU, gpu_affinity=devices_to_use)
+        global_policy = Policy(gpu_affinity=devices_to_use)
         grp = ProcessGroup(restart=False, policy=global_policy)
-        grp.add_process(nproc=my_alloc.nnodes(), template=ProcessTemplate(target=placement_info, args=args, cwd=cwd))
+        grp.add_process(nproc=my_alloc.nnodes, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd))
 
-        #init and start my process group 
+        # init and start my process group
         grp.init()
         grp.start()
 
         count = 0
-        while count < my_alloc.nnodes(): 
+        while count < my_alloc.nnodes:
             _, _, visible_devices = q.get()
             self.assertEqual(visible_devices, correct_env_var)
             count += 1
@@ -381,9 +388,8 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         # wait for workers to finish and shutdown process group
         grp.join()
         grp.stop()
-    
+        grp.close()
 
-    #@unittest.skip(f"Need to work out how to check cpu affinity")
     def test_cpu_affinity(self):
         my_alloc = System()
         q = Queue()
@@ -393,21 +399,23 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         allowed_cpus = [3, 8, 11, 13]
         group_policy = Policy(cpu_affinity=allowed_cpus)
         grp = ProcessGroup(restart=False, policy=group_policy)
-        grp.add_process(nproc=my_alloc.nnodes(), template=ProcessTemplate(target=placement_info, args=args, cwd=cwd))
+        grp.add_process(nproc=my_alloc.nnodes, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd))
 
-        #init and start my process group 
+        #init and start my process group
         grp.init()
         grp.start()
 
         count = 0
-        while count < my_alloc.nnodes(): 
+        while count < my_alloc.nnodes:
             _, cpus_list_allowed, _ = q.get()
             self.assertEqual(allowed_cpus, [int(x) for x in cpus_list_allowed.split(',')])
             count += 1
-         
+
         # wait for workers to finish and shutdown process group
         grp.join()
         grp.stop()
-    
+        grp.close()
+
+
 if __name__ == "__main__":
     unittest.main()

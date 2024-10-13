@@ -52,7 +52,7 @@ def seconds_remaining(deadline: float, _inf: Optional[float] = None) -> (Optiona
     return remaining, since
 
 
-def mem_descr_msg(sdesc: bytes, data: bytes, clientid: int, hints: int) -> Message:
+def mem_descr_msg(sdesc: bytes, data: bytes, clientid: int, hints: int, deadline: Optional[float] = None) -> Message:
     """Attaches to memory allocation given a serialized memory descriptor and
     writes the specified data. Yields a Dragon message created from the
     corresponding memory allocation.
@@ -61,6 +61,12 @@ def mem_descr_msg(sdesc: bytes, data: bytes, clientid: int, hints: int) -> Messa
     # XXX a timeout or deadline.
     mem = MemoryAlloc.attach(sdesc)
     try:
+        if mem.size == 0:
+            # This is a zero-byte allocation. This indicates that an allocation
+            # should be made from the pool of this zero-byte allocation for the
+            # desired size.
+            return mem_pool_msg(mem.pool, data, clientid, hints, deadline)
+
         if mem.size < len(data):
             raise ValueError(f'Memory allocation too small: {mem}')
         v = mem.get_memview()
@@ -104,7 +110,7 @@ def create_msg(data: bytes, clientid: int, hints: int, channel: Optional[Channel
         assert channel is not None
         return mem_pool_msg(channel.default_alloc_pool, data, clientid, hints, deadline)
     else:
-        return mem_descr_msg(sdesc, data, clientid, hints)
+        return mem_descr_msg(sdesc, data, clientid, hints, deadline)
 
 
 @contextmanager

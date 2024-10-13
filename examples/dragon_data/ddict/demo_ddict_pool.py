@@ -1,7 +1,10 @@
+import os
+import argparse
+
 import dragon
 import multiprocessing as mp
-from dragon.data.ddict.ddict import DDict
-import os
+from dragon.data.ddict import DDict
+
 
 def client_function(distdict, client_id):
 
@@ -10,7 +13,8 @@ def client_function(distdict, client_id):
     print(f'added {key1} to dictionary')
     return key1
 
-def main():
+
+def main(num_nodes=1):
     mp.set_start_method('dragon')
 
     d = dict()
@@ -20,7 +24,7 @@ def main():
     d[123] = 456
     d['function'] = client_function
 
-    distdict = DDict(1,10,10000000)
+    distdict = DDict(1, num_nodes, 10000000)
     distdict['Miska'] = 'Dog'
     distdict['Tigger'] = 'Cat'
     distdict[123] = 456
@@ -36,8 +40,12 @@ def main():
 
     distdict.destroy()
 
+
 if __name__ == "__main__":
-    main()
 
+    parser = argparse.ArgumentParser(description='Distributed dictionary demo')
+    parser.add_argument('--num_nodes', type=int, default=1,
+                        help='number of nodes the dictionary distributed across')
+    args = parser.parse_args()
 
-
+    main(num_nodes=args.num_nodes)
