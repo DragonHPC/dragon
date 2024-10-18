@@ -52,6 +52,7 @@ typedef struct dragonHashtable_st {
     dragonBitSet_t allocated;
     dragonBitSet_t placeholder;
     char* slots;
+    char* rehash_space;
 } dragonHashtable_t;
 
 #define DRAGON_HASHTABLE_BITSET_COUNT 2

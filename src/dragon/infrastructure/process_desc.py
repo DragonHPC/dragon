@@ -77,12 +77,13 @@ class ProcessDescriptor:
         ACTIVE = enum.auto()
         DEAD = enum.auto()
 
-    def __init__(self, *, p_uid, p_p_uid, name, node, live_children=None,
+    def __init__(self, *, p_uid, p_p_uid, name, node, h_uid=None, live_children=None,
                  gs_ret_cuid=None, shep_ret_cuid=None, state=None, ecode=None,
                  stdin_sdesc=None, stdout_sdesc=None, stderr_sdesc=None):
         self.p_p_uid = p_p_uid
         self.ecode = ecode
         self.node = int(node)
+        self.h_uid = h_uid
         self.name = name
         self.p_uid = int(p_uid)
         self.gs_ret_cuid = gs_ret_cuid
@@ -93,7 +94,6 @@ class ProcessDescriptor:
         self.stdin_conn = None
         self.stdout_conn = None
         self.stderr_conn = None
-
 
         if live_children is None:
             self.live_children = set()
@@ -136,6 +136,9 @@ class ProcessDescriptor:
 
         if self.gs_ret_cuid is not None:
             rv['gs_ret_cuid'] = self.gs_ret_cuid
+
+        if self.h_uid is not None:
+            rv['h_uid'] = self.h_uid
 
         if self.shep_ret_cuid is not None:
             rv['shep_ret_cuid'] = self.shep_ret_cuid

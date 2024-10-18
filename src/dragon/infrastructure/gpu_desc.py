@@ -3,12 +3,13 @@ import enum
 from dataclasses import dataclass, field
 from subprocess import check_output
 
-GENERIC_REGEX = "((3d|display|vga) (controller|connector)?): (NVIDIA|AMD|Advanced Micro Devices)"
+GENERIC_REGEX = "((3d|display|vga) (controller|connector)?): (NVIDIA|AMD|Advanced Micro Devices|Intel Corporation Device)"
 
 
 class AccVendor(enum.IntEnum):
     NVIDIA = enum.auto()
     AMD = enum.auto()
+    INTEL = enum.auto()
     UNKNOWN = enum.auto()
 
 
@@ -16,6 +17,7 @@ class AccEnvStr():
     NVIDIA = "CUDA_VISIBLE_DEVICES"
     AMD = "ROCR_VISIBLE_DEVICES"
     HIP = "HIP_VISIBLE_DEVICES"
+    INTEL = "ZE_AFFINITY_MASK"
 
 
 @dataclass
@@ -59,7 +61,7 @@ def find_accelerators() -> AcceleratorDescriptor:
                                     env_str=AccEnvStr.NVIDIA
                                     )
         return acc
-    
+
     devices = find_amd()
     if devices is not None:
         return None  # Not implemented, see find_amd()
@@ -69,7 +71,7 @@ def find_accelerators() -> AcceleratorDescriptor:
     except FileNotFoundError as e:
         # print("LSPCI not installed") # TODO: This needs to be sent to a logger somewhere
         return None
-    
+
     # NOTE: Will not work as expected with heterogenous setups (e.g. mixed Nvidia/AMD cards on one node)
     devices = AcceleratorDescriptor()
     n_devices = 0
@@ -82,11 +84,20 @@ def find_accelerators() -> AcceleratorDescriptor:
             elif m[4] == "AMD" or m[4] == "Advanced Micro Devices":
                 devices.vendor = AccVendor.AMD
                 devices.env_str = AccEnvStr.AMD
+            elif m[4] == "Intel Corporation Device":
+                devices.vendor = AccVendor.INTEL
+                devices.env_str = AccEnvStr.INTEL
             n_devices += 1
 
     if n_devices > 0:
-        devices.device_list = list(range(n_devices))
+        if devices.vendor == AccVendor.INTEL:
+            devices.device_list = []
+            for i in range(n_devices):
+                devices.device_list.append(i + 0.0)
+                devices.device_list.append(i + 0.1)
+        else:
+            devices.device_list = list(range(n_devices))
     else:
         return None
-    
+
     return devices

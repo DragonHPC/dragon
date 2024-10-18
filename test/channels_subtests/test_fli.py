@@ -126,15 +126,51 @@ class FLISendRecvTest(unittest.TestCase):
 
         self.fli = FLInterface(main_ch=self.main_ch, manager_ch=self.manager_ch, pool=self.mpool, stream_channels=self.stream_chs)
 
+        pool2_name = f"pydragon_fli_test2_{os.getpid()}"
+        pool2_size = 1073741824  # 1GB
+        pool2_uid = 2
+        self.mpool2 = MemoryPool(pool2_size, pool2_name, pool2_uid)
+
     def tearDown(self):
         self.fli.destroy()
         for i in range(5):
             self.stream_chs[i].destroy()
         self.mpool.destroy()
+        self.mpool2.destroy()
 
     def test_create_close_send_handle(self):
         sendh = self.fli.sendh()
         sendh.close()
+
+    @unittest.skip("AICI-1537")
+    def test_zero_byte_recv(self):
+
+        with self.fli.sendh() as sendh:
+            b = b'Hello World'
+            sendh.send_bytes(b)
+
+        with self.fli.recvh(destination_pool=self.mpool2) as recvh:
+            (x, _) = recvh.recv_mem() # recv_bytes returns a tuple, first the bytes then the message attribute
+            self.assertEqual(b, x.get_memview().tobytes())
+            self.assertEqual(x.pool.muid, 2)
+
+            with self.assertRaises(FLIEOT):
+                (x, _) = recvh.recv_bytes() # We should get back an EOT here
+
+    @unittest.skip("AICI-1537")
+    def test_zero_byte_send(self):
+        with self.fli.sendh(destination_pool=self.mpool2) as sendh:
+            b = b'Hello World'
+            sendh.send_bytes(b)
+
+        with self.fli.recvh() as recvh:
+            (x, _) = recvh.recv_mem() # recv_bytes returns a tuple, first the bytes then the message attribute
+            self.assertEqual(b, x.get_memview().tobytes())
+            self.assertEqual(x.pool.muid, 2)
+
+            with self.assertRaises(FLIEOT):
+                (x, _) = recvh.recv_bytes() # We should get back an EOT here
+
 
     @unittest.skip("Hangs indefinitely on close")
     def test_create_close_recv_handle(self):

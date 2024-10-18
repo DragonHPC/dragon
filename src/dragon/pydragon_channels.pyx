@@ -339,6 +339,33 @@ cdef class Message:
 
         self._allocated = ifree
 
+    def clear_payload(self, start=0, stop=None):
+        """
+        Clear the underlying payload of the message without
+        requiring reconstruction.
+
+        :return: None
+        :raises: ChannelError if the message payload could not be cleated.
+        """
+        cdef:
+            dragonError_t err
+            dragonMemoryDescr_t mem
+            size_t stop_idx
+
+        err = dragon_channel_message_get_mem(&self._msg, &mem)
+        if err != DRAGON_SUCCESS:
+            raise ChannelError("Could not get memory descriptor from message", err)
+
+        if stop is None:
+            # The API will self adjust down to allowable stop.
+            stop_idx = 0xffffffffffffffff
+        else:
+            stop_idx = stop
+
+        err = dragon_memory_clear(&mem, start, stop_idx)
+        if err != DRAGON_SUCCESS:
+            raise ChannelError("Could not clear the memory", err)
+
 
     def bytes_memview(self):
         """
@@ -838,6 +865,7 @@ cdef class Channel:
     def __del__(self):
         # TODO: Proper error handling for this?
         if self._is_serialized:
+            self._is_serialized = False
             dragon_channel_serial_free(&self._serial)
 
 
@@ -1242,7 +1270,13 @@ cdef class Channel:
         with nogil:
             err = dragon_channel_poll(&self._channel, wait, event, time_ptr, &result)
 
-        if err == DRAGON_TIMEOUT:
+        if err == DRAGON_TIMEOUT or err == DRAGON_BARRIER_WAIT_TRY_AGAIN:
+            # Getting try again here means that a 0 timeout was specified and
+            # the operation did not work under that condition. It doesn't make
+            # much sense to try once here, but if they did, we should treat it
+            # like a timeout. The try once option and this return code is really
+            # there for the transport agent to try off node poll operations so that's
+            # why there are two separate return codes for timeout.
             return False
 
         if poll_result is not None:
@@ -2920,3 +2954,7 @@ cdef class GatewayMessage:
             # Note: The specified event mask is ignored
             return self.event_complete(0, op_err)
         raise ValueError('Unsupported kind of message')
+
+    @staticmethod
+    def silence_transport_timeouts():
+        dragon_gatewaymessage_silence_timeouts()

@@ -8,6 +8,7 @@ node.
 import enum
 import logging
 
+from typing import List
 from .api_setup import get_gs_ret_cuid, next_tag, gs_request
 
 from ..infrastructure.messages import \
@@ -15,6 +16,8 @@ from ..infrastructure.messages import \
     GSNodeListResponse, \
     GSNodeQuery, \
     GSNodeQueryResponse, \
+    GSNodeQueryAll, \
+    GSNodeQueryAllResponse, \
     GSNodeQueryTotalCPUCount, \
     GSNodeQueryTotalCPUCountResponse
 
@@ -50,6 +53,29 @@ def query(identifier) -> NodeDescriptor:
         the_desc = reply_msg.desc
 
     return the_desc
+
+
+def query_all() -> List[NodeDescriptor]:
+    """
+    Asks Global Services to return the NodeDescriptor for
+    every node that is part of the system.
+
+    :return: list of NodeDescriptors
+    """
+
+    req_msg = GSNodeQueryAll(
+        tag=next_tag(),
+        p_uid=this_process.my_puid,
+        r_c_uid=get_gs_ret_cuid()
+    )
+
+    reply_msg = gs_request(req_msg)
+    assert isinstance(reply_msg, GSNodeQueryAllResponse)
+
+    descriptors = []
+    if GSNodeQueryAllResponse.Errors.SUCCESS == reply_msg.err:
+        descriptors = reply_msg.descriptors
+    return descriptors
 
 
 def query_total_cpus() -> int:

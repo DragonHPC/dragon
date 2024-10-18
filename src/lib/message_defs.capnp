@@ -36,11 +36,13 @@ struct DDCreateDef {
 struct DDRegisterManagerDef {
     mainFLI @0: Text;
     respFLI @1: Text;
+    hostID @2: UInt64;
 }
 
 struct DDRegisterManagerResponseDef {
     managerID @0: UInt64;
     managers @1: List(Text);
+    managerNodes @2: List(Text);
 }
 
 struct DDGetRandomManagerDef {
@@ -59,6 +61,9 @@ struct DDRegisterClientDef {
 struct DDRegisterClientResponseDef {
     clientID @0: UInt64;
     numManagers @1: UInt64;
+    managerID @2: UInt64;
+    managerNodes @3: List(Text);
+    timeout @4: UInt64;
 }
 
 struct DDConnectToManagerDef {
@@ -87,22 +92,29 @@ struct DDDestroyManagerDef {
 
 struct DDPutDef {
     clientID @0: UInt64;
+    chkptID @1: UInt64;
+    persist @2: Bool;
 }
 
 struct DDGetDef {
     clientID @0: UInt64;
+    chkptID @1: UInt64;
 }
 
 struct DDPopDef {
     clientID @0: UInt64;
+    chkptID @1: UInt64;
 }
 
 struct DDContainsDef {
     clientID @0: UInt64;
+    chkptID @1: UInt64;
 }
 
 struct DDGetLengthDef {
     clientID @0: UInt64;
+    chkptID @1: UInt64;
+    respFLI @2: Text;
 }
 
 struct DDGetLengthResponseDef {
@@ -111,10 +123,30 @@ struct DDGetLengthResponseDef {
 
 struct DDClearDef {
     clientID @0: UInt64;
+    chkptID @1: UInt64;
+    respFLI @2: Text;
+}
+
+struct DDManagerGetNewestChkptID {
+    respFLI @0: Text;
+}
+
+struct DDManagerGetNewestChkptIDResponse {
+    managerID @0: UInt64;
+    chkptID @1: UInt64;
+}
+
+struct DDManagerStatsDef {
+    respFLI @0: Text;
+}
+
+struct DDManagerStatsResponseDef {
+    data @0: Text;
 }
 
 struct DDGetIteratorDef {
     clientID @0: UInt64;
+    chkptID @1: UInt64;
 }
 
 struct DDGetIteratorResponseDef {
@@ -128,6 +160,7 @@ struct DDIteratorNextDef {
 
 struct DDKeysDef {
     clientID @0: UInt64;
+    chkptID @1: UInt64;
 }
 
 struct DDDeregisterClientDef {
@@ -187,5 +220,9 @@ struct MessageDef {
         ddConnectToManagerResponse @35: DDConnectToManagerResponseDef;
         ddGetRandomManager @36: DDGetRandomManagerDef;
         ddGetRandomManagerResponse @37: DDGetRandomManagerResponseDef;
+        ddManagerStats @38: DDManagerStatsDef;
+        ddManagerStatsResponse @39: DDManagerStatsResponseDef;
+        ddManagerGetNewestChkptID @40: DDManagerGetNewestChkptID;
+        ddManagerGetNewestChkptIDResponse @41: DDManagerGetNewestChkptIDResponse;
     }
 }

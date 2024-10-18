@@ -1635,6 +1635,51 @@ querying the number of cpus in the system.
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSMachineQueryResponse>`
 
+.. _gsnodequeryall:
+
+97. **GSNodeQueryAll**
+
+    *type enum*
+        GS_NODE_QUERY_ALL
+
+    *purpose*
+        Asks Global Services to return the NodeDescriptor for every node that is part of the system.
+
+    *fields*
+
+    *response*
+        GSNodeQueryAllResponse
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSNodeQueryAll>`
+
+.. _gsnodequeryallresponse:
+
+98. **GSNodeQueryAllResponse**
+
+    *type enum*
+        GS_NODE_QUERY_ALL_RESPONSE
+
+    *purpose*
+         Return the machine descriptor for every node after GSNodeQueryAll.
+
+    *fields*
+        Alternatives on ``err``:
+
+        SUCCESS (= 0)
+
+            The machine descriptor was successfully constructed
+
+            **descriptors**
+                - List of NodeDescriptors, one for each node in the system
+
+        UNKNOWN ( = 1)
+            An unknown error has occured.
+
+    *see also*
+        GSMachineQuery
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.GSMachineQueryAllResponse>`
+
 .. _gsnodequerytotalcpucount:
 
 104. **GSNodeQueryTotalCPUCount**
@@ -2671,6 +2716,66 @@ LS Process Messages
         SHProcessKill
 
     *implementation(s):* :func:`Python<dragon.infrastructure.messages.SHProcessCreateResponse>`
+
+.. _shmultiprocesskill:
+
+138. **SHMultiProcessKill**
+
+    *type enum*
+        SH_MULTI_PROCESS_KILL
+
+    *purpose*
+        Request to Shepherd to efficiently kill multiple processes.
+
+    *fields*
+        **procs**
+            - list of SHProcessKill messages representing the processes
+              to be killed.
+
+    *response*
+        SHMultiProcessKillResponse
+
+    *see also*
+        SHProcessKill
+
+        refer to the :ref:`cfs` section for additional request message fields
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.SHMultiProcessKill>`
+
+.. _shmultiprocesskillresponse:
+
+139. **SHMultiProcessKillResponse**
+
+    *type enum*
+        SH_MULTI_PROCESS_KILL_RESPONSE
+
+    *purpose*
+        Response to multi process kill request.
+
+    *fields*
+        Alternatives on ``err``:
+
+        **responses**
+            - list of SHProcessKillResponse messages representing the results
+              of each SHProcessKill request.
+
+        SUCCESS (= 0)
+            **responses**
+                - list of SHProcessKillResponse messages for each previously
+                  requested process.
+
+        FAIL (= 1)
+            **err_info**
+                - string
+                - what went wrong
+
+    *request*
+        SHMultiProcessKill
+
+    *see also*
+        SHProcessKill
+
+    *implementation(s):* :func:`Python<dragon.infrastructure.messages.SHMultiProcessKillResponse>`
 
 .. _shprocesskill:
 

@@ -10,12 +10,14 @@ import zlib
 import json
 import time
 import os
+import cloudpickle
 
 import dragon
 import dragon.infrastructure.messages as dmsg
 import dragon.channels as dch
-from dragon.utils import b64encode, b64decode
-from dragon.data.ddict.ddict import DDict
+from dragon.utils import b64encode, b64decode, host_id
+from dragon.data.ddict import DDict
+from dragon.native.machine import Node
 import multiprocessing as mp
 import traceback
 from dragon.rc import DragonError
@@ -60,7 +62,8 @@ class TestDDict(unittest.TestCase):
         self.assertIsInstance(newmsg, dmsg.DDRegisterClient)
 
     def test_ddict_client_response_message(self):
-        msg = dmsg.DDRegisterClientResponse(42, 43, DragonError.SUCCESS, 0, 2, 'this is dragon error info')
+        manager_nodes = b64encode(cloudpickle.dumps([Node(ident=host_id()) for _ in range(2)]))
+        msg = dmsg.DDRegisterClientResponse(42, 43, DragonError.SUCCESS, 0, 2, 3, manager_nodes, 10, 'this is dragon error info')
         ser = msg.serialize()
         newmsg = dmsg.parse(ser)
         self.assertIsInstance(newmsg, dmsg.DDRegisterClientResponse)
@@ -207,7 +210,7 @@ class TestDDict(unittest.TestCase):
             d.destroy()
         except Exception as e:
             tb = traceback.format_exc()
-            raise Exception(f'Exception caught {e}\n Traceback: {tb}', flush=True)
+            raise Exception(f'Exception caught {e}\n Traceback: {tb}')
 
     def test_keys(self):
         d = DDict(2, 1, 3000000)
@@ -219,6 +222,15 @@ class TestDDict(unittest.TestCase):
         for key in k:
             self.assertTrue(key in ddict_keys)
         d.destroy()
+
+    def test_attach_ddict(self):
+        d = DDict(2, 1, 3000000)
+        d['hello'] = 'world'
+        d_serialized = d.serialize()
+        new_d = DDict.attach(d_serialized)
+        self.assertEqual(new_d['hello'], 'world')
+        d.detach()
+        new_d.destroy()
 
 if __name__ == "__main__":
     mp.set_start_method('dragon')

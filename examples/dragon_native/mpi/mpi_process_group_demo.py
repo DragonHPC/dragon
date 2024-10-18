@@ -1,4 +1,4 @@
-""" 
+"""
 Run a sample MPI Hello World application with 1 rank per allocated node.
 """
 
@@ -29,6 +29,7 @@ def main():
     pool.init()
     pool.start()
     pool.join()
+    pool.close()
 
     return 0
 

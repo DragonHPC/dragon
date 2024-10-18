@@ -38,6 +38,7 @@ functionality.
 import os
 from distutils.util import strtobool
 
+
 def _patch_multiprocessing():
     # Set DRAGON_PATCH_MP so multiprocessing is automatically patched when
     # imported in a subprocess.
@@ -46,6 +47,7 @@ def _patch_multiprocessing():
     from .mpbridge.monkeypatching import patch_multiprocessing
     patch_multiprocessing()
 
+
 def _patch_torch():
 
     from .ai.torch.monkeypatching import patch_torch
@@ -53,6 +55,7 @@ def _patch_torch():
 
     from .ai.torch.dataloader_monkeypatch import patch_mpdataloader_torch
     patch_mpdataloader_torch()
+
 
 if bool(strtobool(os.environ.get("DRAGON_PATCH_MP", "False"))):
     _patch_multiprocessing()

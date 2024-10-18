@@ -12,7 +12,10 @@
 extern "C" {
 #endif
 
+extern bool dg_enable_errstr;
+
 char * dragon_getlasterrstr();
+void dragon_enable_errstr(bool enable_errstr);
 
 #define DRAGON_MAX_ERRSTR_REC_LEN 4096
 
@@ -20,42 +23,52 @@ char * dragon_getlasterrstr();
 
 /* This can be modified during debugging if desired */
 #define no_err_return(err) ({\
-    _set_errstr(NULL);\
+    if (dg_enable_errstr) {\
+        _set_errstr(NULL);\
+    }\
     return err;\
 })
 
 #define err_return(err, str) ({\
-    char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "  %s: %s() (line %i) :: %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err)) + 1));\
-    sprintf(head, "  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
-    _set_errstr(head);\
-    free(head);\
-    _append_errstr((char*)str);\
+    if (dg_enable_errstr) {\
+        char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "  %s: %s() (line %i) :: %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err)) + 1));\
+        sprintf(head, "  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
+        _set_errstr(head);\
+        free(head);\
+        _append_errstr((char*)str);\
+    }\
     return err;\
 })
 
 #define err_noreturn(str) ({\
-    char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__) + 1));\
-    sprintf(head, "  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
-    _set_errstr(head);\
-    free(head);\
-    _append_errstr((char*)str);\
+    if (dg_enable_errstr) {\
+        char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__) + 1));\
+        sprintf(head, "  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
+        _set_errstr(head);\
+        free(head);\
+        _append_errstr((char*)str);\
+    }\
 })
 
 #define append_err_return(err, str) ({\
-    char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__) + 1));\
-    sprintf(head, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
-    _append_errstr(head);\
-    free(head);\
-    _append_errstr((char*)str);\
+    if (dg_enable_errstr) {\
+        char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__) + 1));\
+        sprintf(head, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
+        _append_errstr(head);\
+        free(head);\
+        _append_errstr((char*)str);\
+    }\
     return err;\
 })
 
 #define append_err_noreturn(str) ({\
-    char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__) + 1));\
-    sprintf(head, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
-    _append_errstr(head);\
-    free(head);\
-    _append_errstr((char*)str);\
+    if (dg_enable_errstr) {\
+        char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__) + 1));\
+        sprintf(head, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
+        _append_errstr(head);\
+        free(head);\
+        _append_errstr((char*)str);\
+    }\
 })
 #else
 

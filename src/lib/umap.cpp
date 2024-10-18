@@ -1,9 +1,11 @@
+#include <cstdint>
 #include <unordered_map>
 #include <dragon/return_codes.h>
 #include "umap.h"
 #include "err.h"
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 using namespace std;
 
@@ -41,6 +43,29 @@ _unlock_map(dragonMap_t * dmap)
     no_err_return(DRAGON_SUCCESS);
 }
 
+/* this is hash function based on splitmix64 from
+http://xorshift.di.unimi.it/splitmix64.c */
+static uint64_t
+_hash(uint64_t x)
+{
+    uint64_t z = (x += 0x9e3779b97f4a7c15);
+    z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
+    z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
+    return z ^ (z >> 31);
+}
+
+/* inspired by boost::hash_combine */
+class umapHash
+{
+   public:
+    size_t operator () (const std::pair<uint64_t, uint64_t>& key) const {
+        uint64_t val_a = _hash(key.first);
+        uint64_t val_b = _hash(key.second);
+        val_a ^= val_b + 0x9e3779b9 + (val_a << 6) + (val_a >> 2);
+        return (size_t) val_a;
+    }
+};
+
 class dragonMap
 {
    public:
@@ -57,8 +82,8 @@ class dragonMap
         dMap[key] = data;
     }
 
-    void addItem_multikey(std::string keys, const void * data) {
-        dMap_multikey[keys] = data;
+    void addItem_multikey(std::pair<uint64_t, uint64_t> key, const void * data) {
+        dMap_multikey[key] = data;
     }
 
     const void * getItem(uint64_t key) {
@@ -72,10 +97,10 @@ class dragonMap
         }
     }
 
-    const void * getItem_multikey(std::string keys) {
+    const void * getItem_multikey(std::pair<uint64_t, uint64_t> key) {
         try
         {
-            return dMap_multikey.at(keys);
+            return dMap_multikey.at(key);
         }
         catch (const out_of_range& oor)
         {
@@ -87,13 +112,13 @@ class dragonMap
         dMap.erase(key);
     }
 
-    void delItem_multikey(std::string keys) {
-        dMap_multikey.erase(keys);
+    void delItem_multikey(std::pair<uint64_t, uint64_t> key) {
+        dMap_multikey.erase(key);
     }
 
     uint64_t new_key() {
         do {
-            lkey = hash(lkey);
+            lkey = _hash(lkey);
         } while (lkey == 0);
 
         return lkey;
@@ -101,24 +126,15 @@ class dragonMap
 
    private:
     unordered_map<uint64_t, const void *> dMap;
-    unordered_map<std::string, const void *> dMap_multikey;
+    unordered_map<std::pair<uint64_t, uint64_t>, const void *, umapHash> dMap_multikey;
     uint64_t lkey;
-
-    /* this is hash function based on splitmix64 from
-    http://xorshift.di.unimi.it/splitmix64.c */
-    uint64_t hash(uint64_t x) {
-        uint64_t z = (x += 0x9e3779b97f4a7c15);
-        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9;
-        z = (z ^ (z >> 27)) * 0x94d049bb133111eb;
-        return z ^ (z >> 31);
-    }
 };
 
-
-
 dragonError_t
-dragon_umap_create(dragonMap_t * dmap, const uint64_t seed)
+dragon_umap_create(dragonMap_t **dmap_in, const uint64_t seed)
 {
+    dragonMap_t *dmap = *dmap_in;
+
     if (dmap == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"Bad dmap handle.");
 
@@ -147,8 +163,10 @@ dragon_umap_create(dragonMap_t * dmap, const uint64_t seed)
 }
 
 dragonError_t
-dragon_umap_destroy(dragonMap_t * dmap)
+dragon_umap_destroy(dragonMap_t **dmap_in)
 {
+    dragonMap_t *dmap = *dmap_in;
+
     if (dmap == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dmap handle is NULL. Cannot destroy it.");
 
@@ -163,8 +181,10 @@ dragon_umap_destroy(dragonMap_t * dmap)
 }
 
 dragonError_t
-dragon_umap_additem(dragonMap_t * dmap, const uint64_t key, const void * data)
+dragon_umap_additem(dragonMap_t **dmap_in, const uint64_t key, const void *data)
 {
+    dragonMap_t *dmap = *dmap_in;
+
     if (dmap == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dmap handle is NULL. Cannot add item.");
 
@@ -180,24 +200,30 @@ dragon_umap_additem(dragonMap_t * dmap, const uint64_t key, const void * data)
 
 /* TODO: Pass in an array of keys? */
 dragonError_t
-dragon_umap_additem_multikey(dragonMap_t * dmap, const uint64_t key0, const uint64_t key1, const void * data)
+dragon_umap_additem_multikey(dragonMap_t **dmap_in, const uint64_t key0, const uint64_t key1, const void *data)
 {
+    dragonMap_t *dmap = *dmap_in;
+
     if (dmap == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dmap handle is NULL. Cannot add item.");
 
     dragonMap * cpp_map;
     cpp_map = static_cast<dragonMap *>(dmap->_map);
 
+    std::pair<uint64_t, uint64_t> key{key0, key1};
+
     __lock_map(dmap);
-    cpp_map->addItem_multikey(std::to_string(key0) + std::to_string(key1), data);
+    cpp_map->addItem_multikey(key, data);
     __unlock_map(dmap);
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 dragonError_t
-dragon_umap_additem_genkey(dragonMap_t * dmap, const void * data, uint64_t * new_key)
+dragon_umap_additem_genkey(dragonMap_t **dmap_in, const void *data, uint64_t *new_key)
 {
+    dragonMap_t *dmap = *dmap_in;
+
     if (dmap == NULL || data == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dmap handle or data is NULL. Cannot additem and genkey.");
 
@@ -213,8 +239,10 @@ dragon_umap_additem_genkey(dragonMap_t * dmap, const void * data, uint64_t * new
 }
 
 dragonError_t
-dragon_umap_getitem(dragonMap_t * dmap, const uint64_t key, void ** data)
+dragon_umap_getitem(dragonMap_t **dmap_in, const uint64_t key, void **data)
 {
+    dragonMap_t *dmap = *dmap_in;
+
     if (dmap == NULL || data == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dmap handle is NULL. Cannot get an item from it.");
 
@@ -233,16 +261,20 @@ dragon_umap_getitem(dragonMap_t * dmap, const uint64_t key, void ** data)
 }
 
 dragonError_t
-dragon_umap_getitem_multikey(dragonMap_t * dmap, const uint64_t key0, const uint64_t key1, void ** data)
+dragon_umap_getitem_multikey(dragonMap_t **dmap_in, const uint64_t key0, const uint64_t key1, void **data)
 {
+    dragonMap_t *dmap = *dmap_in;
+
     if (dmap == NULL || data == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dmap handle is NULL. Cannot get an item from it.");
 
     dragonMap * cpp_map;
     cpp_map = static_cast<dragonMap *>(dmap->_map);
 
+    std::pair<uint64_t, uint64_t> key{key0, key1};
+
     __lock_map(dmap);
-    *data = (void*)cpp_map->getItem_multikey(std::to_string(key0) + std::to_string(key1));
+    *data = (void*)cpp_map->getItem_multikey(key);
     __unlock_map(dmap);
 
     if (*data == NULL) {
@@ -253,8 +285,10 @@ dragon_umap_getitem_multikey(dragonMap_t * dmap, const uint64_t key0, const uint
 }
 
 dragonError_t
-dragon_umap_delitem(dragonMap_t * dmap, const uint64_t key)
+dragon_umap_delitem(dragonMap_t **dmap_in, const uint64_t key)
 {
+    dragonMap_t *dmap = *dmap_in;
+
     if (dmap == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dmap handle is NULL. Cannot delete the key/value pair.");
 
@@ -269,16 +303,20 @@ dragon_umap_delitem(dragonMap_t * dmap, const uint64_t key)
 }
 
 dragonError_t
-dragon_umap_delitem_multikey(dragonMap_t * dmap, const uint64_t key0, const uint64_t key1)
+dragon_umap_delitem_multikey(dragonMap_t **dmap_in, const uint64_t key0, const uint64_t key1)
 {
+    dragonMap_t *dmap = *dmap_in;
+
     if (dmap == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dmap handle is NULL. Cannot delete the key/value pair.");
 
     dragonMap * cpp_map;
     cpp_map = static_cast<dragonMap *>(dmap->_map);
 
+    std::pair<uint64_t, uint64_t> key{key0, key1};
+
     __lock_map(dmap);
-    cpp_map->delItem_multikey(std::to_string(key0) + std::to_string(key1));
+    cpp_map->delItem_multikey(key);
     __unlock_map(dmap);
 
     no_err_return(DRAGON_SUCCESS);

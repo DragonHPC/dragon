@@ -10,7 +10,6 @@ import sys
 import dragon.channels as dch
 
 import dragon.infrastructure.messages as dmsg
-import dragon.infrastructure.facts as dfacts
 import dragon.infrastructure.connection as dconn
 import dragon.infrastructure.parameters as dparm
 import dragon.infrastructure.util as dutil
@@ -109,7 +108,7 @@ def startup_multi(the_ctx, gs_input=None, shep_inputs=None, bela_input=None):
     ls_stdin = os.fdopen(sys.stdin.fileno(), 'rb')
     ls_stdin_recv = dutil.NewlineStreamWrapper(ls_stdin, write_intent=False)
     la_chs_info = dmsg.parse(ls_stdin_recv.recv())
-    log.info(f'received all channels info, LAChannelsInfo - m9')
+    log.info('received all channels info, LAChannelsInfo - m9')
     log.debug(f'la_channels.nodes_desc: {la_chs_info.nodes_desc}')
     log.debug(f'la_channels.gs_cd: {la_chs_info.gs_cd}')
 

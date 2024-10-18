@@ -12,8 +12,9 @@ How do I debug my Dragon program ?
 
 .. TODO: uguide/log.rst
 
-Set the environment variable `DRAGON_DEBUG=True`. The Dragon logs will show
-debug output from all services alongside your program.
+Use the `-l` option when running Dragon, e.g., `dragon -l DEBUG my_app.py`.
+Possible log levels are `NONE`, `DEBUG`, `INFO`, `WARNING`, `ERROR`, or `CRITICAL`.
+The Dragon logs will show debug output from all services alongside your program.
 
 
 How can I change the size of the default memory pool ?
@@ -80,3 +81,8 @@ Can I use Dragon to manage MPI jobs?
 This functionality is currently only available on systems where the HPE Cray MPITCH library
 is installed.
 
+How can I get the best performance from my Distributed Dictionary?
+====================================================================
+There are a number of :ref:`performance tips and tricks <ddictperformance>` and
+in the enclosing section on the :ref:`Design of the Distributed Dictionary <distdictdesign>`,
+where many examples are also provided.

@@ -117,8 +117,10 @@ class dragonList
 };
 
 dragonError_t
-dragon_ulist_create(dragonList_t * dlist)
+dragon_ulist_create(dragonList_t **dlist_in)
 {
+    dragonList_t *dlist = *dlist_in;
+
     if (dlist == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"Bad dlist handle.");
 
@@ -144,8 +146,10 @@ dragon_ulist_create(dragonList_t * dlist)
 }
 
 dragonError_t
-dragon_ulist_destroy(dragonList_t * dlist)
+dragon_ulist_destroy(dragonList_t **dlist_in)
 {
+    dragonList_t *dlist = *dlist_in;
+
     if (dlist == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dlist handle is NULL. Cannot destroy it.");
 
@@ -160,8 +164,10 @@ dragon_ulist_destroy(dragonList_t * dlist)
 }
 
 dragonError_t
-dragon_ulist_additem(dragonList_t * dlist, const void * item)
+dragon_ulist_additem(dragonList_t **dlist_in, const void *item)
 {
+    dragonList_t *dlist = *dlist_in;
+
     if (dlist == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dlist handle is NULL. Cannot add item.");
 
@@ -176,8 +182,10 @@ dragon_ulist_additem(dragonList_t * dlist, const void * item)
 }
 
 dragonError_t
-dragon_ulist_delitem(dragonList_t * dlist, const void * item)
+dragon_ulist_delitem(dragonList_t **dlist_in, const void *item)
 {
+    dragonList_t *dlist = *dlist_in;
+
     if (dlist == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dlist handle is NULL. Cannot delete the item.");
 
@@ -195,8 +203,10 @@ dragon_ulist_delitem(dragonList_t * dlist, const void * item)
 }
 
 bool
-dragon_ulist_contains(dragonList_t * dlist, const void * item)
+dragon_ulist_contains(dragonList_t **dlist_in, const void *item)
 {
+    dragonList_t *dlist = *dlist_in;
+
     if (dlist == NULL)
         return false;
 
@@ -211,8 +221,10 @@ dragon_ulist_contains(dragonList_t * dlist, const void * item)
 }
 
 dragonError_t
-dragon_ulist_get_current_advance(dragonList_t * dlist, void ** item)
+dragon_ulist_get_current_advance(dragonList_t **dlist_in, void **item)
 {
+    dragonList_t *dlist = *dlist_in;
+
     if (dlist == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dlist handle is NULL. Cannot get item and advance.");
 
@@ -230,8 +242,10 @@ dragon_ulist_get_current_advance(dragonList_t * dlist, void ** item)
 }
 
 dragonError_t
-dragon_ulist_get_by_idx(dragonList_t * dlist, int idx, void ** item)
+dragon_ulist_get_by_idx(dragonList_t **dlist_in, int idx, void **item)
 {
+    dragonList_t *dlist = *dlist_in;
+
     if (dlist == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dlist handle is NULL. Cannot get item.");
 
@@ -252,8 +266,9 @@ dragon_ulist_get_by_idx(dragonList_t * dlist, int idx, void ** item)
 }
 
 size_t
-dragon_ulist_get_size(dragonList_t * dlist)
+dragon_ulist_get_size(dragonList_t **dlist_in)
 {
+    dragonList_t *dlist = *dlist_in;
 
     if (dlist == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"The dlist handle is NULL. Cannot get item and advance.");

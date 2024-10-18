@@ -5,7 +5,7 @@ from dragon.return_codes cimport *
 cpdef host_id():
     return dragon_host_id()
 
-cpdef set_host_id(int new_id):
+cpdef set_host_id(unsigned long new_id):
     dnew_id = <dragonULInt> new_id
     dragon_set_host_id(new_id)
 

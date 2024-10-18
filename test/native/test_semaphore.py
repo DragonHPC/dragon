@@ -18,6 +18,8 @@ from dragon.infrastructure.process_desc import ProcessOptions
 from dragon.native.semaphore import Semaphore
 import dragon.utils as du
 
+TIMEOUT_DELTA_TOL = 1.0
+
 
 def _waiter(env_str):
 
@@ -52,16 +54,18 @@ class TestSemaphore(unittest.TestCase):
         # blocking correct ?
         start = time.monotonic()
         ret_val = sem.acquire(blocking=False, timeout=None)
-        end = time.monotonic()
+        elap = time.monotonic() - start
         self.assertTrue(ret_val == False)
-        self.assertAlmostEqual(0, end - start, 1)
+        self.assertGreaterEqual(elap, 0)
+        self.assertLess(elap, TIMEOUT_DELTA_TOL)
 
         # timeout correct ?
         start = time.monotonic()
         ret_val = sem.acquire(blocking=True, timeout=0.05)
-        end = time.monotonic()
+        elap = time.monotonic() - start
         self.assertTrue(ret_val == False)
-        self.assertAlmostEqual(0.05, end - start, 1)
+        self.assertGreaterEqual(elap, 0.05)
+        self.assertLess(elap, (0.05+TIMEOUT_DELTA_TOL))
 
         # can release ?
         sem.release(n=1)

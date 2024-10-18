@@ -6,6 +6,7 @@ import enum
 import socket
 import sys
 from .. import dtypes
+from pathlib import Path
 
 PREFIX = 'DRAGON_'
 
@@ -25,13 +26,16 @@ NUM_GW_TYPES = 3
 # Note: there is also a dependency on dragon_channel_register_gateways_from_env()
 GW_ENV_PREFIX = PREFIX + 'GW'
 
+DEFAULT_HSTA_TRANSPORT_TYPE = 'p2p'
+
 # For environment variable passing, this set is the list of dragon parameters
 # in capital letters.
 env_vars = frozenset({'MODE', 'INDEX', DEFAULT_PD_VAR, INF_PD_VAR, 'LOCAL_SHEP_CD', 'LOCAL_BE_CD', 'GS_RET_CD',
                  'SHEP_RET_CD', 'GS_CD', 'DEFAULT_SEG_SZ', 'INF_SEG_SZ', 'TEST', 'DEBUG', 'MY_PUID',
                  'BE_CUID', 'INF_WAIT_MODE', 'USER_WAIT_MODE', 'USER_RETURN_WHEN_MODE', 'INF_RETURN_WHEN_MODE',
                  'GW_CAPACITY', NUM_GW_CHANNELS_PER_NODE_VAR, 'TRANSPORT_AGENT', 'HSTA_MAX_EJECTION_MB', 'HSTA_MAX_GETMSG_MB',
-                 'PMOD_COMMUNICATION_TIMEOUT', 'BASEPOOL', 'OVERLAY_FANOUT', 'NET_CONF_CACHE'})
+                 'HSTA_FABRIC_BACKEND', 'HSTA_TRANSPORT_TYPE', 'PMOD_COMMUNICATION_TIMEOUT', 'BASEPOOL', 'OVERLAY_FANOUT',
+                 'NET_CONF_CACHE'})
 
 
 # TODO:PE-37770  This list of names should NOT need to appear
@@ -458,7 +462,7 @@ def index_from_shepherd_cuid(cuid:int)->int:
     return cuid - BASE_SHEP_CUID
 
 
-def is_default_pool(m_uid:int) -> bool:
+def is_default_pool(m_uid: int) -> bool:
     """Check if the given `m_uid` is a default `m_uid`. Otherwise throw an `AssertionError`.
 
     :param m_uid: uid to check
@@ -471,7 +475,7 @@ def is_default_pool(m_uid:int) -> bool:
     return True
 
 
-def index_from_default_pool_muid(m_uid:int) -> int:
+def index_from_default_pool_muid(m_uid: int) -> int:
     """Return the unique node index from the default pool id.
 
     :param m_uid: A default pool id.
@@ -633,6 +637,8 @@ DEFAULT_PMI_CONTROL_PORT = 8575
 DEFAULT_OOB_PORT = 9575
 DEFAULT_PORT_RANGE=1000
 
+HSTA_BINARY = Path(os.environ.get('DRAGON_BASE_DIR', '')) / f'bin/{PROCNAME_RDMA_TA}'
+
 def port_check(ip_port):
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -658,4 +664,9 @@ OOB_PORT = get_port(DEFAULT_OOB_PORT, DEFAULT_PORT_RANGE)
 
 # GS_DEFAULT_POLICY -- To prevent circular imports, this lives in policy_eval.py
 
-DEFAULT_NET_CONF_CACHE = os.path.join(os.getcwd(), ".dragon-net-conf")
+DEFAULT_NET_CONF_CACHE = os.path.join(os.getcwd(), '.dragon-net-conf')
+
+# Default dragon config directory and file
+
+DEFAULT_CONFIG_DIR = Path.home() / '.dragon'
+CONFIG_FILE_PATH = DEFAULT_CONFIG_DIR / 'dragon-config.json'

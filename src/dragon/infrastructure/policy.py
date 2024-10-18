@@ -67,31 +67,6 @@ class Policy:
         BLOCK = enum.auto()
         DEFAULT = enum.auto()
 
-    class Device(enum.IntEnum):
-        """
-        Which type of device the affinity policy will apply to
-        """
-
-        CPU = enum.auto()
-        GPU = enum.auto()
-        DEFAULT = enum.auto()
-
-    # TODO: The NodeDescriptor may need to hold its devices in a dictionary so we can count how many devices have been used to do some kind of rudamentary load-balancing
-    class Affinity(enum.IntEnum):
-        """
-        Device Affinity distribution
-
-        ANY - Place on any available core or GPU device
-        SPECIFIC - Place to specific CPU core affinities or GPU device
-        DEFAULT - Defaults to Any
-        """
-
-        ANY = -5
-        # ROUNDROBIN = -4 # TODO: Not implemented
-        # BLOCK = -3 # TODO: Not implemented
-        SPECIFIC = -2
-        DEFAULT = -1  # Same as ANY
-
     # TODO: Not implemented
     class WaitMode(enum.IntEnum):
         """Channel WaitMode type"""
@@ -104,8 +79,6 @@ class Policy:
     host_name: str = ""  # To be populated by caller in use with Placement.HOST_NAME
     host_id: int = -1  # To be populated by caller in use with Placement.HOST_ID
     distribution: Distribution = Distribution.DEFAULT
-    device: Device = Device.DEFAULT  # What device to apply to
-    affinity: Affinity = Affinity.DEFAULT  # Affinity distribution
     cpu_affinity: list[int] = field(
         default_factory=list
     )  # To be populated by called in use with Affinity.SPECIFIC, specify exact device IDs or cores
@@ -124,8 +97,6 @@ class Policy:
             "host_name": self.host_name,
             "host_id": self.host_id,
             "distribution": self.distribution,
-            "device": self.device,
-            "affinity": self.affinity,
             "cpu_affinity": self.cpu_affinity,
             "gpu_env_str": self.gpu_env_str,
             "gpu_affinity": self.gpu_affinity,
@@ -167,8 +138,6 @@ GS_DEFAULT_POLICY = Policy(
     host_name="",
     host_id=-1,
     distribution=Policy.Distribution.ROUNDROBIN,
-    device=Policy.Device.CPU,
-    affinity=Policy.Affinity.ANY,
     cpu_affinity=[],
     gpu_env_str="",
     gpu_affinity=[],

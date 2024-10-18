@@ -2,7 +2,7 @@
 from dragon.native.process import Process, ProcessTemplate, Popen
 from dragon.native.process_group import ProcessGroup
 from dragon.infrastructure.connection import Connection
-from dragon.infrastructure.policy import Policy 
+from dragon.infrastructure.policy import Policy
 from dragon.native.machine import System, Node
 
 import os
@@ -12,8 +12,8 @@ def parse_results(stdout_conn: Connection) -> str:
 
     :param stdout_conn: Dragon connection to stdout
     :type stdout_conn: Connection
-    :return: string of output received on stdout  
-    :rtype: str 
+    :return: string of output received on stdout
+    :rtype: str
     """
     output = ""
     try:
@@ -25,7 +25,7 @@ def parse_results(stdout_conn: Connection) -> str:
     finally:
         stdout_conn.close()
 
-    return output.strip('/n') 
+    return output.strip('/n')
 
 
 
@@ -35,12 +35,12 @@ def main_policy_example():
     my_alloc = System()
     num_procs_per_node = 8
     node_list = my_alloc.nodes
-    nnodes = my_alloc.nnodes()
+    nnodes = my_alloc.nnodes
     num_nodes_to_use = int(nnodes/2)
-    
+
     print(f'Using {num_nodes_to_use} of {nnodes}', flush=True)
-    
-    nodes = {} 
+
+    nodes = {}
     for node_id in node_list:
         node = Node(node_id)
         nodes[node.hostname] = node
@@ -54,10 +54,10 @@ def main_policy_example():
     args = []
     run_dir = os.getcwd()
 
-    # restrict cpu affinity for every member of the group 
+    # restrict cpu affinity for every member of the group
     cpu_affinity =[0, 16, 32, 48, 64, 80, 96, 112]
-    group_policy = Policy(affinity=Policy.Affinity.SPECIFIC, cpu_affinity=cpu_affinity)
-    
+    group_policy = Policy(cpu_affinity=cpu_affinity)
+
     # Define group and give it the group policy
     grp = ProcessGroup(restart=False, pmi_enabled=True, policy=group_policy)
 
@@ -71,14 +71,15 @@ def main_policy_example():
     grp.start()
     group_procs = [Process(None, ident=puid) for puid in grp.puids]
     for proc in group_procs:
-        # get info printed to stdout from each rank 
+        # get info printed to stdout from each rank
         if proc.stdout_conn:
             stdout = parse_results(proc.stdout_conn)
             print(f'{proc.puid} returned output: {stdout}', flush=True)
-    
+
     # wait for workers to finish and shutdown process group
     grp.join()
     grp.stop()
+    grp.close()
 
 
 if __name__ == "__main__":

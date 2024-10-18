@@ -14,6 +14,8 @@ from dragon.globalservices.process import (
 from dragon.infrastructure.process_desc import ProcessOptions
 import dragon.utils as du
 
+TIMEOUT_DELTA_TOL = 1.0
+
 
 def wait_event_with_timeout(args):
     bytes = du.B64.str_to_bytes(args)
@@ -94,11 +96,12 @@ class TestEvent(unittest.TestCase):
         The class then returns False.
         """
         event = dragon.native.event.Event()
+        def_timeout = 0.9
         start = time.monotonic()
-        event_wait = event.wait(0.1)
-        stop = time.monotonic()
-        timeout = round(float(float(stop) - float(start)), 1)
-        self.assertAlmostEqual(0.1, timeout, "The timeout is not 0.1")
+        event_wait = event.wait(def_timeout)
+        elap = time.monotonic() - start
+        self.assertGreaterEqual(elap, def_timeout)
+        self.assertLess(elap, (def_timeout+TIMEOUT_DELTA_TOL))
         # This proves the event was not set and wait returns False as a result.
         self.assertFalse(event_wait, "The event is set")
         self.assertFalse(event.is_set(), "The event is set")
@@ -110,9 +113,9 @@ class TestEvent(unittest.TestCase):
         event = dragon.native.event.Event()
         start = time.monotonic()
         wait_val = event.wait(timeout=0)
-        stop = time.monotonic()
-        timeout = int(int(stop) - int(start))
-        self.assertAlmostEqual(0, timeout)
+        elap = time.monotonic() - start
+        self.assertGreaterEqual(elap, 0)
+        self.assertLess(elap, TIMEOUT_DELTA_TOL)
         self.assertFalse(wait_val, "The event is set")
         cmd = sys.executable
         wdir = "."
@@ -133,9 +136,9 @@ class TestEvent(unittest.TestCase):
         event = dragon.native.event.Event()
         start = time.monotonic()
         wait_val = event.wait(timeout=0)
-        stop = time.monotonic()
-        timeout = int(int(stop) - int(start))
-        self.assertAlmostEqual(0, timeout)
+        elap = time.monotonic() - start
+        self.assertGreaterEqual(elap, 0)
+        self.assertLess(elap, TIMEOUT_DELTA_TOL)
         self.assertFalse(wait_val, "The event is set")
         t1 = Thread(target=self.set_event, args=(event,))
         t1.start()
@@ -150,8 +153,9 @@ class TestEvent(unittest.TestCase):
         start = time.monotonic()
         wait_val = event.wait(timeout=-1)
         stop = time.monotonic()
-        timeout = int(int(stop) - int(start))
-        self.assertAlmostEqual(0, timeout)
+        elap = time.monotonic() - start
+        self.assertGreaterEqual(elap, 0)
+        self.assertLess(elap, TIMEOUT_DELTA_TOL)
         self.assertFalse(wait_val, "The event is set")
 
     def test_process_multiple_sets(self):

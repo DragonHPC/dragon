@@ -19,10 +19,10 @@ def main():
         num_nodes = len(nodes_to_channel_map)
 
         if num_nodes < 2:
-            raise ValueError('There must be at least 2 nodes allocated to run this test.', flush=True)
+            raise ValueError('There must be at least 2 nodes allocated to run this test.')
 
         if num_nodes % 2 != 0:
-            raise ValueError('The number of allocated nodes must be a multiple of 2.', flush=True)
+            raise ValueError('The number of allocated nodes must be a multiple of 2.')
 
         this_node_index = dparms.this_process.index
         next_node_index = (this_node_index + 1) % num_nodes

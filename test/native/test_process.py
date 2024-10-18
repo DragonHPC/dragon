@@ -2,11 +2,21 @@ import unittest
 import sys
 import time
 
-import dragon
-
 from dragon.native.queue import Queue
 from dragon.native.process import Process, current, ProcessTemplate
 from dragon.infrastructure.parameters import this_process
+from dragon.infrastructure.process_desc import ProcessOptions
+from dragon.native.array import Array
+from dragon.native.value import Value
+from dragon.native.lock import Lock
+from ctypes import Structure, c_double
+
+
+def simple_mod_2x(v, A):
+
+    v.value *= 2
+    for idx, _ in enumerate(A):
+        A[idx] *= 2
 
 
 class TestDragonNativeProcess(unittest.TestCase):
@@ -119,6 +129,32 @@ class TestDragonNativeProcess(unittest.TestCase):
         self.assertTrue(p.ident == "Banana")
         p.kill()
         p.join()
+
+    def test_template_python_exe_with_infra(self):
+
+        exe = sys.executable
+        args = ["-c","import dragon; import multiprocessing as mp; mp.set_start_method('dragon'); q = mp.Queue()"]
+
+        templ = ProcessTemplate(exe, args, options=ProcessOptions(make_inf_channels=True))
+        p = Process.from_template(templ)
+
+        p.start()
+        p.join()
+        self.assertEqual(p.returncode, 0)
+
+    def test_value_array(self):
+
+        ref_val = 0.5
+        ref_arr = [0.1, 0.2, 0.3]
+        v = Value("d", ref_val)
+        A = Array("d", ref_arr)
+
+        p = Process(target=simple_mod_2x, args=(v, A))
+        p.start()
+        p.join()
+
+        self.assertEqual(v.value, ref_val * 2)
+        self.assertEqual([a for a in A], [x * 2 for x in ref_arr])
 
     def test_templating_python(self):
 

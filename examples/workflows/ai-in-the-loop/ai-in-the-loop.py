@@ -88,6 +88,7 @@ def generate_data(
     # wait for workers to finish and shutdown process group
     grp.join()
     grp.stop()
+    grp.close()
     # transform data into tensors for training
     data = torch.tensor(x)
     target = torch.tensor(y)
@@ -129,6 +130,7 @@ def compute_cheap_approx(num_ranks: int, x: float) -> float:
     # wait for workers to finish and shutdown process group
     grp.join()
     grp.stop()
+    grp.close()
 
     return y
 
@@ -196,7 +198,7 @@ def main():
             # interval we uniformly sample training data from
             # launch mpi job to generate data
             data, target = generate_data(
-                my_alloc.nnodes() * ranks_per_node, samples_per_rank, data_interval, number_of_times_trained
+                my_alloc.nnodes * ranks_per_node, samples_per_rank, data_interval, number_of_times_trained
             )
             # train model
             loss = train(model, optimizer, data, target)

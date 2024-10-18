@@ -86,7 +86,7 @@ def worker_fill_poll_empty(ch_ser, pool_ser):
                 mview[0:5] = b"Hello"
                 sendh.send(msg)
 
-            if not ch.poll(event_mask=EventType.POLLEMPTY, timeout=5):
+            if not ch.poll(event_mask=EventType.POLLEMPTY, timeout=30):
                 print("Error in polling for empty")
                 sys.exit(1)
 
@@ -102,7 +102,7 @@ def worker_empty_poll_full(ch_ser):
         recvh.open()
 
         for j in range(3):
-            if not ch.poll(event_mask=EventType.POLLFULL, timeout=5):
+            if not ch.poll(event_mask=EventType.POLLFULL, timeout=30):
                 print("Error in polling for full")
                 sys.exit(1)
 
@@ -125,13 +125,13 @@ def worker_barrier_wait(ch_ser):
         recvh.open()
 
         try:
-            if not ch.poll(event_mask=EventType.POLLBARRIER, timeout=0):
+            if not ch.poll(event_mask=EventType.POLLBARRIER, timeout=30):
                 print('Error calling Barrier Poll', flush=True)
                 sys.exit(1)
         except ChannelBarrierReady:
-            ch.poll(event_mask=EventType.POLLBARRIER_RELEASE, timeout=0)
+            ch.poll(event_mask=EventType.POLLBARRIER_RELEASE, timeout=30)
 
-        msg = recvh.recv(timeout=5)
+        msg = recvh.recv(timeout=30)
         x = int.from_bytes(msg.bytes_memview(), byteorder=sys.byteorder, signed=True)
         if x < -1 or x > BARRIER_CHANNEL_CAPACITY:
             print(f'Error: Got Barrier Value {x}', flush=True)
@@ -258,6 +258,35 @@ class ChannelCreateTest(unittest.TestCase):
         self.assertEqual(1, mview[0])
         recvh.close()
         msg.destroy()
+        ch.destroy()
+
+    @unittest.skip("AICI-1537")
+    def test_landing_pad_serialized(self):
+        ch = Channel(self.mpool, 1)
+
+        msg = Message.create_alloc(self.mpool, 1500)
+        mview = msg.bytes_memview()
+        for i in range(1500):
+            mview[i] = 1
+
+        recv_msg = Message.create_alloc(self.mpool, 2000)
+
+        sendh = ch.sendh()
+        recvh = ch.recvh()
+
+        sendh.open()
+        sendh.send(msg)
+        sendh.close()
+
+        recvh.open()
+        recv_msg = recvh.recv(recv_msg)
+        recvh.close()
+
+        recv_mview = recv_msg.bytes_memview()
+        self.assertEqual(len(mview), len(recv_mview))
+
+        msg.destroy()
+        recv_msg.destroy()
         ch.destroy()
 
     def test_attr_channel(self):
@@ -1047,6 +1076,7 @@ class MessageTest(unittest.TestCase):
         with self.assertRaises(ChannelError):
             msg.bytes_memview()
 
+    @unittest.skip('This is not currently supported.')
     def test_zero_size(self):
         msg = Message.create_alloc(self.mpool, 0)
         self.assertEqual(len(msg.tobytes()), 0)

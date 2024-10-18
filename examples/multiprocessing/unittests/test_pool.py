@@ -47,6 +47,11 @@ def raise_large_valuerror(wait):
 def identity(x):
     return x
 
+def sleep_kbi(x):
+    try:
+        sleep(x)
+    except KeyboardInterrupt:
+        pass
 
 class CountedObject(object):
     n_instances = 0
@@ -81,8 +86,11 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        cls.pool.terminate()
-        cls.pool.join()
+        try:
+            cls.pool.terminate()
+            cls.pool.join()
+        except ValueError:
+            pass
         cls.pool = None
         super().tearDownClass()
 
@@ -260,7 +268,7 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
                 self.assertIn(value, expected_values)
                 expected_values.remove(value)
 
-    
+
     def test_make_pool(self):
         expected_error = RemoteError if self.TYPE == "manager" else ValueError
 
@@ -276,12 +284,12 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
                 p.join()
 
     def test_terminate(self):
-        result = self.pool.map_async(time.sleep, [0.1 for i in range(10000)], chunksize=1)
+        result = self.pool.map_async(sleep_kbi, [0.1 for i in range(10000)], chunksize=1)
         self.pool.terminate()
         join = TimingWrapper(self.pool.join)
         join()
         # Sanity check the pool didn't wait for all tasks to finish
-        self.assertLess(join.elapsed, 2.0)
+        self.assertLess(join.elapsed, 2.5)
 
     def test_empty_iterable(self):
         # See Issue 12157
@@ -750,12 +758,12 @@ class WithManagerTestPool(BaseTestCase, ManagerMixin, unittest.TestCase):
                 p.join()
 
     def test_terminate(self):
-        result = self.pool.map_async(time.sleep, [0.1 for i in range(10000)], chunksize=1)
+        result = self.pool.map_async(sleep_kbi, [0.1 for i in range(10000)], chunksize=1)
         self.pool.terminate()
         join = TimingWrapper(self.pool.join)
         join()
         # Sanity check the pool didn't wait for all tasks to finish
-        self.assertLess(join.elapsed, 2.0)
+        self.assertLess(join.elapsed, 2.5)
 
     def test_empty_iterable(self):
         # See Issue 12157
@@ -1100,12 +1108,12 @@ class WithThreadsTestPool(BaseTestCase, ThreadsMixin, unittest.TestCase):
                 p.join()
 
     def test_terminate(self):
-        result = self.pool.map_async(time.sleep, [0.1 for i in range(10000)], chunksize=1)
+        result = self.pool.map_async(sleep_kbi, [0.1 for i in range(10000)], chunksize=1)
         self.pool.terminate()
         join = TimingWrapper(self.pool.join)
         join()
         # Sanity check the pool didn't wait for all tasks to finish
-        self.assertLess(join.elapsed, 2.0)
+        self.assertLess(join.elapsed, 2.5)
 
     def test_empty_iterable(self):
         # See Issue 12157

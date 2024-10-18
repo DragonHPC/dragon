@@ -24,9 +24,9 @@ sys.path.insert(0, os.path.abspath("."))
 # -- Project information -----------------------------------------------------
 
 project = "Dragon"
-DragonVersion = "0.9"
+DragonVersion = "0.10"
 copyright = "2024, Hewlett Packard Enterprise"
-author = "Michael Burke, Eric Cozzi, Zach Crisler, Julius Donnert, Veena Ghorakavi, Nick Hill, Maria Kalantzi, Ben Keen, Kent D. Lee, Pete Mendygral, Davin Potts and Nick Radcliffe"
+author = "Michael Burke, Yian Chen, Eric Cozzi, Zach Crisler, Julius Donnert, Veena Ghorakavi, Nick Hill, Maria Kalantzi, Ben Keen, Kent D. Lee, Pete Mendygral, Davin Potts, Nick Radcliffe, and Colin Wahl"
 
 # -- General configuration ---------------------------------------------------
 
@@ -41,7 +41,8 @@ extensions = [
     "sphinx.ext.autosectionlabel",
     "sphinxfortran.fortran_domain",
     "sphinxfortran.fortran_autodoc",
-    "sphinx_copybutton"
+    "sphinx_copybutton",
+    "sphinxcontrib.plantuml"
 ]
 
 # autodoc_typehints = 'description'
@@ -105,6 +106,9 @@ frozen_locals = dict(locals())
 rst_epilog = '\n'.join(map(lambda x: f".. |{x}| replace:: {frozen_locals[x]}", variables_to_export))
 del frozen_locals
 
+# Define plantuml compilation
+plantuml = f'java -jar {os.path.join(os.getcwd(), "plantuml.jar")}'
+
 # Add an autodoc class that only posts the docstring without function
 # names. Useful for autodoc-ing the Dragon CLI commands
 class AutoDocstringOnly(autodoc.MethodDocumenter):
@@ -125,15 +129,14 @@ autodoc_default_flags = ['members', 'private-members', 'special-members',
                          #'undoc-members',
                          'show-inheritance']
 
-def autodoc_skip_member(app, what, name, obj, skip, options):
-    # Ref: https://stackoverflow.com/a/21449475/
-    exclusions = ('__weakref__', '__new__', # special-members
-                  '__doc__', '__module__', '__dict__',  # undoc-members
-                  )
-    exclude = name in exclusions
-    # return True if (skip or exclude) else None  # Can interfere with subsequent skip functions.
-    return True if exclude else None
+autodoc_default_options = {
+    'members': True,
+    'member-order': 'bysource',
+    'special-members': '__setitem__,__getitem__,__delitem__,__len__,__contains__',
+    'undoc-members': False,
+    'exclude-members': '__weakref__,__new__,__doc__,__module__,__dict__',
+    'show-inheritance': True
+}
 
 def setup(app):
-    app.connect('autodoc-skip-member', autodoc_skip_member)
     app.add_autodocumenter(AutoDocstringOnly)

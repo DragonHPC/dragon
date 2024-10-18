@@ -37,6 +37,7 @@
 #include <dragon/utils.h>
 #include <dragon/return_codes.h>
 #include <dragon/global_types.h>
+#include <dragon/managed_memory.h>
 
 struct dragonBCastDescr_st;
 
@@ -56,11 +57,6 @@ extern "C" {
 #endif
 
 /* dyn_mem stats provide statistics for the heap. */
-
-typedef struct dragonHeapStatsAllocationItem_st {
-    uint64_t block_size;
-    uint64_t num_blocks;
-} dragonHeapStatsAllocationItem_t;
 
 typedef struct dragonHeapStats_st {
     uint64_t num_segments;
@@ -139,6 +135,9 @@ dragon_heap_free(dragonDynHeap_t* heap, void* ptr);
 
 dragonError_t
 dragon_heap_recover(dragonDynHeap_t* heap);
+
+void*
+dragon_heap_base_ptr(dragonDynHeap_t* heap);
 
 dragonError_t
 dragon_heap_get_stats(dragonDynHeap_t* heap, dragonHeapStats_t* data);

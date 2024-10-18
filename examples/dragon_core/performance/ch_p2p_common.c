@@ -46,8 +46,6 @@ setup(int num_channels, char *channel_descr[],
 {
     dragonError_t derr;
 
-    dragon_channel_register_gateways_from_env();
-
     for (int idx = 0; idx < num_channels; idx++) {
         DEBUG_PRINT(("Attaching to channel %i\n", idx));
         derr = attach_to_channel(channel_descr[idx], &dragon_channels[idx]);

@@ -16,7 +16,7 @@
 ..      replaces the old path of a file with a new path of the file.
 ..    * We have configured Sphinx, so that `bla` means :code:`bla`, not :any:`bla`
 ..    * Glossary items can be referenced with :term:`Managed Object`
-..    * It is easy to reference a code object with :any:`dragon.data.distdictionary.distributed_dict`
+..    * It is easy to reference a code object with :any:`dragon.data.ddict`
 ..    * Hyperlinks: `Google <https://google.de>`_
 
 ..    * Code uniformity looks professional: Run `black -l 110` over your Python example

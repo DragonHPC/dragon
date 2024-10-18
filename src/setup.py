@@ -44,13 +44,6 @@ extensions = [
     DragonExtension("dragon.pmod", ["dragon/pydragon_pmod.pyx"]),
     DragonExtension("dragon.perf", ["dragon/pydragon_perf.pyx"]),
     DragonExtension("dragon.fli", ["dragon/pydragon_fli.pyx"]),
-    Extension(
-        "dragon.launcher.pmsgqueue",
-        ["dragon/launcher/pydragon_pmsgqueue.pyx"],
-        include_dirs=[f'{ROOTDIR}/include', f'{ROOTDIR}/dragon/launcher/include'],
-        library_dirs=[f'{ROOTDIR}/lib'],
-        libraries=["pmsgqueue", "rt"],
-    ),
 ]
 
 class build(_build):
@@ -89,7 +82,8 @@ class build(_build):
             nthreads=int(os.environ.get('DRAGON_BUILD_NTHREADS', os.cpu_count())),
             show_all_warnings=True,
             compiler_directives={
-                "language_level": 3,
+                "language_level": "3",
+                "boundscheck": False,
             },
             build_dir=self.build_temp,
         )
@@ -108,10 +102,11 @@ class build(_build):
                 'dragon/**/*.py',
                 exclude=['dragon/**/setup.py', 'dragon/cli/*.py', 'dragon/__main__.py'],
                 compiler_directives={
-                    "language_level": 3,
+                    "language_level": "3",
                     # Disable annotation typing when compiling arbitrary
                     # Python 3.x code.
                     "annotation_typing": False,
+                    "boundscheck": False,
                 },
                 force=True,
             ))
@@ -199,10 +194,10 @@ setup(
     description="Python multiprocessing over the Dragon distributed runtime",
     packages=find_packages(),
     package_data={
-        'dragon': ['lib/libdragon.so', 'lib/libpmod.so', 'lib/libpmsgqueue.so']
+        'dragon': ['lib/libdragon.so', 'lib/libpmod.so']
     },
     ext_modules = extensions,
     entry_points=entry_points,
     python_requires=">=3.9",
-    install_requires=['cloudpickle', 'numpy']
+    install_requires=['cloudpickle', 'numpy', 'gunicorn', 'flask', 'pyyaml', 'requests', 'psutil']
 )

@@ -1,11 +1,15 @@
 if module --version 2>&1 | grep -q "Lua"; then
-   echo "Loading LMOD module files...."
-   module use $PWD/src/lmod
+    echo "Loading LMOD module files...."
+    module use $PWD/src/lmod
 else
-   echo "Loading TCL module files...."
-   module use $PWD/src/modulefiles
+    echo "Loading TCL module files...."
+    module use $PWD/src/modulefiles
 fi
 module load dragon-dev
+
+if [ ! -d _env ]; then
+    python3 -m venv _env
+fi
 
 pythonpath=`which python3`
 env_str='_env'

@@ -318,9 +318,6 @@ def connect_to_infrastructure(force=False):
         if not force and _INFRASTRUCTURE_CONNECTED:
             return
 
-        LOG.info(f'We are registering gateways for this process. {dp.this_process.num_gw_channels_per_node=}')
-        dch.register_gateways_from_env()
-
         LOG.info(f'connecting to infrastructure from {os.getpid()}')
 
         _GS_INPUT = _connect_gs_input()

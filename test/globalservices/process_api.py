@@ -190,6 +190,7 @@ class SingleProcAPIChannels(unittest.TestCase):
             args=[],
             env={},
             user_name="dummy",
+            head_proc=True,
         )
 
         self.gs_input_wh.send(create_msg.serialize())

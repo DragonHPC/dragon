@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import shim_dragon_paths
 import unittest
+import multiprocessing as mp
 
 from native.test_process_group import TestDragonNativeProcessGroup
 from native.test_process import TestDragonNativeProcess
@@ -14,7 +15,8 @@ from native.test_lock import TestLock
 from native.test_queue import TestQueue
 from native.test_redirection import TestIORedirection
 from native.test_ddict import TestDDict
-
+from native.test_pool import TestDragonNativePool 
 
 if __name__ == "__main__":
+    mp.set_start_method("dragon")
     unittest.main()

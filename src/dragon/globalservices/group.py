@@ -4,6 +4,7 @@ primary resource component. Only process groups are supported at this time.
 
 import signal
 import logging
+
 from ..infrastructure import messages as dmsg
 from ..infrastructure.parameters import this_process
 from ..globalservices import api_setup as das
@@ -61,7 +62,7 @@ def create(items, policy, user_name='', soft=False):
     return the_desc
 
 
-def kill(identifier, sig=signal.SIGKILL):
+def kill(identifier, sig=signal.SIGKILL, hide_stderr=False):
     """Asks Global Services to send the processes belonging to a specified group
     a specified signal.
 
@@ -74,6 +75,8 @@ def kill(identifier, sig=signal.SIGKILL):
     :type identifier: str|int
     :param sig: signal to use to kill the process, default=signal.SIGKILL
     :type sig: int
+    :param hide_stderr: whether or not to suppress stderr from the process with the delivery of this signal
+    :type hide_stderr: bool
     :raises GroupError: if there is no such group
     :raises GroupError: if the group has not yet started
     :raises NotImplementedError: if any other case not implemented
@@ -82,11 +85,11 @@ def kill(identifier, sig=signal.SIGKILL):
     if isinstance(identifier, str):
         req_msg = dmsg.GSGroupKill(tag=das.next_tag(), p_uid=this_process.my_puid,
                                    r_c_uid=das.get_gs_ret_cuid(), sig=int(sig),
-                                   user_name=identifier)
+                                   user_name=identifier, hide_stderr=hide_stderr)
     else:
         req_msg = dmsg.GSGroupKill(tag=das.next_tag(), p_uid=this_process.my_puid,
                                    r_c_uid=das.get_gs_ret_cuid(), sig=int(sig),
-                                   g_uid=int(identifier))
+                                   g_uid=int(identifier), hide_stderr=hide_stderr)
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupKillResponse)
