@@ -34,7 +34,7 @@ from ...channels import Channel
 from ... import fli
 from ...rc import DragonError
 from .ddict import KEY_HINT, VALUE_HINT, DDictManagerFull, DDictCheckpointSync, DDictManagerStats
-from ...dlogging.util import setup_BE_logging, deferred_flog, finfo, fdebug, DragonLoggingServices as dls
+from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 
 log = None
 MAX_NUM_CLIENTS_PER_MANAGER = 100000
@@ -129,6 +129,9 @@ class DictOp:
         self.chkpt_id = chkpt_id
         self.tag = tag
 
+    def __str__(self):
+        return f'{self.__class__.__name__}{self.client_id, self.chkpt_id, self.tag}'
+
     def perform(self) -> bool:
         '''
         Returns True when it was performed and false otherwise.
@@ -162,7 +165,7 @@ class PutOp(DictOp):
                     val = old_vals.pop()
                     val.free()
                 except Exception as ex:
-                    log.info(f'There was an error while freeing value being replaced. {ex}')
+                    log.info('There was an error while freeing value being replaced. %s', ex)
 
         chkpt.map[key_mem] = self.val_list
         if self.persist:
@@ -656,7 +659,7 @@ class Manager:
             self._register_with_orchestrator(serialized_return_orc)
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'manager {self._puid} failed to initialize. Exception: {ex}\n Traceback: {tb}\n')
+            log.debug('manager %s failed to initialize. Exception: %s\n Traceback: %s\n', self._puid, ex, tb)
 
 
     def _next_strm_channel(self):
@@ -664,9 +667,9 @@ class Manager:
         self._next_stream = (self._next_client_id+1) % NUM_STREAMS_PER_MANAGER
         return ch
 
-    def _traceit(self, fstr, *args):
+    def _traceit(self, *args, **kw_args):
         if self._trace:
-            deferred_flog(log, fstr, logging.INFO, *args)
+            log(logging.INFO, *args, **kw_args)
 
     def _free_resources(self):
 
@@ -689,10 +692,10 @@ class Manager:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'manager {self._puid} failed to destroy resources. Exception: {ex}\n Traceback: {tb}\n')
+            log.debug('manager %s failed to destroy resources. Exception: %s\n Traceback: %s\n', self._puid, ex, tb)
 
     def _register_with_local_service(self):
-        log.debug('manager is sending set_local_kv with self._serialized_main_orc={}'.format(self._serialized_main_orc))
+        log.debug('manager is sending set_local_kv with self._serialized_main_orc=%s', self._serialized_main_orc)
         set_local_kv(key=self._serialized_main_orc, value=self._serialized_main_connector)
 
     def _tag_inc(self):
@@ -723,6 +726,7 @@ class Manager:
     def _defer(self, dictop: DictOp):
         if dictop.chkpt_id not in self._deferred_ops:
             self._deferred_ops[dictop.chkpt_id] = []
+        self._traceit('Operation deferred: %s', dictop)
         self._deferred_ops[dictop.chkpt_id].append(dictop)
 
     def _process_deferred_ops(self, chkpt_id: int):
@@ -733,6 +737,8 @@ class Manager:
                 performed = op.perform()
                 if not performed:
                     left_overs.append(op)
+                else:
+                    self._traceit('Deferred Operation now complete %s', op)
 
             if len(left_overs) == 0:
                 # All performed.
@@ -759,7 +765,7 @@ class Manager:
                 sendh.send_bytes(msg.serialize(), timeout=self._timeout)
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception in the manager _send_msg: {ex} \n Traceback: {tb}')
+            log.debug('There was an exception in the manager _send_msg: %s\n Traceback: %s', ex, tb)
             raise RuntimeError(f'There was an exception in the manager _send_msg: {ex} \n Traceback: {tb}')
 
     def _send_dmsg_and_value(self, chkpt: Checkpoint, resp_msg, connection, key_mem: dmem.MemoryAlloc, \
@@ -809,7 +815,7 @@ class Manager:
             raise Exception(f'Failed to register manager with orchester. Return code: {resp_msg.err}')
         self._manager_id = resp_msg.managerID
         self._managers = resp_msg.managers
-        log.debug('The number of managers is {}'.format(len(self._managers)))
+        log.debug('The number of managers is %s', len(self._managers))
         self._serialized_manager_nodes = resp_msg.managerNodes
         for serialized_node in self._serialized_manager_nodes:
             self._manager_hostnames.append(cloudpickle.loads(b64decode(serialized_node)).hostname)
@@ -856,7 +862,7 @@ class Manager:
                 log.info('Got EOF')
             except Exception as ex:
                 tb = traceback.format_exc()
-                log.debug(f'Caught exception while discarding rest of stream: {ex}\n {tb}')
+                log.debug('Caught exception while discarding rest of stream: %s\n %s', ex, tb)
 
         log.info('Now returning from recover mem')
 
@@ -867,42 +873,42 @@ class Manager:
                     try:
                         ser_msg, hint = recvh.recv_bytes()
                         msg = dmsg.parse(ser_msg)
-                        self._traceit('About to process: {msg}')
+                        self._traceit('About to process: %s', msg)
                         if type(msg) in self._DTBL:
                             self._DTBL[type(msg)][0](self, msg=msg, recvh=recvh)
-                            self._traceit('Finished processing: {msg}')
+                            self._traceit('Finished processing: %s', msg)
                         else:
                             self._serving = False
                             self._abnormal_termination = True
-                            log.debug(f'The message {msg} is not a valid message!')
+                            log.debug('The message %s is not a valid message!', msg)
                     except EOFError:
                         log.info('Got EOFError')
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception in manager:\n{ex}\n Traceback:\n{tb}')
+            log.debug('There was an exception in manager:\n%s\n Traceback:\n%s', ex, tb)
 
         try:
-            log.info(f'Manager {self._manager_id} preparing to exit')
-            log.info(f'Other manager hostnames: {self._manager_hostnames}')
-            log.info(f'Pool utilization percent is {self._pool.utilization}')
+            log.info('Manager %s preparing to exit', self._manager_id)
+            log.info('Other manager hostnames: %s', self._manager_hostnames)
+            log.info('Pool utilization percent is %s', self._pool.utilization)
             # self._pool.free_blocks is a map where keys are the memory block sizes and values are number of blocks with the size.
-            log.info(f'Free memory blocks, keys are memory block sizes and values are the number of blocks with that particular size:')
+            log.info('Free memory blocks, keys are memory block sizes and values are the number of blocks with that particular size:')
             for free_block_key in self._pool.free_blocks.keys():
-                log.info(f'{free_block_key}: {self._pool.free_blocks[free_block_key]}')
+                log.info('%s: %s', free_block_key, self._pool.free_blocks[free_block_key])
             #TBD fix this so we can get more stats.
             #log.info(f'Number of keys stored is {len(self._map)}')
-            log.info(f'Free space is {self._pool.free_space}')
-            log.info(f'The total size of the pool managed by this manager was {self._pool.size}')
+            log.info('Free space is %s', self._pool.free_space)
+            log.info('The total size of the pool managed by this manager was %s', self._pool.size)
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception in the manager while free resources:\n{ex}\n Traeback:\n{tb}')
+            log.debug('There was an exception in the manager while free resources:\n%s\n Traeback:\n%s', ex, tb)
 
         try:
             self._free_resources()
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception in the manager while free resources:\n{ex}\n Traeback:\n{tb}')
+            log.debug('There was an exception in the manager while free resources:\n%s\n Traeback:\n%s', ex, tb)
 
     @dutil.route(dmsg.DDRegisterClient, _DTBL)
     def register_client(self, msg: dmsg.DDRegisterClient, recvh):
@@ -913,8 +919,8 @@ class Manager:
             self._send_msg(resp_msg, self._buffered_client_connections_map[client_id])
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'GOT EXCEPTION {tb}')
-            log.debug(f'There was an exception in the register_client to manager {self._puid=} for client {self._global_client_id}: {ex}\n Traceback: {tb}\n {msg.respFLI=}')
+            log.debug('GOT EXCEPTION %s', tb)
+            log.debug('There was an exception in the register_client to manager %s for client %s: %s\n Traceback: %s\n%s', self._puid, self._global_client_id, ex, tb, msg.respFLI)
 
     @dutil.route(dmsg.DDConnectToManager, _DTBL)
     def connect_to_manager(self, msg: dmsg.DDConnectToManager, recvh):
@@ -923,7 +929,7 @@ class Manager:
             self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception in request manager {msg.managerID} from manager {self._puid=} for client {msg.clientID}: {ex} \n Traceback: {tb}\n {msg.respFLI=}')
+            log.debug('There was an exception in request manager %s from manager %s for client %s: %s \n Traceback: %s\n%s', msg.managerID, self._puid, msg.clientID, ex, tb, msg.respFLI)
             raise RuntimeError(f'There was an exception in request manager {msg.managerID} from manager {self._puid=} for client {msg.clientID}: {ex} \n Traceback: {tb}\n {msg.respFLI=}')
 
     @dutil.route(dmsg.DDRegisterClientID, _DTBL)
@@ -934,7 +940,7 @@ class Manager:
             self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception in the register_clientID to manager {self._puid=} for client {msg.clientID}: {ex} \n Traceback: {tb}\n {msg.respFLI=}')
+            log.debug('There was an exception in the register_clientID to manager %s for client %s: %s\n Traceback: %s\n%s', self._puid, msg.clientID, ex, tb, msg.respFLI)
             raise RuntimeError(f'There was an exception in the register_clientID to manager {self._puid=} for client {msg.clientID}: {ex} \n Traceback: {tb}\n {msg.respFLI=}')
 
     @dutil.route(dmsg.DDDestroyManager, _DTBL)
@@ -948,7 +954,7 @@ class Manager:
             connection.detach()
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception while destroying manager {self._puid=}: {ex} \n Traceback: {tb}\n')
+            log.debug('There was an exception while destroying manager %s: %s\n Traceback: %s', self._puid, ex, tb)
 
     @dutil.route(dmsg.DDPut, _DTBL)
     def put(self, msg: dmsg.DDPut, recvh):
@@ -989,15 +995,15 @@ class Manager:
                     self._process_deferred_ops(msg.chkptID)
 
             except (DDictManagerFull,fli.DragonFLIOutOfMemoryError)  as ex:
-                log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process put request. {ex}')
+                log.info('Manager %s with PUID=%s could not process put request. %s', self._manager_id, self._puid, ex)
                 # recover from the error by freeing memory and cleaning recvh.
                 self._recover_mem(client_key_mem, val_list, recvh)
                 resp_msg = dmsg.DDPutResponse(self._tag_inc(), ref=msg.tag, err=DragonError.MEMORY_POOL_FULL)
                 self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
 
             except DDictCheckpointSync as ex:
-                log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process put request. {ex}')
-                log.info(f'The requested put operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
+                log.info('Manager %s with PUID=%s could not process put request. %s', self._manager_id, self._puid, ex)
+                log.info('The requested put operation for checkpoint id %s was older than the working set range of %s', msg.chkptID, self._working_set.range)
                 # recover from the error by freeing memory and cleaning recvh.
                 self._recover_mem(client_key_mem, val_list, recvh)
                 resp_msg = dmsg.DDPutResponse(self._tag_inc(), ref=msg.tag, err=DragonError.DDICT_CHECKPOINT_RETIRED, errInfo=f'The requested put operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
@@ -1005,7 +1011,7 @@ class Manager:
 
             except Exception as ex:
                 tb = traceback.format_exc()
-                log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process put request. {ex}\n {tb}')
+                log.info('Manager %s with PUID=%s could not process put request. %s\n %s', self._manager_id, self._puid, ex, tb)
                 # recover from the error by freeing memory and cleaning recvh.
                 self._recover_mem(client_key_mem, val_list, recvh)
                 resp_msg = dmsg.DDPutResponse(self._tag_inc(), ref=msg.tag, err=DragonError.FAILURE)
@@ -1013,7 +1019,7 @@ class Manager:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an unexpected exception in put in the manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
+            log.debug('There was an unexpected exception in put in the manager, %s, %s: %s\n Traceback: %s', self._puid, msg.clientID, ex, tb)
             raise RuntimeError(f'There was an unexpected exception in put in manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
     @dutil.route(dmsg.DDGet, _DTBL)
     def get(self, msg: dmsg.DDGet, recvh):
@@ -1027,16 +1033,16 @@ class Manager:
                 self._defer(get_op)
 
         except (DDictManagerFull,fli.DragonFLIOutOfMemoryError)  as ex:
-            log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process get request. {ex}')
-            log.info(f'The requested get operation could not be completed because the manager pool is too full')
+            log.info('Manager %s with PUID=%s could not process get request. %s', self._manager_id, self._puid, ex)
+            log.info('The requested get operation could not be completed because the manager pool is too full')
             # recover from the error by freeing memory and cleaning recvh.
             self._recover_mem(client_key_mem, [], recvh)
             resp_msg = dmsg.DDGetResponse(self._tag_inc(), ref=msg.tag, err=DragonError.MEMORY_POOL_FULL, errInfo=f'The requested get operation could not be completed. The manager pool is full.')
             self._send_dmsg_and_value(chkpt=msg.chkptID, resp_msg=resp_msg, connection=self._client_connections_map[msg.clientID], key_mem=None)
 
         except DDictCheckpointSync as ex:
-            log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process get request. {ex}')
-            log.info(f'The requested get operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
+            log.info('Manager %s with PUID=%s could not process get request. %s', self._manager_id, self._puid, ex)
+            log.info('The requested get operation for checkpoint id %s was older than the working set range of %s', msg.chkptID, self._working_set.range)
             # recover from the error by freeing memory and cleaning recvh.
             self._recover_mem(client_key_mem, [], recvh)
             resp_msg = dmsg.DDGetResponse(self._tag_inc(), ref=msg.tag, err=DragonError.DDICT_CHECKPOINT_RETIRED, errInfo=f'The requested get operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
@@ -1044,7 +1050,7 @@ class Manager:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an unexpected exception in get in the manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
+            log.debug('There was an unexpected exception in get in the manager,%s, %s: %s\nTraceback: %s', self._puid, msg.clientID, ex, tb)
             raise RuntimeError(f'There was an unexpected exception in get in manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
 
     @dutil.route(dmsg.DDPop, _DTBL)
@@ -1059,8 +1065,8 @@ class Manager:
                 self._defer(pop_op)
 
         except DDictCheckpointSync as ex:
-            log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process get request. {ex}')
-            log.info(f'The requested pop operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
+            log.info('Manager %s with PUID=%s could not process get request. %s', self._manager_id, self._puid, ex)
+            log.info('The requested pop operation for checkpoint id %s was older than the working set range of %s', msg.chkptID, self._working_set.range)
             # recover from the error by freeing memory and cleaning recvh.
             self._recover_mem(key_mem, [], recvh)
             resp_msg = dmsg.DDPopResponse(self._tag_inc(), ref=msg.tag, err=DragonError.DDICT_CHECKPOINT_RETIRED, errInfo=f'The requested pop operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
@@ -1068,7 +1074,7 @@ class Manager:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an unexpected exception in pop in the manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
+            log.debug('There was an unexpected exception in pop in the manager %s, %s: %s \n Traceback: %s', self._puid, msg.clientID, ex, tb)
             raise RuntimeError(f'There was an unexpected exception in pop in manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
 
     @dutil.route(dmsg.DDContains, _DTBL)
@@ -1082,7 +1088,7 @@ class Manager:
             contains_op.perform()
 
         except (DDictManagerFull,fli.DragonFLIOutOfMemoryError)  as ex:
-            log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process get request. {ex}')
+            log.info('Manager %s with PUID=%s could not process get request. %s', self._manager_id, self._puid, ex)
             log.info(f'The requested get operation could not be completed because the manager pool is too full')
             # recover from the error by freeing memory and cleaning recvh.
             self._recover_mem(key_mem, [], recvh)
@@ -1090,8 +1096,8 @@ class Manager:
             self._send_dmsg_and_value(chkpt=msg.chkptID, resp_msg=resp_msg, connection=self._client_connections_map[msg.clientID], key_mem=None)
 
         except DDictCheckpointSync as ex:
-            log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process contains request. {ex}')
-            log.info(f'The requested contains operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
+            log.info('Manager %s with PUID=%s could not process contains request. %s', self._manager_id, self._puid, ex)
+            log.info('The requested contains operation for checkpoint id %s was older than the working set range of %s', msg.chkptID, self._working_set.range)
             # recover from the error by freeing memory and cleaning recvh.
             self._recover_mem(key_mem, [], recvh)
             resp_msg = dmsg.DDContainsResponse(self._tag_inc(), ref=msg.tag, err=DragonError.DDICT_CHECKPOINT_RETIRED, errInfo=f'The requested contains operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
@@ -1099,7 +1105,7 @@ class Manager:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an unexpected exception in contains in the manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
+            log.debug('There was an unexpected exception in contains in the manager, %s, %s: %s \n Traceback: %s', self._puid, msg.clientID, ex, tb)
             raise RuntimeError(f'There was an unexpected exception in contains in manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
 
     @dutil.route(dmsg.DDGetLength, _DTBL)
@@ -1112,14 +1118,14 @@ class Manager:
             length_op.perform()
 
         except DDictCheckpointSync as ex:
-            log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process length request. {ex}')
-            log.info(f'The requested length operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
+            log.info('Manager %s with PUID=%s could not process length request. %s', self._manager_id, self._puid, ex)
+            log.info('The requested length operation for checkpoint id %s was older than the working set range of %s', msg.chkptID, self._working_set.range)
             resp_msg = dmsg.DDGetLengthResponse(self._tag_inc(), ref=msg.tag, err=DragonError.DDICT_CHECKPOINT_RETIRED, errInfo=f'The requested length operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
             self._send_msg(resp_msg, self._buffered_client_connections_map[self.client_id])
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception in get_length from manager {self._puid}: {ex} \n Traeback: \n {tb}')
+            log.debug('There was an exception in get_length from manager %s: %s\n Traeback: \n%s', self._puid, ex, tb)
             raise RuntimeError(f'There was an exception in get_length from manager {self._puid}: {ex} \n Traeback: \n {tb}')
 
     @dutil.route(dmsg.DDClear, _DTBL)
@@ -1134,7 +1140,7 @@ class Manager:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an unexpected exception in clear in the manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
+            log.debug('There was an unexpected exception in clear in the manager, %s, %s: %s \n Traceback: %s', self._puid, msg.clientID, ex, tb)
             raise RuntimeError(f'There was an unexpected exception in clear in manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
 
     @dutil.route(dmsg.DDManagerStats, _DTBL)
@@ -1157,7 +1163,7 @@ class Manager:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an unexpected exception in get_stats in the manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
+            log.debug('There was an unexpected exception in get_stats in the manager, %s, %s: %s \n Traceback: %s', self._puid, msg.clientID, ex, tb)
             raise RuntimeError(f'There was an unexpected exception in get_stats in manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
 
     @dutil.route(dmsg.DDManagerGetNewestChkptID, _DTBL)
@@ -1174,7 +1180,7 @@ class Manager:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an unexpected exception in get_newest_chkpt_id in the manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
+            log.debug('There was an unexpected exception in get_newest_chkpt_id in the manager, %s, %s: %s \n Traceback: %s', self._puid, msg.clientID, ex, tb)
             raise RuntimeError(f'There was an unexpected exception in get_newest_chkpt_id in manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
 
 
@@ -1203,14 +1209,14 @@ class Manager:
             keys_op.perform()
 
         except DDictCheckpointSync as ex:
-            log.info(f'Manager {self._manager_id} with PUID={self._puid} could not process keys request. {ex}')
-            log.info(f'The requested keys operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
+            log.info('Manager %s with PUID=%s could not process keys request. %s', self._manager_id, self._puid, ex)
+            log.info('The requested keys operation for checkpoint id %s was older than the working set range of %s', msg.chkptID, self._working_set.range)
             resp_msg = dmsg.DDKeysResponse(self._tag_inc(), ref=msg.tag, err=DragonError.DDICT_CHECKPOINT_RETIRED, errInfo=f'The requested keys operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}')
             self._send_dmsg_and_keys(resp_msg, self._client_connections_map[self.client_id], None)
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an unexpected exception in keys in the manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
+            log.debug('There was an unexpected exception in keys in the manager, %s, %s: %s \n Traceback: %s', self._puid, msg.clientID, ex, tb)
             raise RuntimeError(f'There was an unexpected exception in keys in manager, {self._puid=}, {msg.clientID=}: {ex} \n Traceback: {tb}')
 
 
@@ -1228,7 +1234,7 @@ class Manager:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception while deregistering client in manager. Exception: {ex}\n Traceback: {tb}')
+            log.debug('There was an exception while deregistering client in manager. Exception: %s\n Traceback: %s', ex, tb)
 
 def manager_proc(pool_size: int, serialized_return_orc, serialized_main_orc, trace, args):
     try:
@@ -1237,5 +1243,5 @@ def manager_proc(pool_size: int, serialized_return_orc, serialized_main_orc, tra
         log.debug('Manager is exiting....')
     except Exception as ex:
         tb = traceback.format_exc()
-        log.debug(f'There was an exception initing the manager: {ex}\n Traceback: {tb}')
+        log.debug('There was an exception initing the manager: %s\n Traceback: %s', ex, tb)
         raise RuntimeError(f'There was an exception initing the manager: {ex}\n Traceback: {tb}')

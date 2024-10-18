@@ -13,24 +13,6 @@ from dragon.utils import B64
 from dragon.managed_memory import MemoryPool
 from dragon.dlogging.logger import DragonLogger, DragonLoggingError
 
-# This allows logging with f-strings that are not evaluated immediately. Use like
-# this: finfo(log, 'Got KeyError {e} during bringup')
-# The formatted f will only be added to the f-string and evaluated when info is enabled.
-
-def deferred_flog(log, fstr, level, *args):
-    if log.isEnabledFor(level):
-        import inspect
-        frame = inspect.currentframe().f_back.f_back
-        try:
-            fstr = 'f"""' + fstr + '"""'
-            log.log(level, eval(fstr, frame.f_globals, frame.f_locals))
-        finally:
-            del frame
-
-fdebug = lambda log, fstr, *args: deferred_flog(log, fstr, logging.DEBUG, *args)
-finfo = lambda log, fstr, *args: deferred_flog(log, fstr, logging.INFO, *args)
-
-
 # This is random and exists to conform to the messaging infrastructure.
 # It is discarded once logs are written out
 LOGGING_TAG = 2**8

@@ -32,7 +32,7 @@ from ...infrastructure.policy import Policy
 from .manager import manager_proc
 from ... import fli
 from ...rc import DragonError
-from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls, deferred_flog
+from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 
 fname = f'{dls.DD}_{socket.gethostname()}_orchestrator_{str(parameters.this_process.my_puid)}.log'
 setup_BE_logging(service=dls.DD, fname=fname)
@@ -85,7 +85,7 @@ class Orchestrator:
             self._tag = 0
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception in the Orchestrator: {ex} \n Traceback: {tb}')
+            log.debug('There was an exception in the Orchestrator: %s\n Traceback: %s', ex, tb)
 
     def run(self):
 
@@ -100,24 +100,24 @@ class Orchestrator:
                     ser_msg, hint = recvh.recv_bytes()
                     msg = dmsg.parse(ser_msg)
                     if self._trace:
-                        log.info(f'About to process {msg}')
+                        log.info('About to process %s', msg)
                     if type(msg) in self._DTBL:
                         self._DTBL[type(msg)][0](self, msg=msg)
                     else:
                         self._serving = False
                         self._abnormal_termination = True
-                        log.debug(f'The message {msg} was received and is not understood!')
+                        log.debug('The message %s was received and is not understood!', msg)
                         raise RuntimeError(f'The message {msg} was received and is not understood!')
 
             except Exception as ex:
                 self._serving = False
                 self._abnormal_termination = False
                 tb = traceback.format_exc()
-                log.debug(f'There was an exception in the Orchestrator: {ex} \n Traceback: {tb}')
+                log.debug('There was an exception in the Orchestrator: %s\n Traceback: %s', ex, tb)
                 raise RuntimeError(f'There was an exception in the Orchestrator: {ex} \n Traceback: {tb}')
 
         self._free_resources()
-        log.info(f'Exiting orchestrator.')
+        log.info('Exiting orchestrator.')
 
     def _free_resources(self):
         self._manager_pool.join()
@@ -145,11 +145,11 @@ class Orchestrator:
             with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if self._trace:
-                    log.info(f'Sent message {resp_msg}')
+                    log.info('Sent message %s', resp_msg)
 
         except Exception as e:
             tb = traceback.format_exc()
-            log.debug(f'There is an exception in orchestrator Exception {e}\n Traceback: {tb}\n.')
+            log.debug('There is an exception in orchestrator Exception %s\n Traceback: %s\n.', e, tb)
 
     def _tag_inc(self):
         tag = self._tag
@@ -218,7 +218,7 @@ class Orchestrator:
                 self._serving_connector = self._main_connector
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There was an exception while registering managers: {ex} \n Traceback: {tb}')
+            log.debug('There was an exception while registering managers: %s\n Traceback: %s', ex, tb)
             raise RuntimeError(f'There was an exception while registering managers: {ex} \n Traceback: {tb}')
 
     @dutil.route(dmsg.DDGetRandomManager, _DTBL)
@@ -256,4 +256,4 @@ def start(managers_per_node: int, n_nodes: int, total_mem: int, trace: bool):
         orc.run()
     except Exception as ex:
         tb = traceback.format_exc()
-        log.debug(f'There was an exception initing the orchestrator: {ex} \n Traceback: {tb}')
+        log.debug('There was an exception initing the orchestrator: %s\n Traceback: %s', ex, tb)

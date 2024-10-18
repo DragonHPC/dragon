@@ -39,7 +39,7 @@ from ...infrastructure import messages as dmsg
 from ...infrastructure import policy
 from ...channels import Channel
 from ...native.process import Popen
-from ...dlogging.util import setup_BE_logging, deferred_flog, finfo, fdebug, DragonLoggingServices as dls
+from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 from ...dlogging.logger import DragonLoggingError
 from ...native.machine import Node
 
@@ -292,7 +292,7 @@ class DDict:
             self.__setstate__((True, ddict, timeout, trace))
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There is an exception initializing ddict: {ex}\n Traceback: {tb}\n')
+            log.debug('There is an exception initializing ddict: %s\n Traceback: %s', ex, tb)
             raise RuntimeError(f'There is an exception initializing ddict: {ex}\n Traceback: {tb}\n')
 
     def __setstate__(self, args):
@@ -352,7 +352,7 @@ class DDict:
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug(f'There is an exception __setstate__ of ddict: {ex}\n Traceback: {tb}\n')
+                log.debug('There is an exception __setstate__ of ddict: %s\n Traceback: %s\n', ex, tb)
             except:
                 pass
             raise RuntimeError(f'There is an exception __setstate__ of ddict: {ex}\n Traceback: {tb}\n')
@@ -366,7 +366,7 @@ class DDict:
         except Exception as ex:
             try:
                 tb = traceback.format_exc()
-                log.debug(f'There was an exception while terminating the Distributed Dictionary. Exception is {ex}\n Traceback: {tb}\n')
+                log.debug('There was an exception while terminating the Distributed Dictionary. Exception is %s\n Traceback: %s\n', ex, tb)
             except:
                 pass
 
@@ -376,9 +376,9 @@ class DDict:
         if resp_msg.err != DragonError.SUCCESS:
             raise RuntimeError('Failed to create dictionary!')
 
-    def _traceit(self, fstr, *args):
+    def _traceit(self, *args, **kw_args):
         if self._trace:
-            deferred_flog(log, fstr, logging.INFO, *args)
+            log(logging.INFO, *args, **kw_args)
 
     def _get_main_manager(self): # SHGetKV
         try:
@@ -432,7 +432,7 @@ class DDict:
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug(f'There was an exception registering client ID {self._client_id=} with manager: {ex} \n Traceback: {tb}')
+                log.debug('There was an exception registering client ID %s with manager: %s \n Traceback: %s', self._client_id, ex, tb)
             except:
                 pass
             raise RuntimeError(f'There was an exception registering client ID {self._client_id=} with manager: {ex} \n Traceback: {tb}')
@@ -490,7 +490,7 @@ class DDict:
 
         with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
             for (msg, arg) in msglist:
-                self._traceit('Sending msg: {msg=}')
+                self._traceit('Sending msg: %s', msg)
                 if arg is None:
                     sendh.send_bytes(msg.serialize(), timeout=self._timeout)
                 else:
@@ -510,7 +510,7 @@ class DDict:
                     resp_set.remove(msg.ref)
                     done = True
 
-        self._traceit('Response: {msg=}')
+        self._traceit('Response: %s', msg)
         return msg
 
     def _recv_responses(self, resp_set, num_responses):
@@ -528,7 +528,7 @@ class DDict:
             while ref != req_msg.tag:
                 (resp_ser_msg, hint) = recvh.recv_bytes(timeout=self._timeout)
                 resp_msg = dmsg.parse(resp_ser_msg)
-                self._traceit('Response: {resp_msg}')
+                self._traceit('Response: %s', resp_msg)
                 ref = resp_msg.ref
                 if ref != req_msg.tag:
                     log.info('Tossing lost/timed out message in DDict Client: {}'.format(resp_msg))
@@ -540,7 +540,7 @@ class DDict:
             except Exception as e:
                 tb = traceback.format_exc()
                 try:
-                    log.info(f'Exception caught in cloudpickle load: {e} \n Traceback: {tb}')
+                    log.info('Exception caught in cloudpickle load: %s \n Traceback: %s', e, tb)
                 except:
                     pass
                 raise RuntimeError(f'Exception caught in cloudpickle load: {e} \n Traceback: {tb}')
@@ -558,7 +558,7 @@ class DDict:
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug(f'There was an exception in the _send_receive in ddict: {ex} \n Traceback: {tb}')
+                log.debug('There was an exception in the _send_receive in ddict: %s\n Traceback: %s', ex, tb)
             except:
                 pass
             raise RuntimeError(f'There was an exception in the _send_receive in ddict: {ex} \n Traceback: {tb}')
@@ -567,11 +567,11 @@ class DDict:
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
         self._check_manager_connection(manager_id)
         try:
-            self._traceit('Opening send handle to manager for put: {manager_id=}')
+            self._traceit('Opening send handle to manager for put: %s', manager_id)
             with self._managers[manager_id].sendh(stream_channel=self._stream_channel, timeout=self._timeout) as sendh:
-                self._traceit('Sending to manager: {msg=}')
+                self._traceit('Sending to manager: %s', msg)
                 sendh.send_bytes(msg.serialize(), timeout=self._timeout)
-                self._traceit('Sending pickled key to manager: {key=}')
+                self._traceit('Sending pickled key to manager: %s', key)
                 sendh.send_bytes(pickled_key, arg=KEY_HINT, timeout=self._timeout)
                 cloudpickle.dump(value, file=PickleWriteAdapter(sendh=sendh, hint=VALUE_HINT, timeout=self._timeout), protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -610,7 +610,7 @@ class DDict:
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug(f'There was an exception in the destroy: {ex} \n Traceback: {tb}')
+                log.debug('There was an exception in the destroy: %s\n Traceback: %s', ex, tb)
             except:
                 pass
 
@@ -619,7 +619,7 @@ class DDict:
         except Exception as ex:
             try:
                 tb = traceback.format_exc()
-                log.debug(f'There was an exception while detaching orchestrator channel: {ex} \n Traceback: {tb}')
+                log.debug('There was an exception while detaching orchestrator channel: %s \n Traceback: %s', ex, tb)
             except:
                 pass
 
@@ -630,7 +630,7 @@ class DDict:
             except Exception as ex:
                 tb = traceback.format_exc()
                 try:
-                    log.debug(f'There was an exception while joining orchestrator process: {ex} \n Traceback: {tb}')
+                    log.debug('There was an exception while joining orchestrator process: %s \n Traceback: %s', ex, tb)
                 except:
                     pass
 
@@ -695,7 +695,7 @@ class DDict:
                     msg = dmsg.DDDeregisterClient(self._tag_inc(), clientID=self._client_id, respFLI=self._serialized_buffered_return_connector)
                     resp_msg = self._send_receive([(msg, None)], connection=self._managers[manager_id])
                     if resp_msg.err != DragonError.SUCCESS:
-                        log.debug(f'Error on response to deregister client {self._client_id}')
+                        log.debug('Error on response to deregister client %s', self._client_id)
 
                     self._managers[manager_id].detach()
                 except:
@@ -704,7 +704,7 @@ class DDict:
         except Exception as ex:
             try:
                 tb = traceback.format_exc()
-                log.debug(f'There was an exception while detaching the client {self._client_id}. Exception: {ex}\n Traceback: {tb}')
+                log.debug('There was an exception while detaching the client %s. Exception: %s\n Traceback: %s', self._client_id, ex, tb)
             except:
                 pass
 
@@ -817,10 +817,10 @@ class DDict:
         for manager_id in range(self._num_managers):
             msg = dmsg.DDKeys(self._tag_inc(), self._client_id, chkptID=self._chkpt_id)
             self._send([(msg, None)], self._managers[manager_id])
-            self._traceit('About to open recv handle to retrieve keys from {manager_id=}')
+            self._traceit('About to open recv handle to retrieve keys from %s', manager_id)
             with self._return_connector.recvh(use_main_as_stream_channel=True, timeout=self._timeout) as recvh:
                 resp_ser_msg, _ = recvh.recv_bytes(timeout=self._timeout)
-                self._traceit('Got keys from {manager_id=}')
+                self._traceit('Got keys from %s', manager_id)
                 resp_msg = dmsg.parse(resp_ser_msg)
                 if resp_msg.ref == msg.tag:
                     if resp_msg.err == DragonError.DDICT_CHECKPOINT_RETIRED:
@@ -837,7 +837,7 @@ class DDict:
 
                 # If the tag did not match, exiting the context manager will flush the rest of the response.
 
-        self._traceit('Keys from all managers are {keys=}')
+        self._traceit('Keys from all managers are %s', keys)
 
         return keys
 
@@ -872,7 +872,7 @@ class DDict:
         '''
             Empty the distributed dictionary of all keys and values.
         '''
-        self._traceit('clearing dictionary for checkpoint {self._chkpt_id}')
+        self._traceit('clearing dictionary for checkpoint %s', self._chkpt_id)
         tag = self._tag_inc()
         self._check_manager_connection(0)
         msg = dmsg.DDClear(tag, self._client_id, self._chkpt_id, self._serialized_buffered_return_connector)
