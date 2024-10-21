@@ -57,6 +57,8 @@ dragon_timespec_deadline(const timespec_t* timer, timespec_t* deadline);
 dragonError_t
 dragon_timespec_remaining(const timespec_t * deadline, timespec_t * remaining_timeout);
 
+double dragon_get_current_time_as_double();
+
 char*
 dragon_base64_encode(uint8_t *data, size_t input_length);
 
@@ -80,6 +82,24 @@ dragon_ls_get_kv(const unsigned char* key, char** value, const timespec_t* timeo
 
 uint64_t
 dragon_sec_to_nsec(uint64_t sec);
+
+dragonULInt
+dragon_get_my_puid();
+
+dragonError_t
+dragon_set_env_var_as_ulint(char* env_key, dragonULInt val);
+
+dragonULInt
+dragon_get_env_var_as_ulint(char* env_key);
+
+dragonError_t
+dragon_unset_env_var(char* env_key);
+
+void
+dragon_set_thread_local_mode(bool set_thread_local);
+
+bool
+dragon_get_thread_local_mode(void);
 
 #ifdef __cplusplus
 }

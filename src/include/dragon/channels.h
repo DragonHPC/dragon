@@ -24,6 +24,8 @@ using namespace std;
 extern "C" {
 #endif
 
+#define DRAGON_GW_TEST_SLEEP "DRAGON_GW_TEST_SLEEP"
+
 /** @defgroup channels_constants Channels Constants
  *
  *  The channels API constants.
@@ -282,6 +284,7 @@ typedef struct dragonMessageAttr_st {
     dragonULInt hints;    /*!< Placeholder of future hints about this message */
     dragonULInt clientid; /*!< An identifier of the process that sent this message */
     dragonUUID sendhid;   /*!< An identifier of the send handle for the sending process used for ordering */
+    bool send_transfer_ownership; /*!< Used to indicate cleanup by receiver. This can also be specified by providing dest_mem as DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP. */
 } dragonMessageAttr_t;
 
 /**
@@ -337,6 +340,9 @@ typedef struct dragonGatewayMessageHeader_st {
     dragonULInt* deadline_sec; /*!< Seconds of the timeout */
     dragonULInt* deadline_nsec; /*!< Nanoseconds part of timeout */
     atomic_int_fast64_t* client_cmplt; /*!< Set to 1 when client has completed pickup. */
+    dragonULInt* transport_cmplt_timestamp; /*!< Used for reporting after timeout. */
+    dragonULInt* client_pid; /*!< Client PID useful in debugging. */
+    dragonULInt* client_puid; /*!< non-zero when available. */
     dragonULInt* cmplt_bcast_offset; /*!< Offset of the completion bcast */
     dragonULInt* target_ch_ser_offset; /*!< The serialized descriptor of the target channel */
     dragonULInt* target_ch_ser_nbytes; /*!< Number of bytes in target channel serialized descriptor. */
@@ -601,6 +607,12 @@ dragonError_t
 dragon_channel_gatewaymessage_detach(dragonGatewayMessage_t* gmsg);
 
 dragonError_t
+dragon_channel_gatewaymessage_transport_start_send_cmplt(dragonGatewayMessage_t* gmsg, const dragonError_t op_err, timespec_t *deadline);
+
+dragonError_t
+dragon_channel_gatewaymessage_transport_check_send_cmplt(dragonGatewayMessage_t* gmsg, timespec_t *deadline);
+
+dragonError_t
 dragon_channel_gatewaymessage_transport_send_cmplt(dragonGatewayMessage_t* gmsg, const dragonError_t op_err);
 
 dragonError_t
@@ -611,7 +623,23 @@ dragon_channel_gatewaymessage_transport_get_cmplt(dragonGatewayMessage_t* gmsg, 
                                                   const dragonError_t op_err);
 
 dragonError_t
+dragon_channel_gatewaymessage_transport_start_get_cmplt(dragonGatewayMessage_t* gmsg, dragonMessage_t* msg_recv,
+                                                        const dragonError_t op_err, timespec_t *deadline);
+
+dragonError_t
+dragon_channel_gatewaymessage_transport_check_get_cmplt(dragonGatewayMessage_t * gmsg, timespec_t *deadline);
+
+dragonError_t
 dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t* gmsg, dragonMessage_t* msg_recv, const dragonWaitMode_t wait_mode);
+
+dragonError_t
+dragon_channel_gatewaymessage_transport_start_event_cmplt(dragonGatewayMessage_t* gmsg,
+                                                          const dragonULInt event_result,
+                                                          const dragonError_t op_err,
+                                                          timespec_t *deadline);
+
+dragonError_t
+dragon_channel_gatewaymessage_transport_check_event_cmplt(dragonGatewayMessage_t* gmsg, timespec_t *deadline);
 
 dragonError_t
 dragon_channel_gatewaymessage_transport_event_cmplt(dragonGatewayMessage_t* gmsg,
@@ -620,6 +648,9 @@ dragon_channel_gatewaymessage_transport_event_cmplt(dragonGatewayMessage_t* gmsg
 
 dragonError_t
 dragon_channel_gatewaymessage_client_event_cmplt(dragonGatewayMessage_t* gmsg, dragonULInt* event, const dragonWaitMode_t wait_mode);
+
+void
+dragon_gatewaymessage_silence_timeouts();
 
 dragonError_t
 dragon_create_process_local_channel(dragonChannelDescr_t* ch, const timespec_t* timeout);

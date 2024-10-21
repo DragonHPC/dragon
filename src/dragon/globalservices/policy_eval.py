@@ -3,7 +3,7 @@ from dataclasses import dataclass, field, fields
 from ..infrastructure.policy import Policy
 from ..infrastructure.node_desc import NodeDescriptor
 import logging
-
+import warnings
 
 LOG = logging.getLogger('policy_eval:')
 
@@ -66,7 +66,7 @@ class PolicyEvaluator:
         """
         # NOTE: Numa node and accelerator are placeholders
         numa_node = 0
-        layouts.append( ResourceLayout(node.h_uid, node.host_name, numa_node, 
+        layouts.append( ResourceLayout(node.h_uid, node.host_name, numa_node,
                                        cpu_affinity, gpu_affinity, env_str) )
         node.num_policies += 1
 
@@ -135,15 +135,15 @@ class PolicyEvaluator:
 
         elif distribution == Policy.Distribution.BLOCK:
             if self.overprovision:
-                self.cur_node += 1 # Basically means we're in round-robin
+                self.cur_node += 1  # Basically means we're in round-robin
 
             elif node.num_policies >= node.num_cpus:
-                next_node = self._find_next_open(self.cur_node) # Find next open node
-                if next_node is None: # All nodes full
-                    self.overprovision = True # Start overprovisioning
-                    next_node = node # Reassign next_node from None to current node
-                    self.cur_node += 1 # Move to next node in cycle (round robin, essentially)
-                node = next_node # Assign current node to "next node" (either open node, or same node to begin with)
+                next_node = self._find_next_open(self.cur_node)  # Find next open node
+                if next_node is None:  # All nodes full
+                    self.overprovision = True  # Start overprovisioning
+                    next_node = node  # Reassign next_node from None to current node
+                    self.cur_node += 1  # Move to next node in cycle (round robin, essentially)
+                node = next_node  # Assign current node to "next node" (either open node, or same node to begin with)
 
             return node
 
@@ -151,29 +151,29 @@ class PolicyEvaluator:
         """
         Generate a list of available devices the policy can be applied to for the given Node
         """
-    
+
         if p.cpu_affinity: # List not empty, assume SPECIFIC affinity
+            assert(isinstance(p.cpu_affinity, list))
             affinity = [x for x in node.cpu_devices if x in p.cpu_affinity]
             return affinity # This covers both "ANY" and "SPECIFIC" if a specific list is given
-
-        if p.affinity == Policy.Affinity.ANY:
+        elif node.cpu_devices is not None:
             return node.cpu_devices
 
         return []
-        
+
     def _get_gpu_affinity(self, p : Policy, node : NodeDescriptor) -> list[int]:
 
-        #LOG.debug(f'{node=}')
         if p.gpu_affinity:
-            #LOG.debug(f'{node.accelerators=}')
             assert(isinstance(p.gpu_affinity, list))
-            affinity = [x for x in node.accelerators.device_list if x in p.gpu_affinity]
-            return affinity
-            
-        if p.affinity == Policy.Affinity.ANY and node.accelerators is not None:
-            #LOG.debug(f'{node.accelerators=}')
+            if node.accelerators is not None:
+                affinity = [x for x in p.gpu_affinity  if x in node.accelerators.device_list]
+                return affinity
+            else:
+                LOG.warning("GPU affinity provided when no GPUs are available on the node")
+                return []
+        elif node.accelerators is not None:
             return node.accelerators.device_list
-        
+
         return []
 
     def evaluate(self, policies : list[Policy]=None) -> list[ResourceLayout]:
@@ -187,9 +187,7 @@ class PolicyEvaluator:
         for p in policies:
             # Merge incoming policies against the self.default_policy so any DEFAULT enums get replaced with the default policy option
             p = self.merge(self.default_policy, p)
-            #LOG.debug(f'Merged policy {p=}')
             node = self._get_node(p) # Get a node based on policy (if requesting specific nodes, may raise exception)
-            #LOG.debug(f'Node {node=}')
             cpu_affinity = self._get_cpu_affinity(p, node) # Get affinity based on policy
             gpu_affinity = self._get_gpu_affinity(p, node)
             env_str = "" # Environment string for setting accelerator affinity
@@ -197,7 +195,6 @@ class PolicyEvaluator:
                 env_str = node.accelerators.env_str
             self._add_layout(node, cpu_affinity, gpu_affinity, env_str, layouts)
 
-        #LOG.debug(f'{layouts=}')
         return layouts
 
     @staticmethod

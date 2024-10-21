@@ -192,7 +192,7 @@ class ProcessManager:
     Process Manager
 Tasks:
 {tasks}
-       
+
 Task Names Reverse Map:
 {self.task_tbl.values()!s}
 
@@ -416,7 +416,7 @@ New Processes:
                 self.shepherd.log.info('SENDING SHProcessExit message')
                 process.term_queue.send(
                     dmsg.SHProcessExit(tag=0, p_uid=process.p_uid,
-                                       exit_code=process._stat.returncode).serialize())
+                                       exit_code=process._stat.returncode, creation_msg_tag=None).serialize())
 
     async def async_read_output(self, p_uid: int, stream_type: TaskType) -> None:
         """

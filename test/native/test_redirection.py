@@ -15,23 +15,8 @@ from dragon.channels import Channel, ChannelExistsError
 from dragon.utils import B64
 
 class TestIORedirection(unittest.TestCase):
-    def test_native_process_stdout(self):
 
-        exe = shutil.which('echo')
-        proc = Popen(executable=exe, args=['Hello World'], stdout=Popen.PIPE)
-
-        result = ''
-        try:
-            while True:
-                data = proc.stdout.recv()
-                result += data
-        except EOFError:
-            pass
-
-        self.assertEqual('Hello World\n', result)
-        proc.stdout.close()
-
-    def test_native_process_stdout2(self):
+    def test_process_stdout(self):
 
         exe = sys.executable
         proc = Popen(executable=exe, args=['-c', 'print("Hello World")'], stdout=Popen.PIPE)

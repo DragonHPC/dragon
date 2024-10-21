@@ -137,7 +137,7 @@ class SingleProcMsgChannels(unittest.TestCase):
         self.tag_cnt += 1
         return self.tag_cnt
 
-    def _start_a_process(self, exe_name, the_args, the_name, the_tag, the_puid, the_rcuid, pmi_required=False, pmi_info=None):
+    def _start_a_process(self, exe_name, the_args, the_name, the_tag, the_puid, the_rcuid, pmi_required=False, pmi_info=None, head_proc=False):
         if pmi_required:
             self.assertIsNotNone(pmi_info)
 
@@ -150,7 +150,8 @@ class SingleProcMsgChannels(unittest.TestCase):
             env={},
             user_name=the_name,
             pmi_required=pmi_required,
-            _pmi_info=pmi_info
+            _pmi_info=pmi_info,
+            head_proc=head_proc,
         )
 
         self.gs_input_wh.send(create_msg.serialize())
@@ -197,6 +198,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             the_tag=self._tag_inc(),
             the_puid=dfacts.LAUNCHER_PUID,
             the_rcuid=dfacts.BASE_BE_CUID,
+            head_proc=True,
         )
 
         self.assertEqual(
@@ -227,6 +229,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             args=test_args,
             env={},
             user_name=test_name,
+            head_proc=True,
         )
 
         self.gs_input_wh.send(create_msg.serialize())
@@ -416,6 +419,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             the_tag=self._tag_inc(),
             the_puid=dfacts.LAUNCHER_PUID,
             the_rcuid=dfacts.BASE_BE_CUID,
+            head_proc=True,
         )
 
         death_msg = dmsg.SHProcessExit(tag=self._tag_inc(), p_uid=create_reply_msg.desc.p_uid)
@@ -446,7 +450,8 @@ class SingleProcMsgChannels(unittest.TestCase):
                 ppn=1,
                 nid=1,
                 pid_base=1
-            )
+            ),
+            head_proc=True,
         )
 
         death_msg = dmsg.SHProcessExit(tag=self._tag_inc(), p_uid=create_reply_msg.desc.p_uid)
@@ -471,6 +476,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             the_tag=self._tag_inc(),
             the_puid=dfacts.LAUNCHER_PUID,
             the_rcuid=dfacts.BASE_BE_CUID,
+            head_proc=True,
         )
 
         kill_msg = dmsg.GSProcessKill(
@@ -517,6 +523,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             the_tag=self._tag_inc(),
             the_puid=dfacts.LAUNCHER_PUID,
             the_rcuid=dfacts.BASE_BE_CUID,
+            head_proc=True,
         )
 
         death_msg = dmsg.SHProcessExit(tag=self._tag_inc(), p_uid=create_reply_msg.desc.p_uid)
@@ -535,6 +542,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             the_tag=self._tag_inc(),
             the_puid=dfacts.LAUNCHER_PUID,
             the_rcuid=dfacts.BASE_BE_CUID,
+            head_proc=True,
         )
 
         death_msg2 = dmsg.SHProcessExit(tag=self._tag_inc(), p_uid=create_reply_msg2.desc.p_uid)

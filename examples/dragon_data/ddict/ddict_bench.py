@@ -9,7 +9,7 @@ import traceback
 import sys
 
 from dragon.infrastructure import parameters as dparm
-from dragon.data.ddict.ddict import DDict
+from dragon.data.ddict import DDict
 
 @enum.unique
 class DictOp(enum.Enum):

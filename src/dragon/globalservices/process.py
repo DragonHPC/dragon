@@ -257,6 +257,8 @@ def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_
     :return: GSProcessCreate message object
     """
 
+    # for the current argdata delivery mechanism (using the GS ret channel), we must make an infra channel
+    # this will likely change
     if options is None:
         options = pdesc.ProcessOptions(make_inf_channels=True)
     else:
@@ -440,7 +442,7 @@ def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
             pmi_required=pmi_required,
             stdin=stdin,
             stdout=stdout,
-            stderr=stderr, 
+            stderr=stderr,
             policy=policy)
 
     elif len(argdata) <= dfacts.ARG_IMMEDIATE_LIMIT:
@@ -558,7 +560,26 @@ def query(identifier):
     return _create_stdio_connections(the_desc)
 
 
-def kill(identifier, sig=signal.SIGKILL):
+def runtime_reboot(puids: List[int]):
+    """For a list of puids, find their host IDs and request a restart"""
+
+    huids = []
+    for puid in puids:
+        p_desc = query(puid)
+
+        # Map the node id to a host id
+        log.debug(f'process {p_desc.p_uid} was on node {p_desc.node}')
+        huids.append(p_desc.h_uid)
+
+    req_msg = dmsg.GSGroupRebootRuntime(tag=das.next_tag(), h_uid=huids,
+                                        r_c_uid=das.get_gs_ret_cuid(),)
+    reply_msg = das.gs_request(req_msg)
+    assert isinstance(reply_msg, dmsg.GSGroupRebootRuntimeResponse)
+
+    return reply_msg.exit_code
+
+
+def kill(identifier, sig=signal.SIGKILL, hide_stderr=False):
     """Asks Global Services to kill a specified managed process with a specified signal.
 
     Note that this is like the unix 'kill' command - the signal given to the process
@@ -566,17 +587,20 @@ def kill(identifier, sig=signal.SIGKILL):
 
     :param identifier: string indicating process name or integer indicating a p_uid
     :param sig: signal to use to kill the process, default=signal.SIGKILL
+    :type sig: int
+    :param hide_stderr: whether or not to suppress stderr from the process with the delivery of this signal
+    :type sig: bool
     :return: Nothing if successful
     :raises: ProcessError if there is no such process, or if the process has not yet started.
     """
     if isinstance(identifier, str):
         req_msg = dmsg.GSProcessKill(tag=das.next_tag(), p_uid=this_process.my_puid,
                                      r_c_uid=das.get_gs_ret_cuid(),
-                                     user_name=identifier, sig=int(sig))
+                                     user_name=identifier, sig=int(sig), hide_stderr=hide_stderr)
     else:
         req_msg = dmsg.GSProcessKill(tag=das.next_tag(), p_uid=this_process.my_puid,
                                      r_c_uid=das.get_gs_ret_cuid(),
-                                     t_p_uid=int(identifier), sig=int(sig))
+                                     t_p_uid=int(identifier), sig=int(sig), hide_stderr=hide_stderr)
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSProcessKillResponse)
@@ -638,7 +662,7 @@ def join(identifier, timeout=None):
 def get_multi_join_success_puids(statuses: Dict[str, List[int]]) -> Tuple[List[Tuple[int, int]], bool]:
     """Go through list of processes that have been joined on to isolate successful zero exits
 
-    :param statuses: Dict of puid keys pointing to error status and exit codes of multi_join function
+    :param statuses: Dict of puid keys pointing to error status and exit codes of multi_join function regardless of exit code
     :type statuses: Dict[str, List[int, int]]
     :returns: List comprised of puids and exit code tuples, if exit code was zero. And whether
               there was a timeout
@@ -670,7 +694,7 @@ def get_multi_join_failure_puids(statuses: Dict[str, List[int]]) -> Tuple[List[T
     timeout_flag = False
     for t_p_uid, status_info in statuses.items():
         # Look for non-zero exit codes
-        if status_info[1] not in [0, None]:
+        if status_info[0] == ec.SUCCESS.value and status_info[1] not in [0, None]:
             failure_list.append((int(t_p_uid), status_info[1]))
         elif status_info[0] == ec.TIMEOUT.value:
             timeout_flag = True

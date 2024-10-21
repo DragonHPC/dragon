@@ -46,7 +46,7 @@ find this install script in the untarred distribution file at the root level.
 
 .. code-block:: console
 
-    ./dragon-install
+    . dragon-install
 
 You have completed the prerequisites for running Dragon with multiprocessing programs.
 
@@ -58,15 +58,7 @@ time you may have to reactivate your environment. Execute this from the same dir
 
 .. code-block:: console
 
-    . _env/bin/activate
-
-Along with reactivating your environment you will also need to load the dragon
-module.
-
-.. code-block:: console
-
-    module use $PWD/modulefiles
-    module load dragon
+    . dragon-activate
 
 If you are NOT using a virtual environment then check and possibly update the
 `$PATH` so it has the location of pip installed console scripts, such as

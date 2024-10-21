@@ -8,7 +8,7 @@ from enum import Enum
 from functools import total_ordering
 from time import sleep
 
-from ..utils import B64
+from ..utils import B64, host_id as get_host_id
 from ..managed_memory import MemoryPool, DragonPoolError, DragonMemoryError
 from ..channels import Channel, register_gateways_from_env, ChannelError, discard_gateways
 
@@ -104,13 +104,14 @@ class LauncherBackEnd:
 
     _DTBL = {}  # dispatch router for msgs, keyed by type of message
 
-    def __init__(self, transport_test_env, network_prefix):
+    def __init__(self, transport_test_env, network_prefix, overlay_port):
 
         self._state = BackendState.INITIALIZING
         self._abnormally_terminating = False
 
         self.transport_test_env = bool(transport_test_env)
         self.network_prefix = network_prefix
+        self.overlay_port = overlay_port
 
         # The la_be_stdin queue is the connection between this main thread
         # (i.e. the launcher backend) and the OverlayNet down the tree thread.
@@ -471,7 +472,7 @@ class LauncherBackEnd:
         return list(range(fanout * (index+1), min(nnodes, fanout * (index+1) + fanout)))
 
     def _construct_child_forwarding(self,
-                                    node_info: dict[NodeDescriptor]):
+                                    node_info: dict[NodeDescriptor], net_conf_key_mapping: list[str]):
         """Set up any infrastructure messages I must forward to other backend nodes
 
         :param node_info: node indices and channel descriptors
@@ -498,7 +499,7 @@ class LauncherBackEnd:
         conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2 ** 16)
         conn_policy = POLICY_INFRASTRUCTURE
         for idx in ids_to_forward:
-            outbound = Channel.attach(B64.from_str(node_info[str(idx)].overlay_cd).decode(),
+            outbound = Channel.attach(B64.from_str(node_info[str(net_conf_key_mapping[idx])].overlay_cd).decode(),
                                       mem_pool=self.be_mpool)
             fwd_conns[idx] = Connection(outbound_initializer=outbound,
                                         options=conn_options,
@@ -525,7 +526,12 @@ class LauncherBackEnd:
                     arg_ip_addr: str,
                     arg_host_id: str,
                     frontend_sdesc: B64,
-                    level=logging.INFO, fname=None):
+                    level=logging.INFO,
+                    fname=None,
+                    *,
+                    backend_ip_addr=None,
+                    backend_hostname=None,
+    ):
         """Begin bringup of backend services
 
         :param arg_ip_addr: IP address of frontened with port appended
@@ -550,9 +556,15 @@ class LauncherBackEnd:
             # which we do for unit tests. So pass on this
             log.debug("Unable to do signal handling outside of main thread")
 
-        net_conf = NodeDescriptor.get_local_node_network_conf()
-        self.host_id = int(net_conf.host_id)
-        self.hostname = net_conf.name
+        # Propagate information passed on command-line or discover if needed.
+        if not (backend_hostname and backend_ip_addr):
+            net_conf = NodeDescriptor.get_local_node_network_conf(network_prefix=self.network_prefix,
+                                                                port_range=self.overlay_port)
+            self.host_id = int(net_conf.host_id)
+        else:
+            self.host_id = get_host_id()
+        self.hostname = backend_hostname or net_conf.name
+        self.transport_agent_ipaddr = backend_ip_addr or net_conf.ip_addrs[0]
 
         conn_options = ConnectionOptions(min_block_size=2 ** 16)
         conn_policy = POLICY_INFRASTRUCTURE
@@ -615,7 +627,7 @@ class LauncherBackEnd:
         # start my transport agent
         # Add my own host_id and ip_addr to frontend's
         host_ids = [arg_host_id, str(self.host_id)]
-        ip_addrs = [arg_ip_addr, net_conf.ip_addrs[0]]  # it includes the port
+        ip_addrs = [arg_ip_addr, self.transport_agent_ipaddr]  # it includes the port
         log.debug(f'standing up tcp agent with gw: {encoded_ser_gw_str}, host_ids={host_ids}, and ip_addrs={ip_addrs}')
         self.dragon_logger = setup_dragon_logging(node_index=0)
 
@@ -652,6 +664,7 @@ class LauncherBackEnd:
 
         log.info('la_be recv FENodeIdxBE')
         self.node_idx = fe_node_idx_msg.node_index
+        self.net_conf_key = fe_node_idx_msg.net_conf_key_mapping[self.node_idx]
         if self.node_idx < 0:
             log.error(f'node_idx = {self.node_idx} | invalid node id, error starting LA BE')
         log.debug(f'my node index is {self.node_idx}')
@@ -663,19 +676,22 @@ class LauncherBackEnd:
         log.debug(f'sending TAUpdateNodes to overlay: {update_msg.uncompressed_serialize()}')
         self.local_inout.send(update_msg.serialize())
 
+        # create a contiguous mapping of keys that came from net_config
         # If I'm a tree child of the frontend, I need to forward infrastructure messages to
         # specific children of my own
-        self.frontend_fwd_conns = self._construct_child_forwarding(fe_node_idx_msg.forward)
+        self.frontend_fwd_conns = self._construct_child_forwarding(fe_node_idx_msg.forward, fe_node_idx_msg.net_conf_key_mapping)
         log.debug(f'connections to forward to: {self.frontend_fwd_conns}')
 
         # If I have any FENodeIdxBE messages to propogate, do it now,
         # filling in that node's index as well as my channel descriptor, for when
         # we eventually have a hierarchical reduce implemented
+        # We make node_index contiguous with range [0...n-1]. The net_conf_key_mapping provides a way to refernece back to the index in the network config.
         for idx, conn in self.frontend_fwd_conns.items():
             fe_node_idx = dmsg.FENodeIdxBE(tag=dlutil.next_tag(),
                                         node_index=int(idx),
                                         forward=fe_node_idx_msg.forward,
-                                        send_desc=self.be_inbound)
+                                        send_desc=self.be_inbound,
+                                        net_conf_key_mapping=fe_node_idx_msg.net_conf_key_mapping)
             conn.send(fe_node_idx.serialize())
 
         # This starts the "down the tree" router.
@@ -727,10 +743,11 @@ class LauncherBackEnd:
 
         be_node_idx_msg = dmsg.BENodeIdxSH(tag=dlutil.next_tag(), node_idx=self.node_idx,
                                            host_name=self.hostname, ip_addrs=ip_addrs,
-                                           primary=self.is_primary, logger_sdesc=B64(logger_sdesc))
+                                           primary=self.is_primary, logger_sdesc=B64(logger_sdesc),
+                                           net_conf_key=self.net_conf_key)
 
         self.ls_stdin.send(be_node_idx_msg.serialize())
-        log.info(f'sent BENodeIdxSH(node_idx={self.node_idx}) - m2.1 -- ip_addrs = {ip_addrs}')
+        log.info(f'sent BENodeIdxSH(node_idx={self.node_idx}, net_conf_key={self.net_conf_key}) - m2.1 -- ip_addrs = {ip_addrs}')
 
         # Wait for SHPingBE on the incoming Posix Message Queue. This tells us the
         # infrastructure channels have been created. Then we know we can attach to them.
@@ -805,6 +822,7 @@ class LauncherBackEnd:
             # go until told to stop
             while not self._shutdown.is_set():
                 # recv msg from parent to send to frontend
+                self.to_overlaynet_log.info("overlay net waiting for message")
                 msg = dlutil.get_with_blocking(la_be_stdout)
 
                 if isinstance(msg, dmsg.HaltOverlay):
@@ -913,12 +931,14 @@ class LauncherBackEnd:
 
         log.debug("exiting channel monitor loop")
 
+
     def run_msg_server(self):
         """Handle messages from dragon services
         """
         self.msg_log = logging.getLogger(dls.LA_BE).getChild('msg_server')
 
         while not self._shutdown.is_set():
+            self.msg_log.debug(f"waiting for another message")
             msg = dlutil.get_with_blocking(self.la_be_stdin)
             self.msg_log.info(f"JUST received {type(msg)}")
             if hasattr(msg, 'r_c_uid'):

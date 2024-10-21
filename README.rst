@@ -1,170 +1,193 @@
-Dragon - Scalable Distributed Computing Made Easy
-===================================================
+# Dragon
 
-.. contents::
+## Introduction
 
+Dragon is a distributed runtime environment with the goal of being a foundation for many
+libraries, applications, tools, and services.  Software written on top of the Dragon runtime
+benefits from lower complexity, interoperability, scalability, and performance from "laptop
+to exaflop".
 
-Introduction
--------------
+The Dragon project also includes implementations of strategically important APIs built on
+the Dragon runtime with the goal of making programming HPC systems fast, fun, and productive.
+The primary example of this is the standard Python multiprocessing API, which has driven many
+of the requirements on the Dragon runtime.  Other APIs and services will come will be coming
+in the future.
 
-Dragon is a composable distributed run-time for managing dynamic processes,
-memory, and data at scale through high-performance communication objects. Some of
-the key use cases for Dragon include distributed applications and
-workflows for analytics, HPC, and converged HPC/AI.
+The Dragon runtime builds from basic operating system (OS) features to maximize portability and
+incorporates numerous HPC techniques for performance and scalability.  It provides a higher
+level abstraction of OS-like features including namespace, process and memory resource
+management, and communication across a distributed system or systems.
 
-Dragon brings scalable, distributed computing to a wide range of programmers. It
-runs on your laptop, cluster, supercomputer, or any collection of networked
-computers. Dragon provides an environment where you can write programs that
-transparently use all the computers or nodes in your cluster. And the same
-program will run on your laptop with no change, just at smaller scale.
+## Directory Structure
 
-While Dragon implements many APIs, the primary one is Python multiprocessing. If
-you write your programs using Python's multiprocessing API, your program will run
-now and in the future. Dragon does not re-define the multiprocessing API, but it
-does extend it in some circumstances. For example, Dragon enables
-multiprocessing's Process and Pool objects to execute across the nodes of a
-distributed system, extending those objects which previously only supported
-parallel execution on a single node.
+| Directory       | Description                                                           |
+|:----------------|-----------------------------------------------------------------------|
+| .devcontainer/  | Docker development environment (via [VS Code Remote Containers])      |
+| doc/            | Internal and public documentation                                     |
+| examples/       | Examples and benchmarks for the Dragon API and Python multiprocessing |
+| src/            | Source code and working development directory for all components      |
+| test/           | Unit tests for all components                                         |
+| external/       | External packages Dragon relies on                                    |
 
-Dive into Dragon in the next section to see how easy it is to begin Writing
-and running distributed multiprocessing programs!
+## Building and Installing a Package
 
-Quickstart
----------------
+The Dragon core requires only basic POSIX features in the OS, such as shared memory.  Dragon
+should build and run on any modern Linux distribution.  See src/requirements.txt for a breakdown
+of requirements and versions.  Using the modulefiles included with it to set the enviroment
+requires environment-modules to be installed.  Modules must also be initialized in your shell
+with a command like this (see CONTRIBUTING.md for a few more details):
 
-Dragon requires a Linux POSIX environment. It is not supported under Microsoft
-Windows (r) or Apple Mac OS (r). However, it can run in a container on either
-platform with Docker installed. Under Microsoft Windows you must install Docker
-with the WSL (Windows Subsystem for Linux). The Dragon repository is configured
-for use as a Docker container or it can run within a Linux OS either on bare
-hardware or within a VM.
+```
+. /usr/share/Modules/init/bash
+```
 
-You can download or clone the repository from here and open it inside a container
-to run it in single node mode within the container. The setup below allows you to
-configure and run Dragon either inside a container or directly on a Linux
-machine. If you have not used containers before, download Docker and Visual
-Studio Code (VSCode) to your laptop, start Docker, and open the Dragon repository
-in VSCode. VSCode will prompt you to reopen the directory inside a container. If
-you run inside a container you will need to first build Dragon. Open a terminal
-pane in VSCode and type the following from the root directory of the container.
+To build a distribution package of Dragon that includes a Python wheel, run the following
+from the top-level repo directory:
 
-Whether in a container or not, once you have a terminal window, navigate to the
-root directory of the repository and type the following.
+```
+cd src
+module use $PWD/modulefiles
+module load dragon-dev
+make dist
+```
 
-.. code-block:: console
+This will produce a tarfile inside of src/dragon-dist.  An error that may occur at this stage is
+because the `wheel` Python package is not installed.  You'll know if you see an error suggesting
+`python setup.py bdist_wheel` fails.  If you see that error, install the Python dependencies with
 
-    . hack/clean_build
+```
+make install-pythondeps
+```
 
-After building has completed you will have Dragon built and be ready to write and
-run Dragon programs.
+To install the package from a new terminal:
 
-Using a Binary Distribution
-------------------------------
+```
+tar -zxvf dragon-[rel info].tar.gz
+cd dragon-[rel info]
+pip install dragon-[rel info].whl
+module use $PWD/modulefiles
+module load dragon
+```
 
-If you wish to run multi-node or don't want to run in a container, you must set
-up your environment to run Dragon programs. Choose the version of Dragon to
-download that goes with your installed version of Python. Python 3.9+ is required
-to run Dragon. You must have Python installed and it must be in your path
-somewhere.
+You can then verify the install by running:
 
-The untarred distribution file contains several subdirectories. Run the
-./dragon-install file in that root directory to create a python virtual
-environment and install two wheel files. For further details, follow the
-instructions that you find in that README.md file in the distribution directory.
+```
+cd examples/multiprocessing
+dragon p2p_lat.py --dragon
+```
 
-Running Dragon
-==============
+This should show output similar to the following if everything is setup correctly (note the
+actual latency numbers will not be the same):
 
-Single-node Dragon
---------------------
+```
+$ dragon p2p_lat.py --dragon
+dragon p2p_lat.py --dragon
+using Dragon
+Msglen [B]   Lat [usec]
+2  50.19235017243773
+4  47.29981999844313
+8  60.32353558111936
+16  39.78859516791999
++++ head proc exited, code 0
+```
 
-This set of steps show you how to run a parallel "Hello World" application using
-Python multiprocessing with Dragon. Because Dragon's execution context in
-multiprocessing is not dependent upon file descriptors in the same way as the
-standard "fork", "forkserver", or "spawn" execution contexts, Dragon permits
-multiprocessing to scale to orders of magnitude more processes on a single node
-(think tens-of-thousands instead of hundreds). For single nodes with a larger
-number of cores, starting as many processes as there are cores is not always
-possible with multiprocessing but it is possible when using Dragon with
-multiprocessing.
+## Building and Testing for Development
 
-This demo program will print a string of the form `"Hello World from $PROCESSID
-with payload=$RUNNING_INT"` using every cpu on your system. So beware if you're
-on a supercomputer and in an allocation, your console will be flooded.
+Setting up a development environment can be done locally, similar to the package building
+steps above, or through a VSCode dev container.  See CONTRIBUTING.md For details on using
+the VSCode container.  The steps here are the minimal steps for getting going on a build
+so that you can then run tests. If you run into issues there are more hints and details
+in CONTRIBUTING.md.
 
-Create a file `hello_world.py` containing:
+### Environment Setup and Building Dragon
 
-.. code-block:: python
-   :linenos:
-   :caption: **Hello World in Python multiprocessing with Dragon**
+The following lines assume that you have module commands configured. If you do not have them
+configured on your system you may need to source a line like the following to enable them before
+executing the other commands below.
 
-    import dragon
-    import multiprocessing as mp
-    import time
+```
+. /opt/cray/pe/modules/default/init/bash
+```
 
+Begin by sourcing the `setup` script, which will enable the use of other scripts, such as `dragon-config`,
+`dragon-cleanup`, and others.
 
-    def hello(payload):
+```
+. hack/setup
+```
 
-        p = mp.current_process()
+#### Configuring the Build for the High Speed Transport Agent (HSTA)
 
-        print(f"Hello World from {p.pid} with payload={payload} ", flush=True)
-        time.sleep(1) # force all cpus to show up
+In order to configure the build and runtime environments in regards to external libraries, use
+the `dragon-config` script. The `--help` option will give more details on its use.
 
+When building for multi-node environments, make sure to specify the necessary include and lib directories
+for the fabric backends using the `dragon-config --add` command with `<backend>-include=<path to include dir>`
+and `<backend>-build-lib=<path to build-time lib dir>`, where `<backend>` can be `ofi` (Libfabric with the
+CXI provider) or `ucx` (for Infiniband systems).
 
-    if __name__ == "__main__":
+For running in multi-node environments, again use `dragon-config --add`, but this time using
+`<backend>-runtime-lib=<path to runtime lib dir>`.
 
-        mp.set_start_method("dragon")
+These can be combined into a single colon-separated list, e.g.:
 
-        cpu_count = mp.cpu_count()
-        with mp.Pool(cpu_count) as pool:
-            result = pool.map(hello, range(cpu_count))
+```
+dragon-config --add="ofi-include=/opt/cray/libfabric/1.15.2.0/include:ofi-build-lib=/opt/cray/libfabric/1.15.2.0/lib64:ofi-runtime-lib=/opt/cray/libfabric/1.15.2.0/lib64"
+```
 
-and run it by executing `dragon hello_world.py`. This will result in an output like this:
+The current config is stored in `${HOME}/.dragon/dragon-config.json`. You can serialize the current config into a colon-separated string using `dragon-config --serialize`, or clean it out using `dragon-config --clean`.
 
-.. code-block:: console
+If the build or runtime environment is not configured for the use of HSTA, Dragon will fall back on the
+TCP transport agent.
 
-    dir >$dragon hello_world.py
-    Hello World from 4294967302 with payload=0
-    Hello World from 4294967301 with payload=1
-    Hello World from 4294967303 with payload=2
-    Hello World from 4294967300 with payload=3
-    +++ head proc exited, code 0
+#### Building
 
+To completely build and set up the environment from scratch for single node execution, run these commands.
 
-Multi-node Dragon
--------------------
+```
+. hack/clean_build
+```
 
-Dragon can run on a supercomputer with a workload manager or on your cluster. The
-hello world example from the previous section can be run across multiple nodes
-without any modification. The only requirement is that you have an allocation of
-nodes (obtained with `salloc` or `qsub` on a system with the Slurm workload
-manager) and then execute `dragon` within that allocation. Dragon will launch
-across all nodes in the allocation by default, giving you access to all processor
-cores on every node. If you don't have Slurm installed on your system or cluster,
-there are other means of running Dragon multi-node as well. For more details see
-`Running Dragon on a Multi-Node System <https://dragonhpc.org/>`_.
+Once you have built the package from scratch, new changes typically don't require a complete build. During
+development, smaller changes can be followed by a
 
+```
+. hack/build
+```
 
-Code of Conduct
-===============
+### Test Dragon
 
-Dragon seeks to foster an open and welcoming environment - Please see the `Dragon
-Code of Conduct
-<https://github.com/DragonHPC/dragon/blob/master/CODE_OF_CONDUCT.md>`_ for more
-details.
+Once Dragon is built, you can run the unit tests as follows:
 
-Contributing
-============
+```
+cd ../test
+make
+```
 
-We welcome contributions from the community. Please see our `contributing guide
-<https://github.com/DragonHPC/dragon/blob/master/CONTRIBUTING.rst>`_.
+This runs all Dragon unit tests (not including multiprocessing unit tests).  To run all standard
+Python multiprocessing unit tests, follow these steps starting next to this README.md file:
 
-Credits
----------
+```
+cd examples/multiprocessing/unittests
+make
+```
+
+In the event your experiment goes awry, we provide a helper script to clean up any zombie processes and memory:
+
+```
+dragon-cleanup
+```
+
+## Contributing
+
+Refer to CONTRIBUTING.md on processes and requirements for contributing to Dragon.
+
+## Credits
 
 The Dragon team is:
 
 * Michael Burke [burke@hpe.com]
+* Yian Chen [yian.chen@hpe.com]
 * Eric Cozzi [eric.cozzi@hpe.com]
 * Zach Crisler [zachary.crisler@hpe.com]
 * Julius Donnert [julius.donnert@hpe.com]
@@ -172,9 +195,9 @@ The Dragon team is:
 * Faisal Hadi (manager) [mohammad.hadi@hpe.com]
 * Nick Hill [nicholas.hill@hpe.com]
 * Maria Kalantzi [maria.kalantzi@hpe.com]
-* Ben Keen [ keen.benjamin.j@gmail.com]
 * Kent Lee [kent.lee@hpe.com]
 * Pete Mendygral [pete.mendygral@hpe.com]
+* Indira Pimpalkhare [indira.pimpalkhare@hpe.com]
 * Davin Potts [davin.potts@hpe.com]
 * Nick Radcliffe [nick.radcliffe@hpe.com]
-* Rajesh Ratnakaram [rajesh.ratnakaram@hpe.com]
+* Colin Wahl [colin.wahl@hpe.com]

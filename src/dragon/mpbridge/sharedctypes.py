@@ -3,9 +3,7 @@
 
 import dragon
 from ..native.lock import Lock
-from ..native.value import Value
-from ..native.array import Array
-from ..globalservices.channel import create, get_refcnt, release_refcnt
+from ..globalservices.channel import release_refcnt
 
 
 def dragon_copy(obj: object) -> object:
@@ -36,8 +34,8 @@ def dragon_synchronized(obj: object, lock=None, ctx=None) -> object:
 
 def RawValue(typecode_or_type, *args, original=None, use_base_impl=True):
     if use_base_impl:
-        if original == None:
-            raise NameError(f"Dragon patch of Multiprocessing not correct.")
+        if original is None:
+            raise NameError("Dragon patch of Multiprocessing not correct.")
         else:
             return original(typecode_or_type, *args)
     else:
@@ -46,8 +44,8 @@ def RawValue(typecode_or_type, *args, original=None, use_base_impl=True):
 
 def RawArray(typecode_or_type, size_or_initializer, original=None, use_base_impl=True):
     if use_base_impl:
-        if original == None:
-            raise NameError(f"Dragon patch of Multiprocessing not correct.")
+        if original is None:
+            raise NameError("Dragon patch of Multiprocessing not correct.")
         else:
             return original(typecode_or_type, size_or_initializer)
     else:
@@ -56,8 +54,8 @@ def RawArray(typecode_or_type, size_or_initializer, original=None, use_base_impl
 
 def Value(typecode_or_type, *args, lock=True, ctx=None, original=None, use_base_impl=False):
     if use_base_impl:
-        if original == None:
-            raise NameError(f"Dragon patch of Multiprocessing not correct.")
+        if original is None:
+            raise NameError("Dragon patch of Multiprocessing not correct.")
         else:
             return original(typecode_or_type, *args, lock=lock, ctx=ctx)
     else:
@@ -68,8 +66,8 @@ def Array(
     typecode_or_type, size_or_initializer, *args, lock=True, ctx=None, original=None, use_base_impl=False
 ):
     if use_base_impl:
-        if original == None:
-            raise NameError(f"Dragon patch of Multiprocessing not correct.")
+        if original is None:
+            raise NameError("Dragon patch of Multiprocessing not correct.")
         else:
             return original(typecode_or_type, size_or_initializer, *args, lock=lock, ctx=ctx)
     else:
@@ -167,6 +165,7 @@ class DragonValue(dragon.native.value.Value):
     def __exit__(self, *args):
         self.release()
 
+
 class DragonRawArray(dragon.native.array.Array):
     """
     RawArray Class replacement for Array multiprocessing test cases
@@ -185,6 +184,7 @@ class DragonRawArray(dragon.native.array.Array):
         :type raw: sets whether lock is used or not
         """
         super().__init__(typecode_or_type, size_or_initializer, lock=False)
+
 
 class DragonArray(dragon.native.array.Array):
     """

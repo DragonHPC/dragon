@@ -158,7 +158,7 @@ fake_transport(const dragonChannelSerial_t* gw_ser)
     int number_of_send_requests = 0;
     int number_of_receive_requests = 0;
 
-    for (int k=0;k<7;k++) {
+    for (int k=0;k<8;k++) {
 
         err = dragon_chrecv_get_msg_blocking(&gw_recvh, &msg, NULL);
         if (err != SUCCESS) {
@@ -524,8 +524,7 @@ main(int argc, char *argv[])
     if (err != SUCCESS)
         main_err_fail(err, "Could not create or open receive handle for remote channel (check full message for which)", jmp_destroy_pool);
 
-
-    printf("Created and opened Receive handle to remote channel\n");
+    printf("Created and opened Receive handle\n");
 
     err = dragon_chrecv_get_msg_blocking(&recvh, &rem_msg, NULL);
     if (err != DRAGON_SUCCESS)
@@ -562,6 +561,37 @@ main(int argc, char *argv[])
     err = dragon_channel_poll(&remote_channel, DRAGON_IDLE_WAIT, DRAGON_CHANNEL_POLLIN | DRAGON_CHANNEL_POLLOUT, NULL, NULL);
     if (err != DRAGON_SUCCESS)
         main_err_fail(err, "Failed to get successful remote poll return code", jmp_destroy_pool);
+
+    /* Now Setting up for remote receive with a client completion timeout */
+    printf("Now setting GW test sleep to cause client completion timeout.\n");
+    printf("For this program to test it, you must uncomment the define\n");
+    printf("TEST_GW_TIMEOUT at the top of src/lib/channel_messages.c\n");
+    printf("and compile the dragon source with that defined.\n");
+    fflush(stdout);
+    setenv(DRAGON_GW_TEST_SLEEP, "2", true);
+
+    err = dragon_chrecv_get_msg_blocking(&recvh, &rem_msg, NULL);
+    /* We also check for success below in case we did not do the define to
+       run this test. */
+    if (err != DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT && err != DRAGON_SUCCESS)
+        main_err_fail(err, "Failed to get message from remote channel", jmp_destroy_pool);
+
+    unsetenv(DRAGON_GW_TEST_SLEEP);
+
+    if (err == DRAGON_SUCCESS) {
+        printf("This test was not tested presumably because the TEST_GW_TIMEOUT was not\n");
+        printf("defined as indicated above.\n");
+    }
+
+    if (err == DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT) {
+        printf("Got correct timeout error in response to remote get message.\n");
+        printf("Here is the traceback.\n");
+        char * msg = "Got expected gateway timeout in this test";
+        char * errstr = dragon_getlasterrstr();                     \
+        const char * errcode = dragon_get_rc_string(err);          \
+        printf("TEST_MAIN: %s:%d | %s.  Got EC=%s (%i)\nERRSTR = \n%s\n", __FUNCTION__, __LINE__, msg, errcode, err, errstr); \
+    }
+
 
     /* Now waiting for the fake_transport to exit */
 

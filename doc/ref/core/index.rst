@@ -436,7 +436,7 @@ channel is required in this case.
         err = create_pool(&pool);
         err = create_channels(&pool, channels, NUM_CHANNELS);
         err = dragon_fli_create(&fli, channel_ptrs[0], NULL, &pool, 0, NULL, false, NULL);
-        err = dragon_fli_open_send_handle(&fli, &sendh, channel_ptrs[1], NULL);
+        err = dragon_fli_open_send_handle(&fli, &sendh, channel_ptrs[1], NULL, NULL);
 
 When opening the send handle, a sender supplied stream channel is specified.
 Opening the send handle places the stream channel's serialized descriptor into
@@ -483,7 +483,7 @@ channel is required in this case.
         err = create_pool(&pool);
         err = create_channels(&pool, channels, NUM_CHANNELS);
         err = dragon_fli_create(&fli, NULL, channel_ptrs[0], &pool, 0, NULL, false, NULL);
-        err = dragon_fli_open_recv_handle(&fli, &recvh, channel_ptrs[1], NULL);
+        err = dragon_fli_open_recv_handle(&fli, &recvh, channel_ptrs[1], NULL, NULL);
 
 When opening the receive handle, a receiver supplied stream channel is specified.
 Opening the receive handle places the stream channel's serialized descriptor into
@@ -526,9 +526,9 @@ data may be streamed between sender and receiver without the need for extra chan
         err = create_pool(&pool);
         err = create_channels(&pool, channels, NUM_CHANNELS);
         err = dragon_fli_create(&fli, channel_ptrs[0], NULL, &pool, 0, NULL, false, NULL);
-        err = dragon_fli_open_send_handle(&fli, &sendh, STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION, NULL);
+        err = dragon_fli_open_send_handle(&fli, &sendh, STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION, NULL, NULL);
         /* and separately on the receiver */
-        err = dragon_fli_open_recv_handle(&fli, &recvh, STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION, NULL);
+        err = dragon_fli_open_recv_handle(&fli, &recvh, STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION, NULL, NULL);
 
 The code in :numref:`noop_fli_code` shows that both the sender and receiver must
 declare that there is one receiver and one sender by specifying the constant

@@ -1,4 +1,4 @@
-"""The Dragon native pool manages a pool of child processes. 
+"""The Dragon native pool manages a pool of child processes that can be used to run python callables.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import types
 import signal
 from typing import Iterable, Any
 import time
+import os
 
 import dragon
 
@@ -21,6 +22,9 @@ from .process_group import ProcessGroup, DragonProcessGroupError
 from .event import Event
 from .process import current as current_process
 from .machine import System
+from .barrier import Barrier
+from ..dlogging import util as dlog
+from ..dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 
 from ..infrastructure.policy import Policy
 
@@ -28,7 +32,14 @@ from ..infrastructure.policy import Policy
 
 job_counter = itertools.count()
 
-POLL_FREQUENCY = 0.2
+WORKER_POLL_FREQUENCY = 0.2
+RESULTS_HANDLER_POLL_FREQUENCY = 0.2
+
+def get_logs(name):
+
+    global _LOG
+    log = _LOG.getChild(name)
+    return log.debug, log.info
 
 
 class RemoteTraceback(Exception):
@@ -134,7 +145,7 @@ class ApplyResult:
         :type timeout: float, optional
         :raises TimeoutError: raised if result is not ready in specified timeout
         :raises self._value: raises error if returned work was unsuccessful
-        :return: value returned by `func(*args, **kwargs)`
+        :return: value returned by `func(*args, **kwds)`
         :rtype: Any
         """
         self.wait(timeout)
@@ -221,15 +232,12 @@ def mapstar(args):
     return list(map(*args))
 
 
-LOGGER = logging.getLogger(__name__)
-
-
 class Pool:
     """A Dragon native Pool relying on native Process Group and Queues
 
     The interface resembles the Python Multiprocessing.Pool interface and focuses on the most generic functionality. Here we directly support the asynchronous API. The synchronous version of these calls are supported by calling get on the objects returned from the asynchronous functions. By using a Dragon native Process Group to coordinate the worker processes this implementation addresses scalability limitations with the patched base implementation of Multiprocessing.Pool.
 
-    At this time, both `terminate` and `close` send a `signal.SIGTERM` that the workers catch. Using `close` guarantees that all work submitted to the pool is finished before the signal is sent while `terminate` sends the signal immediately. The user is expected to call `join` following both of these calls. If `join` is not called, zombie processes may be left.
+    At this time, `signal.SIGUSR2` is used to signal workers to shutdown. Users should not use or register a handler for this signal if they want to use `close` to shutdown the pool. Using `close` guarantees that all work submitted to the pool is finished before the signal is sent while `terminate` sends the signal immediately. If workers don't immediately exit, `terminate` will send escalating signals (SIGINT, SIGTERM, then SIGKILL) and wait patience amount of time for processes to exit before sending the next signal. The user is expected to call `join` following both of these calls. If `join` is not called, zombie processes may be left and leave the runtime in a corrupted state.
 
     """
 
@@ -239,9 +247,9 @@ class Pool:
         initializer: callable = None,
         initargs: tuple = (),
         maxtasksperchild: int = None,
+        *,
         policy: Policy = None,
-        *args,
-        **kwargs,
+        processes_per_policy: int = None
     ):
         """Init method
 
@@ -253,12 +261,22 @@ class Pool:
         :type initargs: tuple, optional
         :param maxtasksperchild: maximum tasks each worker will perform, defaults to None
         :type maxtasksperchild: int, optional
-        :param policy: determines the placement of the processes
-        :type policy: dragon.infrastructure.policy.Policy
+        :param policy: determines the placement and resources of processes. If a list of policies is given that the number of processes_per_policy must be specified.
+        :type policy: dragon.infrastructure.policy.Policy or list of dragon.infrastructure.policy.Policy
+        :param processes_per_policy: determines the number of processes to be placed with a specific policy if a list of policies is provided
+        :type processes_per_policy: int
         :raises ValueError: raised if number of worker processes is less than 1
         """
         myp = current_process()
-        LOGGER.debug(f"pool init on node {socket.gethostname()} by process {myp.ident}")
+
+        # setup logging
+        fname = f'{dls.PG}_{socket.gethostname()}_pool_main.log'
+        setup_BE_logging(service=dls.PG, fname=fname)
+        global _LOG
+        _LOG = logging.getLogger(dls.PG)
+        self.fdebug, self.finfo = get_logs('pool main')
+
+        self.fdebug(f"pool init on node {socket.gethostname()} by process {myp.ident}")
         self._inqueue = Queue()
         self._outqueue = Queue()
         self._end_threading_event = threading.Event()
@@ -266,26 +284,51 @@ class Pool:
         self._initializer = initializer
         self._initargs = initargs
         self._can_join = False
+        self._pg_closed = False
 
         if processes is None:
-            my_sys = System()
-            self._processes = my_sys.nnodes
-            LOGGER.warning(
-                f"Number of processes not specified. Setting processes={self._processes}, equal to the number of nodes."
-            )
+            if processes_per_policy is not None:
+                if isinstance(policy, list):
+                    self._processes = len(policy)*processes_per_policy
+                else:
+                    self._processes = processes_per_policy
+            else:
+                my_sys = System()
+                self._processes = my_sys.nnodes
         else:
+            if processes_per_policy is not None:
+                raise RuntimeError("cannot provide processes_per_policy and a total number of processes")
+            if isinstance(policy, list):
+                raise RuntimeError("cannot provide a list of policies and a total number of processes. must provide the number of processes_per_policy")
             self._processes = processes
 
         if self._processes < 1:
             raise ValueError("Number of processes must be at least 1")
 
-        # starts a process group with nproc workers
+        self._start_barrier = Barrier(parties=self._processes+1)
+        self._start_barrier_passed = Event()
+        self._start_barrier_helper = threading.Thread(
+            target=self._start_barrier_helper, args=(self._start_barrier, self._start_barrier_passed)
+        )
+        self._start_barrier_helper.daemon = True
+        self._start_barrier_helper.start()
+
         self._template = ProcessTemplate(
             self._worker_function,
-            args=(self._inqueue, self._outqueue, self._initializer, self._initargs, self._maxtasksperchild),
+            args=(self._inqueue, self._outqueue, self._start_barrier, self._start_barrier_passed,self._initializer, self._initargs, self._maxtasksperchild),
         )
-        self._pg = ProcessGroup(restart=True, ignore_error_on_exit=True)
-        self._pg.add_process(self._processes, self._template)
+        if isinstance(policy, list):
+            self._pg = ProcessGroup(restart=True, ignore_error_on_exit=True)
+            for p in policy:
+                # starts a process group with nproc workers
+                placed_template = ProcessTemplate(
+                self._worker_function,
+                args=(self._inqueue, self._outqueue, self._start_barrier, self._start_barrier_passed,self._initializer, self._initargs, self._maxtasksperchild), policy=p
+                )
+                self._pg.add_process(processes_per_policy, placed_template)
+        else:
+            self._pg = ProcessGroup(restart=True, ignore_error_on_exit=True, policy=policy)
+            self._pg.add_process(self._processes, self._template)
         self._pg.init()
         self._pg.start()
 
@@ -304,151 +347,234 @@ class Pool:
         self._close_thread = None
 
     def _check_running(self):
-        status = self._pg.status
-        if not (status == "Running" or status == "Maintain"):
-            raise ValueError("Pool not running")
+        if self._pg_closed:
+            raise ValueError("Checking running of a closed pool")
+        status = self._pg._state
+        if not (status == "Running"):
+            raise ValueError(f"Pool not running. ProcessGroup State = {status}")
 
-    def terminate(self) -> None:
-        """This sends the signal.SIGTERM and sets the threading event immediately. Calling this method before blocking on results may lead to some work being undone. If all work should be done before stopping the workers, `close` should be used. If `join` is not called after terminate zombie processes may be left over and interfere with future pool or process group use."""
+    def terminate(self, patience: float = 60.0) -> None:
+        """This sets the threading event immediately and sends signal.SIGINT, signal.SIGTERM, and signal.SIGKILL successively with patience time between the sending of each signal until all processes have exited. Calling this method before blocking on results may lead to some work being undone. If all work should be done before stopping the workers, `close` should be used.
 
-        LOGGER.debug(f"terminating pool")
+        :param patience: timeout to wait for processes to join after each signal, defaults to None
+        :type patience: float, optional
+        """
+
+        self.fdebug("terminating pool")
+        if self._pg_closed:
+            raise ValueError("Closing when ProcessGroup has been closed")
+        if self._start_barrier_helper is not None:
+            self._start_barrier_helper.join()
+        self._check_running()
+        self._end_threading_event.set()
+        self.fdebug("stop restart")
+        self._pg.stop_restart()
+        self.fdebug("in stop")
+        self._pg.stop(patience=patience)
+        self.fdebug("in close")
+        self._pg.close(patience=patience)
+        self.fdebug("closed")
+        self._pg_closed = True
+        self._can_join = True
+
+    def kill(self) -> None:
+        """This sends the signal.SIGKILL and sets the threading event immediately. This is the most dangerous way to shutdown pool workers and will likely leave the runtime in a corrupted state. Calling this method before blocking on results may lead to some work being undone. If all work should be done before stopping the workers, `close` should be used."""
+
+        self.fdebug("killing pool")
         # setting end event to stop all threads
         self._end_threading_event.set()
-        # send SIGTERM signal to process group. Worker functions will return on their next pass through the while loop. See CIRRUS-1467 for reasons why sending SIGKILL doesn't work here.
-        if not self._pg.status == "Stop":
-            self._pg.kill(signal.SIGTERM)
+        self._pg.stop_restart()
+        self._pg.kill()
         self._can_join = True
 
     @staticmethod
-    def _close(cache, end_threading_event, pool):
+    def _start_barrier_helper(start_barrier: Barrier = None, start_barrier_passed: Event = None):
+        """This is started in a separate thread and is meant to set the event when all workers have passed the barrier. We join on this thread in terminate to avoid sending a sigint when worker processes are in the middle of being started.
+
+        :param start_barrier: barrier shared with worker_function, defaults to None
+        :type start_barrier: Barrier, optional
+        :param start_barrier_passed: Event to prevent restarted workers from trying to wait on barrier, defaults to None
+        :type start_barrier_passed: Event, optional
+        """
+        fdebug, finfo = get_logs("start barrier helper")
+        fdebug("waiting for all workers to reach barrier")
+        start_barrier.wait()
+        fdebug("all workers past barrier")
+        start_barrier_passed.set()
+
+    @staticmethod
+    def _close(cache, start_barrier_passed, end_threading_event, pool):
         def work_done(cache):
             return len(cache) == 0
-
-        LOGGER.debug(f"closing pool and setting end events in thread {threading.get_native_id()}")
 
         # waits until all submitted jobs are done.
         while not work_done(cache):
             if end_threading_event.is_set():
                 return
 
-        # send SIGTERM to worker_functions
-        if not pool.status == "Stop":
-            pool.kill(signal.SIGTERM)
+        # wait for all the initial processes to have come up and registered their signal handler
+        start_barrier_passed.wait()
+
+        pool.stop_restart()
+        # send signal to shutdown pool workers
+        pool.send_signal(signal.SIGUSR2)
         end_threading_event.set()
 
     def close(self) -> None:
-        """This method starts a thread that waits for all submitted jobs to finish. This thread then sends signal.SIGTERM to the process group and sets the threading event to close the handle_results thread. Waiting and then sending the signals within the thread allows close to return without all work needing to be done.
+        """This method starts a thread that waits for all submitted jobs to finish. This thread then sends signal.SIGUSR2 to the process group and sets the threading event to close the handle_results thread. Waiting and then sending the signals within the thread allows close to return without all work needing to be done.
 
         :raises ValueError: raised if `close` or `terminate` have been previously called
         """
+        self.fdebug("closing pool")
         if self._can_join:
             raise ValueError("Trying to close pool that has already been closed or terminated")
-        # defines and starts thread that waits for jobs to be done before sending shutdown signals
+        if self._pg_closed:
+            raise ValueError("Closing when ProcessGroup has been closed")
+        # defines and starts thread that waits for work in input queue to be done before sending shutdown signal
         self._close_thread = threading.Thread(
-            target=self._close, args=(self._cache, self._end_threading_event, self._pg)
+            target=self._close, args=(self._cache, self._start_barrier_passed,self._end_threading_event, self._pg)
         )
+        self.fdebug("starting close thread")
         self._close_thread.start()
         self._can_join = True
 
-    def join(self) -> None:
-        """Waits for all workers to return. The user must have called close or terminate prior to calling join.
+    def join(self, patience: float = None) -> None:
+        """Waits for all workers to return. The user must have called close or terminate prior to calling join. By default this blocks indefinitely for processes to exit. If a patience is given, then once the patience has passed signal.SIGINT, signal.SIGTERM, and signal.SIGKILL will be sent successively with patience time between the sending of each signal. It is recommended that if a patience is set to a value other than None that a user assume the runtime is corrupted after the join completes.
 
+        :param patience: timeout to wait for processes to join after each signal, defaults to None
+        :type patience: float, optional
         :raises ValueError: raised if `close` or `terminate` were not previously called
+        :raises ValueError: raised if join has already been called and the process group is closed
+
         """
-        LOGGER.debug(f"joining pool")
+        self.fdebug("joining pool")
         if not self._can_join:
             raise ValueError("Trying to join pool that has not been closed or terminated")
+
+        # this thread should almost always already be finished but put it here for safety
+        if self._start_barrier_helper is not None:
+            self.fdebug("joining start_barrier_helper")
+            self._start_barrier_helper.join()
+
+        self.fdebug("joining close thread and map thread")
         # waits on close_thread before joining workers
         if self._close_thread is not None:
+            self.fdebug("joining close thread")
             self._close_thread.join()
         if self._map_launch_thread is not None:
+            self.fdebug("joining map launch thread")
             self._map_launch_thread.join()
 
-        if self._pg.status != "Stop":
-            self._pg.join()
+        if not self._pg_closed:
+            self.fdebug("joining process group")
+            try:
+                self._pg.join(timeout=patience)
+            except TimeoutError:
+                self.fdebug("process group join timed out")
+                pass
+
+            self.fdebug("closing process group")
             try:
                 # This extra step makes sure the infrastructure related to managing the processgroup exits cleanly
-                self._pg.stop()
+                if patience is not None:
+                    self._pg.close(patience=patience)
+                else:
+                    self._pg.close()
             except DragonProcessGroupError:
                 pass
+            self._pg_closed = True
+        self.fdebug("joining on results handler thread")
         self._results_handler.join()
 
+        # destroy the underlying Dragon resources so
+        # managed memory is freed.
+        self._start_barrier_passed.destroy()
+        self._start_barrier.destroy()
+        self._inqueue.destroy()
+        self._outqueue.destroy()
+        del self._start_barrier
+        del self._start_barrier_passed
+        del self._inqueue
+        del self._outqueue
+        del self._template
+
     @staticmethod
-    def _worker_function(inqueue, outqueue, initializer=None, initargs=(), maxtasks=None):
+    def _worker_function(inqueue, outqueue, start_barrier, start_barrier_passed, initializer=None, initargs=(), maxtasks=None):
 
-        # handles shutdown signal
-        class Value:
-            def __init__(self, val):
-                self._val = val
+        try:
+            termflag = threading.Event()
 
-            @property
-            def val(self):
-                return self._val
+            def handler(signum, frame):
+                termflag.set()
 
-            @val.setter
-            def val(self, val):
-                self._val = val
+            signal.signal(signal.SIGUSR2, handler)
 
-        termflag = Value(False)
+            # setup logging
+            fname = f'{dls.PG}_{socket.gethostname()}_workers.log'
+            setup_BE_logging(service=dls.PG, fname=fname)
+            global _LOG
+            _LOG = logging.getLogger(dls.PG).getChild('worker')
+            fdebug, finfo = get_logs('worker')
 
-        def handler(signum, frame):
-            LOGGER.debug("_worker_function SIGTERM handler saw signal")
-            termflag.val = True
+            if not start_barrier_passed.is_set():
+                start_barrier.wait()
 
-        signal.signal(signal.SIGTERM, handler)
+            if (maxtasks is not None) and not (isinstance(maxtasks, int) and maxtasks >= 1):
+                raise AssertionError("Maxtasks {!r} is not valid".format(maxtasks))
 
-        if (maxtasks is not None) and not (isinstance(maxtasks, int) and maxtasks >= 1):
-            raise AssertionError("Maxtasks {!r} is not valid".format(maxtasks))
+            if initializer is not None:
+                initializer(*initargs)
 
-        if initializer is not None:
-            initializer(*initargs)
+            completed_tasks = 0
 
-        completed_tasks = 0
+            while not termflag.is_set() and (maxtasks is None or (maxtasks and completed_tasks < maxtasks)):
+                # get work item
+                try:
+                    # still need timeout here to check signal occasionally
+                    task = inqueue.get(timeout=WORKER_POLL_FREQUENCY)
+                except queue.Empty:
+                    continue
+                except TimeoutError:
+                    continue
 
-        while not termflag.val and (maxtasks is None or (maxtasks and completed_tasks < maxtasks)):
-            # get work item
-            LOGGER.debug(f"getting work from inqueue on node {socket.gethostname()}")
-            try:
-                # still need timeout here to check signal occasionally
-                task = inqueue.get(timeout=0)
-            except queue.Empty:
-                time.sleep(POLL_FREQUENCY)
-                continue
-            except TimeoutError:
-                time.sleep(POLL_FREQUENCY)
-                continue
+                job, i, func, args, kwargs = task
 
-            job, i, func, args, kwargs = task
-            LOGGER.debug(f"job={job}, i={i}, func={func}, args={args}, kwargs={kwargs}")
-
-            # perform work
-            try:
-                output = (True, func(*args, **kwargs))
-            except Exception as e:
-                LOGGER.debug(f"\nDragon pool._worker_function threw an exception: \n{e}")
-                if func is not _helper_reraises_exception:
-                    e = ExceptionWithTraceback(e, e.__traceback__)
-                output = (False, e)
-            # put result in output queue
-            LOGGER.debug(f"putting result in outqueue = {(job, i, output)}")
-            try:
-                outqueue.put((job, i, output))
-            except Exception as e:
-                wrapped = MaybeEncodingError(e, output[1])
-                LOGGER.debug("Possible encoding error while sending result: %s" % (wrapped))
-                outqueue.put((job, i, (False, wrapped)))
-            completed_tasks += 1
+                # perform work
+                try:
+                    output = (True, func(*args, **kwargs))
+                except Exception as e:
+                    fdebug(f"\nDragon pool._worker_function threw an exception: \n{e}")
+                    if func is not _helper_reraises_exception:
+                        e = ExceptionWithTraceback(e, e.__traceback__)
+                    output = (False, e)
+                # put result in output queue
+                try:
+                    fdebug("putting output")
+                    outqueue.put((job, i, output))
+                    fdebug("put output")
+                except Exception as e:
+                    wrapped = MaybeEncodingError(e, output[1])
+                    fdebug(f"Possible encoding error while sending result: {wrapped}")
+                    outqueue.put((job, i, (False, wrapped)))
+                completed_tasks += 1
+        except EOFError:
+            pass # This can happen when barrier is destroyed at end of pool.
+        except KeyboardInterrupt:
+            pass
+        finally:
+            dlog.detach_from_dragon_handler(dls.PG)
 
     @classmethod
     def _handle_results(cls, outqueue, cache, end_event):
-        LOGGER.debug(
+        fdebug, finfo = get_logs("results handler")
+        fdebug(
             f"handle_results on node {socket.gethostname()} with thread id {threading.get_native_id()}"
         )
         while not end_event.is_set():
 
             # timeout with some frequency so we check if end_event is set
             try:
-                task = outqueue.get(timeout=POLL_FREQUENCY)
+                task = outqueue.get(timeout=RESULTS_HANDLER_POLL_FREQUENCY)
             except queue.Empty:
                 continue
             except TimeoutError:
@@ -468,24 +594,24 @@ class Pool:
         self,
         func: callable,
         args: tuple = (),
-        kwargs: dict = {},
+        kwds: dict = {},
         callback: callable = None,
         error_callback: callable = None,
     ) -> ApplyResult:
-        """Equivalent to calling `func(*args, **kwargs)` in a non-blocking way. A result is immediately returned and then updated when `func(*args, **kwargs)` has completed.
+        """Equivalent to calling `func(*args, **kwds)` in a non-blocking way. A result is immediately returned and then updated when `func(*args, **kwds)` has completed.
 
         :param func: user function to be called by worker function
         :type func: callable
         :param args: input args to func, defaults to ()
         :type args: tuple, optional
-        :param kwargs: input kwargs to func, defaults to {}
-        :type kwargs: dict, optional
+        :param kwds: input kwds to func, defaults to {}
+        :type kwds: dict, optional
         :param callback: user provided callback function, defaults to None
         :type callback: callable, optional
         :param error_callback: user provided error callback function, defaults to None
         :type error_callback: callable, optional
         :raises ValueError: raised if pool has already been closed or terminated
-        :return: A result that has a `get` method to retrieve result of `func(*args, **kwargs)`
+        :return: A result that has a `get` method to retrieve result of `func(*args, **kwds)`
         :rtype: ApplyResult
         """
 
@@ -493,7 +619,7 @@ class Pool:
             raise ValueError("Pool closed or terminated. Cannot add work to a closed pool.")
 
         result = ApplyResult(self, callback, error_callback)
-        self._inqueue.put((result._job, 0, func, args, kwargs))
+        self._inqueue.put((result._job, 0, func, args, kwds))
         return result
 
     @staticmethod

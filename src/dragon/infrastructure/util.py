@@ -21,12 +21,12 @@ import fcntl
 import heapq
 import io
 from itertools import chain
+import logging
 import os
 import re
 import selectors
 import sys
 import time
-import logging
 from warnings import warn
 from .parameters import this_process
 from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM, gethostname, inet_aton

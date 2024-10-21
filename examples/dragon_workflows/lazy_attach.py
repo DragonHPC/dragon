@@ -96,6 +96,7 @@ def main():
 
     grp.join()
     grp.stop()
+    grp.close()
 
     # signal client's exit
 

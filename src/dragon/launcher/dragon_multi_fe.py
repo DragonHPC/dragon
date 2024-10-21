@@ -13,6 +13,7 @@ from ..dlogging.util import setup_FE_logging, DragonLoggingServices as dls
 from ..infrastructure.facts import PROCNAME_LA_FE, FRONTEND_HOSTID
 from ..infrastructure.node_desc import NodeDescriptor
 
+
 def main(args_map=None):
 
     if args_map is None:
@@ -33,6 +34,9 @@ def main(args_map=None):
 
     execution_complete = False
     net_conf = None
+    telemetry_level = args_map['telemetry_level']
+    restart = False
+    last_avail_nodes = None
 
     while not execution_complete:
         # Try to run the launcher
@@ -40,7 +44,9 @@ def main(args_map=None):
         try:
             with LauncherFrontEnd(args_map=args_map) as fe_server:
                 net_conf = fe_server.run_startup(net_conf=net_conf)
-                net_conf = fe_server.run_app()
+                if telemetry_level > 0:
+                    net_conf = fe_server.run_telem(telemetry_level)
+                net_conf = fe_server.run_app(restart=restart)
                 net_conf = fe_server.run_msg_server()
 
         # Handle an obvious exception as well as what to do if we're trying a resilient runtime
@@ -50,19 +56,30 @@ def main(args_map=None):
                 return LAUNCHER_FAIL_EXIT
 
             # Check if the sum of active and idle nodes is > 0:
+            if last_avail_nodes is None:
+                last_avail_nodes = len([idx for idx, node in net_conf.items()])
             avail_nodes = len([idx for idx, node in net_conf.items()
-                               if node.state in [NodeDescriptor.State.ACTIVE, NodeDescriptor.State.IDLE] and idx !='f'])
+                               if node.state in [NodeDescriptor.State.ACTIVE, NodeDescriptor.State.IDLE] and idx != 'f'])
+
+            # Make sure we didn't exit for reasons other than a downed node
+            if last_avail_nodes == avail_nodes:
+                print("Dragon runtime is in an unrecoverable state. Exiting.", flush=True)
+                return LAUNCHER_FAIL_EXIT
+
+            last_avail_nodes = avail_nodes
             log.info(f'avail nodes found to be {avail_nodes}')
 
             # Proceed
             if args_map['exhaust_resources']:
                 if avail_nodes == 0:
-                    print("There are no more hardware resources available for continued app execution.")
+                    print("There are no more hardware resources available for continued app execution.", flush=True)
                     return LAUNCHER_FAIL_EXIT
             elif avail_nodes == args_map['node_count'] - 1:
-                print("There are not enough hardware resources available for continued app execution.")
+                print("There are not enough hardware resources available for continued app execution.", flush=True)
                 return LAUNCHER_FAIL_EXIT
 
+            # Make sure the user app has some semblance of understanding this is a resiliency restart
+            restart = True
 
         # If everything exited wtihout exception, break out of the loop and exit
         else:

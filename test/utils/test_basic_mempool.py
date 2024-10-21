@@ -51,7 +51,6 @@ class MemPoolCreateTest(unittest.TestCase):
     def setUpClass(cls):
         cls.seed = random.getrandbits(100)
         random.seed(a=cls.seed)
-        # print(f'Our random seed is {cls.seed}')
 
     def test_create(self):
         size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
@@ -289,6 +288,7 @@ class MemoryPoolAllocTest(unittest.TestCase):
         mem2 = mem.clone(100)
         self.assertEqual(mem2.get_memview()[0], mem.get_memview()[100])
         self.assertEqual(mem.size, mem2.size + 100)
+
         mem.free()
 
     def test_alloc_random(self):
@@ -381,13 +381,21 @@ class MemoryPoolAllocTest(unittest.TestCase):
             _ = self.mpool.alloc(512.789)
 
     def test_alloc_zero(self):
-        with self.assertRaises(RuntimeError):
-            _ = self.mpool.alloc(0)
+        # This should be allowed without an error.
+        self.mpool.alloc(0)
 
     def test_alloc_all(self):
         mem = self.mpool.alloc(self.size)
         self.assertEqual(1, self.mpool.get_allocations().num_allocs)
         mem.free()
+
+    def test_timeout(self):
+        mem = self.mpool.alloc(self.size)
+        self.assertEqual(1, self.mpool.get_allocations().num_allocs)
+        with self.assertRaises(TimeoutError):
+            mem2 = self.mpool.alloc_blocking(self.size, timeout=2)
+        mem.free()
+
 
     def test_alloc_small(self):
         mem = self.mpool.alloc(1)

@@ -22,7 +22,7 @@ Multiprocessing with Dragon
    pipeline.rst
 
 Workflows with Dragon
-===========================
+=====================
 
 .. toctree::
    :maxdepth: 1
@@ -43,10 +43,26 @@ Dragon Native
    dragon_mpi_workflow.rst
    dragon_native_policy_demo.rst
 
-Dragon Data (Preview)
+Dragon Data
 =====================
 
 .. toctree::
    :maxdepth: 1
 
    dragon_dict.rst
+
+Dragon Telemetry (Preview)
+================
+
+.. toctree::
+   :maxdepth: 1
+
+   dragon_telemetry.rst
+
+Dragon AI
+=========
+
+.. toctree::
+   :maxdepth: 1
+
+   dict_torch_dataset.rst

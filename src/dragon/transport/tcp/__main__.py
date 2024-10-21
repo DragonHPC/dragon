@@ -6,7 +6,7 @@ import ssl
 from collections import defaultdict
 from typing import Union
 
-from ...channels import Channel, register_gateways_from_env
+from ...channels import Channel, register_gateways_from_env, GatewayMessage
 from ...infrastructure import messages as dmsg
 from ...infrastructure.connection import Connection, ConnectionOptions
 from ...infrastructure.facts import GW_ENV_PREFIX, DEFAULT_TRANSPORT_PORT, FRONTEND_HOSTID
@@ -111,6 +111,9 @@ async def tcp_transport_agent(node_index: str = None,
     else:
         LOGGER = logging.getLogger(DragonLoggingServices.OOB).getChild('transport.tcp.__main__')
         halt_msg = dmsg.UserHaltOOB
+
+    # This tells the library to be silent about any transport completion timeouts.
+    GatewayMessage.silence_transport_timeouts()
 
     if max_threads is not None:
         # Set a new default executor that limits the maximum number of worker

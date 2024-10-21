@@ -12,6 +12,8 @@ import sys
 import logging
 import ctypes
 import struct
+import numbers
+from enum import Enum
 
 import dragon
 from ..channels import Channel, Message, ChannelError
@@ -19,6 +21,7 @@ from ..managed_memory import MemoryPool
 import dragon.utils as du
 from ..dtypes import WHEN_DEPOSITED
 from ..infrastructure.facts import default_pool_muid_from_index
+from ..infrastructure.util import route
 from ..infrastructure.parameters import this_process
 from ..infrastructure.channel_desc import ChannelOptions
 from ..localservices.options import ChannelOptions as ShepherdChannelOptions
@@ -45,10 +48,257 @@ _TYPECODE_TO_TYPE = {
 }
 
 _SUPPORTED_TYPES = frozenset(_TYPECODE_TO_TYPE.values())
+_ALIGNMENT = 8
+
+_TYPE_CONV_VAL = {}  # dispatch router for manipulating the values based on datatype
+
+
+class ValueConversion(Enum):
+    BYTES_TO_OBJ = 0
+    OBJ_TO_BYTES = 1
+
+
+def _get_nbytes(mview: memoryview):
+
+    nbytes_in_bytes = mview.tobytes()
+    nbytes = int.from_bytes(nbytes_in_bytes, byteorder=sys.byteorder, signed=True)
+    return nbytes
+
+
+def _get_data_bytes(mview: memoryview, alignment: int = _ALIGNMENT,
+                    nbytes: int = None) -> bytes:
+    """Read the first 8 bytes of the view to get the nbytes to read"""
+
+    if not nbytes:
+        nbytes = _get_nbytes(mview[0: alignment])
+        val_in_bytes = mview[alignment: nbytes + alignment].tobytes()
+    else:
+        val_in_bytes = mview[: nbytes].tobytes()
+
+    return val_in_bytes
+
+
+def _set_data_bytes(mview: memoryview, val_in_bytes: bytes, alignment: int = _ALIGNMENT,
+                    pack_length: bool = True) -> None:
+    """Store the nbytes the value takes up """
+
+    # Compute the number of bytes
+    nbytes = len(val_in_bytes)
+    nbytes_in_bytes = int(nbytes).to_bytes(length=alignment, byteorder=sys.byteorder, signed=True)
+
+    # Store the nbytes and the value in the memoryview
+    if pack_length:
+        mview[:alignment] = nbytes_in_bytes
+        mview[alignment: nbytes + alignment] = val_in_bytes
+    else:
+        mview[: nbytes] = val_in_bytes
+
+
+def _extract_structure_types(type_fields: list, struct_len: int):
+
+    subclass_types = [x[1] for x in type_fields]
+    tuple_type_list = list(subclass_types) * struct_len
+
+    return subclass_types, tuple_type_list
+
+
+def _map_structure_to_list(value: object, type_fields: list = None):
+
+    # Get the structure type if given a list of types
+    if type_fields is not None:
+        subclass_types, tuple_type_list = _extract_structure_types(type_fields, len(value))
+
+    # create list of types for tuple
+    no_tuples = []
+    for item in value:
+        no_tuples.append(item)
+
+    if type_fields:
+        return no_tuples, subclass_types, tuple_type_list
+    else:
+        return no_tuples
+
+
+@route(ctypes.c_char, _TYPE_CONV_VAL)
+def _c_char_conversion(mview: memoryview, convert: ValueConversion, val: object = b'0', pack_length=True,
+                       nbytes: int = None, alignment: int = _ALIGNMENT):
+
+    if convert is ValueConversion.BYTES_TO_OBJ:
+
+        # c_char's are returned as bytes to the user
+        return _get_data_bytes(mview, nbytes=nbytes)
+
+    elif convert is ValueConversion.OBJ_TO_BYTES:
+        # Get a bytes representation, utf-8 encoded if necessary
+        if isinstance(val, bytes):
+            valbytes = val
+        else:
+            # First make sure we weren't given a number via a range init or something
+            if isinstance(val, numbers.Number):
+                val = str(val)
+
+            # Get a bytes representation, utf-8 encoded if necessary
+            try:
+                valbytes = bytes(val)
+            except TypeError:
+                valbytes = bytes(val.encode('utf-8'))
+
+        # Get the data into memory
+        _set_data_bytes(mview, valbytes, pack_length=pack_length, alignment=alignment)
+
+
+@route(ctypes.c_wchar, _TYPE_CONV_VAL)
+def _c_wchar_conversion(mview: memoryview, convert: ValueConversion, val: object = "0", pack_length=True,
+                        nbytes: int = None, alignment: int = _ALIGNMENT):
+
+    # w_char's prototype follows the template of the other conversion functions but ALWAYS
+    # ignores the kwargs in favor of always packing the number of bytes for a given
+    # value and doing so with a 4 byte alignment, so every 8 bytes is packed with
+    # 4 bytes for length and then 4 bytes for characters. This prevents us
+    # from appending null characters and returning them to the user since their
+    # input string can occupty 1-4 bytes
+    pack_length = True
+    alignment = 4
+    if convert is ValueConversion.BYTES_TO_OBJ:
+        # c_wchar's are returned as a str
+        val_in_bytes = _get_data_bytes(mview, alignment=alignment)
+        val = str(val_in_bytes.decode('utf-8'))
+        return val
+
+    elif convert is ValueConversion.OBJ_TO_BYTES:
+        # First make sure we weren't given a number via a range init or something
+        if isinstance(val, numbers.Number):
+            val = str(val)
+
+        # Get a bytes representation, utf-8 encoded if necessary
+        if isinstance(val, bytes):
+            valbytes = val
+        elif isinstance(val, str):
+            valbytes = bytes(val.encode("utf-8"))
+        else:
+            raise AttributeError('ctypes._c_whar requires a str input')
+
+        # Get the data into memory
+        _set_data_bytes(mview, valbytes, pack_length=pack_length, alignment=alignment)
+
+
+@route(ctypes.c_ubyte, _TYPE_CONV_VAL)
+@route(ctypes.c_byte, _TYPE_CONV_VAL)
+@route(ctypes.c_short, _TYPE_CONV_VAL)
+@route(ctypes.c_ushort, _TYPE_CONV_VAL)
+@route(ctypes.c_uint, _TYPE_CONV_VAL)
+@route(ctypes.c_long, _TYPE_CONV_VAL)
+@route(ctypes.c_ulong, _TYPE_CONV_VAL)
+@route(ctypes.c_int, _TYPE_CONV_VAL)
+def _c_int_conversion(mview: memoryview, convert: ValueConversion, val = 0, pack_length=True,
+                      nbytes: int = None, alignment: int = _ALIGNMENT):
+
+    if convert is ValueConversion.BYTES_TO_OBJ:
+        # Get bytes representation of data
+        val_in_bytes = _get_data_bytes(mview, nbytes=nbytes)
+        # Convert from bytes to integer
+        val = int.from_bytes(val_in_bytes, byteorder=sys.byteorder, signed=True)
+        return val
+
+    elif convert is ValueConversion.OBJ_TO_BYTES:
+        # Get bytes data into memory
+        valbytes = int(val).to_bytes(_ALIGNMENT, byteorder=sys.byteorder, signed=True)
+        _set_data_bytes(mview, valbytes, pack_length=pack_length, alignment=alignment)
+
+
+@route(ctypes.c_float, _TYPE_CONV_VAL)
+@route(ctypes.c_double, _TYPE_CONV_VAL)
+def _c_double_conversion(mview: memoryview, convert: ValueConversion, val = 0.0, pack_length=True,
+                         nbytes: int = None, alignment: int = _ALIGNMENT):
+
+    """Convert a double to bytes and set it in memory or do the inverse and return it"""
+    if convert is ValueConversion.BYTES_TO_OBJ:
+        val_in_bytes = _get_data_bytes(mview, nbytes=nbytes)
+        (float_val,) = struct.unpack("d", val_in_bytes)
+        return float(float_val)
+
+    elif convert is ValueConversion.OBJ_TO_BYTES:
+        valbytes = bytes(struct.pack("d", val))
+        # Get the data into memory
+        _set_data_bytes(mview, valbytes, pack_length=pack_length, alignment=alignment)
+
+
+class PseudoStructure:
+    def __init__(self, value_obj, offset=0):
+        # stashed a reference to the value obj in dictionary which is useful for referencing value object from value and offset used in the Structure
+        self.__dict__["value_obj"] = value_obj
+        self.__dict__["offset"] = offset
+
+    def __getattr__(self, name):
+
+        # go and get field in Structure with that name and return it
+        msg = self.value_obj._recvh.recv()
+        mview = msg.bytes_memview()
+
+        # use name to find offset (this would be the fields)
+        idx = [n for n, t in self.value_obj._type._fields_].index(name)
+        return_type = self.value_obj._type._fields_[idx][1]
+
+        # size of type for the index
+        nbytes = 0
+        if self.offset > 0:
+            pack_length = False
+            nbytes = self.value_obj._struct1_sizes[idx]
+            l_mview = self.value_obj._get_struct_mview_slice(mview=mview, s_idx=self.offset, e_idx=idx, pack_length=pack_length)
+        else:
+            pack_length = True
+            alignment_offset = 2 * _ALIGNMENT  # nbytes in first 8 bytes. value in latter 8
+            start = idx * alignment_offset + self.offset
+            stop = (idx + 1) * alignment_offset + self.offset
+            l_mview = mview[start: stop]
+
+        # grab Structure data from memory
+        value_info = _TYPE_CONV_VAL[return_type][0](mview=l_mview, convert=ValueConversion.BYTES_TO_OBJ, pack_length=pack_length, nbytes=nbytes)
+        self.value_obj._sendh.send(msg)
+        msg.destroy()
+
+        return value_info
+
+    def __setattr__(self, name, value):
+
+        # Get the message and grab the memview
+        msg = self.value_obj._recvh.recv()
+        mview = msg.bytes_memview()
+
+        # use name to find offset (this would be the fields)
+        idx = [n for n, _ in self.value_obj._type._fields_].index(name)
+
+        # size of type for the index
+        c_return_type = self.value_obj._type._fields_[idx][1]
+
+        if self.offset > 0:
+            pack_length = False
+            l_mview = self.value_obj._get_struct_mview_slice(mview=mview, s_idx=self.offset, e_idx=idx, pack_length=pack_length)
+        else:
+            pack_length = True
+            alignment_offset = 2 * _ALIGNMENT  # nbytes in first 8 bytes. value in latter 8
+            start = idx * alignment_offset + self.offset
+            stop = (idx + 1) * alignment_offset + self.offset
+            l_mview = mview[start: stop]
+
+        _TYPE_CONV_VAL[c_return_type][0](l_mview, convert=ValueConversion.OBJ_TO_BYTES, val=value, pack_length=pack_length)
+
+        # write Structure to memory
+        self.value_obj._sendh.send(msg)
+        msg.destroy()
 
 
 class Value:
     """This class implements Dragon value resides in the Dragon channel."""
+
+    _types = None
+    # list of tuple types
+    subclass_types = None
+    # type of tuple at index
+    tuple_type_list = None
+    item_type = None
+
+    _alignment = 8  # all values will be 8 byte aligned
 
     def __getstate__(self):
         return (self._channel.serialize(), self._type)
@@ -62,7 +312,7 @@ class Value:
     def __repr__(self):
         return f"Dragon Value(type={self._type}, value={self.value}, cuid={self._channel.cuid})"
 
-    def __init__(self, typecode_or_type, value: int = 0, m_uid: int = _DEF_MUID):
+    def __init__(self, typecode_or_type, value: object = None, m_uid: int = _DEF_MUID):
         """Initialize a value object.
         :param typecode_or_type: the typecode or type is returned from the dictionary, _TYPECODE_TO_TYPE
         :type typecode_or_type: str or ctypes, required
@@ -72,44 +322,58 @@ class Value:
         :type m_uid: int, optional
         """
 
+        # First 8 bytes are just for the size of the value. 2nd is for the value, which are all 8 bytes unless
+        # we have a structure or tule
+        self._alignment = _ALIGNMENT
+
+        # Figure out how much space we need beyond that
+        size = 2 * self._alignment
         if isinstance(typecode_or_type, str):
             if typecode_or_type in _TYPECODE_TO_TYPE.keys():
                 typecode_or_type = _TYPECODE_TO_TYPE[typecode_or_type]
             else:
                 raise AttributeError(f"typecode not found, has to be one of {list(_TYPECODE_TO_TYPE.keys())}")
 
+        # Type checking against Python type to make the structure check not croak and then ctypes.Structure
+        elif isinstance(typecode_or_type, type) and issubclass(typecode_or_type, ctypes.Structure):
+            # For structure, we need to make sure we have enough space for every entry and its size
+            size = 2 * (self._alignment * len(typecode_or_type._fields_))
         else:
             if typecode_or_type not in _SUPPORTED_TYPES:
                 raise AttributeError(f"type not found, has to be one of {_SUPPORTED_TYPES}")
+
+        # don't lose our ctype
+        self._type = typecode_or_type
 
         LOGGER.debug(
             f"Init Dragon Native Value with typecode_or_type={typecode_or_type}, value={value}, m_uid={m_uid}"
         )
 
-        # for repr method
-        self._muid = m_uid
+        # If we were given a structure class, cast it to a list
 
-        sh_channel_options = ShepherdChannelOptions(capacity=1)
-        gs_channel_options = ChannelOptions(ref_count=True, local_opts=sh_channel_options)
-        descriptor = create(m_uid, options=gs_channel_options)
-        self._channel = Channel.attach(descriptor.sdesc)
-        self._reset()
-
-        # set value with type that is multiprocessing Value type
-        self._type = typecode_or_type
-        valbytes = self._value2valbytes(value)
-
-        # create value in shared memory
-        mpool = self._channel.get_pool()
-        # if the channel isn't local, then fall back on using the default
-        # allocation pool
-        if not mpool.is_local:
-            mpool = self._channel.default_alloc_pool
-
-        msg = Message.create_alloc(mpool, 8)
+        # Get a msg and a memview for the value inside our pool
+        msg = self._get_msg_from_pool(size, value, m_uid)
         mview = msg.bytes_memview()
-        mview[: len(valbytes)] = valbytes
 
+        # if we were given an initial value, cast it to bytes and set it in memory view
+        if value is not None:
+            if issubclass(typecode_or_type, ctypes.Structure):
+                value, self.subclass_types, self.tuple_type_list = _map_structure_to_list(value, self._type._fields_)
+
+                for idx, val in enumerate(value):
+                    self.item_type = self.tuple_type_list[idx]
+
+                    # Pad by a factor of 2 in order to include length of data
+                    start = idx * (2 * self._alignment)
+                    stop = start + (2 * self._alignment)
+                    _TYPE_CONV_VAL[self.item_type][0](mview=mview[start: stop], convert=ValueConversion.OBJ_TO_BYTES, val=val)
+            else:
+                # write Value to memory
+                _TYPE_CONV_VAL[self._type][0](mview=mview, convert=ValueConversion.OBJ_TO_BYTES, val=value)
+
+        # Otherwise, fill the buffer with 0s
+        else:
+            mview[:ctypes.sizeof(self._type)] = int(0).to_bytes(length=ctypes.sizeof(self._type), byteorder=sys.byteorder, signed=False)
         self._sendh.send(msg)
 
         msg.destroy()
@@ -131,14 +395,29 @@ class Value:
         :rtype: object
         """
 
-        # grab value from the channel
+        # grab mview from the channel
         msg = self._recvh.recv()
         mview = msg.bytes_memview()
-        value_info = mview[:].tobytes()
+
+        # Structure goes into Pseudostructure class and type checking against Python type and ctypes.Structure to make sure typecode_or_type is ctypes.Structure and not None
+        if (
+            isinstance(self._type, type)
+            and issubclass(self._type, ctypes.Structure)
+            and self.subclass_types is not None
+        ):
+            value_info = PseudoStructure(self)
+
+        else:
+            # And now convert the memory to the correct return type
+            value_info = _TYPE_CONV_VAL[self._type][0](mview=mview, convert=ValueConversion.BYTES_TO_OBJ)
 
         self._sendh.send(msg)
         msg.destroy()
-        return self._valbytes2value(value_info)
+
+        # flattens out value information
+        if type(value_info) is list:
+            value_info = value_info[0]
+        return value_info
 
     @value.setter
     def value(self, val: object) -> None:
@@ -152,18 +431,54 @@ class Value:
 
         # grabs value from the channel
         msg = self._recvh.recv()
+        msg.clear_payload()
 
-        # assigns the changed value to bytes string
-        valbytes = self._value2valbytes(val)
+        if isinstance(val, ctypes.Structure):
+            no_tuples = []
+            for item in val:
+                no_tuples.append(item)
+            val = no_tuples
 
-        # puts value back into memory
+        # Get the memview
         mview = msg.bytes_memview()
-        mview[: len(valbytes)] = valbytes
+
+        # If we are given a structure and weren't given it at __init__, treat it correctly by casting
+        # it to a lsit
+        if issubclass(self._type, ctypes.Structure):
+            val, self.subclass_types, self.tuple_type_list = _map_structure_to_list(val, self._type._fields_)
+
+            for idx, v in enumerate(val):
+                self.item_type = self.tuple_type_list[idx]
+                start = idx * (2 * self._alignment)
+                stop = start + (2 * self._alignment)
+                _TYPE_CONV_VAL[self.item_type][0](mview=mview[start: stop], convert=ValueConversion.OBJ_TO_BYTES, val=v)
+        # writes value to memory
+        else:
+            _TYPE_CONV_VAL[self._type][0](mview=mview, convert=ValueConversion.OBJ_TO_BYTES, val=val)
 
         self._sendh.send(msg)
         msg.destroy()
 
     # private methods
+    def _get_msg_from_pool(self, size: int, value: object = None, m_uid: int = _DEF_MUID):
+
+        # for repr method
+        self._muid = m_uid
+
+        sh_channel_options = ShepherdChannelOptions(capacity=1)
+        gs_channel_options = ChannelOptions(ref_count=True, local_opts=sh_channel_options)
+        descriptor = create(m_uid, options=gs_channel_options)
+        self._channel = Channel.attach(descriptor.sdesc)
+        self._reset()
+
+        # create value in shared memory
+        mpool = self._channel.get_pool()
+        # if the channel isn't local, then fall back on using the default allocation pool
+        if not mpool.is_local:
+            mpool = self._channel.default_alloc_pool
+
+        msg = Message.create_alloc(mpool, size)
+        return msg
 
     def _reset(self) -> None:
         self._recvh = self._channel.recvh()
@@ -171,43 +486,3 @@ class Value:
         self._recvh.open()
         self._sendh.open()
         self._mpool = MemoryPool.attach(du.B64.str_to_bytes(this_process.default_pd))
-
-    def _value2valbytes(self, value: object) -> bytes:
-
-        valbytes = b""
-        if self._type in [ctypes.c_char, ctypes.c_wchar]:
-            # This is for ctypes.c_char as ctypes.c_wchar returns str
-            if isinstance(value, (bytes, bytearray)) and self._type is not ctypes.c_wchar:
-                valbytes = bytes(value)
-            else:
-                valbytes = bytes(str(value).encode("utf-8"))
-            # if there are more than one bytes in valbytes
-            if len(valbytes) > 8:
-                raise AttributeError
-        # c_float and c_double return float type
-        elif self._type in [ctypes.c_float, ctypes.c_double]:
-            valbytes = bytes(struct.pack("d", value))
-        # int, longlong, and other ctypes return int type
-        else:
-            valbytes = int(value).to_bytes(8, byteorder=sys.byteorder, signed=True)
-        return valbytes
-
-    def _valbytes2value(self, valbytes: bytes) -> object:
-
-        if self._type in [ctypes.c_char, ctypes.c_wchar]:
-            value_info = valbytes.decode("utf-8")
-            # removes extraneous characters
-            value_val = value_info.replace("\x00", "")
-            if self._type is ctypes.c_char:
-                # c_char returns bytes
-                return str(value_val).encode()
-            else:
-                # c_wchar returns string
-                return str(value_val)
-        elif self._type in (ctypes.c_float, ctypes.c_double):
-            # returns float for the float types
-            (float_val,) = struct.unpack("d", valbytes)
-            return float(float_val)
-        else:
-            # returns int for int types
-            return int.from_bytes(valbytes, byteorder=sys.byteorder, signed=True)

@@ -66,7 +66,7 @@ def maybe_start_gs(gs_args: Optional[list], gs_env: Optional[dict], hostname: st
                              stdin_req=None, stdout_req=None, stderr_req=None,
                              stdin_connector=None, stdout_connector=stdout_connector,
                              stderr_connector=stderr_connector, layout=None,
-                             local_cuids=set()),
+                             local_cuids=set(), creation_msg_tag=None),
                 gs_args,
                 bufsize=0,
                 stdin=subprocess.PIPE,
@@ -196,6 +196,7 @@ def single(make_infrastructure_resources: bool = True,
         log.info('got BENodeIdxSH')
         assert msg.node_idx == 0, 'single node'
         node_index = msg.node_idx
+        net_conf_key = msg.net_conf_key
 
         if make_infrastructure_resources:
             assert not any((gs_input, la_input, shep_input, ta_input))
@@ -217,11 +218,12 @@ def single(make_infrastructure_resources: bool = True,
 
         ls_node_desc = NodeDescriptor.get_localservices_node_conf(host_name='localhost',
                                                                   name='localhost',
-                                                                  ip_addrs=['127.0.0.1'], 
+                                                                  ip_addrs=['127.0.0.1'],
                                                                   is_primary=True)
         ch_up_msg = dmsg.SHChannelsUp(tag=get_new_tag(),
                                       node_desc=ls_node_desc,
-                                      gs_cd=dparms.this_process.gs_cd)
+                                      gs_cd=dparms.this_process.gs_cd,
+                                      net_conf_key=net_conf_key)
 
         la_input.send(ch_up_msg.serialize())
         log.info('sent SHChannelsUp')
@@ -289,6 +291,7 @@ def multinode(make_infrastructure_resources: bool = True,
         msg = dmsg.parse(ls_stdin_queue.recv())
         assert isinstance(msg, dmsg.BENodeIdxSH), 'startup msg expected on stdin'
         node_index = msg.node_idx
+        net_conf_key = msg.net_conf_key
         hostname = msg.host_name
         ip_addrs = msg.ip_addrs
         is_primary = msg.primary
@@ -331,7 +334,8 @@ def multinode(make_infrastructure_resources: bool = True,
         ch_up_msg = dmsg.SHChannelsUp(tag=get_new_tag(),
                                       node_desc=ls_node_desc,
                                       gs_cd=gs_cd,
-                                      idx=node_index)
+                                      idx=node_index,
+                                      net_conf_key=net_conf_key)
 
         la_input.send(ch_up_msg.serialize())
         log.info('sent SHChannelsUp')
@@ -407,7 +411,8 @@ def multinode(make_infrastructure_resources: bool = True,
                 stdout_req=None,
                 stderr_req=None,
                 layout=None,
-                local_cuids=set()
+                local_cuids=set(),
+                creation_msg_tag=None
             )
         except Exception as e:
             logging.getLogger(dls.LS).getChild('start_ta').fatal(f'transport agent launch failed on {node_index}')

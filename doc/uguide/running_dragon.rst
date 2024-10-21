@@ -255,6 +255,27 @@ Formatting of the network-config file appears below for both JSON and YAML:
       }
   }
 
+When nodes have multiple available NICs, attention should be paid to the number and order of
+IP addresses specified in the network configuration file.  Because the `dragon-network-config`
+utility has no way of knowing which of the multiple NICs and IP addresses should be used
+preferentially on a given node, the list of "ip_addrs" specified in the network config
+YAML/JSON file may need to be manually adjusted to ensure the preferred IP address is first
+in the list. This manual review and ordering adjustment is only necessary when some NICs can
+and some NICs can not route to other nodes in the Dragon cluster.
+
+Although not specified as part of the network configuration, if the frontend node also has
+multiple NICs and only some have available routes to the compute nodes, it is possible to
+specify the routable IP address (and thereby NIC) to use on the frontend node for all
+communications with the compute nodes via the environment variable, `DRAGON_FE_IP_ADDR`.
+A toy example showcasing how to specify which NIC to use of the frontend / head node
+while simultaneously specifying which NICs to use on the compute nodes (via the network
+config JSON file):
+
+.. code-block:: bash
+
+    # Note that the value "1.2.3.4" should be replaced with the appropriate local IP address.
+    $ DRAGON_FE_IP_ADDR="1.2.3.4:6566" dragon --wlm ssh --network-config my_cluster_config.json --network-prefix '' my_user_code.py
+
 .. _transport_agents:
 
 Dragon's Transport Agents

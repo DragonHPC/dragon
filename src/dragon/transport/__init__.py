@@ -9,7 +9,6 @@ from typing import Union
 from ..channels import Channel
 from ..infrastructure import facts
 from ..utils import B64
-from ..dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 
 
 def resolve_args(args=None):
@@ -59,6 +58,8 @@ def start_transport_agent(
     :return: Transport agent child process
     :rtype: subprocess.Popen
     """
+
+    from ..dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 
     _env = ChainMap()
     if env is not None:

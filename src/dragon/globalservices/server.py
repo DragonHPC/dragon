@@ -101,6 +101,7 @@ class GlobalContext(object):
 
         self.pending = dict()  # key = tag, value = continuation on response
         self.pending_group_destroy = dict()  # is applied only to groups of resources when destroy is called, key = uid, value = continuation on response
+        self.pending_process_exits = dict()  # key = creation msg tag, value = SHProcessExit msg
 
         self.pending_sends = Queue()
 
@@ -116,7 +117,7 @@ class GlobalContext(object):
         self.gs_input = None
         self.bela_input = None
         self.test_connections = None
-        self.head_puid = None
+        self.head_puid = set()
         self._tag = 0
         self._next_puid = dfacts.FIRST_PUID
         self._next_cuid = dfacts.FIRST_CUID
@@ -139,12 +140,13 @@ class GlobalContext(object):
         self._node_logger = logging.getLogger(dls.GS).getChild('node:')
         self._group_logger = logging.getLogger(dls.GS).getChild('group:')
 
-        self.circ_index = 0 # helper index for implementing the circular order of choosing shepherds
+        self.circ_index = 0  # helper index for implementing the circular order of choosing shepherds
 
-        self.policy_eval = None # Policy Evaluator, init'd in `handle_sh_ping`
+        self.policy_eval = None  # Policy Evaluator, init'd in `handle_sh_ping`
+        self.resilient_groups = False  # Whether to handle Groups as if they are a group of individually critical processes
+                                       # and restart should be attempted upon one of their failures
 
     ################ Support Functions for GS #######################################
-
 
     def dump_to(self, fh):
         """Dumps a human readable representation of current state to a file-like object.
@@ -294,8 +296,11 @@ class GlobalContext(object):
             assert msg.layout.h_uid in self.node_table.keys()
             index = self.node_table[msg.layout.h_uid].ls_index
 
-        log.debug("choose shepherd %d for %s", index, msg)
-        return index
+        # Get huid for ProcessDescriptor
+        huid = [huid for huid, node in self.node_table.items() if node.ls_index == index][0]
+
+        log.debug("choose shepherd %d (huid %d) for %s", index, huid, msg)
+        return index, huid
 
 
     # picks the node to put a pool on
@@ -730,14 +735,13 @@ class GlobalContext(object):
     @dutil.route(dmsg.GSProcessCreate, DTBL)
     def handle_process_create(self, msg):
         log = self._process_logger
-        is_head_proc = self._state == self.RunState.WAITING_FOR_HEAD
 
         log.debug(f'handling {msg!s}')
         reply_channel = self.get_reply_handle(msg)
         # here the constructor might have multiple steps so
         # it has to control its own pending completions.
         # The RunState is set to HAS_HEAD in this function as well.
-        ProcessContext.construct(self, msg, reply_channel, is_head_proc)
+        ProcessContext.construct(self, msg, reply_channel)
 
 
     @dutil.route(dmsg.SHProcessCreateResponse, DTBL)
@@ -747,7 +751,9 @@ class GlobalContext(object):
         assert msg.ref in self.pending
         handler = self.pending.pop(msg.ref)
         handler(msg)
-
+        if msg.ref in self.pending_process_exits:
+            process_exit_msg = self.pending_process_exits.pop(msg.ref)
+            self.handle_process_exit(process_exit_msg)
 
     @dutil.route(dmsg.GSProcessList, DTBL)
     def handle_process_list(self, msg):
@@ -795,6 +801,16 @@ class GlobalContext(object):
         log.debug(f'handling {msg!s}')
         reply_channel = self.get_reply_handle(msg)
         ProcessContext.kill(self, msg, reply_channel)
+
+
+    @dutil.route(dmsg.SHMultiProcessKillResponse, DTBL)
+    def handle_sh_multi_process_kill_response(self, msg):
+        log = self._node_logger
+        log.debug('handling %s', msg)
+
+        for proc_kill_response in msg.responses:
+            log.info("proc_kill_response=%s", str(proc_kill_response))
+            self.handle_process_kill_response(proc_kill_response)
 
 
     @dutil.route(dmsg.SHProcessKillResponse, DTBL)
@@ -937,6 +953,12 @@ class GlobalContext(object):
         gspjlr = dmsg.GSProcessJoinListResponse
         log.debug(f'p_uid {msg.p_uid} exited')
 
+        if msg.creation_msg_tag in self.pending:
+            log.debug(f'p_uid {msg.p_uid} was found in pending. delaying handling of process exit until creation is finished.')
+            self.pending_process_exits[msg.creation_msg_tag] = msg
+            return
+
+
         ctx = self.process_table[msg.p_uid]
         ctx.descriptor.state = process_desc.ProcessDescriptor.State.DEAD
         ctx.descriptor.ecode = msg.exit_code
@@ -1026,13 +1048,14 @@ class GlobalContext(object):
         for puid_set in to_be_erased:
             self.pending_join_list.remove(puid_set)
 
-        if msg.p_uid == self.head_puid:
-            log.info(f'head process id {self.head_puid} exited')
+        if msg.p_uid in self.head_puid:
+            log.info(f'head process id {msg.p_uid} exited')
             self.bela_input.send(dmsg.GSHeadExit(tag=self.tag_inc(),
                                                  exit_code=msg.exit_code).serialize())
             # TODO: head process exit cleanup
-            self._state = self.RunState.WAITING_FOR_HEAD
-            self.head_puid = None
+            self.head_puid.remove(msg.p_uid)
+            if not self.head_puid:
+                self._state = self.RunState.WAITING_FOR_HEAD
 
         # GROUP related work
         # if this process is a member of a group, then update the group context
@@ -1042,6 +1065,7 @@ class GlobalContext(object):
             groupctx = self.group_table[guid]
             groupctx.descriptor.sets[lst_idx][item_idx].state = process_desc.ProcessDescriptor.State.DEAD
             groupctx.descriptor.sets[lst_idx][item_idx].desc.state = process_desc.ProcessDescriptor.State.DEAD
+
 
             # if group destroy was called
             if msg.p_uid in self.pending_group_destroy:
@@ -1339,7 +1363,6 @@ class GlobalContext(object):
         reply_channel.send(rm.serialize())
         log.debug(f'response to {msg!s}: {rm!s}')
 
-
     @dutil.route(dmsg.SHMultiProcessCreateResponse, DTBL)
     def handle_sh_group_create_response(self, msg):
         log = self._node_logger
@@ -1349,6 +1372,34 @@ class GlobalContext(object):
             log.info("proc_create_response=%s", str(proc_create_response))
             self.handle_process_create_response(proc_create_response)
 
+    @dutil.route(dmsg.GSNodeQueryAll, DTBL)
+    def handle_node_query(self, msg):
+        log = self._node_logger
+        log.debug(f'handling {msg}')
+
+        reply_channel = self.get_reply_handle(msg)
+
+        descriptors = [node.descriptor for node in self.node_table.values()]
+
+        if not descriptors:
+            errmsg = 'Could not retrieve list of node descriptors'
+            log.error(errmsg)
+            rm = dmsg.GSNodeQueryAllResponse(
+                tag=self.tag_inc(),
+                ref=msg.tag,
+                err=dmsg.GSNodeQueryAllResponse.Errors.UNKNOWN,
+                err_info=errmsg
+            )
+        else:
+            rm = dmsg.GSNodeQueryAllResponse(
+                tag=self.tag_inc(),
+                ref=msg.tag,
+                err=dmsg.GSNodeQueryAllResponse.Errors.SUCCESS,
+                descriptors=descriptors
+            )
+
+        reply_channel.send(rm.serialize())
+        log.debug(f'response to {msg!s}: {rm!s}')
 
     @dutil.route(dmsg.GSGroupCreate, DTBL)
     def handle_group_create(self, msg):
@@ -1459,6 +1510,25 @@ class GlobalContext(object):
                                            err=dmsg.GSGroupQueryResponse.Errors.SUCCESS,
                                            desc=gdesc)
 
+        reply_channel.send(rm.serialize())
+        log.debug(f'response to {msg!s}: {rm!s}')
+
+
+    @dutil.route(dmsg.GSGroupRebootRuntime, DTBL)
+    def handle_group_reboot_runtime(self, msg):
+        log = self._group_logger
+        log.debug(f'handling {msg}')
+
+        # Channel to tell user we got its request
+        reply_channel = self.get_reply_handle(msg)
+
+        # Send AbnormalTermination to the frontend
+        am = dmsg.AbnormalTermination(tag=self.tag_inc(), host_id=msg.h_uid)
+        self.bela_input.send(am.serialize())
+        log.debug(f'response to {msg!s}: {am!s}')
+
+        # Send response
+        rm = dmsg.GSGroupRebootRuntimeResponse(err_info=dmsg.GSGroupRebootRuntimeResponse.Errors.SUCCESS)
         reply_channel.send(rm.serialize())
         log.debug(f'response to {msg!s}: {rm!s}')
 

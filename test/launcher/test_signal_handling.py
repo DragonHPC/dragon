@@ -76,7 +76,8 @@ def send_shchannelsup(nodes, mpool):
         ch_up_msg = dmsg.SHChannelsUp(tag=next_tag(),
                                       node_desc=node_desc,
                                       gs_cd=gs_cd,
-                                      idx=node['node_index'])
+                                      idx=node['node_index'],
+                                      net_conf_key = node['net_conf_key'])
         log.info(f'construct SHChannelsUp: {ch_up_msg}')
         node['conn'].send(ch_up_msg.serialize())
         log.info(f'sent SHChannelsUp for {node["node_index"]}')

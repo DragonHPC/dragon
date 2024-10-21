@@ -201,6 +201,14 @@ class LaunchParameters:
     :type USER_RETURN_WHEN_MODE: str
     :param GW_CAPACITY: Positive capacity of gateway channels, defaults to 2048.
     :type GW_CAPACITY: int
+    :param HSTA_MAX_EJECTION_MB: Size in MB of buffers used for network receive operations. This controls network ejection rate, defaults to 8.
+    :type HSTA_MAX_EJECTION_MB: int
+    :param HSTA_MAX_GETMSG_MB: Size in MB of buffers used for local `'getmsg`' operations. This controls memory consumption rate for messages with `'GETMSG`' protocol, defaults to 8.
+    :type HSTA_MAX_GETMSG_MB: int
+    :param HSTA_FABRIC_BACKEND: Select the fabric backend to use. Possible options are `'ofi`', `'ucx`', and `'mpi`', defaults to `'ofi`'.
+    :type HSTA_FABRIC_BACKEND: str
+    :param HSTA_TRANSPORT_TYPE: Select if HSTA uses point-to-point operations or RDMA Get to send large messages. Possible options are `'p2p`' and `'rma`', defaults to `'p2p`'.
+    :type HSTA_TRANSPORT_TYPE: str
     :param PMOD_COMMUNICATION_TIMEOUT: Timeout in seconds for PMOD communication with child MPI processes, defaults to 30.
     :type PMOD_COMMUNICATION_TIMEOUT: int
     :param BASEPOOL: Default implementation of multiprocessing pool. One of `'NATIVE'` or `'PATCHED'`, defaults to `'NATIVE'`.
@@ -263,6 +271,8 @@ class LaunchParameters:
             TypedParm(name=dfacts.NUM_GW_CHANNELS_PER_NODE, cast=typecast(int), check=nonnegative, default=dfacts.DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE),
             TypedParm(name=dfacts.HSTA_MAX_EJECTION_MB, cast=typecast(int), check=positive, default=8),
             TypedParm(name=dfacts.HSTA_MAX_GETMSG_MB, cast=typecast(int), check=positive, default=8),
+            TypedParm(name=dfacts.HSTA_FABRIC_BACKEND, cast=typecast(str), check=nocheck),
+            TypedParm(name=dfacts.HSTA_TRANSPORT_TYPE, cast=typecast(str), check=nocheck, default=dfacts.DEFAULT_HSTA_TRANSPORT_TYPE),
             TypedParm(name=dfacts.PMOD_COMMUNICATION_TIMEOUT, cast=typecast(int), check=positive, default=30),
             TypedParm(name=dfacts.BASEPOOL, cast=typecast(str), check=check_pool, default=dfacts.DEFAULT_POOL),
             TypedParm(name=dfacts.OVERLAY_FANOUT, cast=typecast(int), check=positive, default=32),

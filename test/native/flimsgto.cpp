@@ -28,7 +28,7 @@ int main(int argc, char* argv[]) {
             return -1;
         }
 
-        err = dragon_fli_open_recv_handle(&fli, &recvh, NULL, NULL);
+        err = dragon_fli_open_recv_handle(&fli, &recvh, NULL, NULL, NULL);
         if (err != DRAGON_SUCCESS) {
             cout << "Failed to open recv handle" << endl;
             cerr << "Failed to open recv handle" << endl;
