@@ -378,7 +378,7 @@ class DDict:
 
     def _traceit(self, *args, **kw_args):
         if self._trace:
-            log(logging.INFO, *args, **kw_args)
+            log.log(logging.INFO, *args, **kw_args)
 
     def _get_main_manager(self): # SHGetKV
         try:
