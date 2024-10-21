@@ -1,3 +1,7 @@
+ifneq ("$(wildcard $(DRAGON_BASE_DIR)/.dragon-config.mk)","")
+    include $(DRAGON_BASE_DIR)/.dragon-config.mk
+endif
+
 export INSTALL = install
 export PYTHON = $(shell which python3 | awk '{if ($$1 == "") { print "python" } else { print "python3"}}')
 export PIP = $(shell which pip3 | awk '{if ($$1 == "") { print "pip" } else { print "pip3"}}')
@@ -10,10 +14,11 @@ endif
 
 export INSTALL_DIR = $(abspath dist)
 
-LIBRARIES := lib/libdragon.so lib/libpmsgqueue.so lib/libpmod.so
+LIBRARIES := lib/libdragon.so lib/libpmod.so $(wildcard lib/libdfabric_*.so)
 
 TOOLS := tools/dragon-cleanup \
-         tools/dragon-node-cleanup
+         tools/dragon-node-cleanup \
+         tools/dragon-config
 
 BINARIES := $(addprefix bin/, $(notdir $(TOOLS)))
 
@@ -53,7 +58,6 @@ clean:
 	$(PYTHON) setup.py clean --all
 	$(RM) -r build *.egg-info
 	$(RM) $(LIBRARIES) $(BINARIES) $(CY_FILES)
-	$(MAKE) -C dragon/launcher/src clean
 	$(MAKE) -C lib clean
 	$(MAKE) -C include clean
 
@@ -67,6 +71,7 @@ dist: $(addprefix $(INSTALL_DIR)/,$(LIBRARIES) $(BINARIES)) $(CY_FILES)
 # Prepare to files to be included in the distribution.
 	cp ../external/pycapnp/pycapnp*.whl dist
 	cp bin/dragon-install dist
+	cp bin/dragon-activate dist
 # This code copies the message_defs.capnp file into the wheel file
 # which is needed for the captain proto support.
 	rm -rf build/dragon_wheel
@@ -81,6 +86,7 @@ dist: $(addprefix $(INSTALL_DIR)/,$(LIBRARIES) $(BINARIES)) $(CY_FILES)
 #	cp -f lib/libdragon.so build/dragon_wheel/lib
 #	cp -f lib/libpmod.so build/dragon_wheel/lib
 #	cp -f lib/libpmsgqueue.so build/dragon_wheel/lib
+	cp -f lib/libdfabric_*.so dist/lib
 	$(PYTHON) setup.py bdist_wheel --skip-build --bdist-dir=$(abspath build/dragon_wheel)
 	$(MAKE) -C modulefiles dist
 	$(MAKE) -C pkg dist
@@ -108,6 +114,9 @@ release:
 	cp ../test/multi-node/test_lock.py  release/dragon/examples/dragon_native/multi-node_tests
 	cp ../test/multi-node/test_machine.py  release/dragon/examples/dragon_native/multi-node_tests
 	cp ../test/multi-node/test_barrier.py  release/dragon/examples/dragon_native/multi-node_tests
+	cp ../src/dragon/telemetry/imports/*.yaml  release/dragon/examples/dragon_telemetry
+	cp ../src/dragon/telemetry/imports/*.json  release/dragon/examples/dragon_telemetry
+
 	mv release/dragon release/dragon-$(DRAGON_VERSION)
 	cd release && tar -czvf dragon-$(DRAGON_VERSION)-$(GITHASH).tar.gz dragon-$(DRAGON_VERSION)
 	cd release && rm -rf dragon-$(DRAGON_VERSION)

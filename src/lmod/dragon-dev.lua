@@ -36,7 +36,7 @@ local DRAGON_BASE_DIR = capture(base_dir):gsub("\n$", "")
 
 -- environment modifications --
 
-setenv("DRAGON_VERSION", "0.9")
+setenv("DRAGON_VERSION", "0.10")
 
 -- get project dir
 setenv("DRAGON_BASE_DIR", DRAGON_BASE_DIR)
@@ -48,11 +48,11 @@ setenv("DRAGON_BASE_DIR", DRAGON_BASE_DIR)
 -- module load: "try_load" will still load a module if the module couldn't be loaded
 -- module load: "depends_on" Loads all modules. When unloading only dependent modules are unloaded.
 
-load("craype-x86-rome")
+try_load("craype-x86-rome")
 load("PrgEnv-gnu");
 -- it's possible (e.g. on pinoak) to load PrgEnv-gnu but not get the gcc module
 load("gcc")
-load("cray-python")
+load_any("cray-python", "python")
 
 
 -- Kaylie -> would like to know more about this version number ....

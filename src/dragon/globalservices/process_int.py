@@ -19,7 +19,7 @@ from ..infrastructure import util as dutil
 from ..infrastructure import policy as dpolicy
 from ..utils import B64
 
-LOG = logging.getLogger('process:')
+LOG = logging.getLogger('GS.process:')
 
 
 class ProcessContext:
@@ -30,7 +30,7 @@ class ProcessContext:
         manage its lifecycle.
     """
 
-    def __init__(self, *, server, request, reply_channel, p_uid, node):
+    def __init__(self, *, server, request, reply_channel, p_uid, node, h_uid):
         self.server = server
         self.request = request
         self.reply_channel = reply_channel
@@ -41,7 +41,8 @@ class ProcessContext:
         self._descriptor = process_desc.ProcessDescriptor(p_uid=p_uid,
                                                           name=request.user_name,
                                                           node=node,
-                                                          p_p_uid=request.p_uid)
+                                                          p_p_uid=request.p_uid,
+                                                          h_uid=h_uid)
 
         self.process_parms = copy.copy(dp.this_process)
         self.process_parms.my_puid = p_uid
@@ -66,6 +67,9 @@ class ProcessContext:
         for k, v in self.process_parms.env().items():
             the_env[k] = v
 
+        # If the launcher is relaunching this application, let it know
+        if self.request.restart:
+            the_env['DRAGON_RESILIENT_RESTART'] = '1'
         # if the parent process wants output or input redirected,
         # we encapsulate necessary messages here to be sent with the
         # SHProcessCreate. All requests are then handled at once by
@@ -152,15 +156,15 @@ class ProcessContext:
                                     layout=self.request.layout,
                                     gs_ret_chan_msg=gs_ret_chan_msg)  #pylint: disable=protected-access
 
-    def mk_sh_proc_kill(self, the_tag, the_sig=signal.SIGKILL):
+    def mk_sh_proc_kill(self, the_tag, the_sig=signal.SIGKILL, hide_stderr=False):
         return dmsg.SHProcessKill(tag=the_tag,
                                   p_uid=dfacts.GS_PUID,
                                   r_c_uid=dfacts.GS_INPUT_CUID,
                                   t_p_uid=self.descriptor.p_uid,
-                                  sig=the_sig)
+                                  sig=the_sig, hide_stderr=hide_stderr)
 
     @classmethod
-    def construct(cls, server, msg, reply_channel, head, send_msg=True, belongs_to_group=False, addition=False):
+    def construct(cls, server, msg, reply_channel, send_msg=True, belongs_to_group=False, addition=False):
         """Makes a new context, registers it with the server, and sends a request start message
 
         :param server: global server context object
@@ -196,9 +200,9 @@ class ProcessContext:
 
         this_puid, auto_name = server.new_puid_and_default_name()
 
-        if head:
+        if msg.head_proc:
             LOG.info(f'head puid is {this_puid}')
-            server.head_puid = this_puid
+            server.head_puid.add(this_puid)
             server._state = server.RunState.HAS_HEAD
 
         if not msg.user_name:
@@ -208,10 +212,14 @@ class ProcessContext:
         if msg.layout is None and msg.policy is not None:
             msg.layout = server.policy_eval.evaluate([msg.policy])[0]
 
-        which_node = server.choose_shepherd(msg)
+        # Update the resiliency flag if the launcher requested it
+        if not server.resilient_groups:
+            server.resilient_groups = msg.resilient
+
+        which_node, node_huid = server.choose_shepherd(msg)
 
         context = cls(server=server, request=msg, reply_channel=reply_channel,
-                      p_uid=this_puid, node=which_node)
+                      p_uid=this_puid, node=which_node, h_uid=node_huid)
         server.process_names[msg.user_name] = this_puid
         server.process_table[this_puid] = context
 
@@ -445,11 +453,12 @@ class ProcessContext:
 
             # clean up tables - don't keep ProcessDescriptor stuff around
             # for things that never were alive.
-            if self.descriptor.p_uid == self.server.head_puid:
+            if self.descriptor.p_uid in self.server.head_puid:
                 LOG.info('head process creation failed')
                 # TODO: whatever cleanup actions desired when the head process leaves.
-                self.server._state = self.server.RunState.WAITING_FOR_HEAD
-                self.server.head_puid = None
+                self.server.head_puid.remove(self.descriptor.p_uid)
+                if not self.server.head_puid:
+                    self.server._state = self.server.RunState.WAITING_FOR_HEAD
 
             del self.server.process_table[self.descriptor.p_uid]
             del self.server.process_names[self.request.user_name]
@@ -477,29 +486,50 @@ class ProcessContext:
         return succeeded
 
     @staticmethod
-    def kill(server, msg, reply_channel, belongs_to_group=False):
+    def kill(server, msg, reply_channel, belongs_to_group=False, send_msg=True):
+        """Kill the given process
+
+        :param msg: GSProcessKill request
+        :type msg: GSProcessKill
+        :param reply_channel: Reply channel optionally used to send GSProcessKillResponse
+        :type reply_channel: Connection
+        :param belongs_to_group: Whether the process belongs to a dragon Group. Defaults to False.
+        :type belongs_to_group: bool, optional
+        :param send_msg: whether to send the request message or not, defaults to True
+        :type send_msg: bool, optional
+        :raises NotImplementedError: when the process is unknown
+        :return: a tuple True or False according to success
+                 First element: True if the process was found and active, else False
+                 Second element: The tag if the message was issued, else None
+        :rtype: tuple
+        """
+
         target_uid, found, errmsg = server.resolve_puid(msg.user_name, msg.t_p_uid)
         gspkr = dmsg.GSProcessKillResponse
 
         if not found:
-            rm = gspkr(tag=server.tag_inc(),
-                       ref=msg.tag,
-                       err=gspkr.Errors.UNKNOWN,
-                       err_info=errmsg)
-            reply_channel.send(rm.serialize())
-            LOG.debug(f'process absent; response to {msg}: {rm}')
+            LOG.debug('process absent %s', msg)
+            if send_msg:
+                rm = gspkr(tag=server.tag_inc(),
+                        ref=msg.tag,
+                        err=gspkr.Errors.UNKNOWN,
+                        err_info=errmsg)
+                reply_channel.send(rm.serialize())
+                LOG.debug('sent response %s', rm)
             return False, None
         else:
             pctx = server.process_table[target_uid]
             pdesc = pctx.descriptor
             pds = process_desc.ProcessDescriptor.State
             if pds.DEAD == pdesc.state:
-                rm = gspkr(tag=server.tag_inc(),
-                           ref=msg.tag,
-                           err=gspkr.Errors.DEAD,
-                           exit_code=pdesc.ecode)
-                reply_channel.send(rm.serialize())
-                LOG.debug(f'process dead, response to {msg}: {rm}')
+                LOG.debug('process dead %s', msg)
+                if send_msg:
+                    rm = gspkr(tag=server.tag_inc(),
+                            ref=msg.tag,
+                            err=gspkr.Errors.DEAD,
+                            exit_code=pdesc.ecode)
+                    reply_channel.send(rm.serialize())
+                    LOG.debug('sent response %s', rm)
                 return False, None
 
             # this is a highly unlikely case to happen
@@ -508,25 +538,28 @@ class ProcessContext:
             # state of the process is not pending anymore
             # so, what we really want here is to log the case and move on
             elif pds.PENDING == pdesc.state:
-                rm = gspkr(tag=server.tag_inc(),
-                           ref=msg.tag,
-                           err=gspkr.Errors.PENDING,
-                           err_info=f'process {target_uid} is pending')
-                reply_channel.send(rm.serialize())
-                LOG.debug(f'process pending while kill request -- this should not be happening, response to {msg}: {rm}')
+                LOG.debug('process pending while kill request -- this should not be happening %s', msg)
+                if send_msg:
+                    rm = gspkr(tag=server.tag_inc(),
+                            ref=msg.tag,
+                            err=gspkr.Errors.PENDING,
+                            err_info=f'process {target_uid} is pending')
+                    reply_channel.send(rm.serialize())
+                    LOG.debug('sent response %s', rm)
                 return False, None
             elif pds.ACTIVE == pdesc.state:
                 pctx.descriptor.state = pds.PENDING
                 pctx.destroy_request = msg
                 pctx.reply_channel = reply_channel
                 the_tag = server.tag_inc()
-                shep_kill_msg = pctx.mk_sh_proc_kill(the_tag, msg.sig)
+                pctx.shep_kill_msg = pctx.mk_sh_proc_kill(the_tag, msg.sig, msg.hide_stderr)
                 target_node = pdesc.node
                 if not belongs_to_group:
                     server.pending[the_tag] = pctx.complete_kill
 
-                server.pending_sends.put((server.shep_inputs[target_node], shep_kill_msg.serialize()))
-                LOG.debug(f'kill {msg} sent to shep as {shep_kill_msg} on node {target_node}')
+                if send_msg:
+                    server.pending_sends.put((server.shep_inputs[target_node], pctx.shep_kill_msg.serialize()))
+                    LOG.debug(f'kill {msg} sent to shep as {pctx.shep_kill_msg} on node {target_node}')
                 return True, the_tag
             else:
                 raise NotImplementedError('close case')

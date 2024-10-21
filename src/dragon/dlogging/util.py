@@ -13,7 +13,6 @@ from dragon.utils import B64
 from dragon.managed_memory import MemoryPool
 from dragon.dlogging.logger import DragonLogger, DragonLoggingError
 
-
 # This is random and exists to conform to the messaging infrastructure.
 # It is discarded once logs are written out
 LOGGING_TAG = 2**8
@@ -132,6 +131,7 @@ class DragonLoggingServices(str, enum.Enum):
         :DD: 'DD'
         :TEST: 'TEST'
         :PERF: 'PERF'
+        :PG: 'PG'
     """
     LA_FE = 'LA_FE'
     LA_BE = 'LA_BE'
@@ -143,6 +143,7 @@ class DragonLoggingServices(str, enum.Enum):
     DD = 'DD'
     TEST = 'TEST'
     PERF = 'PERF'
+    PG = 'PG'
 
     def __str__(self):
         return str(self.value)

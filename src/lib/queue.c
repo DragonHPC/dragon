@@ -1,19 +1,21 @@
 #include <stdlib.h>
 #include "_queue.h"
+#include "_utils.h"
 #include "umap.h"
 #include "err.h"
 #include <dragon/queue.h>
 
-static dragonMap_t * dg_queues = NULL;
+/* dragon globals */
+DRAGON_GLOBAL_MAP(queues);
 
 static dragonError_t
 _add_umap_queue_entry(const dragonQueueDescr_t * qdesc, const dragonQueue_t * newq)
 {
     dragonError_t err;
 
-    if (dg_queues == NULL) {
-        dg_queues = malloc(sizeof(dragonMap_t));
-        if (dg_queues == NULL)
+    if (*dg_queues == NULL) {
+        *dg_queues = malloc(sizeof(dragonMap_t));
+        if (*dg_queues == NULL)
             err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate umap for channels");
 
         err = dragon_umap_create(dg_queues, DRAGON_QUEUE_UMAP_SEED);
@@ -80,6 +82,21 @@ _init_channel_handles(dragonQueue_t * queue)
 
     no_err_return(DRAGON_SUCCESS);
 }
+
+/*
+ * NOTE: This should only be called from dragon_set_thread_local_mode
+ */
+void
+_set_thread_local_mode_queues(bool set_thread_local)
+{
+    if (set_thread_local) {
+        dg_queues = &_dg_thread_queues;
+    } else {
+        dg_queues = &_dg_proc_queues;
+    }
+}
+
+// BEGIN USER API
 
 /** @brief Initialize a Policy structure with default values.
 *

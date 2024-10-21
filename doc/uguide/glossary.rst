@@ -3,7 +3,7 @@ Glossary
 
 .. figure:: images/dragon_domain_model.svg
    :scale: 75%
-   :name: dragon-domain-model 
+   :name: dragon-domain-model
 
    **UML diagram of the most important Dragon concepts and their relation. Open arrows are read as "is a", diamond edges as "contains", normal arrows are annotated**
 
@@ -34,7 +34,7 @@ Glossary
    Dragon Object
      A *Dragon Object* is an abstraction of one or more :term:`System Resource`
      into a programmable object. High level Dragon objects, such as the
-     :any:`dragon.data.distdictionary.distributed_dict` are composites of
+     :any:`dragon.data.ddict.DDict` are composites of
      other *Dragon Objects* to provide convenient functionality to the programmer. Every
      *Dragon Object* can be represented by either :term:`Object Name`,
      :term:`Object UID` or :term:`Serialized Descriptor`. The representation can

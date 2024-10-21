@@ -47,7 +47,10 @@ def create(size, user_name='', options=None, soft=False):
         if soft and ec.ALREADY == reply_msg.err:
             the_desc = reply_msg.desc
         else:
-            raise PoolError(f'pool create {req_msg} failed: {reply_msg.err_info}')
+            if hasattr(reply_msg, 'err_info'):
+                raise PoolError(f'pool create {req_msg} failed: {reply_msg.err_info}')
+            else:
+                raise PoolError(f'pool create {req_msg} failed. Response message was {repr(reply_msg)}')
 
     return the_desc
 

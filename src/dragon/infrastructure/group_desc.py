@@ -79,11 +79,13 @@ class GroupDescriptor:
 
             return rv
 
+    # GroupDescriptor attributes
     state: State = State.PENDING
     g_uid: int = None
     name: str = None
     sets: list(list()) = field(default_factory=list)
     policy: Policy = None
+    resilient: bool = False
 
     def __post_init__(self):
         if type(self.policy) is dict:
@@ -108,7 +110,7 @@ class GroupDescriptor:
                             self.sets[i][j].desc = channel_desc.from_sdict(self.sets[i][j].desc)
                         elif 'm_uid' in self.sets[i][j].desc.keys():
                             self.sets[i][j].desc = pool_desc.from_sdict(self.sets[i][j].desc)
-                        elif 'h_uid' in self.sets[i][j].desc.keys():
+                        elif 'host_name' in self.sets[i][j].desc.keys():
                             self.sets[i][j].desc = node_desc.from_sdict(self.sets[i][j].desc)
                         else:
                             self.sets[i][j].desc = process_desc.from_sdict(self.sets[i][j].desc)
@@ -137,7 +139,8 @@ class GroupDescriptor:
         """
         rv = {'name': self.name,
               'g_uid': self.g_uid,
-              'state': self.state}
+              'state': self.state,
+              'resilient': self.resilient}
 
         if isinstance(self.policy, Policy):
             rv['policy'] = self.policy.get_sdict()

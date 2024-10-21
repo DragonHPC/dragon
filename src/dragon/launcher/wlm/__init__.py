@@ -34,6 +34,10 @@ class WLM(enum.Enum):
             raise ValueError()
 
 
+wlm_cls_dict = {WLM.SLURM: SlurmNetworkConfig,
+                WLM.PBS_PALS: PBSPalsNetworkConfig,
+                WLM.SSH: SSHNetworkConfig}
+
 wlm_launch_dict = {WLM.SLURM: get_slurm_launch_be_args,
                    WLM.PBS_PALS: get_pbs_pals_launch_be_args,
                    WLM.SSH: get_ssh_launch_be_args}

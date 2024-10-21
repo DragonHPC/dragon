@@ -12,13 +12,12 @@ from ..infrastructure import messages as dmsg
 from ..infrastructure import facts as dfacts
 from ..infrastructure import process_desc as pdesc
 
-from .wlm import wlm_launch_dict, WLM
+from .wlm import wlm_launch_dict, WLM, wlm_cls_dict
 
 
 # general amount of patience we have for an expected message
 # in startup or teardown before we assume something has gone wrong
-TIMEOUT_PATIENCE = 1  # seconds, 1 second.
-QUEUE_PATIENCE = 0.1  # seconds of patience to wait for messages in MRNet
+TIMEOUT_PATIENCE = 10  # seconds
 LA_TAG = 0
 LOGBASE = 'launcher'
 
@@ -47,7 +46,7 @@ def detect_wlm():
 
     wlm = None
     try:
-        for wlm, cls in NetworkConfig.wlm_cls_dict.items():
+        for wlm, cls in wlm_cls_dict.items():
             if cls.check_for_wlm_support():
                 break
 
@@ -69,6 +68,7 @@ and `dragon --help` for more information.
 
 
 def get_wlm_launch_args(args_map: dict = None,
+                        launch_args: dict = None,
                         nodes: tuple[int, list[str]] = None,
                         hostname: str = None,
                         wlm: WLM = None):
@@ -77,18 +77,20 @@ def get_wlm_launch_args(args_map: dict = None,
     try:
         if wlm is None:
             wlm = detect_wlm()
-        wlm_args = wlm_launch_dict[wlm](args_map=args_map)
-
-        if nodes is not None:
-            wlm_args = wlm_args.format(nnodes=nodes[0], nodelist=','.join(nodes[1]))
 
         if hostname is not None:
-            wlm_args = wlm_args.format(hostname=hostname)
+            args_map['hostname'] = hostname
+
+        if nodes is not None:
+            args_map['nnodes'] = nodes[0]
+            args_map['nodelist'] = ','.join(nodes[1])
+
+        wlm_args = wlm_launch_dict[wlm](args_map=args_map, launch_args=launch_args)
 
     except Exception:
         raise RuntimeError("Unable to generate WLM backend launch args")
 
-    return wlm_args.split()
+    return wlm_args
 
 
 def queue_monitor(func: Callable, *, log_test_queue=None):
@@ -185,7 +187,7 @@ def get_with_timeout(handle, timeout=TIMEOUT_PATIENCE):
         if handle.poll(timeout=timeout):
             return dmsg.parse(handle.recv())
         else:
-            raise TimeoutError
+            raise TimeoutError("get_with_timeout poll operation timed out")
     else:
         msg = handle.recv(timeout=timeout)
         if isinstance(msg, tuple):
@@ -193,7 +195,7 @@ def get_with_timeout(handle, timeout=TIMEOUT_PATIENCE):
         elif msg is not None:
             return dmsg.parse(msg)
         else:
-            raise TimeoutError
+            raise TimeoutError("get_with_timeout recv operation timed out")
 
 
 @queue_monitor
@@ -378,7 +380,9 @@ def get_process_exe_args(args_map=None):
 
 def mk_head_proc_start_msg(logbase='launcher',
                            make_inf_channels=True,
-                           args_map=None):
+                           args_map=None,
+                           restart=False,
+                           resilient=False):
     """Look at script arguments and return the head process launch message.
 
     If the first argument looks executable via 'which' then that will
@@ -399,7 +403,7 @@ def mk_head_proc_start_msg(logbase='launcher',
 
     return dmsg.GSProcessCreate(tag=next_tag(), p_uid=dfacts.LAUNCHER_PUID,
                                 r_c_uid=dfacts.BASE_BE_CUID, exe=exe, args=args,
-                                options=options)
+                                options=options, head_proc=True, restart=restart, resilient=resilient)
 
 
 def mk_shproc_echo_msg(logbase='launcher', stdin_str='', node_index=0):

@@ -11,7 +11,7 @@ The internals of the distributed dictionary rely on several processes include a
 single orchestrator process and one or more manager processes. Each client attaches
 to managers on an as-needed basis. Clients discover managers by attaching to the
 serialized descriptor of a Distributed Dictionary. When using a Distributed Dictionary
-in Python, the dictionary will be automitically pickled/serialized and sent to new
+in Python, the dictionary will be automatically pickled/serialized and sent to new
 processes in the same way a Queue or other objects can be passed as parameters in
 multiprocessing.
 
@@ -22,38 +22,43 @@ chosen managers. See the Distributed Dictionary documentation for more details.
 """
 
 import sys
+import math
 import logging
 import traceback
 import cloudpickle
+import pickle
 import time
 import socket
-import builtins
 import os
+from dataclasses import dataclass, field
 
 
 from ...utils import b64decode, b64encode, hash as dragon_hash, get_local_kv
-from ...infrastructure import parameters
+from ...infrastructure.parameters import this_process
 from ...infrastructure import messages as dmsg
 from ...infrastructure import policy
 from ...channels import Channel
 from ...native.process import Popen
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 from ...dlogging.logger import DragonLoggingError
+from ...native.machine import Node
 
 from ... import fli
+from dragon.fli import PickleWriteAdapter, PickleReadAdapter
 from ...rc import DragonError
 
 log = None
 KEY_HINT = 1
 VALUE_HINT = 2
-builtin_types = frozenset(dir(builtins))
 
 # This is a default timeout value that is used for send/receive operations.
-# Longer timeouts can be specified if needed by passing in a timeout on the
+# Timeouts can be specified if needed by passing in a timeout on the
 # distributed dictionary creation. The timeout applies to all operations that
 # could timeout in the distributed dictionary. Likely causes of timeouts are
 # a manager being overfilled, but some care is taken that does not occur.
-DDICT_DEFAULT_TIMEOUT = 10
+# A timeout of None indicates to wait forever. Otherwise, positive timeout
+# values are in seconds.
+DDICT_DEFAULT_TIMEOUT = None
 
 # This is the default size of a distributed dictionary which would normally be
 # overridden.
@@ -82,28 +87,76 @@ class DDictManagerFull(DDictError):
 class DDictTimeoutError(DDictError, TimeoutError):
     pass
 
+# KeyErrors that can also be caught as DDictErrors.
+class DDictKeyError(DDictError, KeyError):
+    def __init__(self, err, msg, key):
+        super().__init__(err, msg)
+        super(KeyError, self).__init__(key)
+
+
+# A Checkpoint Sync error can occur when a client is trying to work with
+# a dictionary checkpoint that has now been retired from the working set
+# of checkpoints.
+class DDictCheckpointSync(DDictError):
+    pass
+
+# Make the key a little more precise by stripping off pickled data.
+def strip_pickled_bytes(byte_str):
+    if byte_str[-2:] == b'\x94.':
+        byte_str = byte_str[:-2]
+
+    if byte_str[-1:] == b'.':
+        byte_str = byte_str[:-1]
+
+    if byte_str[:3] == b'\x80\x05\x95':
+        byte_str = byte_str[3:]
+
+    return byte_str
+
+@dataclass
+class DDictManagerStats:
+    '''
+        Included in manager stats are the manager identifier (0 to num_managers-1), the
+        total number of bytes in the manager's pool, the total used bytes in the manager's pool,
+        the number of key/value pairs stored in the manager, and the dictionary of free blocks. The
+        free blocks has the block size and the number of free blocks of that size. If the pool is
+        empty, then there will be one free block of the same size as the total number of bytes of the
+        manager's pool. Otherwise, free blocks can be used to see the amount of fragmentation within
+        the pool by looking at the various block sizes and number of blocks available. NOTE: Any
+        larger block (except the smallest block size) can be split into two smaller blocks for
+        smaller allocations.
+    '''
+    manager_id: int
+    hostname: str
+    total_bytes: int
+    total_used_bytes: int
+    num_keys: int
+    free_blocks: dict
+
+# This is here for type hinting below. It is redefined right below.
 class DDict:
-    # TODO: reorganize __iter__ to use DDictIterator
-    # class DDictIterator:
-    #     def __init__(self, ddict):
-    #         self._ddict = ddict
-    #         self._manager_idx = 0
-    #         self._current_iter_id = -1
+    pass
 
-    #     def __next__(self):
-    #         # send msg(self._current_iter_id) to manager[self._manager_idx]
-    #         # recv resp for the next key
-    #         # check hint -> if EOF or not
-    #         # if EOF: advance to the next manager, send msg to the manager, store iter id, send msg to manager
-    #         #       if no more manager: raise StopIteration
-    #         # else: return key
-    #         pass
+class DDict:
+    '''
+        The Distributed Dictionary provides a key/value store that is distributed across a series
+        of managers and one nodes of a Dragon run-time.
+        The goal is to evenly distribute data across all managers to provide a scalable
+        implementation of a dictionary with a high degree of allowable parallelism. Clients attach
+        to the Distributed Dictionary and store key/value pairs in it just like accessing a local
+        dictionary in Python. However, the Distributed Dictionary goes beyond what the standard Python
+        dictionary supports by including support for distributing data, checkpointing, and various
+        other optimization opportunities for specific applications.
+    '''
 
-    def __init__(self, managers_per_node:int=1, n_nodes:int=1, total_mem:int=DDICT_MIN_SIZE, *,
-                 working_set_size:int=1, wait_for_keys:bool=False, wait_for_writers:bool=False,
-                 policy:policy.Policy=None, persist_freq:int=0, persist_base_name:str="",
-                 timeout:float=DDICT_DEFAULT_TIMEOUT) -> None:
-        """Construct a Distributed Dictionary to be shared amongst distributed processes running
+    def __init__(self, managers_per_node: int = 1, n_nodes: int = 1, total_mem: int = DDICT_MIN_SIZE, *,
+                 working_set_size: int = 1, wait_for_keys: bool = False, wait_for_writers: bool = False,
+                 policy: policy.Policy or list[policy.Policy] = None,
+                 managers_per_policy: int = 1,
+                 persist_freq: int = 0, persist_base_name: str = "",
+                 timeout: float = DDICT_DEFAULT_TIMEOUT, trace: bool = False) -> None:
+        """
+           Construct a Distributed Dictionary to be shared amongst distributed processes running
            in the Dragon Runtime. The distributed dictionary creates the specified number of managers
            and shards the data across all managers. The total memory of the dictionary is split
            across all the managers, so you want to allocate more space than is required by perhaps
@@ -111,127 +164,166 @@ class DDict:
            application being developed. See the Dragon documentation's section on the Distributed
            Dictionary design for more details about creating and using a distributed dictionary.
 
-        Args:
-            managers_per_node (int, optional): The number of managers on each
-            node. The total_mem is divided up amongst the managers.
-            Defaults to 1.
+           :param managers_per_node: The number of managers on each node. The
+                total_mem is divided up amongst the managers. If a list of
+                policies is provided then this is the number of managers
+                per policy. Each policy could be used to start more than
+                one manager per node, in a potentially heterogeneous way.
+                Defaults to 1.
 
-            n_nodes (int, optional): The number of nodes that will have managers
-            deployed on them. Defaults to 1.
+           :param n_nodes: The number of nodes that will have managers
+                deployed on them. This must be set to None if a list of policies is
+                provided. Defaults to 1.
 
-            total_mem (int, optional): The total memory in bytes that will be
-            sharded across all managers. Defaults to DDICT_MIN_SIZE
-            but this is really a minimum size for a single manager
-            and should be specified by the user.
+           :param total_mem: The total memory in bytes that will be
+                sharded evenly across all managers. Defaults to DDICT_MIN_SIZE
+                but this is really a minimum size for a single manager
+                and should be specified by the user.
 
-            working_set_size (int, optional): Not implemented yet. This sets the
-            size of the checkpoint, in memory, working set. This
-            determines how much state each manager will keep
-            internally. This is the number of different, simultaneous
-            checkpoints that may be active at any point in time.
-            Defaults to 1.
+           :param working_set_size: Not implemented yet. This sets the
+                size of the checkpoint, in memory, working set. This
+                determines how much state each manager will keep
+                internally. This is the number of different, simultaneous
+                checkpoints that may be active at any point in time.
+                Defaults to 1.
 
-            wait_for_keys (bool, optional): Not implemented yet. Setting this to
-            true means that each manager will keep track of a set of
-            keys at each checkpoint level and clients advancing to a
-            new checkpoint level will block until the set of keys at
-            the oldest, retiring working set checkpoint are all
-            written. By specifying this all clients will remain in
-            sync with each other relative to the size of the working
-            set. Defaults to False. It is also possible to store
-            key/values that are not part of the checkpointing set of
-            key/values. Those keys are called persistent keys and
-            will not be affected by setting this argument to true.
+           :param wait_for_keys: Not implemented yet. Setting this to
+                true means that each manager will keep track of a set of
+                keys at each checkpoint level and clients advancing to a
+                new checkpoint level will block until the set of keys at
+                the oldest, retiring working set checkpoint are all
+                written. By specifying this all clients will remain in
+                sync with each other relative to the size of the working
+                set. Defaults to False. It is also possible to store
+                key/values that are not part of the checkpointing set of
+                key/values. Those keys are called persistent keys and
+                will not be affected by setting this argument to true.
+                Specifying wait_for_keys also means that readers will block while
+                waiting for a non-persistent key to be written until the
+                key is found or a timeout occurs.
 
-            wait_for_writers (bool, optional): Not implemented yet. Setting this
-            to true means that each manager will wait for a set of
-            clients to have all advanced their checkpoint id beyond
-            the oldest checkpointing id before retiring a checkpoint
-            from the working set. Setting this to true will cause
-            clients that are advancing rapidly to block while others
-            catch up. Defaults to False.
+           :param wait_for_writers: Not implemented yet. Setting this
+                to true means that each manager will wait for a set of
+                clients to have all advanced their checkpoint id beyond
+                the oldest checkpointing id before retiring a checkpoint
+                from the working set. Setting this to true will cause
+                clients that are advancing rapidly to block while others
+                catch up. Defaults to False.
 
-            policy (policy.Policy, optional): A policy can be supplied for
-            starting the managers. Please read about policies in the
-            Process Group documentation. Managers are started via a
-            Process Group and placement of managers and other
-            characteristics can be controlled via a policy. Defaults
-            to None which applies a Round-Robin policy.
+           :param policy: A policy
+                can be supplied for starting the managers. Please read about policies in the
+                Process Group documentation. Managers are started via a
+                Process Group and placement of managers and other
+                characteristics can be controlled via a policy or list of policies.
+                If a list of policies is given then managers_per_node processes are
+                started for each policy. Defaults to None which applies a
+                Round-Robin policy.
 
-            persist_freq (int, optional): Not implemented yet. This is the
-            frequency that a checkpoint will be persisted to disk.
-            This is independent of the working set size and can be
-            any frequency desired. Defaults to 0 which means that no
-            persisting will be done.
+           :param managers_per_policy: The number of managers started
+                with each policy when a list of policies is provided. The total_mem
+                is divided up evenly amongst the managers. This is the Defaults to
+                1.
 
-            persist_base_name (str, optional): Not implemented yet. This is a
-            base file name to be applied to persisted state for the
-            dictionary. This base name along with a checkpoint number
-            is used to restore a distributed dictionary from a
-            persisted checkpoint. Defaults to "".
+           :param persist_freq: Not implemented yet. This is the
+                frequency that a checkpoint will be persisted to disk.
+                This is independent of the working set size and can be
+                any frequency desired. Defaults to 0 which means that no
+                persisting will be done.
 
-            timeout (float, optional): This is a timeout that will be used for
-            all timeouts on the creating client and all managers
-            during communication between the distributed components
-            of the dictionary. New clients wishing to set their own
-            timeout can use the attach method to specify their own
-            local timeout. Defaults to DDICT_DEFAULT_TIMEOUT.
+           :param persist_base_name: Not implemented yet. This is a
+                base file name to be applied to persisted state for the
+                dictionary. This base name along with a checkpoint number
+                is used to restore a distributed dictionary from a
+                persisted checkpoint. Defaults to "".
 
-        Raises:
-            AttributeError: If incorrect parameters are supplied.
-            RuntimeError: If there was an unexpected error during initialization.
+           :param timeout: This is a timeout that will be used for
+                all timeouts on the creating client and all managers
+                during communication between the distributed components
+                of the dictionary. New clients wishing to set their own
+                timeout can use the attach method to specify their own
+                local timeout. Defaults to None (block).
+
+           :param trace: Defaults to False. If set to true, all
+                interaction between clients and managers is logged. This results
+                in large logs, but may help in debugging.
+
+           :returns: None and a new instance of a distributed dictionary is initialized.
+
+           :raises AttributeError: If incorrect parameters are supplied.
+           :raises RuntimeError: If there was an unexpected error during initialization.
         """
 
         # This is the pattern used in the pydragon_perf.pyx file
         # It works, but may need review if it's the way we want to do it
 
         # This block turns on client log for the initial client that creates the dictionary
-        global log
-        if log == None:
-            fname = f'{dls.DD}_{socket.gethostname()}_client_{str(parameters.this_process.my_puid)}.log'
-            setup_BE_logging(service=dls.DD, fname=fname)
-            log = logging.getLogger(str(dls.DD))
-
         try:
-            # Start the Orchestrator and capture its serialized descriptor so we can connect to it.
-            if type(managers_per_node) is not int or type(n_nodes) is not int or type(total_mem) is not int:
-                raise AttributeError('When creating a Dragon Distributed Dict you must provide managers_per_node, n_nodes, and total_mem')
+            if type(managers_per_node) is not int and type(managers_per_policy) is not int:
+                raise AttributeError('When creating a Dragon Distributed Dict you must provide managers_per_node or managers_per_policy')
 
-            proc = Popen(executable=sys.executable, args=['-c',
-                f'import dragon.data.ddict.orchestrator as orc; orc.start({managers_per_node}, {n_nodes}, {total_mem})'],
+            if type(total_mem) is not int:
+                raise AttributeError('When creating a Dragon Distributed Dict you must provide total_mem')
+
+            if type(policy) is not list  and type(n_nodes) is not int:
+                raise AttributeError('When creating a Dragon Distributed Dict if you provide a single policy you must provide n_nodes')
+
+            if type(policy) is list and (n_nodes is not None or managers_per_node is not None):
+                raise AttributeError('When creating a Dragon Distributed Dict if you provide a list of policies you must provide n_nodes = None and managers_per_node=None')
+
+
+            # we overwrite n_nodes and managers_per_node so that we get the correct division of the total memory among the managers that are launched as part of the process group.
+            if isinstance(policy, list):
+                n_nodes = len(policy)
+                managers_per_node = managers_per_policy
+
+            # Start the Orchestrator and capture its serialized descriptor so we can connect to it.
+            self._orc_proc = Popen(executable=sys.executable, args=['-c',
+                f'import dragon.data.ddict.orchestrator as orc; orc.start({managers_per_node}, {n_nodes}, {total_mem}, {trace})'],
                 stdout=Popen.PIPE)
 
             # Read the serialized FLI of the orchestrator.
-            ddict = proc.stdout.recv().strip()
+            ddict = self._orc_proc.stdout.recv().strip()
 
             self._orc_connector = fli.FLInterface.attach(b64decode(ddict))
             self._args = (working_set_size, wait_for_keys, wait_for_writers, policy, persist_freq, persist_base_name, timeout)
 
-            self.__setstate__((ddict, timeout))
+            self._wait_for_keys = wait_for_keys
+            self._wait_for_writers = wait_for_writers
+            self.__setstate__((True, ddict, timeout, trace))
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug(f'There is an exception initializing ddict: {ex}\n Traceback: {tb}\n')
+            log.debug('There is an exception initializing ddict: %s\n Traceback: %s', ex, tb)
             raise RuntimeError(f'There is an exception initializing ddict: {ex}\n Traceback: {tb}\n')
 
     def __setstate__(self, args):
-        serialized_orc, timeout = args
+        self._creator, serialized_orc, timeout, trace = args
+        # -1 indicates to use the default timeout since the default
+        # is sometimes None and None can't be passed through capnproto
+        if timeout == -1:
+            self._timeout = DDICT_DEFAULT_TIMEOUT
+        else:
+            self._timeout = timeout
 
         # This block turns on a client log for each client
-        # global log
-        # if log == None:
-        #     fname = f'{dls.DD}_{socket.gethostname()}_client_{str(parameters.this_process.my_puid)}.log'
-        #     setup_BE_logging(service=dls.DD, fname=fname)
-        #     log = logging.getLogger(str(dls.DD))
+        global log
+        if log is None:
+            fname = f'{dls.DD}_{socket.gethostname()}_client_{str(this_process.my_puid)}.log'
+            setup_BE_logging(service=dls.DD, fname=fname)
+            log = logging.getLogger(str(dls.DD))
 
         self._managers = dict()
         self._tag = 0
+        self._chkpt_id = 0
         self._destroyed = False
         self._detached = False
         self._timeout = timeout
+        self._trace = trace
 
         try:
+            self._traceit('Connecting to ddict.')
             return_channel = Channel.make_process_local()
             buffered_return_channel = Channel.make_process_local()
+            self._stream_channel = Channel.make_process_local()
 
             self._default_pool = return_channel.get_pool()
 
@@ -242,25 +334,31 @@ class DDict:
             self._serialized_buffered_return_connector = b64encode(self._buffered_return_connector.serialize())
 
             self._serialized_orc = serialized_orc
-            try:
+            if self._creator:
                 self._create(b64encode(cloudpickle.dumps((self._args))))
-            except AttributeError:
+            else:
                 self._orc_connector = fli.FLInterface.attach(b64decode(serialized_orc))
 
             self._client_id = None
 
+            # if the client has a local manager, it is the main manager
+            self._has_local_manager = False
+            self._local_manager = None
+            self._main_manager = None
+            self._manager_nodes = []
+
             self._get_main_manager()
-            self._register_client_to_main_manager()
+            self._register_client_to_main_manager(timeout)
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug(f'There is an exception __setstate__ of ddict: {ex}\n Traceback: {tb}\n')
+                log.debug('There is an exception __setstate__ of ddict: %s\n Traceback: %s\n', ex, tb)
             except:
                 pass
             raise RuntimeError(f'There is an exception __setstate__ of ddict: {ex}\n Traceback: {tb}\n')
 
     def __getstate__(self):
-        return (self.serialize(), self._timeout)
+        return (False, self.serialize(), self._timeout, self._trace)
 
     def __del__(self):
         try:
@@ -268,7 +366,7 @@ class DDict:
         except Exception as ex:
             try:
                 tb = traceback.format_exc()
-                log.debug(f'There was an exception while terminating the Distributed Dictionary. Exception is {ex}\n Traceback: {tb}\n')
+                log.debug('There was an exception while terminating the Distributed Dictionary. Exception is %s\n Traceback: %s\n', ex, tb)
             except:
                 pass
 
@@ -278,14 +376,19 @@ class DDict:
         if resp_msg.err != DragonError.SUCCESS:
             raise RuntimeError('Failed to create dictionary!')
 
+    def _traceit(self, *args, **kw_args):
+        if self._trace:
+            log.log(logging.INFO, *args, **kw_args)
+
     def _get_main_manager(self): # SHGetKV
         try:
             serialized_main_manager = get_local_kv(key=self._serialized_orc)
             self._main_manager_connection = fli.FLInterface.attach(b64decode(serialized_main_manager))
+            self._has_local_manager = True
         except KeyError as e:
             # no manager on the node, get a random manager from orchestrator
             try:
-                log.info(f'Got KeyError {e} during bringup, sending get random manager request to orchestrator')
+                log.info('Got KeyError {} during bringup, sending get random manager request to orchestrator'.format(e))
             except:
                 pass
             msg = dmsg.DDGetRandomManager(self._tag_inc(), respFLI=self._serialized_buffered_return_connector)
@@ -294,13 +397,23 @@ class DDict:
                 raise RuntimeError('Client failed to get manager from orchestrator')
             self._main_manager_connection = fli.FLInterface.attach(b64decode(resp_msg.manager))
 
-    def _register_client_to_main_manager(self): # client ID assigned here
+    def _register_client_to_main_manager(self, timeout): # client ID assigned here
         msg = dmsg.DDRegisterClient(self._tag_inc(), respFLI=self._serialized_return_connector, bufferedRespFLI=self._serialized_buffered_return_connector) # register client to the manager (same node)
         resp_msg = self._send_receive([(msg, None)], connection=self._main_manager_connection)
         if resp_msg.err != DragonError.SUCCESS:
             raise RuntimeError('Client failed to connect to main manager.')
+        # -1 indicates to use the default timeout since the default
+        # is sometimes None and None can't be passed through capnproto
+        if timeout == -1:
+            self._timeout = resp_msg.timeout
         self._client_id = resp_msg.clientID
         self._num_managers = resp_msg.numManagers
+        for serialized_node in resp_msg.managerNodes:
+            self._manager_nodes.append(cloudpickle.loads(b64decode(serialized_node)))
+        self._managers[resp_msg.managerID] = self._main_manager_connection
+        self._main_manager = resp_msg.managerID
+        if self._has_local_manager:
+            self._local_manager = resp_msg.managerID
 
     def _connect_to_manager(self, manager_id):
         msg = dmsg.DDConnectToManager(self._tag_inc(), clientID=self._client_id, managerID=manager_id)
@@ -319,7 +432,7 @@ class DDict:
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug(f'There was an exception registering client ID {self._client_id=} with manager: {ex} \n Traceback: {tb}')
+                log.debug('There was an exception registering client ID %s with manager: %s \n Traceback: %s', self._client_id, ex, tb)
             except:
                 pass
             raise RuntimeError(f'There was an exception registering client ID {self._client_id=} with manager: {ex} \n Traceback: {tb}')
@@ -338,6 +451,7 @@ class DDict:
         # Check to see if there is a user-defined hash function. If so, then
         # assume it is deterministic and the same across all nodes and use it.
         pickled_key = cloudpickle.dumps(key)
+        stripped_key = strip_pickled_bytes(pickled_key)
 
         try:
             if key.__hash__.__class__.__name__ == 'method':
@@ -345,9 +459,21 @@ class DDict:
         except:
             pass
 
-        hash_val = dragon_hash(pickled_key)
-        return (hash_val % self._num_managers, pickled_key)
+        try:
+            if isinstance(key, int):
+                sz = round(math.log(key,2))
+                return (dragon_hash(key.to_bytes(sz, sys.byteorder)) % self._num_managers, pickled_key)
+        except:
+            pass
 
+        try:
+            if isinstance(key, str):
+                return (dragon_hash(key.encode('utf-8')) % self._num_managers, pickled_key)
+        except:
+            pass
+
+        hash_val = dragon_hash(stripped_key)
+        return (hash_val % self._num_managers, pickled_key)
 
     def _tag_inc(self):
         tag = self._tag
@@ -355,31 +481,66 @@ class DDict:
         return tag
 
     def _send(self, msglist, connection):
-        with connection.sendh(timeout=self._timeout) as sendh:
+        self._traceit('Opening send handle.')
+
+        if connection.is_buffered:
+            strm = None
+        else:
+            strm = self._stream_channel
+
+        with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
             for (msg, arg) in msglist:
+                self._traceit('Sending msg: %s', msg)
                 if arg is None:
                     sendh.send_bytes(msg.serialize(), timeout=self._timeout)
                 else:
                     # It is a pickled value so don't call serialize.
                     sendh.send_bytes(msg, arg=arg, timeout=self._timeout)
 
-    def _recv_resp(self):
+    def _recv_resp(self, resp_set):
+        self._traceit('About to open receive handle on fli to receive response.')
+        done = False
         with self._buffered_return_connector.recvh(timeout=self._timeout) as recvh:
-            resp_ser_msg, hint = recvh.recv_bytes(timeout=self._timeout)
-        return dmsg.parse(resp_ser_msg)
+            while not done:
+                resp_ser_msg, hint = recvh.recv_bytes(timeout=self._timeout)
+                msg = dmsg.parse(resp_ser_msg)
+                if msg.ref not in resp_set:
+                    log.info('Tossing lost/timed out response message in DDict Client: {}'.format(msg))
+                else:
+                    resp_set.remove(msg.ref)
+                    done = True
 
-    def _recv_dmsg_and_val(self, key):
+        self._traceit('Response: %s', msg)
+        return msg
+
+    def _recv_responses(self, resp_set, num_responses):
+        msglist = []
+        for _ in range(num_responses):
+            resp_msg = self._recv_resp(set(resp_set))
+            msglist.append(resp_msg)
+
+        return msglist
+
+    def _recv_dmsg_and_val(self, req_msg, key):
+        self._traceit('About to open receive handle on fli to receive response and value.')
         with self._return_connector.recvh(use_main_as_stream_channel=True, timeout=self._timeout) as recvh:
-            (resp_ser_msg, hint) = recvh.recv_bytes(timeout=self._timeout)
-            resp_msg = dmsg.parse(resp_ser_msg)
+            ref = -1
+            while ref != req_msg.tag:
+                (resp_ser_msg, hint) = recvh.recv_bytes(timeout=self._timeout)
+                resp_msg = dmsg.parse(resp_ser_msg)
+                self._traceit('Response: %s', resp_msg)
+                ref = resp_msg.ref
+                if ref != req_msg.tag:
+                    log.info('Tossing lost/timed out message in DDict Client: {}'.format(resp_msg))
+
             if resp_msg.err != DragonError.SUCCESS:
-                raise KeyError(key)
+                raise DDictKeyError(resp_msg.err, "The key was not found", key)
             try:
                 value = cloudpickle.load(file=PickleReadAdapter(recvh=recvh, hint=VALUE_HINT, timeout=self._timeout))
             except Exception as e:
                 tb = traceback.format_exc()
                 try:
-                    log.info(f'Exception caught in cloudpickle load: {e} \n Traceback: {tb}')
+                    log.info('Exception caught in cloudpickle load: %s \n Traceback: %s', e, tb)
                 except:
                     pass
                 raise RuntimeError(f'Exception caught in cloudpickle load: {e} \n Traceback: {tb}')
@@ -388,21 +549,59 @@ class DDict:
 
     def _send_receive(self, msglist, connection):
         try:
+            msg = msglist[0][0]
+            tag = msg.tag
             self._send(msglist, connection)
-            resp_msg = self._recv_resp()
+            resp_msg = self._recv_resp(set([msg.tag]))
             return resp_msg
 
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug(f'There was an exception in the _send_receive in ddict: {ex} \n Traceback: {tb}')
+                log.debug('There was an exception in the _send_receive in ddict: %s\n Traceback: %s', ex, tb)
             except:
                 pass
             raise RuntimeError(f'There was an exception in the _send_receive in ddict: {ex} \n Traceback: {tb}')
 
-    def destroy(self):
+    def _put(self, msg, key, value):
+        manager_id, pickled_key = self._choose_manager_pickle_key(key)
+        self._check_manager_connection(manager_id)
+        try:
+            self._traceit('Opening send handle to manager for put: %s', manager_id)
+            with self._managers[manager_id].sendh(stream_channel=self._stream_channel, timeout=self._timeout) as sendh:
+                self._traceit('Sending to manager: %s', msg)
+                sendh.send_bytes(msg.serialize(), timeout=self._timeout)
+                self._traceit('Sending pickled key to manager: %s', key)
+                sendh.send_bytes(pickled_key, arg=KEY_HINT, timeout=self._timeout)
+                cloudpickle.dump(value, file=PickleWriteAdapter(sendh=sendh, hint=VALUE_HINT, timeout=self._timeout), protocol=pickle.HIGHEST_PROTOCOL)
+
+        except TimeoutError as ex:
+            raise DDictTimeoutError(DragonError.TIMEOUT, f'The operation timed out. This could be a network failure or an out of memory condition.\n{str(ex)}')
+
+        try:
+            resp_msg = self._recv_resp(set([msg.tag]))
+        except TimeoutError as ex:
+            raise DDictTimeoutError(DragonError.TIMEOUT, f'The operation timed out. This could be a network failure or an out of memory condition.\n{str(ex)}')
+
+        if resp_msg.err == DragonError.MEMORY_POOL_FULL:
+            raise DDictManagerFull(DragonError.MEMORY_POOL_FULL, f"Distributed Dictionary Manager {manager_id} is full. The key/value pair was not stored.", )
+
+        elif resp_msg.err == DragonError.DDICT_CHECKPOINT_RETIRED:
+            raise DDictCheckpointSync(resp_msg.err, resp_msg.errInfo)
+
+        elif resp_msg.err != DragonError.SUCCESS:
+            raise DDictError(resp_msg.err, 'Failed to store key in the distributed dictionary.')
+
+    def destroy(self) -> None:
+        '''
+            Destroy a Distributed Dictionary instance, freeing all the resources that were allocated
+            when it was created. Any clients that are still attached to the dictionary and try to do
+            an operation on it will experience an exception when attempting subsequent operations.
+        '''
         if self._destroyed:
             return
+
+        self._traceit('Destroying the ddict.')
 
         self._destroyed = True
         try:
@@ -411,7 +610,7 @@ class DDict:
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug(f'There was an exception in the destroy: {ex} \n Traceback: {tb}')
+                log.debug('There was an exception in the destroy: %s\n Traceback: %s', ex, tb)
             except:
                 pass
 
@@ -420,115 +619,132 @@ class DDict:
         except Exception as ex:
             try:
                 tb = traceback.format_exc()
-                log.debug(f'There was an exception while detaching orchestrator channel: {ex} \n Traceback: {tb}')
+                log.debug('There was an exception while detaching orchestrator channel: %s \n Traceback: %s', ex, tb)
             except:
                 pass
 
-    def serialize(self):
+        # join on the orchestrator proc
+        if self._creator:
+            try:
+                self._orc_proc.wait()
+            except Exception as ex:
+                tb = traceback.format_exc()
+                try:
+                    log.debug('There was an exception while joining orchestrator process: %s \n Traceback: %s', ex, tb)
+                except:
+                    pass
+
+    def serialize(self) -> str:
+        '''
+            Returns a serialized, base64 encoded descriptor (i.e. string) that may be shared with other
+            processes for attaching. This is especially useful when sharing with C/C++ or Fortran code
+            though not all clients are available yet. Within Python you can pass the Distributed Dictionary
+            to another process and it will be automatically serialized and attached so using this method
+            is not needed when passing to another Python process.
+
+            :returns: A serialized, base64 encoded string that may be used for attaching to the dictionary.
+        '''
         return self._serialized_orc
 
     @classmethod
-    def attach(cls, serialized_dict, timeout=0):
+    def attach(cls, serialized_dict:str, *, timeout:float=None, trace:bool=False) -> DDict:
+        '''
+            Within Python you typically do not need to call this method explicitly. It will be done
+            automatically when you pass a Distributed Dictionary from one process to another. However,
+            you can do this explicitly if desired/needed.
+
+            :param serialized_dict: A serialized distributed dictionary.
+
+            :param timeout: None or a float or int value. A value of None means to wait forever. Otherwise
+                it is the number of seconds to wait while an operation is performed. This timeout is applied
+                to all subsequent client operations that are performed by the process that is attaching
+                this DDict.
+
+            :param trace: If True, specifies that all operations on the distributed dictionary should be
+                logged in detail within the client log.
+
+            :returns: An attached serialized dictionary.
+            :rtype: DDict
+
+            :raises TimeoutError: If the timeout expires.
+
+            :raises Exception: Other exceptions are possible if for instance the serialized dictionary
+                no longer exists.
+
+        '''
         new_client = cls.__new__(cls)
-        new_client.__setstate__((serialized_dict, timeout))
+        new_client.__setstate__((False, serialized_dict, timeout, trace))
         return new_client
 
-    def __setitem__(self, key, value):
-        msg = dmsg.DDPut(self._tag_inc(), self._client_id)
-        manager_id, pickled_key = self._choose_manager_pickle_key(key)
-        self._check_manager_connection(manager_id)
-        try:
-            with self._managers[manager_id].sendh(timeout=self._timeout) as sendh:
-                sendh.send_bytes(msg.serialize(), timeout=self._timeout)
-                sendh.send_bytes(pickled_key, arg=KEY_HINT, timeout=self._timeout)
-                cloudpickle.dump(value, file=PickleWriteAdapter(sendh=sendh, hint=VALUE_HINT, timeout=self._timeout))
-
-        except TimeoutError as ex:
-            raise DDictTimeoutError(DragonError.TIMEOUT, f'The operation timed out. This could be a network failure or an out of memory condition.\n{str(ex)}')
+    def detach(self) -> None:
+        '''
+            Detach from the Distributed Dictionary and free all local resources of this client. But leave
+            in place the DDict for other clients and processes.
+        '''
 
         try:
-            resp_msg = self._recv_resp()
-        except TimeoutError as ex:
-            raise DDictTimeoutError(DragonError.TIMEOUT, f'The operation timed out. This could be a network failure or an out of memory condition.\n{str(ex)}')
+            if self._destroyed or self._detached:
+                return
 
-        if resp_msg.err == DragonError.MEMORY_POOL_FULL:
-            raise DDictManagerFull(DragonError.MEMORY_POOL_FULL, f"Distributed Dictionary Manager {manager_id} is full. The key/value pair was not stored.", )
+            self._traceit('Detaching from ddict.')
 
-        if resp_msg.err != DragonError.SUCCESS:
-            raise DDictError(resp_msg.err, 'Failed to store key in the distributed dictionary.')
+            self._detached = True
 
-    def __getitem__(self, key):
-        msg = dmsg.DDGet(self._tag_inc(), self._client_id)
+            for manager_id in self._managers:
+                try:
+                    msg = dmsg.DDDeregisterClient(self._tag_inc(), clientID=self._client_id, respFLI=self._serialized_buffered_return_connector)
+                    resp_msg = self._send_receive([(msg, None)], connection=self._managers[manager_id])
+                    if resp_msg.err != DragonError.SUCCESS:
+                        log.debug('Error on response to deregister client %s', self._client_id)
+
+                    self._managers[manager_id].detach()
+                except:
+                    pass
+
+        except Exception as ex:
+            try:
+                tb = traceback.format_exc()
+                log.debug('There was an exception while detaching the client %s. Exception: %s\n Traceback: %s', self._client_id, ex, tb)
+            except:
+                pass
+
+    def __setitem__(self, key:object, value:object) -> None:
+        '''
+            Store the key/value pair in the current checkpoint within the Distributed Dictionary.
+
+            :param key: The key of the pair. It must be serializable.
+            :param value: the value of the pair. It also must be serializable.
+            :raises Exception: Various exceptions can be raised including TimeoutError.
+        '''
+        msg = dmsg.DDPut(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, persist=False)
+        self._put(msg, key, value)
+
+    def __getitem__(self, key:object) -> object:
+        '''
+            Get the value that is associated with the given key.
+
+            :param key: The key of a stored key/value pair.
+            :returns: The value associated with the key.
+            :raises Exception: Various exceptions can be raised including TimeoutError and KeyError.
+        '''
+        msg = dmsg.DDGet(self._tag_inc(), self._client_id, chkptID=self._chkpt_id)
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
         self._check_manager_connection(manager_id)
         self._send([(msg, None),
                     (pickled_key, KEY_HINT)], self._managers[manager_id])
 
-        value = self._recv_dmsg_and_val(key)
+        value = self._recv_dmsg_and_val(msg, key)
         return value
 
-    def keys(self):
+    def __contains__(self, key:object) -> bool:
+        '''
+            Returns True if key is in the Distributed Dictionary and False otherwise.
 
-        keys = []
-        self._check_manager_connection(all=True)
-        for manager_id in range(self._num_managers):
-            msg = dmsg.DDKeys(self._tag_inc(), self._client_id)
-            self._send([(msg, None)], self._managers[manager_id])
-            with self._return_connector.recvh(use_main_as_stream_channel=True, timeout=self._timeout) as recvh:
-                resp_ser_msg, _ = recvh.recv_bytes(timeout=self._timeout)
-                resp_msg = dmsg.parse(resp_ser_msg)
-                if resp_msg.err != DragonError.SUCCESS:
-                    raise RuntimeError(f'{resp_msg.err}')
-                done = False
-                while not done:
-                    try:
-                        key = cloudpickle.load(file=PickleReadAdapter(recvh=recvh, hint=KEY_HINT, timeout=self._timeout))
-                        keys.append(key)
-                    except EOFError:
-                        done = True
-                        break
-        return keys
-
-    def values(self):
-        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
-
-    def items(self):
-        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
-
-    def pop(self, key):
-        msg = dmsg.DDPop(self._tag_inc(), self._client_id)
-        manager_id, pickled_key = self._choose_manager_pickle_key(key)
-        self._check_manager_connection(manager_id)
-        self._send([(msg, None),
-                    (pickled_key, KEY_HINT)], self._managers[manager_id])
-        return self._recv_dmsg_and_val(key)
-
-    def clear(self):
-
-        self._check_manager_connection(all=True)
-
-        for manager_id in range(self._num_managers):
-            msg = dmsg.DDClear(self._tag_inc(), self._client_id)
-            self._send([(msg, None)], self._managers[manager_id])
-
-        for _ in range(self._num_managers):
-            with self._buffered_return_connector.recvh(timeout=self._timeout) as recvh:
-                (resp_ser_msg, hint) = recvh.recv_bytes(timeout=self._timeout)
-                resp_msg = dmsg.parse(resp_ser_msg)
-                if resp_msg.err != DragonError.SUCCESS:
-                    raise RuntimeError(resp_msg.err)
-
-    def update(self, dict2):
-        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
-
-    def popitem(self):
-        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
-
-    def copy(self):
-        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
-
-    def __contains__(self, key):
-        msg = dmsg.DDContains(self._tag_inc(), self._client_id)
+            :param key: A possible key stored in the DDict.
+            :returns bool: True or False depending on if the key is there or not.
+            :raises: Various exceptions can be raised including TimeoutError.
+        '''
+        msg = dmsg.DDContains(self._tag_inc(), self._client_id, chkptID=self._chkpt_id)
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
         self._check_manager_connection(manager_id)
         resp_msg = self._send_receive([(msg, None), (pickled_key, KEY_HINT)],
@@ -536,30 +752,284 @@ class DDict:
 
         if resp_msg.err == DragonError.SUCCESS:
             return True
-
-        if resp_msg.err == DragonError.KEY_NOT_FOUND:
+        elif resp_msg.err == DragonError.KEY_NOT_FOUND:
             return False
+        elif resp_msg.err == DragonError.DDICT_CHECKPOINT_RETIRED:
+            raise DDictCheckpointSync(resp_msg.err, resp_msg.errInfo)
 
         raise RuntimeError(resp_msg.err)
 
-    def __len__(self):
-        self._check_manager_connection(all=True)
+    def __len__(self) -> int:
+        '''
+            Returns the number of keys stored in the entire Distributed Dictionary.
 
-        for manager_id in range(self._num_managers):
-            msg = dmsg.DDGetLength(self._tag_inc(), self._client_id)
-            sendh = self._send([(msg, None)], self._managers[manager_id])
-
-        length = 0
-        for _ in range(self._num_managers):
-            resp_msg = self._recv_resp()
+            :returns int: The number of stored keys in the current checkpoint plus any persistent keys.
+            :raises: Various exceptions can be raised including TimeoutError.
+        '''
+        self._traceit('Getting length from ddict')
+        tag = self._tag_inc()
+        self._check_manager_connection(0)
+        msg = dmsg.DDGetLength(tag, clientID=self._client_id, chkptID=self._chkpt_id, respFLI=self._serialized_buffered_return_connector)
+        self._send([(msg, None)], self._managers[0])
+        msglist = self._recv_responses(set([tag]), self._num_managers)
+        length=0
+        for resp_msg in msglist:
             if resp_msg.err == DragonError.SUCCESS:
                 length += resp_msg.length
+            elif resp_msg.err == DragonError.DDICT_CHECKPOINT_RETIRED:
+                raise DDictCheckpointSync(resp_msg.err, resp_msg.errInfo)
             else:
                 raise RuntimeError(resp_msg.err)
         return length
 
-    def __delitem__(self, key):
+    def __delitem__(self, key: object) -> None:
+        '''
+            Deletes a key/value pair from the Distributed Dictionary if it exists.
+
+            :raises: Various exceptions can be raised including TimeoutError and KeyError.
+        '''
         self.pop(key)
+
+    def pput(self, key:object, value:object) -> None:
+        '''
+            Persistently store a key/value pair within the Distributed Dictionary. This is
+            useful when checkpointing is employed in the dictionary. A persistent put of a
+            key/value pair means that the key/value pair persists across checkpoints. Persistent
+            key/value pairs are useful when putting constant values or other values that don't
+            change across checkpoints.
+
+            :param key: A serializable object that will be stored as the key in the DDict.
+            :param value: A serializable object that will be stored as the value.
+        '''
+        msg = dmsg.DDPut(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, persist=True)
+        self._put(msg, key, value)
+
+    def keys(self) -> list[object]:
+        '''
+            Return a list of the keys of the distributed dictionary. This is potentially a big
+            list and should be used cautiously.
+
+            :returns: A list of all the keys of the distributed dictionary for the current checkpoint.
+        '''
+
+        keys = []
+        self._check_manager_connection(all=True)
+        for manager_id in range(self._num_managers):
+            msg = dmsg.DDKeys(self._tag_inc(), self._client_id, chkptID=self._chkpt_id)
+            self._send([(msg, None)], self._managers[manager_id])
+            self._traceit('About to open recv handle to retrieve keys from %s', manager_id)
+            with self._return_connector.recvh(use_main_as_stream_channel=True, timeout=self._timeout) as recvh:
+                resp_ser_msg, _ = recvh.recv_bytes(timeout=self._timeout)
+                self._traceit('Got keys from %s', manager_id)
+                resp_msg = dmsg.parse(resp_ser_msg)
+                if resp_msg.ref == msg.tag:
+                    if resp_msg.err == DragonError.DDICT_CHECKPOINT_RETIRED:
+                        raise DDictError(resp_msg.err, resp_msg.errInfo)
+                    elif resp_msg.err != DragonError.SUCCESS:
+                        raise DDictError(resp_msg.err, 'Failed to get key list in the distributed dictionary.')
+                    done = False
+                    while not done:
+                        try:
+                            key = cloudpickle.load(file=PickleReadAdapter(recvh=recvh, hint=KEY_HINT, timeout=self._timeout))
+                            keys.append(key)
+                        except EOFError:
+                            done = True
+
+                # If the tag did not match, exiting the context manager will flush the rest of the response.
+
+        self._traceit('Keys from all managers are %s', keys)
+
+        return keys
+
+    def pop(self, key: object, default:object=None) -> object:
+        '''
+            Pop the given key from the distributed dictionary and return the associated
+            value. If the given key is not found in the dictionary, then KeyError is raised
+            unless a default value is provided, in which case the default value is returned
+            if the key is not found in the dictionary.
+
+            :param key: A key to be popped from the distributed dictionary.
+
+            :param default: A default value to be returned if the key is not in the
+                distributed dictionary.
+
+            :returns: The associated value if key is popped and the default value otherwise.
+        '''
+        msg = dmsg.DDPop(self._tag_inc(), self._client_id, chkptID=self._chkpt_id)
+        manager_id, pickled_key = self._choose_manager_pickle_key(key)
+        self._check_manager_connection(manager_id)
+        self._send([(msg, None),
+                    (pickled_key, KEY_HINT)], self._managers[manager_id])
+        try:
+            return self._recv_dmsg_and_val(msg, key)
+        except KeyError as ex:
+            if default is None:
+                raise ex
+
+            return default
+
+    def clear(self) -> None:
+        '''
+            Empty the distributed dictionary of all keys and values.
+        '''
+        self._traceit('clearing dictionary for checkpoint %s', self._chkpt_id)
+        tag = self._tag_inc()
+        self._check_manager_connection(0)
+        msg = dmsg.DDClear(tag, self._client_id, self._chkpt_id, self._serialized_buffered_return_connector)
+        self._send([(msg, None)], self._managers[0])
+        msglist = self._recv_responses(set([tag]), self._num_managers)
+        for resp_msg in msglist:
+            if resp_msg.err != DragonError.SUCCESS:
+                raise DDictError(resp_msg.err, 'There was an error while clearing the distributed dictionary.')
+
+    def values(self) -> list[object]:
+        """
+            When called this returns a list of all values in the Distributed Dictionary.
+
+            :returns list[object]: A list of all keys in the DDict.
+            :raises NotImplementedError: Not implemented.
+
+        """
+        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
+
+    def items(self) -> list[tuple[object,object]]:
+        """
+            Returns a list of all key/value pairs in the Distributed Dictionary.
+
+            :returns list[tuple[object,object]]: A list of all key/value pairs.
+            :raises NotImplementedError: Not implemented.
+        """
+        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
+
+    def update(self, dict2: DDict) -> None:
+        """
+            Adds all key/value pairs from dict2 into this Distributed Dictionary.
+
+            :param dict2: Another distributed dictionary.
+            :raises NotImplementedError: Not implemented.
+        """
+        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
+
+    def popitem(self) -> tuple[object, object]:
+        """
+            Returns a random key/value pair from the Distributed Dictionary.
+
+            :returns tuple[object,object]: A random key/value pair.
+            :raises NotImplementedError: Not implemented.
+        """
+        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
+
+    def copy(self) -> DDict:
+        """
+            Returns a copy of the Distributed Dictionary.
+
+            :returns DDict: A second DDict that is a copy of the first assuming that no
+                other processes were concurrently using this DDict.
+
+            :raises NotImplementedError: Not implemented.
+        """
+        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
+
+    @property
+    def stats(self) -> list[DDictManagerStats]:
+        '''
+            Returns a list of manager stats, one for each manager of the distributed dictionary. See
+            the DDictManagerStats structure for a description of its contents.
+        '''
+        self._traceit('Getting stats from ddict')
+        tag = self._tag_inc()
+        self._check_manager_connection(0)
+        msg = dmsg.DDManagerStats(tag, respFLI=self._serialized_buffered_return_connector)
+        self._send([(msg, None)], self._managers[0])
+        msglist = self._recv_responses(set([tag]), self._num_managers)
+        data = []
+        for resp_msg in msglist:
+            if resp_msg.err != DragonError.SUCCESS:
+                raise DDictError(resp_msg.err, 'There was an error while getting stats from the distributed dictionary.')
+            item = cloudpickle.loads(b64decode(resp_msg.data))
+            data.append(item)
+
+        return data
+
+    def checkpoint(self) -> None:
+        '''
+            Calling checkpoint advances the checkpoint for the distributed dictionary. In
+            subsequent calls to the distributed dictionary, like gets or puts, if the chosen
+            manager does not have the current checkpoint in its working set, the get/put
+            operations will block until the checkpoint becomes available. But, calling this
+            operation itself does not block.
+        '''
+        self._chkpt_id += 1
+
+    def rollback(self) -> None:
+        '''
+            Calling rollback decrements the checkpoint id to its previous value. Again this
+            call does not block. If rollback causes the checkpoint id to roll back to a
+            checkpoint that a chosen manager no longer has in its working set, then subsequent
+            operations may fail with a exception indicating the Checkpoint is no longer available,
+            raising a DDictCheckpointSync exception.
+
+        '''
+        self._chkpt_id -= 1
+
+    def sync_to_newest_checkpoint(self) -> None:
+        '''
+            Advance the checkpoint identifier of this client to the newest checkpoint across all managers.
+            This does not guarantee that all managers have advanced to the same checkpoint. That is up to the
+            application which may guarantee all managers are at the same checkpoint by setting and getting
+            values from managers in checkpoints and checkpoints advance. See the ddict_checkpoint_pi.py demo
+            in examples/dragon_data/ddict for an example of an application that uses this method.
+        '''
+        self._traceit('Syncing to newest checkpoint')
+        tag = self._tag_inc()
+        chkpt_id = 0
+        self._check_manager_connection(0)
+        msg = dmsg.DDManagerGetNewestChkptID(tag, respFLI=self._serialized_buffered_return_connector)
+        self._send([(msg, None)], self._managers[0])
+        msglist = self._recv_responses(set([tag]), self._num_managers)
+        for resp_msg in msglist:
+            if resp_msg.err != DragonError.SUCCESS:
+                raise DDictError(resp_msg.err, 'There was an error while getting stats from the distributed dictionary.')
+            chkpt_id = max(chkpt_id, resp_msg.chkptID)
+
+        self._chkpt_id = chkpt_id
+
+    @property
+    def current_checkpoint_id(self) -> int:
+        '''
+            Returns the current checkpoint id of the client.
+        '''
+        return self._chkpt_id
+
+    def local_managers(self) -> list[int]:
+        """
+            Returns all local manager ids of all managers that are local to this node.
+
+            :raises NotImplementedError: Not implemented yet.
+        """
+        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
+
+    def local_manager(self) -> int:
+        """
+            Returns a local manager id if one exists. This is manager designated as the main manager for the client. If
+            no local manager exists, the None is returned.
+        """
+        return self._local_manager
+
+    def main_manager(self) -> int:
+        """
+            Returns the main manager id. This will always exist and will be the same as the local manager
+            id if a local manager exists. Otherwise, it will be the id of a random manager from another node.
+        """
+        return self._main_manager
+
+    def manager_nodes(self) -> list[str]:
+        """
+            For each manager, the serialized, base64 encoded FLI of the manager is returned.
+        """
+        return self._manager_nodes
+
+    # TODO: def atomic(self)
 
     # Not yet implemented.
     # def __iter__(self):
@@ -598,85 +1068,3 @@ class DDict:
     #         tb = traceback.format_exc()
     #         log.debug(f'Got exception in client iter: {e}\n Traceback: {tb}')
     #         raise RuntimeError(f'Got exception in client iter: {e}\n Traceback: {tb}')
-
-    def __hash__(self):
-        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
-
-    def __equal__(self):
-        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
-
-    def __str__(self): # return a iterator for an object
-        raise NotImplementedError('Not implemented on Dragon Distributed Dictionaries.')
-
-    def dump_state(self):
-        pass
-
-    def detach(self):
-        try:
-            if self._destroyed or self._detached:
-                try:
-                    log.debug(f'Cannot detach client {self._client_id} from a destroyed/detached dictionary.')
-                except:
-                    pass
-                return
-
-            self._detached = True
-
-            for manager_id in self._managers:
-                try:
-                    msg = dmsg.DDDeregisterClient(self._tag_inc(), clientID=self._client_id, respFLI=self._serialized_buffered_return_connector)
-                    resp_msg = self._send_receive([(msg, None)], connection=self._managers[manager_id])
-                    if resp_msg.err != DragonError.SUCCESS:
-                        log.debug(f'Error on response to deregister client {self._client_id}')
-
-                    self._managers[manager_id].detach()
-                except:
-                    pass
-
-        except Exception as ex:
-            try:
-                tb = traceback.format_exc()
-                log.debug(f'There was an exception while detaching the client {self._client_id}. Exception: {ex}\n Traceback: {tb}')
-            except:
-                pass
-
-class PickleWriteAdapter:
-
-    def __init__(self, sendh, timeout=None, hint=None):
-        self._sendh = sendh
-        self._timeout = timeout
-        self._hint = hint
-
-    def write(self, b):
-        try:
-            self._sendh.send_bytes(b, timeout=self._timeout, arg=self._hint)
-        except Exception as ex:
-            tb = traceback.format_exc()
-            try:
-                log.debug(f'Caught exception in pickle write: {ex}\n {tb}')
-            except:
-                pass
-
-class PickleReadAdapter:
-
-    def __init__(self, recvh, timeout=None, hint=None):
-        self._recvh = recvh
-        self._timeout = timeout
-        self._hint = hint
-
-    def read(self, size=-1):
-        try:
-            data, arg = self._recvh.recv_bytes(size=size, timeout=self._timeout)
-            assert arg == self._hint
-            return data
-        except EOFError:
-            return b''
-        except Exception as ex:
-            tb = traceback.format_exc()
-            try:
-                log.debug(f'Caught exception in pickle read: {ex}\n {tb}')
-            except:
-                pass
-
-    def readline(self):
-        return self.read()

@@ -24,8 +24,6 @@ import dragon.utils as du
 
 import support.util as tsu
 
-DEFAULT_TIMEOUT = 1
-
 get_msg = tsu.get_and_parse
 
 
@@ -73,7 +71,7 @@ class SingleLS(unittest.TestCase):
                                name='local_svc')
         self.proc.start()
 
-        self.shep_stdin_wh.send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=0).serialize())
+        self.shep_stdin_wh.send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=0, net_conf_key="0").serialize())
 
         msg = tsu.get_and_check_type(self.shep_stdout_rh, dmsg.SHPingBE)
 

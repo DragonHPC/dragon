@@ -10,9 +10,14 @@ import string
 import dragon
 from dragon.globalservices.process import create, multi_join
 from dragon.infrastructure.process_desc import ProcessOptions
-from dragon.native.value import Value, _TYPECODE_TO_TYPE, _SUPPORTED_TYPES
+from dragon.native.value import Value, _SUPPORTED_TYPES
 from dragon.native.queue import Queue
 import dragon.utils as du
+from ctypes import Structure, c_double
+
+
+class Point(Structure):
+    _fields_ = [("x", c_double), ("y", c_double)]
 
 
 def create_value_assignment(type):
@@ -61,12 +66,28 @@ class TestValue(unittest.TestCase):
         """typedef_or_type type checking"""
         self.assertRaises(AttributeError, Value, ())
 
+    def test_structure(self):
+        """test that Value can handle Structure"""
+        v = Value(Point, (10, 10))
+        self.assertEqual(v.value.x, 10, "Assignment to x in Point did not happen properly")
+        self.assertEqual(v.value.y, 10, "Assignment to y in Point did not happen properly")
+        v.value.x = 100
+        v.value.y = 100
+        self.assertEqual(v.value.x, 100, "Assignment to x in Point did not happen properly")
+        self.assertEqual(v.value.y, 100, "Assignment to y in Point did not happen properly")
+
+    def test_float_power(self):
+        float_value = Value(c_double, 1.0 / 3.0)
+        float_value.value **= 2
+        self.assertEqual(
+            (1.0 / 3.0) ** 2, float_value.value, "There is an issue with raising floats to the power of 2"
+        )
+
     def test_ping_pong(self):
         """queue ping pong between 2 processes that tests value assignment in
         parent and child processes"""
 
         for type in _SUPPORTED_TYPES:
-
             # Create a list of values to be tested values_assignment: bytes, char, int, and float
             values_assignment = create_value_assignment(type)
 

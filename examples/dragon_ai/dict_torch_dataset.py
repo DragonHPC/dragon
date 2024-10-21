@@ -1,4 +1,4 @@
-"""This example shows how a PyTorch dataset can use a Dragon distributed dictionary to store the data. In principle, the distributed dictionary could be shared among other processes that might interact with the training data between training iterations.    
+"""This example shows how a PyTorch dataset can use a Dragon distributed dictionary to store the data. In principle, the distributed dictionary could be shared among other processes that might interact with the training data between training iterations.
 """
 import dragon
 import multiprocessing as mp
@@ -107,6 +107,7 @@ def get_device(device_queue):
     else:
         # if we don't have a device that is free, we use the cpu
         device = torch.device("cpu")
+
     return device
 
 
@@ -264,6 +265,5 @@ if __name__ == "__main__":
 
     # launch scipy and mnist jobs
     results = mnist_pool.map(mnist_lr_sweep_partial, [idx for idx in range(num_mnist_workers)], 1)
-
     mnist_pool.close()
     mnist_pool.join()

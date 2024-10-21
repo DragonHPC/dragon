@@ -21,6 +21,16 @@ static const int DRAGON_MEMORY_TEMPORARY_TIMEOUT_SECS = DRAGON_MEMORY_TEMPORARY_
 static const timespec_t DRAGON_MEMORY_TEMPORARY_TIMEOUT = {DRAGON_MEMORY_TEMPORARY_TIMEOUT_CONST,0};
 
 /**
+ * @brief The number of free memory blocks with the memory size.
+ *
+ * dyn_mem stats provide statistics for the heap.
+*/
+typedef struct dragonHeapStatsAllocationItem_st {
+    uint64_t block_size;
+    uint64_t num_blocks;
+} dragonHeapStatsAllocationItem_t;
+
+/**
  * @brief The type of memory pool.
  *
  * For future use. Currently, the only valid value is DRAGON_MEMORY_TYPE_SHM.
@@ -84,6 +94,14 @@ typedef struct dragonMemoryPoolAttr_st {
     /*!< The size in bytes of the manifest.
      * Ignored if set by user. */
 
+    size_t manifest_table_size;
+    /*!< The size in bytes of the internal allocation table.
+     * Ignored if set by user. */
+
+    size_t manifest_heap_size;
+    /*!< The size in bytes of the internal heap manager.
+     * Ignored if set by user. */
+
     size_t segment_size;
     /*!< The requested size of segments when pool size is increased by the user.
      * The actual segment size may be larger. The actual segment size will be
@@ -106,19 +124,12 @@ typedef struct dragonMemoryPoolAttr_st {
     /* !< The number of segments added to the memory pool. Ignored if set by the
      * user. */
 
-    size_t minimum_data_alignment;
-    /*!< The minimum data alignment required of allocated blocks.
-     * The minimum data alignment cannot be greater than the minimum block size.
-     * */
-
     dragonLockKind_t lock_type;
     /*<! The type of lock to be used on the memory pool. */
-
 
     dragonMemoryPoolType_t mem_type;
     /*!< The type of memory this pool supports. Currently only SHM
      * memory pools are supported. */
-
 
     dragonMemoryPoolGrowthType_t growth_type;
     /*!< The type of growth allowed on this memory pool.
@@ -308,6 +319,12 @@ dragonError_t
 dragon_memory_pool_get_utilization_pct(dragonMemoryPoolDescr_t* pool_descr, double* utilization_pct);
 
 dragonError_t
+dragon_memory_pool_get_num_block_sizes(dragonMemoryPoolDescr_t* pool_descr, size_t* num_block_sizes);
+
+dragonError_t
+dragon_memory_pool_get_free_blocks(dragonMemoryPoolDescr_t* pool_descr, dragonHeapStatsAllocationItem_t * free_blocks);
+
+dragonError_t
 dragon_memory_pool_get_pointer(const dragonMemoryPoolDescr_t * pool_descr, void **base_ptr);
 
 dragonError_t
@@ -359,7 +376,7 @@ dragon_memory_descr_clone(dragonMemoryDescr_t * newmem_descr, const dragonMemory
                           ptrdiff_t offset, size_t * custom_length);
 
 dragonError_t
-dragon_memory_modify_size(dragonMemoryDescr_t * mem_descr, const size_t new_size);
+dragon_memory_modify_size(dragonMemoryDescr_t * mem_descr, const size_t new_size, const timespec_t* timeout);
 
 dragonError_t
 dragon_memory_hash(dragonMemoryDescr_t* mem_descr, dragonULInt* hash_value);
@@ -369,6 +386,9 @@ dragon_memory_equal(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_de
 
 dragonError_t
 dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout);
+
+dragonError_t
+dragon_memory_clear(dragonMemoryDescr_t* mem_descr, size_t start, size_t stop);
 
 #ifdef __cplusplus
 }

@@ -424,7 +424,7 @@ dragon_ddict_write_bytes(dragonDDictRequestDescr_t* req, size_t num_bytes,
 /** @} */ // end of ddict_ops group.
 
 
- #ifdef __cplusplus
+#ifdef __cplusplus
 }
 #endif
 

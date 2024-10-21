@@ -13,8 +13,7 @@ COMPONENTS := broadcast \
               hashtable \
               heapmanager \
               pmod \
-	      	  pmsgq \
-              utils
+	      utils
 
 DIST_SOURCES := $(wildcard pkg/*) \
 				_ctest_utils.h \
@@ -30,7 +29,6 @@ DIST_SOURCES := $(wildcard pkg/*) \
 				multi-node/test_array.py \
 				multi-node/test_barrier.py \
 				multi-node/test_connection.py \
-				multi-node/test_ddict.py \
 				multi-node/test_distdict.py \
 				multi-node/test_fli.py \
 				multi-node/test_lock.py \
@@ -50,7 +48,7 @@ DIST_TARGETS := $(addprefix $(DIST_DIR)/,$(notdir $(filter pkg/%,$(DIST_SOURCES)
                 $(addprefix $(DIST_DIR)/,$(filter-out pkg/%,$(DIST_SOURCES)))
 
 TESTS_PYTHON := test_c_files.py \
-		test_channels.py \
+				test_channels.py \
                 test_utils.py \
                 test_connection.py \
                 test_infrastructure.py \
@@ -65,7 +63,6 @@ TESTS_PYTHON := test_c_files.py \
 
 TESTS_DRAGON := test_mpbridge.py \
                 test_native.py \
-                test_dict.py \
 				test_distdict.py
 
 .PHONY: all
@@ -80,7 +77,7 @@ $(TESTS_PYTHON):
 
 .PHONY: $(TESTS_DRAGON)
 $(TESTS_DRAGON):
-	$(PYTHON) -m dragon $@ -v -f
+	$(PYTHON) -m dragon -s $@ -v -f
 
 .PHONY: tests_multi_node
 tests_multi_node:

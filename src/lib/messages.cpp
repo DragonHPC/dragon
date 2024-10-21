@@ -395,10 +395,12 @@ DDRegisterClientMsg::bufferedRespFLI()
 /********************************************************************************************************/
 /* ddict register client response */
 
-DDRegisterClientResponseMsg::DDRegisterClientResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t clientID, uint64_t numManagers) :
+DDRegisterClientResponseMsg::DDRegisterClientResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t clientID, uint64_t numManagers, uint64_t managerID, uint64_t timeout) :
     DragonResponseMsg(DDRegisterClientResponseMsg::TC, tag, ref, err, errInfo),
     mClientID(clientID),
-    mNumManagers(numManagers) {}
+    mNumManagers(numManagers),
+    mManagerID(managerID),
+    mTimeout(timeout) {}
 
 dragonError_t
 DDRegisterClientResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
@@ -414,7 +416,9 @@ DDRegisterClientResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg**
             (dragonError_t)rReader.getErr(),
             rReader.getErrInfo().cStr(),
             mReader.getClientID(),
-            mReader.getNumManagers());
+            mReader.getNumManagers(),
+            mReader.getManagerID(),
+            mReader.getTimeout());
 
     } catch (...) {
         err_return(DRAGON_FAILURE, "There was an exception while deserializing the SHCreateProcessLocalChannelResponse message.");
@@ -430,8 +434,21 @@ DDRegisterClientResponseMsg::clientID()
 }
 
 uint64_t
-DDRegisterClientResponseMsg::numManagers() {
+DDRegisterClientResponseMsg::numManagers()
+{
     return mNumManagers;
+}
+
+uint64_t
+DDRegisterClientResponseMsg::managerID()
+{
+    return mManagerID;
+}
+
+uint64_t
+DDRegisterClientResponseMsg::timeout()
+{
+    return mTimeout;
 }
 
 void
@@ -441,6 +458,8 @@ DDRegisterClientResponseMsg::builder(MessageDef::Builder& msg)
     DDRegisterClientResponseDef::Builder builder = msg.initDdRegisterClientResponse();
     builder.setClientID(mClientID);
     builder.setNumManagers(mNumManagers);
+    builder.setManagerID(mManagerID);
+    builder.setTimeout(mTimeout);
 }
 
 
@@ -1473,7 +1492,7 @@ dragon_sh_send_receive(DragonMsg* req_msg, DragonMsg** resp_msg, dragonFLIDescr_
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not lock the sh_return channel");
 
-    err = dragon_fli_open_send_handle(&shep_fli, &sendh, NULL, timeout);
+    err = dragon_fli_open_send_handle(&shep_fli, &sendh, NULL, NULL, timeout);
     if (err != DRAGON_SUCCESS) {
         dragon_unlock(&sh_return_lock);
         append_err_return(err, "Could not open send handle.");
@@ -1506,7 +1525,7 @@ dragon_sh_send_receive(DragonMsg* req_msg, DragonMsg** resp_msg, dragonFLIDescr_
         append_err_return(err, "Could not close send handle.");
     }
 
-    err = dragon_fli_open_recv_handle(return_fli, &recvh, NULL, timeout);
+    err = dragon_fli_open_recv_handle(return_fli, &recvh, NULL, NULL, timeout);
     if (err != DRAGON_SUCCESS) {
         dragon_unlock(&sh_return_lock);
         append_err_return(err, "Could not open receive handle.");

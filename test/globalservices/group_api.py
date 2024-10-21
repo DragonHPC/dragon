@@ -195,6 +195,7 @@ class GSGroupAPI(unittest.TestCase):
             args=[],
             env={},
             user_name="dummy",
+            head_proc=True
         )
 
         self.gs_input_wh.send(create_msg.serialize())
@@ -553,12 +554,26 @@ class GSGroupAPI(unittest.TestCase):
         kill_thread = threading.Thread(target=kill_wrap, args=(identifier, kill_result))
         kill_thread.start()
 
-        for _ in range(n):
-            sh_kill_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHProcessKill)
-            sh_kill_reply = dmsg.SHProcessKillResponse(
-                tag=self.next_tag(), ref=sh_kill_msg.tag, err=dmsg.SHProcessKillResponse.Errors.SUCCESS
+        sh_multi_kill_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessKill)
+
+        responses = []
+        for i in range(n):
+            responses.append(
+                dmsg.SHProcessKillResponse(
+                    tag=self.next_tag(),
+                    ref=sh_multi_kill_msg.procs[i].tag,
+                    err=dmsg.SHProcessKillResponse.Errors.SUCCESS
+                )
             )
-            self.gs_input_wh.send(sh_kill_reply.serialize())
+
+        sh_multi_kill_reply = dmsg.SHMultiProcessKillResponse(
+                tag=self.next_tag(),
+                ref=sh_multi_kill_msg.tag,
+                responses=responses,
+                failed=False,
+                err=dmsg.SHMultiProcessKillResponse.Errors.SUCCESS
+        )
+        self.gs_input_wh.send(sh_multi_kill_reply.serialize())
 
         kill_thread.join()
         return kill_result[0]
@@ -622,12 +637,26 @@ class GSGroupAPI(unittest.TestCase):
         destroy_thread = threading.Thread(target=destroy_wrap, args=(identifier, destroy_result))
         destroy_thread.start()
 
-        for _ in range(n):
-            sh_kill_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHProcessKill)
-            sh_kill_reply = dmsg.SHProcessKillResponse(
-                tag=self.next_tag(), ref=sh_kill_msg.tag, err=dmsg.SHProcessKillResponse.Errors.SUCCESS
+        sh_multi_kill_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessKill)
+
+        responses = []
+        for i in range(n):
+            responses.append(
+                dmsg.SHProcessKillResponse(
+                    tag=self.next_tag(),
+                    ref=sh_multi_kill_msg.procs[i].tag,
+                    err=dmsg.SHProcessKillResponse.Errors.SUCCESS
+                )
             )
-            self.gs_input_wh.send(sh_kill_reply.serialize())
+
+        sh_multi_kill_reply = dmsg.SHMultiProcessKillResponse(
+                tag=self.next_tag(),
+                ref=sh_multi_kill_msg.tag,
+                responses=responses,
+                failed=False,
+                err=dmsg.SHMultiProcessKillResponse.Errors.SUCCESS
+        )
+        self.gs_input_wh.send(sh_multi_kill_reply.serialize())
 
         for item in sets:
             death_msg = dmsg.SHProcessExit(tag=self.next_tag(), p_uid=item.uid)
@@ -877,12 +906,26 @@ class GSGroupAPI(unittest.TestCase):
             remove_from(descr.g_uid, [descr.sets[0][0].uid, "rand1", "rand2"])
 
     def _send_kill_messages(self, n):
-        for _ in range(n):
-            sh_kill_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHProcessKill)
-            sh_kill_reply = dmsg.SHProcessKillResponse(
-                tag=self.next_tag(), ref=sh_kill_msg.tag, err=dmsg.SHProcessKillResponse.Errors.SUCCESS
+        sh_multi_kill_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessKill)
+
+        responses = []
+        for i in range(n):
+            responses.append(
+                dmsg.SHProcessKillResponse(
+                    tag=self.next_tag(),
+                    ref=sh_multi_kill_msg.procs[i].tag,
+                    err=dmsg.SHProcessKillResponse.Errors.SUCCESS
+                )
             )
-            self.gs_input_wh.send(sh_kill_reply.serialize())
+
+        sh_multi_kill_reply = dmsg.SHMultiProcessKillResponse(
+                tag=self.next_tag(),
+                ref=sh_multi_kill_msg.tag,
+                responses=responses,
+                failed=False,
+                err=dmsg.SHMultiProcessKillResponse.Errors.SUCCESS
+        )
+        self.gs_input_wh.send(sh_multi_kill_reply.serialize())
 
     def test_destroy_remove_from(self):
         # first create a group

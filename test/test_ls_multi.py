@@ -21,8 +21,6 @@ from dragon.utils import B64
 
 import support.util as tsu
 
-DEFAULT_TIMEOUT = 1
-
 get_msg = tsu.get_and_parse
 
 
@@ -101,7 +99,8 @@ class MultiLS(unittest.TestCase):
         # Send BENodeIdxSH as if I were launcher backend
         self.pq_stdin.send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=node_idx, ip_addrs=[self.ip_addr],
                                             host_name=self.hostname, primary=(node_idx == 0),
-                                            logger_sdesc=B64(self.logger_sdesc)).serialize())
+                                            logger_sdesc=B64(self.logger_sdesc),
+                                            net_conf_key = str(node_idx)).serialize())
         return tsu.get_and_check_type(self.pq_stdout, dmsg.SHPingBE)
 
     def connect_to_ls_channels(self, sh_ping_be):

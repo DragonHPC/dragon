@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 # This is meant to be run as part of an install from release package.
-# invoke as: ./dragon-install
+# invoke as: . dragon-install
 # from the untarred directory. It will create a virtual environment
 # where you execute the command. To create it someplace else, first
 # move the files in this gzipped archive where you want them and then
-# execute the ./dragon-install.
+# source the dragon-install.
 
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 python3 -m venv --clear _env
 . _env/bin/activate
-cd $dirname
+cd ${SCRIPT_DIR}
 pycapnpwheel=$(ls $SCRIPT_DIR/pycapnp*.whl)
 dragonwheel=$(ls $SCRIPT_DIR/dragon*.whl)
 echo "Pycapnp wheel is" $pycapnpwheel

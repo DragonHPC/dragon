@@ -1,10 +1,22 @@
-# Dragon 0.9 Release Summary
+# Dragon 0.10 Release Summary
+Dragon 0.10 adds support for infiniband networks, checkpointing to the distributed dictionary,
+and provides initial support for telemetry monitoring via a Grafana frontend. Other features include:
+
+- Complete overhaul of ProcessGroup to improve reliability and user debugging
+- Performance improvements in HSTA
+- Better exception handling and logging 
+- Better support for specifying placement of processes 
+- Addition of a `dragon-activate` script to make it easier to set-up runtime environment
+- Improved stability for the Distributed Dictionary and runtime overall
+
+
+# Dragon 0.9 and 0.91 Release Summary
 This release augments scalability and performance for launching 10k or more processes and greatly improves distributed dictionary
 performanace. Other highlighted features:
 
 - Improvements to ProcessGroup to provide better user experience and performance
 - Improve launch time for large numbers of processes by enabling batch launch
-- New implementation for distributed dictionary that improves performances and scalability
+- New implementation for distributed dictionary that improves performance and scalability
 - Support for placement of processes via Policy API
 - Bug fix for launching a Pool of pools
 
