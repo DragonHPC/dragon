@@ -50,6 +50,7 @@ build scalable solutions across a wide range of applications and workflows.
 Dragon development has been organized into several areas of ongoing work as shown
 in :numref:`dragoncomponents`. These key areas are seen as common to many of the
 needs of distributed computing at scale.
+
 .. _dragoncomponents:
 
 .. list-table:: Dragon Components
