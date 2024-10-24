@@ -6,7 +6,7 @@ Additionally, Dragon managed memory is capable of efficient shared memory partit
 structures in a dictionary. The Distributed Dragon Dictionary uses these technologies along with namespace and process management services of Dragon to provide
 a highly productive and simple to use tool for communication among a set of distributed processes.
 
-Architecture of Dragon Dictionay
+Architecture of Dragon Dictionary
 --------------------------------
 .. figure:: images/dragon_dict_architecture.png
     :align: center
@@ -22,7 +22,7 @@ such as a put or get, coming from any client. The manager processes are also ass
 Once initialized, a dragon dictionary can be shared with other processes. A common hash function translates a key to one of the manager channels.
 This translation occurs entirely local to a client process and allows the dictionary to efficiently scale.
 
-Example of Dragon Dictionay shared by the multiprocessing (mp) processes
+Example of Dragon Dictionary shared by the multiprocessing (mp) processes
 ------------------------------------------------------------------------
 Here we show a simple demonstration of the dragon dictionary functionality with distributed clients, using the dictionary object. With the current dragon
 multiprocessing implementation, each new process is spawned on a new node in a round-robin fashion in a multinode setup. The dictionary is instantiated spawning

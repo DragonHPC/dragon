@@ -74,7 +74,7 @@ class ManagerOwnerProc:
         self.manager_processes = []
         # Manager pool workers object
         self.manager_pool = None
-        # Store the handle to the dictionay object
+        # Store the handle to the dictionary object
         self.dict_chnl_desc = None
         self.dict_chnl = None
 
