@@ -86,7 +86,7 @@ dist: $(addprefix $(INSTALL_DIR)/,$(LIBRARIES) $(BINARIES)) $(CY_FILES)
 #	cp -f lib/libdragon.so build/dragon_wheel/lib
 #	cp -f lib/libpmod.so build/dragon_wheel/lib
 #	cp -f lib/libpmsgqueue.so build/dragon_wheel/lib
-	cp -f lib/libdfabric_*.so dist/lib
+	cp -f lib/libdfabric_*.so dist/lib || true
 	$(PYTHON) setup.py bdist_wheel --skip-build --bdist-dir=$(abspath build/dragon_wheel)
 	$(MAKE) -C modulefiles dist
 	$(MAKE) -C pkg dist
