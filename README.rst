@@ -1,6 +1,8 @@
-# Dragon
+Dragon
+========
 
-## Introduction
+Introduction
+---------------
 
 Dragon is a distributed runtime environment with the goal of being a foundation for many
 libraries, applications, tools, and services.  Software written on top of the Dragon runtime
@@ -18,7 +20,8 @@ incorporates numerous HPC techniques for performance and scalability.  It provid
 level abstraction of OS-like features including namespace, process and memory resource
 management, and communication across a distributed system or systems.
 
-## Directory Structure
+Directory Structure
+----------------------
 
 | Directory       | Description                                                           |
 |:----------------|-----------------------------------------------------------------------|
@@ -29,7 +32,8 @@ management, and communication across a distributed system or systems.
 | test/           | Unit tests for all components                                         |
 | external/       | External packages Dragon relies on                                    |
 
-## Building and Installing a Package
+Building and Installing a Package
+-----------------------------------
 
 The Dragon core requires only basic POSIX features in the OS, such as shared memory.  Dragon
 should build and run on any modern Linux distribution.  See src/requirements.txt for a breakdown
@@ -91,7 +95,8 @@ Msglen [B]   Lat [usec]
 +++ head proc exited, code 0
 ```
 
-## Building and Testing for Development
+Building and Testing for Development
+-------------------------------------
 
 Setting up a development environment can be done locally, similar to the package building
 steps above, or through a VSCode dev container.  See CONTRIBUTING.md For details on using
@@ -99,7 +104,8 @@ the VSCode container.  The steps here are the minimal steps for getting going on
 so that you can then run tests. If you run into issues there are more hints and details
 in CONTRIBUTING.md.
 
-### Environment Setup and Building Dragon
+Environment Setup and Building Dragon
+______________________________________
 
 The following lines assume that you have module commands configured. If you do not have them
 configured on your system you may need to source a line like the following to enable them before
@@ -116,7 +122,8 @@ Begin by sourcing the `setup` script, which will enable the use of other scripts
 . hack/setup
 ```
 
-#### Configuring the Build for the High Speed Transport Agent (HSTA)
+Configuring the Build for the High Speed Transport Agent (HSTA)
+________________________________________________________________
 
 In order to configure the build and runtime environments in regards to external libraries, use
 the `dragon-config` script. The `--help` option will give more details on its use.
@@ -140,7 +147,8 @@ The current config is stored in `${HOME}/.dragon/dragon-config.json`. You can se
 If the build or runtime environment is not configured for the use of HSTA, Dragon will fall back on the
 TCP transport agent.
 
-#### Building
+Building
+_________
 
 To completely build and set up the environment from scratch for single node execution, run these commands.
 
@@ -155,7 +163,8 @@ development, smaller changes can be followed by a
 . hack/build
 ```
 
-### Test Dragon
+Testing Dragon
+______________
 
 Once Dragon is built, you can run the unit tests as follows:
 
@@ -178,11 +187,13 @@ In the event your experiment goes awry, we provide a helper script to clean up a
 dragon-cleanup
 ```
 
-## Contributing
+Contributing
+-------------
 
 Refer to CONTRIBUTING.md on processes and requirements for contributing to Dragon.
 
-## Credits
+Credits
+---------
 
 The Dragon team is:
 
