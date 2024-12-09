@@ -7,13 +7,13 @@ on:
 #   push:
 #     branches:
 #       - main
-#   pull_request:
-#     types:
-#       - opened
-#       - synchronize
-#       - reopened
-#     branches:
-#       - main
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    branches:
+      - main
 
 jobs:
   Build:
@@ -149,11 +149,9 @@ jobs:
 
           # Run Dragon GS client API tests
           find /dev/shm  -exec rm -fr {} \;
-          # sudo sync; sudo echo 3 > /proc/sys/vm/drop_caches
           pushd $ROOTDIR/examples/dragon_gs_client/
           dragon queue_demo.py
           dragon pi_demo.py 4
-          # Confirm we handle input arguments to dragon and user script
           dragon --single-node-override pi_demo.py 4
           # Reduce size of default memory pool to 0.5GB
           DRAGON_DEFAULT_SEG_SZ=536870912 dragon connection_demo.py
@@ -162,7 +160,6 @@ jobs:
           popd
 
           find /dev/shm -exec rm -fr {} \;
-          # sudo sync; sudo echo 3 > /proc/sys/vm/drop_caches
           pushd $ROOTDIR/examples/dragon_native/
           dragon pi_demo.py 4
           popd
@@ -180,9 +177,6 @@ jobs:
           dragon p2p_lat.py --iterations 1000 --lg_max_message_size 12 --dragon
           dragon p2p_bw.py --iterations 10 --lg_max_message_size 12 --dragon
           dragon aa_bench.py --iterations 100 --num_workers 4 --lg_message_size 21 --dragon
-          # TODO: Comment this test out for now, since it seems to be hanging
-          # (see PE-43717 - lock_performance.py test is hanging)
-          #dragon lock_performance.py --dragon
           popd
 
           # Run multiprocessing numpy teests

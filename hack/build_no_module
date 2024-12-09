@@ -26,11 +26,6 @@ if [[ "$pythonpath" == *"$env_str"* ]]; then
   deactivate
 fi
 
-#echo "Running distclean"
-#cd src
-#make distclean
-#cd ..
-
 echo "Building and activating new, clean environment."
 python3 -m venv --clear _env
 . _env/bin/activate
