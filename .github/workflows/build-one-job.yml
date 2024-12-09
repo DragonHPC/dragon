@@ -1,0 +1,160 @@
+name: Dragon
+on:
+  workflow_dispatch: {}
+  # push:
+  #   branches:
+  #     - master
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+    branches:
+      - main
+
+jobs:
+  Build:
+
+    runs-on: ubuntu-20.04
+    strategy:
+      fail-fast: 
+        false
+      matrix:
+        python-version: ["3.9.4", "3.10.10", "3.11.7"]
+    outputs:
+        GITHASH: ${{ steps.build.outputs.GITHASH }}
+        VERSION: ${{ steps.build.outputs.VERSION }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: check environment
+        run: |
+          set -x
+          uname -a 
+          git branch 
+          ls 
+          which python3 
+          python3 --version
+          whoami
+
+      - name: Build 
+        id: build
+        run: |
+          . hack/build_no_module
+          set -x
+          ARTIFACT=$(ls ./src/release)
+          GITHASH=$(git rev-parse --short HEAD)
+          VERSION=$(echo $ARTIFACT | awk -F- '{print $2}')
+          echo "GITHASH=$GITHASH" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          mv ./src/release/$ARTIFACT ./src/release/dragon-$VERSION-py${{ matrix.python-version }}-$GITHASH.tar.gz
+          ARTIFACT=$(ls ./src/release)
+          echo "ARTIFACT=$ARTIFACT" >> $GITHUB_OUTPUT
+
+      - name: Run Test
+        run: |
+          set -ex
+          pwd 
+          ls -la
+          ls ./src/release
+          echo "ARTIFACT=$ARTIFACT"
+          
+          ############################
+          ### untar relase package ###
+          ############################
+          mkdir -p release
+          tar -C release -xvzf $PWD/src/release/${{ steps.build.outputs.ARTIFACT }}        
+          ROOTDIR="$(realpath release/dragon-${{ steps.build.outputs.VERSION }})"
+          
+          #################################
+          ### Install Python Dependency ###
+          #################################
+          python3 -m venv dvenv 
+          source dvenv/bin/activate
+          python3 -m pip install -U pip
+          python3 -m pip install -c src/constraints.txt \
+              cloudpickle \
+              cryptography \
+              numpy \
+              parameterized \
+              scipy \
+              wheel \
+              pyyaml
+          python3 -m pip install $ROOTDIR/dragon-${{ steps.build.outputs.VERSION }}-*.whl
+
+
+          ############################
+          ### set environment path ### 
+          ############################
+          pushd $ROOTDIR
+          export DRAGON_VERSION=${{ steps.build.outputs.VERSION }}
+          export DRAGON_BASE_DIR=$PWD
+          export DRAGON_INCLUDE_DIR=$DRAGON_BASE_DIR/include
+          export DRAGON_LIB_DIR=$DRAGON_BASE_DIR/lib
+          export PATH=$DRAGON_BASE_DIR/bin:$PATH
+          export LD_LIBRARY_PATH=$DRAGON_LIB_DIR:$LD_LIBRARY_PATH
+          export LIBRARY_PATH=$DRAGON_LIB_DIR:$LIBRARY_PATH
+          export DRAGON_DEBUG="0"
+          popd
+
+
+          ####################
+          ### Run unittest ###
+          ####################
+          make -C test test
+
+          find /dev/shm  -user $(USER) -exec rm -fr {} \;
+          pushd $ROOTDIR/dragon_unittests
+          python3 test_utils.py -f -v
+          python3 test_channels.py -f -v
+          popd
+
+          # Run Dragon GS client API tests
+          find /dev/shm  -user $(USER) -exec rm -fr {} \;
+          # sudo sync; sudo echo 3 > /proc/sys/vm/drop_caches
+          pushd $ROOTDIR/examples/dragon_gs_client/
+          dragon queue_demo.py
+          dragon pi_demo.py 4
+          # Confirm we handle input arguments to dragon and user script
+          dragon --single-node-override pi_demo.py 4
+          # Reduce size of default memory pool to 0.5GB
+          DRAGON_DEFAULT_SEG_SZ=536870912 dragon connection_demo.py
+          dragon dragon_run_api.py ls
+          dragon dragon_popen_api.py ls
+          popd
+
+          find /dev/shm  -user $(USER) -exec rm -fr {} \;
+          # sudo sync; sudo echo 3 > /proc/sys/vm/drop_caches
+          pushd $ROOTDIR/examples/dragon_native/
+          dragon pi_demo.py 4
+          popd
+
+          find /dev/shm  -user $(USER) -exec rm -fr {} \;
+          pushd $ROOTDIR/examples/multiprocessing/unittests
+          make
+          popd
+
+          # Run multiprocessing benchmarks
+          find /dev/shm  -user $(USER) -exec rm -fr {} \;
+          pushd $ROOTDIR/examples/multiprocessing/
+          dragon p2p_lat.py --iterations 1000 --lg_max_message_size 12 --dragon
+          dragon p2p_bw.py --iterations 10 --lg_max_message_size 12 --dragon
+          dragon aa_bench.py --iterations 100 --num_workers $NCPU --lg_message_size 21 --dragon
+          # TODO: Comment this test out for now, since it seems to be hanging
+          # (see PE-43717 - lock_performance.py test is hanging)
+          #dragon lock_performance.py --dragon
+          popd
+
+          # Run multiprocessing numpy teests
+          find /dev/shm  -user $(USER) -exec rm -fr {} \;
+          pushd $ROOTDIR/examples/multiprocessing/numpy-mpi4py-examples
+          dragon numpy_scale_work.py
+          dragon numpy_scale_work.py --dragon
+          dragon scipy_scale_work.py
+          dragon scipy_scale_work.py --dragon
+          popd
+          

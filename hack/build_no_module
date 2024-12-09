@@ -1,0 +1,50 @@
+
+export DRAGON_VERSION=0.61
+export DRAGON_BASE_DIR=$PWD/src
+echo "DRAGON_BASE_DIR=$DRAGON_BASE_DIR"
+export DRAGON_INCLUDE_DIR=$DRAGON_BASE_DIR/include
+export DRAGON_LIB_DIR=$DRAGON_BASE_DIR/lib
+export DRAGON_BUILD_NTHREADS=6
+export PYTHONPATH=$DRAGON_BASE_DIR
+##########################################################
+### alias should already been take care of in src/setup.py ###
+########################################################## 
+# alias dragon="python3 -m dragon.cli dragon"
+# alias dragon-backend="python3 -m dragon.cli dragon-backend"
+# alias dragon-localservices="python3 -m dragon.cli dragon-localservices"
+# alias dragon-globalservices="python3 -m dragon.cli dragon-globalservices"
+# alias dragon-tcp="python3 -m dragon.cli dragon-tcp"
+# alias dragon-hsta-if="python3 -m dragon.cli dragon-hsta-if"
+
+
+pythonpath=`which python3`
+echo $pythonpath
+env_str='_env'
+echo $env_str
+if [[ "$pythonpath" == *"$env_str"* ]]; then
+  echo "Deactivating environment."
+  deactivate
+fi
+
+#echo "Running distclean"
+#cd src
+#make distclean
+#cd ..
+
+echo "Building and activating new, clean environment."
+python3 -m venv --clear _env
+. _env/bin/activate
+python3 -m pip install -U pip
+python3 -m pip install -r src/requirements.txt -c src/constraints.txt
+export PATH=$PWD/hack:$PATH
+
+echo "Building externals"
+cd external
+make clean
+make build-capnproto
+cd ..
+
+echo "Building source code."
+cd src
+make dist
+cd ..
