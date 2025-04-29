@@ -1,5 +1,0 @@
-__pycache__
-pydragon_rc.pyx
-pydragon_rc.c
-pydragon_types.c
-return_codes.pxd
