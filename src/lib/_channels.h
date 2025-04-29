@@ -9,14 +9,13 @@
 #include <dragon/channels.h>
 #include <dragon/utils.h>
 #include <stdint.h>
+#include <stdatomic.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define DRAGON_CHANNEL_DEFAULT_BYTES_PER_BLOCK 1024
-#define DRAGON_CHANNEL_MINIMUM_BYTES_PER_BLOCK 256
-#define DRAGON_CHANNEL_DEFAULT_CAPACITY 100
 #define DRAGON_CHANNEL_MINIMUM_CAPACITY 1
 #define DRAGON_CHANNEL_DEFAULT_LOCK_TYPE DRAGON_LOCK_FIFO_LITE
 #define DRAGON_CHANNEL_DEFAULT_OMODE DRAGON_CHANNEL_EXCLUSIVE
@@ -43,6 +42,9 @@ typedef struct dragonChannelHeader_st {
     dragonULInt* lock_type;
     dragonULInt* oflag;
     dragonULInt* fc_type;
+    bool* semaphore;
+    bool* bounded;
+    dragonULInt* initial_sem_value;
     dragonULInt* max_spinners;
     dragonULInt* available_msgs;
     dragonULInt* available_blocks;
@@ -100,6 +102,7 @@ typedef struct dragonChannel_st {
     atomic_int_fast64_t ref_cnt;
     dragonEventRec_t* event_records;
     dragonChannelSerial_t ch_ser;
+    dragonC_UID_t c_uid;
 } dragonChannel_t;
 
 #ifdef __cplusplus

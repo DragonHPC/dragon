@@ -20,5 +20,5 @@ class StreamsTestCase(unittest.IsolatedAsyncioTestCase):
         raise NotImplementedError
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

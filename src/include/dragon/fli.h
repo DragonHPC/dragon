@@ -401,6 +401,20 @@ dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
  * pool descriptor can be either a local or remote channel but must exist on
  * the node where the
  *
+ * @param allow_strm_term If true, then when the receiver closes the receive handle
+ * the sender will be notified via a DRAGON_EOT return code. The FLI will return
+ * this on any subsequent send operations once the receiver has canceled the stream.
+ * After stream cancelation, the sender should close the send handle since no more
+ * data will be sent. For short streams, one or two sent messages, this should
+ * be set to false. For longer streams of multiple message sends this should be
+ * set to true if there is some situation where the receiver may wish to terminate
+ * the stream prematurely. The sender controls this though, not the receiver. If
+ * the receiver closes a receive handle prematurely on a non-terminating stream,
+ * the rest of the stream will be sent by the sender and discarded automatically
+ * the FLI code when the receiver closes the receive handle.
+ *
+ * Note: Stream termination is unavailable if the FLI is a buffered FLI.
+ *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and
  * return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that indicates
@@ -410,7 +424,7 @@ dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
 **/
 dragonError_t
 dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandleDescr_t* send_handle,
-                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, const timespec_t* timeout);
+                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, bool allow_strm_term, const timespec_t* timeout);
 
 /**
  * @brief Close a Send Handle

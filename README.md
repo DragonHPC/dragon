@@ -1,8 +1,6 @@
-Dragon
-========
+# Dragon
 
-Introduction
----------------
+## Introduction
 
 Dragon is a distributed runtime environment with the goal of being a foundation for many
 libraries, applications, tools, and services.  Software written on top of the Dragon runtime
@@ -20,8 +18,7 @@ incorporates numerous HPC techniques for performance and scalability.  It provid
 level abstraction of OS-like features including namespace, process and memory resource
 management, and communication across a distributed system or systems.
 
-Directory Structure
-----------------------
+## Directory Structure
 
 | Directory       | Description                                                           |
 |:----------------|-----------------------------------------------------------------------|
@@ -32,45 +29,42 @@ Directory Structure
 | test/           | Unit tests for all components                                         |
 | external/       | External packages Dragon relies on                                    |
 
-Building and Installing a Package
------------------------------------
+## Building and Installing a Package
 
 The Dragon core requires only basic POSIX features in the OS, such as shared memory.  Dragon
-should build and run on any modern Linux distribution.  See src/requirements.txt for a breakdown
-of requirements and versions.  Using the modulefiles included with it to set the enviroment
-requires environment-modules to be installed.  Modules must also be initialized in your shell
-with a command like this (see CONTRIBUTING.md for a few more details):
-
-```
-. /usr/share/Modules/init/bash
-```
+should build and run on any modern Linux distribution.  The only hard requirements are
+gcc >= 9.x and python version >= 3.9. See src/requirements.txt for a breakdown of specific python package requirements and versions (and see CONTRIBUTING.md for a few more details).
 
 To build a distribution package of Dragon that includes a Python wheel, run the following
 from the top-level repo directory:
 
 ```
+. hack/setup  # This sets development environment variables
+# dragon-config needs the appropriate arguments for the transport on your system.
+# use dragon-config -h for help on what to provide. If you wish to run
+# the base TCP implementation, you can run `dragon-config -a 'tcp-runtime=True'`.
+# The higher performance transports require the library and include paths be provided.
+# You can read below for further details.
+dragon-config ...
+. hack/clean_build
 cd src
-module use $PWD/modulefiles
-module load dragon-dev
-make dist
+make release
 ```
 
-This will produce a tarfile inside of src/dragon-dist.  An error that may occur at this stage is
-because the `wheel` Python package is not installed.  You'll know if you see an error suggesting
-`python setup.py bdist_wheel` fails.  If you see that error, install the Python dependencies with
+This will produce a tarfile inside of src/release.  An error will occur if the gcc or python
+version requirements are not met. Other errors may occur if you have not installed all the
+requirements. If that is the case, try:
 
 ```
-make install-pythondeps
+python -m pip install -r requirements.txt
 ```
 
-To install the package from a new terminal:
+Once built, you can install the package from a new terminal:
 
 ```
 tar -zxvf dragon-[rel info].tar.gz
 cd dragon-[rel info]
 pip install dragon-[rel info].whl
-module use $PWD/modulefiles
-module load dragon
 ```
 
 You can then verify the install by running:
@@ -95,8 +89,7 @@ Msglen [B]   Lat [usec]
 +++ head proc exited, code 0
 ```
 
-Building and Testing for Development
--------------------------------------
+## Building and Testing for Development
 
 Setting up a development environment can be done locally, similar to the package building
 steps above, or through a VSCode dev container.  See CONTRIBUTING.md For details on using
@@ -104,26 +97,15 @@ the VSCode container.  The steps here are the minimal steps for getting going on
 so that you can then run tests. If you run into issues there are more hints and details
 in CONTRIBUTING.md.
 
-Environment Setup and Building Dragon
-______________________________________
+### Environment Setup and Building Dragon
 
-The following lines assume that you have module commands configured. If you do not have them
-configured on your system you may need to source a line like the following to enable them before
-executing the other commands below.
-
-```
-. /opt/cray/pe/modules/default/init/bash
-```
-
-Begin by sourcing the `setup` script, which will enable the use of other scripts, such as `dragon-config`,
-`dragon-cleanup`, and others.
+Begin by sourcing the `setup` script, which will modify environment variables to enable the use of other scripts, such as `dragon-config`,`dragon-cleanup`, etc.
 
 ```
 . hack/setup
 ```
 
-Configuring the Build for the High Speed Transport Agent (HSTA)
-________________________________________________________________
+#### Configuring the Build for the High Speed Transport Agent (HSTA)
 
 In order to configure the build and runtime environments in regards to external libraries, use
 the `dragon-config` script. The `--help` option will give more details on its use.
@@ -142,13 +124,18 @@ These can be combined into a single colon-separated list, e.g.:
 dragon-config --add="ofi-include=/opt/cray/libfabric/1.15.2.0/include:ofi-build-lib=/opt/cray/libfabric/1.15.2.0/lib64:ofi-runtime-lib=/opt/cray/libfabric/1.15.2.0/lib64"
 ```
 
+If the alias for `dragon-config` does not work, you can try running
+
+```
+python3 -m dragon.cli dragon-config -add="ofi-include=/opt/cray/libfabric/1.15.2.0/include:ofi-build-lib=/opt/cray/libfabric/1.15.2.0/lib64:ofi-runtime-lib=/opt/cray/libfabric/1.15.2.0/lib64"
+```
+
 The current config is stored in `${HOME}/.dragon/dragon-config.json`. You can serialize the current config into a colon-separated string using `dragon-config --serialize`, or clean it out using `dragon-config --clean`.
 
 If the build or runtime environment is not configured for the use of HSTA, Dragon will fall back on the
 TCP transport agent.
 
-Building
-_________
+#### Building
 
 To completely build and set up the environment from scratch for single node execution, run these commands.
 
@@ -163,17 +150,26 @@ development, smaller changes can be followed by a
 . hack/build
 ```
 
-Testing Dragon
-______________
+### Test Dragon
 
 Once Dragon is built, you can run the unit tests as follows:
 
 ```
-cd ../test
+cd test
 make
 ```
 
-This runs all Dragon unit tests (not including multiprocessing unit tests).  To run all standard
+This runs many of the Dragon unit tests (not including multiprocessing unit
+tests). To run the multi-node tests you can get an allocation or whatever is
+necessary for mulitple node runs at your site and then do the following. You need
+more than two nodes to run the all the tests successfully. Four will do nicely.
+
+```
+cd test/multi-node
+make
+```
+
+Finally, you can verify that the multiprocessing unit tests all work. To run all standard
 Python multiprocessing unit tests, follow these steps starting next to this README.md file:
 
 ```
@@ -187,13 +183,11 @@ In the event your experiment goes awry, we provide a helper script to clean up a
 dragon-cleanup
 ```
 
-Contributing
--------------
+## Contributing
 
 Refer to CONTRIBUTING.md on processes and requirements for contributing to Dragon.
 
-Credits
----------
+## Credits
 
 The Dragon team is:
 

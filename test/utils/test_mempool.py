@@ -10,6 +10,7 @@ import os
 SMALL_TIMEOUT_VAL = 0.2
 BIGGER_TIMEOUT_VAL = 1.2
 
+
 def worker_attach(q=None, pool_ser=None, mem_ser=None):
     if pool_ser is not None and q is not None:
         mpool = MemoryPool.attach(pool_ser)
@@ -25,18 +26,20 @@ def worker_attach(q=None, pool_ser=None, mem_ser=None):
     else:
         raise RuntimeError("Invalid arguments to worker_attach")
 
+
 def worker_blocking_alloc(q, pool_ser, pid):
     mpool = MemoryPool.attach(pool_ser)
-    mem = mpool.alloc_blocking(3000*pid+100)
+    mem = mpool.alloc_blocking(3000 * pid + 100)
     memview = mem.get_memview()
     memview[0:5] = b"Hello"
     q.put(mem.serialize())
     mpool.detach()
 
+
 def worker_blocking_alloc_timeout(pool_ser, TIMEOUT_VAL):
     mpool = MemoryPool.attach(pool_ser)
     try:
-        mem = mpool.alloc_blocking(3100,timeout=TIMEOUT_VAL)
+        mem = mpool.alloc_blocking(3100, timeout=TIMEOUT_VAL)
         rc = 1
     except TimeoutError as ex:
         rc = 0
@@ -47,12 +50,14 @@ def worker_blocking_alloc_timeout(pool_ser, TIMEOUT_VAL):
 
     exit(rc)
 
+
 def worker_attach_via_pickle(q, mpool):
     mem = mpool.alloc(512)
     memview = mem.get_memview()
     memview[:5] = b"Howdy"
     q.put(mem.serialize())
     mpool.detach()
+
 
 class MemPoolTest(unittest.TestCase):
     mpool = None
@@ -103,7 +108,7 @@ class MemPoolTest(unittest.TestCase):
 
         for i in range(allocs.num_allocs):
             self.assertEqual(0, allocs.alloc_type(i).value)
-            self.assertTrue(self.mpool.allocation_exists(allocs.alloc_type(i), allocs.alloc_id(i)))
+            self.assertTrue(self.mpool.allocation_exists(allocs.alloc_id(i)))
 
         mem1.free()
         mem2.free()
@@ -176,7 +181,7 @@ class MemPoolTest(unittest.TestCase):
         # Getting a big allocation so subsequent allocs will block.
         mem = self.mpool.alloc(32000)
 
-        proc = mp.Process(target=worker_blocking_alloc_timeout, args=(pool_ser,SMALL_TIMEOUT_VAL))
+        proc = mp.Process(target=worker_blocking_alloc_timeout, args=(pool_ser, SMALL_TIMEOUT_VAL))
         start = time.monotonic()
         proc.start()
         proc.join()
@@ -188,15 +193,15 @@ class MemPoolTest(unittest.TestCase):
 
         self.assertEqual(rc, 0, "Blocking Alloc process did not timeout.")
 
-        self.assertGreater(delta, SMALL_TIMEOUT_VAL, 'time lapsed should be bigger than timeout.')
-        self.assertLessEqual(delta, 1+SMALL_TIMEOUT_VAL, "blocking allocation timeout took too long.")
+        self.assertGreater(delta, SMALL_TIMEOUT_VAL, "time lapsed should be bigger than timeout.")
+        self.assertLessEqual(delta, 1 + SMALL_TIMEOUT_VAL, "blocking allocation timeout took too long.")
 
     def test_bigger_blocking_timeout(self):
         pool_ser = self.mpool.serialize()
         # Getting a big allocation so subsequent allocs will block.
         mem = self.mpool.alloc(32000)
 
-        proc = mp.Process(target=worker_blocking_alloc_timeout, args=(pool_ser,BIGGER_TIMEOUT_VAL))
+        proc = mp.Process(target=worker_blocking_alloc_timeout, args=(pool_ser, BIGGER_TIMEOUT_VAL))
         start = time.monotonic()
         proc.start()
         proc.join()
@@ -208,15 +213,15 @@ class MemPoolTest(unittest.TestCase):
 
         self.assertEqual(rc, 0, "Blocking Alloc process did not timeout.")
 
-        self.assertGreater(delta, BIGGER_TIMEOUT_VAL, 'time lapsed should be bigger than timeout.')
-        self.assertLessEqual(delta, 1+BIGGER_TIMEOUT_VAL, "blocking allocation timeout took too long.")
+        self.assertGreater(delta, BIGGER_TIMEOUT_VAL, "time lapsed should be bigger than timeout.")
+        self.assertLessEqual(delta, 1 + BIGGER_TIMEOUT_VAL, "blocking allocation timeout took too long.")
 
     def test_zero_blocking_timeout(self):
         pool_ser = self.mpool.serialize()
         # Getting a big allocation so subsequent allocs will block.
         mem = self.mpool.alloc(32000)
 
-        proc = mp.Process(target=worker_blocking_alloc_timeout, args=(pool_ser,0))
+        proc = mp.Process(target=worker_blocking_alloc_timeout, args=(pool_ser, 0))
         start = time.monotonic()
         proc.start()
         proc.join()
@@ -228,21 +233,74 @@ class MemPoolTest(unittest.TestCase):
 
         self.assertEqual(rc, 2, "Blocking Alloc process timed out with zero timeout.")
 
-        self.assertGreater(delta, 0, 'There should have been a near immediate return.')
+        self.assertGreater(delta, 0, "There should have been a near immediate return.")
         self.assertLessEqual(delta, 1, "blocking allocation timeout took too long.")
 
-
     def test_big_allocation(self):
-        mem_bytes = os.sysconf('SC_PAGE_SIZE') * os.sysconf('SC_PHYS_PAGES')
+        mem_bytes = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
         big_size = int(mem_bytes * 0.55)
         big_pool = MemoryPool(big_size, "big_pool_test", 2)
         mem = big_pool.alloc(big_size)
         memview = mem.get_memview()
-        memview[big_size-1] = 42
-        self.assertEqual(memview[big_size-1], 42)
+        memview[big_size - 1] = 42
+        self.assertEqual(memview[big_size - 1], 42)
         mem.free()
         big_pool.destroy()
 
-if __name__ == '__main__':
-    mp.set_start_method('spawn', force=True)
+    def test_too_many_allocations(self):
+        # 4GB pool.
+        pool = MemoryPool(4294967296, "max_allocations_pool_test", 2, min_block_size=4096, max_allocations=10)
+
+        allocs = []
+        try:
+            for i in range(20):
+                mem = pool.alloc(60)
+                allocs.append(mem)
+        except DragonPoolError as ex:
+            print()
+            print(ex)
+
+        self.assertEqual(len(allocs), 10)
+
+        while len(allocs) > 0:
+            mem = allocs.pop()
+            mem.free()
+
+        pool.destroy()
+
+    def test_too_many_allocations_blocking(self):
+        # 4GB pool.
+        pool = MemoryPool(4294967296, "max_allocations_pool_test", 2, min_block_size=4096, max_allocations=10)
+
+        allocs = []
+        try:
+            for i in range(20):
+                mem = pool.alloc_blocking(60, timeout=1)
+                allocs.append(mem)
+        except DragonPoolError as ex:
+            print()
+            print(ex)
+
+        self.assertEqual(len(allocs), 10)
+
+        while len(allocs) > 0:
+            mem = allocs.pop()
+            mem.free()
+
+        pool.destroy()
+
+    def test_performance(self):
+        mem_bytes = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        big_size = int(mem_bytes * 0.55)
+        big_pool = MemoryPool(big_size, "big_pool_test", 2)
+        mem = big_pool.alloc(big_size)
+        memview = mem.get_memview()
+        memview[big_size - 1] = 42
+        self.assertEqual(memview[big_size - 1], 42)
+        mem.free()
+        big_pool.destroy()
+
+
+if __name__ == "__main__":
+    mp.set_start_method("spawn", force=True)
     unittest.main(verbosity=2)

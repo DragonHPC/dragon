@@ -7,80 +7,75 @@ necessary components to run the Python multiprocessing library using the Dragon
 implementation which provides greater scaling and performance improvements over
 the legacy multiprocessing that is currently distributed with Python.
 
-A complete set of documentation is available in the Dragon HTML documentation, which
-is delivered in a separate tar file.
+For examples and the actual source code for Dragon, please visit its github
+repository: <https://github.com/DragonHPC/dragon>
 
-Before Running a Program
+Installing Dragon
 ------------------------
 
-Before you can run programs using Dragon, you must set up the run-time for your
-environment. You must have a supported Python installed and it must be in your path
-somewhere. The python version must  correspond to the Dragon Python whl file you
-are installing eg a cp39 whl file corresponds to Python 3.9 and a cp310 whl file
-corresponds to Python 3.10.
+Dragon currently requires a minimum python version of 3.10 with support
+for 3.11 and 3.12. Otherwise, just do a `pip install`:
 
-The untarred distribution file contains several subdirectories directories
-including the following. All provided commands are relative to the directory
-that contains this README.md.
+    pip3 install --force-reinstall dragonhpc
 
-* The pycapnp-*.whl file must be pip3 installed once for your environment.
-
-        pip3 install --force-reinstall pycapnp-*.whl
-
-* The dragon-*.whl file must be pip3 installed once for your environment.
-
-        pip3 install --force-reinstall dragon-0.9-*.whl
-
-* Check and possibly update that `$PATH` has the location of pip installed
-  console scripts, such as ~/.local/bin
-
-        export PATH=~/.local/bin:${PATH}
-
-* modulefiles - This contains module files that are needed when using Dragon.
-  You must set up the environment by loading the dragon module as follows.
-
-        module use [/path to dragon-0.9]/modulefiles
-        module load dragon
-
-  If you intend to use Dragon on your own Linux VM or an image that you
-  personally installed, you may need to enable module commands by adding the
-  following command to your ~/.bashrc or other login script.
-
-        source /usr/share/modules/init/bash
-
-  If you use a different shell, look in the `init` directory for a script for
-  your shell.
-
-* bin - The module file will set up access to the dragon command found in the
-  bin directory.
-
-* examples - This directory provides a few demonstration programs that provide
-  some working examples of using multiprocessing with Dragon and of the Dragon API
-  itself. Also under this directory are the standard Python multiprocessing unit
-  tests packaged for easier use with Dragon (these have been developed for
-  Python 3.9 but are still in progress for Python 3.10 and 3.11.) There is a
-  README.md in the `examples` directory with more information about these 
-  demonstration programs.
-
-* dragon_unittests - This directory contains a selection of Dragon-specific unit
-  tests used in the development process.  The tests are included as validation
-  of a Dragon install.  Later updates will have a complete set of unit tests.
-
-* lib - The lib directory contains the library files providing the underlying
-  services needed by the Dragon implementation of multiprocessing in the pip
-  installed wheel package. The module command given above sets up a
-  `$DRAGON_BASE_DIR` environment variable so these shared libraries can can
-  found by the run-time when running Dragon multiprocessing programs.
-
-* test - This directory contains acceptance tests for verifying the installation
-  of Dragon.
-
-After doing the `pip3 install` and the
-`module use [/path to dragon-0.9]/modulefiles && module load dragon` you have
+After doing the `pip3 install` of the package, you have
 completed the prerequisites for running Dragon multiprocessing programs.
 
-Running a Program using Dragon
-------------------------------
+Dragon is built with `manylinux2014` support and should function on most Linux
+distros.
+
+Configuring Dragon's high performance network backend for HSTA
+--------------------------------------------------------------
+
+Dragon includes two separate network backend services for communication across compute nodes.
+The first is referred as the "TCP transport agent". This backend uses common TCP to 
+perform any communication over the compute network. However, this backend is relatively
+low performing and can be a perforamnce bottleneck.
+
+Dragon also includes the "High Speed Transport Agent (HSTA)", which supports UCX for 
+Infiniband networks and OpenFabrics Interface (OFI) for HPE Slingshot. However,
+Dragon can only use these networks if its envionment is properly configured. 
+
+To configure HSTA, use `dragon-config` to provide an "ofi-runtime-lib" or "ucx-runtime-lib".
+The input should be a library path that contains a `libfabric.so` for OFI or a 
+`libucp.so` for UCX. These are libraries are dynamically opened by HSTA at runtime.
+Without them, dragon will fallback to using the lower performing TCP transport agent
+
+Example configuration commands appear below:
+
+```
+# For a UCX backend, provide a library path that contains a libucp.so:
+dragon-config -a  "ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib"
+
+# For an OFI backend, provide a library path that contains a libfabric.so:
+dragon-config -a "ofi-runtime-lib=/opt/cray/libfabric/1.22.0/lib64"
+```
+
+As mentioned, if `dragon-config` is not run as above to tell Dragon where to
+appropriate libraries exist, Dragon will fall back to using the TCP transport
+agent. You'll know this because a message similar to the following will
+print to stdout:
+
+```
+Dragon was unable to find a high-speed network backend configuration.
+Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
+to determine the best way to configure the high-speed network backend to your
+compute environment (e.g., ofi or ucx). In the meantime, we will use the
+lower performing TCP transport agent for backend network communication.
+```
+
+If you get tired of seeing this message and plan to only use TCP communication
+over ethernet, you can use the following `dragon-config` command to silence it:
+
+```
+dragon-config -a 'tcp-runtime=True'
+```
+
+For help without referring to this README.md, you can always use `dragon-config --help`
+
+
+Running a Program using Dragon and python multiprocessing
+---------------------------------------------------------
 
 There are two steps that users must take to use Dragon multiprocessing.
 
@@ -118,18 +113,42 @@ If you find that there are directions that would be helpful and are missing from
 our documentation, please make note of them and provide us with feedback. This is
 an early stab at documentation. We'd like to hear from you. Have fun with Dragon!
 
-Dragon Open Source Release
-------------------------------
+Sanity check Dragon installation
+--------------------------------
 
-Dragon is now open source and available for download. The open source version
-comes with the full implementation of Dragon using the TCP transport agent.
+Grab the following from the DragonHPC github by cloning the repository or a quick wget: [p2p_lat.py](https://raw.githubusercontent.com/DragonHPC/dragon/refs/heads/main/examples/multiprocessing/p2p_lat.py)
 
-Please read the :ref:`FAQ <Transport FAQ>` for notes about the open source release.
+```
+wget https://raw.githubusercontent.com/DragonHPC/dragon/refs/heads/main/examples/multiprocessing/p2p_lat.py .
+```
+
+If testing on a single compute node/instance, you can just do:
+```
+dragon p2p_lat.py --dragon
+using Dragon
+Msglen [B]   Lat [usec]
+2  28.75431440770626
+4  39.88605458289385
+8  37.25141752511263
+16  43.31085830926895
++++ head proc exited, code 0
+```
+
+If you're trying to test the same across two nodes connected via a high speed network,
+try to get an allocation via the workload manager first and then run the test, eg:
+```
+salloc --nodes=2 --exclusive
+dragon p2p_lat.py --dragon
+using Dragon
+Msglen [B]   Lat [usec]
+2  73.80113238468765
+4  73.75898555619642
+8  73.52533907396719
+16  72.79851596103981
+```
 
 Environment Variables
 ---------------------
-
-DRAGON_BASE_DIR - Set by `dragon` module file, the base directory of the package
 
 DRAGON_DEBUG - Set to any non-empty string to enable more verbose logging
 
@@ -138,15 +157,10 @@ DRAGON_DEFAULT_SEG_SZ - Set to the number of bytes for the default Managed Memor
                         increased for applications running with a lot of Queues or Pipes,
                         for example.
 
-DRAGON_TRANSPORT_AGENT - Dragon will use the TCP transport agent unless this variable is set
-                         to 'hsta'. When set to 'hsta' the RDMA-enabled transport will be used if available.
-                         Please read the :ref:`FAQ <Transport FAQ>` for more information about available
-                         transport agents.
-
 Requirements
 ------------
 
-- Python 3.9 (e.g., module load cray-python)
+- Python 3.10 
 - GCC 9 or later
 - Slurm or PBS+PALS (for multi-node Dragon)
 
@@ -159,17 +173,11 @@ runtime. We also ask for any issues you wish to report that this output be inclu
 report. To learn more about how to enable higher levels of debug logging refer to
 `dragon --help`.
 
-If you want to use Dragon with an Anaconda distribution of Python, there will be
-libstdc++ ABI incompatibilities.  A workaround is to move/rename
-[anaconda]/lib/libstdc++.so* to a subdirectory or other name.  The desired version
-of libstdc++.so should come from GCC 9 or later.
-
 Dragon Managed Memory, a low level component of the Dragon runtime, uses shared memory.
-It is possible with this pre-alpha release that things go wrong while the runtime
-is coming down and files are left in /dev/shm.  It is good to check if files are left
-there if the runtime is killed or forced down without a clean exit.  If multiprocessing
-features are used that are not yet fully supported, such as Pool, it is possible for
-Python processes to be left behind after the runtime exits.
+It is possible with this beta release that things go wrong while the runtime
+is coming down and files are left in /dev/shm. Dragon does attempt to clean these up in
+the chance of a bad exit, but it may not succeed. In that case, running `dragon-cleanup`
+on your own will clean up any zombie processes or un-freed memory.
 
 It is possible for a user application or workflow to exhaust memory resources in Dragon
 Managed Memory without the runtime detecting it. Many allocation paths in the runtime use
@@ -189,6 +197,5 @@ the runtime will hang during startup. Proper error handling of this case will co
 release.
 
 In the event your experiment goes awry, we provide a helper script, `dragon-cleanup`, to clean
-up any zombie processes and memory. The script `dragon-cleanup` is placed in the `[dragon install dir]/bin`
-after running `make` or loading the `setup` script and running the `build` script.  `dragon-cleanup` is loaded
-in the `$PATH` environment variable. So, all you need to do is run `dragon-cleanup`.
+up any zombie processes and memory. `dragon-cleanup` should be in your PATH once you install
+dragon.

@@ -87,8 +87,7 @@ instead of `StreamTransport`::
         asyncio.run(agent(SERIALIZED_CHANNEL_DESCRIPTORS))
 """
 
-from .transport import Address, StreamTransport, Transport, \
-                       LOOPBACK_ADDRESS_IPv4, LOOPBACK_ADDRESS_IPv6
+from .transport import Address, StreamTransport, Transport, LOOPBACK_ADDRESS_IPv4, LOOPBACK_ADDRESS_IPv6
 from .client import Client
 from .server import Server
 from .task import cancel_all_tasks

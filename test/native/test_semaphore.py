@@ -41,7 +41,6 @@ class TestSemaphore(unittest.TestCase):
 
         # init correct ?
         self.assertTrue(sem._bounded == False)
-        self.assertTrue(sem._closed == False)
         self.assertTrue(sem._channel.capacity == 1)
         self.assertTrue(1 == sem.get_value())
 
@@ -65,7 +64,7 @@ class TestSemaphore(unittest.TestCase):
         elap = time.monotonic() - start
         self.assertTrue(ret_val == False)
         self.assertGreaterEqual(elap, 0.05)
-        self.assertLess(elap, (0.05+TIMEOUT_DELTA_TOL))
+        self.assertLess(elap, (0.05 + TIMEOUT_DELTA_TOL))
 
         # can release ?
         sem.release(n=1)

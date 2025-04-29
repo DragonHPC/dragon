@@ -1,5 +1,4 @@
-"""Dragon's replacement of Multiprocessing Queue objects based on Channels.
-""" 
+"""Dragon's replacement of Multiprocessing Queue objects based on Channels."""
 
 import multiprocessing.queues
 import logging
@@ -185,6 +184,7 @@ _QUEUE_API = [
 
 @restrict_public_api(_QUEUE_API)
 class DragonQueue(PatchedDragonNativeQueue):
+    """A queue co-located on the same node by default as the creating process"""
     def __init__(self, *args, ctx=None, **kwargs):
         super().__init__(*args, joinable=False, **kwargs)
 
@@ -207,6 +207,7 @@ _JOINABLE_QUEUE_API = [
 
 @restrict_public_api(_JOINABLE_QUEUE_API)
 class DragonJoinableQueue(PatchedDragonNativeQueue):
+    """A jonable queue co-located on the same node by default as the creating process"""
     def __init__(self, *args, ctx=None, **kwargs):
         super().__init__(*args, joinable=True, **kwargs)
 
@@ -216,6 +217,7 @@ _SIMPLE_QUEUE_API = ["close", "empty", "get", "put"]
 
 @restrict_public_api(_SIMPLE_QUEUE_API)
 class DragonSimpleQueue(PatchedDragonNativeQueue):
+    """A simplified queue co-located on the same node by default as the creating process"""
     def __init__(self, *args, ctx=None, **kwargs):
         super().__init__(*args, joinable=False, **kwargs)
 

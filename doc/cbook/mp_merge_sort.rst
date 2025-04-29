@@ -1,28 +1,30 @@
-Parallel Merge Sort 
+.. _merge_sort:
+
+Parallel Merge Sort
 +++++++++++++++++++
 
 
 Here we show a simple recursive merge sort implementation using Python
-Multiprocessing with Dragon.  
+Multiprocessing with Dragon.
 This divide-and-conquer algorithm uses recursion to subdivide the target
 list into smaller chunks and calls itself on each sublist. This is done
 until a minimal cutoff size is reached, at which point the Python standard
-is used on the sublist. See e.g. Knuth, The Art of Computer Programming, 
+is used on the sublist. See e.g. Knuth, The Art of Computer Programming,
 1998, Vol. 3, section 5.2.4 for more information on merge sort.
 
 In our parallel implementation, a new process is started for every sublist
 using Python Multiprocessing. Results are communicated using Multiprocessing
 queues. Parent processes block (sleep) in the result queues, until the child
-process has put their result into the queue. 
+process has put their result into the queue.
 
-Note that `__main__` actually executes `(MAX_SIZE-MIN_SIZE)/INCREMENT` merge 
-sorts of increasingly large sublists, measures the time and prints the 
+Note that `__main__` actually executes `(MAX_SIZE-MIN_SIZE)/INCREMENT` merge
+sorts of increasingly large sublists, measures the time and prints the
 timing results.
 
 
 .. code-block:: python
     :linenos:
-    :caption: **merge_sort.py: Parallel merge sort using Python Multiprocessing with Dragon** 
+    :caption: **merge_sort.py: Parallel merge sort using Python Multiprocessing with Dragon**
 
 
     import random
@@ -204,7 +206,7 @@ timing results.
             channel_count = proc_count // 2
             print(f"{size:13d}    {delta:14.6f}{proc_count:12}{channel_count:12}")
 
-The code can be run with `dragon merge_sort.py dragon` using Dragon. 
+The code can be run with `dragon merge_sort.py dragon` using Dragon.
 
 
 Example output using standard Multiprocessing

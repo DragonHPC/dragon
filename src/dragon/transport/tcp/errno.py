@@ -13,20 +13,23 @@ DRAGON_INTERNAL_MALLOC_FAIL = DragonError.INTERNAL_MALLOC_FAIL
 
 
 def get_errno(e):
-    return getattr(e, 'lib_err', _errno(e))
+    return getattr(e, "lib_err", _errno(e))
 
 
 @singledispatch
 def _errno(e):
     return DRAGON_FAILURE
 
+
 @_errno.register
 def _(e: ValueError):
     return DRAGON_INVALID_ARGUMENT
 
+
 @_errno.register
 def _(e: NotImplementedError):
     return DRAGON_NOT_IMPLEMENTED
+
 
 @_errno.register
 def _(e: TimeoutError):

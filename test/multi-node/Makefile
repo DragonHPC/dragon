@@ -6,8 +6,36 @@
 CC = cc
 CXX = CC
 CFLAGS = -Ofast -fomit-frame-pointer -Wall
-CPPFLAGS = -I $(DRAGON_INCLUDE_DIR) -DDRAGON_DEBUG
-LIBS = -L $(DRAGON_LIB_DIR)
+
+ifeq ($(DRAGON_INCLUDE_DIR),)
+    DRAGON_INCLUDE = $(shell dragon-config -o)
+else
+	DRAGON_INCLUDE = -I $(DRAGON_INCLUDE_DIR)
+endif
+
+ifeq ($(DRAGON_LIB_DIR),)
+    DRAGON_LINK = $(shell  dragon-config -l)
+else
+	DRAGON_LINK = -L $(shell echo ${DRAGON_LIB_DIR}) -ldragon
+endif
+
+RES_NODES = 0
+ifdef SLURM_NNODES
+	RES_NNODES = $(shell expr $(SLURM_NNODES) - 1)
+	RES_NODE_INFO = "Got $(SLURM_NNODES) and running resilient test on $(RES_NNODES) "
+endif
+
+ifdef PBS_NODEFILE
+	PBS_NNODES = $(shell cat ${PBS_NODEFILE} | uniq | wc -l )
+	RES_NNODES = $(shell expr ${PBS_NNODES} - 1)
+	RES_NODE_INFO = "Got $(PBS_NNODES) and running resilient test on $(RES_NNODES) "
+endif
+
+# TODO: Sort out the right way to get the num nodes here for K8s
+
+CPPFLAGS = $(DRAGON_INCLUDE) -DDRAGON_DEBUG
+LIBS = $(DRAGON_LINK)
+INCLUDE = $(DRAGON_INCLUDE)
 PYTHON = $(shell which python3 | awk '{if ($$1 == "") { print "python" } else { print "python3"}}')
 DEF_NODES =
 
@@ -27,19 +55,36 @@ TESTS_DRAGON_MULTI_NODE := test_barrier.py \
 						   test_array.py \
 						   test_process_group.py \
 						   test_distdict.py \
-						   test_fli.py
+						   test_fli.py \
+						   test_distdict_c.py \
+						   test_zarr_store.py
 
 TESTS_DRAGON_MULTI_NODE_PMI := test_mpi_hello_world.py
 
+TESTS_DRAGON_RUNTIME_REBOOT := test_runtime_restart.py
+
 .PHONY: all
-all: $(TESTS_DRAGON_MULTI_NODE)
+all: c_ddict cpp_ddict $(TESTS_DRAGON_MULTI_NODE) resiliency
+
+.PHONY: resiliency
+resiliency: $(TESTS_DRAGON_RUNTIME_REBOOT)
 
 .PHONY: $(TESTS_DRAGON_MULTI_NODE)
 $(TESTS_DRAGON_MULTI_NODE):
 	$(PYTHON) -m dragon $(DEF_NODES) $@ -v -f
 
+.PHONY: $(TESTS_DRAGON_RUNTIME_REBOOT)
+$(TESTS_DRAGON_RUNTIME_REBOOT):
+	$(PYTHON) -m dragon --resilient --nodes=$(RES_NNODES) $@ -v -f
+
+c_ddict: c_ddict.c
+	$(CC) $(INCLUDE) $(CFLAGS) -o c_ddict $< $(LIBS) -ldl
+
+cpp_ddict: cpp_ddict.cpp
+	g++ $(INCLUDE) -std=c++14 -o cpp_ddict $< $(LIBS) -ldl
+
 mpi_hello: $(OBJECTS)
-	$(CC) -o mpi_hello $< $(LIBS) -ldragon -ldl
+	$(CC) -o mpi_hello $< $(LIBS) -ldl
 
 .PHONY: $(TESTS_DRAGON_MULTI_NODE_PMI)
 $(TESTS_DRAGON_MULTI_NODE_PMI): mpi_hello
@@ -48,5 +93,6 @@ $(TESTS_DRAGON_MULTI_NODE_PMI): mpi_hello
 .PHONY: clean
 clean: $(CLEAN_COMPONENTS)
 	$(RM) *.log
-	$(RM) -f *.o mpi_hello
+	$(RM) -f *.o mpi_hello c_ddict cpp_ddict
 	$(RM) -f /dev/shm/*
+

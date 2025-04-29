@@ -8,6 +8,7 @@ import multiprocessing
 import time
 import test_util
 
+
 class SendReceiveTest:
 
     def __init__(self):
@@ -15,11 +16,11 @@ class SendReceiveTest:
         self.results = None
 
     def __setup(self):
-        parser = test_util.add_default_args('Send and receive a message of varying size using a Pipe')
+        parser = test_util.add_default_args("Send and receive a message of varying size using a Pipe")
         parser = test_util.add_connections_args(parser)
-        parser.add_argument('--response_size', type=int, default=4, help='size of message pass back')
+        parser.add_argument("--response_size", type=int, default=4, help="size of message pass back")
         self.args = test_util.process_args(parser)
-        multiprocessing.set_start_method('spawn')
+        multiprocessing.set_start_method("spawn")
 
     def run(self):
         self.__setup()
@@ -39,30 +40,33 @@ class SendReceiveTest:
     def do_send_receive(self):
 
         num_workers = self.args.num_workers
-        #assert self.args.message_size > 0
+        # assert self.args.message_size > 0
         message = bytes(self.args.message_size)
         response = bytes(self.args.response_size)
         assert num_workers > 0
-
 
         pipeconns = [multiprocessing.Pipe() for _ in range(num_workers)]
 
         processes = []
         for idx in range(num_workers):
-            processes.append(multiprocessing.Process(target=self.dummy_func,
-                                                     args=(pipeconns[idx][1], 
-                                                     response,)
-                                                     ))
-        
+            processes.append(
+                multiprocessing.Process(
+                    target=self.dummy_func,
+                    args=(
+                        pipeconns[idx][1],
+                        response,
+                    ),
+                )
+            )
+
         start_time = time.time_ns()
         for handle in processes:
             handle.start()
-        
+
         for i in range(len(pipeconns)):
             pipeconns[i][0].send(message)
         for i in range(len(pipeconns)):
             pipeconns[i][0].recv()
-
 
         for handle in processes:
             handle.join()
@@ -70,6 +74,6 @@ class SendReceiveTest:
         return time.time_ns() - start_time
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test = SendReceiveTest()
     print(test.run())

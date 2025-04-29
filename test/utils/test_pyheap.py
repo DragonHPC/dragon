@@ -1,4 +1,4 @@
-#/usr/bin/env python3
+# /usr/bin/env python3
 
 import unittest
 import array
@@ -28,7 +28,7 @@ class PHeapTest(unittest.TestCase):
     def test_simple_insert(self):
         hdl = PriorityHeap.create(self.base, self.cap, self.nvals, self.mem)
 
-        arr = array.array('Q', [0] * self.cap)
+        arr = array.array("Q", [0] * self.cap)
         for i in range(self.cap):
             for j in range(self.nvals):
                 arr[j] = i * self.nvals + j
@@ -36,7 +36,7 @@ class PHeapTest(unittest.TestCase):
             hdl.insert(arr)
 
         for i in range(self.cap):
-            v = array.array('Q', [0] * self.nvals)
+            v = array.array("Q", [0] * self.nvals)
             p = int()
             hdl.extract(v, p)
 
@@ -50,7 +50,7 @@ class PHeapTest(unittest.TestCase):
         hdl = PriorityHeap.create(self.base, self.cap, self.nvals, self.mem)
 
         expected = [5, 0, 2, 3, 4, 1, 6, 7, 8, 9, 10, 11, 12, 13, 14]
-        arr = array.array('Q', [0] * self.cap)
+        arr = array.array("Q", [0] * self.cap)
         for i in range(self.cap):
             for j in range(self.nvals):
                 arr[j] = i * self.nvals + j
@@ -61,7 +61,7 @@ class PHeapTest(unittest.TestCase):
                 hdl.insert(arr, urgent=True)
 
         for i in range(self.cap):
-            v = array.array('Q', [0] * self.nvals)
+            v = array.array("Q", [0] * self.nvals)
             p = int()
             hdl.extract(v, p)
 
@@ -70,13 +70,13 @@ class PHeapTest(unittest.TestCase):
                     self.assertEqual(5 * self.nvals + j, v[j])
             elif i <= 5:
                 for j in range(self.nvals):
-                    self.assertEqual((i-1) * self.nvals + j, v[j])
+                    self.assertEqual((i - 1) * self.nvals + j, v[j])
             else:
                 for j in range(self.nvals):
-                    self.assertEqual(i * self.nvals + j , v[j])
+                    self.assertEqual(i * self.nvals + j, v[j])
 
         hdl.destroy()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

@@ -8,6 +8,7 @@ import multiprocessing
 import time
 import test_util
 
+
 class AccessManagedDictTest:
 
     def __init__(self):
@@ -16,19 +17,20 @@ class AccessManagedDictTest:
         self.test = 0
 
     def __setup(self):
-        parser = test_util.add_default_args('Does a basic speed test of managed dicts')
-        parser.add_argument('--spins', type=int, default=4,
-                             help='number of times for each worker to touch the dictionary')
+        parser = test_util.add_default_args("Does a basic speed test of managed dicts")
+        parser.add_argument(
+            "--spins", type=int, default=4, help="number of times for each worker to touch the dictionary"
+        )
         parser = test_util.add_connections_args(parser)
         self.args = test_util.process_args(parser)
-        multiprocessing.set_start_method('spawn')
+        multiprocessing.set_start_method("spawn")
 
     def run(self):
         self.__setup()
         times = test_util.iterations(self.do_managed_dict_test, self.args)
         self.results = test_util.Results(self.args, times, "access_managed_dict_test")
         if self.args.json:
-            return self.dump() 
+            return self.dump()
         return self.results
 
     def dump(self):
@@ -59,7 +61,6 @@ class AccessManagedDictTest:
         process_handles = []
         touch_process_handles = []
 
-
         with multiprocessing.Manager() as mgr:
 
             d = mgr.dict()
@@ -72,11 +73,18 @@ class AccessManagedDictTest:
 
             for handle in process_handles:
                 handle.join()
-            
+
             start_time = time.time_ns()
-            
+
             for idy in range(num_workers):
-                handle = multiprocessing.Process(target=self.touch_dict, args=(d, idy, spins,))
+                handle = multiprocessing.Process(
+                    target=self.touch_dict,
+                    args=(
+                        d,
+                        idy,
+                        spins,
+                    ),
+                )
                 touch_process_handles.append(handle)
 
             for handle in touch_process_handles:
@@ -84,13 +92,10 @@ class AccessManagedDictTest:
 
             for handle in touch_process_handles:
                 handle.join()
-                
-
 
         return time.time_ns() - start_time
 
 
-
-if __name__ == '__main__':
+if __name__ == "__main__":
     test = AccessManagedDictTest()
     print(test.run())

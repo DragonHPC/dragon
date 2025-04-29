@@ -30,7 +30,7 @@ $(OUTPUTS): dragon/return_codes_map_maker.py dragon/return_codes.h
 	cd $(<D) && python3 $(<F)
 
 clean:
-	$(RM) $(OUTPUTS)
+	$(RM) -rf $(OUTPUTS) $(DISTFILES) capnp kj
 
 .PHONY: dist
 dist: $(DISTFILES)

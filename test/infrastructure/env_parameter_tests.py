@@ -28,10 +28,10 @@ class LaunchParameterTest(unittest.TestCase):
         mlp2 = dip.LaunchParameters.from_env()
 
         for name in self.all_names:
-            self.assertEqual(getattr(mlp, name), getattr(mlp2, name), f'looking for {name}')
+            self.assertEqual(getattr(mlp, name), getattr(mlp2, name), f"looking for {name}")
 
     def test_from_env(self):
-        key_to_test = 'INF_SEG_SZ'
+        key_to_test = "INF_SEG_SZ"
         old_val = None
         ev_name = dip.LaunchParameters._ev_name_from_pt(key_to_test)
 
@@ -48,7 +48,7 @@ class LaunchParameterTest(unittest.TestCase):
             os.environ[ev_name] = old_val
 
     def test_to_env(self):
-        key_to_test = 'INF_SEG_SZ'
+        key_to_test = "INF_SEG_SZ"
         ev_name = dip.LaunchParameters._ev_name_from_pt(key_to_test)
         mlp = dip.LaunchParameters.from_env()
         mlp.inf_seg_sz = 1001

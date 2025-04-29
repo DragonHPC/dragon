@@ -1,0 +1,41 @@
+name: Black Linter
+
+on: [pull_request]
+
+jobs:
+    lint:
+        runs-on: [self-hosted]
+        steps:
+            - uses: actions/checkout@v4
+            #- name: Set up Python
+            #  uses: actions/setup-python@v4
+            #  with:
+            #    python-version: "3.11.11"
+
+            - name: Install Black
+              run: |
+                module load cray-python
+                python3 --version
+                pip install "black>=25.1.0"
+                black --version
+
+            - name: Check Src
+              run: |
+                pwd
+                set -e
+                cd ./src
+                pwd
+                black . --check --diff --color
+
+            - name: Check Tests
+              run: |
+                pwd
+                set -e
+                cd ./test
+                pwd
+                black . --check --diff --color
+
+
+
+
+

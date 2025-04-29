@@ -112,6 +112,10 @@ Memory Lifecycle Management
 
 .. doxygenfunction:: dragon_memory_get_alloc_memdescr
 
+.. doxygenfunction:: dragon_memory_id
+
+.. doxygenfunction:: dragon_memory_from_id
+
 Memory Information & Functionality
 ''''''''''''''''''''''''''''''''''''''
 

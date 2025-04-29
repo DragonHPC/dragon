@@ -4,7 +4,7 @@ import logging
 from typing import Optional
 
 
-LOGGER = logging.getLogger('dragon.transport.tcp.task')
+LOGGER = logging.getLogger("dragon.transport.tcp.task")
 
 
 def run_forever(func=None, /, *, ignore=(Exception,)):
@@ -30,16 +30,16 @@ def run_forever(func=None, /, *, ignore=(Exception,)):
             try:
                 await func(*args, **kwds)
             except ignore:
-                LOGGER.exception(f'Uncaught exception, continuing task: {asyncio.current_task()}')
+                LOGGER.exception(f"Uncaught exception, continuing task: {asyncio.current_task()}")
                 pass
             except asyncio.exceptions.CancelledError:
-                LOGGER.debug(f'Task cancelled: {asyncio.current_task()}')
+                LOGGER.debug(f"Task cancelled: {asyncio.current_task()}")
                 return
             except:
-                LOGGER.exception(f'Uncaught exception, terminating task: {asyncio.current_task()}')
+                LOGGER.exception(f"Uncaught exception, terminating task: {asyncio.current_task()}")
                 return
             else:
-                LOGGER.debug(f'Successfully terminating: {asyncio.current_task()}')
+                LOGGER.debug(f"Successfully terminating: {asyncio.current_task()}")
                 return
 
     return wrapper

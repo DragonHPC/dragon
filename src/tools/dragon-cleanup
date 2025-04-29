@@ -18,7 +18,7 @@ run_backend_cleanup() {
     $launcher $nnodes dragon-node-cleanup $1 || return 0
 }
 
-run_backend_cleanup $#
+run_backend_cleanup $1
 me=`whoami`
 
 
@@ -50,5 +50,11 @@ if [ $# -ne 1 ]; then
     echo $pids | xargs -r kill -9
 
     echo "Cleaning up /dev/shm of any leftover pools on login node"
-    find /dev/shm -user $me -exec rm -f {} \;
+    find /dev/shm/ -user $me -exec rm -f {} \;
+
+    echo "Cleaning up hugepages of any leftover pools on login node"
+    dragon-hugepages-cleanup
+
+    echo "Cleaning up /tmp of sqlite3 dbs on login node"
+    find /tmp -maxdepth 1 -user $me -name "*.db" -exec rm -f {} \;
 fi

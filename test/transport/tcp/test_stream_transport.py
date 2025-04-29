@@ -25,7 +25,7 @@ def tearDownModule():
 class StreamTransportTestCase(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
-        addr = transport.Address.from_netloc('127.0.0.1:7575')
+        addr = transport.Address.from_netloc("127.0.0.1:7575")
         self.transport = transport.StreamTransport(addr)
 
     def tearDown(self):
@@ -37,51 +37,51 @@ class StreamTransportTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_wait_serving(self):
         self.assertIsNone(self.transport._server)
-        with patch.object(self.transport, '_server', autospec=asyncio.base_events.Server) as server:
+        with patch.object(self.transport, "_server", autospec=asyncio.base_events.Server) as server:
             server.is_serving.side_effect = [False, False, True]
             await self.transport.wait_serving()
         self.assertEqual(server.is_serving.call_count, 3)
 
-    @patch.object(transport.StreamTransport, 'add_connection')
+    @patch.object(transport.StreamTransport, "add_connection")
     async def test_accept_connection(self, add_connection):
         # Transport.accept_connection() completes the address handshake and
         # adds the connection to internal state.
-        addr = transport.Address.from_netloc('127.0.0.1:8888')
+        addr = transport.Address.from_netloc("127.0.0.1:8888")
         reader = MagicMock(spec=asyncio.StreamReader)
         writer = MagicMock(spec=asyncio.StreamWriter)
 
-        with patch.object(transport.Address, 'do_handshake', return_value=addr) as do_handshake:
+        with patch.object(transport.Address, "do_handshake", return_value=addr) as do_handshake:
             await self.transport.accept_connection(reader, writer)
 
         do_handshake.assert_awaited_once_with(reader, writer)
         add_connection.assert_called_once_with(addr, reader, writer)
 
-    @patch.object(transport.StreamTransport, 'add_connection')
-    @patch('asyncio.open_connection')
+    @patch.object(transport.StreamTransport, "add_connection")
+    @patch("asyncio.open_connection")
     async def test__open_connection(self, open_connection, add_connection):
         # Transport._open_connection() connects to a transport server and
         # initiates the address handshake. Once established, the connection
         # is added to the transport's internal state.
-        addr = transport.Address.from_netloc('127.0.0.1:8888')
+        addr = transport.Address.from_netloc("127.0.0.1:8888")
         reader = MagicMock(spec=asyncio.StreamReader)
         writer = MagicMock(spec=asyncio.StreamWriter)
 
         open_connection.return_value = (reader, writer)
 
-        with patch.object(transport.Address, 'do_handshake', return_value=addr) as do_handshake:
+        with patch.object(transport.Address, "do_handshake", return_value=addr) as do_handshake:
             r, w = await self.transport._open_connection(addr)
 
         self.assertEqual(open_connection.await_args.args, (str(addr.host), int(addr.port)))
         do_handshake.assert_awaited_once_with(reader, writer)
         add_connection.assert_called_once_with(addr, reader, writer)
 
-    @patch.object(transport.StreamTransport, '_do_recv', new_callable=MagicMock)
-    @patch('asyncio.create_task')
+    @patch.object(transport.StreamTransport, "_do_recv", new_callable=MagicMock)
+    @patch("asyncio.create_task")
     def test_add_connection(self, create_task, _do_recv):
         task = MagicMock(spec=asyncio.Task)
         create_task.return_value = task
 
-        addr = transport.Address.from_netloc('127.0.0.1:8888')
+        addr = transport.Address.from_netloc("127.0.0.1:8888")
         reader = MagicMock(spec=asyncio.StreamReader)
         writer = MagicMock(spec=asyncio.StreamWriter)
         self.transport.add_connection(addr, reader, writer)
@@ -94,9 +94,9 @@ class StreamTransportTestCase(unittest.IsolatedAsyncioTestCase):
         # Verify recv task added to set of recv tasks for addr
         self.assertIn(task, self.transport._recv_tasks[addr])
 
-    @patch.object(transport, 'writer_addrs', None)
-    @patch.object(transport, 'close_writer')
-    @patch.object(transport.StreamTransport, '_open_connection')
+    @patch.object(transport, "writer_addrs", None)
+    @patch.object(transport, "close_writer")
+    @patch.object(transport.StreamTransport, "_open_connection")
     async def test_connect(self, open_connection, close_writer):
         def _open_connection(addr):
             # Simulate connection errors when trying to open a new connection
@@ -108,9 +108,10 @@ class StreamTransportTestCase(unittest.IsolatedAsyncioTestCase):
             # XXX Skip the handshake!
             # XXX Do not call add_connection() since that will start recv
             # XXX tasks. Instead, just update the _writers list.
-            #self.transport.add_connection(addr, reader, writer)
+            # self.transport.add_connection(addr, reader, writer)
             self.transport._writers[addr].append(writer)
             return reader, writer
+
         open_connection.side_effect = _open_connection
 
         # Verify self connections are prevented
@@ -119,7 +120,7 @@ class StreamTransportTestCase(unittest.IsolatedAsyncioTestCase):
 
         self.addAsyncCleanup(self.transport.close)
 
-        addr = transport.Address.from_netloc('127.0.0.1:8888')
+        addr = transport.Address.from_netloc("127.0.0.1:8888")
 
         # Verify new connection opened
         writer = await self.transport.connect(addr)
@@ -164,7 +165,7 @@ class StreamTransportConnectionTestCase(TestMessages, unittest.IsolatedAsyncioTe
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.addr = transport.Address.from_netloc('127.0.0.1:7575')
+        cls.addr = transport.Address.from_netloc("127.0.0.1:7575")
 
     def setUp(self):
         self.transport = transport.StreamTransport(self.addr)
@@ -180,7 +181,9 @@ class StreamTransportConnectionTestCase(TestMessages, unittest.IsolatedAsyncioTe
         self.assertFalse(self.transport._writers)
 
     async def _open_client_connection(self):
-        opts = self.transport.default_connection_options.new_child(self.transport.connection_options[self.transport.addr])
+        opts = self.transport.default_connection_options.new_child(
+            self.transport.connection_options[self.transport.addr]
+        )
         return await asyncio.open_connection(
             str(self.transport.addr.host),
             int(self.transport.addr.port),
@@ -189,7 +192,7 @@ class StreamTransportConnectionTestCase(TestMessages, unittest.IsolatedAsyncioTe
 
     async def test_accept_connection(self):
         client_req = self.SendRequest(seqno=42)
-        client_addr = transport.Address.from_netloc('127.0.0.1:8686')
+        client_addr = transport.Address.from_netloc("127.0.0.1:8686")
 
         self.transport.start()
         await self.transport.wait_serving()
@@ -221,7 +224,7 @@ class StreamTransportConnectionTestCase(TestMessages, unittest.IsolatedAsyncioTe
 
     async def test_open_connection(self):
         server_req = self.SendRequest(seqno=42)
-        server_addr = transport.Address.from_netloc('127.0.0.1:8686')
+        server_addr = transport.Address.from_netloc("127.0.0.1:8686")
 
         async def accept_connection(reader, writer):
             try:
@@ -252,12 +255,19 @@ class StreamTransportConnectionTestCase(TestMessages, unittest.IsolatedAsyncioTe
 
 
 try:
-    from dragon.transport.x509 import CertificateAuthority, dragon_uri, generate_server_csr, generate_server_self_signed_cert, pem_encode, pem_encode_pkcs8
+    from dragon.transport.x509 import (
+        CertificateAuthority,
+        dragon_uri,
+        generate_server_csr,
+        generate_server_self_signed_cert,
+        pem_encode,
+        pem_encode_pkcs8,
+    )
 except ImportError:
     pass
 else:
-    class StreamTransportSSLConnectionTestCase(StreamTransportConnectionTestCase):
 
+    class StreamTransportSSLConnectionTestCase(StreamTransportConnectionTestCase):
         """StreamTransport tests where transport supports basic SSL using
         self-signed certs and no verification.
         """
@@ -286,12 +296,12 @@ else:
             # transport will use.
             key, cert = generate_server_self_signed_cert(cls.addr.host, cls._uri, valid_for=timedelta(minutes=5))
             # Write key file
-            cls._keyfile = cls._workdir / 'server-key.pem'
-            with open(cls._keyfile, 'wb') as f:
+            cls._keyfile = cls._workdir / "server-key.pem"
+            with open(cls._keyfile, "wb") as f:
                 f.write(pem_encode_pkcs8(key))
             # Write cert file
-            cls._certfile = cls._workdir / 'server-cert.pem'
-            with open(cls._certfile, 'wb') as f:
+            cls._certfile = cls._workdir / "server-cert.pem"
+            with open(cls._certfile, "wb") as f:
                 f.write(pem_encode(cert))
 
         def _create_server_ssl_context(self):
@@ -308,7 +318,6 @@ else:
             ctx.verify_mode = ssl.CERT_NONE
             return ctx
 
-
     class StreamTransportMutualTLSConnectionTestCase(StreamTransportSSLConnectionTestCase):
         """StreamTransport tests where transport supports mutual-TLS using certs
         issued by trusted CA.
@@ -320,16 +329,16 @@ else:
             key, csr = generate_server_csr(cls.addr.host, cls._uri)
             cert = ca.issue_server_certificate(csr, valid_for=timedelta(minutes=5))
             # Write CA file
-            cls._cafile = cls._workdir / 'ca.pem'
-            with open(cls._cafile, 'wb') as f:
+            cls._cafile = cls._workdir / "ca.pem"
+            with open(cls._cafile, "wb") as f:
                 f.write(pem_encode(ca.certificate))
             # Write key file
-            cls._keyfile = cls._workdir / 'server-key.pem'
-            with open(cls._keyfile, 'wb') as f:
+            cls._keyfile = cls._workdir / "server-key.pem"
+            with open(cls._keyfile, "wb") as f:
                 f.write(pem_encode_pkcs8(key))
             # Write cert file
-            cls._certfile = cls._workdir / 'server-cert.pem'
-            with open(cls._certfile, 'wb') as f:
+            cls._certfile = cls._workdir / "server-cert.pem"
+            with open(cls._certfile, "wb") as f:
                 f.write(pem_encode(cert))
 
         def _create_server_ssl_context(self):
@@ -350,5 +359,5 @@ else:
             return ctx
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

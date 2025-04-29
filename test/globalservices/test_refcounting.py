@@ -24,6 +24,7 @@ def attach_proc(ser_desc_str):
     dgchan.release_refcnt(channel.cuid)
     channel.detach()
 
+
 @unittest.skip(f"PE-42136 : Fails if run with other GS unit tests.")
 class TestGSRefcounting(unittest.TestCase):
 

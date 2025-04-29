@@ -131,15 +131,11 @@ if __name__ == "__main__":
 
     parser.add_argument("--iterations", type=int, default=1000, help="number of iterations to do")
 
-    parser.add_argument(
-        "--lg_max_message_size", type=int, default=4, help="log base 2 of size of message to pass in"
-    )
+    parser.add_argument("--lg_max_message_size", type=int, default=4, help="log base 2 of size of message to pass in")
 
     parser.add_argument("--dragon", action="store_true", help="run using dragon")
 
-    parser.add_argument(
-        "--with_bytes", action="store_true", help="use send_bytes/recv_bytes instead of send/recv"
-    )
+    parser.add_argument("--with_bytes", action="store_true", help="use send_bytes/recv_bytes instead of send/recv")
 
     parser.add_argument("--queues", action="store_true", help="use per-worker queues for the communication")
 

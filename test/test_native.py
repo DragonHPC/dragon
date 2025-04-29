@@ -15,7 +15,9 @@ from native.test_lock import TestLock
 from native.test_queue import TestQueue
 from native.test_redirection import TestIORedirection
 from native.test_ddict import TestDDict
-from native.test_pool import TestDragonNativePool 
+from native.test_ddict_c_driver import TestDDictC
+from native.test_ddict_cpp_driver import TestDDictCPP
+from native.test_pool import TestDragonNativePool
 
 if __name__ == "__main__":
     mp.set_start_method("dragon")

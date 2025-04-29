@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """An ultra simple way to start the infrastructure (shep & GS) and
-   start a script under it.  The script can do what it likes.
+start a script under it.  The script can do what it likes.
 """
 import atexit
 import logging
@@ -29,26 +29,31 @@ import dragon.localservices.server as sserver
 import support.util as tsu
 
 
-def shep_startup_channels_env(shep_stdin_queue, shep_stdout_queue, env_update, name_addition=''):
-    log_setup.setup_logging(basename='shep_' + name_addition, the_level=logging.DEBUG)
-    log = logging.getLogger('shep startup')
-    log.info('--------------------shep started-----------------------')
+def shep_startup_channels_env(shep_stdin_queue, shep_stdout_queue, env_update, name_addition=""):
+    log_setup.setup_logging(basename="shep_" + name_addition, the_level=logging.DEBUG)
+    log = logging.getLogger("shep startup")
+    log.info("--------------------shep started-----------------------")
 
     try:
         os.environ[dfacts.ENV_MODE] = dfacts.SINGLE_MODE
         os.environ[dfacts.ENV_DEFAULT_SEG_SZ] = str(dfacts.ONE_GB)
         os.environ[dfacts.ENV_INF_SEG_SZ] = str(dfacts.ONE_GB)
 
-        shep = sserver.Shepherd(shep_stdin_queue, shep_stdout_queue, gs_start_cmd=sys.executable,
-                                gs_args=['-c', 'import dragon.globalservices.server as dgs; dgs.single()'],
-                                gs_env=env_update, create_channels_pools=True)
+        shep = sserver.Shepherd(
+            shep_stdin_queue,
+            shep_stdout_queue,
+            gs_start_cmd=sys.executable,
+            gs_args=["-c", "import dragon.globalservices.server as dgs; dgs.single()"],
+            gs_env=env_update,
+            create_channels_pools=True,
+        )
 
         shep.run()
-        log.info('-----Shepherd exited normally')
+        log.info("-----Shepherd exited normally")
     except Exception as e:
-        log.exception('++++Shep blew up')
-        print('shepherd blew up')
-        print(f'{e}')
+        log.exception("++++Shep blew up")
+        print("shepherd blew up")
+        print(f"{e}")
         traceback.print_exc()
 
     sys.stdout.flush()
@@ -63,10 +68,10 @@ class Context:
         self.shep_stdin_rh, self.shep_stdin_wh = multiprocessing.Pipe(duplex=False)
         self.shep_stdout_rh, self.shep_stdout_wh = multiprocessing.Pipe(duplex=False)
 
-        username = subprocess.check_output('whoami').decode().strip()
-        self.pool_name = 'standalone_' + username
-        self.pool_size = 2 ** 30
-        self.pool_uid = dfacts.FIRST_MUID + 2 ** 20
+        username = subprocess.check_output("whoami").decode().strip()
+        self.pool_name = "standalone_" + username
+        self.pool_size = 2**30
+        self.pool_uid = dfacts.FIRST_MUID + 2**20
         self.test_pool = dmm.MemoryPool(self.pool_size, self.pool_name, self.pool_uid)
 
         # will need to make a 'test pool' and 'test channels' and pass
@@ -79,12 +84,12 @@ class Context:
 
         # faking these up and making them really large so they won't be likely to
         # clash with anything assigned by GS in a test
-        self.gs_return_cuid = 2 ** 64 - 17
+        self.gs_return_cuid = 2**64 - 17
         self.proc_gs_return_chan = dch.Channel(self.test_pool, self.gs_return_cuid)
         self.proc_gs_return_rh = dconn.Connection(inbound_initializer=self.proc_gs_return_chan)
 
         # not used in this test, but just for uniform practice.
-        self.shep_return_cuid = 2 ** 64 - 18
+        self.shep_return_cuid = 2**64 - 18
         self.proc_shep_return_chan = dch.Channel(self.test_pool, self.shep_return_cuid)
         self.proc_shep_return_rh = dconn.Connection(inbound_initializer=self.proc_shep_return_chan)
 
@@ -99,25 +104,24 @@ class Context:
         self.head_puid = None
 
     def start_infrastructure(self):
-        log_name_addition = subprocess.check_output('whoami').decode().strip()
+        log_name_addition = subprocess.check_output("whoami").decode().strip()
 
         # Make a list of channels to pass thru the environment to GS for testing purposes.
         # In reality these channels would be created by GS in advance of starting
         # the infrastructure-using process.
-        test_chan_list = [(self.gs_return_cuid, self.test_pool.serialize(),
-                           self.proc_gs_return_chan.serialize(), False),
-                          (self.shep_return_cuid, self.test_pool.serialize(),
-                           self.proc_shep_return_chan.serialize(), False)]
+        test_chan_list = [
+            (self.gs_return_cuid, self.test_pool.serialize(), self.proc_gs_return_chan.serialize(), False),
+            (self.shep_return_cuid, self.test_pool.serialize(), self.proc_shep_return_chan.serialize(), False),
+        ]
 
         val = pickle.dumps(test_chan_list)
-        env_update = {dfacts.GS_TEST_CH_EV: du.B64.bytes_to_str(val),
-                      dfacts.GS_LOG_BASE: 'gs_' + log_name_addition}
+        env_update = {dfacts.GS_TEST_CH_EV: du.B64.bytes_to_str(val), dfacts.GS_LOG_BASE: "gs_" + log_name_addition}
 
         shep_start_args = (self.shep_stdin_rh, self.shep_stdout_wh, env_update)
 
-        self.shep_dut = multiprocessing.Process(target=shep_startup_channels_env,
-                                                args=shep_start_args,
-                                                kwargs={'name_addition': log_name_addition})
+        self.shep_dut = multiprocessing.Process(
+            target=shep_startup_channels_env, args=shep_start_args, kwargs={"name_addition": log_name_addition}
+        )
 
         self.shep_dut.start()
 
@@ -144,12 +148,14 @@ class Context:
         # initialization won't have triggered, so we override the connections so the API
         # will work.
 
-        dapi.test_connection_override(test_gs_input=self.gs_input_wh,
-                                      test_gs_return=self.proc_gs_return_rh,
-                                      test_gs_return_cuid=self.gs_return_cuid,
-                                      test_shep_input=self.shep_input_wh,
-                                      test_shep_return=self.proc_shep_return_rh,
-                                      test_shep_return_cuid=self.shep_return_cuid)
+        dapi.test_connection_override(
+            test_gs_input=self.gs_input_wh,
+            test_gs_return=self.proc_gs_return_rh,
+            test_gs_return_cuid=self.gs_return_cuid,
+            test_shep_input=self.shep_input_wh,
+            test_shep_return=self.proc_shep_return_rh,
+            test_shep_return_cuid=self.shep_return_cuid,
+        )
 
         # complete shepherd startup.
         self.shep_input_wh.send(dmsg.BEPingSH(tag=self.la_tag_cnt).serialize())
@@ -244,9 +250,9 @@ class Context:
             self.shep_dut.kill()
 
     def start_thing(self, start_args):
-        res = dproc.create(exe='python3', run_dir='',
-                           args=start_args, env={},
-                           options=pdesc.ProcessOptions(make_inf_channels=True))
+        res = dproc.create(
+            exe="python3", run_dir="", args=start_args, env={}, options=pdesc.ProcessOptions(make_inf_channels=True)
+        )
 
         self.head_puid = res.p_uid
 
@@ -266,37 +272,36 @@ class Context:
                     except threading.BrokenBarrierError:
                         pass
             elif isinstance(msg, dmsg.GSHeadExit):
-                print('+++ head proc exited, code {}'.format(msg.exit_code))
+                print("+++ head proc exited, code {}".format(msg.exit_code))
                 break
             else:
-                print('unexpected message: {}'.format(msg))
+                print("unexpected message: {}".format(msg))
 
 
-default_parent_stdin_filename = f'quokka_{os.getpid()}'
+default_parent_stdin_filename = f"quokka_{os.getpid()}"
 parent_raw_input_fh = None
 coordinate_repl_prompt_barrier = threading.Barrier(2)
 
-def get_raw_input_from_parent_via_fd(prompt='D>>'):
-    'Intended to be called as substitute for raw_input() in child process.'
+
+def get_raw_input_from_parent_via_fd(prompt="D>>"):
+    "Intended to be called as substitute for raw_input() in child process."
     global parent_raw_input_fh, default_parent_stdin_filename
     if parent_raw_input_fh is None:
-        print(f'DBG {default_parent_stdin_filename=}', flush=True)
-        parent_raw_input_fh = open(default_parent_stdin_filename, 'rt')
+        print(f"DBG {default_parent_stdin_filename=}", flush=True)
+        parent_raw_input_fh = open(default_parent_stdin_filename, "rt")
     sys.stdout.flush()
     input_text = parent_raw_input_fh.readline()
     return input_text.rstrip()
 
-def capture_raw_input_as_parent_via_fd(
-        filename=default_parent_stdin_filename,
-        barrier=coordinate_repl_prompt_barrier
-):
+
+def capture_raw_input_as_parent_via_fd(filename=default_parent_stdin_filename, barrier=coordinate_repl_prompt_barrier):
     os.mkfifo(filename)
     barrier.wait()
-    print(f'DBG parent process {os.getpid()=}')
+    print(f"DBG parent process {os.getpid()=}")
     try:
-        with open(filename, 'wt') as parent_raw_input_fh:
+        with open(filename, "wt") as parent_raw_input_fh:
             while True:
-                print('D>> ', end='', flush=True)
+                print("D>> ", end="", flush=True)
                 input_text = sys.stdin.readline()
                 parent_raw_input_fh.write(input_text)
                 parent_raw_input_fh.flush()
@@ -305,12 +310,14 @@ def capture_raw_input_as_parent_via_fd(
                 except threading.BrokenBarrierError:
                     pass
     except Exception as e:
-        print(f'Capture ending, reason: {e}', flush=True)
+        print(f"Capture ending, reason: {e}", flush=True)
+
 
 def start_repl(pipe_filename):
     import code
+
     g = globals()
-    g['default_parent_stdin_filename'] = pipe_filename
+    g["default_parent_stdin_filename"] = pipe_filename
     code.interact(readfunc=get_raw_input_from_parent_via_fd, local=g)
 
 
@@ -319,7 +326,7 @@ def main(start_args, interactive=False):
     try:
         the_ctx.start_infrastructure()
     except Exception as e:
-        print('Got exception {} in inf startup'.format(e))
+        print("Got exception {} in inf startup".format(e))
         traceback.print_exc()
         the_ctx.cleanup()
         exit(1)
@@ -327,14 +334,14 @@ def main(start_args, interactive=False):
     if interactive:
         capture_raw_input_thread = threading.Thread(
             target=capture_raw_input_as_parent_via_fd,
-            args=(default_parent_stdin_filename, coordinate_repl_prompt_barrier)
+            args=(default_parent_stdin_filename, coordinate_repl_prompt_barrier),
         )
         capture_raw_input_thread.start()
 
     try:
         the_ctx.start_thing(start_args)
     except Exception as e:
-        print('Got exception {} in program start'.format(e))
+        print("Got exception {} in program start".format(e))
         traceback.print_exc()
         the_ctx.cleanup()
         exit(1)
@@ -344,8 +351,7 @@ def main(start_args, interactive=False):
 
     if interactive:
         monitor_output_thread = threading.Thread(
-            target=Context.monitor_output,
-            args=(the_ctx, coordinate_repl_prompt_barrier)
+            target=Context.monitor_output, args=(the_ctx, coordinate_repl_prompt_barrier)
         )
         monitor_output_thread.start()
         monitor_output_thread.join()
@@ -366,10 +372,7 @@ def main(start_args, interactive=False):
 
 if __name__ == "__main__":
     if 1 == len(sys.argv):
-        args = [
-            '-c',
-            f'import start_single; start_single.start_repl({default_parent_stdin_filename!r})'
-        ]
+        args = ["-c", f"import start_single; start_single.start_repl({default_parent_stdin_filename!r})"]
         interactive = True
     else:
         args = sys.argv[1:]

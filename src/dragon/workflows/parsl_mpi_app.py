@@ -1,3 +1,4 @@
+"""Dragon's experimental `@mpi_app` decorator and `DragonMPIExecutor` for  `parsl`. This work was done before parsl's official @mpi_app decorator was released."""
 import dragon
 
 from dragon.native.process import Process, ProcessTemplate, Popen
@@ -6,7 +7,6 @@ from dragon.native.process_group import ProcessGroup
 import logging
 
 import parsl
-from parsl.config import Config
 from parsl.data_provider.staging import Staging
 from parsl.executors.base import ParslExecutor
 from parsl.utils import RepresentationMixin
@@ -26,7 +26,50 @@ logger = logging.getLogger(__name__)
 
 
 class DragonMPIExecutor(ParslExecutor, RepresentationMixin):
-    """Dragon based @mpi_app executor. It executes an MPI application that is started using a ProcessGroup within an existing allocation of nodes."""
+    """Dragon based experimental @mpi_app executor. It executes an MPI application that is started using a ProcessGroup within an existing allocation of nodes.
+
+    Example usage:
+
+    .. highlight:: python
+    .. code-block:: python
+
+        import dragon
+
+        from dragon.workflows.parsl_mpi_app import mpi_app, DragonMPIExecutor
+        from dragon.infrastructure.connection import Connection
+        from dragon.infrastructure.policy import Policy
+        import parsl
+        from parsl.config import Config
+        from parsl.dataflow.dflow import DataFlowKernelLoader
+
+        @mpi_app
+        def mpi_factorial_app(num_ranks: int, bias: float, policy: Policy = None):
+            import os
+
+            # executable located in run_dir that we want to launch
+            exe = "factorial"
+            run_dir = os.getcwd()
+            # list of the mpi args we want to pass to the app
+            mpi_args = [str(bias)]
+            # format that is expected by the DragonMPIExecutor
+            return exe, run_dir, policy, num_ranks, mpi_args
+
+        with DragonMPIExecutor() as dragon_mpi_exec:
+            config = Config(
+                executors=[dragon_mpi_exec],
+                strategy=None,
+            )
+
+            parsl.load(config)
+
+            bias = 10
+            num_mpi_ranks = 10
+            scale_factor = 1 / 10000
+            connections = mpi_factorial_app(num_mpi_ranks, bias)
+            output_string = get_results(connections.result()["out"])
+            print(f"mpi computation: {output_string}", flush=True)
+
+    """
 
     @typeguard.typechecked
     def __init__(
@@ -107,7 +150,7 @@ class DragonMPIExecutor(ParslExecutor, RepresentationMixin):
         if self.grps:
             for grp in self.grps:
                 grp.join()
-                grp.stop()
+                grp.close()
             self.grps = []
         return True
 

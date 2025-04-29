@@ -11,15 +11,16 @@ import logging
 from typing import List
 from .api_setup import get_gs_ret_cuid, next_tag, gs_request
 
-from ..infrastructure.messages import \
-    GSNodeList, \
-    GSNodeListResponse, \
-    GSNodeQuery, \
-    GSNodeQueryResponse, \
-    GSNodeQueryAll, \
-    GSNodeQueryAllResponse, \
-    GSNodeQueryTotalCPUCount, \
-    GSNodeQueryTotalCPUCountResponse
+from ..infrastructure.messages import (
+    GSNodeList,
+    GSNodeListResponse,
+    GSNodeQuery,
+    GSNodeQueryResponse,
+    GSNodeQueryAll,
+    GSNodeQueryAllResponse,
+    GSNodeQueryTotalCPUCount,
+    GSNodeQueryTotalCPUCountResponse,
+)
 
 from ..infrastructure.parameters import this_process
 from ..infrastructure.node_desc import NodeDescriptor
@@ -32,7 +33,7 @@ class DragonNodeError(Exception):
 
 
 def query(identifier) -> NodeDescriptor:
-    """ Asks GS for the node descriptor beloging to a node identified by name or h_uid .
+    """Asks GS for the node descriptor beloging to a node identified by name or h_uid .
 
     :param identifier: Node id to query. This is the name if of type str, h_uid if of type int
     :return: descriptor
@@ -40,11 +41,9 @@ def query(identifier) -> NodeDescriptor:
     """
 
     if isinstance(identifier, int):  # by h_uid
-        req_msg = GSNodeQuery(tag=next_tag(), p_uid=this_process.my_puid,
-                              r_c_uid=get_gs_ret_cuid(), h_uid=identifier)
+        req_msg = GSNodeQuery(tag=next_tag(), p_uid=this_process.my_puid, r_c_uid=get_gs_ret_cuid(), h_uid=identifier)
     else:  # by name
-        req_msg = GSNodeQuery(tag=next_tag(), p_uid=this_process.my_puid,
-                              r_c_uid=get_gs_ret_cuid(), name=identifier)
+        req_msg = GSNodeQuery(tag=next_tag(), p_uid=this_process.my_puid, r_c_uid=get_gs_ret_cuid(), name=identifier)
 
     reply_msg = gs_request(req_msg)
     assert isinstance(reply_msg, GSNodeQueryResponse)
@@ -63,11 +62,7 @@ def query_all() -> List[NodeDescriptor]:
     :return: list of NodeDescriptors
     """
 
-    req_msg = GSNodeQueryAll(
-        tag=next_tag(),
-        p_uid=this_process.my_puid,
-        r_c_uid=get_gs_ret_cuid()
-    )
+    req_msg = GSNodeQueryAll(tag=next_tag(), p_uid=this_process.my_puid, r_c_uid=get_gs_ret_cuid())
 
     reply_msg = gs_request(req_msg)
     assert isinstance(reply_msg, GSNodeQueryAllResponse)
@@ -79,15 +74,14 @@ def query_all() -> List[NodeDescriptor]:
 
 
 def query_total_cpus() -> int:
-    """ Asks GS to return the total number of CPUS beloging to all of the registered nodes.
+    """Asks GS to return the total number of CPUS beloging to all of the registered nodes.
 
     :return: integer value of the number of cpus
     :raises:
     """
     total_cpus = 0
 
-    req_msg = GSNodeQueryTotalCPUCount(tag=next_tag(), p_uid=this_process.my_puid,
-                                       r_c_uid=get_gs_ret_cuid())
+    req_msg = GSNodeQueryTotalCPUCount(tag=next_tag(), p_uid=this_process.my_puid, r_c_uid=get_gs_ret_cuid())
 
     reply_msg = gs_request(req_msg)
     assert isinstance(reply_msg, GSNodeQueryTotalCPUCountResponse)
@@ -99,12 +93,11 @@ def query_total_cpus() -> int:
 
 
 def get_list() -> list[int]:
-    """ Asks Global Services for a list of the h_uids of all nodes.
+    """Asks Global Services for a list of the h_uids of all nodes.
 
     :return: list of the  h_uids of all currently existing memory pools
     """
-    req_msg = GSNodeList(tag=next_tag(), p_uid=this_process.my_puid,
-                         r_c_uid=get_gs_ret_cuid())
+    req_msg = GSNodeList(tag=next_tag(), p_uid=this_process.my_puid, r_c_uid=get_gs_ret_cuid())
 
     reply_msg = gs_request(req_msg)
     assert isinstance(reply_msg, GSNodeListResponse)

@@ -1,8 +1,6 @@
-An example using Dragon Telemetry
-+++++++++++++++++++++++++++++++++
+Example Using Dragon Telemetry
+++++++++++++++++++++++++++++++
 
-..
-  Unlock the power of... (is this too much?)
 The Telemetry feature enables users to monitor and collect data on critical factors like system performance, and resource utilization.
 Being able to visualize and gain deep insights on these metrics is crucial for optimizing resource allocation, identifying and diagnosing issues and ensuring the efficiency of compute nodes.
 Telemetry comes with the option to add custom metrics tailored to the user application unique needs. This can be done using a simple interface that we have provided.
@@ -26,14 +24,14 @@ Method: ``add_data``
 
 Description: Insert user defined metrics to node local database. Currently there is not a way to write data into the same metric name from multiple processes on the same node and visualize that data separated by the process ID in Grafana. We do plan to support that in the future.
 
-==============  ============       =====================
-fields          type               description
---------------  ------------       ---------------------
-ts_metric_name  string *required*  Metric name to store data
-ts_data         float *required*   Metric value (time-series)
-timestamp       int *optional*     Time stamp for data, defaults to current time
-telemetry_level      int *optional*     Telemetry data level for storing metric. Only stores if data level is less than or equal to telemetry level specified during launch.
-=============== ==============     ===================================
+===============  =================  ====================================================================================================================================
+fields           type               description
+---------------  -----------------  ------------------------------------------------------------------------------------------------------------------------------------
+ts_metric_name   string *required*  Metric name to store data
+ts_data          float *required*   Metric value (time-series)
+timestamp        int *optional*     Time stamp for data, defaults to current time
+telemetry_level  int *optional*     Telemetry data level for storing metric. Only stores if data level is less than or equal to telemetry level specified during launch.
+===============  =================  ====================================================================================================================================
 
 Method: ``finalize``
 
@@ -66,7 +64,9 @@ For convenience, those files are shown below:
 
   .. literalinclude:: ../../src/dragon/telemetry/imports/Grafana_DragonTelemetryDashboard.json
 
+
 Steps to import -
+=================
 
 1. Go to the Dashboard section in Grafana
 
@@ -142,13 +142,13 @@ Example Output when run on 4 nodes with telemetry enabled
 
 Troubleshooting
 =============================
-Listed below are some scenarios that we ran into and the steps we took to solve them. 
+Listed below are some scenarios that we ran into and the steps we took to solve them.
 
 1. Metrics aren't showing up on Grafana dashboard panels
     - You might encounter this the first time running Grafana and Telemetry
-    - Verify that Grafana is able to access Telemetry - 
-        - Go to the Datasources tab in the navigation. 
-        - Select OpenTSDB, scroll to the bottom and click on the Save and Test button. 
+    - Verify that Grafana is able to access Telemetry -
+        - Go to the Datasources tab in the navigation.
+        - Select OpenTSDB, scroll to the bottom and click on the Save and Test button.
         - You should see a connection confirmation indicated by a green notification. If you don't, double check ssh tunnels. Check for messages like: "open failed: connect failed: Connection refused"
     - Refresh Grafana Panels individually
         - Click on the Edit option of any panel.

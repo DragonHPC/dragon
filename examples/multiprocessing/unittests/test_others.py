@@ -90,6 +90,10 @@ class OtherTest(unittest.TestCase):
         )
 
     def test_answer_challenge_auth_failure(self):
+        # Get the python version because the CHALLENGE location
+        # changed in 3.10
+        minor_version = sys.version_info[1]
+
         class _FakeConnection(object):
             def __init__(self):
                 self.count = 0
@@ -97,7 +101,10 @@ class OtherTest(unittest.TestCase):
             def recv_bytes(self, size):
                 self.count += 1
                 if self.count == 1:
-                    return multiprocessing.connection.CHALLENGE
+                    if minor_version < 12:
+                        return multiprocessing.connection.CHALLENGE
+                    else:
+                        return multiprocessing.connection._CHALLENGE
                 elif self.count == 2:
                     return b"something bogus"
                 return b""
@@ -407,6 +414,7 @@ class TestWait(unittest.TestCase):
 # Issue 14151: Test invalid family on invalid environment
 #
 
+
 @unittest.skip(f"DRAGON: Not Implemented")
 class TestInvalidFamily(unittest.TestCase):
     @unittest.skipIf(WIN32, "skipped on Windows")
@@ -444,6 +452,7 @@ class TestFlags(unittest.TestCase):
         flags = (tuple(sys.flags), grandchild_flags)
         print(json.dumps(flags))
 
+    @unittest.skip("AICI-1688: Currently unsupported test")
     def test_flags(self):
         import json
 
@@ -457,6 +466,7 @@ class TestFlags(unittest.TestCase):
 #
 # Test interaction with socket timeouts - see Issue #6056
 #
+
 
 @unittest.skip(f"Dragon: Not Implemented")
 class TestTimeouts(unittest.TestCase):
@@ -613,7 +623,6 @@ class TestCloseFds(unittest.TestCase):
 
 
 class TestIgnoreEINTR(unittest.TestCase):
-
     # Sending CONN_MAX_SIZE bytes into a multiprocessing pipe must block
     CONN_MAX_SIZE = max(test.support.PIPE_MAX_SIZE, test.support.SOCK_MAX_SIZE)
 
@@ -759,6 +768,7 @@ class TestStartMethod(unittest.TestCase):
             print(err)
             self.fail("failed spawning forkserver or grandchild")
 
+
 @unittest.skip(f"DRAGON: Not Implemented PE-45417")
 @unittest.skipIf(sys.platform == "win32", "test semantics don't make sense on Windows")
 class TestResourceTracker(unittest.TestCase):
@@ -826,9 +836,7 @@ class TestResourceTracker(unittest.TestCase):
                         self.assertIn(e.errno, (errno.ENOENT, errno.EINVAL))
                         break
                 else:
-                    raise AssertionError(
-                        f"A {rtype} resource was leaked after a process was " f"abruptly terminated."
-                    )
+                    raise AssertionError(f"A {rtype} resource was leaked after a process was " f"abruptly terminated.")
                 err = p.stderr.read().decode("utf-8")
                 p.stderr.close()
                 expected = "resource_tracker: There appear to be 2 leaked {} " "objects".format(rtype)
@@ -931,9 +939,7 @@ class TestSimpleQueue(unittest.TestCase):
         child_can_start = multiprocessing.Event()
         parent_can_continue = multiprocessing.Event()
 
-        proc = multiprocessing.Process(
-            target=self._test_empty, args=(queue, child_can_start, parent_can_continue)
-        )
+        proc = multiprocessing.Process(target=self._test_empty, args=(queue, child_can_start, parent_can_continue))
         proc.daemon = True
         proc.start()
 
@@ -1245,12 +1251,12 @@ class TestPoolNotLeakOnFailure(unittest.TestCase):
 class MiscTestCase(unittest.TestCase):
     def test__all__(self):
         # Just make sure names in blacklist are excluded
-        try: 
+        try:
             test.support.check__all__(
                 self, multiprocessing, extra=multiprocessing.__all__, not_exported=["SUBDEBUG", "SUBWARNING"]
             )
         except TypeError:
-            #kwargs prior to Python 3.10
+            # kwargs prior to Python 3.10
             test.support.check__all__(
                 self, multiprocessing, extra=multiprocessing.__all__, blacklist=["SUBDEBUG", "SUBWARNING"]
             )

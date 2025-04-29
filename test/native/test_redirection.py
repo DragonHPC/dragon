@@ -11,17 +11,17 @@ import dragon
 # from dragon.native.queue import Queue
 # from dragon.native.barrier import Barrier, BrokenBarrierError
 from dragon.native.process import Popen
-from dragon.channels import Channel, ChannelExistsError
 from dragon.utils import B64
+
 
 class TestIORedirection(unittest.TestCase):
 
     def test_process_stdout(self):
 
         exe = sys.executable
-        proc = Popen(executable=exe, args=['-c', 'print("Hello World")'], stdout=Popen.PIPE)
+        proc = Popen(executable=exe, args=["-c", 'print("Hello World")'], stdout=Popen.PIPE)
 
-        result = ''
+        result = ""
         try:
             while True:
                 data = proc.stdout.recv()
@@ -29,23 +29,23 @@ class TestIORedirection(unittest.TestCase):
         except EOFError:
             pass
 
-        self.assertEqual('Hello World\n', result)
+        self.assertEqual("Hello World\n", result)
         proc.stdout.close()
 
     def test_native_process_stdout_to_devnull(self):
-        '''
-            No output should appear on the terminal from running this test.
-        '''
-        exe = shutil.which('echo')
-        proc = Popen(executable=exe, args=['Hello World'], stdout=Popen.DEVNULL)
+        """
+        No output should appear on the terminal from running this test.
+        """
+        exe = shutil.which("echo")
+        proc = Popen(executable=exe, args=["Hello World"], stdout=Popen.DEVNULL)
 
         self.assertEqual(proc.stdout, None)
 
     def test_native_process_stderr(self):
-        exe = shutil.which('cat')
-        proc = Popen(executable=exe, args=['notafile'], stderr=Popen.PIPE)
+        exe = shutil.which("cat")
+        proc = Popen(executable=exe, args=["notafile"], stderr=Popen.PIPE)
 
-        result = ''
+        result = ""
         try:
             while True:
                 data = proc.stderr.recv()
@@ -53,27 +53,27 @@ class TestIORedirection(unittest.TestCase):
         except EOFError:
             pass
 
-        self.assertEqual('/usr/bin/cat: notafile: No such file or directory\n', result)
+        self.assertEqual("/usr/bin/cat: notafile: No such file or directory\n", result)
         proc.stderr.close()
 
     def test_native_process_stderr_to_devnull(self):
-        '''
-            No output should appear on the terminal from running this test.
-        '''
-        exe = shutil.which('cat')
-        proc = Popen(executable=exe, args=['notafile'], stderr=Popen.DEVNULL)
+        """
+        No output should appear on the terminal from running this test.
+        """
+        exe = shutil.which("cat")
+        proc = Popen(executable=exe, args=["notafile"], stderr=Popen.DEVNULL)
 
         self.assertEqual(proc.stderr, None)
 
     def test_native_process_stdin(self):
-        exe = shutil.which('cat')
-        proc = Popen(executable=exe, args=['-'], stdin=Popen.PIPE, stdout=Popen.PIPE)
+        exe = shutil.which("cat")
+        proc = Popen(executable=exe, args=["-"], stdin=Popen.PIPE, stdout=Popen.PIPE)
 
-        x = 'Hello, How Are You?'
+        x = "Hello, How Are You?"
         proc.stdin.send(x)
         proc.stdin.close()
 
-        result = ''
+        result = ""
         try:
             while True:
                 data = proc.stdout.recv()
@@ -85,10 +85,10 @@ class TestIORedirection(unittest.TestCase):
         proc.stdout.close()
 
     def test_native_process_stderr_to_stdout(self):
-        exe = shutil.which('cat')
-        proc = Popen(executable=exe, args=['notafile'], stderr=Popen.STDOUT, stdout=Popen.PIPE)
+        exe = shutil.which("cat")
+        proc = Popen(executable=exe, args=["notafile"], stderr=Popen.STDOUT, stdout=Popen.PIPE)
 
-        result = ''
+        result = ""
         try:
             while True:
                 data = proc.stdout.recv()
@@ -96,8 +96,9 @@ class TestIORedirection(unittest.TestCase):
         except EOFError:
             pass
 
-        self.assertEqual('/usr/bin/cat: notafile: No such file or directory\n', result)
+        self.assertEqual("/usr/bin/cat: notafile: No such file or directory\n", result)
         proc.stdout.close()
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -4,9 +4,9 @@ import os
 
 pid = os.getpid()
 
-sendh = PMsgQueue("/test"+str(pid), write_intent=True)
-recvh = PMsgQueue("/test"+str(pid), read_intent=True)
-sendh.send('Bad Message')
+sendh = PMsgQueue("/test" + str(pid), write_intent=True)
+recvh = PMsgQueue("/test" + str(pid), read_intent=True)
+sendh.send("Bad Message")
 sendh.reset()
 recvh.reset()
 

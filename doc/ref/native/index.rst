@@ -1,49 +1,86 @@
-Dragon Native
-+++++++++++++
+.. _NativeAPI:
 
-The following reference provides information about the Dragon Native API.  It is Dragon's top level API
-intended for users that require all supported programming languages or extended functionality. The API has
-bindings across Fortran, C, and C++ to the native Dragon run-time system. It is a cross-language API, so
-objects created in one language are usable across processes and languages by sharing their names or unique
-IDs. Dragon Native objects are available in :term:`mangaged <Managed Object>` and
-:term:`unmanaged <Unmanaged Object>` version. As the naming suggests, unmanaged versions do not require
-the Dragon runtime to run, but may have limited functionality. In particular, they are not garbage
-collected and cannot be looked by :term:`name <Object Name>` or :term:`uid <Object UID>`.
+Native
+++++++
 
-Much of the API is inspired by Python Multiprocessing.
+The following reference provides information about the Dragon Native API. Much of the API is inspired by Python
+multiprocessing but includes extended functionality, such as support for explicit placement of resources through
+the :py:class:`dragon.infrastructure.policy.Policy` class.
 
-Reference by Language
-=====================
+Python Reference
+================
 
-.. toctree::
-    :maxdepth: 2
+Infrastructure Information
+--------------------------
 
-    Python/index.rst
+.. currentmodule:: dragon.native
 
-Specification by Language
-=========================
+.. autosummary::
+    :toctree:
+    :recursive:
 
-The following specification documents the intended API in C, C++ and Fortran. It is subject to change.
+    machine
 
-.. toctree::
-    :maxdepth: 2
 
-    C/index.rst
-    C++/index.rst
-    Fortran/index.rst
+Process Management
+------------------
 
-Architecture
-============
+.. currentmodule:: dragon.native
 
-.. figure:: images/architecture.svg
-    :scale: 75%
-    :name: dragon-native-architecture 
+.. autosummary::
+    :toctree:
+    :recursive:
 
-    **The Dragon native architecture**
+    process
 
-Dragon native components use the Dragon Global Services Client API to implement
-:term:`refcounted <Refcounted Object>`, :term:`managed <Managed Object>`, or
-:term:`unmanaged <Unmanaged Object>` :term:`objects <Dragon Object>`.  Every
-object on the Native API is made up of the four base components of the Dragon GS
-Client API: processes, channels, (memory) pools and (hardware) nodes. The
-life-cycle of these objects is in-turn managed by Dragons runtime services.
+.. currentmodule:: dragon.native.process_group
+
+.. autosummary::
+    :toctree:
+    :recursive:
+
+    ProcessGroup
+
+
+Synchronization
+---------------
+
+.. currentmodule:: dragon.native
+
+.. autosummary::
+    :toctree:
+    :recursive:
+
+    barrier
+    event
+    lock
+    semaphore
+
+
+Communication and Shared Data
+-----------------------------
+
+.. currentmodule:: dragon.native
+
+.. autosummary::
+    :toctree:
+    :recursive:
+
+    queue
+    value
+    array
+
+
+Process Pools
+-------------
+
+.. currentmodule:: dragon.native.pool
+
+.. autosummary::
+    :toctree:
+    :recursive:
+
+    ApplyResult
+    AsyncResult
+    MapResult
+    Pool

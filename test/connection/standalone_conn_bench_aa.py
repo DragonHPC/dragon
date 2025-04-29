@@ -75,8 +75,7 @@ def aa_test(nworkers, burn, iterations, msg_sz, my_pipe):
             if k != i:
                 links.append(all_links[min(i, k), max(i, k)][int(k < i)])
 
-        proc = mp.Process(target=test_worker,
-                          args=(links, result_links[i][1], msg_sz, total_iterations))
+        proc = mp.Process(target=test_worker, args=(links, result_links[i][1], msg_sz, total_iterations))
 
         all_workers.append(proc)
 
@@ -93,46 +92,46 @@ def aa_test(nworkers, burn, iterations, msg_sz, my_pipe):
     avg_aa_completion_time = sum(avg_times) / nworkers  # seconds
     bandwidth = msg_sz * nworkers / avg_aa_completion_time  # bytes/second
 
-    msg_size_in_k = msg_sz / (2 ** 10)
-    bw_in_mb_sec = bandwidth / (2 ** 20)
+    msg_size_in_k = msg_sz / (2**10)
+    bw_in_mb_sec = bandwidth / (2**20)
     completion_time_in_ms = avg_aa_completion_time * 1000
 
     for worker in all_workers:
         worker.join()
 
-    print(f'{nworkers=} {iterations=} {msg_size_in_k=} {completion_time_in_ms=:.3f} {bw_in_mb_sec=:.2f}')
+    print(f"{nworkers=} {iterations=} {msg_size_in_k=} {completion_time_in_ms=:.3f} {bw_in_mb_sec=:.2f}")
 
 
 if __name__ == "__main__":
-    mp.set_start_method('spawn')
+    mp.set_start_method("spawn")
 
-    parser = argparse.ArgumentParser(description='All-all channels/connection test')
-    parser.add_argument('--num_workers', type=int, default=4,
-                        help='number of workers to spawn at a time')
+    parser = argparse.ArgumentParser(description="All-all channels/connection test")
+    parser.add_argument("--num_workers", type=int, default=4, help="number of workers to spawn at a time")
 
-    parser.add_argument('--iterations', type=int, default=100,
-                        help='number of iterations to do')
+    parser.add_argument("--iterations", type=int, default=100, help="number of iterations to do")
 
-    parser.add_argument('--burn_iterations', type=int, default=5,
-                        help='number of iterations to burn first time')
+    parser.add_argument("--burn_iterations", type=int, default=5, help="number of iterations to burn first time")
 
-    parser.add_argument('--lg_message_size', type=int, default=4,
-                        help='log base 2 of size of message to pass in')
+    parser.add_argument("--lg_message_size", type=int, default=4, help="log base 2 of size of message to pass in")
 
-    parser.add_argument('--dragon', action='store_true', help='run using dragon Connection')
+    parser.add_argument("--dragon", action="store_true", help="run using dragon Connection")
 
     my_args = parser.parse_args()
 
-    assert my_args.lg_message_size <= 25, 'limit: 32MB per worker to each other worker'
+    assert my_args.lg_message_size <= 25, "limit: 32MB per worker to each other worker"
 
     if my_args.dragon:
-        print('using dragon Connection')
-        dconn.get_going(pool_size=2 ** 31)  # setup for standalone channels
+        print("using dragon Connection")
+        dconn.get_going(pool_size=2**31)  # setup for standalone channels
         pipe_call = dconn.Pipe
     else:
-        print('using multiprocessing Connection')
+        print("using multiprocessing Connection")
         pipe_call = mp.Pipe
 
-    aa_test(nworkers=my_args.num_workers, burn=my_args.burn_iterations,
-            iterations=my_args.iterations, msg_sz=2 ** my_args.lg_message_size,
-            my_pipe=pipe_call)
+    aa_test(
+        nworkers=my_args.num_workers,
+        burn=my_args.burn_iterations,
+        iterations=my_args.iterations,
+        msg_sz=2**my_args.lg_message_size,
+        my_pipe=pipe_call,
+    )

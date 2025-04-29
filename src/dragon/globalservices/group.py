@@ -5,11 +5,13 @@ primary resource component. Only process groups are supported at this time.
 import signal
 import logging
 
+from ..infrastructure.policy import Policy
+
 from ..infrastructure import messages as dmsg
 from ..infrastructure.parameters import this_process
 from ..globalservices import api_setup as das
 
-log = logging.getLogger('group_api')
+log = logging.getLogger("group_api")
 
 
 class GroupError(Exception):
@@ -19,10 +21,10 @@ class GroupError(Exception):
 def _check_msg_types(items):
     for _, msg in items:
         if not isinstance(dmsg.parse(msg), (dmsg.GSChannelCreate, dmsg.GSProcessCreate, dmsg.GSPoolCreate)):
-            raise GroupError('An invalid message type was provided.')
+            raise GroupError("An invalid message type was provided.")
 
 
-def create(items, policy, user_name='', soft=False):
+def create(items, policy, user_name="", soft=False):
     """Asks Global Services to create a new group of specified resources.
 
     :param items: list of tuples where each tuple contains a replication factor `n` and the Dragon create message. Dragon create messages do not have to be of the same primary resources, i.e. ChannelCreate and ProcessCreate messages can be mixed to into groups to represent composite resources.
@@ -40,14 +42,30 @@ def create(items, policy, user_name='', soft=False):
     """
 
     if soft and not user_name:
-        raise GroupError('soft create requires a user supplied group name')
+        raise GroupError("soft create requires a user supplied group name")
 
     # check that we have valid message types on each tuple
     _check_msg_types(items)
 
-    req_msg = dmsg.GSGroupCreate(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                 r_c_uid=das.get_gs_ret_cuid(), items=items,
-                                 policy=policy, user_name=user_name)
+    thread_policy = Policy.thread_policy()
+    if all([policy, thread_policy]):
+        # Since both policy and thread_policy are not None, we are likely within a
+        # Policy context manager. In this case we need to merge the supplied policy
+        # with the policy of the context manager.
+        policy = Policy.merge(thread_policy, policy)
+    elif policy is None:
+        # If policy is None, then let's assign thread_policy to policy. thread_policy
+        # may also be None, but that's OK.
+        policy = thread_policy
+
+    req_msg = dmsg.GSGroupCreate(
+        tag=das.next_tag(),
+        p_uid=this_process.my_puid,
+        r_c_uid=das.get_gs_ret_cuid(),
+        items=items,
+        policy=policy,
+        user_name=user_name,
+    )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupCreateResponse)
@@ -57,7 +75,7 @@ def create(items, policy, user_name='', soft=False):
         # TODO: add check that the items tuples correspond to the
         # correct tuples in the response message
     else:
-        raise GroupError(f'group create {req_msg} failed, no descriptor returned')
+        raise GroupError(f"group create {req_msg} failed, no descriptor returned")
 
     return the_desc
 
@@ -83,13 +101,23 @@ def kill(identifier, sig=signal.SIGKILL, hide_stderr=False):
     :return: GSGroupKillResponse.desc
     """
     if isinstance(identifier, str):
-        req_msg = dmsg.GSGroupKill(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                   r_c_uid=das.get_gs_ret_cuid(), sig=int(sig),
-                                   user_name=identifier, hide_stderr=hide_stderr)
+        req_msg = dmsg.GSGroupKill(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            sig=int(sig),
+            user_name=identifier,
+            hide_stderr=hide_stderr,
+        )
     else:
-        req_msg = dmsg.GSGroupKill(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                   r_c_uid=das.get_gs_ret_cuid(), sig=int(sig),
-                                   g_uid=int(identifier), hide_stderr=hide_stderr)
+        req_msg = dmsg.GSGroupKill(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            sig=int(sig),
+            g_uid=int(identifier),
+            hide_stderr=hide_stderr,
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupKillResponse)
@@ -100,11 +128,11 @@ def kill(identifier, sig=signal.SIGKILL, hide_stderr=False):
         # processes were already dead
         return reply_msg.desc
     elif ec.UNKNOWN == reply_msg.err:
-        raise GroupError(f'group kill {req_msg} failed: {reply_msg.err_info}')
+        raise GroupError(f"group kill {req_msg} failed: {reply_msg.err_info}")
     elif ec.PENDING == reply_msg.err:
-        raise GroupError(f'group kill {req_msg} failed pending: {reply_msg.err_info}')
+        raise GroupError(f"group kill {req_msg} failed pending: {reply_msg.err_info}")
     else:
-        raise NotImplementedError('close case')
+        raise NotImplementedError("close case")
 
 
 def destroy(identifier):
@@ -120,13 +148,13 @@ def destroy(identifier):
     :rtype: dragon.infrastructure.group_desc.GroupDescriptor
     """
     if isinstance(identifier, str):
-        req_msg = dmsg.GSGroupDestroy(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                      r_c_uid=das.get_gs_ret_cuid(),
-                                      user_name=identifier)
+        req_msg = dmsg.GSGroupDestroy(
+            tag=das.next_tag(), p_uid=this_process.my_puid, r_c_uid=das.get_gs_ret_cuid(), user_name=identifier
+        )
     else:
-        req_msg = dmsg.GSGroupDestroy(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                      r_c_uid=das.get_gs_ret_cuid(),
-                                      g_uid=int(identifier))
+        req_msg = dmsg.GSGroupDestroy(
+            tag=das.next_tag(), p_uid=this_process.my_puid, r_c_uid=das.get_gs_ret_cuid(), g_uid=int(identifier)
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupDestroyResponse)
@@ -136,11 +164,11 @@ def destroy(identifier):
     if ec.SUCCESS == reply_msg.err:
         return reply_msg.desc
     elif ec.UNKNOWN == reply_msg.err:
-        raise GroupError(f'group destroy {req_msg} failed: {reply_msg.err_info}')
+        raise GroupError(f"group destroy {req_msg} failed: {reply_msg.err_info}")
     elif ec.PENDING == reply_msg.err:
-        raise GroupError(f'group destroy {req_msg} failed pending: {reply_msg.err_info}')
+        raise GroupError(f"group destroy {req_msg} failed pending: {reply_msg.err_info}")
     else:
-        raise NotImplementedError('close case')
+        raise NotImplementedError("close case")
 
 
 def add_to(identifier, items):
@@ -155,13 +183,21 @@ def add_to(identifier, items):
     """
 
     if isinstance(identifier, str):
-        req_msg = dmsg.GSGroupAddTo(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                    r_c_uid=das.get_gs_ret_cuid(),
-                                    user_name=identifier, items=items)
+        req_msg = dmsg.GSGroupAddTo(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            user_name=identifier,
+            items=items,
+        )
     else:
-        req_msg = dmsg.GSGroupAddTo(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                    r_c_uid=das.get_gs_ret_cuid(),
-                                    g_uid=int(identifier), items=items)
+        req_msg = dmsg.GSGroupAddTo(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            g_uid=int(identifier),
+            items=items,
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupAddToResponse)
@@ -169,9 +205,9 @@ def add_to(identifier, items):
     if reply_msg.desc:
         the_desc = reply_msg.desc
     elif dmsg.GSGroupAddToResponse.Errors.UNKNOWN == reply_msg.err:
-        raise GroupError(f'group addition {req_msg} failed due to unknown group: {reply_msg.err_info}')
+        raise GroupError(f"group addition {req_msg} failed due to unknown group: {reply_msg.err_info}")
     else:
-        raise GroupError(f'group addition {req_msg} failed: {reply_msg.err_info}')
+        raise GroupError(f"group addition {req_msg} failed: {reply_msg.err_info}")
 
     return the_desc
 
@@ -192,14 +228,35 @@ def create_add_to(identifier, items, policy):
     # check that we have valid message types on each tuple
     _check_msg_types(items)
 
+    thread_policy = Policy.thread_policy()
+    if all([policy, thread_policy]):
+        # Since both policy and thread_policy are not None, we are likely within a
+        # Policy context manager. In this case we need to merge the supplied policy
+        # with the policy of the context manager.
+        policy = Policy.merge(thread_policy, policy)
+    elif policy is None:
+        # If policy is None, then let's assign thread_policy to policy. thread_policy
+        # may also be None, but that's OK.
+        policy = thread_policy
+
     if isinstance(identifier, str):
-        req_msg = dmsg.GSGroupCreateAddTo(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                          r_c_uid=das.get_gs_ret_cuid(),
-                                          user_name=identifier, items=items, policy=policy)
+        req_msg = dmsg.GSGroupCreateAddTo(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            user_name=identifier,
+            items=items,
+            policy=policy,
+        )
     else:
-        req_msg = dmsg.GSGroupCreateAddTo(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                          r_c_uid=das.get_gs_ret_cuid(),
-                                          g_uid=int(identifier), items=items, policy=policy)
+        req_msg = dmsg.GSGroupCreateAddTo(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            g_uid=int(identifier),
+            items=items,
+            policy=policy,
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupCreateAddToResponse)
@@ -207,9 +264,9 @@ def create_add_to(identifier, items, policy):
     if reply_msg.desc:
         return reply_msg.desc
     elif dmsg.GSGroupCreateAddToResponse.Errors.UNKNOWN == reply_msg.err:
-        raise GroupError(f'group addition {req_msg} failed due to unknown group: {reply_msg.err_info}')
+        raise GroupError(f"group addition {req_msg} failed due to unknown group: {reply_msg.err_info}")
     else:
-        raise GroupError(f'group addition {req_msg} failed: {reply_msg.err_info}')
+        raise GroupError(f"group addition {req_msg} failed: {reply_msg.err_info}")
 
 
 def remove_from(identifier, items):
@@ -224,13 +281,21 @@ def remove_from(identifier, items):
     """
 
     if isinstance(identifier, str):
-        req_msg = dmsg.GSGroupRemoveFrom(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                         r_c_uid=das.get_gs_ret_cuid(),
-                                         user_name=identifier, items=items)
+        req_msg = dmsg.GSGroupRemoveFrom(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            user_name=identifier,
+            items=items,
+        )
     else:
-        req_msg = dmsg.GSGroupRemoveFrom(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                         r_c_uid=das.get_gs_ret_cuid(),
-                                         g_uid=int(identifier), items=items)
+        req_msg = dmsg.GSGroupRemoveFrom(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            g_uid=int(identifier),
+            items=items,
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupRemoveFromResponse)
@@ -238,9 +303,9 @@ def remove_from(identifier, items):
     if dmsg.GSGroupRemoveFromResponse.Errors.SUCCESS == reply_msg.err:
         return reply_msg.desc
     elif dmsg.GSGroupRemoveFromResponse.Errors.UNKNOWN == reply_msg.err:
-        raise GroupError(f'removal of group resources {req_msg} failed due to unknown group: {reply_msg.err_info}')
+        raise GroupError(f"removal of group resources {req_msg} failed due to unknown group: {reply_msg.err_info}")
     else:
-        raise GroupError(f'removal of group resources {req_msg} failed: {reply_msg.err_info}')
+        raise GroupError(f"removal of group resources {req_msg} failed: {reply_msg.err_info}")
 
 
 def destroy_remove_from(identifier, items):
@@ -257,13 +322,21 @@ def destroy_remove_from(identifier, items):
     """
 
     if isinstance(identifier, str):
-        req_msg = dmsg.GSGroupDestroyRemoveFrom(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                                r_c_uid=das.get_gs_ret_cuid(),
-                                                user_name=identifier, items=items)
+        req_msg = dmsg.GSGroupDestroyRemoveFrom(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            user_name=identifier,
+            items=items,
+        )
     else:
-        req_msg = dmsg.GSGroupDestroyRemoveFrom(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                                r_c_uid=das.get_gs_ret_cuid(),
-                                                g_uid=int(identifier), items=items)
+        req_msg = dmsg.GSGroupDestroyRemoveFrom(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            g_uid=int(identifier),
+            items=items,
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupDestroyRemoveFromResponse)
@@ -271,9 +344,9 @@ def destroy_remove_from(identifier, items):
     if dmsg.GSGroupDestroyRemoveFromResponse.Errors.SUCCESS == reply_msg.err:
         return reply_msg.desc
     elif dmsg.GSGroupDestroyRemoveFromResponse.Errors.UNKNOWN == reply_msg.err:
-        raise GroupError(f'removal of group resources {req_msg} failed due to unknown group: {reply_msg.err_info}')
+        raise GroupError(f"removal of group resources {req_msg} failed due to unknown group: {reply_msg.err_info}")
     else:
-        raise GroupError(f'removal of group resources {req_msg} failed: {reply_msg.err_info}')
+        raise GroupError(f"removal of group resources {req_msg} failed: {reply_msg.err_info}")
 
 
 def get_list():
@@ -282,8 +355,7 @@ def get_list():
     :return: list of the g_uids of all groups, alive and dead
     :rtype: list[g_uids]
     """
-    req_msg = dmsg.GSGroupList(tag=das.next_tag(), p_uid=this_process.my_puid,
-                               r_c_uid=das.get_gs_ret_cuid())
+    req_msg = dmsg.GSGroupList(tag=das.next_tag(), p_uid=this_process.my_puid, r_c_uid=das.get_gs_ret_cuid())
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupListResponse)
@@ -302,13 +374,13 @@ def query(identifier):
     :rtype: GroupDescriptor
     """
     if isinstance(identifier, str):
-        req_msg = dmsg.GSGroupQuery(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                    r_c_uid=das.get_gs_ret_cuid(),
-                                    user_name=identifier)
+        req_msg = dmsg.GSGroupQuery(
+            tag=das.next_tag(), p_uid=this_process.my_puid, r_c_uid=das.get_gs_ret_cuid(), user_name=identifier
+        )
     else:
-        req_msg = dmsg.GSGroupQuery(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                    r_c_uid=das.get_gs_ret_cuid(),
-                                    g_uid=int(identifier))
+        req_msg = dmsg.GSGroupQuery(
+            tag=das.next_tag(), p_uid=this_process.my_puid, r_c_uid=das.get_gs_ret_cuid(), g_uid=int(identifier)
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSGroupQueryResponse)
@@ -316,4 +388,4 @@ def query(identifier):
     if dmsg.GSGroupQueryResponse.Errors.SUCCESS == reply_msg.err:
         return reply_msg.desc
     else:
-        raise GroupError(f'group query {req_msg} failed: {reply_msg.err_info}')
+        raise GroupError(f"group query {req_msg} failed: {reply_msg.err_info}")

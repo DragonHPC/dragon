@@ -15,7 +15,6 @@ different processes will create only minimal overhead.
 :raises NotImplementedError: If used with win32
 """
 
-
 import multiprocessing
 import multiprocessing.pool
 import multiprocessing.queues
@@ -128,13 +127,14 @@ class _WaitService:
     already 'ready', when waited upon.
     """
 
-    THREAD_WAIT = 0.1  # [sec] time interval for a thread to check if it needs to stop waiting, used when timeout is None
+    THREAD_WAIT = (
+        0.1  # [sec] time interval for a thread to check if it needs to stop waiting, used when timeout is None
+    )
     GC_INTERVAL = 10  # [sec] how often to look for abandoned waiters/ready_objects from vanished waiters
     # exact value not important as it's not related to timeout
 
     def __init__(self, timeout):
-
-        self.wait_timeout = timeout # [sec] time interval for a thread to check if it needs to stop waiting
+        self.wait_timeout = timeout  # [sec] time interval for a thread to check if it needs to stop waiting
 
         self.insert_lock = threading.Lock()  # protect inserting new objects and waiters
 
@@ -164,7 +164,6 @@ class _WaitService:
             self.events[my_tid] = threading.Event()
 
         while True:
-
             # Wait on the event for 10sec.
             # If the event is set, this breaks immediately
             res = self.events[my_tid].wait(timeout=self.GC_INTERVAL)
@@ -404,9 +403,7 @@ class _WaitService:
                 self.objects[t.native_id] = [obj]
 
         if new_others:
-            t = threading.Thread(
-                target=self._wait_on_multiprocessing_objects, args=(new_others,), daemon=True
-            )
+            t = threading.Thread(target=self._wait_on_multiprocessing_objects, args=(new_others,), daemon=True)
             t.start()
             self.waiters[t.native_id] = [my_tid]
             self.objects[t.native_id] = new_others
@@ -470,17 +467,28 @@ _original_ShareableList = None
 
 
 class DragonContext(multiprocessing.context.BaseContext):
-    """The Dragon context patches the Dragon Native API into
-    Python Multiprocessing using the dragon.mpbridge modules,
-    when the startmethod is set to 'dragon' and Dragon is imported.
-    This is done in 2 ways:
+    """This class patches the :py:mod:`dragon.native` modules into Python multiprocessing using the
+    :py:mod:`dragon.mpbridge` modules, when the start method is set to `dragon` and Dragon is imported. Processes,
+    whether started through :py:meth:`~dragon.mpbridge.context.DragonContext.Process` or
+    :py:meth:`~dragon.mpbridge.context.DragonContext.Pool`, are placed in a round-robin fashion across nodes. This
+    behavior can be changed by instead using the lower level :py:mod:`dragon.native` equivalents.
 
-    1. The Dragon context is selected and with it all of
-    the replaced API (see dragon/__init__.py).
+    Example usage:
 
-    2. The module is monkey patched during import, to ensure
-    users that don't use the context to get parts of the API
-    still get the dragon/mpbridge/*.py methods and classes.
+    .. highlight:: python
+    .. code-block:: python
+
+        import dragon  # <<-- import before multiprocessing
+        import multiprocessing as mp
+
+        def f(item):
+            print(f"I got {item}", flush=True)
+
+        if __name__ == "__main__":
+            mp.set_start_method("dragon")  # <<-- set the start method to "dragon"
+
+            with mp.Pool(5) as p:
+                p.map(f, [0, 1, 2])
     """
 
     Process = DragonProcess
@@ -512,7 +520,24 @@ class DragonContext(multiprocessing.context.BaseContext):
     USE_MPCLIENT = False
 
     def cpu_count(self):
-        """Returns the number of CPUs in the system"""
+        """Returns the total number of logical CPUs across all nodes. See
+        :external+python:py:func:`multiprocessing.cpu_count` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import cpu_count, set_start_method
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+                print(f"There are {cpu_count()} logical CPUs across all nodes", flush=True)
+
+        :return: total number of logical CPUs across all nodes
+        :rtype: int
+        """
         if multiprocessing.get_start_method() == self._name:
             from ..native.machine import cpu_count
 
@@ -524,8 +549,8 @@ class DragonContext(multiprocessing.context.BaseContext):
             return multiprocessing.get_context().cpu_count()
 
     def freeze_support(self):
-        """Check whether this is a fake forked process in a frozen executable.
-        If so then run code specified by commandline and exit.
+        """Present to allow CPython unit tests to pass with Dragon. Check whether this is a fake forked process in a
+        frozen executable. If so then run code specified by commandline and exit.
         """
         if multiprocessing.get_start_method() == self._name:
             raise NotImplementedError(
@@ -535,7 +560,12 @@ class DragonContext(multiprocessing.context.BaseContext):
             return multiprocessing.get_context().freeze_support()
 
     def log_to_stderr(self, level=None):
-        """Turn on logging and add a handler which prints to stderr"""
+        """Turn on logging and add a handler which prints to stderr. See
+        :external+python:py:func:`multiprocessing.log_to_stderr` for additional information.
+
+        :param level: the logging level
+        :type level: int (e.g., `logging.DEBUG`)
+        """
 
         if multiprocessing.get_start_method() == self._name:
             from .util import log_to_stderr
@@ -548,8 +578,11 @@ class DragonContext(multiprocessing.context.BaseContext):
             return multiprocessing.get_context().log_to_stderr(level=level)
 
     def get_logger(self):
-        """Return package logger -- if it does not already exist then
-        it is created.
+        """Return package logger -- if it does not already exist then it is created. See
+        :external+python:py:func:`multiprocessing.get_logger` for additional information.
+
+        :return: the logger used by `multiprocessing`
+        :rtype: :external+python:py:class:`logging.Logger`
         """
         if multiprocessing.get_start_method() == self._name:
             from .util import get_logger
@@ -563,15 +596,38 @@ class DragonContext(multiprocessing.context.BaseContext):
 
     @staticmethod
     def wait(object_list, timeout=None):
-        """Implement a wait on a list of various Dragon and Multiprocessing objects.
+        """Implements a wait on a list of various Dragon-specific and multiprocessing objects. See
+        :external+python:py:func:`multiprocessing.connection.wait` for additional information.
 
-        We aim to support the following types:
-            * dragon.mpbridge.process.PUID,
-            * dragon.infrastructure.connection.Connection,
-            * dragon.infrastructure.connection.CUID, (broken)
-            * dragon.mpbridge.queue.DragonQueue,
-            * dragon.mpbridge.queue.Faker, (broken)
+        The following types can be waited upon:
+
+            * :py:class:`dragon.mpbridge.process.PUID`,
+            * :py:class:`dragon.infrastructure.connection.Connection`,
+            * :py:class:`dragon.mpbridge.queue.DragonQueue`,
             * standard multiprocessing objects: sockets, mp.connection, mp.sentinel
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Queue, set_start_method
+            from multiprocessing.connection import wait
+            import time
+
+            def f(q):
+                time.sleep(5)
+                q.put("Hello!")
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                q = Queue()
+                p = Process(target=f, args=(q,))
+                p.start()
+                waitlist = [q, p.sentinel]
+                wait(waitlist)   # wait for data to be in the Queue and the process to complete
 
         :param object_list: list of objects to wait on
         :type object_list: supported types
@@ -581,11 +637,9 @@ class DragonContext(multiprocessing.context.BaseContext):
         :rtype: list of supported types
         """
 
-        my_tid = threading.get_native_id()
-
         start = time.monotonic()
 
-        if timeout == None:
+        if timeout is None:
             timeout = 1000000
 
         # check if we're already done
@@ -600,7 +654,7 @@ class DragonContext(multiprocessing.context.BaseContext):
 
         _wait_service.insert_lock.acquire()
         if timeout == 1000000:
-            _wait_service.wait_timeout = _wait_service.THREAD_WAIT # we need a value for the polling timeout
+            _wait_service.wait_timeout = _wait_service.THREAD_WAIT  # we need a value for the polling timeout
         else:
             # Multiply by 4 because he have previously divided by 4 the value of _wait_service.wait_timeout.
             # Setting the value of _wait_service.wait_timeout to a quarter of the minimum value among the
@@ -626,6 +680,7 @@ class DragonContext(multiprocessing.context.BaseContext):
         return ready_objects
 
     def Manager(self):
+        """Not implemented"""
         if multiprocessing.get_start_method() == self._name:
             from .managers import Manager
 
@@ -638,6 +693,41 @@ class DragonContext(multiprocessing.context.BaseContext):
         return m
 
     def Pipe(self, duplex=True):
+        """Return a pair of :py:class:`~dragon.infrastructure.connection.Connection` objects. Note that Dragon
+        does not use true Linux file descriptors. See
+        :external+python:py:class:`multiprocessing.connection.Connection` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Pipe, set_start_method
+
+            def f(c):
+                d = c.recv()
+                d = f"{d} to you!"
+                c.send(d)
+                c.close()
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                mine, theirs = Pipe()
+                p = Process(target=f, args=(thiers, ))
+                p.start()
+                mine.send("hello")
+                d = mine.recv()
+                print(d, flush=True)
+                mine.close()
+                p.join()
+
+        :param duplex: True or False if bi-directional communication is desired
+        :type duplex: bool, optional
+        :return: returns a pair of (conn1, conn2). If `duplex` is True (default) the pipe is bidirectional. If `duplex` is False, `conn1` can only be used for receiving and `conn2` only for sending.
+        :rtype: (:py:class:`~dragon.infrastructure.connection.Connection`, :py:class:`~dragon.infrastructure.connection.Connection`)
+        """
         if multiprocessing.get_start_method() == self._name:
             from .connection import Pipe
 
@@ -645,35 +735,187 @@ class DragonContext(multiprocessing.context.BaseContext):
         else:
             return _original_Pipe(duplex)
 
-    def Lock(self):
-        """Returns a non-recursive lock object"""
+    def Lock(self, *, ctx=None):
+        """A non-recursive lock object: a close analog of :external+python:py:class:`threading.Lock`. See
+        :external+python:py:class:`multiprocessing.Lock` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Lock, set_start_method
+            import time
+
+            def f(name, l):
+                with l:
+                    print(f"{name} has the lock!", flush=True)
+                    time.sleep(2)  # operate on some shared resource
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                l = Lock()
+                p = Process(target=f, args=("Worker", l))
+                p.start()
+                f("Manager", l)
+                p.join()
+
+        :return: non-recursive lock object
+        :rtype: :py:class:`~dragon.mpbridge.synchronize.DragonLock`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .synchronize import Lock
 
             return Lock(ctx=self.get_context(), use_base_impl=self.USE_MPLOCK)
         else:
-            return multiprocessing.get_context().Lock(ctx=self.get_context())
+            if ctx:
+                return multiprocessing.get_context().Lock(ctx=ctx)
+            else:
+                return multiprocessing.get_context().Lock()
 
-    def RLock(self):
-        """Returns a recursive lock object"""
+    def RLock(self, *, ctx=None):
+        """A recursive lock object: a close analog of :external+python:py:class:`threading.RLock`.See
+        :external+python:py:class:`multiprocessing.RLock` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, RLock, set_start_method
+            import time
+
+            def f(name, l):
+                # recursively acquired and released by this process only
+                with l:
+                    with l:
+                        print(f"{name} has the lock!", flush=True)
+                        time.sleep(2)  # operate on some shared resource
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                l = Lock()
+                p = Process(target=f, args=("Worker", l))
+                p.start()
+                f("Manager", l)
+                p.join()
+
+        :return: recursive lock object
+        :rtype: :py:class:`~dragon.mpbridge.synchronize.DragonRLock`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .synchronize import RLock
 
             return RLock(ctx=self.get_context(), use_base_impl=self.USE_MPRLOCK)
         else:
-            return multiprocessing.get_context().RLock(ctx=self.get_context())
+            if ctx:
+                return multiprocessing.get_context().RLock(ctx=ctx)
+            else:
+                return multiprocessing.get_context().RLock(ctx=self.get_context())
 
-    def Condition(self, lock=None):
-        """Returns a condition object"""
+    def Condition(self, *, ctx=None, lock=None):
+        """A condition variable: a close analog of :external+python:py:class:`threading.Condition`. See
+        :external+python:py:class:`multiprocessing.Condition` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Condition, set_start_method
+            import time
+
+            def f(cond, n):
+                cond.acquire()
+                cond.wait()
+                print(f"Worker {n} woke up", flush=True)
+                cond.release()
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                cond = Condition()
+                ps = []
+                for i in range(3):
+                    p = Process(target=f, args=(cond, i,))
+                    p.start()
+                    ps.append(p)
+
+                time.sleep(5)  # should really use a Barrier, but still give workers time to acquire
+
+                cond.acquire()
+                cond.notify(n=1)
+                cond.release()
+
+                cond.acquire()
+                cond.notify_all()
+                cond.release()
+
+                for p in ps:
+                    p.join()
+
+        :param lock: lock to use with the Condition, otherwise an :py:class:`~dragon.mpbridge.synchronize.DragonRLock` is created and used
+        :type object_list: None, RLock, Lock, optional
+        :return: condition variable
+        :rtype: :py:class:`~dragon.mpbridge.synchronize.DragonCondition`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .synchronize import Condition
 
             return Condition(lock, ctx=self.get_context(), use_base_impl=self.USE_MPCONDITION)
         else:
-            return multiprocessing.get_context().Condition(lock, ctx=self.get_context())
+            if ctx:
+                return multiprocessing.get_context().Condition(lock, ctx=ctx)
+            else:
+                return multiprocessing.get_context().Condition(lock, ctx=self.get_context())
 
     def Semaphore(self, value=1):
-        """Returns a semaphore object"""
+        """A semaphore object: a close analog of :external+python:py:class:`threading.Semaphore`. See
+        :external+python:py:class:`multiprocessing.Semaphore` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Semaphore, set_start_method
+            import time
+
+            def f(sem):
+                sem.acquire()
+                if n == 2:
+                    time.sleep(8)
+                    sem.release()
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                # use a Semaphore to hold a process back from proceeding until others have passed through a code block
+                sem = Semaphore(value=3)
+                ps = []
+                for _ in range(3):
+                    p = Process(target=f, args=(sem,))
+                    p.start()
+                    ps.append(p)
+
+                time.sleep(5)  # should really use a Barrier, but still give workers time to acquire
+
+                sem.acquire()  # blocks until worker 2 calls release
+
+                for p in ps:
+                    p.join()
+
+        :param value: initial value for the internal counter, defaults to 1
+        :type value: int, optional
+        :return: semaphore
+        :rtype: :py:class:`~dragon.mpbridge.synchronize.DragonSemaphore`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .synchronize import Semaphore
 
@@ -682,7 +924,14 @@ class DragonContext(multiprocessing.context.BaseContext):
             return multiprocessing.get_context().Semaphore(value, ctx=self.get_context())
 
     def BoundedSemaphore(self, value=1):
-        """Returns a semaphore object"""
+        """A bounded semaphore object: a close analog of :external+python:py:class:`threading.BoundedSemaphore`. See
+        :external+python:py:class:`multiprocessing.BoundedSemaphore` for additional information.
+
+        :param value: initial value for the internal counter, defaults to 1
+        :type value: int, optional
+        :return: semaphore
+        :rtype: :py:class:`~dragon.mpbridge.synchronize.DragonBoundedSemaphore`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .synchronize import BoundedSemaphore
 
@@ -690,27 +939,140 @@ class DragonContext(multiprocessing.context.BaseContext):
         else:
             return multiprocessing.get_context().BoundedSemaphore(value, ctx=self.get_context())
 
-    def Event(self):
-        """Returns an event object"""
+    def Event(self, *, ctx=None):
+        """An event object: a close analog of :external+python:py:class:`threading.Event`. See
+        :external+python:py:class:`multiprocessing.Event` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Event, set_start_method
+            import time
+
+            def f(ev):
+                while not ev.is_set():
+                    time.sleep(1)  # or do other work
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                ev = Event()
+                ps = []
+                for _ in range(3):
+                    p = Process(target=f, args=(ev,))
+                    p.start()
+                    ps.append(p)
+
+                time.sleep(5)  # or do some work
+
+                ev.set()  # alert the workers
+
+                for p in ps:
+                    p.join()
+
+        :return: event
+        :rtype: :py:class:`~dragon.mpbridge.synchronize.DragonEvent`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .synchronize import Event
 
             return Event(ctx=self.get_context(), use_base_impl=self.USE_MPEVENT)
         else:
-            return multiprocessing.get_context().Event(ctx=self.get_context())
+            if ctx:
+                return multiprocessing.get_context().Event(ctx=ctx)
+            else:
+                return multiprocessing.get_context().Event()
 
-    def Barrier(self, parties, action=None, timeout=None):
-        """Returns a barrier object"""
+    def Barrier(self, parties, *, ctx=None, action=None, timeout=None):
+        """A barrier object: a close analog of :external+python:py:class:`threading.Barrier`. See
+        :external+python:py:class:`multiprocessing.Barrier` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Barrier, set_start_method
+
+            def f(bar):
+                bar.wait()
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                bar = Barrier(4)
+                ps = []
+                for _ in range(3):
+                    p = Process(target=f, args=(bar,))
+                    p.start()
+                    ps.append(p)
+
+                bar.wait()  # blocks until all workers and this process are in the barrier
+
+                for p in ps:
+                    p.join()
+
+        :param parties: number of parties participating in the barrier
+        :type value: int
+        :param action: callable executed by one of the processes when they are released
+        :type value: Callable, optional
+        :param timeout: default timeout to use if none is specified to :py:meth:`~dragon.mpbridge.synchronize.Barrier.wait`
+        :type timeout: float, None, optional
+        :return: barrier
+        :rtype: :py:class:`~dragon.mpbridge.synchronize.DragonBarrier`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .synchronize import Barrier
 
             return Barrier(parties, action, timeout, ctx=self.get_context(), use_base_impl=self.USE_MPBARRIER)
         else:
-            return multiprocessing.get_context().Barrier(
-                parties, action=action, timeout=timeout, ctx=self.get_context()
-            )
+            if ctx:
+                return multiprocessing.get_context().Barrier(parties, action=action, timeout=timeout, ctx=ctx)
+            else:
+                return multiprocessing.get_context().Barrier(
+                    parties, action=action, timeout=timeout, ctx=self.get_context()
+                )
 
     def Queue(self, maxsize=0):
+        """A shared FIFO-style queue. Unlike the base implementation, this class is implemented using
+        :py:class:`dragon.channels` and provides more flexibility in terms of the size of items without
+        requiring a helper thread. See :external+python:py:class:`multiprocessing.Queue` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Queue, set_start_method
+
+            def f(inq, outq):
+                v = inq.get()
+                v += 1
+                outq.put(v)
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                workq = Queue()
+                resq = Queue()
+                p = Process(target=f, args=(workq, resq,))
+                p.start()
+
+                workq.put(1)
+                res = resq.get()
+                print(f"Put in 1 and got back {res}", flush=True)
+                p.join()
+
+        :param maxsize: maximum number of entries that can reside at once, default of 0 implies a value of 100
+        :type value: int, optional
+        :return: queue
+        :rtype: :py:class:`~dragon.mpbridge.queues.DragonQueue`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .queues import Queue
 
@@ -725,7 +1087,49 @@ class DragonContext(multiprocessing.context.BaseContext):
         else:
             return multiprocessing.get_context().Queue(maxsize)
 
-    def JoinableQueue(self, maxsize=0):
+    def JoinableQueue(self, *, ctx=None, maxsize=0):
+        """A subclass of :py:class:`~dragon.mpbridge.queues.Queue` that additionally has
+        :py:meth:`~dragon.mpbridge.queues.JoinableQueue.task_done` and
+        :py:meth:`~dragon.mpbridge.queues.JoinableQueue.join` methods. See
+        :external+python:py:class:`multiprocessing.JoinableQueue` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, JoinableQueue, set_start_method
+            import queue
+
+            def f(q):
+                while True:
+                    try:
+                        task = q.get(timeout=1.0)
+                    except queue.Empty:
+                        break
+
+                    print(f"got task {task}", flush=True)
+                    q.task_done()
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                workq = JoinableQueue()
+                p = Process(target=f, args=(workq,))
+                p.start()
+
+                for i in range(10):
+                    workq.put(i)
+                workq.join()
+
+                p.join()
+
+        :param maxsize: maximum number of entries that can reside at once, default of 0 implies a value of 100
+        :type value: int, optional
+        :return: queue
+        :rtype: :py:class:`~dragon.mpbridge.queues.DragonJoinableQueue`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .queues import JoinableQueue
 
@@ -736,11 +1140,43 @@ class DragonContext(multiprocessing.context.BaseContext):
                 # q._writer.ghost = True
                 return q
             else:
-                return JoinableQueue(maxsize=maxsize, ctx=self.get_context(), use_base_impl=False)
+                if ctx:
+                    return JoinableQueue(maxsize=maxsize, ctx=ctx, use_base_impl=False)
+                else:
+                    return JoinableQueue(maxsize=maxsize, ctx=self.get_context(), use_base_impl=False)
         else:
             return multiprocessing.get_context().JoinableQueue(maxsize)
 
-    def SimpleQueue(self):
+    def SimpleQueue(self, *, ctx=None):
+        """A :py:class:`~dragon.mpbridge.queues.Queue` object with fewer methods to match the API of
+        :external+python:py:class:`multiprocessing.SimpleQueue`.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, SimpleQueue, set_start_method
+
+            def f(q):
+                task = q.get()
+                print(f"got task {task}", flush=True)
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                workq = SimpleQueue()
+                p = Process(target=f, args=(workq,))
+                p.start()
+
+                workq.put(1)
+
+                p.join()
+
+        :return: queue
+        :rtype: :py:class:`~dragon.mpbridge.queues.DragonSimpleQueue`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .queues import SimpleQueue, Queue
 
@@ -753,12 +1189,46 @@ class DragonContext(multiprocessing.context.BaseContext):
             else:
                 # TODO, PE-41041 we need a Dragon-native SimpleQueue (wrapped Pipe), but for now we can try
                 # return DragonSimpleQueue(ctx=self.get_context(), use_base_impl=False)
-                return SimpleQueue(ctx=self.get_context(), use_base_impl=False)
+                if ctx:
+                    return SimpleQueue(ctx=ctx, use_base_impl=False)
+                else:
+                    return SimpleQueue(ctx=self.get_context(), use_base_impl=False)
         else:
             return multiprocessing.get_context().SimpleQueue()
 
     def Pool(self, processes=None, initializer=None, initargs=(), maxtasksperchild=None):
-        """Returns a process pool object"""
+        """A :py:class:`~dragon.mpbridge.pool.Pool` object that consists of a pool of worker processes to which
+        jobs can be submitted.
+        See :external+python:py:class:`multiprocessing.pool.Pool` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            import multiprocessing as mp
+
+            def f(item):
+                print(f"I got {item}", flush=True)
+
+            if __name__ == "__main__":
+                mp.set_start_method("dragon")
+
+                with mp.Pool(5) as p:
+                    p.map(f, [0, 1, 2])
+
+        :param processes: the number of workers to use, defaults to :py:attr:`dragon.native.machine.System.nnodes`
+        :type value: int, optional
+        :param initializer: function to call in each worker at startup
+        :type value: Callable, optional
+        :param initargs: arguments to pass to `initializer`
+        :type value: tuple, optional
+        :param maxtasksperchild: if not `None`, the maximum number of tasks a worker processes before it is restarted
+        :type value: int, optional
+        :return: pool
+        :rtype: :py:class:`~dragon.mpbridge.pool.DragonPool`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .pool import Pool
 
@@ -772,55 +1242,166 @@ class DragonContext(multiprocessing.context.BaseContext):
             )
         else:
             return multiprocessing.get_context().Pool(
-                processes=processes,
-                initializer=initializer,
-                initargs=initargs,
-                maxtasksperchild=maxtasksperchild,
+                processes=processes, initializer=initializer, initargs=initargs, maxtasksperchild=maxtasksperchild
             )
 
     def RawValue(self, typecode_or_type, *args):
-        """Returns a shared object"""
+        """Return a ctypes object implemented with :py:class:`dragon.channels`. See
+        :external+python:py:func:`multiprocessing.sharedctypes.RawValue` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, RawValue, set_start_method
+
+            def f(v):
+                print(f"I see {v.value}", flush=True)
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                value = RawValue("i", 42)
+                p = Process(target=f, args=(value,))
+                p.start()
+
+                p.join()
+
+        :param typecode_or_type: either a ctypes type or a one character typecode
+        :type typecode_or_type: see :external+python:py:mod:`multiprocessing.sharedctypes`
+        :return: raw value
+        :rtype: :py:class:`~dragon.mpbridge.sharedctypes.DragonRawValue`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .sharedctypes import RawValue
 
-            return RawValue(
-                typecode_or_type, *args, original=_original_RawValue, use_base_impl=self.USE_MPVALUE
-            )
+            return RawValue(typecode_or_type, *args, original=_original_RawValue, use_base_impl=self.USE_MPVALUE)
         else:
             return _original_RawValue(typecode_or_type, *args)
 
     def RawArray(self, typecode_or_type, size_or_initializer):
-        """Returns a shared array"""
+        """Return a ctypes array implemented with :py:class:`dragon.channels`. See
+        :external+python:py:func:`multiprocessing.sharedctypes.RawArray` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, RawArray, set_start_method
+
+            def f(a):
+                print(f"I see {a[:]}", flush=True)
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                arr = RawArray("i", 11 * [42])
+                p = Process(target=f, args=(arr,))
+                p.start()
+
+                p.join()
+
+        :param typecode_or_type: either a ctypes type or a one character typecode
+        :type value: see :external+python:py:mod:`multiprocessing.sharedctypes`
+        :param size_or_initializer: either an integer length or sequence of values to initialize with
+        :type size_or_initializer: int or sequence
+        :return: raw array
+        :rtype: :py:class:`~dragon.mpbridge.sharedctypes.DragonRawArray`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .sharedctypes import RawArray
 
             return RawArray(
-                typecode_or_type,
-                size_or_initializer,
-                original=_original_RawArray,
-                use_base_impl=self.USE_MPARRAY,
+                typecode_or_type, size_or_initializer, original=_original_RawArray, use_base_impl=self.USE_MPARRAY
             )
         else:
             return _original_RawArray(typecode_or_type, size_or_initializer)
 
     def Value(self, typecode_or_type, *args, lock=True, ctx=None):
-        """Returns a synchronized shared object"""
+        """The same as :py:class:`~dragon.mpbridge.sharedctypes.RawValue` except that depending on the value of `lock`
+        a synchronizing wrapper may be returned. See
+        :external+python:py:func:`multiprocessing.sharedctypes.Value` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Value, set_start_method
+
+            def f(v):
+                print(f"I see {v.value}", flush=True)
+                v.value += 1
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                value = Value("i", 42)
+                p = Process(target=f, args=(value,))
+                p.start()
+
+                p.join()
+                print(f"I now see {value.value}", flush=True)
+
+        :param typecode_or_type: either a ctypes type or a one character typecode
+        :type value: see :external+python:py:mod:`multiprocessing.sharedctypes`
+        :param lock: a lock object or a flag to create a lock
+        :type lock: a :py:class:`~dragon.mpbridge.synchronize.Lock`, bool, optional
+        :return: value
+        :rtype: :py:class:`~dragon.mpbridge.sharedctypes.DragonValue`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .sharedctypes import Value
 
             return Value(
-                typecode_or_type,
-                *args,
-                lock=lock,
-                ctx=ctx,
-                original=_original_Value,
-                use_base_impl=self.USE_MPRAWVALUE,
+                typecode_or_type, *args, lock=lock, ctx=ctx, original=_original_Value, use_base_impl=self.USE_MPRAWVALUE
             )
         else:
             return _original_Value(typecode_or_type, *args, lock=lock, ctx=ctx)
 
     def Array(self, typecode_or_type, size_or_initializer, *, lock=True, ctx=None):
-        """Returns a synchronized shared array"""
+        """The same as :py:class:`~dragon.mpbridge.sharedctypes.RawArray` except that depending on the value of `lock`
+        a synchronizing wrapper may be returned. See
+        :external+python:py:func:`multiprocessing.sharedctypes.Array` for additional information.
+
+        Example usage:
+
+        .. highlight:: python
+        .. code-block:: python
+
+            import dragon
+            from multiprocessing import Process, Array, set_start_method
+
+            def f(a):
+                with a.get_lock():
+                    print(f"I see {a[:]}", flush=True)
+                    a[0] = 99
+
+            if __name__ == "__main__":
+                set_start_method("dragon")
+
+                arr = Array("i", 11 * [42])
+                p = Process(target=f, args=(arr,))
+                p.start()
+
+                p.join()
+                with arr.get_lock():
+                    print(f"I see {arr[:]}", flush=True)
+
+        :param typecode_or_type: either a ctypes type or a one character typecode
+        :type value: see :external+python:py:mod:`multiprocessing.sharedctypes`
+        :param size_or_initializer: either an integer length or sequence of values to initialize with
+        :type size_or_initializer: int or sequence
+        :param lock: a lock object or a flag to create a lock
+        :type lock: a :py:class:`~dragon.mpbridge.synchronize.Lock`, bool, optional
+        :return: array
+        :rtype: :py:class:`~dragon.mpbridge.sharedctypes.DragonArray`
+        """
         if multiprocessing.get_start_method() == self._name:
             from .sharedctypes import Array
 
@@ -837,15 +1418,12 @@ class DragonContext(multiprocessing.context.BaseContext):
             return _original_Array(typecode_or_type, size_or_initializer, lock=lock, ctx=ctx)
 
     def Listener(self, address=None, family=None, backlog=1, authkey=None):
+        """Not implemented"""
         if multiprocessing.get_start_method() == self._name:
             from .connection import Listener
 
             return Listener(
-                address=address,
-                family=family,
-                backlog=backlog,
-                authkey=authkey,
-                use_base_impl=self.USE_MPLISTENER,
+                address=address, family=family, backlog=backlog, authkey=authkey, use_base_impl=self.USE_MPLISTENER
             )
 
         else:
@@ -854,15 +1432,12 @@ class DragonContext(multiprocessing.context.BaseContext):
             )
 
     def Client(self, address, family=None, authkey=None):
+        """Not implemented"""
         if multiprocessing.get_start_method() == self._name:
             from .connection import Client
 
             return Client(
-                address,
-                family=family,
-                authkey=authkey,
-                original=_original_Client,
-                use_base_impl=self.USE_MPCLIENT,
+                address, family=family, authkey=authkey, original=_original_Client, use_base_impl=self.USE_MPCLIENT
             )
         else:
             return _original_Client(address, family=family, authkey=authkey)

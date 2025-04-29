@@ -1,5 +1,4 @@
-"""Dragon's replacement for Multiprocessing's shared ctypes objects: Value and Array.
-"""
+"""Dragon's replacement for Multiprocessing's shared ctypes objects: Value and Array."""
 
 import dragon
 from ..native.lock import Lock
@@ -62,9 +61,7 @@ def Value(typecode_or_type, *args, lock=True, ctx=None, original=None, use_base_
         return DragonValue(typecode_or_type, *args, lock=lock, ctx=ctx)
 
 
-def Array(
-    typecode_or_type, size_or_initializer, *args, lock=True, ctx=None, original=None, use_base_impl=False
-):
+def Array(typecode_or_type, size_or_initializer, *args, lock=True, ctx=None, original=None, use_base_impl=False):
     if use_base_impl:
         if original is None:
             raise NameError("Dragon patch of Multiprocessing not correct.")
@@ -75,9 +72,7 @@ def Array(
 
 
 class DragonRawValue(dragon.native.value.Value):
-    """
-    RawValue Class replacement for Value multiprocessing test cases
-    """
+    """A ctype raw value co-located on the same node by default as the creating process"""
 
     def __init__(self, typecode_or_type, value: int = 0, *, ctx: None = None, raw: bool = True):
         """Initialize the mpbridge RawValue object.
@@ -92,9 +87,7 @@ class DragonRawValue(dragon.native.value.Value):
 
 
 class DragonValue(dragon.native.value.Value):
-    """
-    Value Class replacement
-    """
+    """A ctype value co-located on the same node by default as the creating process"""
 
     def __del__(self):
         try:
@@ -105,21 +98,25 @@ class DragonValue(dragon.native.value.Value):
             pass
 
     def __getstate__(self):
-        return {
-            "base_state": super().__getstate__(),
-            "mp_state": (self.get_lock, self.get_obj, self._lock),
-        }
+
+        try:
+            mp_state = (self.get_lock, self.get_obj, self._lock)
+        except AttributeError:
+            mp_state = (self._lock,)
+
+        return {"base_state": super().__getstate__(), "mp_state": mp_state}
 
     def __setstate__(self, state):
         super().__setstate__(state["base_state"])
-        (self.get_lock, self.get_obj, self._lock) = state["mp_state"]
+        if len(state["mp_state"]) > 1:
+            (self.get_lock, self.get_obj, self._lock) = state["mp_state"]
+        else:
+            (self._lock,) = state["mp_state"]
 
     def __repr__(self):
-        return (
-            f"Dragon Multiprocessing Value({self._type}, {self.value}, {self._channel.cuid}, {self._muid})"
-        )
+        return f"Dragon Multiprocessing Value({self._type}, {self.value}, {self._channel.cuid}, {self._muid})"
 
-    def __init__(self, typecode_or_type, value: int = 0, *, ctx: None = None, lock: Lock = True):
+    def __init__(self, *args, ctx: None = None, lock: Lock = True):
         """Initialize the mpbridge value object.
         :param typecode_or_type: the typecode or type is returned from the dictionary, typecode_to_type
         :type typecode_or_type: str or ctypes, required
@@ -130,25 +127,20 @@ class DragonValue(dragon.native.value.Value):
         :param lock: dragon.native.lock.Lock, optional
         :type lock: creates lock for synchronization for value
         """
+        # Handle situations where a Structure allows a user to input a variable argument list
+        try:
+            typecode_or_type = args[0]
+            if len(args[1:]) > 1:
+                value = args[1:]
+            elif len(args[1:]) == 1:
+                value = args[1]
+            else:
+                value = 0
+        except IndexError as e:
+            raise IndexError("Missing required arguments to DragonValue") from e
 
-        # if lock is False, return the subclass value
-        if lock is False:
-            super().__init__(typecode_or_type, value)
-            return
-
-        elif lock in (True, None) or isinstance(lock, dragon.mpbridge.synchronize.DragonLock):
-            # set attributes for lock get_obj and get_lock
-            if lock is True:
-                lock = Lock(recursive=True)
-            self._lock = lock
-            super().__init__(typecode_or_type, value)
-            self.get_lock = self._get_lock
-            self.get_obj = self._type
-            return
-
-        # lock is not a valid type
-        else:
-            raise AttributeError
+        # For reasons, self._type is defined in native.Value, so init the subclass before assigning self.get_obj
+        super().__init__(typecode_or_type, value, lock=lock)
 
     def acquire(self):
         return self._lock.acquire()
@@ -167,9 +159,7 @@ class DragonValue(dragon.native.value.Value):
 
 
 class DragonRawArray(dragon.native.array.Array):
-    """
-    RawArray Class replacement for Array multiprocessing test cases
-    """
+    """A ctype raw array co-located on the same node by default as the creating process"""
 
     def __repr__(self):
         return f"{self.__class__.__name__}(typecode_or_type={self._type}, m_uid={self._muid})"
@@ -187,19 +177,23 @@ class DragonRawArray(dragon.native.array.Array):
 
 
 class DragonArray(dragon.native.array.Array):
-    """
-    Array Class replacement
-    """
+    """A ctype array co-located on the same node by default as the creating process"""
 
     def __getstate__(self):
-        return {
-            "base_state": super().__getstate__(),
-            "mp_state": (self.get_lock, self.get_obj, self._lock),
-        }
+
+        try:
+            mp_state = (self.get_lock, self.get_obj, self._lock)
+        except AttributeError:
+            mp_state = (self._lock,)
+
+        return {"base_state": super().__getstate__(), "mp_state": mp_state}
 
     def __setstate__(self, state):
         super().__setstate__(state["base_state"])
-        (self.get_lock, self.get_obj, self._lock) = state["mp_state"]
+        if len(state["mp_state"]) > 1:
+            (self.get_lock, self.get_obj, self._lock) = state["mp_state"]
+        else:
+            (self._lock,) = state["mp_state"]
 
     def __repr__(self):
         return f"{self.__class__.__name__}(typecode_or_type={self._type}, lock={self._lock}, m_uid={self._muid})"
@@ -212,7 +206,7 @@ class DragonArray(dragon.native.array.Array):
         except AttributeError:
             pass
 
-    def __init__(self, typecode_or_type,  size_or_initializer, lock: Lock, ctx: None = None):
+    def __init__(self, typecode_or_type, size_or_initializer, lock: Lock = None, ctx: None = None):
         """Initialize the mpbridge array object.
 
         :param typecode_or_type: the typecode or type is returned from the dictionary, typecode_to_type

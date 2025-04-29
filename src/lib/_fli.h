@@ -11,6 +11,7 @@
 #define FLI_HAS_MANAGER_CHANNEL 2
 #define FLI_USING_BUFFERED_PROTOCOL 4
 #define FLI_EOT 0xFFFFFFFFFFFFFFFF
+#define FLI_TERMINATOR 0xFFFFFFFFFFFFFFFE
 
 #ifdef __cplusplus
 extern "C" {
@@ -62,10 +63,13 @@ typedef struct dragonFLISendHandle_st {
     dragonChannelSendh_t chan_sendh;
     dragonMemoryPoolDescr_t dest_pool;
     dragonFLISendBufAlloc_t* buffered_allocations;
+    dragonChannelDescr_t terminate_stream_channel;
     uint64_t buffered_arg;
     size_t total_bytes;
+    bool has_term_channel;
     bool has_dest_pool;
     bool user_supplied;
+    bool close_required;
     pthread_t tid; /* used to keep track of send or receive file descriptors */
     int pipe[2];
 } dragonFLISendHandle_t;
@@ -74,7 +78,14 @@ typedef struct dragonFLISendHandle_st {
  * @brief An FLI Receive Handle
  *
  * When an adapter is open for receiving, a recv handle is provided which
- * is initialized and used until closed.
+ * is initialized and used until closed. The has_term_channel is set to
+ * true when there is a terminate stream channel that has been received
+ * and attached. For buffered streams there is no terminate stream channel.
+ * For non-buffered streams it is possible the terminate channel was
+ * destroyed by the sender (by closing the send handle) prior to the
+ * receiver receiving the serialized term channel descriptor and
+ * attaching to it. In this case, that is not an error. It just means the
+ * stream has been completed and cannot (does not need to be) terminated.
  *
 */
 typedef struct dragonFLIRecvHandle_st {
@@ -82,6 +93,9 @@ typedef struct dragonFLIRecvHandle_st {
     dragonChannelDescr_t strm_channel;
     dragonChannelRecvh_t chan_recvh;
     dragonMemoryPoolDescr_t dest_pool;
+    dragonChannelDescr_t terminate_stream_channel;
+    bool recv_called;
+    bool has_term_channel;
     bool has_dest_pool;
     bool user_supplied;
     bool stream_received;

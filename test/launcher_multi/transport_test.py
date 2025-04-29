@@ -34,55 +34,60 @@ def recv_from(ch_descr):
 
 def send_message_around_ring_of_nodes(this_node_index, send_to_node_index, recv_from_node_index, send_node, recv_node):
     """Send a random secret message around the ring of allocated nodes. Each node has an allocated channel that
-       can be sent to/received from.
-       Depending on the values of send_node and recv_node, this function can send the message or clockwise,
-       counter clockwise. Also depending on the values of send_node and recv_node, either the send or recv will
-       be remote.
-        Clockwise Local Send / Remote Recv    │    Clockwise Remote Send / Local Recv
-                    ┌────────┐                │                ┌────────┐
-                    │        │                │                │        │
-            ┌─recv──┤ Node 0 ◄─recv─┐         │        ┌─send──► Node 0 ├─send─┐
-            │       │        │      │         │        │       │        │      │
-            │       └──▲───┬─┘     msg        │        │       └──▲───┬─┘     msg
-            │          └─msg        │         │        │          └───┘        │
-        ┌───▼────┐     send     ┌───┴────┐    │    ┌───┴────┐     recv     ┌───▼────┐
-        │        ├─┐          ┌─►        │    │    │        ├─┐          ┌─►        │
-        │ Node 4 │ │send  send│ │ Node   │    │    │ Node 4 │ │recv  recv│ │ Node   │
-        │        ◄─┘          └─┤        │    │    │        ◄─┘         msg┤        │
-        └┬───────┘              └───────▲┘    │    └▲───────┘              └───────┬┘
-         │    send              send    │     │     │    recv              recv    │
-       recv   ┌───┐             ┌───┐  recv   │   send   ┌───┐             ┌───┐  send
-         │ ┌──▼───┴─┐        ┌──▼───┴─┐ │     │     │ ┌──▼───┴─┐        ┌──▼───┴─┐ │
-         │ │        │        │        │ │     │     │ │        │        │        │ │
-         └─► Node 3 ├──recv──► Node 2 ├─┘     │     └─┤ Node 3 ◄──send──┤ Node 2 ◄─┘
-           │        │        │        │       │       │        │        │        │
-           └────────┘        └────────┘       │       └────────┘        └────────┘
+    can be sent to/received from.
+    Depending on the values of send_node and recv_node, this function can send the message or clockwise,
+    counter clockwise. Also depending on the values of send_node and recv_node, either the send or recv will
+    be remote.
+     Clockwise Local Send / Remote Recv    │    Clockwise Remote Send / Local Recv
+                 ┌────────┐                │                ┌────────┐
+                 │        │                │                │        │
+         ┌─recv──┤ Node 0 ◄─recv─┐         │        ┌─send──► Node 0 ├─send─┐
+         │       │        │      │         │        │       │        │      │
+         │       └──▲───┬─┘     msg        │        │       └──▲───┬─┘     msg
+         │          └─msg        │         │        │          └───┘        │
+     ┌───▼────┐     send     ┌───┴────┐    │    ┌───┴────┐     recv     ┌───▼────┐
+     │        ├─┐          ┌─►        │    │    │        ├─┐          ┌─►        │
+     │ Node 4 │ │send  send│ │ Node   │    │    │ Node 4 │ │recv  recv│ │ Node   │
+     │        ◄─┘          └─┤        │    │    │        ◄─┘         msg┤        │
+     └┬───────┘              └───────▲┘    │    └▲───────┘              └───────┬┘
+      │    send              send    │     │     │    recv              recv    │
+    recv   ┌───┐             ┌───┐  recv   │   send   ┌───┐             ┌───┐  send
+      │ ┌──▼───┴─┐        ┌──▼───┴─┐ │     │     │ ┌──▼───┴─┐        ┌──▼───┴─┐ │
+      │ │        │        │        │ │     │     │ │        │        │        │ │
+      └─► Node 3 ├──recv──► Node 2 ├─┘     │     └─┤ Node 3 ◄──send──┤ Node 2 ◄─┘
+        │        │        │        │       │       │        │        │        │
+        └────────┘        └────────┘       │       └────────┘        └────────┘
     """
     try:
         if this_node_index == 0:
-            my_secret_message = ''.join(random.choice(string.ascii_letters) for _ in range(64)).encode()
+            my_secret_message = "".join(random.choice(string.ascii_letters) for _ in range(64)).encode()
 
-            print(f'{this_node_index}: Sending node {send_to_node_index} my secret message {my_secret_message}', flush=True)
+            print(
+                f"{this_node_index}: Sending node {send_to_node_index} my secret message {my_secret_message}",
+                flush=True,
+            )
             send_to(send_node, my_secret_message)
 
-            print(f'{this_node_index}: Waiting to receive my message from node {recv_from_node_index}', flush=True)
+            print(f"{this_node_index}: Waiting to receive my message from node {recv_from_node_index}", flush=True)
             check_message = recv_from(recv_node)
 
-            print(f'{this_node_index}: Received {check_message}', flush=True)
+            print(f"{this_node_index}: Received {check_message}", flush=True)
             if check_message == my_secret_message:
-                print(f'{this_node_index}: SUCCESS. I received the same message that I sent.', flush=True)
+                print(f"{this_node_index}: SUCCESS. I received the same message that I sent.", flush=True)
             else:
-                print(f'{this_node_index}: ERROR. I did not receive the same message that I sent.', flush=True)
+                print(f"{this_node_index}: ERROR. I did not receive the same message that I sent.", flush=True)
         else:
-            print(f'{this_node_index}: Waiting to receive a secret message from node {recv_from_node_index}', flush=True)
+            print(
+                f"{this_node_index}: Waiting to receive a secret message from node {recv_from_node_index}", flush=True
+            )
             the_secret_message = recv_from(recv_node)
 
-            print(f'{this_node_index}: Received {the_secret_message}', flush=True)
-            print(f'{this_node_index}: Forwarding to node {send_to_node_index}', flush=True)
+            print(f"{this_node_index}: Received {the_secret_message}", flush=True)
+            print(f"{this_node_index}: Forwarding to node {send_to_node_index}", flush=True)
 
             send_to(send_node, the_secret_message)
 
-        print(f'{this_node_index}: Done', flush=True)
+        print(f"{this_node_index}: Done", flush=True)
     except Exception:
         print("!!!!There was an EXCEPTION!!!!!")
         ex_type, ex_value, ex_tb = sys.exc_info()
@@ -109,22 +114,25 @@ def test_remote_polling(this_node_index, node_to_poll_index, node_to_poll):
     try:
         rc = True
         if this_node_index == 0:
-            print(f'{this_node_index}: Ready to poll on node {node_to_poll_index}', flush=True)
+            print(f"{this_node_index}: Ready to poll on node {node_to_poll_index}", flush=True)
             rc = poll_ch(node_to_poll)
             if rc:
-                print(f'{this_node_index}: SUCCESS. The poll completed successfully.', flush=True)
-                recv_from(node_to_poll) # receive the message to clean the channel
+                print(f"{this_node_index}: SUCCESS. The poll completed successfully.", flush=True)
+                recv_from(node_to_poll)  # receive the message to clean the channel
             else:
-                print(f'{this_node_index}: ERROR. Something went wrong with poll.', flush=True)
+                print(f"{this_node_index}: ERROR. Something went wrong with poll.", flush=True)
         elif this_node_index == 1:
             time.sleep(5)
-            my_secret_message = ''.join(random.choice(string.ascii_letters) for _ in range(64)).encode()
-            print(f'{this_node_index}: Sending node {node_to_poll_index} my secret message {my_secret_message}', flush=True)
+            my_secret_message = "".join(random.choice(string.ascii_letters) for _ in range(64)).encode()
+            print(
+                f"{this_node_index}: Sending node {node_to_poll_index} my secret message {my_secret_message}",
+                flush=True,
+            )
             send_to(node_to_poll, my_secret_message)
         else:
-            print(f'{this_node_index}: I am doing nothing. Moving on.', flush=True)
+            print(f"{this_node_index}: I am doing nothing. Moving on.", flush=True)
 
-        print(f'{this_node_index}: Done with test_remote_polling', flush=True)
+        print(f"{this_node_index}: Done with test_remote_polling", flush=True)
         return rc
     except Exception:
         print("!!!!There was an EXCEPTION on test_remote_polling!!!!!", flush=True)
@@ -151,7 +159,7 @@ def _connection_comm(this_node_index, nodes_to_channel_map, some_msg, isconnin, 
             _ch = Channel.attach(ch_descr)
             connin = Connection(inbound_initializer=_ch)
 
-            print(f'{this_node_index}: Waiting to receive message from node 1', flush=True)
+            print(f"{this_node_index}: Waiting to receive message from node 1", flush=True)
             if isbytes:
                 msg = connin.recv_bytes()
             else:
@@ -166,7 +174,7 @@ def _connection_comm(this_node_index, nodes_to_channel_map, some_msg, isconnin, 
             _ch = Channel.attach(ch_descr)
             connin = Connection(inbound_initializer=_ch)
 
-            print(f'{this_node_index}: Waiting to receive a message from node 0', flush=True)
+            print(f"{this_node_index}: Waiting to receive a message from node 0", flush=True)
             if isbytes:
                 msg = connin.recv_bytes()
             else:
@@ -186,6 +194,7 @@ def _connection_comm(this_node_index, nodes_to_channel_map, some_msg, isconnin, 
 
             connout.ghost_close()
 
+
 def test_connection_basic(nodes_to_channel_map):
     """Basic communication between nodes 0 and 1, through Connection objects.
     Node 0 sends some data to node 1 and then waits to receive it back.
@@ -195,17 +204,18 @@ def test_connection_basic(nodes_to_channel_map):
     :type nodes_to_channel_map: dict, with key as the node index and value a list of channels
     """
     this_node_index = dparms.this_process.index
-    some_msg = ['a', 'b', 'c', 1, 2, 3]
+    some_msg = ["a", "b", "c", 1, 2, 3]
     try:
         if this_node_index == 0 or this_node_index == 1:
             _connection_comm(this_node_index, nodes_to_channel_map, some_msg, True, True, False)
         else:
-            print(f'{this_node_index}: I am doing nothing for test_connection_basic.', flush=True)
+            print(f"{this_node_index}: I am doing nothing for test_connection_basic.", flush=True)
     except Exception:
         print("!!!!There was an EXCEPTION on test_connection_basic!!!!!")
         ex_type, ex_value, ex_tb = sys.exc_info()
         tb_str = "".join(traceback.format_exception(ex_type, ex_value, ex_tb))
         print(tb_str)
+
 
 def test_connection_different_msg_sizes(nodes_to_channel_map):
     """Remote receive of different message sizes.
@@ -214,19 +224,20 @@ def test_connection_different_msg_sizes(nodes_to_channel_map):
     """
     this_node_index = dparms.this_process.index
     for lg_size in range(25):
-        some_msg = bytes(2 ** lg_size)
+        some_msg = bytes(2**lg_size)
         try:
             if this_node_index == 0:
                 _connection_comm(0, nodes_to_channel_map, some_msg, isconnin=False, isconnout=True, isbytes=False)
             elif this_node_index == 1:
                 _connection_comm(1, nodes_to_channel_map, some_msg, isconnin=True, isconnout=False, isbytes=False)
             else:
-                print(f'{this_node_index}: I am doing nothing for test_connection_different_msg_sizes.', flush=True)
+                print(f"{this_node_index}: I am doing nothing for test_connection_different_msg_sizes.", flush=True)
         except Exception:
             print("!!!!There was an EXCEPTION on test_connection_different_msg_sizes!!!!!")
             ex_type, ex_value, ex_tb = sys.exc_info()
             tb_str = "".join(traceback.format_exception(ex_type, ex_value, ex_tb))
             print(tb_str)
+
 
 def test_connection_different_objs(nodes_to_channel_map):
     """Remote receive of different object types.
@@ -234,7 +245,14 @@ def test_connection_different_objs(nodes_to_channel_map):
     :type nodes_to_channel_map: dict, with key as the node index and value a list of channels
     """
     this_node_index = dparms.this_process.index
-    objs = ['hyena', {'hyena': 'hyena'}, bytes(100000), bytearray(200000), bytes('this is a test', 'utf-8'), b'\x01\x02\x03\x04\x05'*1000]
+    objs = [
+        "hyena",
+        {"hyena": "hyena"},
+        bytes(100000),
+        bytearray(200000),
+        bytes("this is a test", "utf-8"),
+        b"\x01\x02\x03\x04\x05" * 1000,
+    ]
     for some_msg in objs:
         try:
             if this_node_index == 0:
@@ -242,12 +260,13 @@ def test_connection_different_objs(nodes_to_channel_map):
             elif this_node_index == 1:
                 _connection_comm(1, nodes_to_channel_map, some_msg, isconnin=True, isconnout=False, isbytes=False)
             else:
-                print(f'{this_node_index}: I am doing nothing for test_connection_different_objs.', flush=True)
+                print(f"{this_node_index}: I am doing nothing for test_connection_different_objs.", flush=True)
         except Exception:
             print("!!!!There was an EXCEPTION on test_connection_different_objs!!!!!")
             ex_type, ex_value, ex_tb = sys.exc_info()
             tb_str = "".join(traceback.format_exception(ex_type, ex_value, ex_tb))
             print(tb_str)
+
 
 def test_connection_poll(nodes_to_channel_map):
     """Remote Connection poll.
@@ -255,7 +274,7 @@ def test_connection_poll(nodes_to_channel_map):
     :type nodes_to_channel_map: dict, with key as the node index and value a list of channels
     """
     this_node_index = dparms.this_process.index
-    some_msg = b'\x01\x02\x03\x04\x05'
+    some_msg = b"\x01\x02\x03\x04\x05"
     try:
         if this_node_index == 0:
             ch_descr = B64.from_str(nodes_to_channel_map[0][0]).decode()
@@ -274,12 +293,13 @@ def test_connection_poll(nodes_to_channel_map):
             assert msg == some_msg
             connin.ghost_close()
         else:
-            print(f'{this_node_index}: I am doing nothing for test_connection_poll.', flush=True)
+            print(f"{this_node_index}: I am doing nothing for test_connection_poll.", flush=True)
     except Exception:
         print("!!!!There was an EXCEPTION on test_connection_poll!!!!!")
         ex_type, ex_value, ex_tb = sys.exc_info()
         tb_str = "".join(traceback.format_exception(ex_type, ex_value, ex_tb))
         print(tb_str)
+
 
 def test_connection_remote_recv_bytes_from_send(nodes_to_channel_map):
     """Local send and remote recv_bytes. Edge case.
@@ -287,7 +307,7 @@ def test_connection_remote_recv_bytes_from_send(nodes_to_channel_map):
     :type nodes_to_channel_map: dict, with key as the node index and value a list of channels
     """
     this_node_index = dparms.this_process.index
-    some_msg = {'hyenas': 'are awesome'}
+    some_msg = {"hyenas": "are awesome"}
     try:
         if this_node_index == 0:
             ch_descr = B64.from_str(nodes_to_channel_map[0][0]).decode()
@@ -304,12 +324,13 @@ def test_connection_remote_recv_bytes_from_send(nodes_to_channel_map):
             assert msg == some_msg
             connin.ghost_close()
         else:
-            print(f'{this_node_index}: I am doing nothing for test_connection_remote_recv_bytes_from_send.', flush=True)
+            print(f"{this_node_index}: I am doing nothing for test_connection_remote_recv_bytes_from_send.", flush=True)
     except Exception:
         print("!!!!There was an EXCEPTION on test_connection_remote_recv_bytes_from_send!!!!!")
         ex_type, ex_value, ex_tb = sys.exc_info()
         tb_str = "".join(traceback.format_exception(ex_type, ex_value, ex_tb))
         print(tb_str)
+
 
 def test_connection_recv_from_remote_send_bytes(nodes_to_channel_map):
     """Remote send_bytes and local recv. Edge case.
@@ -317,7 +338,7 @@ def test_connection_recv_from_remote_send_bytes(nodes_to_channel_map):
     :type nodes_to_channel_map: dict, with key as the node index and value a list of channels
     """
     this_node_index = dparms.this_process.index
-    some_msg = {'hyenas': 'are awesome'}
+    some_msg = {"hyenas": "are awesome"}
     try:
         if this_node_index == 0:
             ch_descr = B64.from_str(nodes_to_channel_map[1][0]).decode()
@@ -334,12 +355,13 @@ def test_connection_recv_from_remote_send_bytes(nodes_to_channel_map):
             assert msg == some_msg
             connin.ghost_close()
         else:
-            print(f'{this_node_index}: I am doing nothing for test_connection_recv_from_remote_send_bytes.', flush=True)
+            print(f"{this_node_index}: I am doing nothing for test_connection_recv_from_remote_send_bytes.", flush=True)
     except Exception:
         print("!!!!There was an EXCEPTION on test_connection_recv_from_remote_send_bytes!!!!!")
         ex_type, ex_value, ex_tb = sys.exc_info()
         tb_str = "".join(traceback.format_exception(ex_type, ex_value, ex_tb))
         print(tb_str)
+
 
 def send_stuff(nnodes, this_node_index, all_connouts, msg):
     register_gateways_from_env()
@@ -348,12 +370,14 @@ def send_stuff(nnodes, this_node_index, all_connouts, msg):
             # print(f"Node {this_node_index} sending to node {i}")
             all_connouts[this_node_index, i].send(msg)
 
+
 def recv_stuff(nnodes, connin, msg):
     register_gateways_from_env()
     for i in range(nnodes - 1):
         # print(f"Node {this_node_index} receiving msg {i}")
         msg_recv = connin.recv()
         assert msg_recv == msg
+
 
 def test_connection_alltoall(nodes_to_channel_map):
     this_node_index = dparms.this_process.index
@@ -372,7 +396,7 @@ def test_connection_alltoall(nodes_to_channel_map):
     _ch = Channel.attach(ch_descr)
     connin = Connection(inbound_initializer=_ch)
 
-    msg = b'\x01\x02\x03\x04\x05'
+    msg = b"\x01\x02\x03\x04\x05"
 
     try:
         send_proc = mp.Process(target=send_stuff, args=(nnodes, this_node_index, all_connouts, msg))
@@ -389,7 +413,7 @@ def test_connection_alltoall(nodes_to_channel_map):
 
 
 def main():
-    mp.set_start_method('spawn')
+    mp.set_start_method("spawn")
 
     register_gateways_from_env()
     nodes_to_channel_map = eval(input())
@@ -397,24 +421,30 @@ def main():
 
     next_node_index = (this_node_index + 1) % len(nodes_to_channel_map)
     prev_node_index = (this_node_index - 1) % len(nodes_to_channel_map)
-    print(f'{this_node_index}: prev_node_index={prev_node_index} next_node_index={next_node_index}', flush=True)
-    print(f'{this_node_index}: Got node to channel map={nodes_to_channel_map}', flush=True)
+    print(f"{this_node_index}: prev_node_index={prev_node_index} next_node_index={next_node_index}", flush=True)
+    print(f"{this_node_index}: Got node to channel map={nodes_to_channel_map}", flush=True)
 
     next_node = B64.from_str(nodes_to_channel_map[next_node_index][0]).decode()
     this_node = B64.from_str(nodes_to_channel_map[this_node_index][0]).decode()
     prev_node = B64.from_str(nodes_to_channel_map[prev_node_index][0]).decode()
 
-    print('Initiating clockwise remote send/local recv ring test:', flush=True)
-    send_message_around_ring_of_nodes(this_node_index,
-                                      send_to_node_index=next_node_index,
-                                      recv_from_node_index=this_node_index,
-                                      send_node=next_node, recv_node=this_node)
+    print("Initiating clockwise remote send/local recv ring test:", flush=True)
+    send_message_around_ring_of_nodes(
+        this_node_index,
+        send_to_node_index=next_node_index,
+        recv_from_node_index=this_node_index,
+        send_node=next_node,
+        recv_node=this_node,
+    )
 
-    print('Initiating clockwise local send/remote recv ring test:', flush=True)
-    send_message_around_ring_of_nodes(this_node_index,
-                                      send_to_node_index=this_node_index,
-                                      recv_from_node_index=prev_node_index,
-                                      send_node=this_node, recv_node=prev_node)
+    print("Initiating clockwise local send/remote recv ring test:", flush=True)
+    send_message_around_ring_of_nodes(
+        this_node_index,
+        send_to_node_index=this_node_index,
+        recv_from_node_index=prev_node_index,
+        send_node=this_node,
+        recv_node=prev_node,
+    )
 
     # this is a connection test including all nodes
     print("\ntest_connection_alltoall", flush=True)
@@ -427,9 +457,7 @@ def main():
     sync_channel = B64.from_str(nodes_to_channel_map[sync_index][0]).decode()
     node_to_poll = B64.from_str(nodes_to_channel_map[node_to_poll_index][0]).decode()
     print("Initiating remote polling:", flush=True)
-    rc = test_remote_polling(this_node_index,
-                             node_to_poll_index=node_to_poll_index,
-                             node_to_poll=node_to_poll)
+    rc = test_remote_polling(this_node_index, node_to_poll_index=node_to_poll_index, node_to_poll=node_to_poll)
     if rc:
         print(f"The poll test was a SUCCESS on node {this_node_index}!", flush=True)
     else:

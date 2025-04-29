@@ -66,7 +66,7 @@ def bringup_channels(gs_stdout, env_updates, channel_overrides, logname=""):
         gs_stdout.send(dmsg.AbnormalTermination(tag=0).serialize())
 
 
-class SingleProcAPIChannels(unittest.TestCase):
+class GSProcessBaseClass(unittest.TestCase):
     def setUp(self) -> None:
         self.gs_stdout_rh, self.gs_stdout_wh = multiprocessing.Pipe(duplex=False)
 
@@ -241,10 +241,10 @@ class SingleProcAPIChannels(unittest.TestCase):
         kill_thread.join()
         return kill_result[0]
 
-    def _create_proc(self, proc_name):
+    def _create_proc(self, proc_name, policy=None):
         def create_wrap(the_exe, the_run_dir, the_args, the_env, the_name, result_list):
             res = dproc.create(
-                exe=the_exe, run_dir=the_run_dir, args=the_args, env=the_env, user_name=the_name
+                exe=the_exe, run_dir=the_run_dir, args=the_args, env=the_env, user_name=the_name, policy=policy
             )
             result_list.append(res)
 
@@ -275,9 +275,7 @@ class SingleProcAPIChannels(unittest.TestCase):
 
         fake_pool_size = 2**30
         create_result = []
-        create_thread = threading.Thread(
-            target=create_wrap, args=(fake_pool_size, fake_pool_name, create_result)
-        )
+        create_thread = threading.Thread(target=create_wrap, args=(fake_pool_size, fake_pool_name, create_result))
         create_thread.start()
         shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHPoolCreate)
 
@@ -326,6 +324,8 @@ class SingleProcAPIChannels(unittest.TestCase):
 
         return desc
 
+
+class SingleProcAPIChannels(GSProcessBaseClass):
     def test_list(self):
         plist = dproc.get_list()
         self.assertEqual(plist, [self.head_puid])
@@ -581,14 +581,10 @@ class SingleProcAPIChannels(unittest.TestCase):
 
         the_one_exiting = desc_first.p_uid
         join_result = []
-        join_thread = threading.Thread(
-            target=join_wrap, args=([desc_first.p_uid, desc_sec.p_uid], join_result)
-        )
+        join_thread = threading.Thread(target=join_wrap, args=([desc_first.p_uid, desc_sec.p_uid], join_result))
         join_thread.start()
 
-        sh_kill_reply = dmsg.SHProcessExit(
-            tag=self.next_tag(), p_uid=the_one_exiting, exit_code=test_exit_code
-        )
+        sh_kill_reply = dmsg.SHProcessExit(tag=self.next_tag(), p_uid=the_one_exiting, exit_code=test_exit_code)
         self.gs_input_wh.send(sh_kill_reply.serialize())
 
         join_thread.join()

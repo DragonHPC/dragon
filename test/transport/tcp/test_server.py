@@ -11,7 +11,7 @@ from test_transport import TestMessages
 
 class ServerTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
 
-    ADDR = transport.Address.from_netloc('127.0.0.1:7575')
+    ADDR = transport.Address.from_netloc("127.0.0.1:7575")
 
     def setUp(self):
         self.transport = transport.StreamTransport(self.ADDR)
@@ -32,7 +32,7 @@ class ServerTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
     async def test_run_read_send_request(self):
         # Mock Transport.read_request() to read fake request
         req = self.SendRequest()
-        addr = transport.Address.from_netloc('127.0.0.1:8888')
+        addr = transport.Address.from_netloc("127.0.0.1:8888")
         self.transport.read_request = AsyncMock(side_effect=[(req, addr), asyncio.CancelledError])
 
         # Mock Server._ensure_process_task() to prevent a process task from
@@ -52,7 +52,7 @@ class ServerTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
     async def test_run_read_recv_request(self):
         # Mock Transport.read_request() to read fake request
         req = self.RecvRequest()
-        addr = transport.Address.from_netloc('127.0.0.1:8888')
+        addr = transport.Address.from_netloc("127.0.0.1:8888")
         self.transport.read_request = AsyncMock(side_effect=[(req, addr), asyncio.CancelledError])
 
         # Mock Server._ensure_process_task() to prevent a process task from
@@ -94,5 +94,5 @@ class ServerTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
         raise NotImplementedError
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

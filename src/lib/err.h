@@ -15,7 +15,10 @@ extern "C" {
 extern bool dg_enable_errstr;
 
 char * dragon_getlasterrstr();
+char * dragon_getrawerrstr();
+void dragon_setrawerrstr(char* err_str);
 void dragon_enable_errstr(bool enable_errstr);
+
 
 #define DRAGON_MAX_ERRSTR_REC_LEN 4096
 

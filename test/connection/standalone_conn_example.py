@@ -7,15 +7,15 @@ import dragon.infrastructure.standalone_conn
 
 
 def write_actor(writer):
-    writer.send('hyenas')
+    writer.send("hyenas")
 
 
 def read_actor(reader):
     msg = reader.recv()
-    if msg == 'hyenas':
-        print('got hyenas')
+    if msg == "hyenas":
+        print("got hyenas")
     else:
-        print('got {}, no hyenas'.format(msg))
+        print("got {}, no hyenas".format(msg))
 
 
 def main():
@@ -32,5 +32,5 @@ def main():
 
 
 if __name__ == "__main__":
-    multiprocessing.set_start_method('spawn')
+    multiprocessing.set_start_method("spawn")
     main()

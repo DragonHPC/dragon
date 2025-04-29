@@ -27,7 +27,7 @@ def startup(gs_input, shep_input, bela_input, gs_stdout, logname=""):
             test_gs_input=gs_input,
             test_shep_inputs=[shep_input],
             test_bela_input=bela_input,
-            test_gs_stdout=gs_stdout
+            test_gs_stdout=gs_stdout,
         )
 
         the_ctx.run_global_server(
@@ -35,7 +35,7 @@ def startup(gs_input, shep_input, bela_input, gs_stdout, logname=""):
             test_gs_input=gs_input,
             test_shep_inputs=[shep_input],
             test_bela_input=bela_input,
-            test_gs_stdout=gs_stdout
+            test_gs_stdout=gs_stdout,
         )
 
         log.info("normal exit")
@@ -134,7 +134,6 @@ class SingleInternal(unittest.TestCase):
         self.tag += 1
         return tmp
 
-
     def test_startup_lifecycle_err(self):
         self.dut = threading.Thread(
             target=startup,
@@ -148,7 +147,6 @@ class SingleInternal(unittest.TestCase):
         tsu.get_and_check_type(self.shep_input_rh, dmsg.GSPingSH)
         self.gs_input_wh.send("crap")  # triggers error
         tsu.get_and_check_type(self.gs_stdout_rh, dmsg.AbnormalTermination)
-
 
     def test_main_loop_exit(self):
         self.dut = threading.Thread(

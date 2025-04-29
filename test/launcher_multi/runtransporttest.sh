@@ -21,11 +21,11 @@ export DRAGON_DEBUG=1
 
 # Setting CTI_DEBUG will turn on logging
 export CTI_DEBUG=1
+export HSTA_DEBUG=cqe,general,gw_ch,tx_stats,work_req
 
 # Tell CTI where to log to
 mkdir -p log
 export CTI_LOG_DIR=$PWD/log
-export HSTA_DEBUG=cqe,general,gw_ch,tx_stats,work_req
 
 rm -f log/* > /dev/null 2>&1
 rm -f *.log > /dev/null 2>&1

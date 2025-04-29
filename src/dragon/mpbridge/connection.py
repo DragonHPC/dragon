@@ -1,5 +1,5 @@
-"""Dragon's replacement for the Multiprocessing Connection and Pipe objects
-"""
+"""Dragon's replacement for the Multiprocessing Connection and Pipe objects"""
+
 import os
 import pickle
 
@@ -16,6 +16,7 @@ _original_os_close = os.close
 _original_os_pipe = os.pipe
 
 # This file mostly contains dead code. The real implementation is in infrastructure.connection
+
 
 class ConnGlueBase:
     def __init__(self, ucid, note, *args, **kwargs):
@@ -94,6 +95,7 @@ else:
 
     class ConnGlue(ConnGlueBase):
         "Glue around dragon.infrastructure.connection.Connection."
+
         _mem_pool = None
         _last_channel_uid = None
 
@@ -119,9 +121,7 @@ else:
             )
 
         def write(self, data, *args, **kwargs):
-            sub_debug(
-                f"{self.__class__.__name__}.write called len(data)={len(data)} args={args} kwargs={kwargs}"
-            )
+            sub_debug(f"{self.__class__.__name__}.write called len(data)={len(data)} args={args} kwargs={kwargs}")
             try:
                 self.lowerlevel_conn.send_bytes(data)
             except Exception as e:
@@ -152,9 +152,7 @@ else:
             return retval
 
         def close(self, *args, **kwargs):
-            sub_debug(
-                f"{self.__class__.__name__}.close called with ({args}, {kwargs}) by os.getpid()={os.getpid()}"
-            )
+            sub_debug(f"{self.__class__.__name__}.close called with ({args}, {kwargs}) by os.getpid()={os.getpid()}")
             self.lowerlevel_conn.close()
             super().close(*args, **kwargs)  # TODO: Remove once no longer employing file descriptors at all.
 
@@ -197,9 +195,7 @@ class DragonConnection(multiprocessing.connection.Connection):
         return super()._recv(size, read)
 
     def __repr__(self):
-        return (
-            f"{self.__class__.__name__}({self._handle}, readable={self._readable}, writable={self._writable})"
-        )
+        return f"{self.__class__.__name__}({self._handle}, readable={self._readable}, writable={self._writable})"
 
     def fileno(self):
         # TODO: Eliminate once file descriptors not used and fix connection.wait()
@@ -288,8 +284,6 @@ def rebuild_connection(df, readable, writable, handle):
 
 
 multiprocessing.connection.reduction.register(DragonConnection, reduce_connection)
-
-
 
 
 class PseudoOS:

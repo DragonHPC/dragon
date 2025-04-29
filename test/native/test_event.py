@@ -101,7 +101,7 @@ class TestEvent(unittest.TestCase):
         event_wait = event.wait(def_timeout)
         elap = time.monotonic() - start
         self.assertGreaterEqual(elap, def_timeout)
-        self.assertLess(elap, (def_timeout+TIMEOUT_DELTA_TOL))
+        self.assertLess(elap, (def_timeout + TIMEOUT_DELTA_TOL))
         # This proves the event was not set and wait returns False as a result.
         self.assertFalse(event_wait, "The event is set")
         self.assertFalse(event.is_set(), "The event is set")

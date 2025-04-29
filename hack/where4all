@@ -6,6 +6,7 @@ from pathlib import Path
 
 def main():
     executable = sys.argv[0]
+    program = sys.argv[1]
 
     proc = sp.run(['ps', 'aux'], stdout=sp.PIPE, encoding='utf-8')
 
@@ -13,7 +14,7 @@ def main():
     path = '/'.join((path.split('/')[:-1]))
 
     for line in proc.stdout.split('\n'):
-        if 'python' in line and not executable in line:
+        if program in line and not executable in line:
             lst = line.split()
             pid = lst[1]
             print(f'*********************** Executing script.gdb on Process {pid} ***********************', flush=True)

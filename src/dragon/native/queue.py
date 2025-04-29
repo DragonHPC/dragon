@@ -1,4 +1,4 @@
-""" The Dragon native queue provides ordered object communication between processes.
+"""The Dragon native queue provides ordered object communication between processes.
 
 This is Dragon's specialized implementations of a Queue, working
 in both single and multi node settings. The API is similar to Multiprocessing.Queue
@@ -426,9 +426,7 @@ class Queue(object):
         )
 
     def _setup_read_adapter_event(self):
-        self._read_adapter_event = Many2ManyReadingChannelFile(
-            self._ev_channel, wait_mode=self._policy.wait_mode
-        )
+        self._read_adapter_event = Many2ManyReadingChannelFile(self._ev_channel, wait_mode=self._policy.wait_mode)
 
     def _setup_write_adapter_count(self):
         self._write_adapter_count = Many2ManyWritingChannelFile(
@@ -439,9 +437,7 @@ class Queue(object):
         )
 
     def _setup_read_adapter_count(self):
-        self._read_adapter_count = Many2ManyReadingChannelFile(
-            self._cnt_channel, wait_mode=self._policy.wait_mode
-        )
+        self._read_adapter_count = Many2ManyReadingChannelFile(self._cnt_channel, wait_mode=self._policy.wait_mode)
 
     def _call_read_adapter(self, adapter, block, timeout):
         try:

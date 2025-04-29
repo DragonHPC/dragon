@@ -1,4 +1,4 @@
-""" This file contains Dragon multi-node acceptance tests for the
+"""This file contains Dragon multi-node acceptance tests for the
 `dragon.native.Barrier` object. The tests scale with the total number of CPUs
 reported by the allocation, i.e. they become tougher on larger allocations.
 

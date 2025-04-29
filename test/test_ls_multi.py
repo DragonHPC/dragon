@@ -26,8 +26,8 @@ get_msg = tsu.get_and_parse
 
 def run_ls(test_env=None):
     dlog.setup_logging(basename="ls_multi_", level=logging.DEBUG, force=True)
-    log = logging.getLogger('run ls')
-    log.info('starting ls from run')
+    log = logging.getLogger("run ls")
+    log.info("starting ls from run")
 
     if test_env is None:
         the_env = os.environ
@@ -46,15 +46,15 @@ def run_ls(test_env=None):
 
 
 class MultiLS(unittest.TestCase):
-    DEFAULT_TEST_POOL_SIZE = 2 ** 20
+    DEFAULT_TEST_POOL_SIZE = 2**20
 
     def setUp(self) -> None:
         # Create posix msg queue for launcher comm
-        _user = os.environ.get('USER', str(os.getuid()))
+        _user = os.environ.get("USER", str(os.getuid()))
         self.hostname = socket.gethostname()
         self.ip_addr = socket.gethostbyname(self.hostname)
-        self.pq_stdin = dpq.PMsgQueue(f'/{_user}_{self.hostname}_la_stdout', write_intent=True)
-        self.pq_stdout = dpq.PMsgQueue(f'/{_user}_{self.hostname}_la_stdin', read_intent=True)
+        self.pq_stdin = dpq.PMsgQueue(f"/{_user}_{self.hostname}_la_stdout", write_intent=True)
+        self.pq_stdout = dpq.PMsgQueue(f"/{_user}_{self.hostname}_la_stdin", read_intent=True)
 
         self.dragon_logger = dlog.setup_dragon_logging(node_index=0)
         self.logger_sdesc = self.dragon_logger.serialize()
@@ -67,7 +67,7 @@ class MultiLS(unittest.TestCase):
         self.pq_stdin.close(destroy=True)
         self.pq_stdout.close(destroy=True)
 
-        if (self.channels_connected):
+        if self.channels_connected:
             self.ls_channel.detach()
             self.la_channel.detach()
 
@@ -82,8 +82,7 @@ class MultiLS(unittest.TestCase):
         return tmp
 
     def do_bringup(self):
-        sh_ping_be_msg = self.do_BENodeIdxSH_SHPingBE(test_env={dfacts.TRANSPORT_TEST_ENV: '1'},
-                                                      node_idx=0)
+        sh_ping_be_msg = self.do_BENodeIdxSH_SHPingBE(test_env={dfacts.TRANSPORT_TEST_ENV: "1"}, node_idx=0)
         self.connect_to_ls_channels(sh_ping_be_msg)
         sh_channels_up = self.do_BEPingSH_SHChannelsUp()
         self.do_TAUp(sh_channels_up)
@@ -97,10 +96,17 @@ class MultiLS(unittest.TestCase):
         self.ls = run_ls(test_env=test_env)
 
         # Send BENodeIdxSH as if I were launcher backend
-        self.pq_stdin.send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=node_idx, ip_addrs=[self.ip_addr],
-                                            host_name=self.hostname, primary=(node_idx == 0),
-                                            logger_sdesc=B64(self.logger_sdesc),
-                                            net_conf_key = str(node_idx)).serialize())
+        self.pq_stdin.send(
+            dmsg.BENodeIdxSH(
+                tag=self.next_tag(),
+                node_idx=node_idx,
+                ip_addrs=[self.ip_addr],
+                host_name=self.hostname,
+                primary=(node_idx == 0),
+                logger_sdesc=B64(self.logger_sdesc),
+                net_conf_key=str(node_idx),
+            ).serialize()
+        )
         return tsu.get_and_check_type(self.pq_stdout, dmsg.SHPingBE)
 
     def connect_to_ls_channels(self, sh_ping_be):
@@ -129,8 +135,9 @@ class MultiLS(unittest.TestCase):
         num_gw_channels = dfacts.DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE
 
         # Send LAChannelsInfo in a test environment or to all
-        la_ch_info = dmsg.LAChannelsInfo(tag=self.next_tag(), nodes_desc=[sh_channels_msg],
-                                         gs_cd=self.gs_cd, num_gw_channels=num_gw_channels)
+        la_ch_info = dmsg.LAChannelsInfo(
+            tag=self.next_tag(), nodes_desc=[sh_channels_msg], gs_cd=self.gs_cd, num_gw_channels=num_gw_channels
+        )
         self.ls_queue.send(la_ch_info.serialize())
         tsu.get_and_check_type(self.la_queue, dmsg.TAUp)
 
@@ -145,13 +152,12 @@ class MultiLS(unittest.TestCase):
         tsu.get_and_check_type(self.la_queue, dmsg.SHHaltBE)
         self.pq_stdin.send(dmsg.BEHalted(tag=self.next_tag()).serialize())
 
-
     def test_bringup_teardown_no_gs_primary(self):
-        '''Transport test mode with no global services and is primary node
+        """Transport test mode with no global services and is primary node
 
         Teardown of LS will begin with SHProcessExit receipt and
         transmission of TAHalted
-        '''
+        """
         log = logging.getLogger("test_bringup_teardown_no_gs_primary")
 
         self.do_bringup()
@@ -166,7 +172,6 @@ class MultiLS(unittest.TestCase):
 
         self.do_teardown()
 
-
     def test_bringup_abnormal_termination(self):
         log = logging.getLogger("test_bringup_abnormal_termination")
 
@@ -176,7 +181,6 @@ class MultiLS(unittest.TestCase):
         tsu.get_and_check_type(self.la_queue, dmsg.AbnormalTermination)
 
         self.do_teardown()
-
 
     def test_bringup_bad_message(self):
         log = logging.getLogger("test_bringup_bad_message")
@@ -190,7 +194,6 @@ class MultiLS(unittest.TestCase):
 
         self.do_teardown()
 
-
     def test_bringup_unexpected_message(self):
         log = logging.getLogger("test_bringup_unexpected_message")
 
@@ -198,9 +201,15 @@ class MultiLS(unittest.TestCase):
 
         # send a message that we're not supposed to
         # LS should send AbnormalTermination msg to launcher be
-        self.ls_queue.send(dmsg.GSProcessCreate(tag=self.next_tag(), exe='/bin/echo',
-                                                args=['Hello World'], p_uid=dfacts.LAUNCHER_PUID,
-                                                r_c_uid=dfacts.BASE_BE_CUID).serialize())
+        self.ls_queue.send(
+            dmsg.GSProcessCreate(
+                tag=self.next_tag(),
+                exe="/bin/echo",
+                args=["Hello World"],
+                p_uid=dfacts.LAUNCHER_PUID,
+                r_c_uid=dfacts.BASE_BE_CUID,
+            ).serialize()
+        )
         log.info("sent unexpected message to ls")
         tsu.get_and_check_type(self.la_queue, dmsg.AbnormalTermination)
         log.info("received AbnormalTermination from ls")

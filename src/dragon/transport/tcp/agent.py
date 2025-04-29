@@ -13,7 +13,7 @@ from ...dtypes import DEFAULT_WAIT_MODE, WaitMode
 from ...infrastructure.node_desc import NodeDescriptor
 
 
-LOGGER = logging.getLogger('dragon.transport.tcp.agent')
+LOGGER = logging.getLogger("dragon.transport.tcp.agent")
 
 
 class Agent:
@@ -40,14 +40,17 @@ class Agent:
             await cancel_all_tasks()
 
     """
+
     _running = False
 
-    def __init__(self,
-                 transport: Transport,
-                 nodes: dict[int, Address],
-                 server: Optional[Server] = None,
-                 clients: Optional[Iterable[Client]] = None,
-                 wait_mode: WaitMode = DEFAULT_WAIT_MODE):
+    def __init__(
+        self,
+        transport: Transport,
+        nodes: dict[int, Address],
+        server: Optional[Server] = None,
+        clients: Optional[Iterable[Client]] = None,
+        wait_mode: WaitMode = DEFAULT_WAIT_MODE,
+    ):
         if server is None:
             server = Server(transport, wait_mode=wait_mode)
         if clients is None:
@@ -78,19 +81,19 @@ class Agent:
         return False
 
     def is_running(self):
-        return getattr(self, '_running', False)
+        return getattr(self, "_running", False)
 
     async def start(self):
-        LOGGER.debug('Agent starting')
+        LOGGER.debug("Agent starting")
         if isinstance(self._transport, TaskMixin):
             await self._start_transport()
         self._start_server()
         self._start_clients()
         self._running = True
-        LOGGER.debug('Agent started')
+        LOGGER.debug("Agent started")
 
     async def stop(self):
-        LOGGER.debug('Agent stopping')
+        LOGGER.debug("Agent stopping")
         del self._running
         await self._stop_clients()
         if self._server.is_running():
@@ -98,55 +101,55 @@ class Agent:
         if isinstance(self._transport, TaskMixin):
             if self._transport.is_running():
                 await self._stop_transport()
-        LOGGER.debug('Agent stopped')
+        LOGGER.debug("Agent stopped")
 
     async def _start_transport(self):
         assert isinstance(self._transport, TaskMixin), "Transport is not a TaskMixin"
-        self._transport.start(name=f'Transport-{self._transport.addr}')
+        self._transport.start(name=f"Transport-{self._transport.addr}")
         await self._transport.wait_serving()
-        LOGGER.debug('Transport started')
+        LOGGER.debug("Transport started")
 
     async def _stop_transport(self):
         assert isinstance(self._transport, TaskMixin), "Transport is not a TaskMixin"
         assert self._transport.is_running(), "Transport not running"
         await self._transport.stop()
-        LOGGER.debug('Transport stopped')
+        LOGGER.debug("Transport stopped")
 
     def _start_server(self):
-        self._server.start(name='Server')
-        LOGGER.debug('Server started')
+        self._server.start(name="Server")
+        LOGGER.debug("Server started")
 
     async def _stop_server(self):
         assert self._server.is_running(), "Server not running"
         await self._server.stop()
-        LOGGER.debug('Server stopped')
+        LOGGER.debug("Server stopped")
 
     def _start_clients(self):
         for c in self._clients:
             if not c.is_running():
                 self._start_client(c)
-        LOGGER.debug('Clients started')
+        LOGGER.debug("Clients started")
 
     async def _stop_clients(self):
         await asyncio.gather(*[self._stop_client(c) for c in self._clients if c.is_running()], return_exceptions=True)
-        LOGGER.debug('Clients stopped')
+        LOGGER.debug("Clients stopped")
 
     @staticmethod
     def _start_client(client):
-        name = f'Client-{id(client)}'
+        name = f"Client-{id(client)}"
         client.start(name)
-        LOGGER.debug(f'{name} started')
+        LOGGER.debug(f"{name} started")
 
     @staticmethod
     async def _stop_client(client):
-        name = f'Client-{id(client)}'
-        assert client.is_running(), f'{name} not running'
+        name = f"Client-{id(client)}"
+        assert client.is_running(), f"{name} not running"
         try:
             await client.stop()
         except:
-            LOGGER.exception(f'{name} errored while stopping')
+            LOGGER.exception(f"{name} errored while stopping")
             raise
-        LOGGER.debug(f'{name} stopped')
+        LOGGER.debug(f"{name} stopped")
 
     def new_client(self, channel_sdesc: bytes):
         """Create a `Client` and start it if the agent is already running.
@@ -191,19 +194,19 @@ class Agent:
                     addr = Address.from_netloc(str(node.ip_addrs[0]))
                     node_update_map[int(node.host_id)] = Address(addr.host, addr.port or node.port)
                 except Exception:
-                    LOGGER.critical(f'Failed to update agent node-address mapping for {node}')
+                    LOGGER.critical(f"Failed to update agent node-address mapping for {node}")
                     raise
 
             self.nodes.update(node_update_map)
         except Exception:
-            LOGGER.critical(f'Failed to update agent node-address mapping')
+            LOGGER.critical(f"Failed to update agent node-address mapping")
             raise
 
         # Update clients
         self._update_client_nodes(node_update_map)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     from .task import cancel_all_tasks
 
     async def main():

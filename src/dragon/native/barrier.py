@@ -30,10 +30,7 @@ class Barrier:
     waiting threads, and whether or not the barrier is broken.
     """
 
-    def __init__(
-        self, parties: int = 2, action: callable = None, timeout: float = None, m_uid: int = _DEF_MUID
-    ):
-
+    def __init__(self, parties: int = 2, action: callable = None, timeout: float = None, m_uid: int = _DEF_MUID):
         """Initialize a barrier object
         :param parties: number of parties for the barrier to act upon
         :type parties: int, optional, > 1
@@ -48,9 +45,7 @@ class Barrier:
         LOGGER.debug(f"Init Dragon Native Barrier with m_uid={m_uid}")
 
         if timeout is not None and timeout < 0:
-            raise ValueError(
-                "The timeout in init is less than 0 for the Dragon Native Barrier implementation."
-            )
+            raise ValueError("The timeout in init is less than 0 for the Dragon Native Barrier implementation.")
 
         if timeout is None:
             timeout = 1000000000  # so we can do math with it.
@@ -102,9 +97,7 @@ class Barrier:
         if timeout is None:
             timeout = self._timeout
         elif timeout < 0:
-            raise ValueError(
-                "The timeout in wait is less than 0 for the Dragon Native Barrier implementation."
-            )
+            raise ValueError("The timeout in wait is less than 0 for the Dragon Native Barrier implementation.")
 
         try:
             recvh = self._channel.recvh()
@@ -223,14 +216,14 @@ class Barrier:
             raise BrokenBarrierError(f"The abort failed with the error of {repr(ex)}.")
 
     def destroy(self) -> None:
-        '''Destroys the underlying Dragon resources so the space can be re-used.
+        """Destroys the underlying Dragon resources so the space can be re-used.
 
         Destroys underlying Dragon resource. Only do this when you know all
         references to the object have been deleted.
 
         :return: None
         :rtype: NoneType
-        '''
+        """
         try:
             self._channel.destroy()
         except:

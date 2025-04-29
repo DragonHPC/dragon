@@ -47,7 +47,7 @@ class RequestTestCase(unittest.TestCase):
 class TransmittableTestCase(unittest.IsolatedAsyncioTestCase):
 
     def setUp(self):
-        if not (hasattr(self, 'msg') and hasattr(self, 'data')):
+        if not (hasattr(self, "msg") and hasattr(self, "data")):
             self.skipTest('Missing "msg" and "data" attributes')
         self.assertIsInstance(self.msg, messages.TransportMessage)
         self.assertIsInstance(self.data, bytes)
@@ -80,7 +80,7 @@ class HelloTestCase(TransmittableTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.msg = messages.Hello(ip_address('127.0.0.1'), 8888)
+        cls.msg = messages.Hello(ip_address("127.0.0.1"), 8888)
         cls.data = b'\x40\x7f\x00\x00\x01"\xb8'
 
 
@@ -88,7 +88,7 @@ class Hello6TestCase(TransmittableTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.msg = messages.Hello6(ip_address('::1'), 8888)
+        cls.msg = messages.Hello6(ip_address("::1"), 8888)
         cls.data = b'\x60\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"\xb8'
 
 
@@ -97,45 +97,66 @@ class SendRequestTestCase(TransmittableTestCase):
     @classmethod
     def setUpClass(cls):
         cls.msg = messages.SendRequest(
-            seqno=1, timeout=0.5, channel_sd=b'channel desc',
-            return_mode=messages.SendReturnMode.WHEN_BUFFERED, sendhid=uuid4(),
-            payload=b'payload', hints=0, clientid=0
+            seqno=1,
+            timeout=0.5,
+            channel_sd=b"channel desc",
+            return_mode=messages.SendReturnMode.WHEN_BUFFERED,
+            sendhid=uuid4(),
+            payload=b"payload",
+            hints=0,
+            clientid=0,
         )
-        cls.data = b'\x01\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x02' + cls.msg.sendhid.bytes + b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07payload'
+        cls.data = (
+            b"\x01\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x02"
+            + cls.msg.sendhid.bytes
+            + b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07payload"
+        )
+
 
 class SendMemoryRequestTestCase(TransmittableTestCase):
 
     @classmethod
     def setUpClass(cls):
         cls.msg = messages.SendMemoryRequest(
-            seqno=1, timeout=0.5, channel_sd=b'channel desc',
-            return_mode=messages.SendReturnMode.WHEN_BUFFERED, sendhid=uuid4(),
-            payload=b'payload', mem_sd=b'memory desc', clientid=0, hints=0
+            seqno=1,
+            timeout=0.5,
+            channel_sd=b"channel desc",
+            return_mode=messages.SendReturnMode.WHEN_BUFFERED,
+            sendhid=uuid4(),
+            payload=b"payload",
+            mem_sd=b"memory desc",
+            clientid=0,
+            hints=0,
         )
-        cls.data = b'\x02\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x02' + cls.msg.sendhid.bytes + b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07payload\x00\x0bmemory desc'
+        cls.data = (
+            b"\x02\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x02"
+            + cls.msg.sendhid.bytes
+            + b"\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07payload\x00\x0bmemory desc"
+        )
 
 
 class RecvRequestTestCase(TransmittableTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.msg = messages.RecvRequest(seqno=1, timeout=0.5, channel_sd=b'channel desc')
-        cls.data = b'\x03\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc'
+        cls.msg = messages.RecvRequest(seqno=1, timeout=0.5, channel_sd=b"channel desc")
+        cls.data = b"\x03\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc"
 
 
 class EventRequestTestCase(TransmittableTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.msg = messages.EventRequest(seqno=1, timeout=0.5, channel_sd=b'channel desc', mask=3)
-        cls.data = b'\x04\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x00\x03'
+        cls.msg = messages.EventRequest(seqno=1, timeout=0.5, channel_sd=b"channel desc", mask=3)
+        cls.data = b"\x04\x00\x00\x00\x00\x00\x00\x00\x01?\x00\x00\x00\x00\x0cchannel desc\x00\x03"
+
 
 class ErrorResponseTestCase(TransmittableTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.msg = messages.ErrorResponse(seqno=1, errno=42, text='error message')
-        cls.data = b'\xff\x00\x00\x00\x00\x00\x00\x00\x01\x00*\x00\x00\x00\x00\x00\x00\x00\rerror message'
+        cls.msg = messages.ErrorResponse(seqno=1, errno=42, text="error message")
+        cls.data = b"\xff\x00\x00\x00\x00\x00\x00\x00\x01\x00*\x00\x00\x00\x00\x00\x00\x00\rerror message"
 
 
 class SendResponseTestCase(TransmittableTestCase):
@@ -143,15 +164,15 @@ class SendResponseTestCase(TransmittableTestCase):
     @classmethod
     def setUpClass(cls):
         cls.msg = messages.SendResponse(seqno=1)
-        cls.data = b'\xfe\x00\x00\x00\x00\x00\x00\x00\x01'
+        cls.data = b"\xfe\x00\x00\x00\x00\x00\x00\x00\x01"
 
 
 class RecvResponseTestCase(TransmittableTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.msg = messages.RecvResponse(seqno=1, payload=b'payload', clientid=0, hints=0)
-        cls.data = b'\xfc\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07payload'
+        cls.msg = messages.RecvResponse(seqno=1, payload=b"payload", clientid=0, hints=0)
+        cls.data = b"\xfc\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x07payload"
 
 
 class EventResponseTestCase(TransmittableTestCase):
@@ -159,7 +180,7 @@ class EventResponseTestCase(TransmittableTestCase):
     @classmethod
     def setUpClass(cls):
         cls.msg = messages.EventResponse(seqno=1, errno=0, result=42)
-        cls.data = b'\xfb\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00*'
+        cls.data = b"\xfb\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00*"
 
 
 class MessagesTestCase(unittest.IsolatedAsyncioTestCase):
@@ -180,5 +201,5 @@ class MessagesTestCase(unittest.IsolatedAsyncioTestCase):
         raise NotImplementedError
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

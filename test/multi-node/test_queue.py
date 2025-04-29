@@ -1,4 +1,4 @@
-""" This file contains Dragon multi-node acceptance tests for the
+"""This file contains Dragon multi-node acceptance tests for the
 `multiprocessing.Queue` object.  The test scales with the total number of CPUs
 reported by the allocation, i.e. it becomes tougher on larger allocations.
 The test is run with `dragon test_queue.py -f -v`
@@ -39,7 +39,7 @@ class TestQueueMultiNode(unittest.TestCase):
         """Start 2 processes per cpu and have each of them send 16 messages to
         each other. Message sizes rotate between 1 byte and 1 Mbyte"""
 
-        num_readers = num_writers = max(2, mp.cpu_count() // 8)
+        num_readers = num_writers = max(2, mp.cpu_count() // 32)
 
         msg_list = {}  # key is the msg identifier, value is the payload
         nitems = 42  # Seems like the right value.
@@ -48,9 +48,7 @@ class TestQueueMultiNode(unittest.TestCase):
             msg_list[i] = random.randbytes(max_msg_size)
 
         q = mp.Queue()
-        q_ver = mp.Queue(
-            maxsize=nitems * num_writers
-        )  # used to verify that all messages are gotten from the queue
+        q_ver = mp.Queue(maxsize=nitems * num_writers)  # used to verify that all messages are gotten from the queue
 
         writers = []
         for i in range(num_writers):

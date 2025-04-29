@@ -6,6 +6,7 @@ development. To revert to the version based on the `multiprocessing.Pool` class
 with a patched terminate_pool method, set `DRAGON_BASEPOOL="PATCHED"` in the
 environment.
 """
+
 import multiprocessing.pool
 from multiprocessing import get_start_method
 from multiprocessing.pool import TERMINATE, IMapIterator, IMapUnorderedIterator
@@ -159,7 +160,7 @@ class WrappedDragonProcess:  # Dummy
         :return: exit code of the process, None if timeout occurs
         :rtype: int
         :raises: ProcessError
-    """
+        """
         return self._process.join()
 
     def terminate(self) -> None:
@@ -213,8 +214,9 @@ class WrappedDragonProcess:  # Dummy
     def close(self):
         raise NotImplementedError
 
+
 class WrappedResult:
-    """Returned by all functions that return a result. Wraps ApplyResult and MapResult so that correct timeout error can be raised."""
+    """Wraps `ApplyResult` and `MapResult` so that correct timeout error can be raised"""
 
     def __init__(self, result: ApplyResult or MapResult = None):
         """Initializes wrapped result by saving input result
@@ -265,7 +267,7 @@ class WrappedResult:
 
 
 class DragonPool(NativePool):
-    """Dragon's replacement for Multiprocessing Pool."""
+    """A process pool consisting of a input and output queues and worker processes"""
 
     def __init__(self, *args, context=None, **kwargs):
         super().__init__(*args, **kwargs)
@@ -324,9 +326,7 @@ class DragonPool(NativePool):
         :rtype: WrappedResult
         """
         return WrappedResult(
-            super().apply_async(
-                func=func, args=args, kwds=kwds, callback=callback, error_callback=error_callback
-            )
+            super().apply_async(func=func, args=args, kwds=kwds, callback=callback, error_callback=error_callback)
         )
 
     def map_async(
@@ -422,9 +422,7 @@ class DragonPool(NativePool):
         :return: A result that has a `get` method that returns an iterable of the output from applying `func` to each element of iterable.
         :rtype: WrappedResult
         """
-        return WrappedResult(
-            self._map_async(func, iterable, starmapstar, chunksize, callback, error_callback)
-        )
+        return WrappedResult(self._map_async(func, iterable, starmapstar, chunksize, callback, error_callback))
 
     def __enter__(self):
         self._check_running()
@@ -433,9 +431,7 @@ class DragonPool(NativePool):
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.terminate()
 
-    def imap_unordered(
-        self, func: callable, iterable: Iterable, chunksize: int = 1
-    ) -> IMapUnorderedIterator or Any:
+    def imap_unordered(self, func: callable, iterable: Iterable, chunksize: int = 1) -> IMapUnorderedIterator or Any:
         """Like `imap()` method but ordering of results is arbitrary.
 
         :param func: user provided function to call on elements of iterable
@@ -539,9 +535,7 @@ class BaseImplPool(multiprocessing.pool.Pool):
         super().__init__(*args, **kwargs)
 
 
-def Pool(
-    processes=None, initializer=None, initargs=(), maxtasksperchild=None, context=None, *, use_base_impl=True
-):
+def Pool(processes=None, initializer=None, initargs=(), maxtasksperchild=None, context=None, *, use_base_impl=True):
     #    dragon_base_pool = int(os.getenv("DRAGON_BASEPOOL", "0"))
     dragon_base_pool = os.getenv("DRAGON_BASEPOOL", "NATIVE")
     if use_base_impl:

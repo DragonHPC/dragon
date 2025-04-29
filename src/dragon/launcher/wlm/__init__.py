@@ -3,14 +3,17 @@ import enum
 from .slurm import SlurmNetworkConfig, get_slurm_launch_be_args
 from .pbs_pals import PBSPalsNetworkConfig, get_pbs_pals_launch_be_args
 from .ssh import SSHNetworkConfig, get_ssh_launch_be_args
+from .k8s import KubernetesNetworkConfig
 
 
 @enum.unique
 class WLM(enum.Enum):
     """Enumerated list of supported workload manager"""
-    SLURM = 'slurm'
-    PBS_PALS = 'pbs+pals'
-    SSH = 'ssh'
+
+    SLURM = "slurm"
+    PBS_PALS = "pbs+pals"
+    SSH = "ssh"
+    K8S = "k8s"
 
     def __str__(self):
         return self.value
@@ -34,10 +37,15 @@ class WLM(enum.Enum):
             raise ValueError()
 
 
-wlm_cls_dict = {WLM.SLURM: SlurmNetworkConfig,
-                WLM.PBS_PALS: PBSPalsNetworkConfig,
-                WLM.SSH: SSHNetworkConfig}
+wlm_cls_dict = {
+    WLM.SLURM: SlurmNetworkConfig,
+    WLM.PBS_PALS: PBSPalsNetworkConfig,
+    WLM.K8S: KubernetesNetworkConfig,
+    WLM.SSH: SSHNetworkConfig,
+}
 
-wlm_launch_dict = {WLM.SLURM: get_slurm_launch_be_args,
-                   WLM.PBS_PALS: get_pbs_pals_launch_be_args,
-                   WLM.SSH: get_ssh_launch_be_args}
+wlm_launch_dict = {
+    WLM.SLURM: get_slurm_launch_be_args,
+    WLM.PBS_PALS: get_pbs_pals_launch_be_args,
+    WLM.SSH: get_ssh_launch_be_args,
+}

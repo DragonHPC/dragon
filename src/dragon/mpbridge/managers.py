@@ -1,5 +1,4 @@
-"""Dragon's replacement of Multiprocessing Managers. Not implemented at the moment.
-"""
+"""Dragon's replacement of Multiprocessing Managers. Not implemented at the moment."""
 
 import multiprocessing.managers
 

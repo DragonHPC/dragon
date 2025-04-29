@@ -9,15 +9,25 @@ from ...infrastructure.node_desc import NodeDescriptor
 
 from .errno import get_errno, DRAGON_TIMEOUT
 from .io import UUIDBytesIO
-from .messages import ErrorResponse, EventRequest, EventResponse, \
-    RecvRequest, RecvResponse, Request, Response, SendMemoryRequest, \
-    SendRequest, SendResponse, SendReturnMode
+from .messages import (
+    ErrorResponse,
+    EventRequest,
+    EventResponse,
+    RecvRequest,
+    RecvResponse,
+    Request,
+    Response,
+    SendMemoryRequest,
+    SendRequest,
+    SendResponse,
+    SendReturnMode,
+)
 from .task import TaskMixin, run_forever
 from .transport import Address, Transport
 from .util import create_msg
 
 
-LOGGER = logging.getLogger('dragon.transport.tcp.client')
+LOGGER = logging.getLogger("dragon.transport.tcp.client")
 
 
 class Client(TaskMixin):
@@ -25,11 +35,13 @@ class Client(TaskMixin):
     with the corresponding transport server.
     """
 
-    def __init__(self,
-                 channel_sdesc: bytes,
-                 transport: Transport,
-                 nodes: Optional[dict[int, Address]] = None,
-                 wait_mode: WaitMode = DEFAULT_WAIT_MODE):
+    def __init__(
+        self,
+        channel_sdesc: bytes,
+        transport: Transport,
+        nodes: Optional[dict[int, Address]] = None,
+        wait_mode: WaitMode = DEFAULT_WAIT_MODE,
+    ):
         self.channel_sdesc = channel_sdesc
         self.transport = transport
         if nodes is None:
@@ -46,23 +58,23 @@ class Client(TaskMixin):
         try:
             while True:
                 msg = await self.recv()
-                LOGGER.debug(f'Received gateway message: {msg}')
+                LOGGER.debug(f"Received gateway message: {msg}")
                 try:
                     task = self.process(msg)
                 except BaseException as e:
-                    LOGGER.exception(f'Error processing gateway message: {msg}')
+                    LOGGER.exception(f"Error processing gateway message: {msg}")
 
                     # Try to complete the gateway message with the error
                     try:
                         msg.complete_error(get_errno(e))
                     except:
-                        LOGGER.exception('Failed to complete gateway message with error')
+                        LOGGER.exception("Failed to complete gateway message with error")
 
                     # Ensure gateway message is destroyed
                     try:
                         msg.destroy()
                     except:
-                        LOGGER.exception('Failed to destroy gateway message')
+                        LOGGER.exception("Failed to destroy gateway message")
 
                     # Finally, ignore Exceptions, but not BaseExceptions (e.g., KeyboardInterrupt)
                     try:
@@ -72,7 +84,7 @@ class Client(TaskMixin):
                 else:
                     self._background_tasks.add(task)
                     task.add_done_callback(self._background_tasks.discard)
-                    LOGGER.debug(f'Processed gateway message: {msg}')
+                    LOGGER.debug(f"Processed gateway message: {msg}")
 
         finally:
             await asyncio.to_thread(self.close)
@@ -118,7 +130,7 @@ class Client(TaskMixin):
         try:
             self.nodes.update(node_update_map)
         except Exception:
-            LOGGER.critical(f'Failed to update client node-address mapping')
+            LOGGER.critical(f"Failed to update client node-address mapping")
             raise
 
     def process(self, msg: GatewayMessage) -> asyncio.Task:
@@ -126,7 +138,7 @@ class Client(TaskMixin):
         try:
             to_addr = self.nodes[msg.target_hostid]
         except KeyError:
-            raise ValueError(f'Unknown target host ID: {msg.target_hostid}')
+            raise ValueError(f"Unknown target host ID: {msg.target_hostid}")
         # Create Request from gateway message
         req = create_request(msg)
         # Send request
@@ -149,17 +161,17 @@ class Client(TaskMixin):
             try:
                 resp, addr = await fut
             except BaseException as e:
-                LOGGER.exception(f'Error awaiting response to gateway message: {msg}')
+                LOGGER.exception(f"Error awaiting response to gateway message: {msg}")
                 # Create local ErrorResponse response; seqno=None implies it
                 # was never actually sent/received.
-                resp = ErrorResponse(None, get_errno(e), f'Error awaiting response to gateway message: {msg}')
+                resp = ErrorResponse(None, get_errno(e), f"Error awaiting response to gateway message: {msg}")
                 # Inidicate local transport address (i.e., myself)
                 addr = self.transport.addr
             # Handle response and complete the gateway message
             try:
                 await self.handle_response(resp, addr, msg)
             except BaseException:
-                LOGGER.exception(f'Error handling response to gateway message: {msg}')
+                LOGGER.exception(f"Error handling response to gateway message: {msg}")
             finally:
                 # Set the I/O event on the response. Critical for properly
                 # handling RecvResponse messages when the transport does NOT use
@@ -172,14 +184,14 @@ class Client(TaskMixin):
 
     @singledispatchmethod
     async def handle_response(self, resp: Response, addr: Address, msg: GatewayMessage) -> None:
-        raise NotImplementedError(f'Unsupported response type: {type(resp)}')
+        raise NotImplementedError(f"Unsupported response type: {type(resp)}")
 
     @handle_response.register
     async def _(self, resp: ErrorResponse, addr: Address, msg: GatewayMessage) -> None:
         """Handle ErrorResponse messages."""
         # Log errors except time outs on events
         if not (msg.is_event_kind and resp.errno == DRAGON_TIMEOUT):
-            LOGGER.error(f'Request {resp.seqno} errored: {resp.errno}: {resp.text}')
+            LOGGER.error(f"Request {resp.seqno} errored: {resp.errno}: {resp.text}")
         # Need to complete the message in order to pass back the response's
         # error code.
         msg.complete_error(resp.errno)
@@ -195,12 +207,20 @@ class Client(TaskMixin):
         """Handle RecvResponse messages."""
         assert msg.is_get_kind
         try:
-            msg_recv = await asyncio.to_thread(create_msg, resp.payload, resp.clientid, resp.hints, self._channel, msg.deadline, msg.get_dest_mem_descr_ser)
+            msg_recv = await asyncio.to_thread(
+                create_msg,
+                resp.payload,
+                resp.clientid,
+                resp.hints,
+                self._channel,
+                msg.deadline,
+                msg.get_dest_mem_descr_ser,
+            )
         except BaseException as e:
             try:
                 msg.complete_error(get_errno(e))
             except:
-                LOGGER.exception('Failed to complete gateway message with error')
+                LOGGER.exception("Failed to complete gateway message with error")
             raise e
         msg.get_complete(msg_recv)
 
@@ -222,22 +242,37 @@ def create_request(msg: GatewayMessage) -> Request:
         elif msg.is_send_return_when_received:
             send_return_mode = SendReturnMode.WHEN_RECEIVED
         else:
-            raise ValueError('Unsupported send return mode')
+            raise ValueError("Unsupported send return mode")
         sendhid = UUIDBytesIO.decode(msg.send_payload_message_attr_sendhid)
         clientid = msg.send_payload_message_attr_clientid
         hints = msg.send_payload_message_attr_hints
         payload = msg.send_payload_message
         mem_sd = msg.send_dest_mem_descr_ser
         if mem_sd is None:
-            cls = partial(SendRequest, return_mode=send_return_mode, sendhid=sendhid, clientid=clientid, hints=hints, payload=payload)
+            cls = partial(
+                SendRequest,
+                return_mode=send_return_mode,
+                sendhid=sendhid,
+                clientid=clientid,
+                hints=hints,
+                payload=payload,
+            )
         else:
-            cls = partial(SendMemoryRequest, return_mode=send_return_mode, sendhid=sendhid, clientid=clientid, hints=hints, payload=payload, mem_sd=mem_sd)
+            cls = partial(
+                SendMemoryRequest,
+                return_mode=send_return_mode,
+                sendhid=sendhid,
+                clientid=clientid,
+                hints=hints,
+                payload=payload,
+                mem_sd=mem_sd,
+            )
     elif msg.is_get_kind:
         cls = RecvRequest
     elif msg.is_event_kind:
         cls = partial(EventRequest, mask=msg.event_mask)
     else:
-        raise ValueError('Unknown kind of gateway message')
+        raise ValueError("Unknown kind of gateway message")
     req = cls(seqno=None, timeout=0.0, channel_sd=msg.target_ch_ser)
     req.deadline = msg.deadline
     return req

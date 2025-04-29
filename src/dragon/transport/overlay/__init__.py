@@ -8,13 +8,15 @@ from ...utils import B64
 from ...dlogging.util import DragonLoggingServices as dls
 
 
-def start_overlay_network(ch_in_sdesc: B64,
-                          ch_out_sdesc: B64,
-                          log_sdesc: B64,
-                          host_ids: list[str],
-                          ip_addrs: list[str],
-                          frontend: bool = False,
-                          env: dict = None):
+def start_overlay_network(
+    ch_in_sdesc: B64,
+    ch_out_sdesc: B64,
+    log_sdesc: B64,
+    host_ids: list[str],
+    ip_addrs: list[str],
+    frontend: bool = False,
+    env: dict = None,
+):
     """Entry point to start the launcher overlay network
 
     :param ch_in_sdesc: Channel to be used for infrastructure messages incoming
@@ -37,7 +39,7 @@ def start_overlay_network(ch_in_sdesc: B64,
     :rtype: subprocess.Popen
     """
 
-    log = logging.getLogger(dls.ON).getChild('start_overlay_network')
+    log = logging.getLogger(dls.ON).getChild("start_overlay_network")
 
     # If no transport agent settings are set in launch parameters
     args = shlex.split(str(TransportAgentOptions.TCP))
@@ -49,21 +51,27 @@ def start_overlay_network(ch_in_sdesc: B64,
     if cmd:  # Only replace if resolved
         args[0] = cmd
 
-    args = args \
-        + ['0', '--infrastructure',
-           '--ip-addrs'] + ip_addrs \
-        + ['--host-ids'] + host_ids \
-        + ['--ch-in-sdesc', str(ch_in_sdesc),
-           '--ch-out-sdesc', str(ch_out_sdesc),
-           '--port', str(DEFAULT_OVERLAY_NETWORK_PORT),
-           '--log-sdesc', str(log_sdesc)]
+    args = (
+        args
+        + ["0", "--infrastructure", "--ip-addrs"]
+        + ip_addrs
+        + ["--host-ids"]
+        + host_ids
+        + [
+            "--ch-in-sdesc",
+            str(ch_in_sdesc),
+            "--ch-out-sdesc",
+            str(ch_out_sdesc),
+            "--port",
+            str(DEFAULT_OVERLAY_NETWORK_PORT),
+            "--log-sdesc",
+            str(log_sdesc),
+        ]
+    )
 
     if frontend:
-        args.append('--frontend')
+        args.append("--frontend")
 
-    log.info(f'overlay args: {args}')
+    log.info(f"overlay args: {args}")
     # start_new_session to detach this process and avoid SIGINT going to it
-    return subprocess.Popen(args,
-                            bufsize=0,
-                            env=env,
-                            start_new_session=True)
+    return subprocess.Popen(args, bufsize=0, env=env, start_new_session=True)

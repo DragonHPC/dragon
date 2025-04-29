@@ -6,54 +6,63 @@ from dragon.native.pool import Pool
 
 TIMEOUT_DELTA_TOL = 1.0
 
+
 def sqr(x, wait=0.0):
     time.sleep(wait)
     return x * x
 
+
 def raising():
     raise KeyError("key")
 
+
 class TestDragonNativePool(unittest.TestCase):
-    """Unit tests for the Dragon Native Pool.
-    """
+    """Unit tests for the Dragon Native Pool."""
+
     def test_async(self):
 
         pool = Pool(processes=4)
-    
-        test_timeout=1.2 
-     
-        res = pool.apply_async(sqr, (7, test_timeout,))
-   
+
+        test_timeout = 1.2
+
+        res = pool.apply_async(
+            sqr,
+            (
+                7,
+                test_timeout,
+            ),
+        )
+
         start = time.monotonic()
-        result = res.get() 
+        result = res.get()
         elap = time.monotonic() - start
-  
+
         self.assertEqual(result, 49)
         self.assertGreaterEqual(elap, test_timeout)
-        self.assertLess(elap, (test_timeout+TIMEOUT_DELTA_TOL))
-      
+        self.assertLess(elap, (test_timeout + TIMEOUT_DELTA_TOL))
+
         pool.close()
         pool.join()
 
     def test_async_timeout(self):
-        
+
         pool = Pool(processes=4)
-    
-        test_timeout=1.2 
+
+        test_timeout = 1.2
         res = pool.apply_async(sqr, (6, test_timeout + 1.0))
         get = res.get
         self.assertRaises(TimeoutError, get, timeout=test_timeout)
-        
+
         pool.close()
         pool.join()
 
     def test_map_async(self):
-       
+
         pool = Pool(processes=4)
-        
+
         self.assertEqual(pool.map_async(sqr, list(range(10))).get(), list(map(sqr, list(range(10)))))
         self.assertEqual(pool.map_async(sqr, list(range(100)), chunksize=20).get(), list(map(sqr, list(range(100)))))
-        
+
         pool.close()
         pool.join()
 
@@ -65,16 +74,15 @@ class TestDragonNativePool(unittest.TestCase):
         start = time.monotonic()
         pool.join()
         stop = time.monotonic()
-  
-        # Sanity check the pool didn't wait for all work to be done 
-        self.assertLess(stop-start, 2.0)
+
+        # Sanity check the pool didn't wait for all work to be done
+        self.assertLess(stop - start, 2.0)
 
     def test_empty_iterable(self):
         p = Pool(1)
         self.assertEqual(p.map_async(sqr, []).get(), [])
         p.close()
         p.join()
-
 
     def test_async_error_callback(self):
         p = Pool(2)

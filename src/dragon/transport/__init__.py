@@ -12,7 +12,6 @@ from ..utils import B64
 
 
 def resolve_args(args=None):
-
     # If no transport agent settings are set in launch parameters
     if not args:
         args = facts.DEFAULT_TRANSPORT_AGENT
@@ -33,7 +32,7 @@ def start_transport_agent(
     args: list[str] = None,
     env: dict[str, str] = None,
     gateway_channels: Iterable[Channel] = None,
-    infrastructure: bool = False
+    infrastructure: bool = False,
 ) -> subprocess.Popen:
     """Start the backend transport agent
 
@@ -61,30 +60,33 @@ def start_transport_agent(
 
     from ..dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 
-    _env = ChainMap()
-    if env is not None:
-        _env.maps.append(env)
-    _env.maps.append(os.environ)
-
     if infrastructure:
         service = dls.LA_BE
     else:
         service = dls.LS
 
-    LOGGER = logging.getLogger(str(service)).getChild('start_transport_agent')
-    for key, val in _env.items():
-        LOGGER.debug(f'{key}: {val}')
+    LOGGER = logging.getLogger(str(service)).getChild("start_transport_agent")
+
+    # Put together and envioronment variables dict
+    _env = ChainMap()
+    if env is not None:
+        _env.maps.append(env)
+    _env.maps.append(os.environ)
+
+    # Modify the LD_LIBRARY_PATH for launch of HSTA so it can find dragon and
+    # fabric libraries
+    lib_dir = os.path.join(os.path.dirname(__file__), "../lib")
+    _env["LD_LIBRARY_PATH"] = lib_dir + ":" + str(_env.get("LD_LIBRARY_PATH", ""))
 
     if gateway_channels is not None:
         for i, ch in enumerate(gateway_channels):
-            _env[f'{facts.GW_ENV_PREFIX}{i+1}'] = str(B64(ch.serialize()))
+            _env[f"{facts.GW_ENV_PREFIX}{i+1}"] = str(B64(ch.serialize()))
+
+    for key, val in _env.items():
+        LOGGER.debug(f"{key}: {val}")
 
     # TODO: This needs to be tightened up
-    _args = resolve_args(args) + [
-        str(node_index),
-        '--ch-in-sdesc', str(in_ch_sdesc),
-        '--log-sdesc', str(log_ch_sdesc)
-    ]
+    _args = resolve_args(args) + [str(node_index), "--ch-in-sdesc", str(in_ch_sdesc), "--log-sdesc", str(log_ch_sdesc)]
 
-    LOGGER.debug(f'Starting transport agent: {_args}')
+    LOGGER.debug(f"Starting transport agent: {_args}")
     return subprocess.Popen(_args, bufsize=0, stdin=subprocess.DEVNULL, env=_env)

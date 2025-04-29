@@ -18,14 +18,16 @@ class Mem(Enum):
 
 
 # Driver class that contains all shared tests for FIFO vs Greedy and SharedMem vs MMAP
-@parameterized_class([
-    {"lock_type": Type.FIFO, "mem_type": Mem.MMAP},
-    {"lock_type": Type.FIFO, "mem_type": Mem.SHM},
-    {"lock_type": Type.FIFOLITE, "mem_type": Mem.MMAP},
-    {"lock_type": Type.FIFOLITE, "mem_type": Mem.SHM},
-    {"lock_type": Type.GREEDY, "mem_type": Mem.MMAP},
-    {"lock_type": Type.GREEDY, "mem_type": Mem.SHM},
-])
+@parameterized_class(
+    [
+        {"lock_type": Type.FIFO, "mem_type": Mem.MMAP},
+        {"lock_type": Type.FIFO, "mem_type": Mem.SHM},
+        {"lock_type": Type.FIFOLITE, "mem_type": Mem.MMAP},
+        {"lock_type": Type.FIFOLITE, "mem_type": Mem.SHM},
+        {"lock_type": Type.GREEDY, "mem_type": Mem.MMAP},
+        {"lock_type": Type.GREEDY, "mem_type": Mem.SHM},
+    ]
+)
 class LockTest(unittest.TestCase):
 
     def setUp(self) -> None:
@@ -98,10 +100,7 @@ class LockTest(unittest.TestCase):
         self.hdl.lock()
         self.hdl.unlock()
 
-    @parameterized.expand([
-        ["2Thread", 2],
-        ["4Thread", 4]
-    ])
+    @parameterized.expand([["2Thread", 2], ["4Thread", 4]])
     def test_lock_count(self, name: str, maxprocs: int) -> None:
         self.hdl = DragonLock.init(self.lock_type, self.memobj)
         self.hdl.lock()
@@ -109,11 +108,10 @@ class LockTest(unittest.TestCase):
         iters = 1000
         procs = []
 
-        tdata = Array('i', range(1))
+        tdata = Array("i", range(1))
 
         for i in range(maxprocs):
-            proc = mp.Process(target=self.atomic_count,
-                              args=(self.memobj, iters, tdata))
+            proc = mp.Process(target=self.atomic_count, args=(self.memobj, iters, tdata))
             proc.start()
             procs.append(proc)
 
@@ -124,23 +122,18 @@ class LockTest(unittest.TestCase):
 
         self.assertEqual(maxprocs * iters, tdata[0])
 
-    @parameterized.expand([
-        ["1Thread", 1],
-        ["2Thread", 2],
-        ["4Thread", 4]
-    ])
+    @parameterized.expand([["1Thread", 1], ["2Thread", 2], ["4Thread", 4]])
     def test_multi_lock(self, name: str, maxprocs: int) -> None:
         self.hdl = DragonLock.init(self.lock_type, self.memobj)
         self.hdl.lock()
 
         warmup = 1000
         iters = 10000
-        tdata = Array('d', range(2))
+        tdata = Array("d", range(2))
         procs = []
 
         for i in range(maxprocs):
-            proc = mp.Process(target=self.bench_ops,
-                              args=(self.memobj, warmup, iters, tdata))
+            proc = mp.Process(target=self.bench_ops, args=(self.memobj, warmup, iters, tdata))
             proc.start()
             procs.append(proc)
 
@@ -173,11 +166,7 @@ class LockTest(unittest.TestCase):
         if res != 0:
             raise RuntimeError(f"Process {procid} got lock when it should not have")
 
-    @parameterized.expand([
-        ["1Thread", 1],
-        ["2Thread", 2],
-        ["4Thread", 4]
-    ])
+    @parameterized.expand([["1Thread", 1], ["2Thread", 2], ["4Thread", 4]])
     def test_multi_try_lock(self, name: str, maxprocs: int) -> None:
         self.hdl = DragonLock.init(self.lock_type, self.memobj)
         self.hdl.lock()
@@ -206,5 +195,5 @@ class LockTest(unittest.TestCase):
         del self.hdl
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

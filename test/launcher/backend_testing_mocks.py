@@ -29,7 +29,7 @@ def get_args_map(network_config, frontend_sdesc, host_id, ip_addrs):
         "frontend_sdesc": frontend_sdesc,
         "network_prefix": f"{network_prefix}",
         "transport_test": False,
-        "overlay_port": 6565
+        "overlay_port": 6565,
     }
     return args_map
 
@@ -52,8 +52,7 @@ def mock_start_localservices_wrapper(func):
         )
 
         with patch(
-            "dragon.launcher.backend.LauncherBackEnd._start_localservices",
-            side_effect=mocked_start_localservices
+            "dragon.launcher.backend.LauncherBackEnd._start_localservices", side_effect=mocked_start_localservices
         ) as mock_localservices:
             localservices_arg_tuple = (mock_localservices, ls_stdin_r, ls_stdout_w)
             args += (localservices_arg_tuple,)
@@ -72,21 +71,15 @@ def mock_start_localservices_wrapper(func):
 
 class LauncherBackendHelper:
 
-    def __init__(self,
-                 network_config_file,
-                 node_index,
-                 ip_addrs,
-                 fe_host_id,
-                 be_host_id):
+    def __init__(self, network_config_file, node_index, ip_addrs, fe_host_id, be_host_id):
         self.network_config_file = network_config_file
-        self.network_config = \
-            NetworkConfig.from_file(self.network_config_file).get_network_config()
+        self.network_config = NetworkConfig.from_file(self.network_config_file).get_network_config()
         self.node_index = node_index
         self.ip_addrs = ip_addrs
         self.fe_host_id = fe_host_id
         self.be_host_id = be_host_id
 
-        self.garbage_dict = {'junk': 'abdecdf', '52': 20}
+        self.garbage_dict = {"junk": "abdecdf", "52": 20}
 
     def cleanup(self):
 
@@ -110,11 +103,10 @@ class LauncherBackendHelper:
         except Exception:
             pass
 
-
     def handle_overlay_start(self, mock_overlay, mock_start_localservices):
-        '''Start of mocked up overlay network'''
+        """Start of mocked up overlay network"""
 
-        log = logging.getLogger('handle_overlay_start')
+        log = logging.getLogger("handle_overlay_start")
         log.info("Waiting for overlay call...")
         while mock_overlay.call_args is None:
             pass
@@ -124,9 +116,7 @@ class LauncherBackendHelper:
 
         # Create our backend overlay TCP agent and connect to the
         # frontend's channels
-        self.be_overlay_tsta = BackendOverlay(
-            overlay_args["ch_in_sdesc"], overlay_args["ch_out_sdesc"]
-        )
+        self.be_overlay_tsta = BackendOverlay(overlay_args["ch_in_sdesc"], overlay_args["ch_out_sdesc"])
 
         # Let backend know its overlay agent is "up"
         self.be_overlay_tsta.send_OverlayPingBE()  # M7
@@ -142,7 +132,7 @@ class LauncherBackendHelper:
         _, self.ls_stdin_queue, self.ls_stdout_queue = mock_start_localservices
 
     def handle_network_and_frontend_start(self, mock_network_config):
-        '''Define the mocked up network and frontend'''
+        """Define the mocked up network and frontend"""
         mock_network_config.return_value = self.network_config[str(self.node_index)]
 
         self.launcher_fe = LauncherFrontEnd(self.node_index, self.fe_host_id, self.network_config)
@@ -156,20 +146,20 @@ class LauncherBackendHelper:
 
         return args_map
 
-    def start_ls(self,
-                 mock_overlay,
-                 mock_start_localservices,
-                 garble_shchannelsup=False,
-                 garble_lachannelsinfo=False,
-                 abort_lachannelsinfo=False,
-                 accelerator_present=False):
+    def start_ls(
+        self,
+        mock_overlay,
+        mock_start_localservices,
+        garble_shchannelsup=False,
+        garble_lachannelsinfo=False,
+        abort_lachannelsinfo=False,
+        accelerator_present=False,
+    ):
 
         self.handle_overlay_start(mock_overlay, mock_start_localservices)
 
         # create our localservices standin class and connect to stdin/stdout queues
-        self.localservices = LocalServices(
-            self.ls_stdin_queue, self.ls_stdout_queue, self.node_index, self.be_host_id
-        )
+        self.localservices = LocalServices(self.ls_stdin_queue, self.ls_stdout_queue, self.node_index, self.be_host_id)
         self.localservices.recv_BENodeIdxSH()  # M10
         self.localservices.send_SHPingBE()  # M11
 
@@ -200,13 +190,10 @@ class LauncherBackendHelper:
 
         self.localservices.recv_LAChannelsInfo()  # M16
 
-    def clean_startup(self,
-                      log,
-                      mock_overlay,
-                      mock_network_config,
-                      mock_start_localservices,
-                      accelerator_present=False):
-        '''Execute a clean bringup and exit of all backend services'''
+    def clean_startup(
+        self, log, mock_overlay, mock_network_config, mock_start_localservices, accelerator_present=False
+    ):
+        """Execute a clean bringup and exit of all backend services"""
 
         self.start_ls(mock_overlay, mock_start_localservices, accelerator_present=accelerator_present)
 
@@ -225,9 +212,7 @@ class LauncherBackendHelper:
         self.launcher_fe.send_GSProcessCreate()
         create_process_tag = self.globalservices.recv_GSProcessCreate()
 
-        self.globalservices.send_GSProcessCreateResponse(
-            p_uid=p_uid, create_process_tag=create_process_tag
-        )
+        self.globalservices.send_GSProcessCreateResponse(p_uid=p_uid, create_process_tag=create_process_tag)
         self.launcher_fe.recv_GSProcessCreateResponse()
 
         self.localservices.send_SHFwdOutput_StdOut(p_uid=p_uid)
@@ -236,8 +221,7 @@ class LauncherBackendHelper:
         self.launcher_fe.recv_SHFwdOutput()
         self.launcher_fe.recv_SHFwdOutput()
 
-    def start_gsteardown_exit(self,
-                              shteardown_abort=False):
+    def start_gsteardown_exit(self, shteardown_abort=False):
 
         self.launcher_fe.send_GSTeardown()  # M5
         self.globalservices.recv_GSTeardown()  # M6
@@ -269,18 +253,16 @@ class LauncherBackendHelper:
         self.be_overlay_tsta.recv_BEHaltOverlay()  # M22
         self.be_overlay_tsta.send_OverlayHalted()  # M23
 
-    def start_gsteardown_exit_no_ls_no_gs(self,
-                                          log,
-                                          shteardown_abort=False):
+    def start_gsteardown_exit_no_ls_no_gs(self, log, shteardown_abort=False):
 
         self.launcher_fe.send_GSTeardown()  # M5
-        log.debug('sent gsteardown')
+        log.debug("sent gsteardown")
 
         self.launcher_fe.recv_GSHalted()  # M9
-        log.debug('recved gshalted')
+        log.debug("recved gshalted")
 
         self.launcher_fe.send_SHHaltTA()  # M10
-        log.debug('send shhaltta')
+        log.debug("send shhaltta")
         self.launcher_fe.recv_TAHalted()  # M15
 
         if shteardown_abort:
@@ -299,18 +281,16 @@ class LauncherBackendHelper:
         self.be_overlay_tsta.recv_BEHaltOverlay()  # M22
         self.be_overlay_tsta.send_OverlayHalted()  # M23
 
-    def start_gsteardown_exit_no_gs(self,
-                                    log,
-                                    shteardown_abort=False):
+    def start_gsteardown_exit_no_gs(self, log, shteardown_abort=False):
 
         self.launcher_fe.send_GSTeardown()  # M5
-        log.debug('sent gsteardown')
+        log.debug("sent gsteardown")
 
         self.launcher_fe.recv_GSHalted()  # M9
-        log.debug('recved gshalted')
+        log.debug("recved gshalted")
 
         self.launcher_fe.send_SHHaltTA()  # M10
-        log.debug('send shhaltta')
+        log.debug("send shhaltta")
         self.localservices.recv_SHHaltTA()  # M11
 
         self.localservices.send_TAHalted()  # M14
@@ -332,11 +312,7 @@ class LauncherBackendHelper:
         self.be_overlay_tsta.recv_BEHaltOverlay()  # M22
         self.be_overlay_tsta.send_OverlayHalted()  # M23
 
-    def start_abnormal_termination_exit(self,
-                                        log,
-                                        gs_up=True,
-                                        ls_up=True,
-                                        shteardown_abort=False):
+    def start_abnormal_termination_exit(self, log, gs_up=True, ls_up=True, shteardown_abort=False):
 
         try:
             self.launcher_fe.recv_AbnormalTermination()
@@ -344,17 +320,13 @@ class LauncherBackendHelper:
             pass
 
         if not gs_up and not ls_up:
-            self.start_gsteardown_exit_no_ls_no_gs(log,
-                                                   shteardown_abort=shteardown_abort)
+            self.start_gsteardown_exit_no_ls_no_gs(log, shteardown_abort=shteardown_abort)
         elif not gs_up:
-            self.start_gsteardown_exit_no_gs(log,
-                                             shteardown_abort=shteardown_abort)
+            self.start_gsteardown_exit_no_gs(log, shteardown_abort=shteardown_abort)
         else:
             self.start_gsteardown_exit(shteardown_abort=shteardown_abort)
 
-    def clean_shutdown(self,
-                       log,
-                       shteardown_abort=False):
+    def clean_shutdown(self, log, shteardown_abort=False):
 
         self.globalservices.send_GSHeadExit()  # M3
         self.launcher_fe.recv_GSHeadExit()  # M4
@@ -425,10 +397,10 @@ class LauncherFrontEnd:
         try:
             # Create my memory pool
             self.fe_mpool = MemoryPool(
-                                int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ),
-                                f"{os.getuid()}_{os.getpid()}_{self.host_id}_{dfacts.DEFAULT_POOL_SUFFIX}",
-                                dfacts.FE_OVERLAY_TRANSPORT_AGENT_MUID,
-                                )
+                int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ),
+                f"{os.getuid()}_{os.getpid()}_{self.host_id}_{dfacts.DEFAULT_POOL_SUFFIX}",
+                dfacts.FE_OVERLAY_TRANSPORT_AGENT_MUID,
+            )
 
             # Create my receiving channel
             self.fe_cuid = dfacts.FE_CUID
@@ -458,9 +430,7 @@ class LauncherFrontEnd:
             if self.fe_mpool:
                 self.fe_mpool.destroy()
 
-            raise RuntimeError(
-                "Overlay transport resource creation failed"
-            ) from init_err
+            raise RuntimeError("Overlay transport resource creation failed") from init_err
 
     def recv_BEIsUp(self):
         self.log.debug("waiting for BEIsUp from Launcher BE")
@@ -472,9 +442,7 @@ class LauncherFrontEnd:
         self.log.debug("connecting to be")
         self.be_sdesc = B64.from_str(self.be_is_up.be_ch_desc)
         self.be_ch = Channel.attach(self.be_sdesc.decode(), mem_pool=self.fe_mpool)
-        be_conn_options = ConnectionOptions(
-            default_pool=self.fe_mpool, min_block_size=2**16
-        )
+        be_conn_options = ConnectionOptions(default_pool=self.fe_mpool, min_block_size=2**16)
         self.conn_out = Connection(
             outbound_initializer=self.be_ch,
             options=be_conn_options,
@@ -486,12 +454,12 @@ class LauncherFrontEnd:
         # Pack up all of our node descriptors for the backend:
         forwarding = {}
         for be_up in [self.be_is_up]:
-            assert isinstance(be_up, dmsg.BEIsUp), 'la_fe received invalid be up'
+            assert isinstance(be_up, dmsg.BEIsUp), "la_fe received invalid be up"
             for key, node_desc in self.network_config.items():
                 if str(be_up.host_id) == str(node_desc.host_id):
-                    forwarding[key] = NodeDescriptor(host_id=int(node_desc.host_id),
-                                                     ip_addrs=node_desc.ip_addrs,
-                                                     overlay_cd=be_up.be_ch_desc)
+                    forwarding[key] = NodeDescriptor(
+                        host_id=int(node_desc.host_id), ip_addrs=node_desc.ip_addrs, overlay_cd=be_up.be_ch_desc
+                    )
                     break
         net_conf_key_mapping = list(self.network_config.keys())
         fe_node_idx = dmsg.FENodeIdxBE(
@@ -499,7 +467,8 @@ class LauncherFrontEnd:
             node_index=self.node_index,
             forward=forwarding,
             send_desc=self.encoded_inbound,
-            net_conf_key_mapping=net_conf_key_mapping)
+            net_conf_key_mapping=net_conf_key_mapping,
+        )
         self.conn_out.send(fe_node_idx.serialize())
         self.log.debug(f"send_FENodeIdxBE sent {fe_node_idx=}")
 
@@ -509,9 +478,7 @@ class LauncherFrontEnd:
         self.chs_up = [get_with_blocking(self.conn_in) for _ in range(nnodes)]
         self.log.debug(f"{self.chs_up=}")
         for ch_up in self.chs_up:
-            assert isinstance(
-                ch_up, dmsg.SHChannelsUp
-            ), "la_fe received invalid channel up"
+            assert isinstance(ch_up, dmsg.SHChannelsUp), "la_fe received invalid channel up"
 
         self.log.debug("Looking for gs_cd")
         gs_cds = [ch_up.gs_cd for ch_up in self.chs_up if ch_up.gs_cd is not None]
@@ -528,12 +495,13 @@ class LauncherFrontEnd:
 
         if custom_msg is None:
             nodes_desc = {ch_up.idx: ch_up.node_desc for ch_up in self.chs_up}
-            la_ch_info = dmsg.LAChannelsInfo(tag=next_tag(),
-                                             nodes_desc=nodes_desc,
-                                             gs_cd=self.gs_cd,
-                                             num_gw_channels=self.num_gw_channels,
-                                             port=self.port,
-                                             )
+            la_ch_info = dmsg.LAChannelsInfo(
+                tag=next_tag(),
+                nodes_desc=nodes_desc,
+                gs_cd=self.gs_cd,
+                num_gw_channels=self.num_gw_channels,
+                port=self.port,
+            )
             # self.la_fe_stdout.send("A", la_ch_info.serialize())
             self.conn_out.send(la_ch_info.serialize())
 
@@ -545,9 +513,7 @@ class LauncherFrontEnd:
 
     def recv_TAUP(self):
         ta_up = get_with_blocking(self.conn_in)
-        assert isinstance(
-            ta_up, dmsg.TAUp
-        ), "la_fe received invalid channel up"
+        assert isinstance(ta_up, dmsg.TAUp), "la_fe received invalid channel up"
         self.log.debug(f"recv_TAUP got {ta_up=}")
 
     def recv_GSIsUp(self):
@@ -572,9 +538,7 @@ class LauncherFrontEnd:
 
     def recv_GSProcessCreateResponse(self):
         gs_process_create_response = get_with_blocking(self.conn_in)
-        assert isinstance(
-            gs_process_create_response, dmsg.GSProcessCreateResponse
-        ), "expected GSIsUP"
+        assert isinstance(gs_process_create_response, dmsg.GSProcessCreateResponse), "expected GSIsUP"
         self.log.debug(f"recv_GSProcessCreateResponse got {gs_process_create_response=}")
 
     def recv_SHFwdOutput(self):
@@ -637,17 +601,13 @@ class BackendOverlay:
             self.be_ta_conn = Connection(
                 inbound_initializer=self.ta_ch_in,
                 outbound_initializer=self.ta_ch_out,
-                options=ConnectionOptions(
-                    creation_policy=ConnectionOptions.CreationPolicy.EXTERNALLY_MANAGED
-                ),
+                options=ConnectionOptions(creation_policy=ConnectionOptions.CreationPolicy.EXTERNALLY_MANAGED),
             )
             self.be_ta_conn.ghost = True
             self.be_ta_conn.open()
 
         except (ChannelError, DragonPoolError, DragonMemoryError) as init_err:
-            raise RuntimeError(
-                "Overlay transport resource creation failed"
-            ) from init_err
+            raise RuntimeError("Overlay transport resource creation failed") from init_err
 
     def __del__(self):
         self.log.debug("__del__")
@@ -747,7 +707,7 @@ class LocalServices:
             self.log.debug("start_channels destroy")
             for key, chan in self.start_channels.items():
                 try:
-                    self.log.debug(f'destroy channel {key}')
+                    self.log.debug(f"destroy channel {key}")
                     chan.destroy()
                 except Exception:
                     pass
@@ -785,10 +745,7 @@ class LocalServices:
         self.log.debug(f"recv_BENodeIdxSH got {self.be_node_idx_sh=}")
 
     @patch("dragon.infrastructure.gpu_desc.find_nvidia")
-    def send_SHChannelsUP(self,
-                          mock_find_nvidia,
-                          custom_msg=None,
-                          accelerator_present=False):
+    def send_SHChannelsUP(self, mock_find_nvidia, custom_msg=None, accelerator_present=False):
 
         if custom_msg:
             self.la_input.send(custom_msg)
@@ -797,16 +754,20 @@ class LocalServices:
             if accelerator_present:
                 mock_find_nvidia.return_value = (0, 1, 2, 3)
 
-            node_desc = NodeDescriptor.get_localservices_node_conf(host_name=self.be_node_idx_sh.host_name,
-                                                                   name=self.be_node_idx_sh.host_name,
-                                                                   host_id=self.host_id,
-                                                                   ip_addrs=self.be_node_idx_sh.ip_addrs,
-                                                                   shep_cd=this_process.local_shep_cd)
-            ch_up_msg = dmsg.SHChannelsUp(tag=next_tag(),
-                                          node_desc=node_desc,
-                                          gs_cd=self.gs_cd,
-                                          idx=self.be_node_idx_sh.node_idx,
-                                          net_conf_key=self.be_node_idx_sh.net_conf_key)
+            node_desc = NodeDescriptor.get_localservices_node_conf(
+                host_name=self.be_node_idx_sh.host_name,
+                name=self.be_node_idx_sh.host_name,
+                host_id=self.host_id,
+                ip_addrs=self.be_node_idx_sh.ip_addrs,
+                shep_cd=this_process.local_shep_cd,
+            )
+            ch_up_msg = dmsg.SHChannelsUp(
+                tag=next_tag(),
+                node_desc=node_desc,
+                gs_cd=self.gs_cd,
+                idx=self.be_node_idx_sh.node_idx,
+                net_conf_key=self.be_node_idx_sh.net_conf_key,
+            )
 
             self.la_input.send(ch_up_msg.serialize())
             self.log.debug(f"send_SHChannelsUP sent {ch_up_msg=}")
@@ -819,9 +780,7 @@ class LocalServices:
     def recv_LAChannelsInfo(self):
         # Recv LAChannelsInfo Broadcast
         la_channels_info = dmsg.parse(self.ls_input.recv())
-        assert isinstance(
-            la_channels_info, dmsg.LAChannelsInfo
-        ), "expected LAChannelsInfo"
+        assert isinstance(la_channels_info, dmsg.LAChannelsInfo), "expected LAChannelsInfo"
         self.gs_cd = la_channels_info.gs_cd
         self.log.debug(f"recv_LAChannelsInfo got {la_channels_info=}")
         self.log.debug(f"{la_channels_info.nodes_desc=}")
@@ -829,9 +788,7 @@ class LocalServices:
 
     def send_TAUP(self):
         ch_list = []
-        ta_up = dmsg.TAUp(
-            tag=next_tag(), idx=self.node_index, test_channels=ch_list
-        )
+        ta_up = dmsg.TAUp(tag=next_tag(), idx=self.node_index, test_channels=ch_list)
         self.la_input.send(ta_up.serialize())
         self.log.debug(f"send_TAUP sent {ta_up=}")
 
@@ -904,9 +861,7 @@ class GlobalServices:
         self.la_input.ghost = True
 
         self.gs_ch_in = Channel.attach(B64.from_str(gs_cd).decode())
-        self.gs_queue = Connection(
-            inbound_initializer=self.gs_ch_in, policy=POLICY_INFRASTRUCTURE
-        )
+        self.gs_queue = Connection(inbound_initializer=self.gs_ch_in, policy=POLICY_INFRASTRUCTURE)
 
     def __del__(self):
         self.log.debug("__del__")
@@ -932,9 +887,7 @@ class GlobalServices:
 
     def recv_GSProcessCreate(self):
         gs_process_create = get_with_blocking(self.gs_queue)
-        assert isinstance(
-            gs_process_create, dmsg.GSProcessCreate
-        ), "expected GSProcessCreate"
+        assert isinstance(gs_process_create, dmsg.GSProcessCreate), "expected GSProcessCreate"
         self.log.debug(f"recv_GSProcessCreate got {gs_process_create=}")
         return gs_process_create.tag
 
@@ -943,9 +896,7 @@ class GlobalServices:
             tag=next_tag(),
             ref=create_process_tag,
             err=dmsg.GSProcessCreateResponse.Errors.SUCCESS,
-            desc=process_desc.ProcessDescriptor(
-                p_uid=p_uid, p_p_uid=47622, name="hello_world", node=0
-            ),
+            desc=process_desc.ProcessDescriptor(p_uid=p_uid, p_p_uid=47622, name="hello_world", node=0),
         )
         self.la_input.send(gs_process_create_response.serialize())
         self.log.debug(f"send_GSProcessCreateResponse sent {gs_process_create_response=}")

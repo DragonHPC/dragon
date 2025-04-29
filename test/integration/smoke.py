@@ -30,20 +30,20 @@ def external_single_echo(conn, resp_size, idx):
 class SendReceiveTest:
 
     def __init__(self):
-        parser = test_util.add_default_args('Send and receive a message of varying size using a Pipe')
+        parser = test_util.add_default_args("Send and receive a message of varying size using a Pipe")
         parser = test_util.add_connections_args(parser)
-        parser.add_argument('--response_size', type=int, default=4, help='size of message pass back')
-        parser.add_argument('--dragon', action='store_true', help='run a la single node dragon')
+        parser.add_argument("--response_size", type=int, default=4, help="size of message pass back")
+        parser.add_argument("--dragon", action="store_true", help="run a la single node dragon")
         self.args = test_util.process_args(parser)
         self.results = None
 
         if self.args.dragon:
-            multiprocessing.set_start_method('dragon')  # could call connect to infrastructure here if we wanted in
+            multiprocessing.set_start_method("dragon")  # could call connect to infrastructure here if we wanted in
             # check avail I guess.
             self.Pipe = dragon.infrastructure.connection.Pipe
             self.Process = dragon.mpbridge.DragonProcess
         else:
-            multiprocessing.set_start_method('spawn')
+            multiprocessing.set_start_method("spawn")
             self.Pipe = multiprocessing.Pipe
             self.Process = multiprocessing.Process
 
@@ -68,10 +68,9 @@ class SendReceiveTest:
 
         processes = []
         for idx in range(num_workers):
-            processes.append(self.Process(target=external_single_echo,
-                                          args=(pipeconns[idx][1],
-                                                self.args.response_size,
-                                                idx)))
+            processes.append(
+                self.Process(target=external_single_echo, args=(pipeconns[idx][1], self.args.response_size, idx))
+            )
 
         start_time = time.time_ns()
 
@@ -90,7 +89,7 @@ class SendReceiveTest:
         return time.time_ns() - start_time
 
 
-if __name__ == '__main__':
-    dlog.setup_logging(basename='head', the_level=logging.DEBUG)
+if __name__ == "__main__":
+    dlog.setup_logging(basename="head", the_level=logging.DEBUG)
     test = SendReceiveTest()
     print(test.run())

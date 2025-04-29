@@ -13,13 +13,15 @@ from mpbridge.test_pool import TestMPBridgePool
 from mpbridge.test_api import TestMultiprocessingAPI, TestMultiprocessingInternalPatching
 from mpbridge.test_array import TestArray
 from mpbridge.test_value import TestValue
+
 # from mpbridge.test_barrier import TestBarrier
 
 
 def setUpModule():
     import dragon
     import multiprocessing
-    multiprocessing.set_start_method('dragon')
+
+    multiprocessing.set_start_method("dragon")
 
 
 if __name__ == "__main__":

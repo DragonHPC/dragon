@@ -1,5 +1,5 @@
-"""Dragon's replacement classes for Multiprocessing Process.
-"""
+"""Dragon's replacement classes for Multiprocessing Process."""
+
 import io
 import logging
 import os
@@ -105,8 +105,8 @@ class DragonPopen(multiprocessing.popen_spawn_posix.Popen):
 
 
 class DragonProcess(multiprocessing.process.BaseProcess):
-    """Dragon's Process uses most of the base process implementation.
-    """
+    """Create and manage a Python process, with a given target function, on a node available to the runtime"""
+
     _start_method = DragonPopen.method
 
     @staticmethod

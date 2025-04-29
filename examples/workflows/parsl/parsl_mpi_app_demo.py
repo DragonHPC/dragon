@@ -1,16 +1,19 @@
 import dragon
 import multiprocessing as mp
 
-from dragon.workflows.parsl_mpi_app import mpi_app, DragonMPIExecutor 
+from dragon.workflows.parsl_mpi_app import mpi_app, DragonMPIExecutor
 from dragon.infrastructure.connection import Connection
 from dragon.infrastructure.policy import Policy
 import parsl
 from parsl.config import Config
+from parsl.dataflow.dflow import DataFlowKernelLoader
+
 import math
+
 
 @mpi_app
 def mpi_factorial_app(num_ranks: int, bias: float, policy: Policy = None):
-    """Example of what an mpi_app needs to return. The ordering of these arguments is important. 
+    """Example of what an mpi_app needs to return. The ordering of these arguments is important.
 
     :param num_ranks: number of mpi ranks
     :type num_ranks: int
@@ -72,25 +75,24 @@ def get_results(stdout_conn: Connection) -> str:
 def main():
     mp.set_start_method("dragon")
 
-    config = Config(
-        executors=[
-            DragonMPIExecutor(),
-        ],
-        strategy=None,
-    )
+    with DragonMPIExecutor() as dragon_mpi_exec:
+        config = Config(
+            executors=[dragon_mpi_exec],
+            strategy=None,
+        )
 
-    parsl.load(config)
+        parsl.load(config)
 
-    bias = 10
-    num_mpi_ranks = 10
-    scale_factor = 1 / 10000
-    connections = mpi_factorial_app(num_mpi_ranks, bias)
-    send_scale_factor(connections.result()["in"], scale_factor)
-    output_string = get_results(connections.result()["out"])
-    print(
-        f"mpi computation: {output_string}, exact = {scale_factor * math.factorial(num_mpi_ranks-1) + bias} ",
-        flush=True,
-    )
+        bias = 10
+        num_mpi_ranks = 10
+        scale_factor = 1 / 10000
+        connections = mpi_factorial_app(num_mpi_ranks, bias)
+        send_scale_factor(connections.result()["in"], scale_factor)
+        output_string = get_results(connections.result()["out"])
+        print(
+            f"mpi computation: {output_string}, exact = {scale_factor * math.factorial(num_mpi_ranks-1) + bias} ",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

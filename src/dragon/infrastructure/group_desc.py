@@ -52,7 +52,7 @@ class GroupDescriptor:
             try:
                 return cls(**d)
             except Exception as exc:
-                raise ValueError(f'Error deserializing {cls.__name__} {d=}') from exc
+                raise ValueError(f"Error deserializing {cls.__name__} {d=}") from exc
 
         def get_sdict(self):
             """Collects the entire information of a member of the group.
@@ -60,22 +60,21 @@ class GroupDescriptor:
             :return: A dictionary with all key-value pairs of the available information of the group's member.
             :rtype: Dictionary
             """
-            rv = {'uid': self.uid,
-                  'placement': self.placement}
+            rv = {"uid": self.uid, "placement": self.placement}
 
             if isinstance(self.state, int):
-                rv['state'] = self.state
+                rv["state"] = self.state
             else:
-                rv['state'] = self.state.value
+                rv["state"] = self.state.value
 
-            rv['desc'] = self.desc.get_sdict()
+            rv["desc"] = self.desc.get_sdict()
 
             if isinstance(self.error_code, int):
-                rv['error_code'] = self.error_code
+                rv["error_code"] = self.error_code
             else:
-                rv['error_code'] = self.error_code.value
+                rv["error_code"] = self.error_code.value
 
-            rv['error_info'] = self.error_info
+            rv["error_info"] = self.error_info
 
             return rv
 
@@ -101,16 +100,22 @@ class GroupDescriptor:
             for i, lst in enumerate(old_sets):
                 self.sets.append([])
                 for j, member in enumerate(lst):
-                    self.sets[i] += [member if type(member) is GroupDescriptor.GroupMember else GroupDescriptor.GroupMember.from_sdict(member)]
+                    self.sets[i] += [
+                        (
+                            member
+                            if type(member) is GroupDescriptor.GroupMember
+                            else GroupDescriptor.GroupMember.from_sdict(member)
+                        )
+                    ]
                     if type(self.sets[i][j].desc) is dict:
                         # self.sets[i][j].desc is a dictionary and we need to call from_sdict() on it
                         # to convert it to the appropriate Descriptor object
                         # figure out what type of resource object this member is
-                        if 'c_uid' in self.sets[i][j].desc.keys():
+                        if "c_uid" in self.sets[i][j].desc.keys():
                             self.sets[i][j].desc = channel_desc.from_sdict(self.sets[i][j].desc)
-                        elif 'm_uid' in self.sets[i][j].desc.keys():
+                        elif "m_uid" in self.sets[i][j].desc.keys():
                             self.sets[i][j].desc = pool_desc.from_sdict(self.sets[i][j].desc)
-                        elif 'host_name' in self.sets[i][j].desc.keys():
+                        elif "host_name" in self.sets[i][j].desc.keys():
                             self.sets[i][j].desc = node_desc.from_sdict(self.sets[i][j].desc)
                         else:
                             self.sets[i][j].desc = process_desc.from_sdict(self.sets[i][j].desc)
@@ -129,7 +134,7 @@ class GroupDescriptor:
         try:
             return cls(**d)
         except Exception as exc:
-            raise ValueError(f'Error deserializing {cls.__name__} {d=}') from exc
+            raise ValueError(f"Error deserializing {cls.__name__} {d=}") from exc
 
     def get_sdict(self):
         """Collects the entire information of the group.
@@ -137,23 +142,20 @@ class GroupDescriptor:
         :return: A dictionary with all key-value pairs of the available information of the group.
         :rtype: Dictionary
         """
-        rv = {'name': self.name,
-              'g_uid': self.g_uid,
-              'state': self.state,
-              'resilient': self.resilient}
+        rv = {"name": self.name, "g_uid": self.g_uid, "state": self.state, "resilient": self.resilient}
 
         if isinstance(self.policy, Policy):
-            rv['policy'] = self.policy.get_sdict()
+            rv["policy"] = self.policy.get_sdict()
         elif isinstance(self.policy, list):
-            rv['policy'] = [policy.get_sdict() for policy in self.policy]
+            rv["policy"] = [policy.get_sdict() for policy in self.policy]
         else:
-            rv['policy'] = self.policy
+            rv["policy"] = self.policy
 
         if self.sets is not None:
-            rv['sets'] = []
+            rv["sets"] = []
             for i, tup in enumerate(self.sets):
-                rv['sets'].append(())
+                rv["sets"].append(())
                 for member in tup:
-                    rv['sets'][i] += (member.get_sdict(),)
+                    rv["sets"][i] += (member.get_sdict(),)
 
         return rv

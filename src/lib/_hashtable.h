@@ -80,14 +80,18 @@ dragon_hashtable_init(char* ptr, dragonHashtable_t* ht, const uint64_t max_entri
 
 dragonError_t
 dragon_hashtable_destroy(dragonHashtable_t* ht);
-dragonError_t dragon_hashtable_attach(char* ptr, dragonHashtable_t* ht);
+
+dragonError_t
+dragon_hashtable_attach(char* ptr, dragonHashtable_t* ht);
 
 dragonError_t
 dragon_hashtable_detach(dragonHashtable_t* ht);
 
 dragonError_t
 dragon_hashtable_add(dragonHashtable_t* ht, const char* key, const char* value);
-dragonError_t dragon_hashtable_replace(dragonHashtable_t* ht, const char* key, const char* value); // @KDL - adds if it is not in the table. Make sure in docs eventually.
+
+dragonError_t
+dragon_hashtable_replace(dragonHashtable_t* ht, const char* key, const char* value); // @KDL - adds if it is not in the table. Make sure in docs eventually.
 
 dragonError_t
 dragon_hashtable_remove(dragonHashtable_t* ht, const char* key);

@@ -1,5 +1,4 @@
-"""A class that uniquely defines  properties of a managed channel for infrastructure communication.
-"""
+"""A class that uniquely defines  properties of a managed channel for infrastructure communication."""
 
 import enum
 
@@ -35,13 +34,14 @@ class ChannelDescriptor:
     @enum.unique
     class State(enum.Enum):
         """Current state of the channel."""
+
         PENDING = enum.auto()
         ACTIVE = enum.auto()
         DEAD = enum.auto()
 
-    def __init__(self, m_uid, c_uid, name, node, state=None, sdesc=''):
+    def __init__(self, m_uid, c_uid, name, node, state=None, sdesc=""):
         """
-            sdesc - serialized library descriptor
+        sdesc - serialized library descriptor
         """
         self.m_uid = m_uid
         self.c_uid = c_uid
@@ -57,7 +57,7 @@ class ChannelDescriptor:
             elif isinstance(state, int):
                 self.state = self.State(state)
             else:
-                raise NotImplementedError('unknown state init')
+                raise NotImplementedError("unknown state init")
 
     @property
     def sdesc(self):
@@ -77,7 +77,7 @@ class ChannelDescriptor:
             self._sdesc = value
 
     def __str__(self):
-        return f'{self.name}:{self.c_uid} {self.state.name} on node {self.node}'
+        return f"{self.name}:{self.c_uid} {self.state.name} on node {self.node}"
 
     def get_sdict(self):
         """Collect the entire information of the channel.
@@ -85,12 +85,14 @@ class ChannelDescriptor:
         :return: A dictionary with all key-value pairs of the available description of the channel.
         :rtype: Dictionary
         """
-        rv = {'sdesc': du.B64.bytes_to_str(self.sdesc),
-              'name': self.name,
-              'm_uid': self.m_uid,
-              'c_uid': self.c_uid,
-              'node': self.node,
-              'state': self.state.value}
+        rv = {
+            "sdesc": du.B64.bytes_to_str(self.sdesc),
+            "name": self.name,
+            "m_uid": self.m_uid,
+            "c_uid": self.c_uid,
+            "node": self.node,
+            "state": self.state.value,
+        }
 
         return rv
 
@@ -132,8 +134,7 @@ class ChannelOptions:
         :return: A dictionary with key-value pairs of the channel options.
         :rtype: Dictionary
         """
-        return {'local_opts': self.local_opts.get_sdict(),
-                'ref_count': self.ref_count}
+        return {"local_opts": self.local_opts.get_sdict(), "ref_count": self.ref_count}
 
     @staticmethod
     def from_sdict(sdict):

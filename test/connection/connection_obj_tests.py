@@ -17,8 +17,8 @@ import dragon.infrastructure.connection as dconn
 
 class ConnectionTest(unittest.TestCase):
     def setUp(self):
-        self.pool_name = 'conn_test_' + os.environ.get('USER', str(os.getuid()))
-        self.pool_size = 2 ** 28
+        self.pool_name = "conn_test_" + os.environ.get("USER", str(os.getuid()))
+        self.pool_size = 2**28
         self.pool_prealloc_blocks = None
         self.pool_uid = 17
         self.mpool = dmm.MemoryPool(self.pool_size, self.pool_name, self.pool_uid, self.pool_prealloc_blocks)
@@ -73,28 +73,28 @@ class ConnectionTest(unittest.TestCase):
         self.pass_some_bytes(random.randbytes(17))
 
         for lg_size in range(25):
-            self.pass_some_bytes(random.randbytes(2 ** lg_size))
+            self.pass_some_bytes(random.randbytes(2**lg_size))
 
     def test_objs(self):
-        self.pass_an_obj('hyena')
-        self.pass_an_obj({'hyena': 'hyena'})
+        self.pass_an_obj("hyena")
+        self.pass_an_obj({"hyena": "hyena"})
 
         self.pass_an_obj(bytes(100000))
 
         self.pass_an_obj(bytes(200000))
 
         for lg_size in range(25):
-            self.pass_an_obj(bytearray(2 ** lg_size))
+            self.pass_an_obj(bytearray(2**lg_size))
 
         for lg_size in range(25):
-            self.pass_an_obj(random.randbytes(2 ** lg_size))
+            self.pass_an_obj(random.randbytes(2**lg_size))
 
     def test_recv_bytes_from_send(self):
         # required for multiprocessing.Connection unit tests...
         writer = dconn.Connection(outbound_initializer=self.second_chan)
         reader = dconn.Connection(inbound_initializer=self.second_chan)
 
-        my_obj = {'hyenas': 'are awesome'}
+        my_obj = {"hyenas": "are awesome"}
         writer.send(my_obj)
         # would like this to raise, but....
         ser_obj = reader.recv_bytes()
@@ -108,14 +108,14 @@ class ConnectionTest(unittest.TestCase):
         writer = dconn.Connection(outbound_initializer=self.second_chan)
         reader = dconn.Connection(inbound_initializer=self.second_chan)
 
-        my_obj = {'hyenas': 'are awesome'}
+        my_obj = {"hyenas": "are awesome"}
         ser_obj = pickle.dumps(my_obj)
         writer.send_bytes(ser_obj)
         rec_obj = reader.recv()
         self.assertEqual(my_obj, rec_obj)
 
     def origin(self, write_options={}):
-        some_bytes = random.randbytes(2 ** 24)
+        some_bytes = random.randbytes(2**24)
 
         try:
             writer = dch.Peer2PeerWritingChannelFile(self.first_chan, options=write_options)
@@ -168,24 +168,30 @@ class ConnectionTest(unittest.TestCase):
 
     def test_channel_adapters_tuned(self):
 
-        options = { "write_options": {"small_blk_size": 2**8, "large_blk_size": 2**12, "huge_blk_size": 2**24,
-                    "buffer_pool": self.mpool }}
+        options = {
+            "write_options": {
+                "small_blk_size": 2**8,
+                "large_blk_size": 2**12,
+                "huge_blk_size": 2**24,
+                "buffer_pool": self.mpool,
+            }
+        }
         bounce_th = threading.Thread(target=self.bounce, args=(options))
         bounce_th.start()
         self.origin()
         bounce_th.join()
 
-        broken_options = { "small_blk_size": 2**8, "large_blk_size": 2**24, "huge_blk_size": 2**12 }
+        broken_options = {"small_blk_size": 2**8, "large_blk_size": 2**24, "huge_blk_size": 2**12}
         with self.assertRaises(ValueError):
             dch.Peer2PeerWritingChannelFile(self.first_chan, options=broken_options)
 
         empty_pool = dmm.MemoryPool.empty_pool()
-        broken_options = { "buffer_pool": empty_pool }
+        broken_options = {"buffer_pool": empty_pool}
         with self.assertRaises(dch.ChannelError):
             dch.Peer2PeerWritingChannelFile(self.first_chan, options=broken_options)
 
     def test_many2many_basic(self):
-        some_bytes = random.randbytes(2 ** 24)
+        some_bytes = random.randbytes(2**24)
 
         try:
             writer = dch.Many2ManyWritingChannelFile(self.first_chan)
@@ -203,7 +209,7 @@ class ConnectionTest(unittest.TestCase):
             reader.close()
 
     def _many2many_origin(self):
-        some_bytes = random.randbytes(2 ** 24)
+        some_bytes = random.randbytes(2**24)
 
         try:
             writer = dch.Many2ManyWritingChannelFile(self.first_chan)
@@ -242,6 +248,6 @@ class ConnectionTest(unittest.TestCase):
         th.join()
 
 
-if __name__ == '__main__':
-    multiprocessing.set_start_method('spawn')
+if __name__ == "__main__":
+    multiprocessing.set_start_method("spawn")
     unittest.main()

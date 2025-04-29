@@ -1,5 +1,6 @@
 import time
 
+
 def foo():
     print("Hello World")
     print("Doing some more")

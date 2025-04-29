@@ -2,11 +2,44 @@
 
 struct SHCreateProcessLocalChannelDef {
     puid @0: UInt64;
-    respFLI @1: Text;
+    blockSize @1: UInt64;
+    capacity @2: UInt64;
+    respFLI @3: Text;
 }
 
 struct SHCreateProcessLocalChannelResponseDef {
     serChannel @0: Text;
+}
+
+struct SHDestroyProcessLocalChannelDef {
+    puid @0: UInt64;
+    cuid @1: UInt64;
+    respFLI @2: Text;
+}
+
+struct SHCreateProcessLocalPoolDef {
+    puid @0: UInt64;
+    size @1: UInt64;
+    minBlockSize @2: UInt64;
+    preAllocs @3: List(UInt64);
+    name @4: Text;
+    respFLI @5: Text;
+}
+
+struct SHCreateProcessLocalPoolResponseDef {
+    serPool @0: Text;
+}
+
+struct SHRegisterProcessLocalPoolDef {
+    puid @0: UInt64;
+    serPool @1: Text;
+    respFLI @2: Text;
+}
+
+struct SHDeregisterProcessLocalPoolDef {
+    puid @0: UInt64;
+    serPool @1: Text;
+    respFLI @2: Text;
 }
 
 struct SHSetKVDef {
@@ -37,19 +70,25 @@ struct DDRegisterManagerDef {
     mainFLI @0: Text;
     respFLI @1: Text;
     hostID @2: UInt64;
+    managerID @3: UInt64;
+    poolSdesc @4: Text;
+    err @5: UInt64;
+    errInfo @6: Text;
 }
 
 struct DDRegisterManagerResponseDef {
-    managerID @0: UInt64;
-    managers @1: List(Text);
-    managerNodes @2: List(Text);
+    managers @0: List(Text);
+    managerNodes @1: List(Text);
+    mainFLI @2: Text;
+    respFLI @3: Text;
+    poolSdesc @4: Text;
 }
 
-struct DDGetRandomManagerDef {
+struct DDRandomManagerDef {
     respFLI @0: Text;
 }
 
-struct DDGetRandomManagerResponseDef {
+struct DDRandomManagerResponseDef {
     manager @0: Text;
 }
 
@@ -63,7 +102,8 @@ struct DDRegisterClientResponseDef {
     numManagers @1: UInt64;
     managerID @2: UInt64;
     managerNodes @3: List(Text);
-    timeout @4: UInt64;
+    name @4: Text;
+    timeout @5: UInt64;
 }
 
 struct DDConnectToManagerDef {
@@ -84,10 +124,12 @@ struct DDRegisterClientIDDef {
 struct DDDestroyDef {
     clientID @0: UInt64;
     respFLI @1: Text;
+    allowRestart @2: Bool;
 }
 
 struct DDDestroyManagerDef {
     respFLI @0: Text;
+    allowRestart @1: Bool;
 }
 
 struct DDPutDef {
@@ -111,13 +153,14 @@ struct DDContainsDef {
     chkptID @1: UInt64;
 }
 
-struct DDGetLengthDef {
+struct DDLengthDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
     respFLI @2: Text;
+    broadcast @3: Bool;
 }
 
-struct DDGetLengthResponseDef {
+struct DDLengthResponseDef {
     length @0: UInt64;
 }
 
@@ -125,31 +168,34 @@ struct DDClearDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
     respFLI @2: Text;
+    broadcast @3: Bool;
 }
 
-struct DDManagerGetNewestChkptID {
+struct DDManagerNewestChkptIDDef {
     respFLI @0: Text;
+    broadcast @1: Bool;
 }
 
-struct DDManagerGetNewestChkptIDResponse {
+struct DDManagerNewestChkptIDResponseDef {
     managerID @0: UInt64;
     chkptID @1: UInt64;
 }
 
 struct DDManagerStatsDef {
     respFLI @0: Text;
+    broadcast @1: Bool;
 }
 
 struct DDManagerStatsResponseDef {
     data @0: Text;
 }
 
-struct DDGetIteratorDef {
+struct DDIteratorDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
 }
 
-struct DDGetIteratorResponseDef {
+struct DDIteratorResponseDef {
     iterID @0: UInt64;
 }
 
@@ -161,11 +207,102 @@ struct DDIteratorNextDef {
 struct DDKeysDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
+    respFLI @2: Text;
+}
+
+struct DDValuesDef {
+    clientID @0: UInt64;
+    chkptID @1: UInt64;
+    respFLI @2: Text;
+}
+
+struct DDItemsDef {
+    clientID @0: UInt64;
+    chkptID @1: UInt64;
+    respFLI @2: Text;
+}
+
+struct DDEmptyManagersDef {
+    respFLI @0: Text;
+}
+
+struct DDEmptyManagersResponseDef {
+    managers @0: List(UInt64);
+}
+
+struct DDBatchPutDef {
+    clientID @0: UInt64;
+    chkptID @1: UInt64;
+    persist @2: Bool;
+}
+
+struct DDBatchPutResponseDef {
+    numPuts @0: UInt64;
+    managerID @1: UInt64;
 }
 
 struct DDDeregisterClientDef {
     clientID @0: UInt64;
     respFLI @1: Text;
+}
+
+struct DDGetManagersDef {
+    respFLI @0: Text;
+}
+
+struct DDGetManagersResponseDef {
+    emptyManagers @0: List(Bool);
+    managers @1: List(Text);
+}
+
+struct DDManagerSyncDef {
+    emptyManagerFLI @0: Text;
+    respFLI @1: Text;
+}
+
+struct DDManagerSetStateDef {
+    state @0: Text;
+    respFLI @1: Text;
+}
+
+struct DDMarkDrainedManagersDef {
+    respFLI @0: Text;
+    managerIDs @1: List(UInt64);
+}
+
+struct DDUnmarkDrainedManagersDef {
+    respFLI @0: Text;
+    managerIDs @1: List(UInt64);
+}
+
+struct DDGetMetaDataDef {
+    respFLI @0: Text;
+}
+
+struct DDGetMetaDataResponseDef {
+    serializedDdict @0: Text;
+    numManagers @1: UInt64;
+}
+
+struct DDManagerNodesDef {
+    respFLI @0: Text;
+}
+
+struct DDManagerNodesResponseDef {
+    huids @0: List(UInt64);
+}
+
+struct DDBPutDef {
+    clientID @0: UInt64;
+    chkptID @1: UInt64;
+    respFLI @2: Text;
+    managers @3: List(UInt64);
+    batch @4: Bool;
+}
+
+struct DDBPutResponseDef {
+    numPuts @0: UInt64;
+    managerID @1: UInt64;
 }
 
 struct NoMessageSpecificData {
@@ -206,11 +343,11 @@ struct MessageDef {
         ddGet @21: DDGetDef;
         ddPop @22: DDPopDef;
         ddContains @23: DDContainsDef;
-        ddGetLength @24: DDGetLengthDef;
-        ddGetLengthResponse @25: DDGetLengthResponseDef;
+        ddLength @24: DDLengthDef;
+        ddLengthResponse @25: DDLengthResponseDef;
         ddClear @26: DDClearDef;
-        ddGetIterator @27: DDGetIteratorDef;
-        ddGetIteratorResponse @28: DDGetIteratorResponseDef;
+        ddIterator @27: DDIteratorDef;
+        ddIteratorResponse @28: DDIteratorResponseDef;
         ddIteratorNext @29: DDIteratorNextDef;
         ddKeys @30: DDKeysDef;
         ddDeregisterClient @31: DDDeregisterClientDef;
@@ -218,11 +355,34 @@ struct MessageDef {
         ddRegisterManagerResponse @33: DDRegisterManagerResponseDef;
         ddConnectToManager @34: DDConnectToManagerDef;
         ddConnectToManagerResponse @35: DDConnectToManagerResponseDef;
-        ddGetRandomManager @36: DDGetRandomManagerDef;
-        ddGetRandomManagerResponse @37: DDGetRandomManagerResponseDef;
+        ddRandomManager @36: DDRandomManagerDef;
+        ddRandomManagerResponse @37: DDRandomManagerResponseDef;
         ddManagerStats @38: DDManagerStatsDef;
         ddManagerStatsResponse @39: DDManagerStatsResponseDef;
-        ddManagerGetNewestChkptID @40: DDManagerGetNewestChkptID;
-        ddManagerGetNewestChkptIDResponse @41: DDManagerGetNewestChkptIDResponse;
+        ddManagerNewestChkptID @40: DDManagerNewestChkptIDDef;
+        ddManagerNewestChkptIDResponse @41: DDManagerNewestChkptIDResponseDef;
+        shCreateProcessLocalPool @42: SHCreateProcessLocalPoolDef;
+        shCreateProcessLocalPoolResponse @43: SHCreateProcessLocalPoolResponseDef;
+        shRegisterProcessLocalPool @44: SHRegisterProcessLocalPoolDef;
+        shDeregisterProcessLocalPool @45: SHDeregisterProcessLocalPoolDef;
+        ddEmptyManagers @46: DDEmptyManagersDef;
+        ddEmptyManagersResponse @47: DDEmptyManagersResponseDef;
+        ddBatchPut @48: DDBatchPutDef;
+        ddBatchPutResponse @49: DDBatchPutResponseDef;
+        ddGetManagers @50: DDGetManagersDef;
+        ddGetManagersResponse @51: DDGetManagersResponseDef;
+        ddManagerSync @52: DDManagerSyncDef;
+        ddManagerSetState @53: DDManagerSetStateDef;
+        ddMarkDrainedManagers @54: DDMarkDrainedManagersDef;
+        ddUnmarkDrainedManagers @55: DDUnmarkDrainedManagersDef;
+        ddGetMetaData @56: DDGetMetaDataDef;
+        ddGetMetaDataResponse @57: DDGetMetaDataResponseDef;
+        shDestroyProcessLocalChannel @58: SHDestroyProcessLocalChannelDef;
+        ddManagerNodes @59: DDManagerNodesDef;
+        ddManagerNodesResponse @60: DDManagerNodesResponseDef;
+        ddValues @61: DDValuesDef;
+        ddItems @62: DDItemsDef;
+        ddBPut @63: DDBPutDef;
+        ddBPutResponse @64: DDBPutResponseDef;
     }
 }

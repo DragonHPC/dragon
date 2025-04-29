@@ -1,4 +1,5 @@
 """Logging setup for Dragon runtime infrastructure"""
+
 import logging
 import os
 import time
@@ -17,49 +18,51 @@ from dragon.dlogging.logger import DragonLogger, DragonLoggingError
 # It is discarded once logs are written out
 LOGGING_TAG = 2**8
 
-LOGGING_OUTPUT_DEVICE_STDERR = 'stderr'
-LOGGING_OUTPUT_DEVICE_DRAGON_FILE = 'dragon_file'
-LOGGING_OUTPUT_DEVICE_ACTOR_FILE = 'actor_file'
+LOGGING_OUTPUT_DEVICE_STDERR = "stderr"
+LOGGING_OUTPUT_DEVICE_DRAGON_FILE = "dragon_file"
+LOGGING_OUTPUT_DEVICE_ACTOR_FILE = "actor_file"
 
 LOGGING_OUTPUT_DEVICES = [
     LOGGING_OUTPUT_DEVICE_STDERR,
     LOGGING_OUTPUT_DEVICE_DRAGON_FILE,
-    LOGGING_OUTPUT_DEVICE_ACTOR_FILE
+    LOGGING_OUTPUT_DEVICE_ACTOR_FILE,
 ]
 
-LOGGING_LEVEL_NONE = 'NONE'
+LOGGING_LEVEL_NONE = "NONE"
 LOGGING_LEVEL_NAMES_MAPPING = {
-    logging.getLevelName(level): level for level in
-        [logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL]
+    logging.getLevelName(level): level
+    for level in [logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL]
 }
 
 LOGGING_STDERR_MAX_LOG_LEVEL = logging.INFO
 LOGGING_DRAGON_FILE_MAX_LOG_LEVEL = logging.INFO
 
 LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING = {
-    f'DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_STDERR.upper()}': LOGGING_LEVEL_NONE,
-    f'DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_DRAGON_FILE.upper()}': LOGGING_LEVEL_NONE,
-    f'DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_ACTOR_FILE.upper()}': LOGGING_LEVEL_NONE
+    f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_STDERR.upper()}": LOGGING_LEVEL_NONE,
+    f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_DRAGON_FILE.upper()}": LOGGING_LEVEL_NONE,
+    f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_ACTOR_FILE.upper()}": LOGGING_LEVEL_NONE,
 }
 
 # Default formatting for logging
-default_single_fmt = '%(asctime)-15s %(levelname)-8s %(name)s :: %(message)s'
-default_FE_fmt = '%(asctime)-15s %(levelname)-8s %(service)s:%(name)s (%(hostname)s) :: %(message)s'
-default_services_fmt = '%(time)-15s %(levelname)-8s %(service)s:%(name)s (%(hostname)s) :: %(message)s'
+default_single_fmt = "%(asctime)-15s %(levelname)-8s %(name)s :: %(message)s"
+default_FE_fmt = "%(asctime)-15s %(levelname)-8s %(service)s:%(name)s (%(hostname)s) :: %(message)s"
+default_services_fmt = "%(time)-15s %(levelname)-8s %(service)s:%(name)s (%(hostname)s) :: %(message)s"
 
 
 class LoggingValue(argparse.Action):
-    def __init__(self,
-                 option_strings,
-                 dest,
-                 nargs=None,
-                 const=None,
-                 default=None,
-                 type=None,
-                 choices=None,
-                 required=False,
-                 help=None,
-                 metavar=None):
+    def __init__(
+        self,
+        option_strings,
+        dest,
+        nargs=None,
+        const=None,
+        default=None,
+        type=None,
+        choices=None,
+        required=False,
+        help=None,
+        metavar=None,
+    ):
 
         if default == dict():
             default = LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING
@@ -69,9 +72,9 @@ class LoggingValue(argparse.Action):
             choices.append(LOGGING_LEVEL_NONE)
             choices.extend(LOGGING_LEVEL_NAMES_MAPPING.keys())
             for device in LOGGING_OUTPUT_DEVICES:
-                choices.append(f'{device}={LOGGING_LEVEL_NONE}')
+                choices.append(f"{device}={LOGGING_LEVEL_NONE}")
                 for level in LOGGING_LEVEL_NAMES_MAPPING.keys():
-                    choices.append(f'{device}={level}')
+                    choices.append(f"{device}={level}")
 
         super(LoggingValue, self).__init__(
             option_strings=option_strings,
@@ -83,9 +86,10 @@ class LoggingValue(argparse.Action):
             choices=choices,
             required=required,
             help=help,
-            metavar=metavar)
+            metavar=metavar,
+        )
 
-    def __call__(self , parser, namespace, values, option_string = None):
+    def __call__(self, parser, namespace, values, option_string=None):
         level_names = LOGGING_LEVEL_NAMES_MAPPING.keys()
 
         log_device_level_map = getattr(namespace, self.dest)
@@ -96,12 +100,12 @@ class LoggingValue(argparse.Action):
 
             elif value.upper() in level_names:
                 level_name = value.upper()
-                log_device_level_map[f'DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_STDERR.upper()}'] = level_name
-                log_device_level_map[f'DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_DRAGON_FILE.upper()}'] = level_name
-                log_device_level_map[f'DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_ACTOR_FILE.upper()}'] = level_name
+                log_device_level_map[f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_STDERR.upper()}"] = level_name
+                log_device_level_map[f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_DRAGON_FILE.upper()}"] = level_name
+                log_device_level_map[f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_ACTOR_FILE.upper()}"] = level_name
 
-            elif '=' in value:
-                k, v = value.split('=')
+            elif "=" in value:
+                k, v = value.split("=")
                 output_device = k.lower()
                 level_name = v.upper()
 
@@ -111,7 +115,7 @@ class LoggingValue(argparse.Action):
                 if level_name not in level_names:
                     raise ValueError(f"Unsupported log level '{v}' in parameter '{value}'")
 
-                log_device_level_map[f'DRAGON_LOG_DEVICE_{output_device.upper()}'] = level_name
+                log_device_level_map[f"DRAGON_LOG_DEVICE_{output_device.upper()}"] = level_name
 
             else:
                 raise ValueError(f"Unsupported parameter {value}.")
@@ -132,18 +136,21 @@ class DragonLoggingServices(str, enum.Enum):
         :TEST: 'TEST'
         :PERF: 'PERF'
         :PG: 'PG'
+        :TELEM: 'TELEM'
     """
-    LA_FE = 'LA_FE'
-    LA_BE = 'LA_BE'
-    GS = 'GS'
-    TA = 'TA'
+
+    LA_FE = "LA_FE"
+    LA_BE = "LA_BE"
+    GS = "GS"
+    TA = "TA"
     ON = "ON"
-    OOB = 'OOB'
-    LS = 'LS'
-    DD = 'DD'
-    TEST = 'TEST'
-    PERF = 'PERF'
-    PG = 'PG'
+    OOB = "OOB"
+    LS = "LS"
+    DD = "DD"
+    TEST = "TEST"
+    PERF = "PERF"
+    PG = "PG"
+    TELEM = "TELEM"
 
     def __str__(self):
         return str(self.value)
@@ -185,15 +192,22 @@ class DragonFEFilter(logging.Filter):
         else:
             record.hostname = socket.gethostname()
             record.ip_address = socket.gethostbyname(record.hostname)
-            record.port = '      '
+            record.port = "      "
             record.service = DragonLoggingServices.LA_FE
         return True
 
 
 class DragonLoggingHandler(logging.StreamHandler):
 
-    def __init__(self, serialized_log_descr: B64, mpool: MemoryPool = None, hostname: str = None, ip_address: str = None,
-                 port: str = None, service: Union[DragonLoggingServices, str] = None) -> None:
+    def __init__(
+        self,
+        serialized_log_descr: B64,
+        mpool: MemoryPool = None,
+        hostname: str = None,
+        ip_address: str = None,
+        port: str = None,
+        service: Union[DragonLoggingServices, str] = None,
+    ) -> None:
         """Logging handler to enable python logging to be sent to the Dragon Logging channel on BE
 
         Ultimately a `logging.StreamHandler` that sends stream output to ``/dev/null`` and also
@@ -215,7 +229,7 @@ class DragonLoggingHandler(logging.StreamHandler):
             in :class:`DragonLoggingServices`
         :type service: Union[DragonLoggingServices, str], optional
         """
-        with open(os.devnull, 'w') as f:
+        with open(os.devnull, "w") as f:
             super().__init__(f)
         self._dlog = DragonLogger.attach(serialized_log_descr.decode(), mpool=mpool)
         self.hostname = hostname
@@ -234,16 +248,18 @@ class DragonLoggingHandler(logging.StreamHandler):
         """
         try:
             self.format(record)
-            msg = dmsg.LoggingMsg(tag=next_tag(),
-                                  name=record.name,
-                                  msg=record.msg,
-                                  time=record.asctime,
-                                  func=record.funcName,
-                                  hostname=self.hostname,
-                                  ip_address=self.ip_address,
-                                  port=self.port,
-                                  service=self.service,
-                                  level=record.levelno)
+            msg = dmsg.LoggingMsg(
+                tag=next_tag(),
+                name=record.name,
+                msg=record.msg,
+                time=record.asctime,
+                func=record.funcName,
+                hostname=self.hostname,
+                ip_address=self.ip_address,
+                port=self.port,
+                service=self.service,
+                level=record.levelno,
+            )
             self._dlog.put(msg.serialize(), record.levelno)
         except (Exception, DragonLoggingError) as err:
             if isinstance(err, DragonLoggingError):
@@ -273,18 +289,20 @@ def _setup_actor_logging(service: Union[DragonLoggingServices, str], level: int,
         str: logging filename if created or None if not
     """
     if service is None or service is DragonLoggingServices.LA_FE:
-        service_name = 'dragon'
+        service_name = "dragon"
     else:
         service_name = service
 
     full_fn = None
     if service is not DragonLoggingServices.LA_FE:
         try:
-            basedir = os.environ.get('DRAGON_LA_LOG_DIR')
+            basedir = os.environ.get("DRAGON_LA_LOG_DIR")
         except AttributeError:
             basedir = None
         if fname is None:
-            full_fn = _setup_file_logging(basename=f'{service_name}_{socket.gethostname()}', basedir=basedir, level=level)
+            full_fn = _setup_file_logging(
+                basename=f"{service_name}_{socket.gethostname()}", basedir=basedir, level=level
+            )
         else:
             full_fn = _setup_file_logging(fname=os.path.basename(fname), basedir=basedir, level=level)
 
@@ -292,13 +310,13 @@ def _setup_actor_logging(service: Union[DragonLoggingServices, str], level: int,
 
 
 def _configure_console_logging(level, fmt=None):
-    '''Add logging to stderr handler'''
+    """Add logging to stderr handler"""
 
     console = logging.StreamHandler()
     console.setLevel(level)
 
     if fmt is None:
-        formatter = logging.Formatter('%(name)-12s: %(levelname)-8s %(message)s')
+        formatter = logging.Formatter("%(name)-12s: %(levelname)-8s %(message)s")
     else:
         formatter = logging.Formatter(fmt)
 
@@ -306,8 +324,14 @@ def _configure_console_logging(level, fmt=None):
     logging.getLogger().addHandler(console)
 
 
-def setup_logging(*, basename: str = None, basedir: str = None, level: int = logging.INFO, force: bool = False,
-                  add_console: bool = False):
+def setup_logging(
+    *,
+    basename: str = None,
+    basedir: str = None,
+    level: int = logging.INFO,
+    force: bool = False,
+    add_console: bool = False,
+):
     """Original dragon logging function to configure root logger.
 
     Args:
@@ -328,12 +352,12 @@ def setup_logging(*, basename: str = None, basedir: str = None, level: int = log
         # so we have a defined place for it to go and look for
         # it
         if not os.path.exists(basedir):
-            basedir = '/tmp'
+            basedir = "/tmp"
 
     fmt = default_single_fmt
 
-    now = time.strftime('%m_%d_%H_%M_%S', time.localtime())
-    fn = '{}_{}.log'.format(basename, now)
+    now = time.strftime("%m_%d_%H_%M_%S", time.localtime())
+    fn = "{}_{}.log".format(basename, now)
     full_fn = os.path.join(basedir, fn)
 
     logging.basicConfig(format=fmt, filename=full_fn, level=level, force=force)
@@ -342,8 +366,14 @@ def setup_logging(*, basename: str = None, basedir: str = None, level: int = log
         _configure_console_logging(level=level)
 
 
-def _setup_file_logging(basename: str = None, fname: str = None, basedir: str = None, level: int = logging.INFO,
-                        force: bool = False, fmt: str = None) -> str:
+def _setup_file_logging(
+    basename: str = None,
+    fname: str = None,
+    basedir: str = None,
+    level: int = logging.INFO,
+    force: bool = False,
+    fmt: str = None,
+) -> str:
     """Configure file-based logging
 
     Sets up the root file logging with specified logging level.
@@ -373,7 +403,7 @@ def _setup_file_logging(basename: str = None, fname: str = None, basedir: str = 
         # so we have a defined place for it to go and look for
         # it
         if not os.path.exists(basedir):
-            basedir = '/tmp'
+            basedir = "/tmp"
 
     if fmt is None:
         fmt = default_single_fmt
@@ -381,11 +411,11 @@ def _setup_file_logging(basename: str = None, fname: str = None, basedir: str = 
     if fname is not None:
         full_fn = os.path.join(basedir, fname)
     else:
-        now = time.strftime('%m_%d_%H_%M_%S', time.localtime())
-        fn = '{}_{}.log'.format(basename, now)
+        now = time.strftime("%m_%d_%H_%M_%S", time.localtime())
+        fn = "{}_{}.log".format(basename, now)
         full_fn = os.path.join(basedir, fn)
 
-    file_handler = logging.FileHandler(filename=full_fn, mode='a')
+    file_handler = logging.FileHandler(filename=full_fn, mode="a")
     formatter = logging.Formatter(fmt=fmt)
     file_handler.setFormatter(formatter)
     file_handler.setLevel(level)
@@ -395,8 +425,15 @@ def _setup_file_logging(basename: str = None, fname: str = None, basedir: str = 
     return full_fn
 
 
-def setup_FE_logging(log_device_level_map: dict = {}, basename: str = None, basedir: str = None, force: bool = False,
-                     add_console: bool = False, test_BE_dir: str = None, multi_node_mode: bool = False) -> Tuple[int, str]:
+def setup_FE_logging(
+    log_device_level_map: dict = {},
+    basename: str = None,
+    basedir: str = None,
+    force: bool = False,
+    add_console: bool = False,
+    test_BE_dir: str = None,
+    multi_node_mode: bool = False,
+) -> Tuple[int, str]:
     """Set-up launcher frontend logging infrastructure. Will log to file.
 
     Configures the individual service loggers the FE will use to log all messages
@@ -423,14 +460,16 @@ def setup_FE_logging(log_device_level_map: dict = {}, basename: str = None, base
 
     # Make sure the environment is updated with the directory to log to:
     if test_BE_dir is not None:
-        os.environ.update({'DRAGON_LA_LOG_DIR': test_BE_dir})
-    elif os.environ.get('DRAGON_LA_LOG_DIR') is None:
-        os.environ.update({'DRAGON_LA_LOG_DIR': os.getcwd()})
+        os.environ.update({"DRAGON_LA_LOG_DIR": test_BE_dir})
+    elif os.environ.get("DRAGON_LA_LOG_DIR") is None:
+        os.environ.update({"DRAGON_LA_LOG_DIR": os.getcwd()})
     for log_device, log_level in log_device_level_map.items():
         os.environ.update({log_device: log_level})
 
     log_to_stderr, stderr_log_level = _get_dragon_log_device_level(log_device_level_map, LOGGING_OUTPUT_DEVICE_STDERR)
-    log_to_dragon_file, dragon_file_log_level = _get_dragon_log_device_level(log_device_level_map, LOGGING_OUTPUT_DEVICE_DRAGON_FILE)
+    log_to_dragon_file, dragon_file_log_level = _get_dragon_log_device_level(
+        log_device_level_map, LOGGING_OUTPUT_DEVICE_DRAGON_FILE
+    )
 
     _clear_root_log_handlers()
 
@@ -446,7 +485,9 @@ def setup_FE_logging(log_device_level_map: dict = {}, basename: str = None, base
 
         if log_to_dragon_file:
             file_formatter = default_FE_fmt if multi_node_mode else default_single_fmt
-            full_fn = _setup_file_logging(basename=basename, basedir=basedir, level=dragon_file_log_level, force=force, fmt=file_formatter)
+            full_fn = _setup_file_logging(
+                basename=basename, basedir=basedir, level=dragon_file_log_level, force=force, fmt=file_formatter
+            )
 
         if multi_node_mode:
             # Add a filter to all the root handlers to only log on the root if it's a FE service
@@ -466,14 +507,14 @@ def close_FE_logging():
 
 
 def _get_logging_mpool(node_index: int):
-    '''Create memory pool for logging infrastructure
+    """Create memory pool for logging infrastructure
 
     Args:
         node_index (int): node ID of caller
-    '''
-    _user = os.environ.get('USER', str(os.getuid()))
+    """
+    _user = os.environ.get("USER", str(os.getuid()))
     lps = int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ)
-    lpn = f'{_user}_{os.getpid()}_{dfacts.LOGGING_POOL_SUFFIX}'
+    lpn = f"{_user}_{os.getpid()}_{dfacts.LOGGING_POOL_SUFFIX}"
     lp_muid = dfacts.logging_pool_muid_from_index(node_index)
     logging_mpool = MemoryPool(lps, lpn, lp_muid, None)
     return logging_mpool
@@ -519,9 +560,9 @@ def detach_from_dragon_handler(service: Union[DragonLoggingServices, str]):
 
 
 def _get_dragon_log_device_level(env_map: dict(), device_name: str) -> Tuple[bool, int]:
-    log_level_value =  0
+    log_level_value = 0
     got_dragon_log_level = False
-    dragon_log_device_env = f'DRAGON_LOG_DEVICE_{device_name.upper()}'
+    dragon_log_device_env = f"DRAGON_LOG_DEVICE_{device_name.upper()}"
 
     if dragon_log_device_env in env_map:
         try:
@@ -535,10 +576,15 @@ def _get_dragon_log_device_level(env_map: dict(), device_name: str) -> Tuple[boo
     return got_dragon_log_level, log_level_value
 
 
-def setup_BE_logging(service: Union[DragonLoggingServices, str], logger_sdesc: B64 = None,
-                     mpool: MemoryPool = None,
-                     hostname: str = None, ip_address: str = None, port: str = None,
-                     fname: str = None) -> Tuple[int, str]:
+def setup_BE_logging(
+    service: Union[DragonLoggingServices, str],
+    logger_sdesc: B64 = None,
+    mpool: MemoryPool = None,
+    hostname: str = None,
+    ip_address: str = None,
+    port: str = None,
+    fname: str = None,
+) -> Tuple[int, str]:
     """Configure backend logging for requested backend service
 
     Create a handler using the :class:`dragon.dlogging.logger.DragonLogger` serialized
@@ -560,14 +606,16 @@ def setup_BE_logging(service: Union[DragonLoggingServices, str], logger_sdesc: B
     :return: logging level, filename logging will be saved to
     :rtype: Tuple[int, str]
     """
-    full_fn = ''
+    full_fn = ""
     log_level = 0
 
     # Make sure there isn't a duplicate handler already attached to this root instance
     _clear_root_log_handlers()
 
     log_to_stderr, stderr_log_level = _get_dragon_log_device_level(os.environ, LOGGING_OUTPUT_DEVICE_STDERR)
-    log_to_dragon_file, dragon_file_log_level = _get_dragon_log_device_level(os.environ, LOGGING_OUTPUT_DEVICE_DRAGON_FILE)
+    log_to_dragon_file, dragon_file_log_level = _get_dragon_log_device_level(
+        os.environ, LOGGING_OUTPUT_DEVICE_DRAGON_FILE
+    )
     log_to_actor_file, actor_file_log_level = _get_dragon_log_device_level(os.environ, LOGGING_OUTPUT_DEVICE_ACTOR_FILE)
 
     logger = logging.getLogger()
@@ -603,15 +651,12 @@ def setup_BE_logging(service: Union[DragonLoggingServices, str], logger_sdesc: B
                 hostname = socket.gethostname()
 
             # Create the Dragon Logging Handler
-            handler = DragonLoggingHandler(logger_sdesc,
-                                           mpool=mpool,
-                                           hostname=hostname,
-                                           ip_address=ip_address,
-                                           port=port,
-                                           service=service)
+            handler = DragonLoggingHandler(
+                logger_sdesc, mpool=mpool, hostname=hostname, ip_address=ip_address, port=port, service=service
+            )
 
             # Give it a formatter with asctime so time gets populated in the log record
-            handler.setFormatter(logging.Formatter(fmt=default_single_fmt + '%(funcName)s'))
+            handler.setFormatter(logging.Formatter(fmt=default_single_fmt + "%(funcName)s"))
 
             # The intent of this next block is to prevent sending DEBUG or higher log
             # messages over the MRNet connection if those log messages will be logged

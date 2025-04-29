@@ -29,6 +29,10 @@ static const int dg_num_gateway_types = 3;
         dragonError_t err = dragon_lock(&channel->ut_lock);                                                  \
         if (err != DRAGON_SUCCESS)                                                                           \
             append_err_return(err, "unable to obtain UT lock");                                              \
+        if (channel->c_uid != *(channel->header.c_uid)) {                                                    \
+            dragon_unlock(&channel->ut_lock);                                                                \
+            err_return(DRAGON_OBJECT_DESTROYED, "The channel was destroyed. This reference to it is stale.");\
+        }                                                                                                    \
     })
 
 #define _release_ut_lock(channel)                                                                            \
@@ -43,6 +47,10 @@ static const int dg_num_gateway_types = 3;
         dragonError_t err = dragon_lock(&channel->ot_lock);                                                  \
         if (err != DRAGON_SUCCESS)                                                                           \
             append_err_return(err, "unable to obtain OT lock");                                              \
+        if (channel->c_uid != *(channel->header.c_uid)) {                                                    \
+            dragon_unlock(&channel->ot_lock);                                                                \
+            err_return(DRAGON_OBJECT_DESTROYED, "The channel was destroyed. This reference to it is stale.");\
+        }                                                                                                    \
     })
 
 #define _release_ot_lock(channel)                                                                            \
@@ -61,6 +69,11 @@ static const int dg_num_gateway_types = 3;
         if (err != DRAGON_SUCCESS) {                                                                         \
             dragon_unlock(&channel->ut_lock);                                                                \
             append_err_return(err, "unable to obtain OT lock");                                              \
+        }                                                                                                    \
+        if (channel->c_uid != *(channel->header.c_uid)) {                                                    \
+            dragon_unlock(&channel->ot_lock);                                                                \
+            dragon_unlock(&channel->ut_lock);                                                                \
+            err_return(DRAGON_OBJECT_DESTROYED, "The channel was destroyed. This reference to it is stale.");\
         }                                                                                                    \
     })
 
@@ -84,7 +97,7 @@ _fast_copy(const size_t bytes, const void* src, void* dest)
     no_err_return(DRAGON_SUCCESS);
 }
 
-/* obtain a channel structure from a given channel descriptor */
+/* Lookup the channel object from the channel descriptor. */
 static dragonError_t
 _channel_from_descr(const dragonChannelDescr_t* ch_descr, dragonChannel_t** ch)
 {
@@ -118,6 +131,7 @@ _channel_descr_from_uids(const dragonRT_UID_t rt_uid, const dragonC_UID_t c_uid,
     // ch_descr->_original = 0; /* @MCB: Not used yet */
     ch_descr->_rt_idx = rt_uid;
     ch_descr->_idx = c_uid;
+    channel->c_uid = c_uid;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -330,6 +344,8 @@ _channel_allocation_size(const dragonChannelAttr_t* attr)
     */
     size_t alloc_size = 0UL;
     size_t bcast_size;
+    size_t bytes_per_msg_block = attr->bytes_per_msg_block;
+
     dragon_bcast_size(0, attr->max_spinners, NULL, &bcast_size);
 
     alloc_size += dragon_priority_heap_size(attr->capacity, DRAGON_CHANNEL_OT_PHEAP_NVALS);
@@ -344,7 +360,7 @@ _channel_allocation_size(const dragonChannelAttr_t* attr)
     // dragon_channel_setattr function. So we can't use the current length and
     // know we have enough room to modify it later.
     alloc_size += dragon_memory_pool_max_serialized_len();
-    alloc_size += (attr->capacity * attr->bytes_per_msg_block);
+    alloc_size += (attr->capacity * bytes_per_msg_block);
 
     return alloc_size;
 }
@@ -362,26 +378,29 @@ _map_header(dragonChannel_t* ch)
     ch->header.lock_type                  = &hptr[3];
     ch->header.oflag                      = &hptr[4];
     ch->header.fc_type                    = &hptr[5];
-    ch->header.max_spinners               = &hptr[6];
-    ch->header.available_msgs             = &hptr[7];
-    ch->header.available_blocks           = &hptr[8];
-    ch->header.max_event_bcasts           = &hptr[9];
-    ch->header.num_event_bcasts           = &hptr[10];
-    ch->header.next_bcast_token           = &hptr[11];
-    ch->header.barrier_count              = &hptr[12];
-    ch->header.barrier_broken             = &hptr[13];
-    ch->header.barrier_reset_in_progress  = &hptr[14];
-    ch->header.ot_offset                  = &hptr[15];
-    ch->header.ut_offset                  = &hptr[16];
-    ch->header.ot_lock_offset             = &hptr[17];
-    ch->header.ut_lock_offset             = &hptr[18];
-    ch->header.recv_bcast_offset          = &hptr[19];
-    ch->header.send_bcast_offset          = &hptr[20];
-    ch->header.poll_bcasts_offset         = &hptr[21];
-    ch->header.event_records_offset       = &hptr[22];
-    ch->header.msg_blks_offset            = &hptr[23];
-    ch->header.buffer_pool_descr_ser_len  = &hptr[24];
-    ch->header.buffer_pool_descr_ser_data = (uint8_t*)&hptr[25];
+    ch->header.semaphore                  = (bool*) &hptr[6];
+    ch->header.bounded                    = (bool*) &hptr[7];
+    ch->header.initial_sem_value          = &hptr[8];
+    ch->header.max_spinners               = &hptr[9];
+    ch->header.available_msgs             = &hptr[10];
+    ch->header.available_blocks           = &hptr[11];
+    ch->header.max_event_bcasts           = &hptr[12];
+    ch->header.num_event_bcasts           = &hptr[13];
+    ch->header.next_bcast_token           = &hptr[14];
+    ch->header.barrier_count              = &hptr[15];
+    ch->header.barrier_broken             = &hptr[16];
+    ch->header.barrier_reset_in_progress  = &hptr[17];
+    ch->header.ot_offset                  = &hptr[18];
+    ch->header.ut_offset                  = &hptr[19];
+    ch->header.ot_lock_offset             = &hptr[20];
+    ch->header.ut_lock_offset             = &hptr[21];
+    ch->header.recv_bcast_offset          = &hptr[22];
+    ch->header.send_bcast_offset          = &hptr[23];
+    ch->header.poll_bcasts_offset         = &hptr[24];
+    ch->header.event_records_offset       = &hptr[25];
+    ch->header.msg_blks_offset            = &hptr[26];
+    ch->header.buffer_pool_descr_ser_len  = &hptr[27];
+    ch->header.buffer_pool_descr_ser_data = (uint8_t*)&hptr[28];
     // clang-format on
 
     if (!_header_checked) {
@@ -405,6 +424,9 @@ _assign_header(const dragonC_UID_t c_uid, const dragonChannelAttr_t* attr, drago
     *(ch->header.lock_type)                 = (dragonULInt)attr->lock_type;
     *(ch->header.oflag)                     = (dragonULInt)attr->oflag;
     *(ch->header.fc_type)                   = (dragonULInt)attr->fc_type;
+    *(ch->header.semaphore)                 = attr->semaphore;
+    *(ch->header.bounded)                   = attr->bounded;
+    *(ch->header.initial_sem_value)         = attr->initial_sem_value;
     *(ch->header.max_spinners)              = (dragonULInt)attr->max_spinners;
     *(ch->header.available_msgs)            = 0;
     *(ch->header.available_blocks)          = attr->capacity;
@@ -494,6 +516,9 @@ _attrs_from_header(const dragonChannel_t* ch, dragonChannelAttr_t* attr)
     attr->lock_type = *(ch->header.lock_type);
     attr->oflag = *(ch->header.oflag);
     attr->fc_type = *(ch->header.fc_type);
+    attr->semaphore = *(ch->header.semaphore);
+    attr->bounded = *(ch->header.bounded);
+    attr->initial_sem_value = *(ch->header.initial_sem_value);
     attr->max_spinners = *(ch->header.max_spinners);
     attr->max_event_bcasts = *(ch->header.max_event_bcasts);
     attr->num_msgs = *(ch->header.available_msgs);
@@ -824,6 +849,14 @@ _validate_attr(const dragonChannelAttr_t* attr)
 
     if (attr->capacity < DRAGON_CHANNEL_MINIMUM_CAPACITY)
         err_return(DRAGON_CHANNEL_CAPACITY_BELOW_REQUIRED_MINIMUM, "Channel capacity is too small");
+
+    if (attr->bounded)
+        ((dragonChannelAttr_t*)attr)->semaphore = true; /* Supposed to set both for bounded, but if they don't, no worries. */
+
+    if (attr->semaphore) {
+        ((dragonChannelAttr_t*)attr)->capacity = 1; /* It might be set to one, but if not, we'll adjust it here.*/
+        ((dragonChannelAttr_t*)attr)->bytes_per_msg_block = 8;
+    }
 
     if (attr->fc_type < DRAGON_CHANNEL_FC_NONE || attr->fc_type > DRAGON_CHANNEL_FC_MSGS)
         err_return(DRAGON_CHANNEL_INVALID_FC_TYPE, "Invalid channel flow control value specified");
@@ -1232,7 +1265,7 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
 
     if (err != DRAGON_SUCCESS) {
         _release_ut_lock(channel);
-        append_err_return(err, "unable to get item from UT");
+        append_err_return(err, "Unable to get item from UT.");
     }
 
     /* decrement the number of available message blocks */
@@ -1261,14 +1294,14 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
         // if it is successful (even if source is destination), then the
         // _copy_payload worked.
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("unable to buffer message into destination memory");
+            append_err_noreturn("Unable to buffer message into destination memory.");
             goto ch_send_fail;
         }
 
         err = _put_serialized_desc_in_msg_blk(dest_mem_descr, mblk, channel, &msg_bytes);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("unable to buffer serialized destination "
-                                "message memory descriptor into message block");
+            append_err_noreturn("Unable to buffer serialized destination "
+                                "message memory descriptor into message block.");
             goto ch_send_fail;
         }
 
@@ -1285,8 +1318,8 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
 
         err = _put_serialized_desc_in_msg_blk(msg_send->_mem_descr, mblk, channel, &msg_bytes);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("unable to buffer serialized original message "
-                                "memory descriptor into message block");
+            append_err_noreturn("Unable to buffer serialized original message "
+                                "memory descriptor into message block.");
             goto ch_send_fail;
         }
     } else if (msg_bytes <= *(channel->header.bytes_per_msg_block)) {
@@ -1297,7 +1330,7 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
            into that block */
         err = _fast_copy(msg_bytes, msg_ptr, channel->msg_blks_ptrs[mblk]);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("unable to buffer message into message block");
+            append_err_noreturn("Unable to buffer message into message block.");
             goto ch_send_fail;
         }
     } else if (*(channel->header.buffer_pool_descr_ser_len) != 0) {
@@ -1313,16 +1346,9 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
 
         err = dragon_memory_pool_attach(&pool, &ser_pool);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("cannot attach to side-buffer pool");
+            append_err_noreturn("Cannot attach to side-buffer pool.");
             goto ch_send_fail;
         }
-
-        // TODO, we need a concrete way to generate a unique ID for side-buffers
-        // probably with help from managed memory.  For now, we'll use the
-        // generic allocator err = dragon_memory_alloc_type(dest_mem_descr,
-        // &channel->pool, msg_bytes,
-        //                                                    DRAGON_MEMORY_ALLOC_CHANNEL_BUFFER,
-        //                                                    c_uid);
 
         if (blocking && end_time_ptr != NULL) {
             err = dragon_timespec_remaining(end_time_ptr, remaining_time_ptr);
@@ -1334,26 +1360,26 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
 
         err = dragon_memory_alloc_blocking(&side_buffer, &pool, msg_bytes, remaining_time_ptr);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("Unable to allocate memory for side-buffer from memory pool");
+            append_err_noreturn("Unable to allocate memory for side-buffer from memory pool.");
             goto ch_send_fail;
         }
 
         err = _copy_payload(&side_buffer, msg_ptr, msg_bytes);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("unable to buffer message into destination memory");
+            append_err_noreturn("Unable to buffer message into destination memory.");
             goto ch_send_fail;
         }
 
         err = _put_serialized_desc_in_msg_blk(&side_buffer, mblk, channel, &msg_bytes);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("unable to buffer serialized destination "
-                                "message memory descriptor into message block");
+            append_err_noreturn("Unable to buffer serialized destination "
+                                "message memory descriptor into message block.");
             goto ch_send_fail;
         }
 
         err = dragon_memory_pool_detach(&pool);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("cannot detach from side-buffer pool");
+            append_err_noreturn("Cannot detach from side-buffer pool.");
             goto ch_send_fail;
         }
     } else {
@@ -1364,11 +1390,6 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
            managed memory destination location from the channel's pool. */
 
         dragonMemoryDescr_t side_buffer;
-        // TODO, we need a concrete way to generate a unique ID for side-buffers
-        // probably with help from managed memory.  For now, we'll use the
-        // generic allocator err = dragon_memory_alloc_type(dest_mem_descr,
-        // &channel->pool, msg_bytes,
-        //  DRAGON_MEMORY_ALLOC_CHANNEL_BUFFER, c_uid);
 
         if (blocking && end_time_ptr != NULL) {
             err = dragon_timespec_remaining(end_time_ptr, remaining_time_ptr);
@@ -1387,14 +1408,14 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
 
         err = _copy_payload(&side_buffer, msg_ptr, msg_bytes);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("unable to buffer message into destination memory");
+            append_err_noreturn("Unable to buffer message into destination memory.");
             goto ch_send_fail;
         }
 
         err = _put_serialized_desc_in_msg_blk(&side_buffer, mblk, channel, &msg_bytes);
         if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("unable to buffer serialized message memory "
-                                "descriptor into message block");
+            append_err_noreturn("Unable to buffer serialized message memory "
+                                "descriptor into message block.");
             goto ch_send_fail;
         }
     }
@@ -1422,12 +1443,12 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
          * somehow leak blocks */
         _release_ot_lock(channel);
         err = DRAGON_CHANNEL_FULL;
-        err_noreturn("the channel is full");
+        err_noreturn("The channel is full.");
         goto ch_send_fail;
     }
     if (err != DRAGON_SUCCESS) {
         _release_ot_lock(channel);
-        append_err_noreturn("unable to add item to OT");
+        append_err_noreturn("Unable to add item to OT.");
         goto ch_send_fail;
     }
 
@@ -1515,7 +1536,7 @@ ch_send_fail:
     if (uterr != DRAGON_SUCCESS)
         append_err_return(uterr, "Multiple problems in channel_send_msg.");
 
-    no_err_return(err);
+    append_err_return(err, "The send of the message failed.");
 }
 
 static dragonError_t
@@ -1528,6 +1549,7 @@ _get_msg(dragonChannel_t* channel, dragonMessage_t* msg_recv, timespec_t* end_ti
     timespec_t* remaining_time_ptr = NULL;
     timespec_t no_wait = { 0, 0 };
     dragonError_t alloc_err = DRAGON_SUCCESS;
+    char* alloc_msg = NULL;
 
     if (blocking) {
         /* if end_time_ptr is NULL, leave remaining_time_ptr pointing to NULL for
@@ -1631,6 +1653,8 @@ _get_msg(dragonChannel_t* channel, dragonMessage_t* msg_recv, timespec_t* end_ti
             /* If there is an error on allocation of the memory, we'll deal with it below, not here.
                We need to discard the message in this case and return an error back to the caller */
             alloc_err = dragon_memory_alloc_blocking(msg_recv->_mem_descr, &pool_descr, src_mem_size, remaining_time_ptr);
+            if (alloc_err != DRAGON_SUCCESS)
+                alloc_msg = dragon_getlasterrstr();
 
         } else if (dest_mem_size < src_mem_size) {
             _release_ot_lock(channel);
@@ -1800,8 +1824,12 @@ _get_msg(dragonChannel_t* channel, dragonMessage_t* msg_recv, timespec_t* end_ti
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to release message block");
 
-    if (alloc_err != DRAGON_SUCCESS)
-        append_err_return(alloc_err, "There was an error trying to do a zero-byte allocation while getting a message. The message was discarded.");
+    /* The message was discarded but we'll return the original error message here.*/
+    if (alloc_err != DRAGON_SUCCESS) {
+        err_noreturn(alloc_msg);
+        free(alloc_msg);
+        append_err_return(alloc_err, "Could not get required memory allocation. Message was discarded.");
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2243,7 +2271,7 @@ _get_gateway(const dragonChannelDescr_t *ch_descr, dragonChannelOpType_t op_type
 }
 
 /*
- * NOTE: This should only be called from dragon_set_thread_local_mode
+ * NOTE: This should only be called from dragon_set_thread_local_mode.
  */
 void
 _set_thread_local_mode_channels(bool set_thread_local)
@@ -2342,6 +2370,9 @@ dragon_channel_attr_init(dragonChannelAttr_t* attr)
     attr->fc_type = DRAGON_CHANNEL_DEFAULT_FC_TYPE;
     attr->flags = DRAGON_CHANNEL_FLAGS_NONE;
     attr->buffer_pool = NULL;
+    attr->semaphore = false;
+    attr->bounded = false;
+    attr->initial_sem_value = 0UL;
     attr->max_spinners = DRAGON_CHANNEL_DEFAULT_SENDRECV_SPIN_MAX;
     attr->max_event_bcasts = DRAGON_CHANNEL_DEFAULT_MAX_EVENT_BCASTS;
 
@@ -2489,11 +2520,12 @@ dragon_channel_create(dragonChannelDescr_t* ch, const dragonC_UID_t c_uid,
     size_t alloc_size = _channel_allocation_size(attr);
 
     /* allocate the space using the alloc type interface with a channel type */
-    err = dragon_memory_alloc_type(&newch->main_mem, &newch->pool, alloc_size, DRAGON_MEMORY_ALLOC_CHANNEL, c_uid);
+    err = dragon_memory_alloc_type(&newch->main_mem, &newch->pool, alloc_size, DRAGON_MEMORY_ALLOC_CHANNEL);
     if (err != DRAGON_SUCCESS) {
-        append_err_noreturn("unable to allocate memory for channel from memory pool");
+        append_err_noreturn("Unable to allocate memory for channel from memory pool.");
         goto ch_fail;
     }
+
     err = dragon_memory_get_pointer(&newch->main_mem, &newch->local_main_ptr);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("unable to get pointer to memory for channel");
@@ -2542,7 +2574,14 @@ dragon_channel_create(dragonChannelDescr_t* ch, const dragonC_UID_t c_uid,
 
     /* register this channel in our umap using the c_uid as the key */
     ch->_idx = c_uid;
+    newch->c_uid = c_uid;
     ch->_rt_idx = dragon_get_local_rt_uid();
+
+    /* if it is a semaphore, init its value. */
+    if (*newch->header.semaphore) {
+        dragonULInt* sem_ptr = (dragonULInt*)newch->msg_blks_ptrs[0];
+        *sem_ptr = attr->initial_sem_value;
+    }
 
     err = _add_umap_channel_entry(ch, newch);
     if (err != DRAGON_SUCCESS) {
@@ -2569,7 +2608,7 @@ ch_fail:
     if (newch != NULL)
         free(newch);
 
-    no_err_return(err);
+    append_err_return(err, "The channel creation failed.");
 }
 
 /**
@@ -2604,11 +2643,10 @@ dragon_channel_destroy(dragonChannelDescr_t* ch)
 
     int allocation_exists;
 
-    err = dragon_memory_pool_allocation_exists(&channel->pool, DRAGON_MEMORY_ALLOC_CHANNEL,
-                                   (dragonULInt) *channel->header.c_uid, &allocation_exists);
+    err = dragon_memory_pool_allocation_exists(&channel->main_mem, &allocation_exists);
 
     if (allocation_exists == 0) {
-        err_return(DRAGON_CHANNEL_ALREADY_DESTROYED, "This channel allocation does not exist and was likely already destroyed.");
+        err_return(DRAGON_OBJECT_DESTROYED, "This channel allocation does not exist and was likely already destroyed.");
     }
 
     /* Empty the channel of any orphaned messages before destroying channel. We
@@ -2866,6 +2904,7 @@ dragon_channel_attach(const dragonChannelSerial_t* ch_ser, dragonChannelDescr_t*
 
     /* register this channel in our umap using the c_uid as the key */
     ch->_rt_idx = rt_uid;
+    channel->c_uid = c_uid;
     ch->_idx = c_uid;
 
     err = _add_umap_channel_entry(ch, channel);
@@ -3079,37 +3118,23 @@ dragon_channel_get_hostid(const dragonChannelDescr_t* ch, dragonULInt* hostid)
  * @brief Get the channel's cuid and/or type
  *
  * From a serialized channel descriptor, this function will return the
- * cuid of the channel and the type of the channel. The channel is not
- * attached while doing this.
+ * cuid of the channel. The channel is not attached while doing this.
  *
- * @param ch_ser is a pointer to a serialied channel descriptor.
- * @param cuid is a pointer to a location there the cuid will be stored. If
- * NULL is provided, the cuid is not copied from the channel descriptor.
- * @param type is a pointer to a location where the channel's type will be stored.
- * If NULL is provided, the type is not copied from the channel descriptor.
+ * @param ch_ser is a pointer to a serialized channel descriptor.
+ * @param cuid is a pointer to a location there the cuid will be stored.
  *
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
  */
 dragonError_t
-dragon_channel_get_uid_type(const dragonChannelSerial_t* ch_ser, dragonULInt* cuid, dragonULInt* type)
+dragon_channel_get_uid(const dragonChannelSerial_t* ch_ser, dragonULInt* cuid)
 {
     if (ch_ser == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Channel serializer is NULL");
 
-    if (cuid != NULL) {
-        *cuid = *(dragonULInt*)ch_ser->data;
-    }
+    if (cuid == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "cuid is NULL");
 
-    if (type != NULL) {
-        dragonULInt* ptr = (dragonULInt*)ch_ser->data;
-        ptr++; // Skip cuid
-        size_t pool_len = *(size_t*)ptr;
-        uint8_t* t_ptr = (uint8_t*)ptr; // Recast to single 8bit pointer
-        t_ptr += sizeof(size_t);        // Move past length
-        t_ptr += pool_len;              // Skip pool serializer
-        ptr = (dragonULInt*)t_ptr;      // Cast back
-        *type = *ptr;
-    }
+    *cuid = *(dragonULInt*)ch_ser->data;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -3217,6 +3242,9 @@ dragon_channel_sendh(const dragonChannelDescr_t* ch, dragonChannelSendh_t* ch_sh
     ch_sh->_opened = 0;
 
     if (dragon_channel_is_local(ch)) {
+        if (*channel->header.semaphore)
+            err_return(DRAGON_INVALID_ARGUMENT, "Cannot create a send handle on a semaphore channel.");
+
         ch_sh->_gw._idx = 0;
         ch_sh->_gw._rt_idx = 0;
     } else {
@@ -3386,6 +3414,9 @@ dragon_channel_recvh(const dragonChannelDescr_t* ch, dragonChannelRecvh_t* ch_rh
     ch_rh->_opened = 0;
 
     if (dragon_channel_is_local(ch)) {
+        if (*channel->header.semaphore)
+            err_return(DRAGON_INVALID_ARGUMENT, "Cannot create a receive handle on a semaphore channel.");
+
         ch_rh->_gw._idx = 0;
         ch_rh->_gw._rt_idx = 0;
     } else {
@@ -3811,7 +3842,8 @@ dragon_chsend_send_msg(const dragonChannelSendh_t* ch_sh, const dragonMessage_t*
                 append_err_return(err, "Timeout or unexpected error.");
         }
 
-        err = dragon_chsend_send_msg(&gw_sh, &req_msg, NULL, remaining_time_ptr);
+        err = dragon_chsend_send_msg(&gw_sh, &req_msg, DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP,
+                                     remaining_time_ptr);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not send gateway message.");
 
@@ -4197,18 +4229,25 @@ dragon_chrecv_pop_msg(const dragonChannelRecvh_t* ch_rh)
  *
  * @param ch A channel descriptor for a channel either on-node or off-node.
  *
- * @param wait_mode A choice between IDLE waiting or SPIN waiting for events
+ * @param wait_mode A choice between IDLE, SPIN, or ADAPTIVE waiting for events
  * polling. It is only relevant when polling for events.
  *
  * @param event_mask This specifies one of the dragonChannelEvent_t constants.
  *
- * @param timeout NULL indicates blocking with no timeout. Otherwise, blocks
- * for the specified amount of time. If (0,0) is provided, then it is a
+ * @param timeout NULL indicates blocking with no timeout. Otherwise, blocks for
+ * the specified amount of time. If (0,0) is provided, then it is a
  * non-blocking call.
  *
- * @param result For all but the DRAGON_CHANNEL_POLLSIZE the result will be a
- * 64-bit cast of the event_mask field. With DRAGON_CHANNEL_POLLSIZE it is
- * the number of messages currently in the channel.
+ * @param result Depends on the event_mask. Those poll operations that return
+ * a result, the result is returned through this pointer which must not be NULL
+ * in those cases. In all other cases, if result is not NULL the event_mask is
+ * returned as the value. Here are return values for other poll operations.
+ * DRAGON_CHANNEL_POLLSIZE: number of messages in channel.
+ * DRAGON_CHANNEL_POLLBARRIER_ISBROKEN: boolean indicating broken barrier.
+ * DRAGON_CHANNEL_POLLBARRIER_WAITERS: number of barrier waiters.
+ * DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS: blocked barrier waiters.
+ * DRAGON_SEMAPHORE_P: The value of the semaphore before decrementing if result is not NULL.
+ * DRAGON_SEMAPHORE_PEEK: The value of the semaphore.
  *
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
  */
@@ -4225,15 +4264,16 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "invalid channel descriptor");
 
-    if (event_mask > DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS) {
+    if (event_mask > DRAGON_SEMAPHORE_PEEK) {
         err_return(DRAGON_INVALID_ARGUMENT, "The event mask must be one of the DragonChannelEvent_t values.");
     }
 
     if (result == NULL &&
         ((event_mask == DRAGON_CHANNEL_POLLSIZE) || (event_mask == DRAGON_CHANNEL_POLLBARRIER_ISBROKEN) ||
-         (event_mask == DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS) || (event_mask == DRAGON_CHANNEL_POLLBARRIER_WAITERS))) {
+         (event_mask == DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS) || (event_mask == DRAGON_CHANNEL_POLLBARRIER_WAITERS) ||
+         (event_mask == DRAGON_SEMAPHORE_PEEK))) {
         err_return(DRAGON_INVALID_ARGUMENT,
-                   "If polling for size, barrier_isbroken, blocked_receivers, or barrier_waiters you must provide a non-null result argument.");
+                   "If polling for size, barrier_isbroken, blocked_receivers, barrier_waiters, or semaphore_peek you must provide a non-null result argument.");
     }
 
     /* This initializes result for all but a few poll values which set it below. */
@@ -4247,6 +4287,16 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
            made below. */
         int poll_bcast_index = event_mask - 1;
         _obtain_channel_locks(channel);
+
+        if (*channel->header.semaphore && (event_mask < DRAGON_SEMAPHORE_P || event_mask > DRAGON_SEMAPHORE_PEEK)) {
+            _release_channel_locks(channel);
+            err_return(DRAGON_INVALID_ARGUMENT, "The channel is a semaphore channel and only semaphore operations are supported.");
+        }
+
+        if (!(*channel->header.semaphore) && event_mask >= DRAGON_SEMAPHORE_P && event_mask <= DRAGON_SEMAPHORE_PEEK) {
+            _release_channel_locks(channel);
+            err_return(DRAGON_INVALID_ARGUMENT, "The channel is not a semaphore channel and does not support semaphore operations.");
+        }
 
         if ((event_mask == DRAGON_CHANNEL_POLLIN) || (event_mask == DRAGON_CHANNEL_POLLINOUT))
             if (*(channel->header.available_msgs) != 0) {
@@ -4442,6 +4492,75 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
 
             _release_channel_locks(channel);
 
+            no_err_return(DRAGON_SUCCESS);
+        }
+
+        if (event_mask == DRAGON_SEMAPHORE_P) {
+            bool went_to_zero = false;
+            dragonULInt* sem_ptr = (dragonULInt*)channel->msg_blks_ptrs[0];
+
+            while (*sem_ptr == 0UL) {
+                err = dragon_bcast_wait(&channel->poll_bcasts[DRAGON_CHANNEL_POLLIN-1], wait_mode, timeout, NULL, 0,
+                                (dragonReleaseFun)_release_channel_locks, channel);
+
+                if (err != DRAGON_SUCCESS)
+                    append_err_return(err, "Could not complete poll operation.");
+
+                _obtain_channel_locks(channel);
+            }
+
+            if (result != NULL)
+                *result = *sem_ptr;
+
+            *sem_ptr = *sem_ptr - 1UL;
+
+            if (*sem_ptr == 0UL)
+                /* Record that we had a transition to 0. */
+                went_to_zero = true;
+
+            _release_channel_locks(channel);
+
+            if (went_to_zero)
+                dragon_bcast_trigger_all(&channel->poll_bcasts[DRAGON_CHANNEL_POLLEMPTY-1], NULL, NULL, 0);
+
+            no_err_return(DRAGON_SUCCESS);
+        }
+
+        if (event_mask == DRAGON_SEMAPHORE_V) {
+            dragonULInt* sem_ptr = (dragonULInt*)channel->msg_blks_ptrs[0];
+
+            if (*channel->header.bounded && *sem_ptr == *channel->header.initial_sem_value) {
+                _release_channel_locks(channel);
+                err_return(DRAGON_INVALID_VALUE, "The semaphore is bounded and has already been incremented to its initial state.");
+            }
+
+            *sem_ptr = *sem_ptr + 1UL;
+            _release_channel_locks(channel);
+
+            dragon_bcast_trigger_one(&channel->poll_bcasts[DRAGON_CHANNEL_POLLIN-1], NULL, NULL, 0);
+            no_err_return(DRAGON_SUCCESS);
+        }
+
+        if (event_mask == DRAGON_SEMAPHORE_VZ) {
+            dragonULInt* sem_ptr = (dragonULInt*)channel->msg_blks_ptrs[0];
+
+            if (*sem_ptr > 0UL) {
+                /* We wait for 0 */
+                err = dragon_bcast_wait(&channel->poll_bcasts[DRAGON_CHANNEL_POLLEMPTY-1], wait_mode, timeout, NULL, 0,
+                                (dragonReleaseFun)_release_channel_locks, channel);
+
+                if (err != DRAGON_SUCCESS)
+                    append_err_return(err, "Could not complete poll operation.");
+            } else
+                _release_channel_locks(channel);
+
+            no_err_return(DRAGON_SUCCESS);
+        }
+
+        if (event_mask == DRAGON_SEMAPHORE_PEEK) {
+            dragonULInt* sem_ptr = (dragonULInt*)channel->msg_blks_ptrs[0];
+            *result = *sem_ptr;
+            _release_channel_locks(channel);
             no_err_return(DRAGON_SUCCESS);
         }
 
@@ -4961,8 +5080,7 @@ dragon_channel_remove_event_bcast(dragonChannelDescr_t* ch, dragonULInt channel_
 
     int allocation_exists;
 
-    err = dragon_memory_pool_allocation_exists(&channel->pool, DRAGON_MEMORY_ALLOC_CHANNEL,
-                                   *channel->header.c_uid, &allocation_exists);
+    err = dragon_memory_pool_allocation_exists(&channel->main_mem, &allocation_exists);
 
     /* If this happens, the channel was destroyed before removing from the channelset. The
        channelset is being destroyed, so just return and move on. */

@@ -1,11 +1,47 @@
+# Dragon 0.12rc1 Release Summary
+Dragon 0.12rc1 coincides with our open source release of code.
+
+- Many small bug fixes.
+- Jupyter notebook server now can be started with dragon-jupyter and now allows
+  kernel restart and fixes some printing issues.
+- DDict broadcast put and get for enhanced performance when all clients need a value.
+- Huge cleanup and reorganization of documentation.
+- Enhanced semaphore performance.
+- Out of memory watcher added for user feedback before a deadlock might occur.
+- Enhancements to allow efficiently iterating over keys in the DDict.
+
+
+# Dragon 0.11.1 Release Summary
+Dragon 0.11.1 addresses a few bugs found in the original 0.11 release and loosens install
+requirements
+
+- Drop numpy from required packages
+- Support minimum psutil and gunicorn versions hosted in public conda repos
+- Print ProcessGroup errors to stderr rather than via logging
+- Decrease chances of long teardown times during abnoral exits from runtime
+
+# Dragon 0.11 Release Summary
+Dragon 0.11 adds support for python 3.12 and manylinux package distribution via PyPI.
+Support for python 3.9 is dropped. Other features:
+
+- Add C and C++ interface to Distributed Dictionary
+- Standardize PEP8 formatting of source code
+- Add Datastore class for Zarr
+- Implement new hashing for Distributed Dictionary for more even distribution among managers
+- Overhaul managed memory
+- Add ability to customize telemetry configuration
+- Add support for hugepages to improve HSTA performance
+- Allow synchronization and restart of Distribution Dictionary managers
+- Drop modules requirement for installation
+
 # Dragon 0.10 Release Summary
 Dragon 0.10 adds support for infiniband networks, checkpointing to the distributed dictionary,
 and provides initial support for telemetry monitoring via a Grafana frontend. Other features include:
 
 - Complete overhaul of ProcessGroup to improve reliability and user debugging
 - Performance improvements in HSTA
-- Better exception handling and logging 
-- Better support for specifying placement of processes 
+- Better exception handling and logging
+- Better support for specifying placement of processes
 - Addition of a `dragon-activate` script to make it easier to set-up runtime environment
 - Improved stability for the Distributed Dictionary and runtime overall
 
@@ -42,12 +78,10 @@ addition/refinements to documentation. Highlighted new features are:
 - Documentation updates explaining how to run Dragon multinode using generic SSH launch
 
 # Dragon 0.6 and 0.61 Release Summary
-This package is the first to extend Dragon beyond support for Python
-multiprocessing. The key new feature is support for running collections of
-executables, including executables that require support for PMI (e.g., MPI). PMI
-support is currently limited to executables using Cray PMI, such as those linked
-with Cray MPICH. The process group feature is also utilized for scalable
-multiprocessing Pool, which can now scale to thousands of workers. Highlighted
+This package is the first to extend Dragon beyond support for Python multiprocessing. The key new feature is support
+for running collections of executables, including executables that require support for PMI (e.g., MPI). PMI
+support is currently limited to executables using Cray PMI, such as those linked with Cray MPICH. The process group
+feature is also utilized for scalable multiprocessing Pool, which can now scale to thousands of workers. Highlighted
 new features are:
 
 - ProcessGroup API for scalable management of processes
@@ -66,6 +100,7 @@ addition/refinements to documentation. Highlighted new features are:
 - mp.Barrier
 - mp.Value
 - Significantly improved launcher stability and ctrl-c handling
+- RDMA support through HSTA is enabled by default
 - Preview release of a distributed dictionary
 - documentation cookbook entries for an llm inference service, jupyter notebooks, and distributed dictionary
 

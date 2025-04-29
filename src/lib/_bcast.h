@@ -28,19 +28,22 @@ the pointers assigned in _map_header and _init_header of bcast.c */
 typedef struct dragonBCastHeader_st {
     volatile atomic_uint * num_waiting;
     volatile atomic_uint * num_triggered;
-    volatile atomic_uint * triggered;
-    volatile atomic_uint * triggering;
+    uint32_t * triggering;
     volatile atomic_uint * shutting_down; // set to 1 when shutting down.
     volatile atomic_int * allowable_count;
-    atomic_uint * trigger_lock_sz;
+    volatile atomic_int * num_to_trigger;
+    dragonULInt* state; // used for debugging
+    atomic_uint * lock_sz;
     atomic_uint * spin_list_sz; // array size, not bytes
     atomic_uint * spin_list_count; // number of active spinners
     atomic_uint * payload_area_sz;
     volatile atomic_uint * payload_sz;
     atomic_uint * sync_type;
     atomic_uint * sync_num;
-    atomic_uint * trigger_lock_type;
-    atomic_uint * trigger_lock;
+    dragonUUID * id; // used for identification of this bcast.
+    dragonULInt * reserved; // this must remain after id field. Id is 128 bits.
+    atomic_uint * lock_type;
+    atomic_uint * lock;
     volatile atomic_uint * spin_list;
     void * payload_area;
 } dragonBCastHeader_t;
@@ -49,10 +52,10 @@ typedef struct dragonBCastHeader_st {
 umap for a process when the object is created or attached. The actual object, in
 shared memory, has the actual fields (not pointers to fields). The constant
 below is used in calculating the space needed for the BCast object. All fields
-are the size of dragonULInt values except the three fields: trigger_lock,
+are the size of dragonULInt values except the three fields: lock,
 spin_list, and payload_area. The lengths of these three are not necessarily the
 same size as a dragonULInt, so their sizes are computed separately. The three
-below is subtracted so the trigger_lock, spin_list, and payload_area are not
+below is subtracted so the lock, spin_list, and payload_area are not
 used in computing the object size. All others in the actual BCast object are the
 size of dragonULInts and we calculate the number of dragonULInts for the rest of
 the object here. */
@@ -62,7 +65,8 @@ the object here. */
 /* A seated BCast handle. For internal use only. */
 
 typedef struct dragonBCast_st {
-    dragonLock_t trigger_lock;
+    dragonLock_t lock;
+    dragonLock_t sync_lock;
     void * obj_ptr;
     bool in_managed_memory;
     dragonMemoryPoolDescr_t pool;
@@ -99,5 +103,23 @@ typedef struct dragonBCastSignalArg_st {
     dragonReleaseFun release_fun;
     void* release_arg;
 } dragonBCastSignalArg_t;
+
+// For debug only.
+#define DRAGON_BCAST_DEBUG_1 1
+#define DRAGON_BCAST_DEBUG_2 2
+#define DRAGON_BCAST_DEBUG_3 4
+#define DRAGON_BCAST_DEBUG_4 8
+#define DRAGON_BCAST_DEBUG_5 16
+#define DRAGON_BCAST_DEBUG_6 32
+#define DRAGON_BCAST_DEBUG_7 64
+#define DRAGON_BCAST_DEBUG_8 128
+#define DRAGON_BCAST_DEBUG_9 256
+#define DRAGON_BCAST_DEBUG_10 512
+#define DRAGON_BCAST_DEBUG_11 1024
+#define DRAGON_BCAST_DEBUG_12 2048
+#define DRAGON_BCAST_DEBUG_13 4096
+#define DRAGON_BCAST_DEBUG_14 8192
+#define DRAGON_BCAST_DEBUG_15 16384
+#define DRAGON_BCAST_DEBUG_16 32768
 
 #endif

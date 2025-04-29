@@ -1,5 +1,4 @@
-""" Node related objects internal to Global Services. 
-"""
+"""Node related objects internal to Global Services."""
 
 from ..infrastructure.node_desc import NodeDescriptor
 
@@ -7,25 +6,26 @@ import logging
 
 LOG = logging.getLogger(__name__)
 
-# NOTE: This is a stub really and will need to be extended once we are 
+
+# NOTE: This is a stub really and will need to be extended once we are
 # targetting cloud hardware.
 class NodeContext:
-    """ Everything to do with a single node in global services.
+    """Everything to do with a single node in global services.
 
-        In contrast to other resources handled by GS, the NodeContext
-        gets its descriptors from the Shepherd started on the node via
-        SHPingGS.
+    In contrast to other resources handled by GS, the NodeContext
+    gets its descriptors from the Shepherd started on the node via
+    SHPingGS.
 
-        This class includes the code that does the lifecycle of the 
-        node to the launcher controlling that channel.
-    """ 
+    This class includes the code that does the lifecycle of the
+    node to the launcher controlling that channel.
+    """
 
     def __init__(self, desc, ls_index, h_uid, name):
 
         self.h_uid = h_uid
         self.name = name
         self.ls_index = ls_index
-        self._descriptor = desc 
+        self._descriptor = desc
         self._descriptor.h_uid = h_uid
 
     def __str__(self):
@@ -41,16 +41,16 @@ class NodeContext:
         context from the message.
 
         :param msg: Message send to GS to create the node
-        :type msg: class SHPingGS 
+        :type msg: class SHPingGS
         :return: The new node context
         :rtype: class NodeContext
         """
 
-        ls_index = msg.idx # index of the node according to Local Services
+        ls_index = msg.idx  # index of the node according to Local Services
         desc = NodeDescriptor.from_sdict(msg.node_sdesc)
 
         h_uid = desc.host_id
-            
+
         name = desc.name
 
         context = cls(desc, ls_index, h_uid, name)

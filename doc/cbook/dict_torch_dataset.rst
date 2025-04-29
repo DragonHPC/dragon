@@ -1,9 +1,9 @@
 PyTorch Dataset Usage with Dragon Distributed Dictionary
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-This example shows how a PyTorch dataset can use a Dragon distributed dictionary to store the data. 
-In principle, the distributed dictionary could be shared among other processes that might interact with the training data between training iterations. 
-The program must be run with GPUs. 
+This example shows how a PyTorch dataset can use a Dragon distributed dictionary to store the data.
+In principle, the distributed dictionary could be shared among other processes that might interact with the training data between training iterations.
+The program must be run with GPUs.
 
 The code demonstrates how the following key concepts work with Dragon:
 
@@ -15,11 +15,12 @@ The code demonstrates how the following key concepts work with Dragon:
 Installation
 ============
 
-After installing dragon, the only other dependency is on PyTorch. The PyTorch version and corresponding pip command can be found here (https://pytorch.org/get-started/locally/). 
+After installing dragon, the only other dependency is on PyTorch. The PyTorch version and corresponding pip command can be found here (https://pytorch.org/get-started/locally/).
 
-```
-> pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
-```
+.. code-block:: console
+
+    > pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu118
+
 
 Description of the system used
 ==============================
@@ -29,8 +30,10 @@ For this example, an HPE Cray EX was used. Each node has AMD EPYC 7763 64-core C
 How to run
 ==========
 
-Example Output when run on 2 nodes with 2 MNIST workers, 1 device per node, 2 epochs, CUDA training, 4 dragon dict managers, and dragon dict memory.
--------------------------------------------------------------------------------------
+Example
+-------
+
+Output when run on 2 nodes with 2 MNIST workers, 1 device per node, 2 epochs, CUDA training, 4 dragon dict managers, and dragon dict memory.
 
 .. code-block:: console
     :linenos:

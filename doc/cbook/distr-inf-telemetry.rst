@@ -211,7 +211,7 @@ in :numref:`single-prompt-response`.
 .. figure:: images/llm-grafana-telem-data.jpg
     :scale: 60%
     :name: node-telemetry
-    
+
     **Node telemetry data that is visualized using Grafana GUI and highlights the load balanced nature of this example**
 
 
@@ -230,7 +230,7 @@ The version of PyTorch and its dependencies may need to be changed to run on oth
 
 
 Alternatively, the packages and their dependencies can be installed individually. The PyTorch version and corresponding pip command
-can be found `here <https://pytorch.org/get-started/locally/>`_.
+can be found `here <https://pytorch.org/get-started/locally/>`__.
 
 .. code-block:: console
     :linenos:
@@ -337,9 +337,9 @@ Finally, we access Grafana in our web browser via the following URL:
     http://localhost:1234
 
 To complete the setup and have Prometheus server communicate and send data to Grafana, we need to configure Grafana via the web browser interface. We need to create a new Prometheus data
-source by following the instructions `here <https://grafana.com/docs/grafana/latest/datasources/prometheus/>`_. The most important field is the `URL`, where we need to provide the URL
+source by following the instructions `here <https://grafana.com/docs/grafana/latest/datasources/prometheus/>`__. The most important field is the `URL`, where we need to provide the URL
 (ip address and port) of the system that Prometheus server runs on. For example, in our case it was `http://pinoak.us.cray.com:9090`.
-Last, we need to create a new dashboard for visualizing our metrics. You can find information `here <https://grafana.com/docs/grafana/latest/dashboards/>`_.
+Last, we need to create a new dashboard for visualizing our metrics. You can find information `here <https://grafana.com/docs/grafana/latest/dashboards/>`__.
 
 
 
@@ -349,6 +349,8 @@ Usage
 To run this example, follow the multi-node start up instructions in :ref:`Running Jupyter Notebook inside of the Dragon<cbook/jupyter:Running Jupyter Notebook inside of the Dragon>`
 and then open the `llm_example.ipynb` notebook which can be found in the release package inside `examples/jupyter` directory. In order for the telemetry component to work and visualize the data with Grafana, you will
 need to also have the Prometheus and Grafana servers started by following the instructions above.
+
+
 
 Description of the system used
 ==============================

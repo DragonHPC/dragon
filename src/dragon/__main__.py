@@ -7,5 +7,5 @@ def main():
     _main([PROCNAME_LA_FE] + sys.argv[1:])
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

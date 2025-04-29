@@ -44,27 +44,27 @@ if len(sys.argv) < 2:
 
 identity = sys.argv[1]
 
-dlog.setup_logging(basename='catt-' + identity, level=logging.DEBUG)
-log = logging.getLogger('')
-log.info('hello from conn test worker {}'.format(identity))
-log.info('p_uid is {}'.format(dparm.this_process.my_puid))
+dlog.setup_logging(basename="catt-" + identity, level=logging.DEBUG)
+log = logging.getLogger("")
+log.info("hello from conn test worker {}".format(identity))
+log.info("p_uid is {}".format(dparm.this_process.my_puid))
 
 try:
     dapi.connect_to_infrastructure()
 except Exception as err:
-    log.info('failed to attach to infrastructure')
-    log.exception(f'error is {err}')
+    log.info("failed to attach to infrastructure")
+    log.exception(f"error is {err}")
     exit(1)
 
-log.info('connected to infrastructure')
+log.info("connected to infrastructure")
 
 # now look at args to get inbound and outbound channel *names*
 my_args = pickle.loads(dapi._ARG_PAYLOAD)
 
-log.info(f'my args: {my_args}')
+log.info(f"my args: {my_args}")
 
 if len(my_args) != 2:
-    log.error('unexpected number of args: {}'.format(len(my_args)))
+    log.error("unexpected number of args: {}".format(len(my_args)))
     exit(1)
 
 inbound_cname, outbound_cname = my_args
@@ -77,7 +77,7 @@ except Exception as e:
     log.exception("couldn't query existing channels")
     exit(1)
 
-log.info('queried pre-existing channels')
+log.info("queried pre-existing channels")
 
 try:
     inbound_ch = dch.Channel.attach(inbound_cdesc.sdesc)
@@ -86,13 +86,13 @@ except Exception as e:
     log.exception("couldn't attach to existing channels")
     exit(1)
 
-log.info('attached to pre-existing channels')
+log.info("attached to pre-existing channels")
 
 # should try this with a full duplex Connection object
 orig_inbound_con = dconn.Connection(inbound_initializer=inbound_ch)
 orig_outbound_con = dconn.Connection(outbound_initializer=outbound_ch)
 
-first_msg = 'weasels'
+first_msg = "weasels"
 
 try:
     orig_outbound_con.send(first_msg)
@@ -102,49 +102,49 @@ except Exception as e:
     exit(1)
 
 if first_msg != partner:
-    log.error('exchanged msgs do not match: {} vs {}'.format(first_msg, partner))
+    log.error("exchanged msgs do not match: {} vs {}".format(first_msg, partner))
     exit(1)
 
-log.info('we got our {}, now for a pipe and connection'.format(first_msg))
+log.info("we got our {}, now for a pipe and connection".format(first_msg))
 
 my_reader, my_writer = dconn.Pipe(duplex=False)
 
-log.info('pipe called')
+log.info("pipe called")
 
 # should the process of sending my_reader put it in a
 # state where it shouldn't be opened?
 orig_outbound_con.send(my_reader)
 
-log.info('reader obj sent')
+log.info("reader obj sent")
 
 others_reader = orig_inbound_con.recv()
-log.info('reader obj received')
+log.info("reader obj received")
 
 # need to do this, otherwise there will be
 # a deadlock.
 others_reader.open()
-log.info('partner reader opened')
+log.info("partner reader opened")
 
-my_message = 'hyenas'
+my_message = "hyenas"
 
 try:
     my_writer.send(my_message)
-    log.info('my message is sent')
+    log.info("my message is sent")
 except Exception as e:
     log.exception("Couldn't send second message thru Connection")
     exit(1)
 
 try:
     others_message = others_reader.recv()
-    log.info('got the message from the other side')
+    log.info("got the message from the other side")
 except:
     log.exception("Couldn't get second message thru Connection")
     exit(1)
 
 if my_message == others_message:
-    log.info('messages are fine')
+    log.info("messages are fine")
 else:
-    log.info('mismatch: {} vs {}'.format(my_message, others_message))
+    log.info("mismatch: {} vs {}".format(my_message, others_message))
     exit(1)
 # todo: some stuff here to do the cleanup explicitly
 

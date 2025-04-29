@@ -1,0 +1,51 @@
+# This workflow automates a comment to PRs for merging to main to remind everyone of
+# requirements to merge to main
+
+name: merging to main requirements
+
+on:
+  # Trigger the workflow on opening of pull request
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+
+env:
+  MAIN_MERGE_COMMENT: >
+    ## Requirements to merge to \`main\`
+
+    - [ ] All requirements for merging to develop are met.
+
+    - [ ] Examples testing successful - these are run as part of nightly testing for branch develop
+      - [ ] 1, 2, and 4 node execution of compiled packages on hotlum and/or pinoak
+      - [ ] whitebox dragon and multiprocessing unittests on pe27rome
+    - [ ] Sanity network tests passing (p2p_lat.py and p2p_bw.py)
+      - [ ] HSTA on IB network
+      - [ ] HSTA on Slingshot network
+      - [ ] TCP agent
+    - [ ] Performance tests
+      - [ ] GUPs benchmark at 128 nodes (\`examples/benchmarks/gups_ddict.py\`)
+        - [ ] \`dragon gups_ddict.py --num_nodes=128 --nclients=8192 --managers_per_node=8 --total_mem_size=24 --mem_frac=0.5 --iterations=1\`
+      - [ ] scipy scale test at 400 nodes (\examples/multiprocessing/numpy-mpi4py-examples/scipy_scale_work.py\`)
+        - [ ] \`dragon scipy_scale_work.py --dragon --num_workers 51200 --mem 3355443200 --size 256 --iterations 2 --burns 0 --work_time .5\`
+      - [ ] bounce test at 512 nodes (\`/release/hello.py\`)
+        - [ ] \`dragon hello.py\`
+      - [ ] 8 node mpi-workflow (\`examples/dragon_native/mpi/hpc_workflow_demo_highlevel.py\`)
+        - [ ] \`dragon hpc_workflow_demo_highlevel.py\`
+
+
+jobs:
+  post-comment:
+    runs-on: [ self-hosted ]
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          github-token: ${{secrets.GITHUB_TOKEN}}
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `${{env.MAIN_MERGE_COMMENT}}`
+            })

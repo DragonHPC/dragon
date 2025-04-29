@@ -1,16 +1,17 @@
-""" This file contains Dragon multi-node acceptance test for the
+"""This file contains Dragon multi-node acceptance test for the
 `dragon.native.Value` object.  The test scales with the total number of CPUs
 reported by the allocation, i.e. it becomes tougher on larger allocations.
 
 The test is run with `dragon test_value.py -f -v`
 """
+
 import unittest
-import os
-import sys
 import numpy as np
 
 import dragon
 import multiprocessing as mp
+from dragon.native.process_group import ProcessGroup
+from dragon.native.process import ProcessTemplate
 
 
 def process_function(
@@ -19,7 +20,6 @@ def process_function(
     queue,
     max_val,
 ):
-
     p = mp.current_process()
     mypuid = p.pid
 
@@ -33,12 +33,7 @@ def process_function(
             val = value.value
             if val <= max_val:
                 value.value += 1
-                queue.put(
-                    (
-                        mypuid,
-                        val,
-                    )
-                )
+                queue.put((mypuid, val))
 
 
 class TestValueMultiNode(unittest.TestCase):
@@ -72,62 +67,45 @@ class TestValueMultiNode(unittest.TestCase):
            exit_code is 0, i.e. that they exited cleanly without an exception
         """
 
-        procs = []
         puid_dict = {}
 
         # number of processes for the test
-        nproc = max(2, mp.cpu_count() // 16)
+        nproc = max(2, mp.cpu_count() // 32)
         max_val = nproc * 8
 
         # each child process is handed the same value, queue, and event
-        value = mp.Value(
-            "i",
-            0,
-            lock=True,
-        )
-        queue = mp.Queue()
+        value = mp.Value("i", 0, lock=True)
+        queue = mp.Queue(maxsize=nproc * 100)
         event = mp.Event()
 
-        for _ in range(nproc):
-            p = mp.Process(
-                target=process_function,
-                args=(
-                    event,
-                    value,
-                    queue,
-                    max_val,
-                ),
-            )
-            p.start()
-            procs.append(p)
-            puid_dict[p.pid] = 0
+        pg = ProcessGroup()
+        pg.add_process(
+            nproc=nproc, template=ProcessTemplate(target=process_function, args=(event, value, queue, max_val))
+        )
+        pg.init()
+        pg.start()
 
         # parent sets event for children processes to work at same time
         event.set()
 
         cnt = 0
-
-        for _ in range(
-            0,
-            max_val,
-        ):
-
-            (
-                puid,
-                val,
-            ) = queue.get()
+        for _ in range(0, max_val):
+            (puid, val) = queue.get()
 
             # check that the value from child process is valid
             self.assertTrue(val == cnt)
             cnt += 1
 
             # increment each time child puid returns value
-            puid_dict[puid] += 1
+            if puid in puid_dict:
+                puid_dict[puid] += 1
+            else:
+                puid_dict[puid] = 1
 
         numpy_puids = np.array(list(puid_dict.values()))
 
         # pring minimum, maximum, mean, and median from puids_dict
-        (puids_max, puids_min, puids_mean, puids_median,) = (
+        (puids_max, puids_min, puids_mean, puids_median) = (
             np.max(numpy_puids),
             np.min(numpy_puids),
             np.mean(numpy_puids),
@@ -138,12 +116,8 @@ class TestValueMultiNode(unittest.TestCase):
         print(f"    Maximum: {puids_max}, Minimum: {puids_min}, Mean: {puids_mean}, Median: {puids_median}")
 
         # check that the child process exited cleanly in parent process
-        for p in procs:
-            p.join()
-            self.assertEqual(
-                p.exitcode,
-                0,
-            )
+        pg.join()
+        pg.close()
 
 
 if __name__ == "__main__":

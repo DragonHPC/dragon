@@ -3,6 +3,7 @@ from multiprocessing import Process
 from dragon.channels import Channel, Message, ChannelSendH, ChannelRecvH
 from dragon.managed_memory import MemoryPool
 
+
 def recv_worker():
     # read the serialized channel from a file
     ser_file = open("channel.dat", "rb")
@@ -20,18 +21,19 @@ def recv_worker():
     for i in range(26):
         msg = rh.recv()
         rb = msg.bytes_memview()
-        rb = rb.cast('c') # Cast to char to spit out letters instead of ascii values
+        rb = rb.cast("c")  # Cast to char to spit out letters instead of ascii values
         print(f"Value at 1 is {rb[1]}")
         msg.destroy()
 
     rh.close()
     ch.detach()
 
-if __name__ == '__main__':
-    mp.set_start_method('spawn', force=True)
+
+if __name__ == "__main__":
+    mp.set_start_method("spawn", force=True)
 
     pool_name = "pydragon_channel_test"
-    pool_size = 1073741824 # 1GB
+    pool_size = 1073741824  # 1GB
     pool_uid = 1
     mpool = MemoryPool(pool_size, pool_name, pool_uid)
 
@@ -51,7 +53,7 @@ if __name__ == '__main__':
     # create a message we will keep sending over and over again
     sm = Message.create_alloc(mpool, 512)
     mb = sm.bytes_memview()
-    mb = mb.cast('c') # Cast to char to directly assign letters in
+    mb = mb.cast("c")  # Cast to char to directly assign letters in
 
     alpha = "abcdefghijklmnopqrstuvwxyz"
     # run a loop where we will keep sending the message

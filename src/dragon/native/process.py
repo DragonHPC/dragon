@@ -1,4 +1,4 @@
-""" The Dragon native process object provides process management across one or
+"""The Dragon native process object provides process management across one or
 multiple distributed systems. `ProcessTemplate` can hold a blueprint for a process
 that can be used to generate many similar processes.
 """
@@ -30,6 +30,7 @@ from ..globalservices.policy_eval import PolicyEvaluator
 from ..utils import b64decode, b64encode
 
 LOG = logging.getLogger(__file__)
+
 
 class Popen:
     PIPE = MSG_PIPE
@@ -236,6 +237,9 @@ class Popen:
 
 class ProcessTemplate:
     """This class provides a template for a Dragon process."""
+    PIPE = MSG_PIPE
+    STDOUT = MSG_STDOUT
+    DEVNULL = MSG_DEVNULL
 
     def __init__(
         self,
@@ -249,7 +253,6 @@ class ProcessTemplate:
         stderr: int = None,
         policy: Policy = None,
         options: ProcessOptions = None,
-
     ):
         """Generic Dragon process template object defining a process based on a
         binary executable or a Python callable.
@@ -264,11 +267,11 @@ class ProcessTemplate:
         This template cannot be started, but it can be used to create many
         similar processes like this:
 
-        ```Python
+        .. code-block:: python
+
             t = ProcessTemplate(myfunc)
             p1 = Process.from_template(t, ident="NewProcess1")
             p2 = Process.from_template(t, ident="NewProcess2")
-        ```
 
         The template stores the absolute path of the target if the target is an executable.
         If the target is a Python function, the template stores the Python executable in
@@ -276,9 +279,9 @@ class ProcessTemplate:
         the Python data in its `argdata` attribute. To obtain the original attributes in
         Python use
 
-        ```Python
+        .. code-block:: python
+
             target, args, kwargs = p.get_original_python_parameters()
-        ```
 
         :param target: The binary or Python callable to execute.
         :type target: str or callable
@@ -350,13 +353,13 @@ class ProcessTemplate:
         if self.policy is not None:
             policy = b64encode(cloudpickle.dumps(self.policy))
 
-
         rv = {
             "is_python": self.is_python,
             "target": self.target,
             "args": self.args,
             "argdata": argdata,
             "env": self.env,
+            "cwd": self.cwd,
             "stdout": self.stdout,
             "stderr": self.stderr,
             "stdin": self.stdin,
@@ -385,6 +388,7 @@ class ProcessTemplate:
         tmpl.args = sdict["args"]
         tmpl.argdata = argdata
         tmpl.env = sdict["env"]
+        tmpl.cwd = sdict["cwd"]
         tmpl.stdout = sdict["stdout"]
         tmpl.stderr = sdict["stderr"]
         tmpl.stdin = sdict["stdin"]
@@ -526,9 +530,7 @@ class Process(ProcessTemplate):
         return super().__init__(target, args, kwargs, cwd, env, stdin, stdout, stderr, policy, options)
 
     @classmethod
-    def from_template(
-        cls, template: ProcessTemplate, ident: str = None, _pmi_enabled: bool = False
-    ) -> object:
+    def from_template(cls, template: ProcessTemplate, ident: str = None, _pmi_enabled: bool = False) -> object:
         """A classmethod that creates a new process object from a template.
 
         :param template: the template to base the process on
@@ -555,9 +557,20 @@ class Process(ProcessTemplate):
             else:
                 raise ProcessError(f"A process '{ident}' already exists within the Dragon runtime.")
 
-        return cls(target, args, kwargs, template.cwd, template.env, ident=ident,
-                   _pmi_enabled=_pmi_enabled, stdin=template.stdin, stdout=template.stdout, stderr=template.stderr,
-                   policy=template.policy, options=template.options)
+        return cls(
+            target,
+            args,
+            kwargs,
+            template.cwd,
+            template.env,
+            ident=ident,
+            _pmi_enabled=_pmi_enabled,
+            stdin=template.stdin,
+            stdout=template.stdout,
+            stderr=template.stderr,
+            policy=template.policy,
+            options=template.options,
+        )
 
     def start(self) -> None:
         """Start the process represented by the underlying process object."""
@@ -567,7 +580,7 @@ class Process(ProcessTemplate):
 
         if self.policy is not None:
             # merge global policy and processes' policy
-            self.policy = PolicyEvaluator.merge(Policy.global_policy(), self.policy)
+            self.policy = Policy.merge(Policy.global_policy(), self.policy)
         else:
             self.policy = Policy.global_policy()
 
@@ -588,6 +601,9 @@ class Process(ProcessTemplate):
                 env=self.env,
                 options=options,
                 user_name=self.ident,
+                stdin=self.stdin,
+                stdout=self.stdout,
+                stderr=self.stderr,
                 policy=self.policy,
             )
         else:  # binary
@@ -602,7 +618,7 @@ class Process(ProcessTemplate):
                 stdin=self.stdin,
                 stdout=self.stdout,
                 stderr=self.stderr,
-                policy=self.policy
+                policy=self.policy,
             )
 
         self.started = True
@@ -630,7 +646,7 @@ class Process(ProcessTemplate):
         :rtype: int
         :raises: ProcessError
         """
-        ecode = process_join(self._descr.p_uid, timeout=timeout)
+        return process_join(self._descr.p_uid, timeout=timeout)
 
     def terminate(self) -> None:
         """Send SIGTERM signal to the process, terminating it.
@@ -744,6 +760,7 @@ def _dragon_native_python_process_main():
 
     try:
         from dragon.globalservices.api_setup import _ARG_PAYLOAD  # import as late as possible
+
         target, args, kwargs = cloudpickle.loads(_ARG_PAYLOAD)  # unpack argdata from GS
     except Exception as e:
         LOG.error(f"Could not unpickle payload data:\n{e}")
@@ -753,10 +770,10 @@ def _dragon_native_python_process_main():
         if threading._HAVE_THREAD_NATIVE_ID:
             threading.main_thread()._set_native_id()
 
-        target(*args, **kwargs)  # run the payload
+        target(*args, **kwargs)  # call the user-provided function
         ecode = 0
-    except Exception:
-        LOG.error(f"\nDragon Python Process puid={myp.puid} threw an exception:\n{traceback.format_exc()}")
+    except Exception as ex:
+        print(f"*** Exception Occurred in User-Provided Code ***\n{traceback.format_exc()}", file=sys.stderr, flush=True)
         ecode = 1
     except SystemExit as e:  # catch sys.exit
         if e.code is None:
@@ -766,7 +783,7 @@ def _dragon_native_python_process_main():
         else:
             ecode = 1
         if ecode != 0:
-            LOG.error(f"\nDragon Python Process puid={myp.puid} exited abnormally with error {ecode}:\n{traceback.format_exc()}")
+            print(f"*** System Exit({ecode}) in User-Provided Code ***\n{traceback.format_exc()}", file=sys.stderr, flush=True)
     finally:
         threading._shutdown()
         try:
@@ -777,5 +794,5 @@ def _dragon_native_python_process_main():
             sys.stderr.flush()
         except (AttributeError, ValueError):
             pass
-    #print("Exiting process main thing")
+    # print("Exiting process main thing")
     sys.exit(ecode)

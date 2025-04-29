@@ -1,5 +1,6 @@
 import time
 
+
 def foo():
     s = input("Enter some text: ")
     print("Here is the response text.")

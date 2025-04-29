@@ -22,9 +22,7 @@ def start_backend(args):
     from dragon.dlogging.util import setup_BE_logging, LOGGING_OUTPUT_DEVICE_ACTOR_FILE
 
     # Enable debug logging in BE service
-    os.environ[
-        f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_ACTOR_FILE.upper()}"
-    ] = "DEBUG"
+    os.environ[f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_ACTOR_FILE.upper()}"] = "DEBUG"
 
     set_procname(PROCNAME_LA_BE)
 
@@ -39,9 +37,7 @@ def start_backend(args):
         be_server.run_startup(args["ip_addrs"], args["host_ids"], args["frontend_sdesc"], level, fname)
         be_server.run_msg_server()
 
-    del os.environ[
-        f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_ACTOR_FILE.upper()}"
-    ]
+    del os.environ[f"DRAGON_LOG_DEVICE_{LOGGING_OUTPUT_DEVICE_ACTOR_FILE.upper()}"]
 
 
 class BackendBringUpTeardownTest(unittest.TestCase):
@@ -55,11 +51,9 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         self.fe_host_id = "fe"
         self.be_host_id = "be"
 
-        self.be_helper = LauncherBackendHelper(self.network_config,
-                                               self.node_index,
-                                               self.ip_addrs,
-                                               self.fe_host_id,
-                                               self.be_host_id)
+        self.be_helper = LauncherBackendHelper(
+            self.network_config, self.node_index, self.ip_addrs, self.fe_host_id, self.be_host_id
+        )
 
     def tearDown(self):
 
@@ -75,9 +69,7 @@ class BackendBringUpTeardownTest(unittest.TestCase):
 
         # get startup going in another thread. Note: need to do threads
         # in order to use all our mocks
-        self.be_thread = threading.Thread(
-            name="Backend Server", target=start_backend, args=(args_map,), daemon=False
-        )
+        self.be_thread = threading.Thread(name="Backend Server", target=start_backend, args=(args_map,), daemon=False)
         self.be_thread.start()
 
     @mock_start_localservices_wrapper
@@ -110,11 +102,9 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         args_map = self.be_helper.handle_network_and_frontend_start(mock_network_config)
         self.start_backend_thread(args_map)
 
-        self.be_helper.clean_startup(log,
-                                     mock_overlay,
-                                     mock_network_config,
-                                     mock_localservices_tuple,
-                                     accelerator_present=True)
+        self.be_helper.clean_startup(
+            log, mock_overlay, mock_network_config, mock_localservices_tuple, accelerator_present=True
+        )
         self.be_helper.launch_user_process(log)
         self.be_helper.clean_shutdown(log)
         self.be_helper.cleanup()
@@ -126,13 +116,14 @@ class BackendBringUpTeardownTest(unittest.TestCase):
     @mock_start_localservices_wrapper
     @patch("dragon.launcher.backend.start_overlay_network")
     @patch("dragon.launcher.backend.NodeDescriptor.get_local_node_network_conf")
-    def test_local_services_launch_exception(self, exceptions_caught_in_threads,
-                                             mock_localservices_tuple, mock_network_config, mock_overlay):
-        '''Test unable to Popen backend launcher'''
+    def test_local_services_launch_exception(
+        self, exceptions_caught_in_threads, mock_localservices_tuple, mock_network_config, mock_overlay
+    ):
+        """Test unable to Popen backend launcher"""
 
         # Set up our breaking of local services start
         all_chars = string.ascii_letters + string.digits + string.punctuation
-        exception_text = ''.join(random.choices(all_chars, k=64))
+        exception_text = "".join(random.choices(all_chars, k=64))
         mock_start_localservices, _, _ = mock_localservices_tuple
         mock_start_localservices.side_effect = RuntimeError(exception_text)
 
@@ -150,19 +141,20 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         self.be_helper.cleanup()
 
         assert mock_start_localservices.call_count == 1
-        assert 'Backend Server' in exceptions_caught_in_threads
-        assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
-        assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == exception_text
+        assert "Backend Server" in exceptions_caught_in_threads
+        assert exceptions_caught_in_threads["Backend Server"]["exception"]["type"] == RuntimeError
+        assert str(exceptions_caught_in_threads["Backend Server"]["exception"]["value"]) == exception_text
 
     @catch_thread_exceptions
     @mock_start_localservices_wrapper
     @patch("dragon.launcher.backend.start_overlay_network")
     @patch("dragon.launcher.backend.NodeDescriptor.get_local_node_network_conf")
-    def test_garbled_lachannelsinfo(self, exceptions_caught_in_threads,
-                                    mock_localservices_tuple, mock_network_config, mock_overlay):
-        '''Test that we exit correctly if the LAChannelsInfo we receive is garbled'''
+    def test_garbled_lachannelsinfo(
+        self, exceptions_caught_in_threads, mock_localservices_tuple, mock_network_config, mock_overlay
+    ):
+        """Test that we exit correctly if the LAChannelsInfo we receive is garbled"""
 
-        log = logging.getLogger('test_garbled_shchannelsup')
+        log = logging.getLogger("test_garbled_shchannelsup")
 
         # Get our frontend crap going so we can get the overlay up
         args_map = self.be_helper.handle_network_and_frontend_start(mock_network_config)
@@ -180,19 +172,20 @@ class BackendBringUpTeardownTest(unittest.TestCase):
 
         # At this point, our LS mock should throw its side-effect:
         self.be_thread.join()
-        assert 'Backend Server' in exceptions_caught_in_threads
-        assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
-        assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == 'Abnormal exit detected'
+        assert "Backend Server" in exceptions_caught_in_threads
+        assert exceptions_caught_in_threads["Backend Server"]["exception"]["type"] == RuntimeError
+        assert str(exceptions_caught_in_threads["Backend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
     @mock_start_localservices_wrapper
     @patch("dragon.launcher.backend.start_overlay_network")
     @patch("dragon.launcher.backend.NodeDescriptor.get_local_node_network_conf")
-    def test_garbled_shchannelsup(self, exceptions_caught_in_threads,
-                                  mock_localservices_tuple, mock_network_config, mock_overlay):
-        '''Test that we exit correctly if the SHChannelsUp from LS is garbled'''
+    def test_garbled_shchannelsup(
+        self, exceptions_caught_in_threads, mock_localservices_tuple, mock_network_config, mock_overlay
+    ):
+        """Test that we exit correctly if the SHChannelsUp from LS is garbled"""
 
-        log = logging.getLogger('test_garbled_shchannelsup')
+        log = logging.getLogger("test_garbled_shchannelsup")
 
         # Get our frontend crap going so we can get the overlay up
         args_map = self.be_helper.handle_network_and_frontend_start(mock_network_config)
@@ -211,19 +204,20 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         # At this point, our LS mock should throw its side-effect:
         self.be_thread.join()
 
-        assert 'Backend Server' in exceptions_caught_in_threads
-        assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
-        assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == 'Abnormal exit detected'
+        assert "Backend Server" in exceptions_caught_in_threads
+        assert exceptions_caught_in_threads["Backend Server"]["exception"]["type"] == RuntimeError
+        assert str(exceptions_caught_in_threads["Backend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
     @mock_start_localservices_wrapper
     @patch("dragon.launcher.backend.start_overlay_network")
     @patch("dragon.launcher.backend.NodeDescriptor.get_local_node_network_conf")
-    def test_app_exec_abnormal_term_from_frontend(self, exceptions_caught_in_threads,
-                                                  mock_localservices_tuple, mock_network_config, mock_overlay):
-        '''Test that we exit if we get an AbnormalTermination from the frontend during app execution'''
+    def test_app_exec_abnormal_term_from_frontend(
+        self, exceptions_caught_in_threads, mock_localservices_tuple, mock_network_config, mock_overlay
+    ):
+        """Test that we exit if we get an AbnormalTermination from the frontend during app execution"""
 
-        log = logging.getLogger('test_app_exec_abnormal_term_from_frontend')
+        log = logging.getLogger("test_app_exec_abnormal_term_from_frontend")
 
         # Get our frontend crap going so we can get the overlay up
         args_map = self.be_helper.handle_network_and_frontend_start(mock_network_config)
@@ -243,19 +237,20 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         # Should be able to join here
         self.be_thread.join()
 
-        assert 'Backend Server' in exceptions_caught_in_threads
-        assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
-        assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == 'Abnormal exit detected'
+        assert "Backend Server" in exceptions_caught_in_threads
+        assert exceptions_caught_in_threads["Backend Server"]["exception"]["type"] == RuntimeError
+        assert str(exceptions_caught_in_threads["Backend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
     @mock_start_localservices_wrapper
     @patch("dragon.launcher.backend.start_overlay_network")
     @patch("dragon.launcher.backend.NodeDescriptor.get_local_node_network_conf")
-    def test_early_abnormal_term_from_frontend(self, exceptions_caught_in_threads,
-                                               mock_localservices_tuple, mock_network_config, mock_overlay):
-        '''Test that we exit if we get an AbnormalTermination from the frontend during app execution'''
+    def test_early_abnormal_term_from_frontend(
+        self, exceptions_caught_in_threads, mock_localservices_tuple, mock_network_config, mock_overlay
+    ):
+        """Test that we exit if we get an AbnormalTermination from the frontend during app execution"""
 
-        log = logging.getLogger('test_early_abnormal_term_from_frontend')
+        log = logging.getLogger("test_early_abnormal_term_from_frontend")
 
         # Get our frontend crap going so we can get the overlay up
         args_map = self.be_helper.handle_network_and_frontend_start(mock_network_config)
@@ -274,20 +269,21 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         # At this point, our LS mock should throw its side-effect:
         self.be_thread.join()
 
-        log.debug(f'exceptions: {exceptions_caught_in_threads}')
-        assert 'Backend Server' in exceptions_caught_in_threads
-        assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
-        assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == 'Abnormal exit detected'
+        log.debug(f"exceptions: {exceptions_caught_in_threads}")
+        assert "Backend Server" in exceptions_caught_in_threads
+        assert exceptions_caught_in_threads["Backend Server"]["exception"]["type"] == RuntimeError
+        assert str(exceptions_caught_in_threads["Backend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
     @mock_start_localservices_wrapper
     @patch("dragon.launcher.backend.start_overlay_network")
     @patch("dragon.launcher.backend.NodeDescriptor.get_local_node_network_conf")
-    def test_late_abnormal_term_from_frontend(self, exceptions_caught_in_threads,
-                                              mock_localservices_tuple, mock_network_config, mock_overlay):
-        '''Test that we exit if we get an AbnormalTermination from the frontend during app execution'''
+    def test_late_abnormal_term_from_frontend(
+        self, exceptions_caught_in_threads, mock_localservices_tuple, mock_network_config, mock_overlay
+    ):
+        """Test that we exit if we get an AbnormalTermination from the frontend during app execution"""
 
-        log = logging.getLogger('test_late_abnormal_term_from_frontend')
+        log = logging.getLogger("test_late_abnormal_term_from_frontend")
 
         # Get our frontend crap going so we can get the overlay up
         args_map = self.be_helper.handle_network_and_frontend_start(mock_network_config)
@@ -304,9 +300,9 @@ class BackendBringUpTeardownTest(unittest.TestCase):
         # Should be able to join here
         self.be_thread.join()
 
-        assert 'Backend Server' in exceptions_caught_in_threads
-        assert exceptions_caught_in_threads['Backend Server']['exception']['type'] == RuntimeError
-        assert str(exceptions_caught_in_threads['Backend Server']['exception']['value']) == 'Abnormal exit detected'
+        assert "Backend Server" in exceptions_caught_in_threads
+        assert exceptions_caught_in_threads["Backend Server"]["exception"]["type"] == RuntimeError
+        assert str(exceptions_caught_in_threads["Backend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
 
 if __name__ == "__main__":

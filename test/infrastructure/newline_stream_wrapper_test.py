@@ -11,7 +11,7 @@ class NewlineStreamWrapperTest(unittest.TestCase):
 
     def _make_pipe(self):
         r, w = os.pipe()
-        return os.fdopen(r), os.fdopen(w, 'w')
+        return os.fdopen(r), os.fdopen(w, "w")
 
     def test_auto_intents(self):
         reader, writer = map(NewlineStreamWrapper, self._make_pipe())
@@ -55,7 +55,7 @@ class NewlineStreamWrapperTest(unittest.TestCase):
             self.assertTrue(stream.write_intent)
         else:
             self.assertFalse(stream.write_intent)
-        
+
     def test_stdout(self):
         readable, writeable = _get_access_modes(sys.stdout)
         # XXX Unless redirected from a file, stdout actually has access
@@ -142,7 +142,7 @@ class NewlineStreamWrapperTest(unittest.TestCase):
             # Once all data has been read, poll() will return True and recv()
             # will return an empty string.
             self.assertTrue(reader.poll())
-            self.assertEqual(reader.recv(), '')
+            self.assertEqual(reader.recv(), "")
 
     def test_send(self):
         r, w = self._make_pipe()

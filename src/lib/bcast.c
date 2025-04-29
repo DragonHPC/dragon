@@ -81,13 +81,17 @@ _bcast_map_obj(void* obj_ptr, dragonBCastHeader_t* header)
     ptr += sizeof(dragonULInt);
     header->num_triggered = (atomic_uint *) ptr;
     ptr += sizeof(dragonULInt);
-    header->triggering = (atomic_uint *) ptr;
+    header->triggering = (uint32_t *) ptr;
     ptr += sizeof(dragonULInt);
     header->shutting_down = (atomic_uint *) ptr;
     ptr += sizeof(dragonULInt);
     header->allowable_count = (atomic_int *) ptr;
     ptr += sizeof(dragonULInt);
-    header->trigger_lock_sz = (atomic_uint *) ptr;
+    header->num_to_trigger = (atomic_int *) ptr;
+    ptr += sizeof(dragonULInt);
+    header->state = (dragonULInt *) ptr;
+    ptr += sizeof(dragonULInt);
+    header->lock_sz = (atomic_uint *) ptr;
     ptr += sizeof(dragonULInt);
     header->spin_list_sz = (atomic_uint *) ptr;
     ptr += sizeof(dragonULInt);
@@ -101,9 +105,13 @@ _bcast_map_obj(void* obj_ptr, dragonBCastHeader_t* header)
     ptr += sizeof(dragonULInt);
     header->sync_num = (atomic_uint *) ptr;
     ptr += sizeof(dragonULInt);
-    header->trigger_lock_type = (atomic_uint *) ptr;
+    header->id = (dragonUUID *) ptr;
     ptr += sizeof(dragonULInt);
-    header->trigger_lock = (atomic_uint *) ptr;
+    header->reserved = NULL;
+    ptr += sizeof(dragonULInt);
+    header->lock_type = (atomic_uint *) ptr;
+    ptr += sizeof(dragonULInt);
+    header->lock = (atomic_uint *) ptr;
 }
 
 static dragonError_t
@@ -113,18 +121,21 @@ _bcast_init_obj(void* obj_ptr, size_t alloc_sz, size_t max_payload_sz, size_t ma
 
     *(header->num_waiting) = 0UL;
     *(header->num_triggered) = 0UL;
-    *(header->triggering) = 0UL;
+    *(header->triggering) = 0;
     *(header->shutting_down) = 0UL;
     *(header->allowable_count) = 0UL;
-    *(header->trigger_lock_sz) = dragon_lock_size(attr->lock_type);
+    *(header->num_to_trigger) = 0UL;
+    *(header->state) = 0UL;
+    *(header->lock_sz) = dragon_lock_size(attr->lock_type);
     *(header->spin_list_sz) = max_spinsig_num;
     *(header->spin_list_count) = 0UL;
     *(header->payload_area_sz) = max_payload_sz;
     *(header->payload_sz) = 0UL;
     *(header->sync_type) = attr->sync_type;
     *(header->sync_num) = attr->sync_num;
-    *(header->trigger_lock_type) = attr->lock_type;
-    header->spin_list = ((void*)header->trigger_lock) + *(header->trigger_lock_sz);
+    dragon_generate_uuid(*header->id);
+    *(header->lock_type) = attr->lock_type;
+    header->spin_list = ((void*)header->lock) + *(header->lock_sz);
     for (int k=0; k<*(header->spin_list_sz); k++)
         header->spin_list[k] = 0UL;
 
@@ -144,7 +155,7 @@ static void
 _bcast_attach_obj(void* obj_ptr, dragonBCastHeader_t* header)
 {
     _bcast_map_obj(obj_ptr, header);
-    header->spin_list = ((void*)header->trigger_lock) + *(header->trigger_lock_sz);
+    header->spin_list = ((void*)header->lock) + *(header->lock_sz);
     header->payload_area = (void*)header->spin_list + (*(header->spin_list_sz)) * sizeof(dragonULInt);
 }
 
@@ -187,14 +198,14 @@ _bcast_descr_from_id(const dragonULInt id, dragonBCastDescr_t * bd)
 static dragonError_t
 _bcast_wait_on_triggering(dragonBCast_t * handle, timespec_t * end_time)
 {
-    volatile atomic_uint * triggering_ptr = handle->header.triggering;
+    uint32_t * triggering_ptr = handle->header.triggering;
     timespec_t now_time = {0,0};
 
     /* check_timeout_when_0 is used below when there is a timeout and we spin wait. No need to check it
        on every loop */
     size_t check_timeout_when_0 = 1;
 
-    while (*triggering_ptr != 0UL) {
+    while (atomic_load(triggering_ptr) != 0) {
         PAUSE();
         if (end_time != NULL) {
             if (check_timeout_when_0 == 0) {
@@ -208,6 +219,26 @@ _bcast_wait_on_triggering(dragonBCast_t * handle, timespec_t * end_time)
     }
 
     no_err_return(DRAGON_SUCCESS);
+}
+
+static void
+_trigger_completion(dragonBCast_t * handle)
+{
+    /* This is called by either the triggerer or, in the case of a zero-byte payload,
+       it is called by the last waiter to wakeup. This is part of an optimization that
+       allows the triggerer to trigger and leave immediately when there is no payload
+       to transfer to waiters. */
+
+    /* setting triggering to 0 means we are no longer in the process of triggering so
+       waiters will wait that were paused while triggering. Using atomic store for the
+       final store will insure all earlier ones are flushed too. */
+    *handle->header.allowable_count = 0;
+    *handle->header.num_to_trigger = 0;
+    *handle->header.state = 0;
+    atomic_store(handle->header.triggering, 0);
+
+    if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
+        dragon_unlock(&handle->lock);
 }
 
 static dragonError_t
@@ -224,8 +255,16 @@ _idle_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
            function when adaptive wait is chosen. If adaptive waiting, then the process is
            already a waiter and should not execute this code (again). */
 
-        /* increment the num_waiting atomically, but also get the new value for num_waiting */
+        /* increment the num_waiting atomically and get our value. We lock here if it is not a
+           synchronized bcast because we want to make sure the triggerer does not get part way
+           through triggering while we are incrementing the num_waiting. */
+        if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
+            dragon_lock(&handle->lock);
+
         my_num_waiting = atomic_fetch_add(handle->header.num_waiting, 1L) + 1;
+
+        if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
+            dragon_unlock(&handle->lock);
 
         if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting > *(handle->header.sync_num)) {
             atomic_fetch_add(handle->header.num_waiting, -1L);
@@ -238,42 +277,41 @@ _idle_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
             (release_fun)(release_arg);
 
         /* When sync between trigger and wait is requested, releasing
-        the trigger lock here is necessary to unblock any triggerer
+        the lock here is necessary to unblock any triggerer
         that is waiting on the specified number of waiters before
         triggering can proceeed.
         */
         if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting == *(handle->header.sync_num))
-            dragon_unlock(&handle->trigger_lock);
+            dragon_unlock(&handle->lock);
     } else
         my_num_waiting = *already_waiter;
 
     /* futex wait for triggering to become 1 */
-    volatile atomic_uint * triggering_ptr = handle->header.triggering;
+    uint32_t * triggering_ptr = handle->header.triggering;
 
-    long frc;
+    long frc = 0;
+    dragonUUID local_uuid;
+    dragon_copy_uuid(local_uuid, *handle->header.id);
 
-    bool waiting_for_trigger = true;
+    bool waiting = true;
 
     /* the while loop below is needed to handle the spurious wakeup from the futex wait. */
-    while (waiting_for_trigger == true) {
+    while (waiting) {
 
-        if (atomic_load(triggering_ptr) == 1UL) {
-            /* The allowable_count is needed because when triggering there
-            is a possiblity that this process and another may both get triggered since
-            one might get here while another is waiting on the futex and the futex waiter
-            wakes up and this one never waits on the futex. In this way we may have more
-            idle waiters than what were woken up proceed through this _idle_wait code. However
-            if more than allowable_count make it through this code in this loop, the extra
-            processes will see that allowable count is not > 0 (before decrementing) and
-            they will continue to wait on here for the next triggering. */
+        /* The allowable_count is needed because when triggering there
+        is a possiblity that this process and another may both get triggered since
+        one might get here while another is waiting on the futex and the futex waiter
+        wakes up and this one never waits on the futex. In this way we may have more
+        idle waiters than what were woken up proceed through this _idle_wait code. However
+        if more than allowable_count make it through this code in this loop, the extra
+        processes will see that allowable count is not > 0 (before decrementing) and
+        they will continue to wait on here for the next triggering. */
 
-            int ticket = atomic_fetch_add(handle->header.allowable_count, -1);
-            if (ticket > 0)
-                waiting_for_trigger = false;
-            else
-                PAUSE();
-        }
-        if (waiting_for_trigger == true) {
+        int ticket = atomic_fetch_add(handle->header.allowable_count, -1);
+        if (ticket > 0)
+            waiting = false;
+
+        if (waiting) {
             if (end_time != NULL) {
                 remaining_timeout = &remaining_time;
                 clock_gettime(CLOCK_MONOTONIC, &now_time);
@@ -284,13 +322,30 @@ _idle_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
                        have allowed a trigger to proceed at same time as timing out. If so, they get what
                        they asked for when using a synchronized bcast and using a timeout. */
                     if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting == *(handle->header.sync_num))
-                        dragon_lock(&handle->trigger_lock);
+                        dragon_lock(&handle->lock);
                     err_return(DRAGON_TIMEOUT, "Timeout while idle waiting on BCast");
                 }
                 dragon_timespec_diff(remaining_timeout, end_time, &now_time);
             }
 
+            *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_3;
+
+            if (*triggering_ptr == 1)
+                *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_6;
+
+            if (*triggering_ptr == 0)
+                *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_7;
+
             frc = syscall(SYS_futex, triggering_ptr, FUTEX_WAIT, 0, remaining_timeout, NULL, 0);
+
+            if (dragon_compare_uuid(local_uuid, *handle->header.id)) {
+                // not the same uuid. That means this process woke up from another
+                // process' bcast. This is a possibility, but would be a HUGE
+                // coincidence. In this case we do not do anything more and we leave.
+                err_return(DRAGON_INVALID_OPERATION, "This process woke up from a bcast and found itself inside another bcast.");
+            }
+
+            *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_8;
 
 #ifdef CHECK_POINTER
             if (!is_pointer_valid(handle->header.shutting_down))
@@ -324,7 +379,7 @@ _idle_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
                        have allowed a trigger to proceed at same time as timing out. If so, they get what
                        they asked for when using a synchronized bcast and using a timeout. */
                     if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting == *(handle->header.sync_num))
-                        dragon_lock(&handle->trigger_lock);
+                        dragon_lock(&handle->lock);
                     err_return(DRAGON_TIMEOUT, "Timeout while idle waiting on BCast");
                 } else {
                     err_return(DRAGON_BCAST_HANDLE_ERROR, "The BCast handle was corrupted.");
@@ -357,6 +412,12 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
     atomic_uint expected = 0UL;
     timespec_t now_time;
 
+    /* increment the num_waiting atomically and get our value. We lock here if it is not a
+        synchronized bcast because we want to make sure the triggerer does not get part way
+        through triggering while we are incrementing the num_waiting. */
+    if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
+        dragon_lock(&handle->lock);
+
     /* Assume we will find a spot. This makes sure we don't miss a spinner later. */
     atomic_fetch_add(handle->header.spin_list_count, 1L);
 
@@ -377,11 +438,16 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
            lead to the process waiting until all other spin waiters are done, but there is no
            guaranteed ordering among spin waiters either. */
         atomic_fetch_add(handle->header.spin_list_count, -1L);
+        if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
+            dragon_unlock(&handle->lock);
         return _idle_wait(handle, num_waiting_ptr, end_time, release_fun, release_arg, NULL);
     }
 
     /* increment the num_waiting atomically, but also get the new value for num_waiting */
     dragonULInt my_num_waiting = atomic_fetch_add(handle->header.num_waiting, 1UL) + 1;
+
+    if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
+        dragon_unlock(&handle->lock);
 
     if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting > *(handle->header.sync_num)) {
         atomic_fetch_add(handle->header.num_waiting, -1L);
@@ -396,19 +462,19 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
         (release_fun)(release_arg);
 
     /* When sync between trigger and wait is requested, releasing
-       the trigger lock here is necessary to unblock any triggerer
+       the lock here is necessary to unblock any triggerer
        that is waiting on the specified number of waiters before
        triggering can proceeed.
     */
     if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting == *(handle->header.sync_num))
-        dragon_unlock(&handle->trigger_lock);
+        dragon_unlock(&handle->lock);
 
     /* do_when is used below when there is a timeout and when we spin wait. No need to do it
        on every iteration */
     size_t do_when = 0;
     size_t number_of_yields = 0;
 
-    while ((handle->header.spin_list[idx] == 1UL) && *handle->header.shutting_down == 0UL) {
+    while ((*handle->header.shutting_down == 0UL) && (handle->header.spin_list[idx] == 1UL)) {
         if (do_when == DRAGON_BCAST_SPIN_CHECK_TIMEOUT_ITERS) {
             if (end_time != NULL) {
                 clock_gettime(CLOCK_MONOTONIC, &now_time);
@@ -434,12 +500,12 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
                        have allowed a trigger to proceed at same time as timing out. If so, they get what
                        they asked for when using a synchronized bcast and using a timeout. */
                     if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting == *(handle->header.sync_num))
-                        dragon_lock(&handle->trigger_lock);
+                        dragon_lock(&handle->lock);
                     err_return(DRAGON_TIMEOUT, "Timeout while spin waiting on BCast.");
                 }
             }
 
-            if (wait_mode != NULL && *wait_mode == DRAGON_ADAPTIVE_WAIT && number_of_yields == DRAGON_BCAST_ADAPTIVE_WAIT_TO_IDLE) {
+            if ((wait_mode != NULL) && (*wait_mode == DRAGON_ADAPTIVE_WAIT) && (number_of_yields == DRAGON_BCAST_ADAPTIVE_WAIT_TO_IDLE)) {
                 /* We did a spin wait for a bit, now it's time for idle wait. */
                 expected = 1UL;
                 if (atomic_compare_exchange_strong(&(handle->header.spin_list[idx]), &expected, 0UL)) {
@@ -602,7 +668,7 @@ dragon_bcast_size(size_t max_payload_sz, size_t max_spinsig_num, dragonBCastAttr
     required_size += sizeof(dragonULInt) * DRAGON_BCAST_NULINTS;
         /* This is the calculated size of all integer fields within the object */
 
-    required_size += dragon_lock_size(attr->lock_type); /* trigger_lock */
+    required_size += dragon_lock_size(attr->lock_type); /* lock */
 
     required_size += sizeof(dragonULInt) * max_spinsig_num;
 
@@ -708,8 +774,8 @@ dragon_bcast_create_at(void* loc, size_t alloc_sz, size_t max_payload_sz, size_t
         append_err_return(err, "The allocated size is too small.");
         goto _bcast_create_at_rollback_chkpnt;
     }
-    /* instantiate the dragon locks */
-    err = dragon_lock_init(&handle->trigger_lock, handle->header.trigger_lock, attr->lock_type);
+    /* instantiate the dragon lock */
+    err = dragon_lock_init(&handle->lock, handle->header.lock, attr->lock_type);
 
     if (err != DRAGON_SUCCESS) {
         append_err_return(err, "Could not init Dragon Lock in BCast object");
@@ -729,7 +795,7 @@ dragon_bcast_create_at(void* loc, size_t alloc_sz, size_t max_payload_sz, size_t
 
     /* When used in synchronizing mode, the object starts out locked for triggerers */
     if (*(handle->header.sync_type) == DRAGON_SYNC)
-        dragon_lock(&handle->trigger_lock);
+        dragon_lock(&handle->lock);
 
     no_err_return(DRAGON_SUCCESS);
 
@@ -838,8 +904,8 @@ dragon_bcast_create(dragonMemoryPoolDescr_t* pd, size_t max_payload_sz, size_t m
         goto _bcast_create_rollback_chkpnt2;
     }
 
-    /* instantiate the dragon locks */
-    err = dragon_lock_init(&handle->trigger_lock, handle->header.trigger_lock, attr->lock_type);
+    /* instantiate the dragon lock */
+    err = dragon_lock_init(&handle->lock, handle->header.lock, attr->lock_type);
 
     if (err != DRAGON_SUCCESS) {
         append_err_return(err, "Could not init Dragon Lock in BCast object");
@@ -859,7 +925,7 @@ dragon_bcast_create(dragonMemoryPoolDescr_t* pd, size_t max_payload_sz, size_t m
 
     /* When used in synchronizing mode, the object starts out locked for triggerers */
     if (*(handle->header.sync_type) == DRAGON_SYNC)
-        dragon_lock(&handle->trigger_lock);
+        dragon_lock(&handle->lock);
 
     no_err_return(DRAGON_SUCCESS);
 
@@ -911,7 +977,7 @@ dragon_bcast_attach_at(void* loc, dragonBCastDescr_t* bd)
     _bcast_attach_obj(handle->obj_ptr, &handle->header);
 
     /* attach the dragon lock */
-    err = dragon_lock_attach(&handle->trigger_lock, handle->header.trigger_lock);
+    err = dragon_lock_attach(&handle->lock, handle->header.lock);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not create BCast object. Lock initialization failed.");
         goto _bcast_attach_at_rollback_chkpnt;
@@ -1018,7 +1084,7 @@ dragon_bcast_attach(dragonBCastSerial_t* bd_ser, dragonBCastDescr_t* bd)
     _bcast_attach_obj(handle->obj_ptr, &handle->header);
 
     /* attach the dragon lock */
-    err = dragon_lock_attach(&handle->trigger_lock, handle->header.trigger_lock);
+    err = dragon_lock_attach(&handle->lock, handle->header.lock);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not create BCast object. Lock initialization failed.");
         goto _bcast_attach_rollback_chkpnt2;
@@ -1037,7 +1103,7 @@ dragon_bcast_attach(dragonBCastSerial_t* bd_ser, dragonBCastDescr_t* bd)
     no_err_return(DRAGON_SUCCESS);
 
     _bcast_attach_rollback_chkpnt3:
-        dragon_lock_detach(&handle->trigger_lock);
+        dragon_lock_detach(&handle->lock);
 
     _bcast_attach_rollback_chkpnt2:
         dragon_memory_detach(&handle->obj_mem);
@@ -1074,7 +1140,7 @@ dragon_bcast_destroy(dragonBCastDescr_t* bd)
 
 
     timespec_t timeout;
-    volatile atomic_uint * triggering_ptr = handle->header.triggering;
+    uint32_t * triggering_ptr = handle->header.triggering;
     timeout.tv_nsec = 0;
     timeout.tv_sec = DRAGON_BCAST_DESTROY_TIMEOUT_SEC;
     timespec_t end_time;
@@ -1091,8 +1157,8 @@ dragon_bcast_destroy(dragonBCastDescr_t* bd)
         clock_gettime(CLOCK_MONOTONIC, &now_time);
     }
 
-    /* tear down the locks */
-    err = dragon_lock_destroy(&handle->trigger_lock);
+    /* tear down the lock */
+    err = dragon_lock_destroy(&handle->lock);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to destroy Dragon lock in BCast object destroy.");
 
@@ -1150,8 +1216,8 @@ dragon_bcast_detach(dragonBCastDescr_t* bd)
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not obtain handle from BCast descriptor.");
 
-    /* tear down the locks */
-    err = dragon_lock_detach(&handle->trigger_lock);
+    /* tear down the lock */
+    err = dragon_lock_detach(&handle->lock);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to detach Dragon lock in BCast object detach.");
 
@@ -1388,28 +1454,32 @@ dragon_bcast_wait(dragonBCastDescr_t* bd, dragonWaitMode_t wait_mode, const time
                 (release_fun)(release_arg);
             append_err_return(err, "Could not compute deadline.");
         }
+    }
 
-        err = _bcast_wait_on_triggering(handle, end_time_ptr);
-    } else
-        err = _bcast_wait_on_triggering(handle, NULL);
-
+    err = _bcast_wait_on_triggering(handle, end_time_ptr);
     if (err != DRAGON_SUCCESS) {
         if (release_fun != NULL)
             (release_fun)(release_arg);
         append_err_return(err, "Timeout or unexpected error while waiting for triggering to complete.");
     }
 
-    if (wait_mode == DRAGON_SPIN_WAIT || wait_mode == DRAGON_ADAPTIVE_WAIT) {
+    //This is a temporary work-around.
+    //if (wait_mode == DRAGON_SPIN_WAIT || wait_mode == DRAGON_ADAPTIVE_WAIT) {
+    if (wait_mode == DRAGON_SPIN_WAIT) {
         err = _spin_wait(handle, num_waiting_ptr, end_time_ptr, release_fun, release_arg, &wait_mode);
-        if (err != DRAGON_SUCCESS) {
+        if (err == DRAGON_TIMEOUT)
+            append_err_return(err, "Timed out while waiting on bcast.");
+
+        if (err != DRAGON_SUCCESS)
             append_err_return(err, "Unable to spin wait on bcast object");
-        }
 
     } else /* idle wait was selected */ {
         err = _idle_wait(handle, num_waiting_ptr, end_time_ptr, release_fun, release_arg, NULL);
-        if (err != DRAGON_SUCCESS) {
+        if (err == DRAGON_TIMEOUT)
+            append_err_return(err, "Timed out while waiting on bcast.");
+
+        if (err != DRAGON_SUCCESS)
             append_err_return(err, "Unable to idle wait on bcast object");
-        }
     }
 
 #ifdef CHECK_POINTER
@@ -1424,7 +1494,7 @@ dragon_bcast_wait(dragonBCastDescr_t* bd, dragonWaitMode_t wait_mode, const time
            this bcast being destroyed so we want all threads/processes waiting
            on it to exit gracefully from the bcast code. */
         atomic_fetch_add(handle->header.num_waiting, -1L);
-        no_err_return(DRAGON_BCAST_DESTROYED);
+        no_err_return(DRAGON_OBJECT_DESTROYED);
     }
 
     local_payload_sz = *(handle->header.payload_sz);
@@ -1725,50 +1795,75 @@ dragon_bcast_trigger_one(dragonBCastDescr_t* bd, const timespec_t* timer, const 
 dragonError_t
 dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const timespec_t* timer, const void* payload, const size_t payload_sz)
 {
+    dragonError_t err;
+
     if (bd == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The BCast descriptor cannot be NULL.");
 
     if (payload_sz > 0 && payload == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The BCast payload cannot be NULL when payload_sz is greater than 0.");
 
-    dragonBCast_t * handle;
-    dragonError_t err = _bcast_handle_from_descr(bd, &handle);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Invalid BCast descriptor.");
-
-    /* This first check is so we return quickly if there are no waiters. A second check, under the trigger lock
-       is the official check below */
-    if (*(handle->header.sync_type) == DRAGON_NO_SYNC && atomic_load(handle->header.num_waiting) == 0)
-        no_err_return(DRAGON_BCAST_NO_WAITERS);
-
-    if (payload_sz > *handle->header.payload_area_sz)
-        err_return(DRAGON_INVALID_ARGUMENT, "The payload_sz is bigger than the maximum allowable payload size configured for this bcast object.");
-
     //setup the timeout for the trigger
     timespec_t end_time = {0,0};
     timespec_t now_time = {0,0};
+    timespec_t* end_time_ptr = NULL;
+
+    // Compute the timespec timeout from the timespec_t timeout.
+    if (timer != NULL) {
+        end_time_ptr = &end_time;
+        err = dragon_timespec_deadline(timer, end_time_ptr);
+        if (err != DRAGON_SUCCESS) {
+            append_err_return(err, "Could not compute deadline.");
+        }
+    }
+
+    dragonBCast_t * handle;
+    err = _bcast_handle_from_descr(bd, &handle);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Invalid BCast descriptor.");
+
+    err = dragon_lock(&handle->lock);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "unable to acquire the BCast lock.");
+
+    /* This first check is so we return quickly if there are no waiters. A second check, under the lock
+       is the official check below */
+    if (*(handle->header.sync_type) == DRAGON_NO_SYNC && atomic_load(handle->header.num_waiting) == 0) {
+        dragon_unlock(&handle->lock);
+        no_err_return(DRAGON_BCAST_NO_WAITERS);
+    }
+
+    if (payload_sz > *handle->header.payload_area_sz) {
+        dragon_unlock(&handle->lock);
+        err_return(DRAGON_INVALID_ARGUMENT, "The payload_sz is bigger than the maximum allowable payload size configured for this bcast object.");
+    }
 
     // Compute the timespec timeout from the timespec_t timeout.
     if (timer != NULL) {
         err = dragon_timespec_deadline(timer, &end_time);
-        if (err != DRAGON_SUCCESS)
+        if (err != DRAGON_SUCCESS) {
+            dragon_unlock(&handle->lock);
             append_err_return(err, "Could not compute deadline.");
+        }
     }
 
-    volatile atomic_uint * triggering_ptr = handle->header.triggering;
+    uint32_t * triggering_ptr = handle->header.triggering;
     volatile atomic_uint * num_triggered_ptr = handle->header.num_triggered;
-
-    err = dragon_lock(&handle->trigger_lock);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "unable to acquire the BCast trigger lock.");
 
     size_t num_waiting = atomic_load(handle->header.num_waiting);
 
-    if (num_waiting == 0) {
-        if (*(handle->header.sync_type) == DRAGON_SYNC)
-            err_return(DRAGON_FAILURE, "There were no waiters on a DRAGON_SYNC BCast. This should never happen.");
+    if (num_waiting == 1)
+        *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_1;
 
-        dragon_unlock(&handle->trigger_lock);
+    if (num_waiting == 0) {
+        *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_2;
+
+        if (*(handle->header.sync_type) == DRAGON_SYNC) {
+            dragon_unlock(&handle->lock);
+            err_return(DRAGON_FAILURE, "There were no waiters on a DRAGON_SYNC BCast. This should never happen.");
+        }
+
+        dragon_unlock(&handle->lock);
         no_err_return(DRAGON_BCAST_NO_WAITERS);
     }
 
@@ -1779,9 +1874,19 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
         memcpy(handle->header.payload_area, payload, payload_sz);
 
     /* Indicate the BCast object is in the process of triggering with */
-    /* payload available */
-    *triggering_ptr = 1UL;
+    /* possible payload available */
     atomic_store(num_triggered_ptr, 0UL);
+
+    /* If more waiters arrive after this, the allowable_count below will
+       only allow this many (i.e. num_waiting) to wake up. */
+    if (num_to_trigger == INT_MAX && num_waiting < num_to_trigger)
+        num_to_trigger = num_waiting;
+
+    if (num_waiting < num_to_trigger)
+        no_err_return(DRAGON_BCAST_INSUFFICIENT_WAITERS);
+
+    atomic_store(handle->header.num_to_trigger, num_to_trigger);
+    atomic_store(triggering_ptr, 1);
 
     size_t num_spinners = 0;
     /* We make a local copy of current_spinner_count because the spin_list_count
@@ -1802,22 +1907,37 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
     uint32_t num_to_wake = num_to_trigger - num_spinners;
 
     /* As each process wakes up it will decrement allowable count. */
-    *handle->header.allowable_count = num_to_wake;
+    atomic_store(handle->header.allowable_count, num_to_wake);
 
     while ((atomic_load(num_triggered_ptr) < num_to_trigger) && (atomic_load(handle->header.num_waiting) > 0UL)) {
 
+        if (*handle->header.shutting_down != 0UL)
+            // Get out, now!
+            err_return(DRAGON_OBJECT_DESTROYED, "The object was destroyed");
+
         if (num_to_wake > 0) {
-            long num_woke = syscall(SYS_futex, triggering_ptr, FUTEX_WAKE, num_to_wake, NULL, NULL, 0);
-            num_to_wake = num_to_wake - num_woke;
+            long num_woke = 0;
+            if (num_to_wake == 1)
+                *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_4;
+
+            /* While the name of the variable is num_woke, extensive testing has shown that
+               occasionally (less than 0.1% of the time) the value is not correct and so is
+               ignored in this code. It can be examined as a return code if the value is -1
+               but is not needed here. */
+            num_woke = syscall(SYS_futex, triggering_ptr, FUTEX_WAKE, num_to_wake, NULL, NULL, 0);
+
+            if (num_woke == 1)
+                *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_5;
+
         }
 
         if (timer != NULL) {
             if (check_timeout_when_0 == 0) {
                 clock_gettime(CLOCK_MONOTONIC, &now_time);
                 if (dragon_timespec_le(&end_time, &now_time)) {
-                    *triggering_ptr = 0UL;
+                    atomic_store(triggering_ptr, 0);
                     if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
-                        dragon_unlock(&handle->trigger_lock);
+                        dragon_unlock(&handle->lock);
                     err_return(DRAGON_TIMEOUT, "BCast trigger_all timed out while waiting for triggered processes to complete payload pickup.");
                 }
             }
@@ -1827,13 +1947,7 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
         PAUSE();
     }
 
-    /* setting triggering to 0 means we are no longer in the process of triggering so
-       waiters will wait that were paused while triggering */
-    *handle->header.allowable_count = 0;
-    *triggering_ptr = 0UL;
-
-    if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
-        dragon_unlock(&handle->trigger_lock);
+    _trigger_completion(handle);
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -1885,7 +1999,7 @@ dragon_bcast_trigger_all(dragonBCastDescr_t* bd, const timespec_t* timer, const 
     if (err != DRAGON_SUCCESS) {
         char err_str[200];
         snprintf(err_str, 199, "Call to trigger some with INT_MAX failed with %s.", dragon_get_rc_string(err));
-        err_return(err, err_str);
+        append_err_return(err, err_str);
     }
 
     no_err_return(DRAGON_SUCCESS);
@@ -1911,10 +2025,19 @@ dragon_bcast_num_waiting(dragonBCastDescr_t* bd, int* num_waiters)
     if (bd == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The BCast descriptor cannot be NULL.");
 
+    if (num_waiters == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The num_waiters argument cannot be NULL.");
+
+    *num_waiters = 0;
+
     dragonBCast_t * handle;
     dragonError_t err = _bcast_handle_from_descr(bd, &handle);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Invalid BCast descriptor.");
+
+    err = _bcast_wait_on_triggering(handle, NULL);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Unable to wait on triggering while querying num_waiting in bcast.");
 
     *num_waiters = atomic_load(handle->header.num_waiting);
 
@@ -1949,14 +2072,55 @@ dragon_bcast_reset(dragonBCastDescr_t* bd) {
 
     dragonLockState_t state;
 
-    err = dragon_lock_state(&handle->trigger_lock, &state);
+    err = dragon_lock_state(&handle->lock, &state);
 
     /* DRAGON_NO_SYNC and DRAGON_SYNC are mutually exclusive */
     if (*(handle->header.sync_type) == DRAGON_NO_SYNC && state == DRAGON_LOCK_STATE_LOCKED)
-        dragon_unlock(&handle->trigger_lock);
+        dragon_unlock(&handle->lock);
 
     if (*(handle->header.sync_type) == DRAGON_SYNC && state == DRAGON_LOCK_STATE_UNLOCKED)
-        dragon_lock(&handle->trigger_lock);
+        dragon_lock(&handle->lock);
 
     no_err_return(DRAGON_SUCCESS);
+}
+
+/** @brief Return the state of the BCast object as a string.
+ *
+ *  Returns the BCast object's state as a string for debug purposes.
+ *
+ *  @param bd The BCast's descriptor handle.
+ *
+ *  @return The bcast state as a string. The string must be freed
+ *  by the caller.
+ */
+char*
+dragon_bcast_state(dragonBCastDescr_t* bd) {
+    char state_str[1000];
+    char* ret_str;
+
+    if (bd == NULL)
+        return NULL;
+
+    dragonBCast_t * handle;
+    dragonError_t err = _bcast_handle_from_descr(bd, &handle);
+    if (err != DRAGON_SUCCESS)
+        return NULL;
+
+    snprintf(state_str, 999, "BCast State:\n   num_waiting %d\n   num_triggered %d\n   triggering %d\n   state %lx\n   shutting_down %d\n   allowable_count %d\n   num_to_trigger %d\n   payload_sz %d\n   sync_type %d\n   sync_num %d\n",
+                            *handle->header.num_waiting,
+                            *handle->header.num_triggered,
+                            *handle->header.triggering,
+                            *handle->header.state,
+                            *handle->header.shutting_down,
+                            *handle->header.allowable_count,
+                            *handle->header.num_to_trigger,
+                            *handle->header.payload_sz,
+                            *handle->header.sync_type,
+                            *handle->header.sync_num);
+
+    ret_str = malloc(strlen(state_str)+1);
+
+    strcpy(ret_str, state_str);
+
+    return ret_str;
 }

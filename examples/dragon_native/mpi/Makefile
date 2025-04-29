@@ -8,7 +8,15 @@ MPI_EXE=mpi_hello
 MPI_SRC=mpi_hello.c
 MPI_OBJECT = $(MPI_SRC:.c=.c.o)
 
-default: $(MPI_EXE)
+OSU_ALLTOALL_EXE=osu_alltoall
+
+.PHONY: all
+
+all: $(MPI_EXE) $(OSU_ALLTOALL_EXE)
+default: all
+
+$(OSU_ALLTOALL_EXE):
+	$(MAKE) -C alltoall
 
 %.c.o: %.c $(H_SOURCES)
 	$(CC) $(CFLAGS)  -c $< -o $@
@@ -18,3 +26,4 @@ $(MPI_EXE): $(MPI_OBJECT)
 
 clean:
 	$(RM) $(MPI_EXE) $(MPI_OBJECT)
+	$(MAKE) -C alltoall clean

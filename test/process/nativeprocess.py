@@ -2,10 +2,11 @@ import dragon
 import dragon.native.process as nativeproc
 import logging
 
-LOG = logging.getLogger('NativeProcTest :')
+LOG = logging.getLogger("NativeProcTest :")
+
 
 def main():
-    proc = nativeproc.Popen([],"hello.py",stdout=nativeproc.PIPE)
+    proc = nativeproc.Popen([], "hello.py", stdout=nativeproc.PIPE)
 
     try:
         while True:
@@ -14,9 +15,10 @@ def main():
     except EOFError:
         pass
     except Exception as ex:
-        print(f'Unexpected error: {repr(ex)}')
+        print(f"Unexpected error: {repr(ex)}")
 
     del proc
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     main()

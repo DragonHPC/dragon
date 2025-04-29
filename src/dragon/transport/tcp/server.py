@@ -6,17 +6,23 @@ import sys
 import traceback
 
 from .errno import get_errno, DRAGON_TIMEOUT
-from .messages import ErrorResponse, \
-                      EventRequest, EventResponse, \
-                      RecvRequest, RecvResponse, \
-                      SendRequest, SendResponse, SendReturnMode
+from .messages import (
+    ErrorResponse,
+    EventRequest,
+    EventResponse,
+    RecvRequest,
+    RecvResponse,
+    SendRequest,
+    SendResponse,
+    SendReturnMode,
+)
 from .task import TaskMixin, run_forever
 from .transport import Address, Transport
 from .util import poll_channel, recv_msg, send_msg
 
 from ...dtypes import DEFAULT_WAIT_MODE, WaitMode
 
-LOGGER = logging.getLogger('dragon.transport.tcp.server')
+LOGGER = logging.getLogger("dragon.transport.tcp.server")
 
 
 class Server(TaskMixin):
@@ -26,9 +32,7 @@ class Server(TaskMixin):
 
     IDLE_PROCESS_TIMEOUT = 60.0
 
-    def __init__(self,
-                 transport: Transport,
-                 wait_mode: WaitMode = DEFAULT_WAIT_MODE):
+    def __init__(self, transport: Transport, wait_mode: WaitMode = DEFAULT_WAIT_MODE):
         self.transport = transport
         self._process_tasks = {}
         self._requests = defaultdict(asyncio.Queue)
@@ -91,7 +95,7 @@ class Server(TaskMixin):
                 # Send ErrorResponse
                 ex_type, ex_value, ex_tb = sys.exc_info()
                 tb_str = "".join(traceback.format_exception(ex_type, ex_value, ex_tb))
-                resp = ErrorResponse(req.seqno, get_errno(e), f'Error while handling request: {tb_str}')
+                resp = ErrorResponse(req.seqno, get_errno(e), f"Error while handling request: {tb_str}")
                 self.transport.write_response(resp, addr)
 
                 # Ignore Exceptions but not BaseExceptions
@@ -108,7 +112,7 @@ class Server(TaskMixin):
 
     @singledispatchmethod
     async def handle_request(self, req, addr: Address) -> None:
-        raise NotImplementedError(f'Unsupported message type: {type(req)}')
+        raise NotImplementedError(f"Unsupported message type: {type(req)}")
 
     @handle_request.register
     async def _(self, req: SendRequest, addr: Address) -> None:
@@ -119,9 +123,9 @@ class Server(TaskMixin):
             req.hints,
             req.payload,
             req.deadline,
-            getattr(req, 'mem_sd', None),
+            getattr(req, "mem_sd", None),
             copy_on_send=not req._io_event.is_set(),
-            wait_mode=self._wait_mode
+            wait_mode=self._wait_mode,
         )
         if req.return_mode in (SendReturnMode.WHEN_DEPOSITED, SendReturnMode.WHEN_RECEIVED):
             resp = SendResponse(req.seqno)
@@ -129,7 +133,9 @@ class Server(TaskMixin):
 
     @handle_request.register
     async def _(self, req: RecvRequest, addr: Address) -> None:
-        clientid, hints, msg_bytes = await asyncio.to_thread(recv_msg, req.channel_sd, req.deadline, wait_mode=self._wait_mode)
+        clientid, hints, msg_bytes = await asyncio.to_thread(
+            recv_msg, req.channel_sd, req.deadline, wait_mode=self._wait_mode
+        )
         task = None  # Ensure task is defined for use in exception handler
         try:
             # Create the response. Note the use of a bytearray for the
@@ -148,5 +154,5 @@ class Server(TaskMixin):
             # explicitly return 0 when result is None just to be safe.
             resp = EventResponse(req.seqno, result.rc, result.value)
         else:
-            resp = ErrorResponse(req.seqno, DRAGON_TIMEOUT, 'Poll timed out')
+            resp = ErrorResponse(req.seqno, DRAGON_TIMEOUT, "Poll timed out")
         self.transport.write_response(resp, addr)

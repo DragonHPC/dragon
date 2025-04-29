@@ -7,18 +7,17 @@ import dragon.managed_memory as dmm
 class MinConnection:
     """Minimal one way Connection style class based on channels
 
-        DEPRECATED
+    DEPRECATED
 
-        Only trying to get this to work for local channels now.
+    Only trying to get this to work for local channels now.
 
-        Also, this only works for sending newline-free strings around, intended
-        to be handled as infrastructure
-        messages, and there is no attempt to avoid copying the data
-        multiple times.
+    Also, this only works for sending newline-free strings around, intended
+    to be handled as infrastructure
+    messages, and there is no attempt to avoid copying the data
+    multiple times.
     """
 
-    def __init__(self, the_pool, the_channel, reading: bool = False,
-                 sleepy_poll_interval_sec=0.001):
+    def __init__(self, the_pool, the_channel, reading: bool = False, sleepy_poll_interval_sec=0.001):
         """Construct from a channel descriptor
 
         :param reading: is this a read-side connection
@@ -59,9 +58,9 @@ class MinConnection:
             pass  # No penalty for attempting to close if already closed.
 
     def send(self, data):
-        assert (not self._is_read_direction)
+        assert not self._is_read_direction
         assert isinstance(data, str)
-        msg_bytes = data.encode().strip().replace(b'\n', b' ') + b'\n'
+        msg_bytes = data.encode().strip().replace(b"\n", b" ") + b"\n"
         the_msg = dch.Message.create_alloc(self.the_pool, len(msg_bytes))
         mmv = the_msg.bytes_memview()
         mmv[:] = msg_bytes
@@ -182,11 +181,11 @@ class MinConnection:
 
 class MinBConnection(MinConnection):
     def send(self, data):
-        assert (not self._is_read_direction)
+        assert not self._is_read_direction
         if not isinstance(data, bytes):
             # Forcibly convert or die; helpful when handed a memoryview as data.
             data = bytes(data)
-        msg_bytes = data # .strip().replace(b'\n', b' ') + b'\n'
+        msg_bytes = data  # .strip().replace(b'\n', b' ') + b'\n'
         the_msg = dch.Message.create_alloc(self.the_pool, len(msg_bytes))
         mmv = the_msg.bytes_memview()
         mmv[:] = msg_bytes

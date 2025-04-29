@@ -25,11 +25,11 @@ def handle_breakpoint(msg):
     # print some stuff out and update the breakpoint file
     global _BREAKPOINT_FH
     if _BREAKPOINT_FH is None:
-        _BREAKPOINT_FH = open(dfacts.BREAKPOINT_FILENAME, 'w')
+        _BREAKPOINT_FH = open(dfacts.BREAKPOINT_FILENAME, "w")
 
-    _BREAKPOINT_FH.write(msg.serialize() + '\n')
+    _BREAKPOINT_FH.write(msg.serialize() + "\n")
     _BREAKPOINT_FH.flush()
-    sys.stdout.write(f'### breakpoint:  p_uid {msg.p_uid} on node {msg.index}\n')
+    sys.stdout.write(f"### breakpoint:  p_uid {msg.p_uid} on node {msg.index}\n")
     sys.stdout.flush()
 
 
@@ -38,7 +38,7 @@ def _cleanup_debug_channels():
     # try to destroy all the debug channels?  Some of this might better be under
     # the control of the reader, but the input channel can probably go
     out_adapter = DbgAdapter(_DEBUG_OUT)
-    out_adapter.write(f'### debug exit for: {dp.this_process.my_puid} on {dp.this_process.index}\n\n')
+    out_adapter.write(f"### debug exit for: {dp.this_process.my_puid} on {dp.this_process.index}\n\n")
     _DEBUG_OUT.detach()
     _LOCAL_BE.detach()
     _DEBUG_IN.destroy()
@@ -101,10 +101,13 @@ def _get_bk_msg():
     if _DEBUG_OUT is None:
         _connect_debug_channels()
 
-    bk_msg = dmsg.Breakpoint(tag=0, p_uid=dp.this_process.my_puid,
-                             index=dp.this_process.index,
-                             out_desc=du.B64.bytes_to_str(_DEBUG_OUT.serialize()),
-                             in_desc=du.B64.bytes_to_str(_DEBUG_IN.serialize()))
+    bk_msg = dmsg.Breakpoint(
+        tag=0,
+        p_uid=dp.this_process.my_puid,
+        index=dp.this_process.index,
+        out_desc=du.B64.bytes_to_str(_DEBUG_OUT.serialize()),
+        in_desc=du.B64.bytes_to_str(_DEBUG_IN.serialize()),
+    )
 
     if _TESTING_DEBUG_HOOK:
         handle_breakpoint(bk_msg)
@@ -117,9 +120,8 @@ def dragon_debug_hook():
 
     _LOCAL_BE_CONN.send(bk_msg.serialize())
     out_adapter = DbgAdapter(_DEBUG_OUT)
-    out_adapter.write(f'### breakpoint: p_uid {dp.this_process.my_puid} on node {dp.this_process.index}')
-    pdb.Pdb(stdin=DbgAdapter(_DEBUG_IN), stdout=out_adapter,
-            skip=[f'{__name__}*']).set_trace()
+    out_adapter.write(f"### breakpoint: p_uid {dp.this_process.my_puid} on node {dp.this_process.index}")
+    pdb.Pdb(stdin=DbgAdapter(_DEBUG_IN), stdout=out_adapter, skip=[f"{__name__}*"]).set_trace()
 
 
 def dragon_exception_hook(ex_type, ex_obj, ex_tb):
@@ -127,12 +129,14 @@ def dragon_exception_hook(ex_type, ex_obj, ex_tb):
 
     _LOCAL_BE_CONN.send(bk_msg.serialize())
     out_adapter = DbgAdapter(_DEBUG_OUT)
-    out_adapter.write(f'### breakpoint: uncaught exception {ex_type!s} '
-                      f'p_uid {dp.this_process.my_puid} on node '
-                      f'{dp.this_process.index}')
+    out_adapter.write(
+        f"### breakpoint: uncaught exception {ex_type!s} "
+        f"p_uid {dp.this_process.my_puid} on node "
+        f"{dp.this_process.index}"
+    )
 
     ex_lines = traceback.format_exception(ex_type, ex_obj, ex_tb)
     for line in ex_lines:
-        out_adapter.write('### ' + line)
+        out_adapter.write("### " + line)
 
     pdb.Pdb(stdin=DbgAdapter(_DEBUG_IN), stdout=out_adapter).post_mortem(ex_tb)

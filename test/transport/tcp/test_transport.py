@@ -25,14 +25,23 @@ class TestMessages:
 
     @classmethod
     def setUpClass(cls):
-        cls.SendRequest = partial(messages.SendRequest,
-            seqno=None, timeout=0.5, channel_sd=b'channel desc',
-            return_mode=messages.SendReturnMode.WHEN_BUFFERED, sendhid=uuid4(),
-            payload=b'payload', clientid=0, hints=0
+        cls.SendRequest = partial(
+            messages.SendRequest,
+            seqno=None,
+            timeout=0.5,
+            channel_sd=b"channel desc",
+            return_mode=messages.SendReturnMode.WHEN_BUFFERED,
+            sendhid=uuid4(),
+            payload=b"payload",
+            clientid=0,
+            hints=0,
         )
 
-        cls.RecvRequest = partial(messages.RecvRequest,
-            seqno=None, timeout=0.5, channel_sd=b'channel desc',
+        cls.RecvRequest = partial(
+            messages.RecvRequest,
+            seqno=None,
+            timeout=0.5,
+            channel_sd=b"channel desc",
         )
 
 
@@ -46,7 +55,7 @@ class TransportTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
     def tearDown(self):
         del self.transport
 
-    @patch.object(transport.Transport, '_handle_send')
+    @patch.object(transport.Transport, "_handle_send")
     async def test_request_response(self, handle_send):
         """Request/Response round-trip
 
@@ -86,7 +95,7 @@ class TransportTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
         self.assertIs(fut_resp, resp)
         self.assertIs(fut_addr, self.destaddr)
 
-    @patch.object(transport.Transport, '_handle_send')
+    @patch.object(transport.Transport, "_handle_send")
     async def test_write_request(self, handle_send):
         # Write request
         req = self.SendRequest()
@@ -105,7 +114,7 @@ class TransportTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
         # Verify that future is not done
         self.assertFalse(fut.done())
 
-    @patch.object(transport.Transport, '_handle_send', side_effect=RuntimeError)
+    @patch.object(transport.Transport, "_handle_send", side_effect=RuntimeError)
     async def test_write_request_handle_send_exception(self, handle_send):
         """Future response is not managed when exception raised in _handle_send()
 
@@ -119,13 +128,13 @@ class TransportTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
         # Verify that _responses is empty
         self.assertFalse(self.transport._responses)
 
-    @patch.object(transport.Transport, '_handle_send')
+    @patch.object(transport.Transport, "_handle_send")
     async def test_write_response(self, handle_send):
         resp = messages.SendResponse(seqno=42)
         self.transport.write_response(resp, self.srcaddr)
         handle_send.assert_called_once_with(resp, self.srcaddr)
 
-    @patch.object(transport.Transport, '_handle_recv')
+    @patch.object(transport.Transport, "_handle_recv")
     def test_handle_send(self, handle_recv):
         # Transport._handle_send() only supports messages to itself
         self.assertRaises(AssertionError, self.transport._handle_send, None, None)
@@ -134,17 +143,19 @@ class TransportTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
             handle_recv.reset_mock()
             req = self.SendRequest(seqno=42, return_mode=mode)
             self.transport._handle_send(req, self.transport.addr)
-            handle_recv.assert_has_calls([
-                call(messages.SendResponse(req.seqno), self.transport.addr),
-                call(req, self.transport.addr),
-            ])
+            handle_recv.assert_has_calls(
+                [
+                    call(messages.SendResponse(req.seqno), self.transport.addr),
+                    call(req, self.transport.addr),
+                ]
+            )
 
         handle_recv.reset_mock()
         req = self.SendRequest(seqno=42, return_mode=messages.SendReturnMode.WHEN_RECEIVED)
         self.transport._handle_send(req, self.transport.addr)
         handle_recv.assert_called_once_with(req, self.transport.addr)
 
-    @patch.object(transport.Transport, '_handle_send')
+    @patch.object(transport.Transport, "_handle_send")
     async def test_handle_recv(self, handle_send):
         """Sends DRAGON_NOT_IMPLEMENTED error when unsupported message type is received
 
@@ -158,7 +169,7 @@ class TransportTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
         self.transport._handle_recv(msg, self.transport.addr)
 
         # Expected response
-        resp = messages.ErrorResponse(0, errno.DRAGON_NOT_IMPLEMENTED, f'Unsupported type of message: {type(msg)}')
+        resp = messages.ErrorResponse(0, errno.DRAGON_NOT_IMPLEMENTED, f"Unsupported type of message: {type(msg)}")
         handle_send.assert_called_once_with(resp, self.transport.addr)
 
     async def test_handle_recv_response(self):
@@ -186,14 +197,14 @@ class TransportTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
         self.transport._handle_recv(msg, self.transport.addr)
 
     async def test_handle_recv_request(self):
-        with patch.object(self.transport._requests, 'put_nowait') as put_nowait:
+        with patch.object(self.transport._requests, "put_nowait") as put_nowait:
             msg = self.SendRequest(seqno=42)
             self.transport._handle_recv(msg, self.transport.addr)
             self.assertEqual(self.transport._last_request[self.transport.addr], msg.seqno)
             put_nowait.assert_called_once_with((msg, self.transport.addr))
 
     async def test_handle_recv_replayed_requests(self):
-        with patch.object(self.transport._requests, 'put_nowait') as put_nowait:
+        with patch.object(self.transport._requests, "put_nowait") as put_nowait:
             # Send original request
             msg = self.SendRequest(seqno=42)
             self.transport._handle_recv(msg, self.transport.addr)
@@ -226,7 +237,7 @@ class TransportTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
     async def test_read_response(self):
         msg = messages.SendResponse(seqno=42)
         self.transport._responses[msg.seqno] = asyncio.Future()
-        #asyncio.get_event_loop().call_soon(fut.set_result, (msg, self.destaddr))
+        # asyncio.get_event_loop().call_soon(fut.set_result, (msg, self.destaddr))
         asyncio.get_event_loop().call_soon(self.transport._handle_recv, msg, self.destaddr)
         resp, addr = await self.transport.read_response(msg.seqno)
         self.assertIs(resp, msg)
@@ -234,5 +245,5 @@ class TransportTestCase(TestMessages, unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(resp.seqno, self.transport._responses)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

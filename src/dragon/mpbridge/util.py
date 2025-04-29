@@ -1,5 +1,4 @@
-"""Dragon's replacement for Multiprocessing's logging methods. 
-"""
+"""Dragon's replacement for Multiprocessing's logging methods."""
 
 import logging
 

@@ -33,7 +33,7 @@
     hashtable.h include file and is called dragonHashtable_t.
 
     NOTE: This hashtable implementation is NOT thread safe. If called from multiple threads, then
-    the user must implementat appropriate locking external to this hashtable implementation to
+    the user must implement an appropriate locking external to this hashtable implementation to
     insure correctness.
 */
 
@@ -164,8 +164,8 @@ _print_chain(dragonHashtable_t* ht, uint64_t idx) {
 
     uint64_t start_idx = idx;
     bool searching = true;
-    unsigned char allocated;
-    unsigned char placeholder;
+    bool allocated;
+    bool placeholder;
     dragonError_t rc;
     int count = 0;
 
@@ -224,8 +224,8 @@ static dragonError_t _rehash(dragonHashtable_t* ht) {
     char* current = ht->rehash_space;
     uint64_t num_copied = 0;
     uint64_t idx = 0;
-    unsigned char allocated;
-    unsigned char placeholder;
+    bool allocated;
+    bool placeholder;
     char* entry_ptr;
     char* key;
     char* value;
@@ -634,8 +634,8 @@ dragon_hashtable_add(dragonHashtable_t* ht, const char* key, const char* value)
     bool searching = true;
     dragonError_t bit_rc;
     dragonError_t rc;
-    unsigned char allocated = 0;
-    unsigned char placeholder = 0;
+    bool allocated = false;
+    bool placeholder = false;
 
     while (searching) {
         bit_rc = dragon_bitset_get(&ht->allocated, idx, &allocated);
@@ -754,8 +754,8 @@ dragon_hashtable_remove(dragonHashtable_t* ht, const char* key)
     bool searching = true;
 
     while (searching) {
-        unsigned char allocated;
-        unsigned char placeholder;
+        bool allocated;
+        bool placeholder;
 
         dragonError_t bit_rc = dragon_bitset_get(&ht->allocated, idx, &allocated);
         if (bit_rc != DRAGON_SUCCESS)
@@ -885,8 +885,8 @@ dragon_hashtable_get(const dragonHashtable_t* ht, const char* key, char* value)
     dragonError_t rc;
 
     while (searching) {
-        unsigned char allocated;
-        unsigned char placeholder;
+        bool allocated;
+        bool placeholder;
 
         dragonError_t bit_rc = dragon_bitset_get(&ht->allocated, idx, &allocated);
 
@@ -939,8 +939,8 @@ dragon_hashtable_iterator_next(const dragonHashtable_t* ht, dragonHashtableItera
 {
     dragonError_t bit_rc;
     dragonError_t rc;
-    unsigned char allocated;
-    unsigned char placeholder;
+    bool allocated;
+    bool placeholder;
 
     if (ht == NULL)
         err_return(DRAGON_HASHTABLE_NULL_POINTER,"The dragonHashtable handle is NULL.");
@@ -1035,8 +1035,8 @@ dragon_hashtable_stats(const dragonHashtable_t* ht, dragonHashtableStats_t* stat
         uint64_t chain_length = 0;
 
         while (searching) {
-            unsigned char allocated;
-            unsigned char placeholder;
+            bool allocated;
+            bool placeholder;
 
             dragonError_t bit_rc = dragon_bitset_get(&ht->allocated, idx, &allocated);
 

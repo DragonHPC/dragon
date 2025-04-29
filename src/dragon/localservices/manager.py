@@ -29,9 +29,19 @@ class Process:
         CLOSING = enum.auto()
         CLOSED = enum.auto()
 
-    def __init__(self, p_uid: int, tag_ref: int, cmd: str, args: tuple, env: dict = None,
-                 cwd: str = None, resp_queue=None, stdout_queue=None,
-                 stderr_queue=None, term_queue=None):
+    def __init__(
+        self,
+        p_uid: int,
+        tag_ref: int,
+        cmd: str,
+        args: tuple,
+        env: dict = None,
+        cwd: str = None,
+        resp_queue=None,
+        stdout_queue=None,
+        stderr_queue=None,
+        term_queue=None,
+    ):
 
         # helps for debugging to have id in process. This is user-assigned id.
         self.p_uid = p_uid
@@ -43,8 +53,7 @@ class Process:
         self.args = args
         self.env = env
         self.cwd = cwd
-        self.output_queue = {ProcessManager.TaskType.STDOUT: stdout_queue,
-                             ProcessManager.TaskType.STDERR: stderr_queue}
+        self.output_queue = {ProcessManager.TaskType.STDOUT: stdout_queue, ProcessManager.TaskType.STDERR: stderr_queue}
         self.term_queue = term_queue
         self._kill_timer = None
         self._signal_tag_ref = 0
@@ -99,10 +108,10 @@ class Process:
         Given a bytearray, write it to standard input. Returns None.
         """
         if not isinstance(data, str):
-            raise ValueError(f'Only string objects can be written to stdin: {data}')
+            raise ValueError(f"Only string objects can be written to stdin: {data}")
 
         if self.stdin_state != self.StdInState.IS_OPEN:
-            raise io.UnsupportedOperation(f'stdin of subprocess is not open. State: {self.stdin_state!s}')
+            raise io.UnsupportedOperation(f"stdin of subprocess is not open. State: {self.stdin_state!s}")
 
         byte_data = data.encode()
 
@@ -138,9 +147,9 @@ class Process:
 
     def cancel_kill_timer(self, logger):
         if self._kill_timer is not None:
-            logger.info(f'Attempting to cancel kill timer for process {self.p_uid}')
+            logger.info(f"Attempting to cancel kill timer for process {self.p_uid}")
             self._kill_timer.cancel()
-            logger.info(f'Cancel Success for process {self.p_uid}')
+            logger.info(f"Cancel Success for process {self.p_uid}")
             self._kill_timer = None
 
 
@@ -161,6 +170,7 @@ class ProcessManager:
         The TaskType is a identifier of the type of task being executed asynchronously
         in the ProcessManager and also identifies the type of stream.
         """
+
         PROCESS = -2  # This indicates a user process task.
         SYS = -1  # This indicates a system task.
         # The stdin, stdout, and stderr values should remain
@@ -183,10 +193,10 @@ class ProcessManager:
 
     def __str__(self):
 
-        tasks = '\n'.join([str(t) for t in self.tasks])
+        tasks = "\n".join([str(t) for t in self.tasks])
 
-        procs = '\n'.join([str(p) for p in self.processes])
-        new_procs = '\n'.join([str(p) for p in self.new_processes])
+        procs = "\n".join([str(p) for p in self.processes])
+        new_procs = "\n".join([str(p) for p in self.new_processes])
 
         rv = f"""
     Process Manager
@@ -204,7 +214,7 @@ New Processes:
         return rv
 
     def create_task(self, fun, task_type, id_num):
-        task_name = f'{task_type!s}:{id_num=!s}'
+        task_name = f"{task_type!s}:{id_num=!s}"
         self.task_tbl[(task := self.ect(fun, name=task_name))] = (task_type, id_num)
         return task
 
@@ -228,14 +238,15 @@ New Processes:
                         process.stream[self.TaskType.STDERR] = process._stat.stderr
                         process.stream[self.TaskType.STDIN] = process._stat.stdin
 
-                        proc_task = self.create_task(self.async_app_done(p_uid),
-                                                     self.TaskType.PROCESS, p_uid)
+                        proc_task = self.create_task(self.async_app_done(p_uid), self.TaskType.PROCESS, p_uid)
 
-                        stdout_task = self.create_task(self.async_read_output(p_uid, self.TaskType.STDOUT),
-                                                       self.TaskType.STDOUT, p_uid)
+                        stdout_task = self.create_task(
+                            self.async_read_output(p_uid, self.TaskType.STDOUT), self.TaskType.STDOUT, p_uid
+                        )
 
-                        stderr_task = self.create_task(self.async_read_output(p_uid, self.TaskType.STDERR),
-                                                       self.TaskType.STDERR, p_uid)
+                        stderr_task = self.create_task(
+                            self.async_read_output(p_uid, self.TaskType.STDERR), self.TaskType.STDERR, p_uid
+                        )
 
                         process.stream_task[self.TaskType.STDOUT] = stdout_task
                         process.stream_task[self.TaskType.STDERR] = stderr_task
@@ -260,7 +271,7 @@ New Processes:
             if task_type == self.TaskType.PROCESS:
                 if p_uid in self.processes and self.processes[p_uid].state != Process.State.COMPLETE:
                     process = self.processes[p_uid]
-                    self.shepherd.log.warning(f'Process {process.p_uid} finished but was not marked complete.')
+                    self.shepherd.log.warning(f"Process {process.p_uid} finished but was not marked complete.")
 
                 del self.task_tbl[task]
                 finished.remove(task)
@@ -354,37 +365,45 @@ New Processes:
         try:
             # check to make sure there really is a process with this p_uid.
             if p.p_uid not in self.processes:
-                self.shepherd.log.warning(f'No managed process with p_uid={p.p_uid} in async_spawn_app.')
-                raise ValueError(f'No managed process with p_uid={p.p_uid} in async_spawn_app.')
+                self.shepherd.log.warning(f"No managed process with p_uid={p.p_uid} in async_spawn_app.")
+                raise ValueError(f"No managed process with p_uid={p.p_uid} in async_spawn_app.")
 
-            self.shepherd.log.info(f'Starting Process: {p.cmd!s} {p.args!s}')
-            p._stat = await asyncio.create_subprocess_exec(p.cmd, *p.args,
-                                                           stdout=asyncio.subprocess.PIPE,
-                                                           stderr=asyncio.subprocess.PIPE,
-                                                           stdin=asyncio.subprocess.PIPE,
-                                                           env=p.env, cwd=p.cwd)
+            self.shepherd.log.info(f"Starting Process: {p.cmd!s} {p.args!s}")
+            p._stat = await asyncio.create_subprocess_exec(
+                p.cmd,
+                *p.args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                stdin=asyncio.subprocess.PIPE,
+                env=p.env,
+                cwd=p.cwd,
+            )
 
-            self.shepherd.log.info('Process Started....')
+            self.shepherd.log.info("Process Started....")
 
             p.pid = p._stat.pid
 
             # If notification needs to be sent with the PID then send it.
             if p.resp_queue is not None:
-                self.shepherd.log.info('SENDING SHProcessCreateResponse')
+                self.shepherd.log.info("SENDING SHProcessCreateResponse")
                 p.resp_queue.send(
-                    dmsg.SHProcessCreateResponse(tag=0, ref=p.tag_ref,
-                                                 err=dmsg.SHProcessCreateResponse.Errors.SUCCESS).serialize())
+                    dmsg.SHProcessCreateResponse(
+                        tag=0, ref=p.tag_ref, err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
+                    ).serialize()
+                )
 
         except Exception as ex:
             try:
                 p.state = Process.State.FAIL
                 p.resp_queue.send(
-                    dmsg.SHProcessCreateResponse(tag=0, ref=p.tag_ref, err=dmsg.SHProcessCreateResponse.Errors.FAIL,
-                                                 err_info=str(ex)).serialize())
-                self.shepherd.log.info('Sent Failed ProcessCreateResponse')
+                    dmsg.SHProcessCreateResponse(
+                        tag=0, ref=p.tag_ref, err=dmsg.SHProcessCreateResponse.Errors.FAIL, err_info=str(ex)
+                    ).serialize()
+                )
+                self.shepherd.log.info("Sent Failed ProcessCreateResponse")
             except:
                 try:
-                    self.shepherd.log.warning('Unable to send Failed ProcessCreateResponse')
+                    self.shepherd.log.warning("Unable to send Failed ProcessCreateResponse")
                 except:
                     pass
 
@@ -399,12 +418,12 @@ New Processes:
         """
         # check if we even have this identifier
         if p_uid not in self.processes:
-            raise ValueError(f'no managed process with p_uid={p_uid}')
+            raise ValueError(f"no managed process with p_uid={p_uid}")
 
         process = self.processes[p_uid]
         await process._stat.wait()
-        self.shepherd.log.info('In async_app_done: Process has exited.')
-        self.shepherd.log.info(f'return code {process._stat.returncode!s}')
+        self.shepherd.log.info("In async_app_done: Process has exited.")
+        self.shepherd.log.info(f"return code {process._stat.returncode!s}")
 
         # Call to cancel any timer set to go off for terminating the process. If no
         # timer exists, it won't hurt anything to call this.
@@ -413,10 +432,12 @@ New Processes:
         if process.state == Process.State.RUN:
             process.state = Process.State.COMPLETE
             if process.term_queue is not None:
-                self.shepherd.log.info('SENDING SHProcessExit message')
+                self.shepherd.log.info("SENDING SHProcessExit message")
                 process.term_queue.send(
-                    dmsg.SHProcessExit(tag=0, p_uid=process.p_uid,
-                                       exit_code=process._stat.returncode, creation_msg_tag=None).serialize())
+                    dmsg.SHProcessExit(
+                        tag=0, p_uid=process.p_uid, exit_code=process._stat.returncode, creation_msg_tag=None
+                    ).serialize()
+                )
 
     async def async_read_output(self, p_uid: int, stream_type: TaskType) -> None:
         """
@@ -444,10 +465,14 @@ New Processes:
                     output_queue = process.output_queue[stream_type]
 
                     if output_queue is not None:
-                        self.shepherd.log.info(f'SENDING SHFwdOutput: {output!s}')
-                        fwd_output_msg = dmsg.SHFwdOutput(tag=0, idx=self.shepherd.node_index,
-                                                          p_uid=process.p_uid, fd_num=stream_type.value,
-                                                          data=output.decode())
+                        self.shepherd.log.info(f"SENDING SHFwdOutput: {output!s}")
+                        fwd_output_msg = dmsg.SHFwdOutput(
+                            tag=0,
+                            idx=self.shepherd.node_index,
+                            p_uid=process.p_uid,
+                            fd_num=stream_type.value,
+                            data=output.decode(),
+                        )
                         output_queue.send(fwd_output_msg.serialize())
 
         except Exception as ex:
@@ -465,12 +490,12 @@ New Processes:
             # reset the buffer so if while we await below, more
             # data is written, we get that the next time.
             process.stdin_buf = bytearray()
-            self.shepherd.log.info('In async_write_input')
+            self.shepherd.log.info("In async_write_input")
             if not stream.is_closing():
-                self.shepherd.log.info(f'Now writing input {buf!s}')
+                self.shepherd.log.info(f"Now writing input {buf!s}")
                 stream.write(buf)
                 await stream.drain()
-                self.shepherd.log.info('Done writing')
+                self.shepherd.log.info("Done writing")
         except Exception as ex:
             self.shepherd.abend(sys.exc_info())
             raise ex
@@ -496,7 +521,7 @@ New Processes:
 
         # TODO should not report this as a ValueError probably
         if p.p_uid in self.processes:
-            raise ValueError(f'existing managed process with p_uid={p.p_uid}')
+            raise ValueError(f"existing managed process with p_uid={p.p_uid}")
 
         # add the process to our registry of processes
         self.processes[p.p_uid] = p
@@ -536,10 +561,10 @@ New Processes:
 
         for task in self.tasks:
             if task.done():
-                self.shepherd.log.info(f'already completed task: {task!s}')
+                self.shepherd.log.info(f"already completed task: {task!s}")
                 finished.append(task)
             elif task.cancelled():
-                self.shepherd.log.info(f'cancelled task: {task!s}')
+                self.shepherd.log.info(f"cancelled task: {task!s}")
                 finished.append(task)
             else:
                 unfinished.append(task)
@@ -556,8 +581,8 @@ New Processes:
                 return [], 0
 
             finished_tasks, unfinished = asyncio.get_event_loop().run_until_complete(
-                asyncio.wait(unfinished, timeout=1,
-                             return_when=asyncio.FIRST_COMPLETED))
+                asyncio.wait(unfinished, timeout=1, return_when=asyncio.FIRST_COMPLETED)
+            )
 
             finished.extend(finished_tasks)
 
@@ -590,13 +615,13 @@ New Processes:
         the exit status of the process.
         """
         if p_uid not in self.processes:
-            raise RuntimeError(f'cannot clean up non-existent process with p_uid={p_uid}')
+            raise RuntimeError(f"cannot clean up non-existent process with p_uid={p_uid}")
 
         process = self.processes[p_uid]
 
         # make sure the app is not still running
         if process.state == Process.State.RUN:
-            raise RuntimeError(f'cannot cleanup a running process with ID={p_uid}')
+            raise RuntimeError(f"cannot cleanup a running process with ID={p_uid}")
 
         # cancel any outstanding tasks on this app
         # There may be stdout and stderr tasks that may need clean up

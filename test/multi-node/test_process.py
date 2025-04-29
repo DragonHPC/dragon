@@ -1,4 +1,4 @@
-""" This file contains Dragon multi-node acceptance tests for the
+"""This file contains Dragon multi-node acceptance tests for the
 `multiprocessing.Process` object. The test scales with the total number of CPUs
 reported by the allocation, i.e. it becomes tougher on larger allocations.
 
@@ -17,12 +17,11 @@ from dragon.native.machine import cpu_count, current, System, Node
 from dragon.native.process import Process
 from dragon.infrastructure.policy import Policy
 
-def inception(nnew: int, q: mp.Queue, ev1: mp.Event, ev2: mp.Event, sem: mp.Semaphore) -> None:
 
+def inception(nnew: int, q: mp.Queue, ev1: mp.Event, ev2: mp.Event, sem: mp.Semaphore) -> None:
     ev1.wait(timeout=None)
 
     for _ in range(nnew):
-
         if not sem.acquire(timeout=0.1):  # try for a while
             break  # stop spawning
 
@@ -32,19 +31,26 @@ def inception(nnew: int, q: mp.Queue, ev1: mp.Event, ev2: mp.Event, sem: mp.Sema
 
     ev2.wait(timeout=None)
 
+
 def placement_gpu_info(sleep_time, q, vendor=None):
     hostname = socket.gethostname()
     if vendor is not None:
-        if vendor == 'Nvidia':
+        if vendor == "Nvidia":
             visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
-        elif vendor == 'AMD':
+        elif vendor == "AMD":
             visible_devices = os.getenv("ROCR_VISIBLE_DEVICES")
-        elif vendor == 'Intel':
+        elif vendor == "Intel":
             visible_devices = os.getenv("ZE_AFFINITY_MASK")
     else:
-        visible_devices=None
+        visible_devices = None
         # this sleep is important until Process Group holds a history of puids
-    q.put((hostname, visible_devices,))
+    q.put(
+        (
+            hostname,
+            visible_devices,
+        )
+    )
+
 
 class TestProcessMultiNode(unittest.TestCase):
     def test_inception(self) -> None:
@@ -105,18 +111,26 @@ class TestProcessMultiNode(unittest.TestCase):
         q = mp.Queue()
         cwd = os.getcwd()
         if node.gpu_vendor is None:
-            args = (5,q,)
-            policy = Policy(placement=Policy.Placement.HOST_NAME,host_name=node.hostname)
+            args = (
+                5,
+                q,
+            )
+            policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node.hostname)
         else:
-            args = (5,q,node.gpu_vendor,)
+            args = (
+                5,
+                q,
+                node.gpu_vendor,
+            )
             policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node.hostname, gpu_affinity=[node.gpus[-1]])
-        #using native process to take template
+        # using native process to take template
         proc = Process(target=placement_gpu_info, args=args, policy=policy)
         proc.start()
         hostname, gpu_affinity = q.get()
         self.assertEqual(hostname, node.hostname)
         if node.gpu_vendor is not None:
             self.assertEqual(gpu_affinity, str(node.gpus[-1]))
+
 
 if __name__ == "__main__":
     mp.set_start_method("dragon")

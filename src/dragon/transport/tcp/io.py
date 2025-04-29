@@ -127,7 +127,7 @@ class VariableTextIO(CodableIO, VariableBytesIO):
     :param format: `Struct` format string; restricts the maximum number of bytes which may be read/written before/after decoding/encoding.
     """
 
-    codec = 'utf-8'
+    codec = "utf-8"
     """Codec for encoding/decoding."""
 
     @classmethod
@@ -171,12 +171,14 @@ class IPAddressIO(CodableIO):
 
 class IPv4AddressIO(IPAddressIO):
     """Read and write `ipaddress.IPv4Address` instances."""
-    size = len(ip_address('127.0.0.1').packed)
+
+    size = len(ip_address("127.0.0.1").packed)
 
 
 class IPv6AddressIO(IPAddressIO):
     """Read and write `ipaddress.IPv6Address` instances."""
-    size = len(ip_address('::1').packed)
+
+    size = len(ip_address("::1").packed)
 
 
 class EnumIO(CodableIO, StructIO):
@@ -195,16 +197,16 @@ class EnumIO(CodableIO, StructIO):
     def __init__(self, enum_cls: Enum, format: Optional[str] = None):
         if format is None:
             max_value = max(e.value for e in enum_cls)
-            if max_value < 1<<8:
-                format = '!B'
-            elif max_value < 1<<16:
-                format = '!H'
-            elif max_value < 1<<32:
-                format = '!L'
-            elif max_value < 1<<64:
-                format = '!Q'
+            if max_value < 1 << 8:
+                format = "!B"
+            elif max_value < 1 << 16:
+                format = "!H"
+            elif max_value < 1 << 32:
+                format = "!L"
+            elif max_value < 1 << 64:
+                format = "!Q"
             else:
-                raise ValueError(f'Maximum value of {enum_cls} is out of range')
+                raise ValueError(f"Maximum value of {enum_cls} is out of range")
         super().__init__(format)
         self.decode = enum_cls
         """Decode `int` value as `enum.Enum` instance."""

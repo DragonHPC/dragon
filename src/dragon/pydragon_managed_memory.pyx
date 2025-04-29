@@ -1,38 +1,25 @@
 from dragon.dtypes_inc cimport *
+import dragon.dtypes as dtypes
 import enum
 import sys
+import math
 
 
 ################################
 # Begin Cython definitions
 ################################
-
-# Custom exception classes
-# @MCB TODO: Make this a generic base and share between cython layers?
-# @MCB TODO: Naming scheme is to prevent confusion with other generic Memory or Pool exceptions, but seems clunky
-
-class DragonMemoryError(Exception):
-    """TBD """
-
+class DragonMemoryError(dtypes.DragonException):
     def __init__(self, lib_err, msg):
-        cdef char * errstr = dragon_getlasterrstr()
+        super().__init__(msg, lib_err)
 
-        self.msg = msg
-        self.lib_msg = errstr[:].decode('utf-8')
-        lib_err_str = dragon_get_rc_string(lib_err)
-        self.lib_err = lib_err_str[:].decode('utf-8')
-        free(errstr)
-
-    def __str__(self):
-        return f"ManagedMemory Exception: {self.msg}\n*** Dragon C-level Traceback: ***\n{self.lib_msg}\n*** End C-level Traceback: ***\nDragon Error Code: {self.lib_err}"
-
-    @enum.unique
-    class Errors(enum.Enum):
-        SUCCESS = 0
-        FAIL = 1
+class DragonMemoryTypeError(DragonMemoryError, TypeError):
+    def __init__(self, lib_err, msg):
+        super().__init__(lib_err, msg)
 
 class DragonPoolError(DragonMemoryError):
-    """TBD """
+    def __init__(self, lib_err, msg):
+        super().__init__(lib_err, msg)
+
     @enum.unique
     class Errors(enum.Enum):
         SUCCESS = 0
@@ -41,20 +28,20 @@ class DragonPoolError(DragonMemoryError):
         ATTACH_FAIL = 3
 
 class DragonPoolCreateFail(DragonPoolError):
-    """TBD """
-    pass
+    def __init__(self, lib_err, msg):
+        super().__init__(lib_err, msg)
 
 class DragonPoolAttachFail(DragonPoolError):
-    """TBD """
-    pass
+    def __init__(self, lib_err, msg):
+        super().__init__(lib_err, msg)
 
 class DragonPoolDetachFail(DragonPoolError):
-    """TBD """
-    pass
+    def __init__(self, lib_err, msg):
+        super().__init__(lib_err, msg)
 
 class DragonPoolAllocationNotAvailable(DragonPoolError):
-    """TBD """
-    pass
+    def __init__(self, lib_err, msg):
+        super().__init__(lib_err, msg)
 
 # @MCB TODO: How do we expose ctypedef enums directly to python instead of having to maintain this?
 # PJM: there is an easy way to do this (I have it below for the ConnMsgHeader stuff).  We'level
@@ -71,6 +58,7 @@ class AllocType(enum.Enum):
     DATA = DRAGON_MEMORY_ALLOC_DATA
     CHANNEL = DRAGON_MEMORY_ALLOC_CHANNEL
     CHANNEL_BUFFER = DRAGON_MEMORY_ALLOC_CHANNEL_BUFFER
+    BOOTSTRAP = DRAGON_MEMORY_ALLOC_BOOTSTRAP
 
 DRAGON_MEMORY_DEFAULT_TIMEOUT = 300
 
@@ -121,6 +109,13 @@ cdef class MemoryAlloc:
     Cython wrapper object for memory pool allocations.
     """
 
+    def __getstate__(self):
+        return self.serialize()
+
+    def __setstate__(self, state):
+        serialized_bytes = state
+        self._attach(serialized_bytes)
+
     def __del__(self):
         if self._is_serial == 1:
             dragon_memory_serial_free(&self._mem_ser)
@@ -153,6 +148,34 @@ cdef class MemoryAlloc:
         derr = dragon_memory_equal(&self._mem_descr, &other._mem_descr, &result)
         if derr != DRAGON_SUCCESS:
             raise DragonMemoryError(derr, "Could not compare memory allocations")
+
+        return result
+
+    # debug use only by developers.
+    def _manifest_info(self):
+        cdef:
+            dragonError_t derr
+            dragonULInt type_val
+            dragonULInt type_id_val
+
+        derr = dragon_memory_manifest_info(&self._mem_descr, &type_val, &type_id_val)
+        if derr != DRAGON_SUCCESS:
+            raise DragonMemoryError(derr, "Could not compare memory allocations")
+
+        return (type_val, type_id_val)
+
+    def is_the_same_as(self, MemoryAlloc other):
+        cdef:
+            dragonError_t derr
+            bool result
+
+        # not sure this is needed, but doesn't hurt.
+        if (type(other) is not MemoryAlloc):
+                raise DragonMemoryError(DRAGON_INVALID_OPERATION, "Cannot compare MemoryAlloc with value of different type.")
+
+        derr = dragon_memory_is(&self._mem_descr, &other._mem_descr, &result)
+        if derr != DRAGON_SUCCESS:
+            raise DragonMemoryError(derr, "Could not check memory allocations")
 
         return result
 
@@ -229,14 +252,7 @@ cdef class MemoryAlloc:
             raise DragonMemoryError(mem_alloc_obj[0], mem_alloc_obj[1])
         return mem_alloc_obj
 
-    @classmethod
-    def attach(cls, ser_bytes):
-        """
-        Attach to a serialized memory allocation
-
-        :param ser_bytes: Bytes-like object (memoryview, bytearray, bytes) of a serialized memory descriptor
-        :return: MemoryAlloc object
-        """
+    def _attach(self, ser_bytes):
         cdef:
             dragonError_t derr
             dragonMemorySerial_t _ser
@@ -245,17 +261,26 @@ cdef class MemoryAlloc:
         _ser.len = len(ser_bytes)
         _ser.data = <uint8_t*>&cdata[0]
 
-        memobj = MemoryAlloc()
-
-        derr = dragon_memory_attach(&memobj._mem_descr, &_ser)
+        derr = dragon_memory_attach(&self._mem_descr, &_ser)
         if derr != DRAGON_SUCCESS:
-            raise DragonMemoryError(derr, "Could not attach to memory")
+            raise DragonMemoryTypeError(derr, "Could not attach to memory")
 
-        derr = dragon_memory_get_size(&memobj._mem_descr, &memobj._mem_size)
+        derr = dragon_memory_get_size(&self._mem_descr, &self._mem_size)
         if derr != DRAGON_SUCCESS:
             raise DragonMemoryError(derr, "Could not retrieve memory size")
 
-        memobj._is_attach = 1
+        self._is_attach = 1
+
+    @classmethod
+    def attach(cls, ser_bytes):
+        """
+        Attach to a serialized memory allocation
+
+        :param ser_bytes: Bytes-like object (memoryview, bytearray, bytes) of a serialized memory descriptor
+        :return: MemoryAlloc object
+        """
+        memobj = MemoryAlloc()
+        memobj._attach(ser_bytes)
         return memobj
 
     def detach(self):
@@ -349,6 +374,24 @@ cdef class MemoryAlloc:
         return: the size in bytes of the memory allocation
         """
         return self._mem_size
+
+    @property
+    def id(self):
+        """
+        Returns the unique identifier of this memory allocation.
+
+        :return: the unique allocation identifier
+        :raises: DragonMemoryError
+        """
+        cdef:
+            dragonError_t err
+            uint64_t id_val
+
+        err = dragon_memory_id(&self._mem_descr, &id_val)
+        if err != DRAGON_SUCCESS:
+            raise DragonMemoryError(err, "Could not retrieve the pool for the memory allocation.")
+
+        return id_val
 
     @property
     def pool(self):
@@ -453,14 +496,24 @@ cdef class MemoryPool:
             dragon_memory_pool_serial_free(&self._pool_ser)
 
 
-    def __init__(self, size, str fname, uid, pre_alloc_blocks=None):
+    def __init__(self, size, str fname, uid, pre_alloc_blocks=None, min_block_size=None, max_allocations=None):
         """
         Create a new memory pool and return a MemoryPool object.
 
-        :param size: Size (in bytes) of the pool.
+        :param size: Minimum size (in bytes) of the pool. The actual size will be at least
+            this size.
         :param fname: Filename of the pool to use.
         :param uid: Unique pool identifier to use.
-        :param mattr: MemoryPoolAttr object to specify various pool attributes.  *Currently Unused*
+        :param pre_alloc_blocks: A list of integers indicating the number of pre-allocated
+            blocks to allocate of each power of two starting with the minimum block size.
+        :param min_block_size: The minimum block size of the pool. The maximum block size
+            is determined by the pool size. The default minimum block size is 4KB.
+        :param max_allocations: The maximum number of concurrent allocations that can exist
+            among all processes at a given time. The default is 1048576 (1024^2) but can be
+            set higher if needed. Space is reserved for a manifest of all allocations in
+            shared memory and the default results in approximately 128MB of reserved space.
+            It can be adjusted, but adjustments will increase or decrease the reserved
+            space proportionally.
         :return: MemoryPool object
         :raises: DragonPoolCreateFail
         """
@@ -483,12 +536,28 @@ cdef class MemoryPool:
         if derr != DRAGON_SUCCESS:
             raise RuntimeError(f"MemoryAttr Error: Unable to initialized memory attribute. Dragon Error Code: ({dragon_get_rc_string(derr)})")
 
-        # @MCB: if pre_alloc_blocks is used, build mattr struct
+        if min_block_size is not None:
+            if not isinstance(min_block_size, int):
+                raise RuntimeError('MemoryAttr Error: min_block_size must be an int')
+
+            self._mattr.data_min_block_size = min_block_size
+
+        if max_allocations is not None:
+            if not isinstance(max_allocations, int):
+                raise RuntimeError('MemoryAttr Error: max_allocations must be an int')
+
+            self._mattr.max_allocations = max_allocations
+
+        # if pre_alloc_blocks is used, build mattr struct
         if pre_alloc_blocks is not None:
             if not isinstance(pre_alloc_blocks, list):
                 raise RuntimeError(f"MemoryAttr Error: pre_alloc_blocks must be a list of ints")
             if not all(isinstance(item, int) for item in pre_alloc_blocks):
                 raise RuntimeError(f"MemoryAttr Error: pre_alloc_blocks must be a list of ints")
+
+            alloc_arr_size = int(math.log(size//self._mattr.data_min_block_size, 2))+1
+            alloc_arr_diff = alloc_arr_size - len(pre_alloc_blocks)
+            pre_alloc_blocks += ([0]*alloc_arr_diff)
 
             self._mattr.npre_allocs = len(pre_alloc_blocks)
             self._mattr.pre_allocs = <size_t *>malloc(sizeof(size_t) * self._mattr.npre_allocs)
@@ -596,6 +665,196 @@ cdef class MemoryPool:
 
         return mpool
 
+    @classmethod
+    def make_process_local(cls, str name, size, min_block_size=None, pre_allocs=None, timeout=None):
+        """
+        Create a process local pool which is a pool that exists for the
+        lifetime of the current process. The pool may be shared with other
+        processes, but must be managed in such a way that all shared allocations
+        in the pool are freed prior to this process terminating since the
+        pool will be destroyed when the process exits. The pool may live beyond
+        the process by deregistering the pool from the process (see deregister)
+        and a pool may be registered as a local pool if desired. When registering
+        a pool you should make sure that its lifetime is not being managed by
+        Global Services. Locally created pools are not managed by Global Services.
+
+        This is especially useful for processes that need a pool for their own
+        application's use and don't need the pool anymore once the process exits.
+
+        :param name: The name to be used as part of the name of the mmap that is used
+            for the shared memory.
+
+        :param size: The size of the managed memory pool. It will be at least that large.
+
+        :param min_block_size: The minimum allocatable block size. The min block size will be
+            at least this big, possibly bigger. The current implementation will make it
+            the next smallest power of 2. If no min_block_size is provided a default will
+            be used.
+
+        :param pre_allocs: A list of integers corresponding to pre-allocated blocks within the
+            pool where each index within the list corresponds to a power of 2 starting with the
+            min_block_size. The value at each location in the list is the number of pre-allocated
+            blocks of that size.
+
+        :param timeout: Default is None which means to block without timeout until the
+            pool is made. This should not timeout and should be processed quickly. If a
+            timeout value is specified, it is the number of seconds to wait which may be a
+            float.
+
+        :return: A new pool object.
+
+        :raises: DragonMemoryError if there was an error. Note that the Dragon run-time
+            must be running to use this function as it interacts with Local Services on the
+            node on which it is called.
+        """
+        cdef:
+            dragonError_t err
+            timespec_t * time_ptr
+            timespec_t val_timeout
+            dragonMemoryPoolDescr_t pool
+            dragonMemoryPoolSerial_t ser
+            dragonMemoryPoolAttr_t attrs
+            dragonMemoryPoolAttr_t* attr_ptr
+            size_t* pre
+            size_t num_pres
+            size_t num_bytes
+            const unsigned char [:] ucname = name.encode('utf-8')
+            const char * cname = <const char*> &ucname[0]
+
+        attr_ptr = NULL
+        pre = NULL
+
+        if timeout is None:
+            time_ptr = NULL
+        elif isinstance(timeout, int) or isinstance(timeout, float):
+            if timeout < 0:
+                raise ValueError('Cannot provide timeout < 0 to make_process_local operation')
+            # Anything > 0 means use that as seconds for timeout.
+            time_ptr = & val_timeout
+            val_timeout.tv_sec =  int(timeout)
+            val_timeout.tv_nsec = int((timeout - val_timeout.tv_sec)*1000000000)
+        else:
+            raise ValueError('make_process_local timeout must be a float or int')
+
+        if min_block_size is not None or pre_allocs is not None:
+            attr_ptr = &attrs
+            err = dragon_memory_attr_init(attr_ptr)
+            if err != DRAGON_SUCCESS:
+                raise DragonMemoryError(err, "Could not init attributes")
+
+            if min_block_size is not None:
+                attr_ptr.data_min_block_size = min_block_size
+
+            if pre_allocs is not None:
+                num_pres = len(pre_allocs)
+                if num_pres > 0:
+                    pre = <size_t*>malloc(sizeof(size_t)*num_pres)
+                    for i in range(num_pres):
+                        pre[i] = pre_allocs[i]
+
+                    attr_ptr.pre_allocs = pre
+
+        num_bytes = size
+
+        with nogil:
+            err = dragon_create_process_local_pool(&pool, num_bytes, cname, attr_ptr, time_ptr)
+
+        if pre_allocs is not None:
+            free(pre)
+
+        if err != DRAGON_SUCCESS:
+            raise DragonMemoryError(err, "Could not create process local pool")
+
+        err = dragon_memory_pool_serialize(&ser, &pool)
+        if err != DRAGON_SUCCESS:
+            raise DragonMemoryError(err, "Could not serialize pool")
+
+        py_obj = ser.data[:ser.len]
+
+        dragon_memory_pool_serial_free(&ser)
+
+        # This inits the rest of the object given the pool descriptor above.
+        return MemoryPool.attach(py_obj)
+
+    def deregister(self, timeout=None):
+        """
+        Deregister a process local pool which is a pool that exists for the
+        lifetime of the current process. By deregistering it the current process is
+        claiming responsibility for the management of the lifetime of this pool. This
+        only applies to pools created with the make_process_local path. Those pools
+        created through Global Services are managed exclusively by Global Services.
+
+        :parm timeout: The amount of time the process is willing to wait for a response.
+            A timeout of None means to wait without timing out.
+
+        :raises: DragonMemoryError if there was an error. Note that the Dragon run-time
+            must be running to use this function as it interacts with Local Services on the
+            node on which it is called.
+        """
+        cdef:
+            dragonError_t err
+            timespec_t * time_ptr
+            timespec_t val_timeout
+
+        if timeout is None:
+            time_ptr = NULL
+        elif isinstance(timeout, int) or isinstance(timeout, float):
+            if timeout < 0:
+                raise ValueError('Cannot provide timeout < 0 to deregister operation')
+            # Anything > 0 means use that as seconds for timeout.
+            time_ptr = & val_timeout
+            val_timeout.tv_sec =  int(timeout)
+            val_timeout.tv_nsec = int((timeout - val_timeout.tv_sec)*1000000000)
+        else:
+            raise ValueError('deregister timeout must be a float or int')
+
+        err = dragon_deregister_process_local_pool(&self._pool_hdl, time_ptr)
+        if err != DRAGON_SUCCESS:
+            DragonPoolAttachFail(err, "Could not deregister pool")
+
+    def register(self, timeout=None):
+        """
+        Register a process local pool which is a pool that exists for the
+        lifetime of the current process. By registering it the current
+        process is turning over responsibility for the management of the
+        lifetime of this pool to local services. This only applies to
+        pools created with the make_process_local path or those pools
+        created entirely by a process through the MemoryPool constructor
+        (be careful if doing this - the muid must be unique). Local
+        Services will guarantee unique muids for pools created through
+        the create_process_local method of MemoryPool as will Global
+        Services through its API. Those pools created through Global
+        Services are managed exclusively by Global Services and should
+        not be registered with Local Services.
+
+        :parm timeout: The amount of time the process is willing to wait for a response.
+            A timeout of None means to wait without timing out.
+
+        :raises: DragonMemoryError if there was an error. Note that the Dragon run-time
+            must be running to use this function as it interacts with Local Services on the
+            node on which it is called.
+        """
+        cdef:
+            dragonError_t err
+            timespec_t * time_ptr
+            timespec_t val_timeout
+
+        if timeout is None:
+            time_ptr = NULL
+        elif isinstance(timeout, int) or isinstance(timeout, float):
+            if timeout < 0:
+                raise ValueError('Cannot provide timeout < 0 to register operation')
+            # Anything > 0 means use that as seconds for timeout.
+            time_ptr = & val_timeout
+            val_timeout.tv_sec =  int(timeout)
+            val_timeout.tv_nsec = int((timeout - val_timeout.tv_sec)*1000000000)
+        else:
+            raise ValueError('register timeout must be a float or int')
+
+        err = dragon_register_process_local_pool(&self._pool_hdl, time_ptr)
+        if err != DRAGON_SUCCESS:
+            DragonPoolAttachFail(err, "Could not register pool")
+
     def destroy(self):
         """
         Destroy the pool created by this object.
@@ -643,8 +902,7 @@ cdef class MemoryPool:
         # Returns a python copy of the serializer
         return self._pool_ser.data[:self._pool_ser.len]
 
-    # @MCB TODO: Add optional type parameter.  Where should the ID for typed allocs come from?
-    def alloc(self, size):
+    def alloc(self, size, alloc_type=None):
         """
         Allocate a memory block within this pool.
         Please note that the internal memory manager allocates to nearest powers of 2.
@@ -657,6 +915,8 @@ cdef class MemoryPool:
             dragonError_t derr
             dragonMemoryDescr_t mem
             size_t sz
+            int flag
+            dragonMemoryAllocationType_t tyval
 
         if not isinstance(size, int):
             raise TypeError(f"Allocation size must be int, got type {type(size)}")
@@ -666,8 +926,20 @@ cdef class MemoryPool:
 
         sz = size
 
-        with nogil:
-            derr = dragon_memory_alloc(&mem, &self._pool_hdl, sz)
+        # allocate with type
+        if alloc_type is not None:
+
+            if type(alloc_type) is AllocType:
+                tyval = alloc_type.value
+            else:
+                raise DragonMemoryError(DRAGON_INVALID_ARGUMENT, 'alloc_type must be None or of type AllocType.')
+
+            with nogil:
+                derr = dragon_memory_alloc_type(&mem, &self._pool_hdl, sz, tyval)
+        else:
+            # allocate without type
+            with nogil:
+                derr = dragon_memory_alloc(&mem, &self._pool_hdl, sz)
 
         if derr == DRAGON_DYNHEAP_REQUESTED_SIZE_NOT_AVAILABLE:
             raise DragonPoolAllocationNotAvailable(derr, f"An allocation of size={size} is not available.")
@@ -676,13 +948,14 @@ cdef class MemoryPool:
             raise DragonPoolError(derr, "Could not perform allocation")
 
         mem_alloc_obj = MemoryAlloc.cinit(mem)
-        # We had to move the error handling here, in the caller
+
         if not isinstance(mem_alloc_obj, MemoryAlloc):
             # if there was an error, the returned value is a tuple of the form: (derr, err_str)
             raise DragonMemoryError(mem_alloc_obj[0], mem_alloc_obj[1])
+
         return mem_alloc_obj
 
-    def alloc_blocking(self, size, timeout=None):
+    def alloc_blocking(self, size, timeout=None, alloc_type=None):
         """
         Allocate a memory block within this pool.
         Please note that the internal memory manager allocates to nearest powers of 2.
@@ -697,6 +970,9 @@ cdef class MemoryPool:
             timespec_t timer
             timespec_t* time_ptr
             size_t sz
+            int flag
+            dragonMemoryAllocationType_t tyval
+            dragonULInt alid
 
         if timeout is None:
             time_ptr = NULL
@@ -721,8 +997,20 @@ cdef class MemoryPool:
         # Assignment causes coercion, not allowed without gil
         sz = size
 
-        with nogil:
-            derr = dragon_memory_alloc_blocking(&mem, &self._pool_hdl, sz, time_ptr)
+        # allocate with type
+        if alloc_type is not None:
+
+            if type(alloc_type) is AllocType:
+                tyval = alloc_type.value
+            else:
+                raise DragonMemoryError(DRAGON_INVALID_ARGUMENT, 'alloc_type must be None or of type AllocType.')
+
+            with nogil:
+                derr = dragon_memory_alloc_type_blocking(&mem, &self._pool_hdl, sz, tyval, time_ptr)
+        else:
+            # allocate without type
+            with nogil:
+                derr = dragon_memory_alloc_blocking(&mem, &self._pool_hdl, sz, time_ptr)
 
         if derr == DRAGON_TIMEOUT:
             raise TimeoutError("The blocking allocation timed out")
@@ -740,7 +1028,33 @@ cdef class MemoryPool:
             raise DragonMemoryError(mem_alloc_obj[0], mem_alloc_obj[1])
         return mem_alloc_obj
 
-    def get_allocations(self):
+    def alloc_from_id(self, id):
+        """
+        Attach to a memory allocation given its unique identifier
+
+        :return: New MemoryAlloc object
+        """
+        cdef:
+            dragonError_t derr
+            dragonMemoryDescr_t mem
+            uint64_t id_val
+
+        id_val = id
+        with nogil:
+            derr = dragon_memory_from_id(&self._pool_hdl, id_val, &mem)
+
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not get memory allocation from id.")
+
+        mem_alloc_obj = MemoryAlloc.cinit(mem)
+        # We had to move the error handling here, in the caller
+        if not isinstance(mem_alloc_obj, MemoryAlloc):
+            # if there was an error, the returned value is a tuple of the form: (derr, err_str)
+            raise DragonMemoryError(mem_alloc_obj[0], mem_alloc_obj[1])
+
+        return mem_alloc_obj
+
+    def get_allocations(self, alloc_type=None):
         """
         Get a list of allocations in this pool
 
@@ -749,74 +1063,49 @@ cdef class MemoryPool:
         cdef:
             dragonError_t derr
             dragonMemoryPoolAllocations_t allocs
+            dragonMemoryAllocationType_t tyval
 
-        with nogil:
-            derr = dragon_memory_pool_get_allocations(&self._pool_hdl, &allocs)
-        if derr != DRAGON_SUCCESS:
-            raise DragonPoolError(derr, "Could not retrieve allocation list from pool")
+        if alloc_type is None:
+            with nogil:
+                derr = dragon_memory_pool_get_allocations(&self._pool_hdl, &allocs)
+            if derr != DRAGON_SUCCESS:
+                raise DragonPoolError(derr, "Could not retrieve allocation list from pool")
+        else:
+            if type(alloc_type) is AllocType:
+                tyval = alloc_type.value
+            else:
+                raise DragonMemoryError(DRAGON_INVALID_ARGUMENT, 'alloc_type must be None or of type AllocType.')
+
+            with nogil:
+                derr = dragon_memory_pool_get_type_allocations(&self._pool_hdl, tyval, &allocs)
 
         return MemoryAllocations.cinit(allocs)
 
-    def allocation_exists(self, alloc_type, alloc_id):
+    def allocation_exists(self, id):
         """
         Scan the pool to determine if a given allocation exists
 
-        :param alloc_type: AllocType Enum of the allocation type
-        :param alloc_id: Integer ID of the allocation
+        :param id: Integer ID of the allocation
         :return: True if allocation exists, False otherwise
         """
         cdef:
             dragonError_t derr
+            dragonMemoryDescr_t mem_descr
             int flag
-            dragonMemoryAllocationType_t tyval
-            dragonULInt alid
+            uint64_t id_val
 
-        tyval = alloc_type.value
-        alid = alloc_id
+        id_val = id
 
         with nogil:
-            derr = dragon_memory_pool_allocation_exists(&self._pool_hdl, tyval,
-                                                        alid, &flag)
+            derr = dragon_memory_get_alloc_memdescr(&mem_descr, &self._pool_hdl, id_val, 0, NULL)
+
+        if derr == DRAGON_KEY_NOT_FOUND:
+            return False
+
         if derr != DRAGON_SUCCESS:
             raise DragonPoolError(derr, "Error checking allocation existence")
 
-        return flag == 1
-
-    def get_alloc_by_id(self, alloc_type, alloc_id):
-        """
-        Get an allocation object by searching for type and ID
-
-        :param alloc_type: AllocType Enum of the allocation type
-        :param alloc_id: Integer ID of the allocation
-        :return: New MemoryAlloc object if allocation exists
-        :raises: RuntimeError if allocation does not exist
-        """
-        cdef:
-            dragonError_t derr
-            dragonMemoryDescr_t mem_descr
-            size_t mem_size
-            dragonMemoryAllocationType_t tyval
-            dragonULInt alid
-
-        tyval = alloc_type.value
-        alid = alloc_id
-
-        with nogil:
-            derr = dragon_memory_get_alloc_memdescr(&mem_descr, &self._pool_hdl,
-                                                    tyval, alid, 0, NULL)
-        if derr != DRAGON_SUCCESS:
-            raise DragonPoolError(derr, "Could not retrieve memory descriptor of provided ID and Type")
-
-        derr = dragon_memory_get_size(&mem_descr, &mem_size)
-        if derr != DRAGON_SUCCESS:
-            raise DragonPoolError(derr, "Could not retrieve size of memory descriptor")
-
-        mem_alloc_obj = MemoryAlloc.cinit(mem_descr)
-        # We had to move the error handling here, in the caller
-        if not isinstance(mem_alloc_obj, MemoryAlloc):
-            # if there was an error, the returned value is a tuple of the form: (derr, err_str)
-            raise DragonMemoryError(mem_alloc_obj[0], mem_alloc_obj[1])
-        return mem_alloc_obj
+        return True
 
     @property
     def is_local(self):
@@ -864,6 +1153,45 @@ cdef class MemoryPool:
             raise DragonPoolError(derr, "Could not retrieve the pool's percent utilized space.")
 
         return pct
+
+    @property
+    def max_allocations(self):
+        cdef:
+            dragonError_t derr
+            dragonMemoryPoolAttr_t attrs
+
+        with nogil:
+            derr = dragon_memory_get_attr(&self._pool_hdl, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve the pool's attributes.")
+
+        return attrs.max_allocations
+
+    @property
+    def max_used_allocations(self):
+        cdef:
+            dragonError_t derr
+            dragonMemoryPoolAttr_t attrs
+
+        with nogil:
+            derr = dragon_memory_get_attr(&self._pool_hdl, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve the pool's attributes.")
+
+        return attrs.max_manifest_entries
+
+    @property
+    def current_allocations(self):
+        cdef:
+            dragonError_t derr
+            dragonMemoryPoolAttr_t attrs
+
+        with nogil:
+            derr = dragon_memory_get_attr(&self._pool_hdl, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve the pool's attributes.")
+
+        return attrs.manifest_entries
 
     @property
     def num_block_sizes(self):
@@ -925,3 +1253,8 @@ cdef class MemoryPool:
             raise DragonPoolError(derr, "Error getting pool's rt_uid")
 
         return rtuid
+
+    # Debug use only by developers.
+    @classmethod
+    def _set_debug_flag(cls, flag):
+        dragon_memory_set_debug_flag(flag)

@@ -1,4 +1,4 @@
-""" The Dragon native machine interface provides hardware related functionality.
+"""The Dragon native machine interface provides hardware related functionality.
 
 These calls return various hardware properties of the system(s), like the number of processors
 or a list of all nodes.
@@ -35,6 +35,9 @@ class Node:
 
         self._descr = None
         self._update_descriptor(ident)
+
+    def __str__(self) -> str:
+        return f"name={self._descr.name}, h_uid={self._descr.h_uid}, hostname={self._descr.host_name}, ip={self._descr.ip_addrs}"
 
     @property
     def name(self) -> str:
@@ -116,13 +119,13 @@ class Node:
             return None
         vendor_int = self._descr.accelerators.vendor
         if vendor_int == AccVendor.NVIDIA:
-            return 'Nvidia'
+            return "Nvidia"
         elif vendor_int == AccVendor.AMD:
-            return 'AMD'
+            return "AMD"
         elif vendor_int == AccVendor.INTEL:
-            return 'Intel'
+            return "Intel"
         else:
-            return 'Unknown Vendor'
+            return "Unknown Vendor"
 
     @property
     def cpus(self) -> list[int]:
@@ -162,7 +165,6 @@ def current() -> Node:
 
 
 class System:
-
     def __init__(self):
         """A stub of a system abstraction"""
         self._nodes = get_list()

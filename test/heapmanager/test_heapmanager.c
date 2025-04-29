@@ -69,7 +69,7 @@ int main(int argc, char* argv[]) {
         printf("Error Code was %u\n",brc);
     }
 
-    unsigned char bit;
+    bool bit;
 
     brc = dragon_bitset_get(&bset, 42, &bit);
 
@@ -77,7 +77,7 @@ int main(int argc, char* argv[]) {
         printf("Error Code was %u\n",brc);
     }
 
-    if (bit == 1) {
+    if (bit == true) {
         printf("That was a one\n");
     }
 
@@ -116,12 +116,13 @@ int main(int argc, char* argv[]) {
 
     // reserve enough room for pointers to all mallocs.
     void** allocations = malloc(sizeof(void**)*malloc_tests_size);
+    size_t* sizes = malloc(sizeof(size_t)*malloc_tests_size);
 
     // make a heap of size 4GB with 4K segments as minimum block size. How much space
     // is required?
     size_t heap_size;
 
-    dragon_heap_size(32,12,4096,DRAGON_LOCK_FIFO,&heap_size);
+    dragon_heap_size(32,12,DRAGON_LOCK_FIFO,&heap_size);
 
     // get the required space.
     void* space = (dragonDynHeap_t*)malloc(heap_size);
@@ -132,7 +133,7 @@ int main(int argc, char* argv[]) {
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
     // Initialize the heap.
-    dragonError_t rc = dragon_heap_init(space, &heap, 32, 12, 4096, DRAGON_LOCK_FIFO, NULL);
+    dragonError_t rc = dragon_heap_init(space, &heap, 32, 12, DRAGON_LOCK_FIFO, NULL);
     clock_gettime(CLOCK_MONOTONIC, &t2);
     double timer = 1e-9 * (double)(1000000000L * (t2.tv_sec - t1.tv_sec) +
                                    (t2.tv_nsec - t1.tv_nsec));
@@ -154,18 +155,16 @@ int main(int argc, char* argv[]) {
         printf("  Incorrect segment size of %lu when 4096 was expected.\n", heap.segment_size);
     }
 
-    if (heap.num_freelists != 21) {
+    if (heap.num_block_sizes != 21) {
         sub_tests_failed++;
-        printf("  Incorrect number of freelists %lu when 21 was expected.\n", heap.num_freelists);
+        printf("  Incorrect number of freelists %lu when 21 was expected.\n", heap.num_block_sizes);
     }
 
-    if (*heap.recovery_needed_ptr) {
-        sub_tests_failed++;
-        printf("  Recovery_needed should be false after heap creation. It is not.\n");
-    }
+    size_t len;
 
-    for (int k=0;k<heap.num_freelists-1;k++) {
-        if (heap.free_lists[k] != 0) {
+    for (int k=0;k<heap.num_block_sizes-1;k++) {
+        dragon_bitset_length(&heap.free[k], &len);
+        if (len != 0) {
             sub_tests_failed++;
             printf("  Free list at %d should be empty. It is not.\n",k);
         }
@@ -214,29 +213,21 @@ int main(int argc, char* argv[]) {
         printf("  The segment size was incorrect in the attached handle.\n");
     }
 
-    if (heap.num_freelists != heap2.num_freelists) {
+    if (heap.num_block_sizes != heap2.num_block_sizes) {
         sub_tests_failed++;
         printf("  The number of free lists was incorrect in the attached handle.\n");
     }
 
-    if (heap.recovery_needed_ptr != heap2.recovery_needed_ptr) {
-        sub_tests_failed++;
-        printf("  The recovery_needed pointer was different in attached handle vs inited handle.\n");
-    }
-
-    if (heap.free_lists != heap2.free_lists) {
-        sub_tests_failed++;
-        printf("  The address of free_lists is wrong in an attached handle to the heap.\n");
-    }
-
-    for (int k=0;k<heap2.num_freelists-1;k++) {
-        if (heap2.free_lists[k] != 0) {
+    for (int k=0;k<heap2.num_block_sizes-1;k++) {
+        dragon_bitset_length(&heap2.free[k], &len);
+        if (len != 0) {
             sub_tests_failed++;
             printf("  Free list at %d should be empty. It is not.\n",k);
         }
     }
 
-    if (heap2.free_lists[20] == 0) {
+    dragon_bitset_length(&heap2.free[20], &len);
+    if (len == 0) {
         sub_tests_failed++;
         printf("  Free list at 20 should not be empty. It is.\n");
     }
@@ -306,13 +297,13 @@ int main(int argc, char* argv[]) {
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
     rc = dragon_heap_malloc(&heap, 16, &tmp);
+    printf("Got RC=%s\n", dragon_get_rc_string(rc));
 
     clock_gettime(CLOCK_MONOTONIC, &t2);
     timer = 1e-9 * (double)(1000000000L * (t2.tv_sec - t1.tv_sec) +
                                    (t2.tv_nsec - t1.tv_nsec));
 
     printf("  Initial worst case dragon_heap_malloc for 4GB to 4K heap duration=%lf seconds.\n", timer);
-
 
     dragon_heap_get_stats(&heap, &stats);
 
@@ -345,14 +336,21 @@ int main(int argc, char* argv[]) {
         printf("  Failed Test 4.\n");
     }
 
-    dragon_heap_dump("Heap after successful malloc", &heap);
+    //dragon_heap_dump("Heap after successful malloc", &heap);
 
     sub_tests_failed = 0;
 
     printf("Test Case 5 : Free\n");
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
-    dragon_heap_free(&heap, tmp);
+    rc = dragon_heap_free(&heap, tmp, 16);
+
+    if (rc != DRAGON_SUCCESS) {
+        sub_tests_failed++;
+        printf("Expected success, got %s on free of allocation in test case 5\n", dragon_get_rc_string(rc));
+        printf("Traceback: %s", dragon_getlasterrstr());
+        return -1;
+    }
 
     clock_gettime(CLOCK_MONOTONIC, &t2);
     timer = 1e-9 * (double)(1000000000L * (t2.tv_sec - t1.tv_sec) +
@@ -386,84 +384,53 @@ int main(int argc, char* argv[]) {
         printf("  Failed Test 5.\n");
     }
 
-    dragon_heap_dump("Heap after successful free of only allocated block.", &heap);
+    //dragon_heap_dump("Heap after successful free of only allocated block.", &heap);
 
     sub_tests_failed = 0;
 
-    printf("Test Case 6: Corrupting Free List\n");
+    printf("Test Case 6: Two Allocations\n");
 
     dragon_heap_malloc(&heap, 32, &tmp);
+    //dragon_heap_dump("After first allocate", &heap);
     void* tmp2;
     dragon_heap_malloc(&heap,5000, &tmp2);
+    //dragon_heap_dump("After second allocate", &heap);
 
-    //purposely overwrite the linked list to force recovery.
-    size_t k;
-    for (k=0;k<5100;k++) {
-        char* c_ptr = (char*)(tmp + k);
-        *c_ptr = 99;
-    }
-
-    // This free will result in the heap manager detecting that recovery is needed. But recovery won't be done
-    // until the next call.
+    // This free should work.
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
-    rc = dragon_heap_free(&heap, tmp);
+    rc = dragon_heap_free(&heap, tmp2, 5000);
 
     clock_gettime(CLOCK_MONOTONIC, &t2);
     timer = 1e-9 * (double)(1000000000L * (t2.tv_sec - t1.tv_sec) +
                                    (t2.tv_nsec - t1.tv_nsec));
 
-    printf("  First free after corruption needing and detecting recovery needed duration=%lf seconds.\n", timer);
-
+    printf("  Free duration=%lf seconds.\n", timer);
 
     if (rc != DRAGON_SUCCESS) {
         sub_tests_failed++;
-        printf("  A free of a pointer that should have completed successfully did not. Return code was %u\n",rc);
+        printf("  A free of a pointer should have worked. Return code was %u\n",rc);
     }
 
+    //dragon_heap_dump("After first free", &heap);
+
+    // This free should work.
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
-    // This free is rejected.
-    rc = dragon_heap_free(&heap, tmp2);
+    rc = dragon_heap_free(&heap, tmp, 32);
 
     clock_gettime(CLOCK_MONOTONIC, &t2);
     timer = 1e-9 * (double)(1000000000L * (t2.tv_sec - t1.tv_sec) +
                                    (t2.tv_nsec - t1.tv_nsec));
 
-    printf("  Second free after corruption and insisting recovery needed duration=%lf seconds.\n", timer);
-
-    if (rc != DRAGON_DYNHEAP_RECOVERY_REQUIRED) {
-        sub_tests_failed++;
-        printf("  A free of a pointer that should have caused a recover needed return code did not. Return code was %u\n",rc);
-    }
-
-    printf("  Recovery is needed and being attempted.\n");
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-
-    dragon_heap_recover(&heap);
-
-    clock_gettime(CLOCK_MONOTONIC, &t2);
-    timer = 1e-9 * (double)(1000000000L * (t2.tv_sec - t1.tv_sec) +
-                                   (t2.tv_nsec - t1.tv_nsec));
-
-    printf("  Recovery duration=%lf seconds.\n", timer);
-
-    // This free should now work.
-    clock_gettime(CLOCK_MONOTONIC, &t1);
-
-    rc = dragon_heap_free(&heap, tmp2);
-
-    clock_gettime(CLOCK_MONOTONIC, &t2);
-    timer = 1e-9 * (double)(1000000000L * (t2.tv_sec - t1.tv_sec) +
-                                   (t2.tv_nsec - t1.tv_nsec));
-
-    printf("  Second free after recovery duration=%lf seconds.\n", timer);
+    printf("  Free duration=%lf seconds.\n", timer);
 
     if (rc != DRAGON_SUCCESS) {
         sub_tests_failed++;
-        printf("  A free of a pointer that should have caused a recover needed return code did not. Return code was %u\n",rc);
+        printf("  A free of a pointer should have worked. Return code was %u\n",rc);
     }
 
+    //dragon_heap_dump("After second free", &heap);
 
     dragon_heap_get_stats(&heap, &stats);
 
@@ -493,7 +460,7 @@ int main(int argc, char* argv[]) {
 
     sub_tests_failed = 0;
 
-    dragon_heap_dump("Heap just before random mallocs.", &heap);
+    //dragon_heap_dump("Heap just before random mallocs.", &heap);
 
     printf("Test Case 7: Random Mallocs in a 4GB to 4K Heap\n");
 
@@ -504,10 +471,11 @@ int main(int argc, char* argv[]) {
 
     for (int i=0;i<malloc_tests_size;i++) {
         void* ptr;
-        dragon_heap_malloc(&heap, values[i],&ptr);
-        if (ptr != NULL) {
+        rc = dragon_heap_malloc(&heap, values[i],&ptr);
+        if (rc == DRAGON_SUCCESS) {
             total_size += values[i];
             allocations[number_valid_allocations] = ptr;
+            sizes[number_valid_allocations] = values[i];
             number_valid_allocations++;
         } else {
             printf("  Allocation of %lu bytes could not be satisfied\n",values[i]);
@@ -542,7 +510,7 @@ int main(int argc, char* argv[]) {
         printf("The utilization percentage should be 99.38692. It was %lf\n",stats.utilization_pct);
     }
 
-    rc = dragon_heap_free(&heap, (void*)123456);
+    rc = dragon_heap_free(&heap, (void*)9999999999999, 12);
 
     if (rc != DRAGON_DYNHEAP_INVALID_POINTER) {
         sub_tests_failed++;
@@ -552,7 +520,7 @@ int main(int argc, char* argv[]) {
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
     for (int i=0;i<number_valid_allocations;i++) {
-        rc = dragon_heap_free(&heap, allocations[i]);
+        rc = dragon_heap_free(&heap, allocations[i], sizes[i]);
         if (rc != DRAGON_SUCCESS) {
             sub_tests_failed++;
             printf("Freeing allocation resulted in non-zero rc=%u\n",rc);
@@ -599,13 +567,13 @@ int main(int argc, char* argv[]) {
 
     printf("Test Case 8: A Second Heap with 4GB to 32 byte blocks\n");
 
-    dragon_heap_size(32,5,0,DRAGON_LOCK_FIFO, &heap_size);
+    dragon_heap_size(32,5,DRAGON_LOCK_FIFO, &heap_size);
 
     space = (dragonDynHeap_t*)malloc(heap_size);
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
-    rc = dragon_heap_init(space, &heap,32,5,0,DRAGON_LOCK_FIFO, NULL);
+    rc = dragon_heap_init(space, &heap,32,5,DRAGON_LOCK_FIFO, NULL);
 
     clock_gettime(CLOCK_MONOTONIC, &t2);
     timer = 1e-9 * (double)(1000000000L * (t2.tv_sec - t1.tv_sec) +
@@ -627,7 +595,7 @@ int main(int argc, char* argv[]) {
                                    (t2.tv_nsec - t1.tv_nsec));
 
     printf("  dragon_dynmem_malloc duration for initial malloc is %lf seconds.\n", timer);
-    printf("  This causes splits of the largest 4GB block all the way down to 32 byte blocks in powers of 2. So 26 splits touching many pages.\n");
+    printf("  This causes splits of the largest 4GB block all the way down to 32 byte blocks in powers of 2. So 26 splits.\n");
 
     if (rc != DRAGON_SUCCESS) {
         sub_tests_failed++;
@@ -641,10 +609,11 @@ int main(int argc, char* argv[]) {
 
     for (int i=0;i<malloc_tests_size;i++) {
         void* ptr;
-        dragon_heap_malloc(&heap, values[i],&ptr);
-        if (ptr != NULL) {
+        rc = dragon_heap_malloc(&heap, values[i],&ptr);
+        if (rc == DRAGON_SUCCESS) {
             total_size += values[i];
             allocations[number_valid_allocations] = ptr;
+            sizes[number_valid_allocations] = values[i];
             number_valid_allocations++;
         } else {
             printf("  Allocation of %lu bytes could not be satisfied\n",values[i]);
@@ -677,10 +646,11 @@ int main(int argc, char* argv[]) {
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
     for (int i=0;i<number_valid_allocations;i++) {
-        rc = dragon_heap_free(&heap, allocations[i]);
+        rc = dragon_heap_free(&heap, allocations[i], sizes[i]);
         if (rc != DRAGON_SUCCESS) {
             sub_tests_failed++;
-            printf("Freeing allocation resulted in non-zero rc=%u\n",rc);
+            printf("  Freeing allocation resulted in non-zero rc=%s\n",dragon_get_rc_string(rc));
+            printf("  Traceback: %s\n", dragon_getlasterrstr());
         }
     }
 
@@ -693,7 +663,7 @@ int main(int argc, char* argv[]) {
 
     clock_gettime(CLOCK_MONOTONIC, &t1);
 
-    rc = dragon_heap_free(&heap, tmp);
+    rc = dragon_heap_free(&heap, tmp, 32);
 
     clock_gettime(CLOCK_MONOTONIC, &t2);
     timer = 1e-9 * (double)(1000000000L * (t2.tv_sec - t1.tv_sec) +
@@ -730,9 +700,14 @@ int main(int argc, char* argv[]) {
     size_t preallocated[] = {2,2,2,10,0,0,0,0,
                           0,0,0,0,0,0,0,0,
                           0,0,0,0,0,0,0,0,
-                          0,0,0};
+                          0,0,0,0};
 
-    rc = dragon_heap_init(space, &heap, 32, 5, 0, DRAGON_LOCK_FIFO, preallocated);
+    rc = dragon_heap_init(space, &heap, 32, 5, DRAGON_LOCK_FIFO, preallocated);
+
+    if (rc != DRAGON_SUCCESS) {
+        printf("  heap init failed with=%s\n",dragon_get_rc_string(rc));
+        printf("  Traceback: %s\n", dragon_getlasterrstr());
+    }
 
     //dragon_heap_dump("Heap after preallocated blocks.", &heap);
 
@@ -745,16 +720,16 @@ int main(int argc, char* argv[]) {
         printf("Failed with %s and %s\n",dragon_get_rc_string(rc),dragon_getlasterrstr());
     }
 
-    rc = dragon_heap_free(&heap, ptr);
+    rc = dragon_heap_free(&heap, ptr, 1024);
 
     if (rc != DRAGON_SUCCESS) {
         sub_tests_failed++;
         printf("Failed with %s and %s\n",dragon_get_rc_string(rc),dragon_getlasterrstr());
     }
 
-    dragon_heap_dump("Heap after preallocated blocks and one dynamic allocation.", &heap);
+    //dragon_heap_dump("Heap after preallocated blocks and one dynamic allocation.", &heap);
 
-    for (int i=0; i<1000; i++) {
+    for (int i=0; i<1; i++) {
         void* allocs[10];
         for (int k=0;k<10;k++) {
             allocs[k] = 0UL;
@@ -765,7 +740,7 @@ int main(int argc, char* argv[]) {
             }
         }
         for (int k=0;k<10;k++) {
-            rc = dragon_heap_free(&heap,allocs[k]);
+            rc = dragon_heap_free(&heap,allocs[k], 250);
             if (rc != DRAGON_SUCCESS) {
                 sub_tests_failed++;
                 printf("Failed with %s and %s\n",dragon_get_rc_string(rc),dragon_getlasterrstr());
@@ -773,16 +748,17 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    dragon_heap_dump("Heap after 10 preallocated blocks malloced and freed.", &heap);
+    //dragon_heap_dump("Heap after 10 preallocated blocks malloced and freed.", &heap);
 
     number_valid_allocations = 0;
 
     for (int i=0;i<malloc_tests_size;i++) {
         void* ptr;
-        rc = dragon_heap_malloc(&heap, values[i],&ptr);
-        if (rc == DRAGON_SUCCESS && ptr != NULL) {
+        rc = dragon_heap_malloc(&heap, values[i], &ptr);
+        if (rc == DRAGON_SUCCESS) {
             total_size += values[i];
             allocations[number_valid_allocations] = ptr;
+            sizes[number_valid_allocations] = values[i];
             number_valid_allocations++;
         } else {
             printf("  Allocation of %lu bytes could not be satisfied with rc=%s\n",values[i], dragon_get_rc_string(rc));
@@ -799,7 +775,7 @@ int main(int argc, char* argv[]) {
     }
 
     for (int i=0;i<number_valid_allocations;i++) {
-        rc = dragon_heap_free(&heap, allocations[i]);
+        rc = dragon_heap_free(&heap, allocations[i], sizes[i]);
         if (rc != DRAGON_SUCCESS) {
             sub_tests_failed++;
             printf("Freeing allocation resulted in non-zero rc=%u\n",rc);

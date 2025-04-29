@@ -5,6 +5,8 @@
     where either the sender or receiver may create the
     queue first and the other will get the same queue
     regardless of order.
+
+ * Copyright Cray HPE 2021
 */
 #ifndef _DRAGON_PMSGQUEUE_H
 #define _DRAGON_PMSGQUEUE_H

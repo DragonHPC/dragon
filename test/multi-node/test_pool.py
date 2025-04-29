@@ -1,4 +1,4 @@
-""" This file contains Dragon multi-node acceptance tests for the
+"""This file contains Dragon multi-node acceptance tests for the
 `multiprocessing.Pool` object.  The test scales with the total number of CPUs
 reported by the allocation, i.e. it becomes tougher on larger allocations.
 
@@ -41,23 +41,28 @@ def raise_large_valuerror(wait):
 def identity(x):
     return x
 
+
 def placement_info(vendor):
     hostname = socket.gethostname()
     pid = os.getpid()
     cpus_allowed_list = -1
-    with open(f'/proc/{pid}/status') as f:
+    with open(f"/proc/{pid}/status") as f:
         for _, line in enumerate(f):
-            split_line = line.split(':')
+            split_line = line.split(":")
             if split_line[0] == "Cpus_allowed_list":
-                cpus_allowed_list = split_line[1].strip('\n').strip('\t')
+                cpus_allowed_list = split_line[1].strip("\n").strip("\t")
                 break
     visible_devices = None
-    if vendor == 'Nvidia':
+    if vendor == "Nvidia":
         visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
-    elif vendor == 'AMD':
+    elif vendor == "AMD":
         visible_devices = os.getenv("ROCR_VISIBLE_DEVICES")
 
-    return (hostname, cpus_allowed_list, visible_devices,)
+    return (
+        hostname,
+        cpus_allowed_list,
+        visible_devices,
+    )
 
 
 class TestPoolMultiNode(unittest.TestCase):
@@ -67,12 +72,12 @@ class TestPoolMultiNode(unittest.TestCase):
     def setUp(self):
         ncpu = max(2, mp.cpu_count() // 8)
         self.pool = mp.Pool(ncpu)
-        #self.pool = mp.Pool(4)
+        # self.pool = mp.Pool(4)
         while not self.pool._start_barrier_passed.is_set():
             time.sleep(0.25)
 
     def tearDown(self):
-        #self.pool.terminate()
+        # self.pool.terminate()
         self.pool.close()
         self.pool.join()
         self.pool = None
@@ -163,28 +168,30 @@ class TestPoolMultiNode(unittest.TestCase):
     def test_hostname_node_restriction(self):
         my_alloc = System()
         num_procs_per_node = 2
-        num_nodes_to_use = int(my_alloc.nnodes/2)
+        num_nodes_to_use = int(my_alloc.nnodes / 2)
         node_list = my_alloc.nodes
-        num_procs = num_nodes_to_use*num_procs_per_node
+        num_procs = num_nodes_to_use * num_procs_per_node
         gpu_vendor = None
         acceptable_hostnames = []
 
         # create a process group that runs on a subset of nodes
 
-        policy_list=[]
+        policy_list = []
         for node_num in range(num_nodes_to_use):
             node_name = Node(node_list[node_num]).hostname
-            policy_list.append(Policy(placement=Policy.Placement.HOST_NAME,host_name=node_name))
+            policy_list.append(Policy(placement=Policy.Placement.HOST_NAME, host_name=node_name))
             acceptable_hostnames.append(node_name)
 
         p = Pool(policy=policy_list, processes_per_policy=num_procs_per_node)
-        res = p.map_async(placement_info, [(gpu_vendor)]*num_procs)
+        res = p.map_async(placement_info, [gpu_vendor] * num_procs)
 
         self.assertEqual(len(res.get()), num_procs)
         for result in res.get():
             hostname, _, _ = result
             # check that proc is on a node it was meant to land on
-            self.assertIn(hostname, acceptable_hostnames, msg=f'Got hostname {hostname} which is not in {acceptable_hostnames}')
+            self.assertIn(
+                hostname, acceptable_hostnames, msg=f"Got hostname {hostname} which is not in {acceptable_hostnames}"
+            )
         p.close()
         p.join()
 
@@ -200,7 +207,7 @@ class TestPoolScalingMultiNode(unittest.TestCase):
 
         maxcpus = np.flip(np.logspace(np.log10(5), np.log10(max(2, mp.cpu_count() // 8)), num=8, dtype=int))
 
-        params = [1 for _ in range(N)]
+        params = [0.01 for _ in range(N)]
 
         for cpus in maxcpus:
             start = time.monotonic()
@@ -220,15 +227,13 @@ class TestPoolScalingMultiNode(unittest.TestCase):
 
         for cpus in maxcpus:
             N = int(10 * cpus)
-            params = [1 for _ in range(N)]
+            params = [0.01 for _ in range(N)]
             start = time.monotonic()
             with mp.Pool(int(cpus)) as pool:
                 pool.map(time.sleep, params)
             pool.join()
             stop = time.monotonic()
             print(f"{N=} {int(cpus)=} {stop-start=}", flush=True)
-
-
 
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-""" This file contains Dragon multi-node acceptance tests for the
+"""This file contains Dragon multi-node acceptance tests for the
 PMOD MPI job launcher. The test runs 4 MPI jobs simulataneously and
 waits for their completion.
 
@@ -108,9 +108,7 @@ def node_shepherd(job_params, q_to_spawner):
         for lrank in range(job_params.ppn):
             nidlist.append(nid)
 
-    pmod = djm.PMOD(
-        job_params.ppn, job_params.nid, job_params.nnodes, nranks, nidlist, hostname_list, job_params.id
-    )
+    pmod = djm.PMOD(job_params.ppn, job_params.nid, job_params.nnodes, nranks, nidlist, hostname_list, job_params.id)
 
     child_handles = []
 

@@ -2,6 +2,19 @@ from dragon.dtypes_inc cimport *
 from dragon.return_codes cimport *
 #import cython
 
+cpdef host_id_from_k8s(str pod_uid):
+    """This is used to get a hostid based on the k8s pod uid.
+    It is called when a process in one node needs to know
+    the host_id of another node.
+    It can be called from a node/pod as many times as needed
+    in order to translate a pod uid to a dragon hostid.
+    For example, a backend pod can query the hostids of the other
+    backend pods. For setting/assigning the hostid of the pod itself,
+    each pod needs to call set_host_id().
+    """
+    pod_uuid = pod_uid.encode('utf-8')
+    return dragon_host_id_from_k8s_uuid(<char *>pod_uuid)
+
 cpdef host_id():
     return dragon_host_id()
 
@@ -119,7 +132,7 @@ cpdef set_local_kv(key, value, timeout=None):
 
     if len(key) == 0:
         raise KeyError('Key cannot be empty')
-    
+
     if timeout is None:
         time_ptr = NULL
     elif isinstance(timeout, int) or isinstance(timeout, float):
@@ -180,4 +193,15 @@ cpdef get_local_kv(key, timeout=None):
 
     return val_str.decode('utf-8')
 
+cpdef get_hugepage_mount():
+    cdef:
+        dragonError_t derr
+        char *mount_dir
+        bytes tmp_bytes
 
+    derr = dragon_get_hugepage_mount(&mount_dir)
+    if derr == DRAGON_SUCCESS:
+        tmp_bytes = mount_dir
+        return tmp_bytes.decode('utf-8')
+    else:
+        return None

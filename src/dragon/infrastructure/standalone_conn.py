@@ -1,7 +1,5 @@
-"""A quick and dirty scheme for doing single node channels by themselves.
+"""A quick and dirty scheme for doing single node channels by themselves."""
 
-
-"""
 import atexit
 import logging
 import os
@@ -14,13 +12,13 @@ import dragon.infrastructure.connection as dic
 import dragon.infrastructure.parameters as dparm
 import dragon.utils as du
 
-_STANDALONE_POOL_EV_NAME = 'DRAGON_STANDALONE_POOL'
+_STANDALONE_POOL_EV_NAME = "DRAGON_STANDALONE_POOL"
 _STANDALONE_POOL = None
 _MY_CHANNELS = set()
 _IS_INIT = False
 _ID_BASE = None
 
-LOG = logging.getLogger('connection')
+LOG = logging.getLogger("connection")
 
 
 def destroy_standalone():
@@ -37,12 +35,12 @@ def destroy_my_channels():
         try:
             chan.destroy()
         except dch.ChannelError as ce:
-            logging.exception('destroy of {} failed: {}'.format(chan.cuid, ce))
+            logging.exception("destroy of {} failed: {}".format(chan.cuid, ce))
 
     _MY_CHANNELS.clear()
 
 
-def get_going(pool_size=2 ** 30, pool_attr=None, pool_uid=None):
+def get_going(pool_size=2**30, pool_attr=None, pool_uid=None):
     global _STANDALONE_POOL
     if _STANDALONE_POOL_EV_NAME in os.environ:
         # get the pool descriptor from the environment
@@ -50,8 +48,8 @@ def get_going(pool_size=2 ** 30, pool_attr=None, pool_uid=None):
         _STANDALONE_POOL = dmm.MemoryPool.attach(pool_desc)
     else:
         # make the pool descriptor
-        username = os.environ.get('USER', str(os.getuid()))
-        pool_name = f'sa_{username}_{os.getpid()!s}'
+        username = os.environ.get("USER", str(os.getuid()))
+        pool_name = f"sa_{username}_{os.getpid()!s}"
         if pool_uid is None:
             pool_uid = os.getpid()
 

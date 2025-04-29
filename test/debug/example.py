@@ -14,10 +14,10 @@ def fp(x):
 
 def debug_it():
     delay = random.uniform(1, 10)
-    fp(f'p_uid = {dparm.this_process.my_puid} will be delaying {delay} seconds')
+    fp(f"p_uid = {dparm.this_process.my_puid} will be delaying {delay} seconds")
     time.sleep(delay)
     breakpoint()  # people might want tools to conditionally enable breakpoints.
-    fp(f'How fun it is here in {dparm.this_process.my_puid}')
+    fp(f"How fun it is here in {dparm.this_process.my_puid}")
 
 
 class IHateFives(Exception):
@@ -26,17 +26,17 @@ class IHateFives(Exception):
 
 def except_it():
     delay = random.uniform(1, 10)
-    fp(f'p_uid = {dparm.this_process.my_puid} will be delaying {delay} seconds')
+    fp(f"p_uid = {dparm.this_process.my_puid} will be delaying {delay} seconds")
     time.sleep(delay)
 
     if dparm.this_process.my_puid == 5:
         raise IHateFives
 
-    fp(f'Leaving {dparm.this_process.my_puid}')
+    fp(f"Leaving {dparm.this_process.my_puid}")
 
 
 def main():
-    multiprocessing.set_start_method('dragon')
+    multiprocessing.set_start_method("dragon")
     # multiprocessing.set_start_method('spawn')
 
     nproc = 3
@@ -55,5 +55,5 @@ def main():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     exit(main())

@@ -9,7 +9,7 @@ import time
 import os
 
 from .lock import Lock
-from ..channels import Channel, ChannelRecvTimeout, ChannelEmpty, ChannelRecvH, ChannelSendH
+from ..channels import Channel, ChannelRecvTimeout, ChannelEmpty, ChannelRecvH, ChannelSendH, EventType, PollResult
 from ..dtypes import WHEN_DEPOSITED
 from ..globalservices.channel import get_refcnt, release_refcnt, create
 from ..infrastructure.channel_desc import ChannelOptions
@@ -29,19 +29,12 @@ class Semaphore:
     Semaphore for the current value.
     """
 
-    _BYTEORDER = "big"
-    _POLL_FREQ = 0.01
-
     def __del__(self):
-        if not self._closed:
-            self._closed = True
-            try:
-                self._writer.close()
-                self._reader.close()
-                release_refcnt(self._channel.cuid)
-                self._channel.detach()
-            except Exception:
-                pass
+        try:
+            release_refcnt(self._channel.cuid)
+            self._channel.detach()
+        except Exception:
+            pass
 
     def __enter__(self):
         self.acquire()
@@ -62,15 +55,12 @@ class Semaphore:
 
         LOGGER.debug(f"Init Semaphore with value={value}, m_uid={m_uid}, bounded={bounded}")
 
-        self._closed = True
-
+        # Not used beyond initialization, but included for debugging.
         self._bounded = bounded
         self._initial_value = value
+        local_opts = {"semaphore":not bounded, "bounded_semaphore":bounded, "initial_sem_value":value}
 
-        self._lock = Lock()
-
-        the_options = ChannelOptions(ref_count=True)
-        the_options.local_opts.capacity = 1
+        the_options = ChannelOptions(ref_count=True, local_opts=local_opts)
 
         descr = create(m_uid=m_uid, options=the_options)
 
@@ -78,104 +68,33 @@ class Semaphore:
         self._channel = Channel.attach(descr.sdesc)
         # get_refcnt(self._channel.cuid)
 
-        self._reset()
-
-        self._lmsg = value.to_bytes(8, byteorder=self._BYTEORDER)
-
-        if value > 0:
-            self._writer.send_bytes(self._lmsg)
-
-        self._closed = False
-
     def __getstate__(self) -> tuple:
 
-        if self._closed:
-            raise ValueError(f"Semaphore {self!r} is closed and cannot be serialized.")
-
-        sdesc = self._channel.serialize()
-
-        return sdesc, self._bounded, self._initial_value, self._lock
+        return (self._channel_sdesc, self._bounded, self._initial_value)
 
     def __setstate__(self, state) -> None:
 
-        self._closed = True
+        self._channel_sdesc, self._bounded, self._initial_value = state
 
-        ch_sdesc, self._bounded, self._initial_value, self._lock = state
-
-        self._channel = Channel.attach(ch_sdesc)
+        self._channel = Channel.attach(self._channel_sdesc)
         get_refcnt(self._channel.cuid)
 
-        self._reset()
-
-        value = self.get_value()
-        self._lmsg = value.to_bytes(8, byteorder=self._BYTEORDER)
-
-        self._closed = False
-
     def acquire(self, blocking: bool = True, timeout: float = None) -> bool:
-        """Acquire the Semaphore, decrementing the counter, blocking the other
-        processes, if the counter is 0.
+        """Acquire the Semaphore, decrementing the counter, blocking other
+        processes when the counter is decremented to 0.
 
         :param blocking: block the process if the Semaphore cannot be acquired immediately, defaults to True
         :type blocking: bool, optional
-        :param timeout: timeout for a block in seconds, defaults to None
+        :param timeout: timeout for a block in seconds, defaults to None (i.e. no timeout)
         :type timeout: float, optional
         """
 
-        LOGGER.debug(f"Acquire Semaphore with blocking={blocking}, timeout={timeout}")
-
-        # We need to protect the channel with a lock to stop other processes from
-        # reading or writing into it while we are incrementing the counter.
-        # This is ugly and not very performant
-        # TODO: use dragon_channel_write_lock instead of a poor mans wait here.
-        # That should get rid of the self._lock
-
-        if timeout is None:
-            timeout = 1000000000
-
-        if timeout < 0 or not blocking:
+        if not blocking:
             timeout = 0
 
-        sleep_time = min(self._POLL_FREQ, timeout)
+        LOGGER.debug(f"Acquire Semaphore with blocking={blocking}, timeout={timeout}")
 
-        start = time.monotonic()
-        stop = start
-
-        success = False
-        while (stop - start) <= timeout:
-
-            if not self._lock.acquire(block=False, timeout=None):
-                time.sleep(sleep_time)
-                stop = time.monotonic()
-                continue
-
-            try:
-                self._lmsg = self._reader.recv_bytes(timeout=None, blocking=False)
-                success = True
-                break
-            except ChannelEmpty:  # empty channel - keep waiting
-                pass
-
-            self._lock.release()
-
-            time.sleep(sleep_time)
-
-            stop = time.monotonic()
-
-        if not success:
-            return False
-
-        # still holding the lock here
-        value = int.from_bytes(self._lmsg, byteorder=self._BYTEORDER)
-        value -= 1
-
-        if value > 0:  # only write back to channel if value is not 0, else leave it empty
-            self._lmsg = value.to_bytes(8, self._BYTEORDER)
-            self._writer.send_bytes(self._lmsg, timeout=None, blocking=True)
-
-        self._lock.release()
-
-        return True
+        return self._channel.poll(event_mask=EventType.SEMAPHORE_P, timeout=timeout)
 
     def release(self, n: int = 1) -> None:
         """Release the Semaphore, incrementing the internal value by n,
@@ -187,50 +106,14 @@ class Semaphore:
 
         LOGGER.debug(f"Release Semaphore n={n}")
 
-        self._lock.acquire(block=True, timeout=None)
-
-        try:
-            self._lmsg = self._reader.recv_bytes(timeout=None, blocking=False)
-        except ChannelEmpty:
-            value = 0
-        else:  # use read value
-            value = int.from_bytes(self._lmsg, byteorder=self._BYTEORDER)
-
-        value += n
-
-        if self._bounded:
-            if value > self._initial_value:
-                self._writer.send_bytes(self._lmsg, timeout=None, blocking=True)
-                raise ValueError(
-                    f"BoundedSemaphore value of {value} would exceed initial value of {self._initial_value}"
-                )
-
-        self._lmsg = value.to_bytes(8, self._BYTEORDER)
-
-        self._writer.send_bytes(self._lmsg, timeout=None, blocking=True)
-
-        self._lock.release()
+        for i in range(n):
+            self._channel.poll(event_mask=EventType.SEMAPHORE_V)
 
     def get_value(self) -> int:
         """Get the value of the internal counter without acquiring the Semaphore."""
 
-        self._lock.acquire(block=True, timeout=None)
+        result = PollResult()
+        self._channel.poll(event_mask=EventType.SEMAPHORE_PEEK, poll_result=result)
+        return result.value
 
-        try:
-            self._lmsg = self._reader.recv_bytes(timeout=None, blocking=False)
-        except ChannelEmpty:
-            value = 0
-        else:
-            self._writer.send_bytes(self._lmsg, timeout=None, blocking=False)
-            value = int.from_bytes(self._lmsg, byteorder=self._BYTEORDER)
 
-        self._lock.release()
-
-        return value
-
-    def _reset(self) -> None:
-
-        self._reader = ChannelRecvH(self._channel)
-        self._writer = ChannelSendH(self._channel, return_mode=WHEN_DEPOSITED)
-        self._reader.open()
-        self._writer.open()

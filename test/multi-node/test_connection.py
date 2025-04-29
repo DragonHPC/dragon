@@ -1,4 +1,4 @@
-""" This file contains Dragon multi-node acceptance tests for the
+"""This file contains Dragon multi-node acceptance tests for the
 `multiprocessing.Pipe` object.  The test scales with the total number of CPUs
 reported by the allocation, i.e. it becomes tougher on larger allocations.
 
@@ -24,7 +24,6 @@ def ring_send_recv(id, bwd_recv, fwd_send, q, ev, sizes):
     ev.wait()
 
     for size in sizes:
-
         idx = int(size * 1024**2)
         data = data_all[0:idx]
 
@@ -102,7 +101,6 @@ class TestConnectionMultiNode(unittest.TestCase):
 
         processes = []
         for i in range(num_processes):
-
             if i == num_processes - 1:
                 this_send = last_send
             else:

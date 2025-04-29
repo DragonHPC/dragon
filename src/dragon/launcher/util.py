@@ -4,6 +4,8 @@ import sys
 import queue
 import logging
 import shutil
+import subprocess
+import os
 from functools import wraps, partial
 from typing import Callable
 
@@ -19,7 +21,7 @@ from .wlm import wlm_launch_dict, WLM, wlm_cls_dict
 # in startup or teardown before we assume something has gone wrong
 TIMEOUT_PATIENCE = 10  # seconds
 LA_TAG = 0
-LOGBASE = 'launcher'
+LOGBASE = "launcher"
 
 
 class SRQueue(queue.SimpleQueue):
@@ -31,6 +33,25 @@ class SRQueue(queue.SimpleQueue):
             return super().get(timeout=timeout)
         except queue.Empty:
             return None
+
+
+def exec_dragon_cleanup():
+
+    # Modify PATH so our script finds the bash script for dragon-cleanup
+    bin_path = os.path.join(dfacts.DRAGON_BASE_DIR, "bin")
+    _env = dict(os.environ)
+    _env["PATH"] = bin_path + ":" + _env["PATH"]
+
+    # Get the args that were passed in
+    if len(sys.argv) > 1:
+        args = sys.argv[1:]
+    else:
+        args = []
+
+    # Execute our cleanup
+    cleanup = [os.path.join(bin_path, dfacts.PROCNAME_GLOBAL_CLEANUP)] + args
+    proc = subprocess.run(cleanup, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=_env)
+    print(proc.stdout.decode("utf-8"), flush=True)
 
 
 def next_tag():
@@ -51,13 +72,12 @@ def detect_wlm():
                 break
 
     except Exception:
-        raise RuntimeError('Error searching for supported WLM')
+        raise RuntimeError("Error searching for supported WLM")
 
     if wlm is None:
-        raise RuntimeError('No supported WLM found')
+        raise RuntimeError("No supported WLM found")
     elif wlm is WLM.SSH:
-        msg = \
-"""
+        msg = """
 SSH was only supported launcher found. To use it, specify `--wlm ssh` as input to the dragon launcher.
 It requires passwordless SSH to all backend compute nodes and a list of hosts. Please see documentation
 and `dragon --help` for more information.
@@ -67,11 +87,13 @@ and `dragon --help` for more information.
     return wlm
 
 
-def get_wlm_launch_args(args_map: dict = None,
-                        launch_args: dict = None,
-                        nodes: tuple[int, list[str]] = None,
-                        hostname: str = None,
-                        wlm: WLM = None):
+def get_wlm_launch_args(
+    args_map: dict = None,
+    launch_args: dict = None,
+    nodes: tuple[int, list[str]] = None,
+    hostname: str = None,
+    wlm: WLM = None,
+):
     """Get arguments for WLM to launch the backend"""
 
     try:
@@ -79,11 +101,11 @@ def get_wlm_launch_args(args_map: dict = None,
             wlm = detect_wlm()
 
         if hostname is not None:
-            args_map['hostname'] = hostname
+            args_map["hostname"] = hostname
 
         if nodes is not None:
-            args_map['nnodes'] = nodes[0]
-            args_map['nodelist'] = ','.join(nodes[1])
+            args_map["nnodes"] = nodes[0]
+            args_map["nodelist"] = ",".join(nodes[1])
 
         wlm_args = wlm_launch_dict[wlm](args_map=args_map, launch_args=launch_args)
 
@@ -133,6 +155,7 @@ def queue_monitor(func: Callable, *, log_test_queue=None):
                 raise AbnormalTerminationError("Abnormal exit detected")
             else:
                 return msg
+
     return wrapper
 
 
@@ -174,6 +197,7 @@ def no_error_queue_monitor(func: Callable, *, log_test_queue=None):
                     log.log(msg.level, msg.msg, extra=msg.get_logging_dict())
             else:
                 return msg
+
     return wrapper
 
 
@@ -301,7 +325,7 @@ class AsyncQueueMonitor:
                 json_string = await loop.run_in_executor(None, self.queue.recv)
 
                 if self.running:
-                    if json_string == '':
+                    if json_string == "":
                         # Seems to happen at times during shutdown.
                         self.log.info("Got an empty string for a message in AsyncQueueMonitor for " + self.description)
                         raise EOFError("Got an empty string for a message in AsyncQueueMonitor for " + self.description)
@@ -323,12 +347,12 @@ class AsyncQueueMonitor:
                     # could have its own custom dispatch function.
                     self.dispatch(msg)
 
-            self.log.info('AsyncQueueMonitor exiting for queue ' + self.description)
+            self.log.info("AsyncQueueMonitor exiting for queue " + self.description)
             self.queue.close()
 
         except EOFError:
             # The underlying queue has closed.
-            self.log.info('AsyncQueueMonitor exiting due to EOF of queue for ' + self.description)
+            self.log.info("AsyncQueueMonitor exiting due to EOF of queue for " + self.description)
 
         except Exception as ex:
 
@@ -341,16 +365,25 @@ class AsyncQueueMonitor:
                 exc_type, exc_value, exc_traceback = sys.exc_info()
                 try:
                     try:
-                        text = "Got an unexpected message in AsyncQueueMonitor _receive_dispatch for " + \
-                               self.description + ". Message is '" + repr(
-                            msg) + "'"
+                        text = (
+                            "Got an unexpected message in AsyncQueueMonitor _receive_dispatch for "
+                            + self.description
+                            + ". Message is '"
+                            + repr(msg)
+                            + "'"
+                        )
                     except Exception as ex:
-                        text = "Got an invalid message in AsyncQueueMonitor _receive_dispatch for " + \
-                               self.description + ". Message is '" + json_string + "'"
+                        text = (
+                            "Got an invalid message in AsyncQueueMonitor _receive_dispatch for "
+                            + self.description
+                            + ". Message is '"
+                            + json_string
+                            + "'"
+                        )
                 except:
                     text = "Things are really bad in AysncQueueMonitor _receive_dispatch for " + self.description
 
-                ex_message = text + '\n' + "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+                ex_message = text + "\n" + "".join(traceback.format_exception(exc_type, exc_value, exc_traceback))
                 self.log.warning(ex_message)
 
             raise ex
@@ -369,6 +402,19 @@ def get_process_exe_args(args_map=None):
     else:
         target_fp = shutil.which(head_proc)
         if target_fp is not None:
+            perm = os.stat(target_fp)
+            # This checks the permission bits as an extra check.
+            # In a Docker container which was not returning
+            # executable correctly when headproc was not in the
+            # current working directory. This gets the user
+            # permission value (rwx) and the remainder of 2
+            # division (odd or even). If even, then executable
+            # bit is not set and remainder is 0. bool(0) is False.
+            # bool(1) is True.
+            executable = bool(int(oct(perm.st_mode)[-3]) % 2)
+            if not executable:
+                target_fp = None
+        if target_fp is not None:
             exe = target_fp
             args = head_proc_args[1:]  # Exclude the executable
         else:
@@ -378,11 +424,7 @@ def get_process_exe_args(args_map=None):
     return exe, args
 
 
-def mk_head_proc_start_msg(logbase='launcher',
-                           make_inf_channels=True,
-                           args_map=None,
-                           restart=False,
-                           resilient=False):
+def mk_head_proc_start_msg(logbase="launcher", make_inf_channels=True, args_map=None, restart=False, resilient=False):
     """Look at script arguments and return the head process launch message.
 
     If the first argument looks executable via 'which' then that will
@@ -391,22 +433,30 @@ def mk_head_proc_start_msg(logbase='launcher',
 
     :return: dmsg.GSProcessCreate message
     """
-    log = logging.getLogger(logbase).getChild('mk_head_proc_start_msg')
+    log = logging.getLogger(logbase).getChild("mk_head_proc_start_msg")
 
     exe, args = get_process_exe_args(args_map=args_map)
 
-    log.info(f'head process will be {exe} {args}')
+    log.info(f"head process will be {exe} {args}")
 
     options = None
-    if (make_inf_channels):
+    if make_inf_channels:
         options = pdesc.ProcessOptions(make_inf_channels=True)
 
-    return dmsg.GSProcessCreate(tag=next_tag(), p_uid=dfacts.LAUNCHER_PUID,
-                                r_c_uid=dfacts.BASE_BE_CUID, exe=exe, args=args,
-                                options=options, head_proc=True, restart=restart, resilient=resilient)
+    return dmsg.GSProcessCreate(
+        tag=next_tag(),
+        p_uid=dfacts.LAUNCHER_PUID,
+        r_c_uid=dfacts.BASE_BE_CUID,
+        exe=exe,
+        args=args,
+        options=options,
+        head_proc=True,
+        restart=restart,
+        resilient=resilient,
+    )
 
 
-def mk_shproc_echo_msg(logbase='launcher', stdin_str='', node_index=0):
+def mk_shproc_echo_msg(logbase="launcher", stdin_str="", node_index=0):
     """Look at script arguments and return a SHProcessCreate message
     to be used when using the transport test environment mode.
 
@@ -416,20 +466,25 @@ def mk_shproc_echo_msg(logbase='launcher', stdin_str='', node_index=0):
 
     :return: dmsg.SHProcessCreate message
     """
-    log = logging.getLogger(logbase).getChild('mk_shproc_echo_msg')
+    log = logging.getLogger(logbase).getChild("mk_shproc_echo_msg")
 
     exe, args = get_process_exe_args()
-    args = ['-c', "import socket; print(f'hello from {socket.gethostname()}')"]
+    args = ["-c", "import socket; print(f'hello from {socket.gethostname()}')"]
 
-    log.info(f'The shprocesscreate message will include {exe} {args}')
+    log.info(f"The shprocesscreate message will include {exe} {args}")
 
-    return dmsg.SHProcessCreate(tag=next_tag(), p_uid=dfacts.LAUNCHER_PUID,
-                                r_c_uid=dfacts.launcher_cuid_from_index(node_index),
-                                t_p_uid=dfacts.FIRST_PUID,
-                                exe=exe, args=args, initial_stdin=stdin_str)
+    return dmsg.SHProcessCreate(
+        tag=next_tag(),
+        p_uid=dfacts.LAUNCHER_PUID,
+        r_c_uid=dfacts.launcher_cuid_from_index(node_index),
+        t_p_uid=dfacts.FIRST_PUID,
+        exe=exe,
+        args=args,
+        initial_stdin=stdin_str,
+    )
 
 
-def mk_shproc_start_msg(logbase='launcher', stdin_str=''):
+def mk_shproc_start_msg(logbase="launcher", stdin_str=""):
     """Look at script arguments and return a SHProcessCreate message
     to be used when using the transport test environment mode.
 
@@ -439,10 +494,17 @@ def mk_shproc_start_msg(logbase='launcher', stdin_str=''):
 
     :return: dmsg.GSProcessCreate message
     """
-    log = logging.getLogger(logbase).getChild('mk_head_shproc_create_msg')
+    log = logging.getLogger(logbase).getChild("mk_head_shproc_create_msg")
 
     exe, args = get_process_exe_args()
-    log.info(f'The shprocesscreate message will include {exe} {args}')
+    log.info(f"The shprocesscreate message will include {exe} {args}")
 
-    return dmsg.SHProcessCreate(tag=next_tag(), p_uid=dfacts.LAUNCHER_PUID,
-                                r_c_uid=dfacts.BASE_BE_CUID, t_p_uid=dfacts.FIRST_PUID, exe=exe, args=args, initial_stdin=stdin_str)
+    return dmsg.SHProcessCreate(
+        tag=next_tag(),
+        p_uid=dfacts.LAUNCHER_PUID,
+        r_c_uid=dfacts.BASE_BE_CUID,
+        t_p_uid=dfacts.FIRST_PUID,
+        exe=exe,
+        args=args,
+        initial_stdin=stdin_str,
+    )

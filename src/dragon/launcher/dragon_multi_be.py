@@ -8,12 +8,17 @@ from .backend import LauncherBackEnd
 from .launchargs import NETWORK_HELP, OVERLAY_PORT_HELP
 
 from ..utils import B64
-from ..infrastructure.facts import PROCNAME_LA_BE, DEFAULT_TRANSPORT_NETIF, TRANSPORT_TEST_ENV, DEFAULT_OVERLAY_NETWORK_PORT
+from ..infrastructure.facts import (
+    PROCNAME_LA_BE,
+    DEFAULT_TRANSPORT_NETIF,
+    TRANSPORT_TEST_ENV,
+    DEFAULT_OVERLAY_NETWORK_PORT,
+)
 from ..dlogging.util import setup_BE_logging
 from ..dlogging.util import DragonLoggingServices as dls
 from . import util as dlutil
 
-LOGBASE = 'launcher_multi_be'
+LOGBASE = "launcher_multi_be"
 
 
 def main(transport_test_env: bool = False):
@@ -29,22 +34,29 @@ def main(transport_test_env: bool = False):
 
     # Set up the logging level. If debug, start logging immediately
     level, fname = setup_BE_logging(dls.LA_BE)
-    log = logging.getLogger(dls.LA_BE).getChild('main')
+    log = logging.getLogger(dls.LA_BE).getChild("main")
     log.debug("in multi_be")
     log.debug(f"sys.argv = {sys.argv}")
 
-    parser = ArgumentParser(description='Run Dragon backend')
+    parser = ArgumentParser(description="Run Dragon backend")
 
-    parser.add_argument('--ip-addr', metavar='FRONTEND_IP', dest='ip_addrs',
-                        type=str, help="IP address to connect to frontend")
-    parser.add_argument('--host-id', dest='host_ids', type=str, help="Host ID of frontend")
-    parser.add_argument('--frontend-sdesc', dest='frontend_sdesc', type=B64.from_str,
-                        help="File descriptor for communication to frontend")
-    parser.add_argument('--transport-test', action='store_true', help="Run in transport test mode")
-    parser.add_argument('--network-prefix', dest='network_prefix', type=str, help=NETWORK_HELP)
-    parser.add_argument('--overlay-port', dest='overlay_port', type=int, help=OVERLAY_PORT_HELP)
-    parser.add_argument('--backend-ip-addr', dest='backend_ip_addr', type=str, help='Force backend transport agent IP address')
-    parser.add_argument('--backend-hostname', dest='backend_hostname', type=str, help='Force backend hostname')
+    parser.add_argument(
+        "--ip-addr", metavar="FRONTEND_IP", dest="ip_addrs", type=str, help="IP address to connect to frontend"
+    )
+    parser.add_argument("--host-id", dest="host_ids", type=str, help="Host ID of frontend")
+    parser.add_argument(
+        "--frontend-sdesc",
+        dest="frontend_sdesc",
+        type=B64.from_str,
+        help="File descriptor for communication to frontend",
+    )
+    parser.add_argument("--transport-test", action="store_true", help="Run in transport test mode")
+    parser.add_argument("--network-prefix", dest="network_prefix", type=str, help=NETWORK_HELP)
+    parser.add_argument("--overlay-port", dest="overlay_port", type=int, help=OVERLAY_PORT_HELP)
+    parser.add_argument(
+        "--backend-ip-addr", dest="backend_ip_addr", type=str, help="Force backend transport agent IP address"
+    )
+    parser.add_argument("--backend-hostname", dest="backend_hostname", type=str, help="Force backend hostname")
 
     parser.set_defaults(
         transport_test=bool(strtobool(os.environ.get(TRANSPORT_TEST_ENV, str(transport_test_env)))),
@@ -69,7 +81,7 @@ def main(transport_test_env: bool = False):
             be_server.run_msg_server()
 
         except Exception as err:  # pylint: disable=broad-except
-            log.exception(f'la_be {socket.gethostname} main exception: {err}')
+            log.exception(f"la_be {socket.gethostname} main exception: {err}")
             raise
 
 

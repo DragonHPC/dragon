@@ -6,7 +6,13 @@ from .base import BaseNetworkConfig
 
 
 def get_slurm_launch_be_args(args_map, launch_args):
-    slurm_launch_be_args = ['srun', f"--nodes={args_map['nnodes']}", f"--ntasks={args_map['nnodes']}", '--cpu_bind=none', f"--nodelist={args_map['nodelist']}"]
+    slurm_launch_be_args = [
+        "srun",
+        f"--nodes={args_map['nnodes']}",
+        f"--ntasks={args_map['nnodes']}",
+        "--cpu_bind=none",
+        f"--nodelist={args_map['nodelist']}",
+    ]
     return slurm_launch_be_args + launch_args
 
 
@@ -17,15 +23,13 @@ class SlurmNetworkConfig(BaseNetworkConfig):
 
     def __init__(self, network_prefix, port, hostlist):
 
-        self.job_id =  os.environ.get(self.ENV_SLURM_JOB_ID)
+        self.job_id = os.environ.get(self.ENV_SLURM_JOB_ID)
         if not self.job_id:
             msg = """Requesting a slurm network config outside of slurm job allocation.
 Resubmit as part of a 'salloc' or 'sbatch' execution."""
             raise RuntimeError(msg)
 
-        super().__init__(
-            'slurm', network_prefix, port, int(os.environ.get("SLURM_JOB_NUM_NODES"))
-        )
+        super().__init__("slurm", network_prefix, port, int(os.environ.get("SLURM_JOB_NUM_NODES")))
 
         self.SRUN_ARGS = self.SRUN_COMMAND_LINE.format(nnodes=self.NNODES).split()
 
@@ -50,9 +54,5 @@ Resubmit as part of a 'salloc' or 'sbatch' execution."""
         self.LOGGER.debug(f"Launching config with: {srun_launch_args=}")
 
         return subprocess.Popen(
-            args=srun_launch_args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
-            start_new_session=True
+            args=srun_launch_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0, start_new_session=True
         )

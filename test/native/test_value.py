@@ -7,11 +7,11 @@ import ctypes
 import random
 import string
 
-import dragon
 from dragon.globalservices.process import create, multi_join
 from dragon.infrastructure.process_desc import ProcessOptions
 from dragon.native.value import Value, _SUPPORTED_TYPES
 from dragon.native.queue import Queue
+from dragon.native.process import Process
 import dragon.utils as du
 from ctypes import Structure, c_double
 
@@ -53,6 +53,11 @@ def test_value(args):
         assert parent_queue.get(timeout=None)
 
 
+def _double(foo):
+    foo.x *= 2
+    foo.y *= 2
+
+
 class TestValue(unittest.TestCase):
     def test_requirement_1_1(self):
         """typedef_or_type type checking"""
@@ -76,12 +81,24 @@ class TestValue(unittest.TestCase):
         self.assertEqual(v.value.x, 100, "Assignment to x in Point did not happen properly")
         self.assertEqual(v.value.y, 100, "Assignment to y in Point did not happen properly")
 
+    def test_pickled_structure(self):
+        """test that Value can handle a pickled Structure"""
+        v = Value(Point, (10, 10))
+        self.assertEqual(v.value.x, 10, "Assignment to x in Point did not happen properly")
+        self.assertEqual(v.value.y, 10, "Assignment to y in Point did not happen properly")
+
+        p = Process(target=_double, args=(v,))
+        p.daemon = True
+        p.start()
+        p.join()
+
+        self.assertEqual(v.value.x, 20, "Assignment to x in Point did not happen properly")
+        self.assertEqual(v.value.y, 20, "Assignment to y in Point did not happen properly")
+
     def test_float_power(self):
-        float_value = Value(c_double, 1.0 / 3.0)
+        float_value = Value(c_double, 1.0 / 3.0, lock=False)
         float_value.value **= 2
-        self.assertEqual(
-            (1.0 / 3.0) ** 2, float_value.value, "There is an issue with raising floats to the power of 2"
-        )
+        self.assertEqual((1.0 / 3.0) ** 2, float_value.value, "There is an issue with raising floats to the power of 2")
 
     def test_ping_pong(self):
         """queue ping pong between 2 processes that tests value assignment in

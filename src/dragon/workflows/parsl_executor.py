@@ -4,7 +4,7 @@ import multiprocessing as mp
 import logging
 
 # Uncomment this to see logging info
-#logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 import typeguard
 import concurrent.futures as cf
@@ -22,18 +22,53 @@ logger = logging.getLogger(__name__)
 class DragonPoolExecutor(ParslExecutor, RepresentationMixin):
     """A Dragon multiprocessing-based executor.
 
-    Parameters
-    ----------
-    max_processes : int
-        Number of processes. Default is 2.
-    storage_access : list of :class:`~parsl.data_provider.staging.Staging`
-        Specifications for accessing data this executor remotely.
+    Example usage:
+
+    .. highlight:: python
+    .. code-block:: python
+
+        import dragon
+        import multiprocessing as mp
+        import parsl
+        from parsl.config import Config
+        from parsl import python_app
+
+        @python_app
+        def platform():
+            import platform
+            import time
+
+            time.sleep(2)
+            return platform.uname()
+
+        if __name__ == "__main__":
+            mp.set_start_method("dragon")
+
+            config = Config(
+                executors=[
+                    DragonPoolExecutor(
+                        max_processes=4,
+                    ),
+                ],
+                strategy=None,
+            )
+
+            parsl.load(config)
+            calls = [platform() for i in range(4)]
+            print(calls)
+
+            for c in calls:
+                print("Got result: ", c.result())
     """
 
     @typeguard.typechecked
-    def __init__(self, label: str = 'dragon', max_processes: int = 2,
-                 storage_access: Optional[List[Staging]] = None,
-                 working_dir: Optional[str] = None):
+    def __init__(
+        self,
+        label: str = "dragon",
+        max_processes: int = 2,
+        storage_access: Optional[List[Staging]] = None,
+        working_dir: Optional[str] = None,
+    ):
         super().__init__()
         self.label = label
         self.max_processes = max_processes
@@ -46,8 +81,7 @@ class DragonPoolExecutor(ParslExecutor, RepresentationMixin):
 
     def start(self):
         context = mp.get_context("dragon")
-        self.executor = cf.ProcessPoolExecutor(max_workers=self.max_processes,
-                                              mp_context=context)
+        self.executor = cf.ProcessPoolExecutor(max_workers=self.max_processes, mp_context=context)
 
     def submit(self, func, resource_specification, *args, **kwargs):
         """Submits work to the process pool.
@@ -57,9 +91,11 @@ class DragonPoolExecutor(ParslExecutor, RepresentationMixin):
 
         """
         if resource_specification:
-            logger.error("Ignoring the resource specification. "
-                         "Parsl resource specification is not supported in ProcessPool Executor.")
-            raise UnsupportedFeatureError('resource specification', 'DragonPool Executor', None)
+            logger.error(
+                "Ignoring the resource specification. "
+                "Parsl resource specification is not supported in ProcessPool Executor."
+            )
+            raise UnsupportedFeatureError("resource specification", "DragonPool Executor", None)
 
         return self.executor.submit(func, *args, **kwargs)
 
@@ -106,6 +142,7 @@ class DragonPoolExecutor(ParslExecutor, RepresentationMixin):
         """Resource monitoring sometimes deadlocks, so this function returns false to disable it."""
         return False
 
+
 # =================================================
 # The Code below is used to test the above executor
 # =================================================
@@ -114,11 +151,14 @@ import parsl
 from parsl.config import Config
 
 from parsl import python_app
+
+
 # Here we sleep for 2 seconds and return platform information
 @python_app
 def platform():
     import platform
     import time
+
     time.sleep(2)
     return platform.uname()
 
@@ -141,6 +181,7 @@ def main():
 
     for c in calls:
         print("Got result: ", c.result())
+
 
 if __name__ == "__main__":
     main()

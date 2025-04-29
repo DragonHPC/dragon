@@ -7,20 +7,18 @@ def main(args=None):
     name_padding = min(24, max(map(len, console_scripts.keys())))
 
     parser = argparse.ArgumentParser(
-        prog='dragon',
+        prog="dragon",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        usage='SCRIPT ...',
-        description='Run dragon console script',
-        epilog='console scripts:\n' + '\n'.join(
-            f'  {{:<{name_padding}}}  {{:<}}'.format(ep.name, ep.value)
-            for ep in console_scripts.values()
-        ),
+        usage="SCRIPT ...",
+        description="Run dragon console script",
+        epilog="console scripts:\n"
+        + "\n".join(f"  {{:<{name_padding}}}  {{:<}}".format(ep.name, ep.value) for ep in console_scripts.values()),
         add_help=False,
     )
 
     parser.add_argument(
-        'script',
-        nargs='?',
+        "script",
+        nargs="?",
         choices=console_scripts.keys(),
         help=argparse.SUPPRESS,
     )
@@ -42,5 +40,5 @@ def main(args=None):
     _main()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -115,7 +115,6 @@ from ..infrastructure import util as dutil
 from ..infrastructure.policy import Policy
 from ..infrastructure.parameters import this_process
 from ..infrastructure import messages as dmsg
-from ..globalservices.policy_eval import PolicyEvaluator
 from ..rc import DragonError
 
 from .queue import Queue
@@ -126,15 +125,13 @@ _LOG = None
 
 
 def get_logs(name):
-
     global _LOG
     log = _LOG.getChild(name)
     return log.debug, log.info
 
 
 class DragonProcessGroupError(DragonLoggingError):
-    def __str__(self):
-        return f"PG Exception: {self.msg}\n*** Dragon C-level Traceback: ***\n{self.lib_msg}\n*** End C-level Traceback: ***\nDragon Error Code: {self.lib_err}"
+    pass
 
 
 class DragonProcessGroupException(DragonProcessGroupError):
@@ -154,6 +151,10 @@ class DragonProcessGroupStartError(DragonProcessGroupError):
 
 
 class DragonProcessGroupRunningError(DragonProcessGroupError):
+    pass
+
+
+class DragonUserCodeError(DragonProcessGroupError):
     pass
 
 
@@ -193,6 +194,7 @@ class PGSignals(enum.IntEnum):
 
 
     """
+
     SUCCESS = enum.auto()  # requested signal succeeded
     RAISE_EXCEPTION = enum.auto()  # raise the exception included in the payload
     ADD_TEMPLATES = enum.auto()  # add the given list of ProcessTemplates
@@ -213,23 +215,24 @@ class PGSignals(enum.IntEnum):
     JOIN_FINAL = enum.auto()  # joiner thread is down and we need to scan join requests again for completion
     STOP = enum.auto()  # bring down processes but leave ProcessGroup object still usable
     CLOSE = enum.auto()  # imply stop and then instruct manager to shutdown
-    STOP_MAINTAINING = enum.auto()  # start joiner thread with join_all=True and cease restarting of worker processes if it was being done
+    STOP_MAINTAINING = (
+        enum.auto()
+    )  # start joiner thread with join_all=True and cease restarting of worker processes if it was being done
 
     @classmethod
     def from_str(cls, input_str):
-
         # Assume it's the int representation first:
         try:
             return cls(int(input_str))
         except KeyError as e:
-            raise RuntimeError(f'messed up: {e}')
+            raise RuntimeError(f"messed up: {e}")
 
         # Try the class and enum next
         try:
-            sig = input_str.replace(cls.__name__ + '.', '')
+            sig = input_str.replace(cls.__name__ + ".", "")
             return cls[sig]
         except KeyError as e:
-            raise RuntimeError(f'Invalid string representation of PGSignals class: {e}')
+            raise RuntimeError(f"Invalid string representation of PGSignals class: {e}")
 
 
 class BaseState(ABC):
@@ -255,6 +258,7 @@ class PGProperties:
     :param name: Name for idenitifying ProcessGroup. Unused. Defaults to None
     :type name: str
     """
+
     restart: bool = False
     ignore_error_on_exit: bool = False
     pmi_enabled: bool = False
@@ -265,17 +269,16 @@ class PGProperties:
     lock: threading.Lock = None
 
     def from_dict(self, the_dict) -> None:
-
-        self.restart = the_dict['restart']
-        self.ignore_error_on_exit = the_dict['ignore_error_on_exit']
-        self.pmi_enabled = the_dict['pmi_enabled']
-        self.walltime = the_dict['walltime']
+        self.restart = the_dict["restart"]
+        self.ignore_error_on_exit = the_dict["ignore_error_on_exit"]
+        self.pmi_enabled = the_dict["pmi_enabled"]
+        self.walltime = the_dict["walltime"]
         try:
-            self.policy = Policy.from_sdict(the_dict['policy'])
+            self.policy = Policy.from_sdict(the_dict["policy"])
         except Exception:
             self.policy = None
-        self.critical = the_dict['critical']
-        self.name = the_dict['name']
+        self.critical = the_dict["critical"]
+        self.name = the_dict["name"]
 
 
 @dataclass(frozen=True)
@@ -293,8 +296,6 @@ class PGState:
     :type p_templates: list[tuple[int, ProcessTemplate]]
     :param p_templates_expanded: process templates expanded such that 1 template defines 1 process
     :type p_templates_expanded: list[ProcessTemplate]
-    :param policies_expanded: policies for process placement. 1 policy for 1 process
-    :type policies_expanded: list[Policy]
     :param critical: Whether processes should be treated as critical and trigger a dragon runtime restart. Unused.
     :type critical: bool
     :param joiner_thread: Background thread the Manager uses to query execution status of processes via the GS API
@@ -312,7 +313,6 @@ class PGState:
     group_descr: GroupDescriptor = None
     p_templates: list[tuple] = None  # (nprocs, ProcessTemplate) as given by a client
     p_templates_expanded: list = None  # one template per process
-    policies_expanded: list = None  # one policy per process
     critical: bool = False
     joiner_thread: threading.Thread = None
     walltime_event: threading.Event = None
@@ -339,6 +339,7 @@ class PGSignalMessage:
     :param close: whether to close the state runner thread and ultimately the Manager
     :type close: bool
     """
+
     signal: PGSignals
     p_uid: int = None
     desired_state: PGState = None
@@ -366,8 +367,11 @@ class PGProcessHistory:
     :param archived: whether active processes have been archived. Can help limit some unnecessary list traversals
     :type archived: bool
     """
+
     active_nprocs: int = 0
-    active_processes: list = field(default_factory=list)  # tuple of p_uid and exit code (matching the current g_uid state)
+    active_processes: list = field(
+        default_factory=list
+    )  # tuple of p_uid and exit code (matching the current g_uid state)
     active_processes_inv_map: dict = field(default_factory=dict)  # map of p_uid to index in active_processes
     inactive_nprocs: int = 0
     inactive_processes: list = field(default_factory=list)  # tuple of p_uid and exit code (from all previous g_uids)
@@ -381,7 +385,7 @@ class PGProcessHistory:
         :type p_uids: List[int]
         """
 
-        log = logging.getLogger('pg_init_active_processes')
+        log = logging.getLogger("pg_init_active_processes")
         log.debug("Replace and archive processes")
         self.active_nprocs = len(p_uids)
         self.active_processes = [(p_uid, None) for p_uid in p_uids]
@@ -395,7 +399,7 @@ class PGProcessHistory:
         :param old_puids_idx: indices of processes that need to be removed from active_processes list
         :type old_puids_idx: List[Tuple[int, int]]
         """
-        log = logging.getLogger('pg_replace_and_archive')
+        log = logging.getLogger("pg_replace_and_archive")
         log.debug("Replace and archive processes")
         assert len(new_puids) == len(old_puids_idx)
         self.inactive_nprocs += len(old_puids_idx)
@@ -407,15 +411,14 @@ class PGProcessHistory:
             self.active_processes_inv_map[new_puid] = idx
 
     def archive_active(self) -> None:
-        """Move exited processes from active_processes list to inactive_processes
-        """
+        """Move exited processes from active_processes list to inactive_processes"""
         self.inactive_nprocs += self.active_nprocs
         self.active_nprocs = 0
 
-        log = logging.getLogger('pg_archive')
-        log.debug('active processes in archive: %s', self.active_processes)
+        log = logging.getLogger("pg_archive")
+        log.debug("active processes in archive: %s", self.active_processes)
         self.inactive_processes += self.active_processes
-        log.debug('inactive processes in archive: %s', self.inactive_processes)
+        log.debug("inactive processes in archive: %s", self.inactive_processes)
         self.active_processes = []
         self.active_processes_inv_map = {}
         self.archived = True
@@ -512,15 +515,15 @@ def _generate_process_create_messages(templates: List[ProcessTemplate], props: P
 
 
 class BaseState(ABC):
-    """This class declares methods that all concrete State classes should implement.
-    """
+    """This class declares methods that all concrete State classes should implement."""
 
     allowed_sigs: list[int] = None
     query_sigs = {PGSignals.STATE, PGSignals.PUIDS}
 
     @abstractmethod
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         """Execute the run function defined by the parent state"""
         pass
 
@@ -532,10 +535,11 @@ class BaseState(ABC):
 
 
 class Error(BaseState):
-    """Error state class.
-    """
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    """Error state class."""
+
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         pass
 
 
@@ -550,11 +554,20 @@ class Idle(BaseState):
     Raises DragonProcessGroupIdleError in case of error.
     """
 
-    allowed_sigs = [PGSignals.READY_TO_START, PGSignals.START, PGSignals.CLEAN_IDLE, PGSignals.WALLTIME_EXPIRED,
-                    PGSignals.PROCESSES_EXITED, PGSignals.JOIN, PGSignals.STOP, PGSignals.CLOSE]
+    allowed_sigs = [
+        PGSignals.READY_TO_START,
+        PGSignals.START,
+        PGSignals.CLEAN_IDLE,
+        PGSignals.WALLTIME_EXPIRED,
+        PGSignals.PROCESSES_EXITED,
+        PGSignals.JOIN,
+        PGSignals.STOP,
+        PGSignals.CLOSE,
+    ]
 
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         fdebug, finfo = get_logs("State=Idle")
 
         try:
@@ -565,7 +578,6 @@ class Idle(BaseState):
         with cur_procs.lock:
             running_procs = cur_procs.get_running_p_uids()
         if len(running_procs) > 0:
-
             # phase one is to issue a SIGINT
             try:
                 fdebug("sending SIGINT")
@@ -574,36 +586,37 @@ class Idle(BaseState):
                 pass
 
             try:
-                success, puid_stat = multi_join(running_procs, join_all=True, timeout=patience,
-                                                return_on_bad_exit=False)
+                success, puid_stat = multi_join(
+                    running_procs, join_all=True, timeout=patience, return_on_bad_exit=False
+                )
 
                 if success:
                     with cur_procs.lock:
                         cur_procs.update_active_processes(success)
                 else:
-
                     # phase two is to issue SIGTERM after giving it some time
                     try:
                         fdebug("sending SIGTERM")
                         group_kill(pstate.g_uid, sig=signal.SIGTERM, hide_stderr=True)
                     except (AttributeError, RuntimeError, GroupError):
                         pass
-                    success, puid_stat = multi_join(running_procs, join_all=True,
-                                                    timeout=patience, return_on_bad_exit=False)
+                    success, puid_stat = multi_join(
+                        running_procs, join_all=True, timeout=patience, return_on_bad_exit=False
+                    )
 
                     if success:
                         with cur_procs.lock:
                             cur_procs.update_active_processes(success)
                     else:
-
                         # phase three is to issue SIGKILL after giving it some time
                         try:
                             fdebug("sending SIGKILL")
                             group_kill(self.state.guid, sig=signal.SIGKILL, hide_stderr=True)
                         except (AttributeError, RuntimeError, GroupError):
                             pass
-                        success, puid_stat = multi_join(running_procs, join_all=True, timeout=None,
-                                                        return_on_bad_exit=False)
+                        success, puid_stat = multi_join(
+                            running_procs, join_all=True, timeout=None, return_on_bad_exit=False
+                        )
 
                         with cur_procs.lock:
                             cur_procs.update_active_processes(success)
@@ -616,21 +629,29 @@ class Idle(BaseState):
 
         if signal_msg.signal == PGSignals.START:
             fdebug("Requesting a Start state")
-            desired_state = PGState(state=Start(), p_templates=pstate.p_templates, exq=signal_msg.payload['exq'])
+            desired_state = PGState(state=Start(), p_templates=pstate.p_templates, exq=signal_msg.payload["exq"])
             msg = PGSignalMessage(signal=PGSignals.READY_TO_START, desired_state=desired_state)
         elif (signal_msg.signal == PGSignals.STOP or signal_msg.signal == PGSignals.CLOSE) and pstate.g_uid is not None:
             fdebug("Requesting a Join state")
-            desired_state = PGState(state=Join(), g_uid=pstate.g_uid, group_descr=pstate.group_descr,
-                                    p_templates=pstate.p_templates, p_templates_expanded=pstate.p_templates_expanded,
-                                    critical=pstate.critical, joiner_thread=pstate.joiner_thread,
-                                    walltime_event=pstate.walltime_event, pending_replies=pstate.pending_replies)
+            desired_state = PGState(
+                state=Join(),
+                g_uid=pstate.g_uid,
+                group_descr=pstate.group_descr,
+                p_templates=pstate.p_templates,
+                p_templates_expanded=pstate.p_templates_expanded,
+                critical=pstate.critical,
+                joiner_thread=pstate.joiner_thread,
+                walltime_event=pstate.walltime_event,
+                pending_replies=pstate.pending_replies,
+            )
 
             closeit = signal_msg.close
             if signal_msg.signal == PGSignals.CLOSE:
                 closeit = True
 
-            msg = PGSignalMessage(signal=PGSignals.JOIN_FINAL, desired_state=desired_state, tag=signal_msg.tag,
-                                  close=closeit)
+            msg = PGSignalMessage(
+                signal=PGSignals.JOIN_FINAL, desired_state=desired_state, tag=signal_msg.tag, close=closeit
+            )
         else:
             fdebug("Requesting an Idle state")
             desired_state = PGState(state=Idle(), p_templates=pstate.p_templates)
@@ -651,51 +672,38 @@ class Start(BaseState):
 
     allowed_sigs = [PGSignals.READY_TO_START]
 
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         fdebug, finfo = get_logs("State=Start")
 
         messages = _generate_process_create_messages(pstate.p_templates, props)
-        # piecemeal merging of policies.
-        # first merge group policy and global policy with group policy > global policy.
-        # this merged policy is saved and is what will be used if in the maintain state if we need to restart processes
-        the_policy = None
-        if props.policy is not None:
-            the_policy = PolicyEvaluator.merge(Policy.global_policy(), props.policy)
-        else:
-            the_policy = Policy.global_policy()
 
-        props.policy = the_policy
-        # then go through process policies and merge process policies with group+global policy
-        # with process policy > group+global policy.
-        policy_list = []
         expanded_templates = []
-        for i, tup in enumerate(pstate.p_templates):
-            expanded_templates.extend(tup[0] * [tup[1]])
-
-            # we check if we the template has a policy
-            if messages[i].policy is None:
-                policy_list.extend([the_policy] * tup[0])
-            else:
-                # if the template process got a policy then we give it higher priority, than the policy of the process group.
-                merged_policy = PolicyEvaluator.merge(the_policy, messages[i].policy)
-                policy_list.extend([merged_policy] * tup[0])
+        for i, (replicas, create_template) in enumerate(pstate.p_templates):
+            expanded_templates.extend(replicas * [create_template])
 
         try:
             group_descr = group_create(
-                [(tup[0], messages[i].serialize()) for i, tup in enumerate(pstate.p_templates)],
-                policy_list
+                [(replicas, messages[i].serialize()) for i, (replicas, _) in enumerate(pstate.p_templates)],
+                props.policy,
             )
         except Exception:
             raise DragonProcessGroupStartError(DragonError.FAILURE, "Failed to create GS group")
 
         # TODO to add Maintain path
-        fdebug('start msg: %s', signal_msg)
-        desired_state = PGState(state=MakeJoiner(), g_uid=group_descr.g_uid, group_descr=group_descr,
-                                p_templates=pstate.p_templates, p_templates_expanded=expanded_templates,
-                                critical=group_descr.resilient, walltime_event=threading.Event(),
-                                pending_replies=queue.Queue(), policies_expanded=policy_list,
-                                exq=pstate.exq)
+        fdebug("start msg: %s", signal_msg)
+        desired_state = PGState(
+            state=MakeJoiner(),
+            g_uid=group_descr.g_uid,
+            group_descr=group_descr,
+            p_templates=pstate.p_templates,
+            p_templates_expanded=expanded_templates,
+            critical=group_descr.resilient,
+            walltime_event=threading.Event(),
+            pending_replies=queue.Queue(),
+            exq=pstate.exq,
+        )
 
         with cur_procs.lock:
             cur_procs.init_active_processes([descr.uid for lst in group_descr.sets for descr in lst])
@@ -712,19 +720,28 @@ class MakeJoiner(BaseState):
 
     allowed_sigs = [PGSignals.START_JOIN_THREAD]
 
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         fdebug, finfo = get_logs("State=MakeJoiner")
 
-        th = threading.Thread(target=self._join_runner, args=(pstate, cur_procs, props, pstate.walltime_event,),
-                              daemon=False)
+        th = threading.Thread(
+            target=self._join_runner, args=(pstate, cur_procs, props, pstate.walltime_event), daemon=False
+        )
         th.start()
 
-        desired_state = PGState(state=Running(), g_uid=pstate.g_uid, group_descr=pstate.group_descr,
-                                p_templates=pstate.p_templates, p_templates_expanded=pstate.p_templates_expanded,
-                                critical=pstate.critical, joiner_thread=th, walltime_event=pstate.walltime_event,
-                                pending_replies=pstate.pending_replies,
-                                exq=pstate.exq)
+        desired_state = PGState(
+            state=Running(),
+            g_uid=pstate.g_uid,
+            group_descr=pstate.group_descr,
+            p_templates=pstate.p_templates,
+            p_templates_expanded=pstate.p_templates_expanded,
+            critical=pstate.critical,
+            joiner_thread=th,
+            walltime_event=pstate.walltime_event,
+            pending_replies=pstate.pending_replies,
+            exq=pstate.exq,
+        )
 
         return PGSignalMessage(signal=PGSignals.READY_TO_RUN, desired_state=desired_state)
 
@@ -750,19 +767,18 @@ class MakeJoiner(BaseState):
                 active_puids = cur_procs.get_running_p_uids()
 
             if active_puids:
-
                 keep_going = True
                 with props.lock:
                     cur_restart_flg = props.restart
                 while keep_going:
-
                     if cur_restart_flg is True:
                         join_all = False
                     else:
                         join_all = True
 
-                    success, puid_stat = multi_join(active_puids, join_all=join_all,
-                                                    timeout=props.walltime, return_on_bad_exit=return_on_bad_exit)
+                    success, puid_stat = multi_join(
+                        active_puids, join_all=join_all, timeout=props.walltime, return_on_bad_exit=return_on_bad_exit
+                    )
                     with props.lock:
                         orig_restart = props.restart
                     if cur_restart_flg == orig_restart:
@@ -770,8 +786,11 @@ class MakeJoiner(BaseState):
                     else:
                         cur_restart_flg = orig_restart
 
-                fdebug("Joiner thread observed a multi_join return (join_all=%s, return_on_bad_exit=%s)", join_all,
-                       return_on_bad_exit)
+                fdebug(
+                    "Joiner thread observed a multi_join return (join_all=%s, return_on_bad_exit=%s)",
+                    join_all,
+                    return_on_bad_exit,
+                )
 
                 failed_exits, timeout_f = get_multi_join_failure_puids(puid_stat)
                 clean_exits, timeout_s = get_multi_join_success_puids(puid_stat)
@@ -782,9 +801,14 @@ class MakeJoiner(BaseState):
 
             # If we are supposed to respond to errors, check the exit codes
             if not props.ignore_error_on_exit and len(failed_exits) > 0:
-                fdebug('putting exception in queue for %s', failed_exits)
-                pstate.exq.put(DragonProcessGroupException(DragonError.FAILURE,
-                                                           f'Errors executing PUIDS with exit codes: {failed_exits}'))
+                exit_codes = [failed_exit[1] for failed_exit in failed_exits]
+                fdebug("putting exception in queue for %s", failed_exits)
+                pstate.exq.put(
+                    DragonUserCodeError(
+                        DragonError.USER_CODE_ERROR,
+                        f"Error(s) in user-provided code resulted in exit codes: {exit_codes}",
+                    )
+                )
 
         except Exception:
             raise DragonProcessGroupRunningError(DragonError.FAILURE, "Failed joining on group with GS")
@@ -802,11 +826,19 @@ class Running(BaseState):
         :type patience: float
     """
 
-    allowed_sigs = [PGSignals.READY_TO_RUN, PGSignals.JOIN, PGSignals.JOIN_POKE, PGSignals.JOIN_FINAL,
-                    PGSignals.STOP, PGSignals.CLOSE, PGSignals.STOP_MAINTAINING]
+    allowed_sigs = [
+        PGSignals.READY_TO_RUN,
+        PGSignals.JOIN,
+        PGSignals.JOIN_POKE,
+        PGSignals.JOIN_FINAL,
+        PGSignals.STOP,
+        PGSignals.CLOSE,
+        PGSignals.STOP_MAINTAINING,
+    ]
 
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         fdebug, finfo = get_logs("State=Running")
 
         if signal_msg.signal == PGSignals.STOP or signal_msg.signal == PGSignals.CLOSE:
@@ -814,12 +846,25 @@ class Running(BaseState):
             closeit = False
             if signal_msg.signal == PGSignals.CLOSE:
                 closeit = True
-            desired_state = PGState(state=Idle(), g_uid=pstate.g_uid, group_descr=pstate.group_descr,
-                                    p_templates=pstate.p_templates, p_templates_expanded=pstate.p_templates_expanded,
-                                    critical=pstate.critical, joiner_thread=pstate.joiner_thread,
-                                    walltime_event=pstate.walltime_event, pending_replies=pstate.pending_replies)
-            return PGSignalMessage(signal=signal_msg.signal, p_uid=signal_msg.p_uid, desired_state=desired_state,
-                                   payload=signal_msg.payload, tag=signal_msg.tag, close=closeit)
+            desired_state = PGState(
+                state=Idle(),
+                g_uid=pstate.g_uid,
+                group_descr=pstate.group_descr,
+                p_templates=pstate.p_templates,
+                p_templates_expanded=pstate.p_templates_expanded,
+                critical=pstate.critical,
+                joiner_thread=pstate.joiner_thread,
+                walltime_event=pstate.walltime_event,
+                pending_replies=pstate.pending_replies,
+            )
+            return PGSignalMessage(
+                signal=signal_msg.signal,
+                p_uid=signal_msg.p_uid,
+                desired_state=desired_state,
+                payload=signal_msg.payload,
+                tag=signal_msg.tag,
+                close=closeit,
+            )
 
         # a few notes:
         # not that we inject skip_reply here. This is done because this is the state that transitions to
@@ -831,24 +876,49 @@ class Running(BaseState):
         # that holds the join replies
         if signal_msg.signal == PGSignals.JOIN or signal_msg.signal == PGSignals.JOIN_POKE:
             fdebug("signal = [JOIN, JOIN_POKE]")
-            desired_state = PGState(state=Join(), g_uid=pstate.g_uid, group_descr=pstate.group_descr,
-                                    p_templates=pstate.p_templates, p_templates_expanded=pstate.p_templates_expanded,
-                                    critical=pstate.critical, joiner_thread=pstate.joiner_thread,
-                                    walltime_event=pstate.walltime_event, pending_replies=pstate.pending_replies,
-                                    exq=pstate.exq)
+            desired_state = PGState(
+                state=Join(),
+                g_uid=pstate.g_uid,
+                group_descr=pstate.group_descr,
+                p_templates=pstate.p_templates,
+                p_templates_expanded=pstate.p_templates_expanded,
+                critical=pstate.critical,
+                joiner_thread=pstate.joiner_thread,
+                walltime_event=pstate.walltime_event,
+                pending_replies=pstate.pending_replies,
+                exq=pstate.exq,
+            )
 
             if pstate.joiner_thread.is_alive():
                 fdebug("joiner_thread is alive")
-                return PGSignalMessage(signal=signal_msg.signal, p_uid=signal_msg.p_uid, desired_state=desired_state,
-                                       payload=signal_msg.payload, skip_reply=True, tag=signal_msg.tag)
+                return PGSignalMessage(
+                    signal=signal_msg.signal,
+                    p_uid=signal_msg.p_uid,
+                    desired_state=desired_state,
+                    payload=signal_msg.payload,
+                    skip_reply=True,
+                    tag=signal_msg.tag,
+                )
             else:
                 fdebug("joiner_thread is dead")
                 if pstate.g_uid is None:
-                    return PGSignalMessage(signal=PGSignals.JOIN_FINAL, p_uid=signal_msg.p_uid, desired_state=desired_state,
-                                           payload=signal_msg.payload, skip_reply=False, tag=signal_msg.tag)
+                    return PGSignalMessage(
+                        signal=PGSignals.JOIN_FINAL,
+                        p_uid=signal_msg.p_uid,
+                        desired_state=desired_state,
+                        payload=signal_msg.payload,
+                        skip_reply=False,
+                        tag=signal_msg.tag,
+                    )
                 else:
-                    return PGSignalMessage(signal=PGSignals.JOIN_FINAL, p_uid=signal_msg.p_uid, desired_state=desired_state,
-                                           payload=signal_msg.payload, skip_reply=True, tag=signal_msg.tag)
+                    return PGSignalMessage(
+                        signal=PGSignals.JOIN_FINAL,
+                        p_uid=signal_msg.p_uid,
+                        desired_state=desired_state,
+                        payload=signal_msg.payload,
+                        skip_reply=True,
+                        tag=signal_msg.tag,
+                    )
 
         # TODO: Colin, get sign off on this from someone else
         # When stop_restart is called change the behavior of the join runner.
@@ -865,14 +935,25 @@ class Running(BaseState):
                 props.restart = False
 
             # transition to start the joiner thread
-            desired_state = PGState(state=MakeJoiner(), g_uid=pstate.g_uid, group_descr=pstate.group_descr,
-                                    p_templates=pstate.p_templates, p_templates_expanded=pstate.p_templates_expanded,
-                                    critical=pstate.critical, joiner_thread=pstate.joiner_thread,
-                                    walltime_event=pstate.walltime_event, pending_replies=pstate.pending_replies)
+            desired_state = PGState(
+                state=MakeJoiner(),
+                g_uid=pstate.g_uid,
+                group_descr=pstate.group_descr,
+                p_templates=pstate.p_templates,
+                p_templates_expanded=pstate.p_templates_expanded,
+                critical=pstate.critical,
+                joiner_thread=pstate.joiner_thread,
+                walltime_event=pstate.walltime_event,
+                pending_replies=pstate.pending_replies,
+            )
 
-            return PGSignalMessage(signal=PGSignals.START_JOIN_THREAD, desired_state=desired_state,
-                                   skip_reply=signal_msg.skip_reply, payload=signal_msg.payload,
-                                   close=signal_msg.close)
+            return PGSignalMessage(
+                signal=PGSignals.START_JOIN_THREAD,
+                desired_state=desired_state,
+                skip_reply=signal_msg.skip_reply,
+                payload=signal_msg.payload,
+                close=signal_msg.close,
+            )
 
         if pstate.joiner_thread.is_alive():
             return PGSignalMessage(signal=PGSignals.SUCCESS, desired_state=pstate, skip_reply=signal_msg.skip_reply)
@@ -881,15 +962,26 @@ class Running(BaseState):
             cur_restart = props.restart
         if not cur_restart:
             fdebug("Running: restart = False")
-            desired_state = PGState(state=Idle(), g_uid=pstate.g_uid, group_descr=pstate.group_descr,
-                                    p_templates=pstate.p_templates, p_templates_expanded=pstate.p_templates_expanded,
-                                    critical=pstate.critical, joiner_thread=pstate.joiner_thread,
-                                    walltime_event=pstate.walltime_event, pending_replies=pstate.pending_replies)
+            desired_state = PGState(
+                state=Idle(),
+                g_uid=pstate.g_uid,
+                group_descr=pstate.group_descr,
+                p_templates=pstate.p_templates,
+                p_templates_expanded=pstate.p_templates_expanded,
+                critical=pstate.critical,
+                joiner_thread=pstate.joiner_thread,
+                walltime_event=pstate.walltime_event,
+                pending_replies=pstate.pending_replies,
+            )
 
             if pstate.walltime_event.is_set():
-                return PGSignalMessage(signal=PGSignals.WALLTIME_EXPIRED, desired_state=desired_state,
-                                       skip_reply=signal_msg.skip_reply, payload=signal_msg.payload,
-                                       close=signal_msg.close)
+                return PGSignalMessage(
+                    signal=PGSignals.WALLTIME_EXPIRED,
+                    desired_state=desired_state,
+                    skip_reply=signal_msg.skip_reply,
+                    payload=signal_msg.payload,
+                    close=signal_msg.close,
+                )
 
             non_zero = False
             with cur_procs.lock:
@@ -898,19 +990,27 @@ class Running(BaseState):
                 if exitc is not None and exitc > 0:
                     non_zero = True
             if non_zero:
-                msg = PGSignalMessage(signal=PGSignals.PROCESSES_EXITED, desired_state=desired_state,
-                                      skip_reply=signal_msg.skip_reply, payload=signal_msg.payload,
-                                      close=signal_msg.close)
+                msg = PGSignalMessage(
+                    signal=PGSignals.PROCESSES_EXITED,
+                    desired_state=desired_state,
+                    skip_reply=signal_msg.skip_reply,
+                    payload=signal_msg.payload,
+                    close=signal_msg.close,
+                )
             else:
-                msg = PGSignalMessage(signal=PGSignals.CLEAN_IDLE, desired_state=desired_state,
-                                      skip_reply=signal_msg.skip_reply, payload=signal_msg.payload,
-                                      close=signal_msg.close)
+                msg = PGSignalMessage(
+                    signal=PGSignals.CLEAN_IDLE,
+                    desired_state=desired_state,
+                    skip_reply=signal_msg.skip_reply,
+                    payload=signal_msg.payload,
+                    close=signal_msg.close,
+                )
 
         else:
             fdebug("Maintaining: restart = True")
             # determine which processes have gone missing
             templates = []
-            #policies = []
+            # policies = []
             gone_procs = []
             with cur_procs.lock:
                 for idx, item in enumerate(cur_procs.active_processes):
@@ -918,32 +1018,46 @@ class Running(BaseState):
                     if exitc != None:
                         fdebug("Found process exited that must be restarted: p_uid=%i, idx=%i", p_uid, idx)
                         templates.append((1, pstate.p_templates_expanded[idx]))
-                        # TODO: group_create_add_to needs to be enhanced to tae a list of policies. For now,
-                        # we'll just send along the overall group policy
-                        #policies.append(pstate.policies_expanded[idx])
                         gone_procs.append((p_uid, idx))
 
             messages = _generate_process_create_messages(templates, props)
 
-            group_desc = group_create_add_to(pstate.g_uid, [(tup[0], messages[i].serialize()) for i, tup in enumerate(templates)], props.policy)
+            group_desc = group_create_add_to(
+                pstate.g_uid, [(tup[0], messages[i].serialize()) for i, tup in enumerate(templates)], props.policy
+            )
 
             with cur_procs.lock:
                 # update cur_procs with the new process(es) while archiving the old one(s)
                 all_puids = [descr.uid for lst in group_desc.sets for descr in lst]
                 # there is certainly a better way to get all of the new_puids
                 # currently use set differencing with all active and inactive puids
-                new_puids = list(set(all_puids).difference([puid for puid, _ in cur_procs.active_processes]).difference([puid for puid, _ in cur_procs.inactive_processes]))
+                new_puids = list(
+                    set(all_puids)
+                    .difference([puid for puid, _ in cur_procs.active_processes])
+                    .difference([puid for puid, _ in cur_procs.inactive_processes])
+                )
                 cur_procs.replace_and_archive_processes(new_puids, gone_procs)
 
             # transition to start the joiner thread
-            desired_state = PGState(state=MakeJoiner(), g_uid=pstate.g_uid, group_descr=pstate.group_descr,
-                                    p_templates=pstate.p_templates, p_templates_expanded=pstate.p_templates_expanded,
-                                    critical=pstate.critical, joiner_thread=pstate.joiner_thread,
-                                    walltime_event=pstate.walltime_event, pending_replies=pstate.pending_replies)
+            desired_state = PGState(
+                state=MakeJoiner(),
+                g_uid=pstate.g_uid,
+                group_descr=pstate.group_descr,
+                p_templates=pstate.p_templates,
+                p_templates_expanded=pstate.p_templates_expanded,
+                critical=pstate.critical,
+                joiner_thread=pstate.joiner_thread,
+                walltime_event=pstate.walltime_event,
+                pending_replies=pstate.pending_replies,
+            )
 
-            return PGSignalMessage(signal=PGSignals.START_JOIN_THREAD, desired_state=desired_state,
-                                   skip_reply=signal_msg.skip_reply, payload=signal_msg.payload,
-                                   close=signal_msg.close)
+            return PGSignalMessage(
+                signal=PGSignals.START_JOIN_THREAD,
+                desired_state=desired_state,
+                skip_reply=signal_msg.skip_reply,
+                payload=signal_msg.payload,
+                close=signal_msg.close,
+            )
 
         return msg
 
@@ -959,8 +1073,9 @@ class Join(BaseState):
 
     allowed_sigs = [PGSignals.JOIN, PGSignals.JOIN_POKE, PGSignals.JOIN_FINAL]
 
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         fdebug, finfo = get_logs("State=Join")
 
         q = pstate.pending_replies
@@ -975,7 +1090,9 @@ class Join(BaseState):
             except Exception:
                 pass
             try:
-                fdebug("Adding in new client join request: %s, %s, %s, %s", requester, timeout, deadline, signal_msg.tag)
+                fdebug(
+                    "Adding in new client join request: %s, %s, %s, %s", requester, timeout, deadline, signal_msg.tag
+                )
                 q.put((requester, timeout, deadline, signal_msg.tag))
             except Exception:
                 raise DragonProcessGroupJoinError(DragonError.FAILURE, "Join pending queue not set or is full!")
@@ -985,7 +1102,6 @@ class Join(BaseState):
         put_back = []
 
         while not q.empty():
-
             if payload is None:
                 payload = []
             requester, timeout, deadline, tag = q.get()
@@ -1011,14 +1127,26 @@ class Join(BaseState):
 
         fdebug("Joins to message: %s", payload)
 
-        desired_state = PGState(state=Running(), g_uid=pstate.g_uid, group_descr=pstate.group_descr,
-                                p_templates=pstate.p_templates, p_templates_expanded=pstate.p_templates_expanded,
-                                critical=pstate.critical, joiner_thread=pstate.joiner_thread,
-                                walltime_event=pstate.walltime_event, pending_replies=pstate.pending_replies)
+        desired_state = PGState(
+            state=Running(),
+            g_uid=pstate.g_uid,
+            group_descr=pstate.group_descr,
+            p_templates=pstate.p_templates,
+            p_templates_expanded=pstate.p_templates_expanded,
+            critical=pstate.critical,
+            joiner_thread=pstate.joiner_thread,
+            walltime_event=pstate.walltime_event,
+            pending_replies=pstate.pending_replies,
+        )
 
-        return PGSignalMessage(signal=PGSignals.READY_TO_RUN, desired_state=desired_state,
-                               payload={"replies": payload}, skip_reply=signal_msg.skip_reply, tag=signal_msg.tag,
-                               close=signal_msg.close)
+        return PGSignalMessage(
+            signal=PGSignals.READY_TO_RUN,
+            desired_state=desired_state,
+            payload={"replies": payload},
+            skip_reply=signal_msg.skip_reply,
+            tag=signal_msg.tag,
+            close=signal_msg.close,
+        )
 
 
 class AddTemplates(BaseState):
@@ -1031,8 +1159,9 @@ class AddTemplates(BaseState):
 
     allowed_sigs = [PGSignals.ADD_TEMPLATES]
 
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         fdebug, finfo = get_logs("State=AddTemplates")
 
         desired_state = PGState(state=Idle(), p_templates=signal_msg.payload["p_templates"])
@@ -1046,8 +1175,9 @@ class Benign(ABC):
     allowed_sigs: list[int] = None
 
     @abstractmethod
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         """Execute the run function defined by the parent state"""
         pass
 
@@ -1070,18 +1200,24 @@ class Signal(Benign):
 
     allowed_sigs = [PGSignals.SIGNAL]
 
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         fdebug, finfo = get_logs("Benign=Signal")
 
         if pstate.g_uid is None:
-            raise DragonProcessGroupSignalError(DragonError.FAILURE,
-                                                "cannot send signal to a ProcessGroup before it is started")
+            raise DragonProcessGroupSignalError(
+                DragonError.FAILURE, "cannot send signal to a ProcessGroup before it is started"
+            )
 
         msg = PGSignalMessage(signal=PGSignals.SUCCESS)
         try:
-            fdebug("group_kill on g_uid=%s with sig=%s (hide stderr=%s)", pstate.g_uid, signal_msg.payload["signal"],
-                    signal_msg.payload["hide_stderr"])
+            fdebug(
+                "group_kill on g_uid=%s with sig=%s (hide stderr=%s)",
+                pstate.g_uid,
+                signal_msg.payload["signal"],
+                signal_msg.payload["hide_stderr"],
+            )
             group_kill(pstate.g_uid, sig=signal_msg.payload["signal"], hide_stderr=signal_msg.payload["hide_stderr"])
         except Exception as ex:
             tb = traceback.format_exc()
@@ -1100,11 +1236,12 @@ class Query(Benign):
         :type active: bool
 
     """
+
     allowed_sigs = [PGSignals.STATE, PGSignals.PUIDS]
 
-    def run(self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory,
-            props: PGProperties) -> PGSignalMessage:
-
+    def run(
+        self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
+    ) -> PGSignalMessage:
         log = logging.getLogger("query eval")
         log.debug("doing eval of %s", signal_msg)
 
@@ -1112,23 +1249,25 @@ class Query(Benign):
 
         # Handle state query
         if signal_msg.signal is PGSignals.STATE:
-            log.debug('forming a reply for state')
+            log.debug("forming a reply for state")
             cur_state = str(pstate.state)
-            reply = PGSignalMessage(signal=PGSignals.SUCCESS, payload={'current_state': cur_state})
-            log.debug('have reply %s', reply)
+            reply = PGSignalMessage(signal=PGSignals.SUCCESS, payload={"current_state": cur_state})
+            log.debug("have reply %s", reply)
 
         elif signal_msg.signal is PGSignals.PUIDS:
-            log.debug('forming a reply for puids query')
+            log.debug("forming a reply for puids query")
             active_puids = inactive_puids = None
-            if signal_msg.payload['active']:
+            if signal_msg.payload["active"]:
                 with cur_procs.lock:
                     active_puids = cur_procs.get_running_p_uids()
-            elif signal_msg.payload['inactive']:
-                log.debug('getting the exited processes. state = %s', pstate.state)
+            elif signal_msg.payload["inactive"]:
+                log.debug("getting the exited processes. state = %s", pstate.state)
                 with cur_procs.lock:
                     inactive_puids = cur_procs.get_archived_procs() + cur_procs.get_exited_procs()
-            log.debug('returning collection: active = %s | inactive = %s', active_puids, inactive_puids)
-            reply = PGSignalMessage(signal=PGSignals.SUCCESS, payload={'active': active_puids, 'inactive': inactive_puids})
+            log.debug("returning collection: active = %s | inactive = %s", active_puids, inactive_puids)
+            reply = PGSignalMessage(
+                signal=PGSignals.SUCCESS, payload={"active": active_puids, "inactive": inactive_puids}
+            )
 
         return reply
 
@@ -1143,7 +1282,6 @@ class Manager:
     _DTBL = {}  # dispatch router, keyed by type of message -- for messages into state runner
 
     def __init__(self, inq: Queue = None, exq: Queue = None, name: str = None):
-
         self._inq = inq
         self._exq = exq
         self._puid = this_process.my_puid
@@ -1163,13 +1301,13 @@ class Manager:
         self._join_thread = None
 
         # setup logging with deferred f-string eval support
-        pgname = ''
+        pgname = ""
         if name is not None:
-            pgname = f'_{name}_'
-        fname = f'{dls.PG}_{socket.gethostname()}_manager_{str(self._puid)}{pgname}.log'
+            pgname = f"_{name}_"
+        fname = f"{dls.PG}_{socket.gethostname()}_manager_{str(self._puid)}{pgname}.log"
         setup_BE_logging(service=dls.PG, fname=fname)
         global _LOG
-        _LOG = logging.getLogger(dls.PG).getChild('Manager')
+        _LOG = logging.getLogger(dls.PG).getChild("Manager")
 
         self._stop_serving = threading.Event()
         self._abnormal_termination = False
@@ -1215,18 +1353,22 @@ class Manager:
         fdebug, finfo = get_logs("_state_runner")
 
         self._the_state = PGState(state=AddTemplates())  # note, qstate is immutable and is only replaced in this method
-        self._cur_procs = PGProcessHistory(lock=threading.Lock())  # process history is mutable and can be updated by state runs
+        self._cur_procs = PGProcessHistory(
+            lock=threading.Lock()
+        )  # process history is mutable and can be updated by state runs
 
-        finfo('Up and running (p_uid %s) in %s with %s', self._puid, self._the_state.state, self._cur_procs)
+        finfo("Up and running (p_uid %s) in %s with %s", self._puid, self._the_state.state, self._cur_procs)
 
         while not self._stop_serving.is_set():
-
-            finfo('Status check with: %s in state %s', self._cur_procs, self._the_state.state)
+            finfo("Status check with: %s in state %s", self._cur_procs, self._the_state.state)
             try:
                 client_msg = self._state_inq.get(timeout=self._QPATIENCE)
             except queue.Empty:
-                if type(self._the_state.state).__name__ == 'Running' or type(self._the_state.state).__name__ == 'Maintain':
-                    fdebug('Faking JOIN_POKE client message for join progressing')
+                if (
+                    type(self._the_state.state).__name__ == "Running"
+                    or type(self._the_state.state).__name__ == "Maintain"
+                ):
+                    fdebug("Faking JOIN_POKE client message for join progressing")
                     client_msg = PGSignalMessage(PGSignals.JOIN_POKE, p_uid=self._puid)
                 else:
                     continue
@@ -1234,56 +1376,87 @@ class Manager:
             valid, reply = self._validate_signal(self._the_state.state, client_msg)
 
             if valid:
-                fdebug('Valid message from %s with signal %s', client_msg.p_uid, client_msg.signal)
+                fdebug("Valid message from %s with signal %s", client_msg.p_uid, client_msg.signal)
                 try:
-                    fdebug('Running: %s', self._the_state.state)
-                    desired_state_msg = self._the_state.state.run(signal_msg=client_msg, pstate=self._the_state,
-                                                                  cur_procs=self._cur_procs, props=self._props)
+                    fdebug("Running: %s", self._the_state.state)
+                    desired_state_msg = self._the_state.state.run(
+                        signal_msg=client_msg, pstate=self._the_state, cur_procs=self._cur_procs, props=self._props
+                    )
                     self._send_pending_replies(desired_state_msg.payload)
-                    fdebug('Completed (return signal %s): %s close=%s', desired_state_msg.signal, self._the_state.state,
-                           desired_state_msg.close)
+                    fdebug(
+                        "Completed (return signal %s): %s close=%s",
+                        desired_state_msg.signal,
+                        self._the_state.state,
+                        desired_state_msg.close,
+                    )
 
-                    while (not isinstance(self._the_state.state, type(desired_state_msg.desired_state.state)) and
-                           not isinstance(self._the_state.state, Error)):
-
+                    while not isinstance(
+                        self._the_state.state, type(desired_state_msg.desired_state.state)
+                    ) and not isinstance(self._the_state.state, Error):
                         valid, _ = self._validate_signal(desired_state_msg.desired_state.state, desired_state_msg)
                         if not valid:
-                            raise DragonProcessGroupError(DragonError.FAILURE, 'Critical ProcessGroup state change error')
+                            raise DragonProcessGroupError(
+                                DragonError.FAILURE, "Critical ProcessGroup state change error"
+                            )
 
-                        fdebug('Auto-transition from %s to %s', self._the_state.state, desired_state_msg.desired_state.state)
+                        fdebug(
+                            "Auto-transition from %s to %s",
+                            self._the_state.state,
+                            desired_state_msg.desired_state.state,
+                        )
                         self._the_state = desired_state_msg.desired_state
-                        desired_state_msg = self._the_state.state.run(signal_msg=desired_state_msg,
-                                                                      pstate=self._the_state,
-                                                                      cur_procs=self._cur_procs, props=self._props)
+                        desired_state_msg = self._the_state.state.run(
+                            signal_msg=desired_state_msg,
+                            pstate=self._the_state,
+                            cur_procs=self._cur_procs,
+                            props=self._props,
+                        )
                         self._send_pending_replies(desired_state_msg.payload)
-                        fdebug('Completed (return signal %s): %s close=%s', desired_state_msg.signal,
-                               self._the_state.state, desired_state_msg.close)
+                        fdebug(
+                            "Completed (return signal %s): %s close=%s",
+                            desired_state_msg.signal,
+                            self._the_state.state,
+                            desired_state_msg.close,
+                        )
 
-                    reply = PGSignalMessage(signal=PGSignals.SUCCESS, payload={"current_state": str(self._the_state.state)},
-                                            p_uid=self._puid, tag=client_msg.tag)
+                    reply = PGSignalMessage(
+                        signal=PGSignals.SUCCESS,
+                        payload={"current_state": str(self._the_state.state)},
+                        p_uid=self._puid,
+                        tag=client_msg.tag,
+                    )
                 except Exception as ex:
                     self._the_state = PGState(state=Error())
                     tb = traceback.format_exc()
-                    fdebug('Encountered exception!\n%s\n%s', ex, tb)
-                    reply = PGSignalMessage(signal=PGSignals.RAISE_EXCEPTION, p_uid=self._puid, tag=client_msg.tag,
-                                            payload={"exception": ex, "traceback": tb})
+                    fdebug("Encountered exception!\n%s\n%s", ex, tb)
+                    reply = PGSignalMessage(
+                        signal=PGSignals.RAISE_EXCEPTION,
+                        p_uid=self._puid,
+                        tag=client_msg.tag,
+                        payload={"exception": ex, "traceback": tb},
+                    )
 
             else:
-                fdebug('Invalid message from %s with signal %s', client_msg.p_uid, client_msg.signal)
+                fdebug("Invalid message from %s with signal %s", client_msg.p_uid, client_msg.signal)
 
             # if our steady state says we're done, set the event
-            if desired_state_msg.close or type(self._the_state.state).__name__ == 'Error':
+            if desired_state_msg.close or type(self._the_state.state).__name__ == "Error":
                 fdebug("Last state message indicates we should close")
                 self._stop_serving.set()
 
             if self._reply_needed(client_msg, desired_state_msg) or not valid:
-                fdebug('sending reply to %s', client_msg.p_uid)
+                fdebug("sending reply to %s", client_msg.p_uid)
                 self._state_outq.put((client_msg.p_uid, reply))
             else:
-                fdebug("did not put reply %s for puid %s in queue (puid %s | skip %s)", client_msg, client_msg.p_uid,
-                       self._puid,  desired_state_msg.skip_reply)
+                fdebug(
+                    "did not put reply %s for puid %s in queue (puid %s | skip %s)",
+                    client_msg,
+                    client_msg.p_uid,
+                    self._puid,
+                    desired_state_msg.skip_reply,
+                )
 
-        finfo('Shutting down (p_uid=%s) in %s with %s', self._puid, self._the_state.state, self._cur_procs)
+        finfo("Shutting down (p_uid=%s) in %s with %s", self._puid, self._the_state.state, self._cur_procs)
 
     def _reply_needed(self, client_msg, desired_state_msg):
         """Decide if a reply is necessary to send to the client"""
@@ -1293,8 +1466,7 @@ class Manager:
         return False
 
     def run(self):
-        """Run the manager services until shutdown
-        """
+        """Run the manager services until shutdown"""
         fdebug, finfo = get_logs("run")
 
         th = threading.Thread(target=self._state_runner, daemon=False)
@@ -1302,11 +1474,10 @@ class Manager:
 
         try:
             while not self._stop_serving.is_set():
-
                 try:
-                    fdebug('Waiting for client message')
+                    fdebug("Waiting for client message")
                     ser_msg = self._inq.get(timeout=self._QPATIENCE)
-                    fdebug('Received client message')
+                    fdebug("Received client message")
                 except queue.Empty:
                     self._process_resp()
                     continue
@@ -1316,23 +1487,23 @@ class Manager:
                 except Exception as ex:
                     self._stop_serving.set()
                     self._abnormal_termination = True
-                    fdebug('There was an exception parsing the message:\n%s', ex)
+                    fdebug("There was an exception parsing the message:\n%s", ex)
                     continue
 
                 if type(msg) in self._DTBL:
                     self._DTBL[type(msg)][0](self, msg=msg, p_uid=msg.p_uid)
-                    fdebug('Finished processing: %s', msg)
+                    fdebug("Finished processing: %s", msg)
                 else:
                     self._stop_serving.set()
                     self._abnormal_termination = True
-                    fdebug('The message %s is not a valid message!', msg)
+                    fdebug("The message %s is not a valid message!", msg)
                     continue
 
                 self._process_resp()
 
         except Exception as ex:
             tb = traceback.format_exc()
-            fdebug('There was an exception in manager:\n%s\n Traceback:\n%s', ex, tb)
+            fdebug("There was an exception in manager:\n%s\n Traceback:\n%s", ex, tb)
 
         # note: the state runner thread actually sets the stop_serving event since we really needed to know
         #  that it's safe from its perspective
@@ -1357,7 +1528,7 @@ class Manager:
         fdebug, finfo = get_logs("_send_response")
 
         try:
-            fdebug('Generating reply message to %s: error=%s, ex=%s, payload=%s', p_uid, msg.error, msg.ex, msg.payload)
+            fdebug("Generating reply message to %s: error=%s, ex=%s, payload=%s", p_uid, msg.error, msg.ex, msg.payload)
             if msg.error is not None:
                 msg.error = str(int(msg.error))
             if msg.ex is not None:
@@ -1366,7 +1537,7 @@ class Manager:
                 msg.payload = b64encode(cloudpickle.dumps(msg.payload))
             self._clients[p_uid].send(msg.serialize())
         except Exception as ex:
-            fdebug('Failed to send response to client:\n%s', ex)
+            fdebug("Failed to send response to client:\n%s", ex)
 
     def _process_resp(self):
         fdebug, finfo = get_logs("_process_resp")
@@ -1378,7 +1549,7 @@ class Manager:
             except queue.Empty:
                 return
 
-            fdebug('Preparing reply for p_uid=%s reply=%s', p_uid, reply)
+            fdebug("Preparing reply for p_uid=%s reply=%s", p_uid, reply)
             msg = dmsg.PGClientResponse(self._tag_inc(), error=reply.signal, payload=reply.payload, src_tag=reply.tag)
             self._send_response(p_uid, msg)
 
@@ -1387,14 +1558,14 @@ class Manager:
         fdebug, finfo = get_logs("register_client")
 
         # Note, reregistration is allowed
-        fdebug('Processing client registration from p_uid=%s', p_uid)
+        fdebug("Processing client registration from p_uid=%s", p_uid)
         try:
             # no ref counting. receiver handles that
             resp_chan = Channel.attach(b64decode(msg.resp_cd))
             self._clients[p_uid] = Connection(outbound_initializer=resp_chan)
             self._clients[p_uid].open()
         except Exception as ex:
-            fdebug('Failed to attach to client response Connection (cuid=%s):\n%s', msg.resp_cd, ex)
+            fdebug("Failed to attach to client response Connection (cuid=%s):\n%s", msg.resp_cd, ex)
 
         msg = dmsg.PGClientResponse(self._tag_inc(), error=PGSignals.SUCCESS, src_tag=msg.tag)
         self._send_response(p_uid, msg)
@@ -1403,7 +1574,7 @@ class Manager:
     def unregister_client(self, msg: dmsg.PGUnregisterClient, p_uid):
         fdebug, finfo = get_logs("unregister_client")
 
-        fdebug('Processing client unregistration from p_uid=%s', p_uid)
+        fdebug("Processing client unregistration from p_uid=%s", p_uid)
         msg = dmsg.PGClientResponse(self._tag_inc(), error=PGSignals.SUCCESS, src_tag=msg.tag)
         self._send_response(p_uid, msg)
 
@@ -1411,13 +1582,13 @@ class Manager:
             self._clients[p_uid].close()
             del self._clients[p_uid]
         except Exception as ex:
-            fdebug('Failed to detach from client response Connection:\n%s', msg.resp_cd, ex)
+            fdebug("Failed to detach from client response Connection:\n%s", msg.resp_cd, ex)
 
     @dutil.route(dmsg.PGSetProperties, _DTBL)
     def set_properties(self, msg: dmsg.PGSetProperties, p_uid):
         fdebug, finfo = get_logs("set_properties")
 
-        fdebug('Processing properties assignment from p_uid=%s', p_uid)
+        fdebug("Processing properties assignment from p_uid=%s", p_uid)
         error = PGSignals.SUCCESS
         ex = None
 
@@ -1427,7 +1598,7 @@ class Manager:
             self._props.from_dict(msg.props)
         else:
             error = PGSignals.RAISE_EXCEPTION
-            ex = DragonProcessGroupAlreadyInitialized('Cannot update ProcessGroup already initialized')
+            ex = DragonProcessGroupAlreadyInitialized("Cannot update ProcessGroup already initialized")
 
         msg = dmsg.PGClientResponse(self._tag_inc(), error=error, ex=ex, src_tag=msg.tag)
         self._send_response(p_uid, msg)
@@ -1436,7 +1607,7 @@ class Manager:
     def stop_restart(self, msg: dmsg.PGStopRestart, p_uid):
         fdebug, finfo = get_logs("stop_restart")
 
-        fdebug('Processing stop restart from p_uid=%s', msg.p_uid)
+        fdebug("Processing stop restart from p_uid=%s", msg.p_uid)
 
         with self._props.lock:
             cur_restart = self._props.restart
@@ -1452,7 +1623,7 @@ class Manager:
         """worth noting for now that this overwrites the templates. leaving the opportunity to later allow live adds"""
         fdebug, finfo = get_logs("add_processes")
 
-        fdebug('Processing process initialization from p_uid %s', p_uid)
+        fdebug("Processing process initialization from p_uid %s", p_uid)
 
         # decode the templates into (nproc, ProcessTemplate)
         p_templates = []
@@ -1463,44 +1634,51 @@ class Manager:
             msg = dmsg.PGClientResponse(self._tag_inc(), error=PGSignals.RAISE_EXCEPTION, ex=ex, src_tag=msg.tag)
             self._send_response(p_uid, msg)
 
-        msg = PGSignalMessage(signal=PGSignals.ADD_TEMPLATES, p_uid=p_uid,
-                              payload={"p_templates": p_templates, 'exq': self._exq},
-                              tag=msg.tag)
+        msg = PGSignalMessage(
+            signal=PGSignals.ADD_TEMPLATES,
+            p_uid=p_uid,
+            payload={"p_templates": p_templates, "exq": self._exq},
+            tag=msg.tag,
+        )
         self._state_inq.put(msg)
 
     @dutil.route(dmsg.PGStart, _DTBL)
     def start(self, msg: dmsg.PGStart, p_uid):
         fdebug, finfo = get_logs("start")
 
-        fdebug('Processing process start from p_uid=%s', p_uid)
+        fdebug("Processing process start from p_uid=%s", p_uid)
         msg = PGSignalMessage(signal=PGSignals.START, p_uid=p_uid, payload={"exq": self._exq}, tag=msg.tag)
-        fdebug('Putting start signal msg in queue: %s', msg)
+        fdebug("Putting start signal msg in queue: %s", msg)
         self._state_inq.put(msg)
 
     @dutil.route(dmsg.PGJoin, _DTBL)
     def join(self, msg: dmsg.PGJoin, p_uid):
         fdebug, finfo = get_logs("join")
 
-        fdebug('Processing join from p_uid=%s with timeout=%s', p_uid, msg.timeout)
+        fdebug("Processing join from p_uid=%s with timeout=%s", p_uid, msg.timeout)
 
-        msg = PGSignalMessage(signal=PGSignals.JOIN, p_uid=p_uid,
-                              payload={"timeout": msg.timeout}, tag=msg.tag)
+        msg = PGSignalMessage(signal=PGSignals.JOIN, p_uid=p_uid, payload={"timeout": msg.timeout}, tag=msg.tag)
         self._state_inq.put(msg)
 
     @dutil.route(dmsg.PGSignal, _DTBL)
     def signal(self, msg: dmsg.PGSignal, p_uid):
         fdebug, finfo = get_logs("signal")
 
-        fdebug('Processing signal from p_uid=%s (sig=%s)', p_uid, msg.sig)
+        fdebug("Processing signal from p_uid=%s (sig=%s)", p_uid, msg.sig)
 
         # done in this thread as it is non-blocking
         op = Signal()
         try:
-            fdebug('Running: %s', op)
-            outcome = op.run(signal_msg=PGSignalMessage(signal=PGSignals.SIGNAL,
-                                                        payload={"signal": msg.sig, "hide_stderr": msg.hide_stderr}),
-                            pstate=self._the_state, cur_procs=self._cur_procs, props=self._props)
-            fdebug('Completed: %s', op)
+            fdebug("Running: %s", op)
+            outcome = op.run(
+                signal_msg=PGSignalMessage(
+                    signal=PGSignals.SIGNAL, payload={"signal": msg.sig, "hide_stderr": msg.hide_stderr}
+                ),
+                pstate=self._the_state,
+                cur_procs=self._cur_procs,
+                props=self._props,
+            )
+            fdebug("Completed: %s", op)
             msg = dmsg.PGClientResponse(self._tag_inc(), error=outcome.signal, payload=outcome.payload, src_tag=msg.tag)
         except Exception as ex:
             msg = dmsg.PGClientResponse(self._tag_inc(), error=PGSignals.RAISE_EXCEPTION, ex=ex, src_tag=msg.tag)
@@ -1509,37 +1687,45 @@ class Manager:
 
     @dutil.route(dmsg.PGState, _DTBL)
     def state(self, msg: dmsg.PGState, p_uid):
-
         fdebug, finfo = get_logs("state")
-        fdebug('Processing status query from p_uid=%s', p_uid)
+        fdebug("Processing status query from p_uid=%s", p_uid)
 
-        concrete_states = {'Idle', 'Running', 'Error'}
+        concrete_states = {"Idle", "Running", "Error"}
 
         op = Query()
 
         keep_going = True
         while keep_going:
-            outcome = op.run(signal_msg=PGSignalMessage(signal=PGSignals.STATE),
-                             pstate=self._the_state, cur_procs=self._cur_procs, props=self._props)
+            outcome = op.run(
+                signal_msg=PGSignalMessage(signal=PGSignals.STATE),
+                pstate=self._the_state,
+                cur_procs=self._cur_procs,
+                props=self._props,
+            )
 
-            if outcome.payload['current_state'] in concrete_states:
+            if outcome.payload["current_state"] in concrete_states:
                 keep_going = False
 
-        fdebug('Completed: %s with results %s', op, outcome)
+        fdebug("Completed: %s with results %s", op, outcome)
         msg = dmsg.PGClientResponse(self._tag_inc(), payload=outcome.payload, src_tag=msg.tag)
         self._send_response(p_uid, msg)
-        fdebug('sent reponse...')
+        fdebug("sent reponse...")
 
     @dutil.route(dmsg.PGPuids, _DTBL)
     def get_puids(self, msg: dmsg.PGState, p_uid):
-
         fdebug, finfo = get_logs("get_puids")
-        fdebug('Processing puids query from p_uid=%s', p_uid)
+        fdebug("Processing puids query from p_uid=%s", p_uid)
 
         op = Query()
-        outcome = op.run(signal_msg=PGSignalMessage(signal=PGSignals.PUIDS, payload={'active': msg.active, 'inactive': msg.inactive}),
-                         pstate=self._the_state, cur_procs=self._cur_procs, props=self._props)
-        fdebug('Completed: %s', op)
+        outcome = op.run(
+            signal_msg=PGSignalMessage(
+                signal=PGSignals.PUIDS, payload={"active": msg.active, "inactive": msg.inactive}
+            ),
+            pstate=self._the_state,
+            cur_procs=self._cur_procs,
+            props=self._props,
+        )
+        fdebug("Completed: %s", op)
 
         msg = dmsg.PGClientResponse(self._tag_inc(), payload=outcome.payload, src_tag=msg.tag)
         self._send_response(p_uid, msg)
@@ -1548,7 +1734,7 @@ class Manager:
     def stop(self, msg: dmsg.PGStop, p_uid):
         fdebug, finfo = get_logs("stop")
 
-        fdebug('Processing stop from p_uid=%s with patience=%s', p_uid, msg.patience)
+        fdebug("Processing stop from p_uid=%s with patience=%s", p_uid, msg.patience)
 
         msg = PGSignalMessage(signal=PGSignals.STOP, p_uid=p_uid, payload={"patience": msg.patience}, tag=msg.tag)
         self._state_inq.put(msg)
@@ -1557,14 +1743,13 @@ class Manager:
     def close(self, msg: dmsg.PGStop, p_uid):
         fdebug, finfo = get_logs("close")
 
-        fdebug('Processing close from p_uid=%s with patience=%s', p_uid, msg.patience)
+        fdebug("Processing close from p_uid=%s with patience=%s", p_uid, msg.patience)
 
         msg = PGSignalMessage(signal=PGSignals.CLOSE, p_uid=p_uid, payload={"patience": msg.patience}, tag=msg.tag)
         self._state_inq.put(msg)
 
 
 def _run_manager(inq: Queue, exq: Queue, name: str):
-
     mgr = Manager(inq, exq, name)
     mgr.run()
 
@@ -1606,7 +1791,7 @@ class ProcessGroup:
         walltime: float = None,
         policy: Policy = None,
         critical: bool = False,
-        name: str = None
+        name: str = None,
     ):
         """Instantiate a number of managed processes.
 
@@ -1633,11 +1818,8 @@ class ProcessGroup:
         self._local_templates = []
         self._registered = False
 
-    def _start_manager(self, inq: Queue, exq: Queue, name: str = '', policy: Policy = None):
-
-        proc = Process(target=_run_manager,
-                       args=(inq, exq, name),
-                       policy=None)
+    def _start_manager(self, inq: Queue, exq: Queue, name: str = "", policy: Policy = None):
+        proc = Process(target=_run_manager, args=(inq, exq, name), policy=None)
         proc.start()
         self._mgr_p_uid = proc.puid
         self._update_mgr()
@@ -1649,7 +1831,6 @@ class ProcessGroup:
 
     @property
     def _mgr_alive(self):
-
         if self._mgr.state is ProcessDescriptor.State.ACTIVE:
             return True
         return False
@@ -1679,7 +1860,6 @@ class ProcessGroup:
         return self
 
     def __exit__(self, type, value, tb):
-
         self._unregister()
         self._cleanup()
 
@@ -1689,7 +1869,6 @@ class ProcessGroup:
         return tag
 
     def _send_msg(self, msg, ex_str, timeout=None):
-
         # TODO: should use a lock here in case someone is trying to use the object from multiple threads
         # lock here would do it since it synchronizes req/resp. anything left what a timeout and can be trashed
 
@@ -1711,7 +1890,6 @@ class ProcessGroup:
                         keepgoing = False
 
             else:
-
                 keepgoing = True
                 while keepgoing:
                     if self._conn_me.poll(timeout=timeout):
@@ -1738,7 +1916,7 @@ class ProcessGroup:
         except Exception as ex:
             if isinstance(ex, TimeoutError):
                 raise TimeoutError()
-            raise RuntimeError(f'Failed to parse manager response:\n{ex}')
+            raise RuntimeError(f"Failed to parse manager response:\n{ex}")
 
         if msg.error != PGSignals.SUCCESS:
             raise DragonProcessGroupError(msg.error, f"{ex_str}:\n{msg.ex}\n{msg.payload}")
@@ -1746,7 +1924,6 @@ class ProcessGroup:
         return msg
 
     def _register(self):
-
         self._exq_lock = threading.Lock()
         self._exq_shutdown = threading.Event()
         self._ex_raised = False
@@ -1762,7 +1939,6 @@ class ProcessGroup:
         self._registered = True
 
     def _unregister(self):
-
         if self._registered:
             msg = dmsg.PGUnregisterClient(self._tag_inc(), this_process.my_puid)
 
@@ -1786,17 +1962,12 @@ class ProcessGroup:
         """Decorator for checking exception status around methods that could raise an error"""
 
         def _manage_exception(obj):
-
             ex = obj._query_exception(obj._ex_raised, obj._exq, obj._exq_lock)
             if ex is not None:
-                obj._stop_no_decorator()
-                obj._join_no_decorator()
-                obj._close_no_decorator()
                 raise ex
 
         @wraps(f)
         def check_exception(obj, *args, **kwargs):
-
             _manage_exception(obj)
             x = f(obj, *args, **kwargs)
             _manage_exception(obj)
@@ -1841,8 +2012,9 @@ class ProcessGroup:
         """
 
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot execute a ProcessGroup without Manager initialization"
+            )
 
         msg = dmsg.PGStart(self._tag_inc(), this_process.my_puid)
         msg = self._send_msg(msg, "Failed to tell Manager to start processes")
@@ -1857,19 +2029,20 @@ class ProcessGroup:
 
         # Check the exception queue
         while not self._exq_shutdown.is_set():
-
             if self._exq.poll(timeout=self._EXCEPTION_Q_PATIENCE):
-
                 with self._exq_lock:
                     ex = self._exq.get()
                     self._exq.put(ex)
 
                 if isinstance(ex, Exception):
+                    # Exit Loop to indicate to Manager that
+                    # there was a failure in user-provided code.
+                    # Setting this is necessary so when requested,
+                    # the ProcessGroup surfaces the exception.
                     self._ex_raised = True
-                    raise ex
+                    return
 
     def _cleanup(self):
-
         try:
             self._exq_shutdown.set()
             self._exq_th.join()
@@ -1886,8 +2059,9 @@ class ProcessGroup:
         :type timeout: float
         """
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
 
         tag = self._tag_inc()
         msg = dmsg.PGJoin(tag, this_process.my_puid, timeout)
@@ -1914,19 +2088,20 @@ class ProcessGroup:
         :type signal.Signals: example is signal.SIGINT
         """
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
 
         msg = dmsg.PGSignal(self._tag_inc(), this_process.my_puid, sig, hide_stderr)
         msg = self._send_msg(msg, "Failed to signal processes")
 
     @_check_exception
     def terminate(self, hide_stderr: bool = False) -> None:
-        """Send signal.SIGTERM to all processes and optionally maintain exit codes
-        """
+        """Send signal.SIGTERM to all processes and optionally maintain exit codes"""
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
 
         cur_restart = self._props.restart
         if cur_restart:
@@ -1936,11 +2111,11 @@ class ProcessGroup:
         msg = self._send_msg(msg, "Failed to signal processes with SIGTERM")
 
     def _kill_no_decorator(self, hide_stderr: bool = False) -> None:
-        """Send signal.SIGKILL to all processes and optionally maintain exit codes
-        """
+        """Send signal.SIGKILL to all processes and optionally maintain exit codes"""
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
 
         cur_restart = self._props.restart
         if cur_restart:
@@ -1951,8 +2126,7 @@ class ProcessGroup:
 
     @_check_exception
     def kill(self, hide_stderr: bool = False) -> None:
-        """Send signal.SIGKILL to all processes and optionally maintain exit codes
-        """
+        """Send signal.SIGKILL to all processes and optionally maintain exit codes"""
         self._kill_no_decorator(hide_stderr)
 
     def _stop_no_decorator(self, patience: float = 5.0) -> None:
@@ -1964,8 +2138,9 @@ class ProcessGroup:
         :type float: defaults to 5 seconds
         """
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
         cur_restart = self._props.restart
         if cur_restart:
             self.stop_restart()
@@ -1990,8 +2165,9 @@ class ProcessGroup:
         to exit
         """
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
 
         cur_restart = self._props.restart
         if cur_restart:
@@ -2042,8 +2218,9 @@ class ProcessGroup:
         :raises: DragonProcessGroupRunningError
         """
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
 
         msg = dmsg.PGStopRestart(self._tag_inc(), this_process.my_puid)
         msg = self._send_msg(msg, "Failed to stop restart")
@@ -2057,15 +2234,15 @@ class ProcessGroup:
         :rtype: list[int]
         """
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
 
         msg = dmsg.PGPuids(self._tag_inc(), this_process.my_puid, active=True, inactive=False)
         reply = self._send_msg(msg, "Failed to query active puids of the process group")
-        return reply.payload['active']
+        return reply.payload["active"]
 
     @property
-    @_check_exception
     def inactive_puids(self) -> List[Tuple[int, int]]:
         """Return the group's puids and their exit codes that have exited
 
@@ -2074,12 +2251,13 @@ class ProcessGroup:
         """
 
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
 
         msg = dmsg.PGPuids(self._tag_inc(), this_process.my_puid, active=False, inactive=True)
         reply = self._send_msg(msg, "Failed to query inactive puids of the process group")
-        return reply.payload['inactive']
+        return reply.payload["inactive"]
 
     @property
     @_check_exception
@@ -2113,9 +2291,10 @@ class ProcessGroup:
         :rtype: str
         """
         if not self._mgr_alive:
-            raise DragonProcessGroupRunningError(DragonError.INVALID_OPERATION,
-                                                 "Cannot excecute a ProcessGroup without Manager initialization")
+            raise DragonProcessGroupRunningError(
+                DragonError.INVALID_OPERATION, "Cannot excecute a ProcessGroup without Manager initialization"
+            )
 
         msg = dmsg.PGState(self._tag_inc(), this_process.my_puid)
         reply = self._send_msg(msg, "Failed to query state of the process group")
-        return reply.payload['current_state']
+        return reply.payload["current_state"]

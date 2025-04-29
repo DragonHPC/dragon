@@ -9,7 +9,6 @@ except ImportError:
     c_int = c_double = c_longlong = None
 
 import dragon  # DRAGON import before multiprocessing
-
 import multiprocessing
 
 try:
@@ -32,13 +31,10 @@ class _Foo(Structure):
     _fields_ = [
         ("x", c_int),
         ("y", c_double),
-        (
-            "z",
-            c_longlong,
-        ),
+        ("z", c_longlong),
     ]
 
-@unittest.skip("DRAGON: Not Implemented")
+
 class WithProcessesTestSharedCTypes(BaseTestCase, ProcessesMixin, unittest.TestCase):
 
     # DRAGON ALLOWED_TYPES = ('processes',)
@@ -58,7 +54,6 @@ class WithProcessesTestSharedCTypes(BaseTestCase, ProcessesMixin, unittest.TestC
         for i in range(len(arr)):
             arr[i] *= 2
 
-    @unittest.skip("bug filed PE-40919")
     def test_sharedctypes(self, lock=False):
         x = Value("i", 7, lock=lock)
         y = Value(c_double, 1.0 / 3.0, lock=lock)
@@ -85,6 +80,7 @@ class WithProcessesTestSharedCTypes(BaseTestCase, ProcessesMixin, unittest.TestC
     def test_synchronize(self):
         self.test_sharedctypes(lock=True)
 
+    @unittest.skip('copy not implemented')
     def test_copy(self):
         foo = _Foo(2, 5.0, 2**33)
         bar = copy(foo)

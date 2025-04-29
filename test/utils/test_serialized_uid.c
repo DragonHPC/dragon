@@ -61,19 +61,13 @@ main(int argc, char ** argv)
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Failed to serialize channel", jmp_destroy_pool);
 
-    dragonULInt c_uid_out, type_out;
-    derr = dragon_channel_get_uid_type(&ch_ser, &c_uid_out, &type_out);
+    dragonULInt c_uid_out;
+    derr = dragon_channel_get_uid(&ch_ser, &c_uid_out);
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Something broke", jmp_destroy_pool);
 
     if (c_uid_out != c_uid) {
         printf("Channel ID mismatch, expected %ld but got %ld\n", c_uid, c_uid_out);
-        TEST_STATUS = FAILED;
-        goto jmp_destroy_pool;
-    }
-
-    if (type_out != DRAGON_MEMORY_ALLOC_CHANNEL) {
-        printf("Type mismatch, expected DRAGON_MEMORY_ALLOC_CHANNEL but got enum type %ld\n", type_out);
         TEST_STATUS = FAILED;
         goto jmp_destroy_pool;
     }

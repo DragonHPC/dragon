@@ -50,9 +50,16 @@ static dragonError_t TEST_STATUS = SUCCESS;
 
 // For generic fails that need cleanup but do not have a dragon error code
 #define jmp_fail(msg, jmp) ({                   \
-            printf("%s\n", msg);                \
+            printf("FUNC: %s:%d | %s\n", __FUNCTION__, __LINE__, msg);                \
             TEST_STATUS = FAILED;               \
             goto jmp;                           \
+        })
+
+// No dragon code, no goto cleanup, just print and fail
+#define misc_fail(msg) ({                       \
+            printf("FUNC: %s:%d | %s\n", __FUNCTION__, __LINE__, msg);                \
+            TEST_STATUS = FAILED;               \
+            return FAILED;                      \
         })
 
 /* ++++++++++++ Utility Functions ++++++++++++ */

@@ -23,15 +23,12 @@ from .frontend_testing_mocks import send_abnormal_term
 
 
 def get_args_map(network_config, **kwargs):
-
     parser = get_parser()
-    arg_list = ['--wlm', 'slurm',
-                '--network-config', f'{network_config}',
-                '--network-prefix', '^(eth|hsn)']
+    arg_list = ["--wlm", "slurm", "--network-config", f"{network_config}", "--network-prefix", "^(eth|hsn)"]
     for val in kwargs.values():
         arg_list = arg_list + val
 
-    arg_list.append('hello_world.py')
+    arg_list.append("hello_world.py")
 
     args = parser.parse_args(args=arg_list)
     if args.basic_label or args.verbose_label:
@@ -42,12 +39,11 @@ def get_args_map(network_config, **kwargs):
 
 
 class FrontendRestartTest(unittest.TestCase):
-
     def setUp(self):
         self.test_dir = os.path.dirname(os.path.realpath(__file__))
-        self.network_config = os.path.join(self.test_dir, 'slurm_primary.yaml')
-        self.bad_network_config = os.path.join(self.test_dir, 'slurm_bad.yaml')
-        self.big_network_config = os.path.join(self.test_dir, 'slurm_big.yaml')
+        self.network_config = os.path.join(self.test_dir, "slurm_primary.yaml")
+        self.bad_network_config = os.path.join(self.test_dir, "slurm_bad.yaml")
+        self.big_network_config = os.path.join(self.test_dir, "slurm_big.yaml")
 
         self.be_mpool = None
         self.be_ch_out = None
@@ -61,11 +57,9 @@ class FrontendRestartTest(unittest.TestCase):
         self.fe_ta_conn = None
 
     def tearDown(self):
-
         self.cleanup()
 
     def cleanup(self):
-
         try:
             self.fe_ta_conn.close()
         except (ConnectionError, AttributeError):
@@ -78,16 +72,16 @@ class FrontendRestartTest(unittest.TestCase):
 
         try:
             for node in self.be_nodes.values():
-                node['conn'].close()
-                node['ch_in'].destroy()
+                node["conn"].close()
+                node["ch_in"].destroy()
         except (AttributeError, ChannelError):
             pass
 
         try:
             for node in self.be_nodes.values():
-                node['ls_ch'].destroy()
-                if node['is_primary']:
-                    node['gs_ch'].destroy()
+                node["ls_ch"].destroy()
+                if node["is_primary"]:
+                    node["gs_ch"].destroy()
         except (AttributeError, ChannelError, KeyError):
             pass
 
@@ -108,51 +102,43 @@ class FrontendRestartTest(unittest.TestCase):
             pass
 
     def do_bringup(self, mock_overlay, mock_launch, net_conf=None):
-
-        overlay, la_info = handle_bringup(mock_overlay,
-                                          mock_launch,
-                                          self.network_config,
-                                          net_conf=net_conf)
-        self.ta_ch_in = overlay['ta_ch_in']
-        self.ta_ch_out = overlay['ta_ch_out']
-        self.fe_ta_conn = overlay['fe_ta_conn']
-        self.be_mpool = overlay['be_mpool']
-        self.be_ch_out = overlay['be_ch_out']
-        self.be_ch_in = overlay['be_ch_in']
-        self.be_nodes = overlay['be_nodes']
-        self.overlay_inout = overlay['overlay_inout']
-        self.primary_conn = overlay['primary_conn']
+        overlay, la_info = handle_bringup(mock_overlay, mock_launch, self.network_config, net_conf=net_conf)
+        self.ta_ch_in = overlay["ta_ch_in"]
+        self.ta_ch_out = overlay["ta_ch_out"]
+        self.fe_ta_conn = overlay["fe_ta_conn"]
+        self.be_mpool = overlay["be_mpool"]
+        self.be_ch_out = overlay["be_ch_out"]
+        self.be_ch_in = overlay["be_ch_in"]
+        self.be_nodes = overlay["be_nodes"]
+        self.overlay_inout = overlay["overlay_inout"]
+        self.primary_conn = overlay["primary_conn"]
 
         return la_info
 
     def get_backend_up(self, mock_overlay, mock_launch):
-
         overlay = stand_up_backend(mock_overlay, mock_launch, self.network_config)
-        self.ta_ch_in = overlay['ta_ch_in']
-        self.ta_ch_out = overlay['ta_ch_out']
-        self.fe_ta_conn = overlay['fe_ta_conn']
-        self.be_mpool = overlay['be_mpool']
-        self.be_ch_out = overlay['be_ch_out']
-        self.be_ch_in = overlay['be_ch_in']
-        self.be_nodes = overlay['be_nodes']
-        self.overlay_inout = overlay['overlay_inout']
+        self.ta_ch_in = overlay["ta_ch_in"]
+        self.ta_ch_out = overlay["ta_ch_out"]
+        self.fe_ta_conn = overlay["fe_ta_conn"]
+        self.be_mpool = overlay["be_mpool"]
+        self.be_ch_out = overlay["be_ch_out"]
+        self.be_ch_in = overlay["be_ch_in"]
+        self.be_nodes = overlay["be_nodes"]
+        self.overlay_inout = overlay["overlay_inout"]
 
     @catch_thread_exceptions
-    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
-    @patch('dragon.launcher.frontend.start_overlay_network')
+    @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
+    @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_no_promotion(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
-        '''Test the ability of frontend to restart from an Abnormal Term, excluding the node that sent the signal with no replacement'''
+        """Test the ability of frontend to restart from an Abnormal Term, excluding the node that sent the signal with no replacement"""
 
-        args_map = get_args_map(self.network_config,
-                                arg1=['--resilient', '--exhaust-resources'],
-                                arg2=['--nodes', '4'])
+        args_map = get_args_map(self.network_config, arg1=["--resilient", "--exhaust-resources"], arg2=["--nodes", "4"])
 
         # get startup going in another thread. Note: need to do threads in order to use
         # all our mocks
-        fe_proc = threading.Thread(name='Frontend Server',
-                                   target=run_resilient_frontend,
-                                   args=(args_map,),
-                                   daemon=False)
+        fe_proc = threading.Thread(
+            name="Frontend Server", target=run_resilient_frontend, args=(args_map,), daemon=False
+        )
         fe_proc.start()
 
         # Get backend up
@@ -167,7 +153,7 @@ class FrontendRestartTest(unittest.TestCase):
         for i, (host_id, node) in enumerate(self.be_nodes.items()):
             if i == dropped_index:
                 dropped_host_id = host_id
-                send_abnormal_term(node['conn'], host_id=host_id)
+                send_abnormal_term(node["conn"], host_id=host_id)
 
         # Necessarily clean up all the backend stuff:
         self.cleanup()
@@ -196,16 +182,14 @@ class FrontendRestartTest(unittest.TestCase):
         fe_proc.join()
 
     @catch_thread_exceptions
-    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
-    @patch('dragon.launcher.frontend.start_overlay_network')
+    @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
+    @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_with_promotion(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
-        '''Test the ability of frontend to restart from an Abnormal Term, excluding the node that sent the signal with a replacement'''
+        """Test the ability of frontend to restart from an Abnormal Term, excluding the node that sent the signal with a replacement"""
 
         nnodes = 4
         self.network_config = self.big_network_config
-        args_map = get_args_map(self.network_config,
-                                arg1=['--resilient'],
-                                arg2=['--nodes', f'{nnodes}'])
+        args_map = get_args_map(self.network_config, arg1=["--resilient"], arg2=["--nodes", f"{nnodes}"])
 
         # Construct our node list:
         net = NetworkConfig.from_file(self.network_config)
@@ -221,10 +205,9 @@ class FrontendRestartTest(unittest.TestCase):
 
         # get startup going in another thread. Note: need to do threads in order to use
         # all our mocks
-        fe_proc = threading.Thread(name='Frontend Server',
-                                   target=run_resilient_frontend,
-                                   args=(args_map,),
-                                   daemon=False)
+        fe_proc = threading.Thread(
+            name="Frontend Server", target=run_resilient_frontend, args=(args_map,), daemon=False
+        )
         fe_proc.start()
 
         # Get backend up
@@ -239,7 +222,7 @@ class FrontendRestartTest(unittest.TestCase):
         for i, (host_id, node) in enumerate(self.be_nodes.items()):
             if i == dropped_index:
                 dropped_host_id = host_id
-                send_abnormal_term(node['conn'], host_id=host_id)
+                send_abnormal_term(node["conn"], host_id=host_id)
 
         # Necessarily clean up all the backend stuff:
         self.cleanup()
@@ -269,18 +252,19 @@ class FrontendRestartTest(unittest.TestCase):
         fe_proc.join()
 
     @catch_thread_exceptions
-    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
-    @patch('dragon.launcher.frontend.start_overlay_network')
-    def test_abnormal_restart_with_promotion_and_idle_nodes(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
-        '''Test the ability of frontend to restart from an Abnormal Term, excluding the node that sent the signal with a replacement'''
+    @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
+    @patch("dragon.launcher.frontend.start_overlay_network")
+    def test_abnormal_restart_with_promotion_and_idle_nodes(
+        self, exceptions_caught_in_threads, mock_overlay, mock_launch
+    ):
+        """Test the ability of frontend to restart from an Abnormal Term, excluding the node that sent the signal with a replacement"""
 
         nnodes = 4
         idle_nodes = 12
         self.network_config = self.big_network_config
-        args_map = get_args_map(self.network_config,
-                                arg1=['--resilient'],
-                                arg2=['--nodes', f'{nnodes}'],
-                                arg3=['--idle', f'{idle_nodes}'])
+        args_map = get_args_map(
+            self.network_config, arg1=["--resilient"], arg2=["--nodes", f"{nnodes}"], arg3=["--idle", f"{idle_nodes}"]
+        )
         # Construct our node list:
         net = NetworkConfig.from_file(self.network_config)
         net_conf = net.get_network_config()
@@ -295,10 +279,9 @@ class FrontendRestartTest(unittest.TestCase):
 
         # get startup going in another thread. Note: need to do threads in order to use
         # all our mocks
-        fe_proc = threading.Thread(name='Frontend Server',
-                                   target=run_resilient_frontend,
-                                   args=(args_map,),
-                                   daemon=False)
+        fe_proc = threading.Thread(
+            name="Frontend Server", target=run_resilient_frontend, args=(args_map,), daemon=False
+        )
         fe_proc.start()
 
         # Get backend up
@@ -313,7 +296,7 @@ class FrontendRestartTest(unittest.TestCase):
         for i, (host_id, node) in enumerate(self.be_nodes.items()):
             if i == dropped_index:
                 dropped_host_id = host_id
-                send_abnormal_term(node['conn'], host_id=host_id)
+                send_abnormal_term(node["conn"], host_id=host_id)
 
         # Necessarily clean up all the backend stuff:
         self.cleanup()
@@ -343,17 +326,16 @@ class FrontendRestartTest(unittest.TestCase):
         fe_proc.join()
 
     @catch_thread_exceptions
-    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
-    @patch('dragon.launcher.frontend.start_overlay_network')
+    @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
+    @patch("dragon.launcher.frontend.start_overlay_network")
     def test_rapid_abnormal_restart(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
-        '''Test the ability to arrest ourselves out of a continuous boot loop'''
+        """Test the ability to arrest ourselves out of a continuous boot loop"""
         nnodes = 4
         idle_nodes = 12
         self.network_config = self.big_network_config
-        args_map = get_args_map(self.network_config,
-                                arg1=['--resilient'],
-                                arg2=['--nodes', f'{nnodes}'],
-                                arg3=['--idle', f'{idle_nodes}'])
+        args_map = get_args_map(
+            self.network_config, arg1=["--resilient"], arg2=["--nodes", f"{nnodes}"], arg3=["--idle", f"{idle_nodes}"]
+        )
 
         # Construct our node list:
         net = NetworkConfig.from_file(self.network_config)
@@ -369,10 +351,9 @@ class FrontendRestartTest(unittest.TestCase):
 
         # get startup going in another thread. Note: need to do threads in order to use
         # all our mocks
-        fe_proc = threading.Thread(name='Frontend Server',
-                                   target=run_resilient_frontend,
-                                   args=(args_map,),
-                                   daemon=False)
+        fe_proc = threading.Thread(
+            name="Frontend Server", target=run_resilient_frontend, args=(args_map,), daemon=False
+        )
         fe_proc.start()
 
         # Get backend up
@@ -387,12 +368,12 @@ class FrontendRestartTest(unittest.TestCase):
         for i, (host_id, node) in enumerate(self.be_nodes.items()):
             if i == dropped_index:
                 dropped_host_id = host_id
-                send_abnormal_term(node['conn'], host_id=host_id)
+                send_abnormal_term(node["conn"], host_id=host_id)
 
         # Necessarily clean up all the backend stuff:
         self.cleanup()
 
-        mock_overlay.side_effect = RuntimeError('something to complain about')
+        mock_overlay.side_effect = RuntimeError("something to complain about")
 
         # Catch the stdout
         captured_stdout = StringIO()
@@ -416,16 +397,14 @@ class FrontendRestartTest(unittest.TestCase):
         self.assertTrue("Dragon runtime is in an unrecoverable state. Exiting." in captured_stdout.getvalue())
 
     @catch_thread_exceptions
-    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
-    @patch('dragon.launcher.frontend.start_overlay_network')
+    @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
+    @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_kill_global_services(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
-        '''Test the ability of frontend to restart from an Abnormal Term when downed node is global services'''
+        """Test the ability of frontend to restart from an Abnormal Term when downed node is global services"""
 
         nnodes = 4
         self.network_config = self.big_network_config
-        args_map = get_args_map(self.network_config,
-                                arg1=['--resilient'],
-                                arg2=['--nodes', f'{nnodes}'])
+        args_map = get_args_map(self.network_config, arg1=["--resilient"], arg2=["--nodes", f"{nnodes}"])
 
         # Construct our node list:
         net = NetworkConfig.from_file(self.network_config)
@@ -441,10 +420,9 @@ class FrontendRestartTest(unittest.TestCase):
 
         # get startup going in another thread. Note: need to do threads in order to use
         # all our mocks
-        fe_proc = threading.Thread(name='Frontend Server',
-                                   target=run_resilient_frontend,
-                                   args=(args_map,),
-                                   daemon=False)
+        fe_proc = threading.Thread(
+            name="Frontend Server", target=run_resilient_frontend, args=(args_map,), daemon=False
+        )
         fe_proc.start()
 
         # Get backend up
@@ -459,7 +437,7 @@ class FrontendRestartTest(unittest.TestCase):
         for i, (host_id, node) in enumerate(self.be_nodes.items()):
             if i == dropped_index:
                 dropped_host_id = host_id
-                send_abnormal_term(node['conn'], host_id=host_id)
+                send_abnormal_term(node["conn"], host_id=host_id)
 
         # Necessarily clean up all the backend stuff:
         self.cleanup()
@@ -485,7 +463,7 @@ class FrontendRestartTest(unittest.TestCase):
             self.assertNotEqual(host_id, dropped_host_id)
 
         # Check that some node is selected as primary
-        self.assertTrue(any([node['is_primary'] for node in self.be_nodes.values()]))
+        self.assertTrue(any([node["is_primary"] for node in self.be_nodes.values()]))
 
         # Do the rest of bring-up and teardown
         handle_gsprocesscreate(self.primary_conn)
@@ -495,15 +473,15 @@ class FrontendRestartTest(unittest.TestCase):
         fe_proc.join()
 
     @catch_thread_exceptions
-    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
-    @patch('dragon.launcher.frontend.start_overlay_network')
+    @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
+    @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_exhaust_resources(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
-        '''Test the ability of frontend to restart until there are no nodes left to use'''
+        """Test the ability of frontend to restart until there are no nodes left to use"""
 
         nnodes = 3
-        args_map = get_args_map(self.network_config,
-                                arg1=['--resilient', '--exhaust-resources'],
-                                arg2=['--nodes', f'{nnodes}'])
+        args_map = get_args_map(
+            self.network_config, arg1=["--resilient", "--exhaust-resources"], arg2=["--nodes", f"{nnodes}"]
+        )
 
         # Construct our node list:
         net = NetworkConfig.from_file(self.network_config)
@@ -520,25 +498,23 @@ class FrontendRestartTest(unittest.TestCase):
 
         # get startup going in another thread. Note: need to do threads in order to use
         # all our mocks
-        fe_proc = threading.Thread(name='Frontend Server',
-                                   target=run_resilient_frontend,
-                                   args=(args_map,),
-                                   daemon=False)
+        fe_proc = threading.Thread(
+            name="Frontend Server", target=run_resilient_frontend, args=(args_map,), daemon=False
+        )
         fe_proc.start()
 
         # Get backend
         dropped_index = 2
         dropped_host_id = 0
 
-        log = logging.getLogger('test')
+        log = logging.getLogger("test")
         for index in range(all_nodes):
-
             self.do_bringup(mock_overlay, mock_launch, net_conf=net_conf)
 
             # Receive GSProcessCreate
-            log.info('Creating head proc')
+            log.info("Creating head proc")
             handle_gsprocesscreate(self.primary_conn)
-            log.info('Head proc created')
+            log.info("Head proc created")
 
             # Check that the frontend gave us the expected config
             self.assertEqual(len(self.be_nodes), nnodes)
@@ -557,15 +533,15 @@ class FrontendRestartTest(unittest.TestCase):
                 if i == dropped_index:
                     dropped_host_id = host_id
                     log.info(f"sending a abnormal signal to {host_id}: {node}")
-                    send_abnormal_term(node['conn'], host_id=host_id)
+                    send_abnormal_term(node["conn"], host_id=host_id)
 
             # Necessarily clean up all the backend stuff:
-            log.info('doing cleanup of mocks')
+            log.info("doing cleanup of mocks")
             self.cleanup()
 
             # Update our internal ref on the node states
             active_nodes = 0
-            log.info('updating net conf')
+            log.info("updating net conf")
             for node in net_conf.values():
                 if node.state != NodeDescriptor.State.DOWN:
                     if node.host_id == dropped_host_id:
@@ -586,18 +562,18 @@ class FrontendRestartTest(unittest.TestCase):
 
         # Reset stdout and check captured output
         sys.stdout = sys.__stdout__
-        self.assertTrue("There are no more hardware resources available for continued app execution." in captured_stdout.getvalue())
+        self.assertTrue(
+            "There are no more hardware resources available for continued app execution." in captured_stdout.getvalue()
+        )
 
     @catch_thread_exceptions
-    @patch('dragon.launcher.frontend.LauncherFrontEnd._launch_backend')
-    @patch('dragon.launcher.frontend.start_overlay_network')
+    @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
+    @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_min_nodes(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
-        '''Test the ability of frontend to restart until there are not enough nodes left for user requested node count'''
+        """Test the ability of frontend to restart until there are not enough nodes left for user requested node count"""
 
         nnodes = 2
-        args_map = get_args_map(self.network_config,
-                                arg1=['--resilient'],
-                                arg2=['--nodes', f'{nnodes}'])
+        args_map = get_args_map(self.network_config, arg1=["--resilient"], arg2=["--nodes", f"{nnodes}"])
 
         # Construct our node list:
         net = NetworkConfig.from_file(self.network_config)
@@ -614,25 +590,23 @@ class FrontendRestartTest(unittest.TestCase):
 
         # get startup going in another thread. Note: need to do threads in order to use
         # all our mocks
-        fe_proc = threading.Thread(name='Frontend Server',
-                                   target=run_resilient_frontend,
-                                   args=(args_map,),
-                                   daemon=False)
+        fe_proc = threading.Thread(
+            name="Frontend Server", target=run_resilient_frontend, args=(args_map,), daemon=False
+        )
         fe_proc.start()
 
         # Get backend
         dropped_index = 2
         dropped_host_id = 0
 
-        log = logging.getLogger('test')
+        log = logging.getLogger("test")
         for index in range(all_nodes - nnodes + 1):
-
             self.do_bringup(mock_overlay, mock_launch, net_conf=net_conf)
 
             # Receive GSProcessCreate
-            log.info('Creating head proc')
+            log.info("Creating head proc")
             handle_gsprocesscreate(self.primary_conn)
-            log.info('Head proc created')
+            log.info("Head proc created")
 
             # Check that the frontend gave us the expected config
             self.assertEqual(len(self.be_nodes), nnodes)
@@ -651,15 +625,15 @@ class FrontendRestartTest(unittest.TestCase):
                 if i == dropped_index:
                     dropped_host_id = host_id
                     log.info(f"sending a abnormal signal to {host_id}: {node}")
-                    send_abnormal_term(node['conn'], host_id=host_id)
+                    send_abnormal_term(node["conn"], host_id=host_id)
 
             # Necessarily clean up all the backend stuff:
-            log.info('doing cleanup of mocks')
+            log.info("doing cleanup of mocks")
             self.cleanup()
 
             # Update our internal ref on the node states
             active_nodes = 0
-            log.info('updating net conf')
+            log.info("updating net conf")
             for node in net_conf.values():
                 if node.state != NodeDescriptor.State.DOWN:
                     if node.host_id == dropped_host_id:
@@ -680,9 +654,12 @@ class FrontendRestartTest(unittest.TestCase):
 
         # Reset stdout and check captured output
         sys.stdout = sys.__stdout__
-        self.assertTrue("There are not enough hardware resources available for continued app execution" in captured_stdout.getvalue())
+        self.assertTrue(
+            "There are not enough hardware resources available for continued app execution"
+            in captured_stdout.getvalue()
+        )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     unittest.main()

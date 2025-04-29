@@ -9,6 +9,7 @@ from ...channels import Channel, ChannelRecvH, ChannelSendH, Message, PollResult
 from ...managed_memory import MemoryAlloc, MemoryPool
 from ...dtypes import WaitMode, DEFAULT_WAIT_MODE
 
+
 def unget_nowait(self: Queue, item: Any) -> None:
     """Re-queues an item at the front of a queue, essentially performing the
     opposite of get_nowait().
@@ -68,7 +69,7 @@ def mem_descr_msg(sdesc: bytes, data: bytes, clientid: int, hints: int, deadline
             return mem_pool_msg(mem.pool, data, clientid, hints, deadline)
 
         if mem.size < len(data):
-            raise ValueError(f'Memory allocation too small: {mem}')
+            raise ValueError(f"Memory allocation too small: {mem}")
         v = mem.get_memview()
         v[:] = data
         return Message.create_from_mem(mem, clientid, hints)
@@ -95,7 +96,14 @@ def mem_pool_msg(pool: MemoryPool, data: bytes, clientid: int, hints: int, deadl
     return msg
 
 
-def create_msg(data: bytes, clientid: int, hints: int, channel: Optional[Channel] = None, deadline: Optional[float] = None, sdesc: Optional[bytes] = None) -> Message:
+def create_msg(
+    data: bytes,
+    clientid: int,
+    hints: int,
+    channel: Optional[Channel] = None,
+    deadline: Optional[float] = None,
+    sdesc: Optional[bytes] = None,
+) -> Message:
     """Creates a Dragon message from data.
 
     If a channel is specified, the message will be created from a memory
@@ -131,14 +139,16 @@ def open_handle(h: Union[ChannelRecvH, ChannelSendH]) -> Generator[Union[Channel
         h.close()
 
 
-def send_msg(channel_sdesc: bytes,
-             clientid: int,
-             hints: int,
-             payload: bytes,
-             deadline: float,
-             mem_sd: Optional[bytes] = None,
-             copy_on_send: bool = False,
-             wait_mode: WaitMode = DEFAULT_WAIT_MODE) -> None:
+def send_msg(
+    channel_sdesc: bytes,
+    clientid: int,
+    hints: int,
+    payload: bytes,
+    deadline: float,
+    mem_sd: Optional[bytes] = None,
+    copy_on_send: bool = False,
+    wait_mode: WaitMode = DEFAULT_WAIT_MODE,
+) -> None:
     # TODO Should we cache attached channels and open handles?
     with attach_channel(channel_sdesc) as ch, open_handle(ch.sendh(wait_mode=wait_mode)) as h:
         msg = create_msg(payload, clientid, hints, ch, deadline, mem_sd)
@@ -151,9 +161,7 @@ def send_msg(channel_sdesc: bytes,
         )
 
 
-def recv_msg(channel_sdesc: bytes,
-             deadline: float,
-             wait_mode: WaitMode = DEFAULT_WAIT_MODE) -> Message:
+def recv_msg(channel_sdesc: bytes, deadline: float, wait_mode: WaitMode = DEFAULT_WAIT_MODE) -> Message:
     # TODO Should we cache attached channels and open handles?
     with attach_channel(channel_sdesc) as ch, open_handle(ch.recvh(wait_mode=wait_mode)) as h:
         timeout, _ = seconds_remaining(deadline)

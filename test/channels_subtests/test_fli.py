@@ -8,6 +8,7 @@ from dragon.managed_memory import MemoryPool, MemoryAlloc
 from dragon.channels import Channel
 from dragon.localservices.options import ChannelOptions
 
+
 class FLICreateTest(unittest.TestCase):
 
     @classmethod
@@ -41,7 +42,7 @@ class FLICreateTest(unittest.TestCase):
         # Make list of streaming channels
         streams = []
         for i in range(num_streams):
-            strm = Channel(self.mpool, 3+i)
+            strm = Channel(self.mpool, 3 + i)
             streams.append(strm)
 
         fli = FLInterface(main_ch=self.main_ch, manager_ch=manager_ch, pool=self.mpool, stream_channels=streams)
@@ -67,9 +68,9 @@ def worker_recv_fd(fli_serial, fli_pool, expected):
         fli = FLInterface.attach(fli_serial, fli_pool)
         recvh = fli.recvh()
         fdes = recvh.create_fd()
-        r = os.fdopen(fdes, 'r')
-        s = ''
-        x = ' '
+        r = os.fdopen(fdes, "r")
+        s = ""
+        x = " "
         while len(x) > 0:
             x = r.read()
             s += x
@@ -77,7 +78,7 @@ def worker_recv_fd(fli_serial, fli_pool, expected):
         r.close()
 
         if s != expected:
-            print(f'The expected string as {expected} and received {s} instead!')
+            print(f"The expected string as {expected} and received {s} instead!")
             return -1
 
         recvh.finalize_fd()
@@ -88,14 +89,15 @@ def worker_recv_fd(fli_serial, fli_pool, expected):
     except Exception as ex:
         print(f"GOT EXCEPTION: {ex}")
 
+
 def echo(fli_in, fli_out):
     sendh = fli_out.sendh()
     recvh = fli_in.recvh()
 
-    (x, hint) = recvh.recv_bytes() # recv_bytes returns a tuple, first the bytes then the message attribute
+    (x, hint) = recvh.recv_bytes()  # recv_bytes returns a tuple, first the bytes then the message attribute
     try:
         _ = recvh.recv_bytes()
-        print('Did not get EOT as expected', flush=True )
+        print("Did not get EOT as expected", flush=True)
     except EOFError:
         pass
     recvh.close()
@@ -122,9 +124,11 @@ class FLISendRecvTest(unittest.TestCase):
         self.manager_ch = Channel(self.mpool, 2)
         self.stream_chs = []
         for i in range(5):
-            self.stream_chs.append(Channel(self.mpool, 3+i))
+            self.stream_chs.append(Channel(self.mpool, 3 + i))
 
-        self.fli = FLInterface(main_ch=self.main_ch, manager_ch=self.manager_ch, pool=self.mpool, stream_channels=self.stream_chs)
+        self.fli = FLInterface(
+            main_ch=self.main_ch, manager_ch=self.manager_ch, pool=self.mpool, stream_channels=self.stream_chs
+        )
 
         pool2_name = f"pydragon_fli_test2_{os.getpid()}"
         pool2_size = 1073741824  # 1GB
@@ -146,31 +150,30 @@ class FLISendRecvTest(unittest.TestCase):
     def test_zero_byte_recv(self):
 
         with self.fli.sendh() as sendh:
-            b = b'Hello World'
+            b = b"Hello World"
             sendh.send_bytes(b)
 
         with self.fli.recvh(destination_pool=self.mpool2) as recvh:
-            (x, _) = recvh.recv_mem() # recv_bytes returns a tuple, first the bytes then the message attribute
+            (x, _) = recvh.recv_mem()  # recv_bytes returns a tuple, first the bytes then the message attribute
             self.assertEqual(b, x.get_memview().tobytes())
             self.assertEqual(x.pool.muid, 2)
 
             with self.assertRaises(FLIEOT):
-                (x, _) = recvh.recv_bytes() # We should get back an EOT here
+                (x, _) = recvh.recv_bytes()  # We should get back an EOT here
 
     @unittest.skip("AICI-1537")
     def test_zero_byte_send(self):
         with self.fli.sendh(destination_pool=self.mpool2) as sendh:
-            b = b'Hello World'
+            b = b"Hello World"
             sendh.send_bytes(b)
 
         with self.fli.recvh() as recvh:
-            (x, _) = recvh.recv_mem() # recv_bytes returns a tuple, first the bytes then the message attribute
+            (x, _) = recvh.recv_mem()  # recv_bytes returns a tuple, first the bytes then the message attribute
             self.assertEqual(b, x.get_memview().tobytes())
             self.assertEqual(x.pool.muid, 2)
 
             with self.assertRaises(FLIEOT):
-                (x, _) = recvh.recv_bytes() # We should get back an EOT here
-
+                (x, _) = recvh.recv_bytes()  # We should get back an EOT here
 
     @unittest.skip("Hangs indefinitely on close")
     def test_create_close_recv_handle(self):
@@ -180,15 +183,15 @@ class FLISendRecvTest(unittest.TestCase):
     def test_send_recv_bytes(self):
 
         with self.fli.sendh() as sendh:
-            b = b'Hello World'
+            b = b"Hello World"
             sendh.send_bytes(b)
 
         with self.fli.recvh() as recvh:
-            (x, _) = recvh.recv_bytes() # recv_bytes returns a tuple, first the bytes then the message attribute
+            (x, _) = recvh.recv_bytes()  # recv_bytes returns a tuple, first the bytes then the message attribute
             self.assertEqual(b, x)
 
             with self.assertRaises(FLIEOT):
-                (x, _) = recvh.recv_bytes() # We should get back an EOT here
+                (x, _) = recvh.recv_bytes()  # We should get back an EOT here
 
     def test_send_recv_mem(self):
         sendh = self.fli.sendh()
@@ -196,14 +199,14 @@ class FLISendRecvTest(unittest.TestCase):
 
         mem = self.mpool.alloc(512)
         mview = mem.get_memview()
-        mview[0:5] = b'Hello'
+        mview[0:5] = b"Hello"
 
         sendh.send_mem(mem)
         sendh.close()
         (recv_mem, _) = recvh.recv_mem()
 
         mview2 = recv_mem.get_memview()
-        self.assertEqual(b'Hello', mview2[0:5])
+        self.assertEqual(b"Hello", mview2[0:5])
 
         with self.assertRaises(FLIEOT):
             _ = recvh.recv_mem()
@@ -216,12 +219,12 @@ class FLISendRecvTest(unittest.TestCase):
         sendh = self.fli.sendh()
         recvh = self.fli.recvh()
 
-        b = b'Hello'
+        b = b"Hello"
         sendh.send_bytes(b)
         sendh.close()
         (x, _) = recvh.recv_mem()
         mview = x.get_memview()
-        self.assertEqual(b'Hello', bytes(mview[0:5]))
+        self.assertEqual(b"Hello", bytes(mview[0:5]))
 
         with self.assertRaises(FLIEOT):
             _ - recvh.recv_mem()
@@ -232,12 +235,12 @@ class FLISendRecvTest(unittest.TestCase):
         sendh = self.fli.sendh(stream)
         recvh = self.fli.recvh()
 
-        b = b'Hello World'
+        b = b"Hello World"
         sendh.send_bytes(b)
         sendh.close()
 
         (x, _) = recvh.recv_bytes()
-        self.assertEqual(b'Hello World', x)
+        self.assertEqual(b"Hello World", x)
 
         with self.assertRaises(FLIEOT):
             _ = recvh.recv_bytes()
@@ -249,7 +252,7 @@ class FLISendRecvTest(unittest.TestCase):
         sendh = self.fli.sendh()
         fdes = sendh.create_fd()
 
-        f = os.fdopen(fdes, 'w')
+        f = os.fdopen(fdes, "w")
         f.write("Test")
         f.close()
         sendh.finalize_fd()
@@ -257,12 +260,12 @@ class FLISendRecvTest(unittest.TestCase):
 
     def test_read_write_file(self):
         fli_ser = self.fli.serialize()
-        test_string = 'Hello World'
+        test_string = "Hello World"
         p = mp.Process(target=worker_recv_fd, args=(fli_ser, self.mpool, test_string))
         p.start()
         sendh = self.fli.sendh()
         fdes = sendh.create_fd()
-        f = os.fdopen(fdes, 'w')
+        f = os.fdopen(fdes, "w")
         f.write(test_string)
         f.close()
         sendh.finalize_fd()
@@ -274,7 +277,7 @@ class FLISendRecvTest(unittest.TestCase):
         manager2_ch = Channel(self.mpool, 102)
         stream2_chs = []
         for i in range(5):
-            stream2_chs.append(Channel(self.mpool, 103+i))
+            stream2_chs.append(Channel(self.mpool, 103 + i))
 
         fli2 = FLInterface(main_ch=main2_ch, manager_ch=manager2_ch, pool=self.mpool, stream_channels=stream2_chs)
 
@@ -282,7 +285,7 @@ class FLISendRecvTest(unittest.TestCase):
         proc.start()
         sendh = self.fli.sendh()
         recvh = fli2.recvh()
-        b = b'Hello World'
+        b = b"Hello World"
         sendh.send_bytes(b, 42)
         sendh.close()
         x, hint = recvh.recv_bytes()
@@ -290,5 +293,6 @@ class FLISendRecvTest(unittest.TestCase):
         self.assertEqual(42, hint)
         proc.join()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

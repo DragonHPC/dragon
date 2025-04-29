@@ -60,7 +60,11 @@ class DragonLoggingError(Exception):
         self.lib_err = lib_err_str[:].decode('utf-8')
 
     def __str__(self):
-        return f"DragonLogging Exception: {self.msg}\n*** Dragon C-level Traceback: ***\n{self.lib_msg}\n*** End C-level Traceback: ***\nDragon Error Code: {self.lib_err}"
+        msg = self.msg
+        if len(self.lib_msg) > 0:
+            msg += f"\n*** Additional Info ***\n{self.lib_msg}\n*** End Additional Info ***"
+        msg += f"\nDragon Error Code: {self.lib_err}"
+        return msg
 
     @enum.unique
     class Errors(enum.Enum):

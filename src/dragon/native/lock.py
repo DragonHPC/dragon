@@ -7,7 +7,6 @@ Our implementation also extends the API by a few methods that are internal
 in Python Multiprocessing, but are used very frequently, thus appear useful for everyone.
 """
 
-
 import logging
 import os
 from sys import byteorder
@@ -149,7 +148,7 @@ class Lock:
 
         # Locks are often acquired and released many times, we don't log these to prevent
         # big impacts on performance.
-        #LOGGER.debug(f"Acquire Lock {self!r} with blocking={block}, timeout={timeout}")
+        # LOGGER.debug(f"Acquire Lock {self!r} with blocking={block}, timeout={timeout}")
 
         if timeout is not None and timeout < 0:
             timeout = 0
@@ -188,7 +187,7 @@ class Lock:
 
         # Locks are often acquired and released many times, we don't log these to prevent
         # big impacts on performance.
-        #LOGGER.debug(f"Release Lock {self!r}")
+        # LOGGER.debug(f"Release Lock {self!r}")
 
         if self._recursive:
             assert self._accesscount > 0, "attempt to release recursive lock not owned by process"

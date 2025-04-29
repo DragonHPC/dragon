@@ -967,6 +967,12 @@ dragon_fifo_unlock(dragonFIFOLock_t * dlock)
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 
+    if (dlock->initd == NULL)
+        err_return(DRAGON_LOCK_NOT_INITD,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
+
     dragonLockType_t next_node = dlock->my_node + 1;
     if (next_node >= DRAGON_LOCK_NODE_FANOUT)
         next_node -= DRAGON_LOCK_NODE_FANOUT;
@@ -986,6 +992,12 @@ dragon_fifolite_unlock(dragonFIFOLiteLock_t * dlock)
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
 
+    if (dlock->initd == NULL)
+        err_return(DRAGON_LOCK_NOT_INITD,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
+
     atomic_fetch_add_explicit(dlock->now_serving,
                               1UL, DRAGON_LOCK_MEM_ORDER);
 
@@ -997,6 +1009,12 @@ dragon_greedy_unlock(dragonGreedyLock_t * dlock)
 {
     if (dlock == NULL)
         err_return(DRAGON_INVALID_ARGUMENT,"");
+
+    if (dlock->initd == NULL)
+        err_return(DRAGON_LOCK_NOT_INITD,"");
+
+    if (*dlock->initd != LOCK_INITD)
+        err_return(DRAGON_OBJECT_DESTROYED, "");
 
     int ierr = pthread_mutex_unlock(dlock->mutex);
     if (unlikely(ierr != 0))

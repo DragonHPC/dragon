@@ -8,8 +8,16 @@ import logging
 logging.captureWarnings(True)
 
 import multiprocessing as mp
-from dragon.channels import Channel, Message, ChannelSendH, ChannelRecvH, register_gateways_from_env, discard_gateways, \
-    MASQUERADE_AS_REMOTE, POLLIN
+from dragon.channels import (
+    Channel,
+    Message,
+    ChannelSendH,
+    ChannelRecvH,
+    register_gateways_from_env,
+    discard_gateways,
+    MASQUERADE_AS_REMOTE,
+    POLLIN,
+)
 from dragon.managed_memory import MemoryPool
 from dragon.utils import B64
 import asyncio
@@ -24,6 +32,7 @@ TIMEOUT = 2
 
 SILENT = True
 
+
 def status(*args, **kwargs):
     if not SILENT:
         print(*args, **kwargs)
@@ -37,6 +46,7 @@ from dragon.transport.tcp.task import cancel_all_tasks
 
 GW_ENV_PREFIX = "DRAGON_GW"
 
+
 def mk_msg(pool, nbytes):
     msg = Message.create_alloc(pool, nbytes)
     mview = msg.bytes_memview()
@@ -45,17 +55,19 @@ def mk_msg(pool, nbytes):
 
     return msg
 
+
 def validate_msg(msg):
     # Here we can do any message validation that needs
     # to be done.
     mview = msg.bytes_memview()
 
     for i in range(len(mview)):
-        if (mview[i] != i%256):
-            print(f'The message contents were incorrectly {mview[i]} at location {i}')
+        if mview[i] != i % 256:
+            print(f"The message contents were incorrectly {mview[i]} at location {i}")
             return i
 
     return len(mview)
+
 
 async def agent(channels, control):
     # Create a Transport instance to handle Request/Response I/O.
@@ -90,13 +102,13 @@ async def agent(channels, control):
     # is the case with StreamTransport.
 
     # Start the server
-    server.start(name=f'Transport-server')
+    server.start(name=f"Transport-server")
 
-    status('Transport service started.')
+    status("Transport service started.")
 
     # Start each client
     for name, client in clients.items():
-        client.start(name=f'Transport-client-{name}')
+        client.start(name=f"Transport-client-{name}")
 
     # At this point, the server and client tasks are running and you
     # can do whatever, but if you need a control loop...
@@ -105,7 +117,7 @@ async def agent(channels, control):
             await asyncio.sleep(5.0)
     finally:
         # Shut down clients and server
-        status('Transport service is shutting down')
+        status("Transport service is shutting down")
         await asyncio.gather(*[c.stop() for c in clients.values()], return_exceptions=True)
         try:
             await server.stop()
@@ -114,27 +126,30 @@ async def agent(channels, control):
         # Cancel all remaining tasks for good measure
         await cancel_all_tasks()
 
+
 def start_transport(control):
     done = False
     id = 1
     channels = []
     while not done:
-        id_str = GW_ENV_PREFIX+str(id)
+        id_str = GW_ENV_PREFIX + str(id)
         if id_str in os.environ:
             channels.append(id_str)
             id += 1
         else:
             done = True
 
-    status('Added gateway channels to environment. Now starting transport service.')
+    status("Added gateway channels to environment. Now starting transport service.")
 
     logging.disable(logging.ERROR)
     asyncio.run(agent(channels, control))
 
+
 def add_gw_to_env(gw_ch, id):
     ser_gw = gw_ch.serialize()
     encoded_ser_gw = B64(ser_gw)
-    os.environ[GW_ENV_PREFIX+str(id)] = str(encoded_ser_gw)
+    os.environ[GW_ENV_PREFIX + str(id)] = str(encoded_ser_gw)
+
 
 def echo_gw_and_attach():
     gw_channels = []
@@ -144,10 +159,11 @@ def echo_gw_and_attach():
         ser_gw = B64.from_str(os.environ[id_str])
         status("Found", id_str, "in environment")
         gw_ch = Channel.attach(ser_gw.decode())
-        status('Attached to gateway channel', id)
+        status("Attached to gateway channel", id)
         gw_channels.append(gw_ch)
         id += 1
         id_str = GW_ENV_PREFIX + str(id)
+
 
 def get_msg_from_channel(ch_ser, msg_nbytes, ret_value, timeout=None):
     ch = Channel.attach(ch_ser)
@@ -158,7 +174,7 @@ def get_msg_from_channel(ch_ser, msg_nbytes, ret_value, timeout=None):
         # Here we can do any message validation that needs
         # to be done.
         mview = msg.bytes_memview()
-        if (validate_msg(msg) == msg_nbytes):
+        if validate_msg(msg) == msg_nbytes:
             ret_value.value = SUCCESS
             status("Received message sent to masquerading remote channel and verified its contents.")
         else:
@@ -169,6 +185,7 @@ def get_msg_from_channel(ch_ser, msg_nbytes, ret_value, timeout=None):
         print("Exception getting message from channel.")
         print(ex)
         ret_value.value = FAILURE
+
 
 def send_msg_to_channel(ch_ser, msg_nbytes, ret_value, timeout=None, sleep_secs=0):
     time.sleep(sleep_secs)
@@ -187,9 +204,9 @@ def send_msg_to_channel(ch_ser, msg_nbytes, ret_value, timeout=None, sleep_secs=
         print(ex)
         ret_value.value = FAILURE
 
+
 class SingleNodeTransportBench(unittest.TestCase):
-    """Unit tests for the Single Node emulation of a transport service.
-    """
+    """Unit tests for the Single Node emulation of a transport service."""
 
     @classmethod
     def setUpClass(cls):
@@ -200,7 +217,7 @@ class SingleNodeTransportBench(unittest.TestCase):
         cls.gw_ch1 = Channel(cls.mpool, c_uid=1, block_size=256)
         add_gw_to_env(cls.gw_ch1, 1)
 
-        cls.transport_running = mp.Value('i', 1, lock=False)
+        cls.transport_running = mp.Value("i", 1, lock=False)
         cls.transport_proc = mp.Process(target=start_transport, args=(cls.transport_running,))
         cls.transport_proc.start()
 
@@ -228,14 +245,14 @@ class SingleNodeTransportBench(unittest.TestCase):
         pass
 
     def test_encoding_decoding(self):
-        x = b'Hello World'
+        x = b"Hello World"
         y = B64(x)
-        self.assertEqual(str(y),"SGVsbG8gV29ybGQ=")
-        self.assertEqual(y.decode(),x)
-        x = b'How are you?'
+        self.assertEqual(str(y), "SGVsbG8gV29ybGQ=")
+        self.assertEqual(y.decode(), x)
+        x = b"How are you?"
         y = B64(x)
-        self.assertEqual(str(y),"SG93IGFyZSB5b3U/")
-        self.assertEqual(y.decode(),x)
+        self.assertEqual(str(y), "SG93IGFyZSB5b3U/")
+        self.assertEqual(y.decode(), x)
 
     def test_environment_attach(self):
         proc = mp.Process(target=echo_gw_and_attach)
@@ -257,7 +274,7 @@ class SingleNodeTransportBench(unittest.TestCase):
         # gw channels, through channels, the gw, and the
         # transport service and back out the other end.
         ch_ser = self.user_ch1.serialize()
-        ret_value = mp.Value('i', FAILURE, lock=False)
+        ret_value = mp.Value("i", FAILURE, lock=False)
         proc = mp.Process(target=get_msg_from_channel, args=(ch_ser, 1, ret_value))
         proc.start()
         proc.join()
@@ -278,7 +295,7 @@ class SingleNodeTransportBench(unittest.TestCase):
         # gw channels, through channels, the gw, and the
         # transport service and back out the other end.
         ch_ser = self.user_ch1.serialize()
-        ret_value = mp.Value('i', FAILURE, lock=False)
+        ret_value = mp.Value("i", FAILURE, lock=False)
         proc = mp.Process(target=get_msg_from_channel, args=(ch_ser, 512, ret_value))
         proc.start()
         proc.join()
@@ -300,15 +317,15 @@ class SingleNodeTransportBench(unittest.TestCase):
         recvh = ChannelRecvH(self.user_ch1)
         recvh.open()
         ch_ser = self.user_ch1.serialize()
-        ret_value = mp.Value('i', FAILURE, lock=False)
+        ret_value = mp.Value("i", FAILURE, lock=False)
         proc = mp.Process(target=send_msg_to_channel, args=(ch_ser, 1, ret_value))
         proc.start()
         msg = recvh.recv()
         # Here we can do any message validation that needs
         # to be done.
         mview = msg.bytes_memview()
-        self.assertEqual(validate_msg(msg), 1, 'The message did not have the correct contents')
-        status('Received message from masquerading remote channel via remote receive and verified its contents.')
+        self.assertEqual(validate_msg(msg), 1, "The message did not have the correct contents")
+        status("Received message from masquerading remote channel via remote receive and verified its contents.")
         recvh.close()
         proc.join()
         self.assertEqual(proc.exitcode, 0)
@@ -316,11 +333,11 @@ class SingleNodeTransportBench(unittest.TestCase):
 
     def test_poll(self):
         status("Starting test_poll")
-        #try:
+        # try:
         recvh = ChannelRecvH(self.user_ch1)
         recvh.open()
         ch_ser = self.user_ch1.serialize()
-        ret_value = mp.Value('i', FAILURE, lock=False)
+        ret_value = mp.Value("i", FAILURE, lock=False)
         proc = mp.Process(target=send_msg_to_channel, args=(ch_ser, 1, ret_value, None, 2))
         proc.start()
         rc = self.user_ch1.poll(event_mask=POLLIN)
@@ -329,13 +346,15 @@ class SingleNodeTransportBench(unittest.TestCase):
         # Here we can do any message validation that needs
         # to be done.
         mview = msg.bytes_memview()
-        self.assertEqual(validate_msg(msg), 1, 'The message did not have the correct contents')
-        status('Polled for and received message from masquerading remote channel via remote receive and verified its contents.')
+        self.assertEqual(validate_msg(msg), 1, "The message did not have the correct contents")
+        status(
+            "Polled for and received message from masquerading remote channel via remote receive and verified its contents."
+        )
         recvh.close()
         proc.join()
         self.assertEqual(proc.exitcode, 0)
         self.assertEqual(ret_value.value, SUCCESS)
-        #except Exception as ex:
+        # except Exception as ex:
         #    self.assertTrue(False, "There was an exception in the test code.")
 
     @classmethod
@@ -360,7 +379,7 @@ class SingleNodeTransportBench(unittest.TestCase):
         self.assertEqual(q.qsize(), 1, "We could not get the proper size from a queue on a remote channel.")
         x = q.get()
         self.assertEqual(x, y, "The Queue implementation did not pass a list correctly through it.")
-        y = ['a', 'b', 'c']
+        y = ["a", "b", "c"]
         q.put(y)
         x = q.get()
         self.assertEqual(x, y, "The Queue implementation did not pass a list correctly through it.")
@@ -368,7 +387,14 @@ class SingleNodeTransportBench(unittest.TestCase):
         obj1 = {"hyena": "hyena"}
         obj2 = bytes(10000)
         q.put(obj1)
-        proc = mp.Process(target=self._queue_proc, args=(q, obj1, obj2,))
+        proc = mp.Process(
+            target=self._queue_proc,
+            args=(
+                q,
+                obj1,
+                obj2,
+            ),
+        )
         proc.start()
         proc.join()
         self.assertEqual(proc.exitcode, 0)
@@ -391,7 +417,7 @@ class SingleNodeTransportBench(unittest.TestCase):
         q.put(y)
         x = q.get()
         self.assertEqual(x, y, "The Queue implementation did not pass a list correctly through it.")
-        yy = ['a', 'b', 'c']
+        yy = ["a", "b", "c"]
         q.put(yy)
         q.put(y)
         x = q.get()
@@ -418,7 +444,14 @@ class SingleNodeTransportBench(unittest.TestCase):
         connin = dconn.Connection(inbound_initializer=self.user_ch2, options=self.opts)
         pconnout = dconn.Connection(outbound_initializer=self.user_ch2, options=self.opts)
         pconnin = dconn.Connection(inbound_initializer=self.user_ch1, options=self.opts)
-        proc = mp.Process(target=self._connection_proc, args=(msg, pconnin, pconnout, ))
+        proc = mp.Process(
+            target=self._connection_proc,
+            args=(
+                msg,
+                pconnin,
+                pconnout,
+            ),
+        )
         proc.start()
 
         connout.send(msg)
@@ -447,8 +480,15 @@ class SingleNodeTransportBench(unittest.TestCase):
         pconnout = dconn.Connection(outbound_initializer=self.user_ch2, options=self.opts)
 
         for lg_size in range(25):
-            some_bytes = random.randbytes(2 ** lg_size)
-            proc = mp.Process(target=self._connection_proc_bytes, args=(some_bytes, None, pconnout, ))
+            some_bytes = random.randbytes(2**lg_size)
+            proc = mp.Process(
+                target=self._connection_proc_bytes,
+                args=(
+                    some_bytes,
+                    None,
+                    pconnout,
+                ),
+            )
             proc.start()
 
             rec_bytes = connin.recv_bytes()
@@ -466,8 +506,15 @@ class SingleNodeTransportBench(unittest.TestCase):
         # The following for loop fails and we have added the above lines to at least test one case of
         # having the process receiving bytes
         for lg_size in range(25):
-            some_bytes = random.randbytes(2 ** lg_size)
-            proc = mp.Process(target=self._connection_proc_bytes, args=(some_bytes, pconnin, None, ))
+            some_bytes = random.randbytes(2**lg_size)
+            proc = mp.Process(
+                target=self._connection_proc_bytes,
+                args=(
+                    some_bytes,
+                    pconnin,
+                    None,
+                ),
+            )
             proc.start()
             connout.send_bytes(some_bytes)
             proc.join()
@@ -480,7 +527,14 @@ class SingleNodeTransportBench(unittest.TestCase):
         writer = dconn.Connection(outbound_initializer=self.user_ch1, options=self.opts)
         reader = dconn.Connection(inbound_initializer=self.user_ch1, options=self.opts)
 
-        proc = mp.Process(target=self._connection_proc, args=(obj, None, writer, ))
+        proc = mp.Process(
+            target=self._connection_proc,
+            args=(
+                obj,
+                None,
+                writer,
+            ),
+        )
         proc.start()
 
         rec_obj = reader.recv()
@@ -492,27 +546,27 @@ class SingleNodeTransportBench(unittest.TestCase):
         reader.ghost_close()
 
     def test_connection_with_external_channels_test_objs(self):
-        self.pass_an_obj('hyena')
-        self.pass_an_obj({'hyena': 'hyena'})
+        self.pass_an_obj("hyena")
+        self.pass_an_obj({"hyena": "hyena"})
 
         self.pass_an_obj(bytes(100000))
 
         self.pass_an_obj(bytes(200000))
 
-        self.pass_an_obj(bytearray(2 ** 20))
+        self.pass_an_obj(bytearray(2**20))
 
         for lg_size in range(25):
-            self.pass_an_obj(bytearray(2 ** lg_size))
+            self.pass_an_obj(bytearray(2**lg_size))
 
         for lg_size in range(25):
-            self.pass_an_obj(random.randbytes(2 ** lg_size))
+            self.pass_an_obj(random.randbytes(2**lg_size))
 
     def test_connection_with_external_channels_test_recv_bytes_from_send(self):
         # required for multiprocessing.Connection unit tests...
         writer = dconn.Connection(outbound_initializer=self.user_ch1, options=self.opts)
         reader = dconn.Connection(inbound_initializer=self.user_ch1, options=self.opts)
 
-        my_obj = {'hyenas': 'are awesome'}
+        my_obj = {"hyenas": "are awesome"}
         writer.send(my_obj)
         # would like this to raise, but....
         ser_obj = reader.recv_bytes()
@@ -529,7 +583,7 @@ class SingleNodeTransportBench(unittest.TestCase):
         writer = dconn.Connection(outbound_initializer=self.user_ch1, options=self.opts)
         reader = dconn.Connection(inbound_initializer=self.user_ch1, options=self.opts)
 
-        my_obj = {'hyenas': 'are awesome'}
+        my_obj = {"hyenas": "are awesome"}
         ser_obj = pickle.dumps(my_obj)
         writer.send_bytes(ser_obj)
         rec_obj = reader.recv()
@@ -550,7 +604,13 @@ class SingleNodeTransportBench(unittest.TestCase):
         writer = dconn.Connection(outbound_initializer=self.user_ch1, options=self.opts)
         reader = dconn.Connection(inbound_initializer=self.user_ch1, options=self.opts)
 
-        proc = mp.Process(target=self._connection_proc_poll, args=(msg, reader, ))
+        proc = mp.Process(
+            target=self._connection_proc_poll,
+            args=(
+                msg,
+                reader,
+            ),
+        )
         proc.start()
         time.sleep(3)
         writer.send(msg)

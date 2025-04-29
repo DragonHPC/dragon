@@ -159,16 +159,15 @@ class Event:
             pass
 
     def destroy(self):
-        '''Destroys the underlying Dragon resources so the space can be re-used.
+        """Destroys the underlying Dragon resources so the space can be re-used.
 
         Destroys underlying Dragon resource. Only do this when you know all
         references to the object have been deleted.
 
         :return: None
         :rtype: NoneType
-        '''
+        """
         try:
             self._channel.destroy()
         except:
             pass
-

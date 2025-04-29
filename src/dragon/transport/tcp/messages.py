@@ -14,31 +14,31 @@ from .io import *
 from .util import seconds_remaining
 
 
-LOGGER = logging.getLogger('dragon.transport.tcp.messages')
+LOGGER = logging.getLogger("dragon.transport.tcp.messages")
 
 
-uint8 = Annotated[int, StructIO('!B')]
+uint8 = Annotated[int, StructIO("!B")]
 """:class:`Int <int>` object packed into an unsigned 8-bit integer value."""
 
-uint16 = Annotated[int, StructIO('!H')]
+uint16 = Annotated[int, StructIO("!H")]
 """:class:`Int <int>` object packed into an unsigned 16-bit integer value."""
 
-uint64 = Annotated[int, StructIO('!Q')]
+uint64 = Annotated[int, StructIO("!Q")]
 """:class:`Int <int>` object packed into an unsigned 64-bit integer value."""
 
-float32 = Annotated[float, StructIO('!f')]
+float32 = Annotated[float, StructIO("!f")]
 """:class:`Float <float>` object packed into a signed 32-bit floating point value."""
 
 uuid_bytes = Annotated[UUID, UUIDBytesIO()]
 """:class:`UUID` object packed into a 16 byte value."""
 
-varbytes_short = Annotated[bytes, VariableBytesIO('!H')]
+varbytes_short = Annotated[bytes, VariableBytesIO("!H")]
 """:class:`Bytes <bytes>` object packed into at most (2**16 - 1) variable length bytes."""
 
-varbytes = Annotated[bytes, VariableBytesIO('!Q')]
+varbytes = Annotated[bytes, VariableBytesIO("!Q")]
 """:class:`Bytes <bytes>` object packed into at most (2**64 - 1) variable length bytes."""
 
-vartext = Annotated[str, VariableTextIO('!Q')]
+vartext = Annotated[str, VariableTextIO("!Q")]
 """:class:`String <str>` object encoded in utf-8 and packed into at most (2**64 - 1) variable length bytes."""
 
 ipv4addr = Annotated[IPv4Address, IPv4AddressIO()]
@@ -48,7 +48,7 @@ ipv6addr = Annotated[IPv6Address, IPv6AddressIO()]
 """:class:`IPv6Address <ipaddress.IPv6Address>` object packed into 16 bytes."""
 
 
-#SendReturnMode = Enum('SendReturnMode', 'IMMEDIATELY WHEN_BUFFERED WHEN_DEPOSITED WHEN_RECEIVED')
+# SendReturnMode = Enum('SendReturnMode', 'IMMEDIATELY WHEN_BUFFERED WHEN_DEPOSITED WHEN_RECEIVED')
 class SendReturnMode(Enum):
     """Return behavior of `SendRequest` messages."""
 
@@ -144,7 +144,7 @@ class TransportMessage:
 
 
 @dataclass
-class Hello(TransportMessage, typeid=b'\x40'):
+class Hello(TransportMessage, typeid=b"\x40"):
     """Handshake messasge to communicate corresponding IPv4 server address."""
 
     host: ipv4addr
@@ -155,7 +155,7 @@ class Hello(TransportMessage, typeid=b'\x40'):
 
 
 @dataclass
-class Hello6(Hello, typeid=b'\x60'):
+class Hello6(Hello, typeid=b"\x60"):
     """Handshake message to communicate corresponding IPv6 server address."""
 
     host: ipv6addr
@@ -250,7 +250,7 @@ class Request(SequencedTransportMessage):
 
 
 @dataclass
-class SendRequest(Request, typeid=b'\x01'):
+class SendRequest(Request, typeid=b"\x01"):
     """Request corresponding to a gateway message with kind *send*."""
 
     return_mode: send_return_mode
@@ -276,7 +276,7 @@ class SendRequest(Request, typeid=b'\x01'):
 
 
 @dataclass
-class SendMemoryRequest(SendRequest, typeid=b'\x02'):
+class SendMemoryRequest(SendRequest, typeid=b"\x02"):
     """Request corresponding to a gateway message with kind
     ``DRAGON_GATEWAY_MESSAGE_SEND`` where a serialized memory descriptor on the
     remote peer for the payload is available.
@@ -286,15 +286,16 @@ class SendMemoryRequest(SendRequest, typeid=b'\x02'):
     """Serialized memory descriptor on the remote peer."""
 
 
-class RecvRequest(Request, typeid=b'\x03'):
+class RecvRequest(Request, typeid=b"\x03"):
     """Request corresponding to a gateway message with kind
     ``DRAGON_GATEWAY_MESSAGE_GET``.
     """
+
     pass
 
 
 @dataclass
-class EventRequest(Request, typeid=b'\x04'):
+class EventRequest(Request, typeid=b"\x04"):
     """Request corresponding to a gateway message with kind
     ```DRAGON_GATEWAY_MESSAGE_EVENT``.
     """
@@ -305,11 +306,12 @@ class EventRequest(Request, typeid=b'\x04'):
 
 class Response(SequencedTransportMessage):
     """Base class for responses."""
+
     pass
 
 
 @dataclass
-class ErrorResponse(Response, typeid=b'\xff'):
+class ErrorResponse(Response, typeid=b"\xff"):
     """Response when the server experiences an error processing a `Request`."""
 
     errno: uint16
@@ -319,7 +321,7 @@ class ErrorResponse(Response, typeid=b'\xff'):
     """Error string."""
 
 
-class SendResponse(Response, typeid=b'\xfe'):
+class SendResponse(Response, typeid=b"\xfe"):
     """Response to a `SendRequest`.
 
     .. seealso::
@@ -327,11 +329,12 @@ class SendResponse(Response, typeid=b'\xfe'):
         be sent by the client prior to the `SendRequest` actually being sent
         or processed at the target server.
     """
+
     pass
 
 
 @dataclass
-class RecvResponse(Response, typeid=b'\xfc'):
+class RecvResponse(Response, typeid=b"\xfc"):
     """Response to a `RecvRequest`."""
 
     clientid: uint64
@@ -349,7 +352,7 @@ class RecvResponse(Response, typeid=b'\xfc'):
 
 
 @dataclass
-class EventResponse(Response, typeid=b'\xfb'):
+class EventResponse(Response, typeid=b"\xfb"):
     """Response to an `EventRequest`."""
 
     errno: uint16
@@ -393,13 +396,13 @@ async def read_message(reader: asyncio.StreamReader) -> TransportMessage:
     try:
         cls = TransportMessage._types[typeid]
     except KeyError:
-        raise NotImplementedError(f'Unknown message type identifier: {typeid}')
+        raise NotImplementedError(f"Unknown message type identifier: {typeid}")
     args = []
     for name, io in _get_io_annotations(cls).items():
         try:
             item = await io.read(reader)
         except:
-            LOGGER.exception(f'Error reading message attribute: {cls.__name__}.{name}')
+            LOGGER.exception(f"Error reading message attribute: {cls.__name__}.{name}")
             raise
         else:
             args.append(item)
@@ -422,13 +425,13 @@ async def write_message(writer: asyncio.StreamWriter, msg: TransportMessage) -> 
     try:
         typeid = cls._typeid
     except AttributeError:
-        raise NotImplementedError(f'TransportMessage type not writable: {cls}')
+        raise NotImplementedError(f"TransportMessage type not writable: {cls}")
     writer.write(typeid)
     for name, io in _get_io_annotations(cls).items():
         try:
             io.write(writer, getattr(msg, name))
         except:
-            LOGGER.exception(f'Error writing message attribute: {cls.__name__}.{name}')
+            LOGGER.exception(f"Error writing message attribute: {cls.__name__}.{name}")
             raise
     await writer.drain()
     # Set the I/O event since the message has been written to a stream

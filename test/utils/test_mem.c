@@ -5,6 +5,8 @@
 #include <string.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <ctype.h>
+#include <dragon/utils.h>
 
 #include "../_ctest_utils.h"
 
@@ -74,6 +76,7 @@ int test_memdescr(dragonMemoryDescr_t * mem_descr)
 int test_type_allocations(dragonMemoryPoolDescr_t * mpool, dragonMemoryAllocationType_t type)
 {
     dragonMemoryPoolAllocations_t allocs;
+    dragonMemoryDescr_t mem_descr;
     dragonError_t derr = dragon_memory_pool_get_type_allocations(mpool, type, &allocs);
     if (derr != DRAGON_SUCCESS) {
         err_fail(derr, "Could not find type allocation, but should");
@@ -82,22 +85,15 @@ int test_type_allocations(dragonMemoryPoolDescr_t * mpool, dragonMemoryAllocatio
     for (dragonULInt i = 0; i < allocs.nallocs; i++) {
         printf("%ld: %ld %ld\n", i, allocs.types[i], allocs.ids[i]);
 
-        int flag = 0;
-        derr = dragon_memory_pool_allocation_exists(mpool, allocs.types[i], allocs.ids[i], &flag);
-        if (derr != DRAGON_SUCCESS) {
-            err_fail(derr, "Could not find type allocation, but should");
-        }
-        printf("Found type allocation %ld\n", i);
-
-        if (flag != 1) {
-            err_fail(derr, "Got success on allocation find, but flag is not set to 1");
-        }
+        derr = dragon_memory_get_alloc_memdescr(&mem_descr, mpool, allocs.ids[i], 0, NULL);
+        if (derr != DRAGON_SUCCESS)
+            err_fail(derr, "Could not find allocation, but should");
     }
 
     derr = dragon_memory_pool_allocations_destroy(&allocs);
-    if (derr != DRAGON_SUCCESS) {
+    if (derr != DRAGON_SUCCESS)
         err_fail(derr, "Could not destroy type allocations struct, but should");
-    }
+
     printf("Destroyed second allocations struct from get_type_allocations\n");
 
     return SUCCESS;
@@ -106,6 +102,7 @@ int test_type_allocations(dragonMemoryPoolDescr_t * mpool, dragonMemoryAllocatio
 int test_allocations(dragonMemoryPoolDescr_t * mpool)
 {
     dragonMemoryPoolAllocations_t allocs;
+    dragonMemoryDescr_t mem_descr;
     dragonError_t derr = dragon_memory_pool_get_allocations(mpool, &allocs);
     if (derr != DRAGON_SUCCESS) {
         err_fail(derr, "Could not retrieve allocations from pool");
@@ -115,22 +112,15 @@ int test_allocations(dragonMemoryPoolDescr_t * mpool)
     for (dragonULInt i = 0; i < allocs.nallocs; i++) {
         printf("%ld: %ld %ld\n", i, allocs.types[i], allocs.ids[i]);
 
-        int flag = 0;
-        derr = dragon_memory_pool_allocation_exists(mpool, allocs.types[i], allocs.ids[i], &flag);
-        if (derr != DRAGON_SUCCESS) {
+        derr = dragon_memory_get_alloc_memdescr(&mem_descr, mpool, allocs.ids[i], 0, NULL);
+        if (derr != DRAGON_SUCCESS)
             err_fail(derr, "Could not find allocation, but should");
-        }
-        printf("Found allocation %ld\n", i);
-
-        if (flag != 1) {
-            err_fail(derr, "Got success on allocation find, but flag is not set to 1");
-        }
     }
 
     derr = dragon_memory_pool_allocations_destroy(&allocs);
-    if (derr != DRAGON_SUCCESS) {
+    if (derr != DRAGON_SUCCESS)
         err_fail(derr, "Could not destroy allocations struct, but should");
-    }
+
     printf("Destroyed allocations struct from get_allocations\n\n");
 
     return SUCCESS;
@@ -299,8 +289,6 @@ int proc_waiter(dragonMemoryPoolDescr_t* pool, size_t sz_alloc, int pid) {
     } else
         printf("Process %d got allocation\n", pid);
 
-    sleep(pid+2);
-
     err = dragon_memory_free(&mem);
     printf("Process %d freed it\n", pid);
     if (err != DRAGON_SUCCESS)
@@ -322,8 +310,6 @@ int proc_timeout_waiter(dragonMemoryPoolDescr_t* pool, size_t sz_alloc, int pid)
     } else
         printf("Process %d got allocation\n", pid);
 
-    sleep(5);
-
     err = dragon_memory_free(&mem);
     printf("Process %d freed it\n", pid);
     if (err != DRAGON_SUCCESS)
@@ -332,13 +318,90 @@ int proc_timeout_waiter(dragonMemoryPoolDescr_t* pool, size_t sz_alloc, int pid)
     return SUCCESS;
 }
 
+void strtrim(char *str) {
+    // Trim leading whitespace
+    char *start = str;
+    while (isspace(*start)) {
+        start++;
+    }
+    if (start != str) {
+        memmove(str, start, strlen(start) + 1);
+    }
+
+    // Trim trailing whitespace
+    char *end = str + strlen(str) - 1;
+    while (end >= str && isspace(*end)) {
+        end--;
+    }
+    *(end + 1) = '\0';
+}
+
+/* This code can be used to gather information about the dragon_hash function. You
+   need a file containing one key per line to be passed as a string of bytes to the
+   hash function. In that case this code will show you how the dragon_hash function
+   would distribute those keys across 32 buckets. */
+void test_hash() {
+    size_t bucket[32];
+    FILE *file;
+    char line[256];
+
+    for (int k=0;k<32;k++)
+        bucket[k] = 0;
+
+    file = fopen("files.txt", "r");
+    if (file == NULL) {
+        perror("Error opening file");
+        return;
+    }
+
+    while (fgets(line, sizeof(line), file) != NULL) {
+        strtrim(line);
+        dragonULInt hash_val = dragon_hash((void*)&line[0], strlen(line));
+        bucket[hash_val % 32]++;
+    }
+
+    fclose(file);
+    printf("BUCKET\tCONTAINS\n");
+
+    for (int k=0;k<32;k++)
+        printf("%d:\t%lu\n", k, bucket[k]);
+}
+
 int main(int argc, char *argv[])
 {
+
+    dragonUUID uuid1;
+    dragonUUID uuid2;
+    dragonUUID uuid3;
+
+    dragon_generate_uuid(uuid1);
+    dragon_generate_uuid(uuid2);
+
+    if (!dragon_compare_uuid(uuid1, uuid2))
+        printf("FAILED to find uuid1 and uuid2 as different values\n");
+
+    if (dragon_compare_uuid(uuid1, uuid1))
+        printf("FAILED to find uuid1 equals itself\n");
+
+    dragon_copy_uuid(uuid3, uuid2);
+
+    if (dragon_compare_uuid(uuid2, uuid3))
+        printf("FAILED to find uuid2 equals uuid3\n");
+
+    // Don't want this to print. If using the hex_str function
+    // you should free the string after calling it.
+    // printf("uuid1=%s\n", dragon_uuid_to_hex_str(uuid1));
+    // printf("uuid2=%s\n", dragon_uuid_to_hex_str(uuid2));
+    // printf("uuid3=%s\n", dragon_uuid_to_hex_str(uuid3));
+
     int k;
     long hid = gethostid();
     printf("My host ID = %lu\n", hid);
     int tests_attempted = 0;
     int tests_passed = 0;
+
+    //not called unless interested in testing hash distribution.
+    //test_hash();
 
     dragonError_t derr;
     dragonMemoryPoolDescr_t mpool;
@@ -374,7 +437,6 @@ int main(int argc, char *argv[])
         }
     }
 
-    sleep(2);
     printf("Now freeing big block\n");
     derr = dragon_memory_free(&mem);
 
@@ -486,7 +548,7 @@ int main(int argc, char *argv[])
     }
 
     dragonMemoryDescr_t type_mem;
-    derr = dragon_memory_alloc_type(&type_mem, &mpool, 512, 0, 9001);
+    derr = dragon_memory_alloc_type(&type_mem, &mpool, 512, 9001);
     if (derr != DRAGON_SUCCESS) {
         main_err_fail(derr, "Failed to allocate specific type", jmp_destroy_pool);
     }

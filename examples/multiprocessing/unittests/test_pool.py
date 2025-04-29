@@ -30,6 +30,7 @@ from common import (
     tearDownModule,
 )
 
+
 def sqr(x, wait=0.0):
     time.sleep(wait)
     return x * x
@@ -47,11 +48,13 @@ def raise_large_valuerror(wait):
 def identity(x):
     return x
 
+
 def sleep_kbi(x):
     try:
-        sleep(x)
+        time.sleep(x)
     except KeyboardInterrupt:
         pass
+
 
 class CountedObject(object):
     n_instances = 0
@@ -75,7 +78,6 @@ def exception_throwing_generator(total, when):
         if i == when:
             raise SayWhenError("Somebody said when")
         yield i
-
 
 
 class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
@@ -176,13 +178,7 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
             self.pool.map(sqr, SpecialIterable(), 1)
 
     def test_async(self):
-        res = self.pool.apply_async(
-            sqr,
-            (
-                7,
-                TIMEOUT1,
-            ),
-        )
+        res = self.pool.apply_async(sqr, (7, TIMEOUT1))
         get = TimingWrapper(res.get)
         self.assertEqual(get(), 49)
         self.assertTimingAlmostEqual(get.elapsed, TIMEOUT1)
@@ -268,7 +264,6 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
                 self.assertIn(value, expected_values)
                 expected_values.remove(value)
 
-
     def test_make_pool(self):
         expected_error = RemoteError if self.TYPE == "manager" else ValueError
 
@@ -284,8 +279,13 @@ class WithProcessesTestPool(BaseTestCase, ProcessesMixin, unittest.TestCase):
                 p.join()
 
     def test_terminate(self):
+        print("doing the correct test")
         result = self.pool.map_async(sleep_kbi, [0.1 for i in range(10000)], chunksize=1)
-        self.pool.terminate()
+
+        # I'm going to add a patience to this because it will otherwise take a long time
+        # to get through, and there's little chance this test will get hung since the
+        # children are just doing sleeps
+        self.pool.terminate(patience=1)
         join = TimingWrapper(self.pool.join)
         join()
         # Sanity check the pool didn't wait for all tasks to finish
@@ -445,7 +445,6 @@ def unpickleable_result():
 
 
 class WithProcessesTestPoolWorkerErrors(BaseTestCase, ProcessesMixin, unittest.TestCase):
-
     # DRAGON ALLOWED_TYPES = ('processes', )
 
     def test_async_error_callback(self):
@@ -472,7 +471,6 @@ class WithProcessesTestPoolWorkerErrors(BaseTestCase, ProcessesMixin, unittest.T
 
         # Make sure we don't lose pool processes because of encoding errors.
         for iteration in range(20):
-
             scratchpad = [None]
 
             def errback(exc):
@@ -491,7 +489,6 @@ class WithProcessesTestPoolWorkerErrors(BaseTestCase, ProcessesMixin, unittest.T
 
 
 class WithProcessesTestPoolWorkerLifetime(BaseTestCase, ProcessesMixin, unittest.TestCase):
-
     # DRAGON ALLOWED_TYPES = ('processes', )
 
     def test_pool_worker_lifetime(self):
@@ -504,7 +501,7 @@ class WithProcessesTestPoolWorkerLifetime(BaseTestCase, ProcessesMixin, unittest
             results.append(p.apply_async(sqr, (i,)))
         # Fetch the results and verify we got the right answers,
         # also ensuring all the tasks have completed.
-        for (j, res) in enumerate(results):
+        for j, res in enumerate(results):
             self.assertEqual(res.get(), sqr(j))
         # Refill the pool
         p._repopulate_pool()
@@ -533,7 +530,7 @@ class WithProcessesTestPoolWorkerLifetime(BaseTestCase, ProcessesMixin, unittest
         p.close()
         p.join()
         # check the results
-        for (j, res) in enumerate(results):
+        for j, res in enumerate(results):
             self.assertEqual(res.get(), sqr(j))
 
     def test_worker_finalization_via_atexit_handler_of_multiprocessing(self):
@@ -651,13 +648,7 @@ class WithManagerTestPool(BaseTestCase, ManagerMixin, unittest.TestCase):
             self.pool.map(sqr, SpecialIterable(), 1)
 
     def test_async(self):
-        res = self.pool.apply_async(
-            sqr,
-            (
-                7,
-                TIMEOUT1,
-            ),
-        )
+        res = self.pool.apply_async(sqr, (7, TIMEOUT1))
         get = TimingWrapper(res.get)
         self.assertEqual(get(), 49)
         self.assertTimingAlmostEqual(get.elapsed, TIMEOUT1)
@@ -1001,13 +992,7 @@ class WithThreadsTestPool(BaseTestCase, ThreadsMixin, unittest.TestCase):
             self.pool.map(sqr, SpecialIterable(), 1)
 
     def test_async(self):
-        res = self.pool.apply_async(
-            sqr,
-            (
-                7,
-                TIMEOUT1,
-            ),
-        )
+        res = self.pool.apply_async(sqr, (7, TIMEOUT1))
         get = TimingWrapper(res.get)
         self.assertEqual(get(), 49)
         self.assertTimingAlmostEqual(get.elapsed, TIMEOUT1)
@@ -1254,6 +1239,7 @@ class WithThreadsTestPool(BaseTestCase, ThreadsMixin, unittest.TestCase):
         with test.support.check_warnings(("unclosed running multiprocessing pool", ResourceWarning)):
             pool = None
             test.support.gc_collect()
+
 
 # DRAGON
 if __name__ == "__main__":

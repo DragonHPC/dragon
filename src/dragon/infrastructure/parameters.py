@@ -7,6 +7,7 @@ needed to bootstrap communication to the infrastructure itself.
 It isn't reasonable to provide these on the command line, so they are instead
 passed through environment variables managed by this module.
 """
+
 import base64
 import binascii
 import os
@@ -15,6 +16,7 @@ import shlex
 import dragon.infrastructure.facts as dfacts
 import dragon.dtypes as dtypes
 import dragon.utils as du
+
 
 class ParmError(Exception):
     pass
@@ -54,8 +56,13 @@ def positive(x):
     return x > 0
 
 
+def check_pct(x):
+    if isinstance(x, int) or isinstance(x, float):
+        return x >= 0 and x <= 100
+
 def check_mode(mode):
     return mode in {dfacts.CRAYHPE_MULTI_MODE, dfacts.SINGLE_MODE, dfacts.TEST_MODE}
+
 
 def check_pool(pool):
     return pool in {dfacts.PATCHED, dfacts.NATIVE}
@@ -88,8 +95,9 @@ def cast_wait_mode(wait_mode=dfacts.INFRASTRUCTURE_DEFAULT_WAIT_MODE):
         return dtypes.SPIN_WAIT
     if wait_mode == str(dtypes.ADAPTIVE_WAIT):
         return dtypes.ADAPTIVE_WAIT
-    raise ValueError(f"The provided wait mode must be one of IDLE_WAIT, SPIN_WAIT, or ADAPTIVE_WAIT. The value was {wait_mode}")
-
+    raise ValueError(
+        f"The provided wait mode must be one of IDLE_WAIT, SPIN_WAIT, or ADAPTIVE_WAIT. The value was {wait_mode}"
+    )
 
 
 def cast_return_when_mode(return_when=dfacts.INFRASTRUCTURE_DEFAULT_RETURN_WHEN_MODE):
@@ -142,7 +150,56 @@ def check_base64(strdata):
 
     return decoded_ok
 
-typecast = lambda ty: lambda val: ty() if val == '' else ty(val)
+typecast = lambda ty: lambda val: ty() if val == "" else ty(val)
+
+# This needs to be written up in docs once available. This
+# contains information about how to configure the OOM warming and critical
+# limits.
+
+# By default, one such warning, the approaching out of memory (i.e. OOM)
+# warning, will be printed if the amount of remaining free memory on a node is
+# getting low. Remaining free memory is measured in either a percent of remaining
+# memory or in a number of free bytes, whichever results in warnings for the
+# lowest number of bytes still available.
+
+# This means by default, nodes with fewer than 64GB of memory will use the
+# percentage value to decide if a warning should be generated and for bigger nodes
+# less than 6GB of remaining free memory will be used as the threshold.
+
+# The OOM percentage value can be controlled through the use of the environment
+# variable {OOM_WARNING_PCT_VAR} and should be set to the allowable percentage of
+# remaining memory that can be tolerated on any node. By default it is set to 10
+# percent. If you don't wish to use percentage, setting it to 100 percent will
+# result in using the bytes threshold instead.
+
+# The OOM bytes threshold is set to 6GB by default which is the allowable number of
+# bytes of remaining free memory before warning. It can be adjusted by setting the
+# {OOM_WARNING_BYTES_VAR} env var. If there is less than 64GB memory on a node,
+# then by default the percentage will be less and the percentage will be used
+# instead. Setting the allowable remaining bytes threshold to 0 indicates that
+# the percent threshold should be used instead.
+
+# Two more environment variables are used to detect, notify, and take down the
+# Dragon run-time when it is critically out of memory and (hopefully) before a
+# deadlock/hang would occur. There are two similar environment variables and the
+# same use of the fewer number of bytes to determine which threshold should be
+# used. The {OOM_CRITICAL_PCT_VAR} is the percentage of free memory threshold that
+# should be used when deciding to take down the Dragon runtime. The
+# {OOM_CRITICAL_BYTES_VAR} is the number of free bytes threshold that should be
+# used in making the same decision. Again, Dragon will use the smaller of these two
+# values (in bytes) to decide when it would be necessary to take down the run-time.
+# Setting the percent to 100 means that bytes would be used to make the decision to
+# take down the run-time. Setting the bytes to 0 will result in using the
+# percentage to make the decision of program termination. Setting both the percent
+# to 100 and the number of bytes to 0 for nodes in your cluster/allocation will
+# result in no critical OOM handling which may/will lead to a deadlock condition
+# and is up to the programmer to detect and deal with in that case. By default the
+# critical percent is set at 2% and the OOM bytes is set to 600MB.
+
+# In addition, setting {OOM_QUIET_VAR} to any value other than "False" will
+# result in no warnings being printed to stderr. The default is to print
+# warnings. If critical OOM is detected, the entire run-time will be taken down
+# with a critical OOM message but without further warnings.
 
 class LaunchParameters:
     """Launch Parameters for Dragon processes.
@@ -213,12 +270,21 @@ class LaunchParameters:
     :type PMOD_COMMUNICATION_TIMEOUT: int
     :param BASEPOOL: Default implementation of multiprocessing pool. One of `'NATIVE'` or `'PATCHED'`, defaults to `'NATIVE'`.
     :type BASEPOOL: str
+    :param OOM_WARNING_PCT: The percentage of free memory between 0 and 100 when a warning is printed to stderr to warn of low memory conditions. Setting this value to 100 will result in no warning messages.
+    :type OOM_WARNING_PCT: float
+    :param OOM_CRITICAL_PCT: The percentage of free memory between 0 and 100 when a critical error is printed to stderr and the run-time is taken down due to extremely low memory conditions. Setting this value to 100 will result in no critical takedown and likely lead to a hang of the Dragon run-time.
+    :type OOM_CRITICAL_PCT: float
+    :param OOM_WARNING_BYTES: The bytes of free memory when a warning error is printed to stderr. Setting this value to 0 will result in no warning message. When bytes is non-zero the smaller value of the percent and bytes (in bytes) will be used to decide about warnings.
+    :type OOM_WARNING_BYTES: int
+    :param OOM_CRITICAL_BYTES: The bytes of free memory when a critical error is printed to stderr. Setting this value to 0 will result in no critical error message. When bytes is non-zero the smaller value of the percent and bytes (in bytes) will be used to decide about critical takedown of the Dragon run-time.
+    :type OOM_CRITICAL_BYTES: int
     """
 
     @classmethod
     def init_class_vars(cls):
 
         typecast = lambda ty: lambda val: ty() if val == "" else ty(val)
+
 
         PARMS = [
             TypedParm(name=dfacts.MODE, cast=typecast(str), check=check_mode, default=dfacts.TEST_MODE),
@@ -237,7 +303,10 @@ class LaunchParameters:
                 default=int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ),
             ),
             TypedParm(
-                name=dfacts.INF_SEG_SZ, cast=typecast(int), check=positive, default=int(dfacts.DEFAULT_SINGLE_INF_SEG_SZ)
+                name=dfacts.INF_SEG_SZ,
+                cast=typecast(int),
+                check=positive,
+                default=int(dfacts.DEFAULT_SINGLE_INF_SEG_SZ),
             ),
             TypedParm(name=dfacts.MY_PUID, cast=typecast(int), check=positive, default=1),
             TypedParm(name=dfacts.TEST, cast=typecast(int), check=nonnegative, default=0),
@@ -268,37 +337,60 @@ class LaunchParameters:
                 default=dfacts.USER_DEFAULT_RETURN_WHEN_MODE,
             ),
             TypedParm(name=dfacts.GW_CAPACITY, cast=typecast(int), check=positive, default=dfacts.GW_DEFAULT_CAPACITY),
-            TypedParm(name=dfacts.NUM_GW_CHANNELS_PER_NODE, cast=typecast(int), check=nonnegative, default=dfacts.DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE),
+            TypedParm(
+                name=dfacts.NUM_GW_CHANNELS_PER_NODE,
+                cast=typecast(int),
+                check=nonnegative,
+                default=dfacts.DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE,
+            ),
             TypedParm(name=dfacts.HSTA_MAX_EJECTION_MB, cast=typecast(int), check=positive, default=8),
             TypedParm(name=dfacts.HSTA_MAX_GETMSG_MB, cast=typecast(int), check=positive, default=8),
             TypedParm(name=dfacts.HSTA_FABRIC_BACKEND, cast=typecast(str), check=nocheck),
-            TypedParm(name=dfacts.HSTA_TRANSPORT_TYPE, cast=typecast(str), check=nocheck, default=dfacts.DEFAULT_HSTA_TRANSPORT_TYPE),
+            TypedParm(
+                name=dfacts.HSTA_TRANSPORT_TYPE,
+                cast=typecast(str),
+                check=nocheck,
+                default=dfacts.DEFAULT_HSTA_TRANSPORT_TYPE,
+            ),
             TypedParm(name=dfacts.PMOD_COMMUNICATION_TIMEOUT, cast=typecast(int), check=positive, default=30),
             TypedParm(name=dfacts.BASEPOOL, cast=typecast(str), check=check_pool, default=dfacts.DEFAULT_POOL),
             TypedParm(name=dfacts.OVERLAY_FANOUT, cast=typecast(int), check=positive, default=32),
-            TypedParm(name=dfacts.NET_CONF_CACHE, cast=typecast(str), check=nocheck, default=dfacts.DEFAULT_NET_CONF_CACHE),
+            TypedParm(
+                name=dfacts.NET_CONF_CACHE, cast=typecast(str), check=nocheck, default=dfacts.DEFAULT_NET_CONF_CACHE
+            ),
+            TypedParm(name=dfacts.OOM_WARNING_PCT_VAR, cast=typecast(float), check=check_pct, default=dfacts.OOM_DEFAULT_WARN_PCT),
+            TypedParm(name=dfacts.OOM_CRITICAL_PCT_VAR, cast=typecast(float), check=check_pct, default=dfacts.OOM_DEFAULT_CRITICAL_PCT),
+            TypedParm(name=dfacts.OOM_WARNING_BYTES_VAR, cast=typecast(int), check=nonnegative, default=dfacts.OOM_DEFAULT_WARN_BYTES),
+            TypedParm(name=dfacts.OOM_CRITICAL_BYTES_VAR, cast=typecast(int), check=nonnegative, default=dfacts.OOM_DEFAULT_CRITICAL_BYTES),
+            TypedParm(name=dfacts.QUIET_VAR, cast=typecast(str), check=nocheck, default="False"),
         ]
 
         env = os.environ
 
         try:
             num_gateways_env_var = dfacts.PREFIX + dfacts.NUM_GW_CHANNELS_PER_NODE_VAR
-            num_gateways = int(env[num_gateways_env_var]) if num_gateways_env_var in env else dfacts.DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE
-            assert(num_gateways >= 0)
+            num_gateways = (
+                int(env[num_gateways_env_var])
+                if num_gateways_env_var in env
+                else dfacts.DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE
+            )
+            assert num_gateways >= 0
         except:
-            raise ValueError(f'The value of the environment variable {dfacts.NUM_GW_CHANNELS_PER_NODE} must be valid integer >= 1. It was {env[dfacts.NUM_GW_CHANNELS_PER_NODE]}')
+            raise ValueError(
+                f"The value of the environment variable {dfacts.NUM_GW_CHANNELS_PER_NODE} must be valid integer >= 1. It was {env[dfacts.NUM_GW_CHANNELS_PER_NODE]}"
+            )
 
-        cls.gw_env_vars = frozenset([f'GW{x+1}' for x in range(num_gateways)])
+        cls.gw_env_vars = frozenset([f"GW{x+1}" for x in range(num_gateways)])
 
         for gw_env_var in cls.gw_env_vars:
             PARMS.append(TypedParm(gw_env_var, cast=typecast(str), check=nocheck, default=""))
 
         cls.PARMS = PARMS
 
-        cls.NODE_LOCAL_PARAMS = \
-            frozenset([dfacts.DEFAULT_PD, dfacts.INF_PD, dfacts.LOCAL_SHEP_CD, dfacts.LOCAL_BE_CD, dfacts.BE_CUID]) | \
-            cls.gw_env_vars
-
+        cls.NODE_LOCAL_PARAMS = (
+            frozenset([dfacts.DEFAULT_PD, dfacts.INF_PD, dfacts.LOCAL_SHEP_CD, dfacts.LOCAL_BE_CD, dfacts.BE_CUID])
+            | cls.gw_env_vars
+        )
 
     def __init__(self, **kwargs):
         for pt in LaunchParameters.PARMS:
@@ -383,18 +475,21 @@ class LaunchParameters:
     def set_num_gateways_per_node(self, num_gateways=dfacts.DRAGON_DEFAULT_NUM_GW_CHANNELS_PER_NODE):
         # Configure the number of gateways per node as an
         # environment variable.
-        num_gateways_env_var = dfacts.PREFIX+dfacts.NUM_GW_CHANNELS_PER_NODE_VAR
-        assert(num_gateways >= 0), f'The number of gateways must be greater or equal to 0. It was {num_gateways}'
+        num_gateways_env_var = dfacts.PREFIX + dfacts.NUM_GW_CHANNELS_PER_NODE_VAR
+        assert num_gateways >= 0, f"The number of gateways must be greater or equal to 0. It was {num_gateways}"
         os.environ[num_gateways_env_var] = str(num_gateways)
         this_process.num_gw_channels_per_node = num_gateways
         self.init_class_vars()
 
+
 LaunchParameters.init_class_vars()
 this_process = LaunchParameters.from_env()
+
 
 def reload_this_process():
     global this_process
     this_process = LaunchParameters.from_env()
+
 
 class Policy:
     """Used to encapsulate policy decisions.

@@ -1,7 +1,7 @@
 """Dragon's replacement for Multiprocessing Shared Memory.
 
 Not Implemented.
-""" 
+"""
 
 import multiprocessing.shared_memory
 

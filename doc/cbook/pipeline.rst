@@ -1,3 +1,5 @@
+.. _pipeline:
+
 Creating and Using a Pipeline with Multiprocessing
 +++++++++++++++++++++++++++++++++++++++++++++++++++
 

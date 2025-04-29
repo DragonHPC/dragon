@@ -9,8 +9,8 @@ from dragon.transport.tcp import transport
 
 class AddressIPv4TestCase(unittest.IsolatedAsyncioTestCase):
 
-    IP = ip_address('127.0.0.1')
-    NETLOC = ['127.0.0.1', '127.0.0.1']
+    IP = ip_address("127.0.0.1")
+    NETLOC = ["127.0.0.1", "127.0.0.1"]
 
     LOOPBACK = transport.LOOPBACK_ADDRESS_IPv4
 
@@ -23,12 +23,12 @@ class AddressIPv4TestCase(unittest.IsolatedAsyncioTestCase):
         addr = transport.Address(self.IP, 8888)
         for s in self.NETLOC:
             self.assertEqual(self.LOOPBACK, transport.Address.from_netloc(s))
-            self.assertEqual(addr, transport.Address.from_netloc(f'{s}:8888'))
+            self.assertEqual(addr, transport.Address.from_netloc(f"{s}:8888"))
 
     def test___str__(self):
         s = self.NETLOC[0]
         self.assertEqual(s, str(self.LOOPBACK))
-        self.assertEqual(f'{s}:8888', str(transport.Address(self.IP, 8888)))
+        self.assertEqual(f"{s}:8888", str(transport.Address(self.IP, 8888)))
 
     def test_hello(self):
         self.assertRaises(AssertionError, self.LOOPBACK.hello)
@@ -44,8 +44,8 @@ class AddressIPv4TestCase(unittest.IsolatedAsyncioTestCase):
 
     # XXX Note that write_message() and read_message() must be patched from
     # XXX transport since they are imported there.
-    @patch.object(transport, 'write_message')
-    @patch.object(transport, 'read_message')
+    @patch.object(transport, "write_message")
+    @patch.object(transport, "read_message")
     async def _do_handshake(self, read_message, write_message):
         my_addr = transport.Address(self.IP, 8888)
         peer_addr = transport.Address(self.IP, 9999)
@@ -66,13 +66,13 @@ class AddressIPv4TestCase(unittest.IsolatedAsyncioTestCase):
 
 class AddressIPv6TestCase(AddressIPv4TestCase):
 
-    IP = ip_address('::1')
-    NETLOC = ['[::1]']
+    IP = ip_address("::1")
+    NETLOC = ["[::1]"]
 
     LOOPBACK = transport.LOOPBACK_ADDRESS_IPv6
 
     Hello = messages.Hello6
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

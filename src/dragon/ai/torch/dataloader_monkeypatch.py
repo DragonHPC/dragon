@@ -1,5 +1,5 @@
-"""A class to monkeypatch PyTorch Multiprocessing DataLoader that does not work with Dragon.
-"""
+"""A class to monkeypatch PyTorch Multiprocessing DataLoader that does not work with Dragon."""
+
 import dragon
 import os
 from dragon.infrastructure.policy import Policy

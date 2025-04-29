@@ -137,7 +137,18 @@ class SingleProcMsgChannels(unittest.TestCase):
         self.tag_cnt += 1
         return self.tag_cnt
 
-    def _start_a_process(self, exe_name, the_args, the_name, the_tag, the_puid, the_rcuid, pmi_required=False, pmi_info=None, head_proc=False):
+    def _start_a_process(
+        self,
+        exe_name,
+        the_args,
+        the_name,
+        the_tag,
+        the_puid,
+        the_rcuid,
+        pmi_required=False,
+        pmi_info=None,
+        head_proc=False,
+    ):
         if pmi_required:
             self.assertIsNotNone(pmi_info)
 
@@ -201,9 +212,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             head_proc=True,
         )
 
-        self.assertEqual(
-            create_reply_msg.desc.state, process_desc.ProcessDescriptor.State.ACTIVE
-        )
+        self.assertEqual(create_reply_msg.desc.state, process_desc.ProcessDescriptor.State.ACTIVE)
         self.assertEqual(create_msg.user_name, create_reply_msg.desc.name)
         self.head_uid = create_reply_msg.desc.p_uid
         self.head_name = test_name
@@ -254,9 +263,7 @@ class SingleProcMsgChannels(unittest.TestCase):
     def _make_a_pool(self):
         the_tag = self._tag_inc()
 
-        pcm = dmsg.GSPoolCreate(
-            tag=the_tag, p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID, size=2**30
-        )
+        pcm = dmsg.GSPoolCreate(tag=the_tag, p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID, size=2**30)
         self.gs_input_wh.send(pcm.serialize())
 
         shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHPoolCreate)
@@ -278,9 +285,7 @@ class SingleProcMsgChannels(unittest.TestCase):
 
     def _destroy_a_pool(self, the_muid):
         the_tag = self._tag_inc()
-        pdm = dmsg.GSPoolDestroy(
-            tag=the_tag, p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID, m_uid=the_muid
-        )
+        pdm = dmsg.GSPoolDestroy(tag=the_tag, p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID, m_uid=the_muid)
         self.gs_input_wh.send(pdm.serialize())
 
         shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHPoolDestroy)
@@ -298,9 +303,7 @@ class SingleProcMsgChannels(unittest.TestCase):
     def _make_a_channel(self, the_muid):
         the_tag = self._tag_inc()
 
-        pcm = dmsg.GSChannelCreate(
-            tag=the_tag, p_uid=dfacts.LAUNCHER_PUID, m_uid=the_muid, r_c_uid=dfacts.BASE_BE_CUID
-        )
+        pcm = dmsg.GSChannelCreate(tag=the_tag, p_uid=dfacts.LAUNCHER_PUID, m_uid=the_muid, r_c_uid=dfacts.BASE_BE_CUID)
 
         self.gs_input_wh.send(pcm.serialize())
 
@@ -357,9 +360,7 @@ class SingleProcMsgChannels(unittest.TestCase):
 
     def test_make_head_proc_list(self):
         self._bringup_head_and_dut()
-        list_msg = dmsg.GSProcessList(
-            tag=self._tag_inc(), p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID
-        )
+        list_msg = dmsg.GSProcessList(tag=self._tag_inc(), p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID)
         self.gs_input_wh.send(list_msg.serialize())
 
         list_reply_msg = tsu.get_and_check_type(self.bela_input_rh, dmsg.GSProcessListResponse)
@@ -445,12 +446,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             the_puid=dfacts.LAUNCHER_PUID,
             the_rcuid=dfacts.BASE_BE_CUID,
             pmi_required=True,
-            pmi_info=dmsg.PMIProcessInfo(
-                lrank=0,
-                ppn=1,
-                nid=1,
-                pid_base=1
-            ),
+            pmi_info=dmsg.PMIProcessInfo(lrank=0, ppn=1, nid=1, pid_base=1),
             head_proc=True,
         )
 
@@ -595,9 +591,7 @@ class SingleProcMsgChannels(unittest.TestCase):
         self.assertEqual(gs_response.mlist, [the_muid])
 
         the_tag = self._tag_inc()
-        channel_list_msg = dmsg.GSChannelList(
-            tag=the_tag, p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID
-        )
+        channel_list_msg = dmsg.GSChannelList(tag=the_tag, p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID)
         self.gs_input_wh.send(channel_list_msg.serialize())
         gs_response = tsu.get_and_check_type(self.bela_input_rh, dmsg.GSChannelListResponse)
         self.assertEqual(gs_response.err, dmsg.GSChannelListResponse.Errors.SUCCESS)

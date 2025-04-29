@@ -68,9 +68,7 @@ def _dragon_main():
         process_obj._popen = DragonPopenStub(PUID(this_process.my_puid))
 
     except Exception as e:
-        print(
-            f"Starting Dragon process {this_process.my_puid} with pid {os.getpid()} failed: \n{e}", flush=True
-        )
+        print(f"Starting Dragon process {this_process.my_puid} with pid {os.getpid()} failed: \n{e}", flush=True)
         raise e
     finally:
         del multiprocessing.process.current_process()._inheriting

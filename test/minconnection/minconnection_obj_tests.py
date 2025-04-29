@@ -18,7 +18,7 @@ def soft_detach_chan(the_chan):
         the_chan.detach()
     except dch.ChannelError as dche:
         if dche.Errors.FAIL == dche.ex_code:
-            if not dche.args[0].startswith('Could not detach'):
+            if not dche.args[0].startswith("Could not detach"):
                 raise dche
 
 
@@ -39,7 +39,7 @@ def parse_echo(the_msgstr):
 def echo_end_last(input_sc, input_sp, output_sc, output_sp, last_str, mutator=lambda x: x):
     """Echos messages coming from the input to the output.
 
-        Exits when last_str is seen (and echoed)
+    Exits when last_str is seen (and echoed)
     """
 
     last_str = last_str.strip()
@@ -97,9 +97,9 @@ def worker_pickling_echo_end_last(writer_mc, reader_mc, last_str, mutator=lambda
 
 class MinConnectionTest(unittest.TestCase):
     def setUp(self):
-        username = subprocess.check_output('whoami').decode().strip()
-        self.pool_name = 'mctest_' + username
-        self.pool_size = 2 ** 30
+        username = subprocess.check_output("whoami").decode().strip()
+        self.pool_name = "mctest_" + username
+        self.pool_size = 2**30
         self.pool_uid = 17
         self.mpool = dmm.MemoryPool(self.pool_size, self.pool_name, self.pool_uid)
         self.mpool_ser = self.mpool.serialize()
@@ -129,12 +129,12 @@ class MinConnectionTest(unittest.TestCase):
         inbound_mc = dimc.MinConnection(self.mpool, in_chan, reading=True)
         outbound_mc = dimc.MinConnection(self.mpool, out_chan, reading=False)
 
-        words = 'hyena hyena hyena hyena'
-        lastword = 'nomorehyena'
+        words = "hyena hyena hyena hyena"
+        lastword = "nomorehyena"
 
-        echo_process = multiprocessing.Process(target=echo_end_last, args=(out_chan_ser, self.mpool_ser,
-                                                                           in_chan_ser, self.mpool_ser,
-                                                                           lastword))
+        echo_process = multiprocessing.Process(
+            target=echo_end_last, args=(out_chan_ser, self.mpool_ser, in_chan_ser, self.mpool_ser, lastword)
+        )
         echo_process.start()
 
         for k in range(10):
@@ -161,11 +161,12 @@ class MinConnectionTest(unittest.TestCase):
         their_writer_mc = dimc.MinConnection(self.mpool, out_chan, reading=False)
         my_reader_mc = dimc.MinConnection(self.mpool, out_chan, reading=True)
 
-        words = 'hyena Hyena hyena Hyena'
-        lastword = 'no more Hyena'
+        words = "hyena Hyena hyena Hyena"
+        lastword = "no more Hyena"
 
-        echo_process = multiprocessing.Process(target=worker_pickling_echo_end_last,
-                                               args=(their_writer_mc, their_reader_mc, lastword))
+        echo_process = multiprocessing.Process(
+            target=worker_pickling_echo_end_last, args=(their_writer_mc, their_reader_mc, lastword)
+        )
         echo_process.start()
 
         for k in range(10):
@@ -193,11 +194,11 @@ class MinConnectionTest(unittest.TestCase):
         inbound_mc = dimc.MinConnection(self.mpool, in_chan, reading=True)
         outbound_mc = dimc.MinConnection(self.mpool, out_chan, reading=False)
 
-        lastword = 'nomorehyena'
+        lastword = "nomorehyena"
 
-        echo_process = multiprocessing.Process(target=echo_end_last, args=(out_chan_ser, self.mpool_ser,
-                                                                           in_chan_ser, self.mpool_ser,
-                                                                           lastword, parse_echo))
+        echo_process = multiprocessing.Process(
+            target=echo_end_last, args=(out_chan_ser, self.mpool_ser, in_chan_ser, self.mpool_ser, lastword, parse_echo)
+        )
         echo_process.start()
 
         for msg in (dmsg.GSIsUp(1), dmsg.BEHalted(2), dmsg.GSHalted(3)):

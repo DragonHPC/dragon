@@ -8,7 +8,7 @@ from torchvision import datasets, transforms
 import os
 import socket
 import inspect
-from dragon.ai.torch.monkeypatching import dragon_fp_register 
+from dragon.ai.torch.monkeypatching import dragon_fp_register
 from multiprocessing.reduction import ForkingPickler
 
 
@@ -17,9 +17,10 @@ def simple_fill(queue, event):
     data[0][:] = 4
     event.set()
 
+
 class PyTorchPatches(unittest.TestCase):
     """The test is designed to run on GPU systems."""
-    
+
     def test_placement(self):
         mp.set_start_method("dragon")
         host_name = socket.gethostname()
@@ -61,8 +62,8 @@ class PyTorchPatches(unittest.TestCase):
         self.assertTrue(ForkingPickler.register != classmethod(dragon_fp_register))
         self.assertTrue(torch.multiprocessing.reductions.init_reductions)
         self.assertTrue(inspect.getfile(torch.multiprocessing.reductions.init_reductions))
-        
-        x = torch.zeros(5, 5).to('cpu', torch.float)
+
+        x = torch.zeros(5, 5).to("cpu", torch.float)
         q = mp.Queue()
         e = mp.Event()
 
@@ -74,16 +75,15 @@ class PyTorchPatches(unittest.TestCase):
         p.start()
 
         self.assertTrue(e.wait(10))
-        #this is the opposite behavior of what torch tests
-        #torch_multiprocessing expects these to be in share 
-        #memory and thus that the value is changed by the 
-        #spawned process to a value of 4. 
+        # this is the opposite behavior of what torch tests
+        # torch_multiprocessing expects these to be in share
+        # memory and thus that the value is changed by the
+        # spawned process to a value of 4.
         self.assertTrue(data[0].eq(0).all())
         self.assertTrue(data[1].eq(0).all())
 
         p.join(100)
-        self.assertFalse(p.is_alive())        
-
+        self.assertFalse(p.is_alive())
 
 
 if __name__ == "__main__":

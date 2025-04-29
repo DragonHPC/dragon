@@ -72,7 +72,7 @@ response ID back to the prompter. In this case, that is done by printing this
 output; however, if you have multiple users, the response workers would be
 responsible for returning the response to the correct prompt ID. The structure
 of a `response worker` is similar to that of an `inference worker` in that each
-worker enters a while loop where they greedily get from the shared
+worker enters a while loop where they greedily get from the shared 
 `response queue` and exit when the queue is empty and the end event is set.
 
 Each of the `telemetry workers` executes the `telem_work()` function, inside
@@ -115,7 +115,7 @@ here: https://pytorch.org/get-started/locally/.
 > pip install torch torchvision torchaudio
 > pip install py3nvml
 > pip install huggingface-hub
-> pip install transformers
+> pip install transformers 
 ```
 
 
@@ -232,4 +232,8 @@ Jupyter notebook inside of Dragon (see the Solution Cookbook) and then open the
 the telemetry component to work and visualize the data with Grafana,
 you will need to also have the Prometheus and Grafana servers started by
 following the instructions above.
-.
+
+### Description of the system used
+
+For this example, HPE Cray Pinoak Grizzly Peak nodes (`allgriz` partition) were
+used. Each node has AMD EPYC 7763 64-core CPUs and 4x Nvidia A100 GPUs.

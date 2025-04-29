@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 
-'''
+"""
 @MCB:
 Intended to be used as a benchmark script to compare pipe multiprocessing vs dragon connections
-'''
+"""
 
 import multiprocessing as mp
 import dragon.infrastructure.standalone_conn as dconn
@@ -22,6 +22,7 @@ N_WARMUPS = int(N_REPEATS / 4)
 # TODO: Look into fan & all to all latency tests
 
 timings = []
+
 
 def pingpong(writer, reader, ping_time, msg_size, write_first=True):
     x = bytearray(msg_size)
@@ -48,10 +49,11 @@ def pingpong(writer, reader, ping_time, msg_size, write_first=True):
             writer.send(x)
 
     end_time = time.monotonic_ns()
-    total = 1.0 * (end_time - start_time) * 1e-9 # Convert to seconds
+    total = 1.0 * (end_time - start_time) * 1e-9  # Convert to seconds
     ping_time.value = total
-    #writer.close()
-    #reader.close()
+    # writer.close()
+    # reader.close()
+
 
 # Unilateral write actor
 def unilateral(actor, uni_time, msg_size, writer=True):
@@ -74,9 +76,9 @@ def unilateral(actor, uni_time, msg_size, writer=True):
         for i in range(N_REPEATS):
             msg = actor.recv()
     end_time = time.monotonic_ns()
-    total = 1.0 * (end_time - start_time) * 1e-9 # Convert to seconds
+    total = 1.0 * (end_time - start_time) * 1e-9  # Convert to seconds
     uni_time.value = total
-    #actor.close() # this causes dragon to break but not mp.Pipe
+    # actor.close() # this causes dragon to break but not mp.Pipe
 
 
 def main(conn_class, num_pairs=1, msg_size=1024, is_pingpong=False):
@@ -101,8 +103,8 @@ def main(conn_class, num_pairs=1, msg_size=1024, is_pingpong=False):
         # Spawn our processes
         # TODO: This is a bit hard to read
         if is_pingpong:
-            w_process = mp.Process(target=pingpong, args=(conns[i][0], conns[i+1][1], times[i][0], msg_size, True))
-            r_process = mp.Process(target=pingpong, args=(conns[i+1][0], conns[i][1], times[i][1], 1, False))
+            w_process = mp.Process(target=pingpong, args=(conns[i][0], conns[i + 1][1], times[i][0], msg_size, True))
+            r_process = mp.Process(target=pingpong, args=(conns[i + 1][0], conns[i][1], times[i][1], 1, False))
         else:
             w_process = mp.Process(target=unilateral, args=(conns[i][0], times[i][0], msg_size, True))
             r_process = mp.Process(target=unilateral, args=(conns[i][1], times[i][1], 1, False))
@@ -138,32 +140,33 @@ def main(conn_class, num_pairs=1, msg_size=1024, is_pingpong=False):
     # Spit them to stdout
     print("Size(b): {:8s} | {:0.5f}{:2s} | {:0.5f}".format(str(msg_size), total_0, " ", total_1))
 
+
 if __name__ == "__main__":
-    mp.set_start_method('spawn')
+    mp.set_start_method("spawn")
     conn_class = None
     is_pingpong = False
-    if "-d" in sys.argv: # Check for dragon argument
+    if "-d" in sys.argv:  # Check for dragon argument
         conn_class = dconn
         print("Using dragon connections")
-    else: # Default to multiprocessing
+    else:  # Default to multiprocessing
         conn_class = mp
         print("Using multiprocessing connections")
 
-    if "-pp" in sys.argv: # Check if we want to test pingpong
+    if "-pp" in sys.argv:  # Check if we want to test pingpong
         is_pingpong = True
 
     # Chnage this to start at 8 bytes
-    sizes = [2**x for x in range(6, 22)] # 8 bytes to 2MB
-    #sizes = [2**x for x in range(10, 19)]
-    #sizes = [1024, 2048, 4096]
-    #sizes = [2**x for x in range(21, 26)]
+    sizes = [2**x for x in range(6, 22)]  # 8 bytes to 2MB
+    # sizes = [2**x for x in range(10, 19)]
+    # sizes = [1024, 2048, 4096]
+    # sizes = [2**x for x in range(21, 26)]
     num_pairs = [1, 2, 4, 8]
     for p in num_pairs:
         print(f"Using {p} pairs")
         for sz in sizes:
             main(conn_class, p, sz, is_pingpong)
 
-    with open("pipe.csv", 'w', newline='') as testfile:
+    with open("pipe.csv", "w", newline="") as testfile:
         writer = csv.writer(testfile)
         for timing in timings:
             writer.writerow(timing)

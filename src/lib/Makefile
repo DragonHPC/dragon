@@ -2,11 +2,15 @@ ifneq ("$(wildcard $(DRAGON_BASE_DIR)/.dragon-config.mk)","")
     include $(DRAGON_BASE_DIR)/.dragon-config.mk
 endif
 
+ifeq ($(VIRTUAL_ENV),)
+	VIRTUAL_ENV = $(CONDA_PREFIX)
+endif
+
 CC = gcc
 #CFLAGS = -O0 -g -fPIC -Wall
 CFLAGS = -O3 -fomit-frame-pointer -fPIC -Wall
 CXX = g++
-CPPFLAGS = -I ../include -DDRAGON_DEBUG $(CONFIG_INCLUDE) $(CONFIG_DEFINES)
+CPPFLAGS = -I ../include -DDRAGON_DEBUG $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
 CXXFLAGS = $(CFLAGS) $(CPPFLAGS) -std=c++14
 
 LIBRARIES := libdragon.so libpmod.so $(wildcard libdfabric_*.so)
@@ -20,6 +24,7 @@ libdragon_HEADERS := $(wildcard *.h) \
 libdragon_CAPNP_SOURCES = $(wildcard *.capnp)
 libdragon_SOURCES := $(wildcard *.c) $(wildcard *.cpp) gpu/gpu.cpp $(CONFIG_SOURCES)
 libdragon_OBJECTS := $(addsuffix .o,$(libdragon_CAPNP_SOURCES)) $(addsuffix .o,$(basename $(libdragon_SOURCES)))
+
 
 
 .PHONY: all
@@ -40,11 +45,17 @@ message_defs.capnp.o:
 ../include/dragon/return_codes_map.h: ../include/%:
 	$(MAKE) -C ../include $*
 
+%.o: %.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
+
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c -o $@ $<
+
 libdragon.so: $(libdragon_OBJECTS)
-libdragon.so: LDLIBS += -lstdc++ -lrt -lnuma
+libdragon.so: LDLIBS += -lstdc++ -lrt
 
 libdragon.so: %.so:
-	$(LINK.c) -L . -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive libcapnp.a libkj.a -Wl,--no-whole-archive $(LDLIBS)
+	$(CC) -L . -L ${VIRTUAL_ENV}/lib -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS)
 
 libpmod.so: libdragon.so
 	ln -sf libdragon.so libpmod.so

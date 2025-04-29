@@ -11,14 +11,11 @@ class FixedBytesIOTestCase(unittest.IsolatedAsyncioTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.types = [
-            type(f'FixedBytesIO{size}', (FixedBytesIO,), dict(size=size))
-            for size in (16, 64, 256, 1024)
-        ]
+        cls.types = [type(f"FixedBytesIO{size}", (FixedBytesIO,), dict(size=size)) for size in (16, 64, 256, 1024)]
 
     async def test_read(self):
         for cls in self.types:
-            data = b'\xff' * cls.size
+            data = b"\xff" * cls.size
             r, w = await transport.create_pipe_streams()
             try:
                 w.write(data)
@@ -30,7 +27,7 @@ class FixedBytesIOTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_incomplete_read(self):
         for cls in self.types:
-            data = b'\xff' * (cls.size - 1)
+            data = b"\xff" * (cls.size - 1)
             r, w = await transport.create_pipe_streams()
             try:
                 w.write(data)
@@ -42,7 +39,7 @@ class FixedBytesIOTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_write(self):
         for cls in self.types:
-            data = b'\xff' * cls.size
+            data = b"\xff" * cls.size
             r, w = await transport.create_pipe_streams()
             try:
                 cls().write(w, data)
@@ -54,7 +51,7 @@ class FixedBytesIOTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def test_incomplete_write(self):
         for cls in self.types:
-            data = b'\xff' * (cls.size - 1)
+            data = b"\xff" * (cls.size - 1)
             r, w = await transport.create_pipe_streams()
             try:
                 with self.assertRaises(AssertionError):
@@ -67,14 +64,18 @@ class CodableIOTestCase(unittest.IsolatedAsyncioTestCase):
 
     @classmethod
     def setUpClass(cls):
-        cls.cls = type('Base64CodableIO', (CodableIO,), dict(
-            encode=staticmethod(base64.standard_b64encode),
-            decode=staticmethod(base64.standard_b64decode),
-        ))
-        cls.DATA = b'\xffTEST DATA\xff'
+        cls.cls = type(
+            "Base64CodableIO",
+            (CodableIO,),
+            dict(
+                encode=staticmethod(base64.standard_b64encode),
+                decode=staticmethod(base64.standard_b64decode),
+            ),
+        )
+        cls.DATA = b"\xffTEST DATA\xff"
         cls.ENCDATA = base64.standard_b64encode(cls.DATA)
 
-    @patch.object(FixedBytesIO, 'read')
+    @patch.object(FixedBytesIO, "read")
     async def test_read(self, read):
         read.return_value = self.ENCDATA
         reader = MagicMock(spec=asyncio.StreamReader)
@@ -82,7 +83,7 @@ class CodableIOTestCase(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data, self.DATA)
         read.assert_called_once_with(reader)
 
-    @patch.object(FixedBytesIO, 'write')
+    @patch.object(FixedBytesIO, "write")
     def test_write(self, write):
         writer = MagicMock(spec=asyncio.StreamWriter)
         self.cls().write(writer, self.DATA)
@@ -148,5 +149,5 @@ class EnumIOTestCase(unittest.IsolatedAsyncioTestCase):
         raise NotImplementedError
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

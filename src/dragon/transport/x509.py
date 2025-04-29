@@ -24,7 +24,9 @@ def pem_encode_pkcs8(private_key, password=None):
     )
 
 
-def certificate_builder(issuer_name, subject_name, public_key, *, serial_number=None, not_valid_before=None, not_valid_after=None):
+def certificate_builder(
+    issuer_name, subject_name, public_key, *, serial_number=None, not_valid_before=None, not_valid_after=None
+):
     if not_valid_before is None:
         not_valid_before = datetime.datetime.utcnow()
     # Do not generate certs valid for more than a year
@@ -32,9 +34,9 @@ def certificate_builder(issuer_name, subject_name, public_key, *, serial_number=
     if not_valid_after is None:
         not_valid_after = max_not_valid_after
     elif not_valid_after > max_not_valid_after:
-        raise ValueError(f'Cannot be valid after {max_not_valid_after}')
+        raise ValueError(f"Cannot be valid after {max_not_valid_after}")
     if not_valid_before >= not_valid_after:
-        raise ValueError(f'Invalid validity period: {not_valid_before} to {not_valid_after}')
+        raise ValueError(f"Invalid validity period: {not_valid_before} to {not_valid_after}")
     if serial_number is None:
         serial_number = x509.random_serial_number()
     return x509.CertificateBuilder(
@@ -59,32 +61,43 @@ def add_ca_key_usage_extensions(builder):
             crl_sign=True,
             encipher_only=False,
             decipher_only=False,
-        ), critical=True,
+        ),
+        critical=True,
     ).add_extension(
-        x509.BasicConstraints(ca=True, path_length=0), critical=True,
+        x509.BasicConstraints(ca=True, path_length=0),
+        critical=True,
     )
 
 
 def add_server_key_usage_extensions(builder):
-    return builder.add_extension(
-        x509.KeyUsage(
-            digital_signature=True,
-            content_commitment=False,
-            key_encipherment=False,
-            data_encipherment=False,
-            key_agreement=False,
-            key_cert_sign=False,
-            crl_sign=False,
-            encipher_only=False,
-            decipher_only=False,
-        ), critical=True,
-    ).add_extension(
-        x509.BasicConstraints(ca=False, path_length=None), critical=True,
-    ).add_extension(
-        x509.ExtendedKeyUsage([
-            ExtendedKeyUsageOID.SERVER_AUTH,
-            ExtendedKeyUsageOID.CLIENT_AUTH,
-        ]), critical=False,
+    return (
+        builder.add_extension(
+            x509.KeyUsage(
+                digital_signature=True,
+                content_commitment=False,
+                key_encipherment=False,
+                data_encipherment=False,
+                key_agreement=False,
+                key_cert_sign=False,
+                crl_sign=False,
+                encipher_only=False,
+                decipher_only=False,
+            ),
+            critical=True,
+        )
+        .add_extension(
+            x509.BasicConstraints(ca=False, path_length=None),
+            critical=True,
+        )
+        .add_extension(
+            x509.ExtendedKeyUsage(
+                [
+                    ExtendedKeyUsageOID.SERVER_AUTH,
+                    ExtendedKeyUsageOID.CLIENT_AUTH,
+                ]
+            ),
+            critical=False,
+        )
     )
 
 
@@ -105,21 +118,21 @@ def get_common_name(name):
     # Get subject common name
     common_name = name.get_attributes_for_oid(NameOID.COMMON_NAME)
     if not common_name:
-        raise ValueError('Missing common name attribute')
+        raise ValueError("Missing common name attribute")
     if len(common_name) > 1:
-        raise ValueError('Contains more than one common name attribute')
+        raise ValueError("Contains more than one common name attribute")
     return str(common_name[0].value)
 
 
 def check_subject_alternative_name(csr):
     san_ext = csr.extensions.get_extension_for_oid(ExtensionOID.SUBJECT_ALTERNATIVE_NAME)
     if san_ext is None:
-        raise ValueError('CSR missing Subject Alternative Name extension')
+        raise ValueError("CSR missing Subject Alternative Name extension")
     san = san_ext.value
     # Require the common name to be specified as SAN
     common_name = get_common_name(csr.subject)
     if common_name not in set(map(str, san.get_values_for_type(x509.GeneralName))):
-        raise ValueError('Subject common name attribute is not a subject alternative name')
+        raise ValueError("Subject common name attribute is not a subject alternative name")
     # TODO: Validate other SAN entries?
     return san
 
@@ -133,24 +146,24 @@ class CertificateAuthority:
     @classmethod
     def generate(cls, name=None):
         if name is None:
-            name = x509.Name([
-                x509.NameAttribute(NameOID.ORGANIZATION_NAME, u'Hewlett Packard Enterprise Development LP'),
-                x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, u'Dragon'),
-                x509.NameAttribute(NameOID.COMMON_NAME, u'Dragon Root CA'),
-            ])
+            name = x509.Name(
+                [
+                    x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Hewlett Packard Enterprise Development LP"),
+                    x509.NameAttribute(NameOID.ORGANIZATIONAL_UNIT_NAME, "Dragon"),
+                    x509.NameAttribute(NameOID.COMMON_NAME, "Dragon Root CA"),
+                ]
+            )
         private_key = generate_private_key()
         public_key = private_key.public_key()
-        builder =  certificate_builder(
+        builder = certificate_builder(
             issuer_name=name,
             subject_name=name,
             public_key=public_key,
         )
-        builder = add_ca_key_usage_extensions(builder).add_extension(
-            x509.SubjectKeyIdentifier.from_public_key(public_key),
-            critical=False
-        ).add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(public_key),
-            critical=False
+        builder = (
+            add_ca_key_usage_extensions(builder)
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(public_key), critical=False)
+            .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(public_key), critical=False)
         )
         cert = sign(builder, private_key)
         return cls(private_key, cert)
@@ -163,7 +176,7 @@ class CertificateAuthority:
         else:
             not_valid_after = not_valid_before + valid_for
         if not csr.is_signature_valid:
-            raise ValueError(f'CSR signature invalid {csr}')
+            raise ValueError(f"CSR signature invalid {csr}")
         san = check_subject_alternative_name(csr)
         public_key = csr.public_key()
         builder = certificate_builder(
@@ -173,23 +186,31 @@ class CertificateAuthority:
             not_valid_before=not_valid_before,
             not_valid_after=not_valid_after,
         )
-        builder = add_server_key_usage_extensions(builder).add_extension(
-            x509.SubjectKeyIdentifier.from_public_key(public_key),
-            critical=False
-        ).add_extension(
-            x509.AuthorityKeyIdentifier.from_issuer_public_key(self.certificate.public_key()),
-            critical=False
-        ).add_extension(san, critical=False)
+        builder = (
+            add_server_key_usage_extensions(builder)
+            .add_extension(x509.SubjectKeyIdentifier.from_public_key(public_key), critical=False)
+            .add_extension(
+                x509.AuthorityKeyIdentifier.from_issuer_public_key(self.certificate.public_key()), critical=False
+            )
+            .add_extension(san, critical=False)
+        )
         return sign(builder, self.private_key)
 
 
 def server_csr_builder(subject_alternative_name):
     # Get subject from the first SAN
-    subject = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, str(subject_alternative_name[0].value)),
-    ])
-    return x509.CertificateSigningRequestBuilder().subject_name(subject).add_extension(
-        subject_alternative_name, critical=False,
+    subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, str(subject_alternative_name[0].value)),
+        ]
+    )
+    return (
+        x509.CertificateSigningRequestBuilder()
+        .subject_name(subject)
+        .add_extension(
+            subject_alternative_name,
+            critical=False,
+        )
     )
 
 
@@ -215,9 +236,11 @@ def generate_server_self_signed_cert(ipaddr, *altnames, valid_for: datetime.time
         not_valid_after = not_valid_before + valid_for
     private_key = generate_private_key()
     public_key = private_key.public_key()
-    subject = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, str(names[0].value)),
-    ])
+    subject = x509.Name(
+        [
+            x509.NameAttribute(NameOID.COMMON_NAME, str(names[0].value)),
+        ]
+    )
     builder = certificate_builder(
         issuer_name=subject,
         subject_name=subject,
@@ -225,19 +248,18 @@ def generate_server_self_signed_cert(ipaddr, *altnames, valid_for: datetime.time
         not_valid_before=not_valid_before,
         not_valid_after=not_valid_after,
     )
-    builder = add_server_key_usage_extensions(builder).add_extension(
-        x509.SubjectKeyIdentifier.from_public_key(public_key),
-        critical=False
-    ).add_extension(
-        x509.AuthorityKeyIdentifier.from_issuer_public_key(public_key),
-        critical=False
-    ).add_extension(x509.SubjectAlternativeName(names), critical=False)
+    builder = (
+        add_server_key_usage_extensions(builder)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(public_key), critical=False)
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(public_key), critical=False)
+        .add_extension(x509.SubjectAlternativeName(names), critical=False)
+    )
     cert = sign(builder, private_key)
     return private_key, cert
 
 
 def dragon_uri(rank, host, port):
-    return x509.UniformResourceIdentifier(f'urn:dragon:{rank}:{host}:{port}')
+    return x509.UniformResourceIdentifier(f"urn:dragon:{rank}:{host}:{port}")
 
 
 if __name__ == "__main__":
@@ -247,23 +269,23 @@ if __name__ == "__main__":
     with TemporaryDirectory() as workdir:
 
         def writefile(path, contents):
-            with open(os.path.join(workdir, path), 'wb') as f:
+            with open(os.path.join(workdir, path), "wb") as f:
                 f.write(contents)
 
         def openssl_x509_text(path):
-            os.system(f'openssl x509 -noout -text -in {workdir}/{path}')
+            os.system(f"openssl x509 -noout -text -in {workdir}/{path}")
 
         # Generate CA
         ca = CertificateAuthority.generate()
 
-        writefile('ca-key.pem', pem_encode_pkcs8(ca.private_key))
-        writefile('ca-cert.pem', pem_encode(ca.certificate))
+        writefile("ca-key.pem", pem_encode_pkcs8(ca.private_key))
+        writefile("ca-cert.pem", pem_encode(ca.certificate))
 
-        openssl_x509_text('ca-cert.pem')
+        openssl_x509_text("ca-cert.pem")
 
         cluster_nodes = [
-            ('127.0.0.1', 7575),
-            ('127.0.0.1', 7576),
+            ("127.0.0.1", 7575),
+            ("127.0.0.1", 7576),
         ]
 
         for rank, (host, port) in enumerate(cluster_nodes):
@@ -271,7 +293,7 @@ if __name__ == "__main__":
             key, csr = generate_server_csr(host, uri)
             cert = ca.issue_server_certificate(csr)
 
-            writefile(f'key-{rank}.pem', pem_encode_pkcs8(key))
-            writefile(f'cert-{rank}.pem', pem_encode(cert))
+            writefile(f"key-{rank}.pem", pem_encode_pkcs8(key))
+            writefile(f"cert-{rank}.pem", pem_encode(cert))
 
-            openssl_x509_text(f'cert-{rank}.pem')
+            openssl_x509_text(f"cert-{rank}.pem")

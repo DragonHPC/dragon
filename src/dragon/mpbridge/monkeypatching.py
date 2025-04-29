@@ -23,7 +23,7 @@ Consider:
 
 without correct patching in __init__.py this would print:
 
-.. code-block:: Python    
+.. code-block:: Python
 
     wait.__module__='multiprocessing.connection'
     ctx.wait.__module__='dragon.mpbridge.context'
@@ -70,8 +70,7 @@ class Monkeypatcher:
 
     def __init__(self):
         """Store the original Multiprocessing classes"""
-        from multiprocessing.managers import BaseManager, SyncManager, BaseProxy, Token, SharedMemoryManager
-        from multiprocessing.shared_memory import SharedMemory, ShareableList
+        from multiprocessing.managers import BaseManager, SyncManager, BaseProxy, Token
         from multiprocessing.util import get_logger, log_to_stderr
         from multiprocessing.heap import Arena
 
@@ -131,7 +130,6 @@ class Monkeypatcher:
         self.managers_SyncManager = SyncManager
         self.managers_BaseProxy = BaseProxy
         self.managers_Token = Token
-        self.managers_SharedMemoryManager = SharedMemoryManager
 
         self.connection_wait = multiprocessing.connection.wait
         self.connection_Pipe = multiprocessing.connection.Pipe
@@ -147,9 +145,6 @@ class Monkeypatcher:
         self.sharedctypes_RawValue = multiprocessing.sharedctypes.RawValue
         self.sharedctypes_copy = multiprocessing.sharedctypes.copy
         self.sharedctypes_synchronized = multiprocessing.sharedctypes.synchronized
-
-        self.shared_memory_SharedMemory = SharedMemory
-        self.shared_memory_ShareableList = ShareableList
 
         self.reduction_DupFd = multiprocessing.reduction.DupFd
         self.reduction_recvfds = multiprocessing.reduction.recvfds
@@ -176,9 +171,7 @@ class Monkeypatcher:
             DragonSyncManager,
             DragonBaseProxy,
             DragonToken,
-            DragonSharedMemoryManager,
         )
-        from dragon.mpbridge.shared_memory import DragonSharedMemory, DragonShareableList
         from dragon.mpbridge.util import get_logger, log_to_stderr
         from dragon.mpbridge.heap import DragonArena
 
@@ -247,9 +240,9 @@ class Monkeypatcher:
         multiprocessing.connection.Client = ctx.Client
 
         dragon_base_pool = os.getenv("DRAGON_BASEPOOL", "NATIVE")
-        if  dragon_base_pool == "PATCHED": 
+        if dragon_base_pool == "PATCHED":
             multiprocessing.pool.Pool = dragon.mpbridge.pool.DragonPoolPatched
-        else:        
+        else:
             multiprocessing.pool.Pool = dragon.mpbridge.pool.DragonPool
         multiprocessing.pool.wait = ctx.wait
 
@@ -272,16 +265,10 @@ class Monkeypatcher:
         # be imported with `from multiprocessing.module import Class` or `import multiprocessing.module`
         # and `obj = multiprocessing.module.Class()`
 
-        multiprocessing.managers.BaseManager = (
-            DragonBaseManager  # mimic insane multiprocessing structure here
-        )
+        multiprocessing.managers.BaseManager = DragonBaseManager  # mimic insane multiprocessing structure here
         multiprocessing.managers.SyncManager = DragonSyncManager
         multiprocessing.managers.BaseProxy = DragonBaseProxy
         multiprocessing.managers.Token = DragonToken
-        multiprocessing.managers.SharedMemoryManager = DragonSharedMemoryManager
-
-        multiprocessing.shared_memory.SharedMemory = DragonSharedMemory
-        multiprocessing.shared_memory.ShareableList = DragonShareableList
 
         multiprocessing.heap.Arena = DragonArena
 
@@ -348,7 +335,6 @@ class Monkeypatcher:
         multiprocessing.managers.SyncManager = self.managers_SyncManager
         multiprocessing.managers.BaseProxy = self.managers_BaseProxy
         multiprocessing.managers.Token = self.managers_Token
-        multiprocessing.managers.SharedMemoryManager = self.managers_SharedMemoryManager
 
         multiprocessing.sharedctypes.Array = self.sharedctypes_Array
         multiprocessing.sharedctypes.RawArray = self.sharedctypes_RawArray
@@ -356,9 +342,6 @@ class Monkeypatcher:
         multiprocessing.sharedctypes.RawValue = self.sharedctypes_RawValue
         multiprocessing.sharedctypes.copy = self.sharedctypes_copy
         multiprocessing.sharedctypes.synchronized = self.sharedctypes_synchronized
-
-        multiprocessing.shared_memory.SharedMemory = self.shared_memory_SharedMemory
-        multiprocessing.shared_memory.ShareableList = self.shared_memory_ShareableList
 
         multiprocessing.reduction.DupFd = self.reduction_DupFd
         multiprocessing.reduction.recvfds = self.reduction_sendfds
@@ -405,7 +388,7 @@ def patch_multiprocessing():
     """Add Dragon to the list of Multiprocessing start methods.
 
     This function is called when a Python program is started using the Launcher, i.e.
-    Dragon is invoked with the `dragon` command. 
+    Dragon is invoked with the `dragon` command.
 
     1. Insert Dragon's MPBridge context into the list of Multiprocessing contexts.
     2. Replace Multiprocessings default context with our own version to swap
@@ -421,7 +404,7 @@ def patch_multiprocessing():
 
     # add Dragon context to multiprocessing concrete contexts
     multiprocessing.context._concrete_contexts[
-       dragon.mpbridge.process.DragonPopen.method
+        dragon.mpbridge.process.DragonPopen.method
     ] = dragon.mpbridge.context.DragonContext()
 
     # make our Augmented DefaultContext the new default context
@@ -429,7 +412,7 @@ def patch_multiprocessing():
         multiprocessing.context._default_context = AugmentedDefaultContext(
             multiprocessing.context._default_context._default_context,
             # Preserve whatever the normal system default context is.
-            multiprocessing.context._default_context._actual_context
+            multiprocessing.context._default_context._actual_context,
             # If _actual_context already set, must preserve it here.
         )
 

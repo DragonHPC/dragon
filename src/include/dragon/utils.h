@@ -12,6 +12,8 @@
 extern "C" {
 #endif
 
+#define DRAGON_TWO_MEG (1UL << 21)
+
 dragonULInt
 dragon_get_local_rt_uid();
 
@@ -21,8 +23,14 @@ dragon_set_procname(char * name);
 void
 dragon_zero_uuid(dragonUUID uuid);
 
+char*
+dragon_uuid_to_hex_str(dragonUUID uuid);
+
 void
 dragon_generate_uuid(dragonUUID uuid);
+
+void
+dragon_copy_uuid(dragonUUID dest, const dragonUUID src);
 
 int
 dragon_compare_uuid(const dragonUUID u1, const dragonUUID u2);
@@ -100,6 +108,12 @@ dragon_set_thread_local_mode(bool set_thread_local);
 
 bool
 dragon_get_thread_local_mode(void);
+
+bool
+dragon_check_dir_rw_permissions(char *dir);
+
+dragonError_t
+dragon_get_hugepage_mount(char **mount_dir);
 
 #ifdef __cplusplus
 }

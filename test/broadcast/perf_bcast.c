@@ -350,8 +350,10 @@ run_test_trigger_all(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDe
                 err = dragon_bcast_trigger_all(bd, NULL, &payload, payload_sz);
                 clock_gettime(CLOCK_MONOTONIC, &t2);
                 if (err != DRAGON_SUCCESS) {
+                    printf("Got error code on trigger all: %s\n", dragon_get_rc_string(err));
                     char * errstr = dragon_getlasterrstr();
                     printf("Failed to trigger all. Got EC=%i\nERRSTR = \n%s\n", err, errstr);
+                    fflush(stdout);
                     return FAILED;
                 }
 
@@ -497,7 +499,7 @@ run_test_trigger_one(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDe
                 clock_gettime(CLOCK_MONOTONIC, &t2);
                 if (err != DRAGON_SUCCESS) {
                     char * errstr = dragon_getlasterrstr();
-                    printf("Failed to trigger all. Got EC=%i\nERRSTR = \n%s\n", err, errstr);
+                    printf("Failed to trigger one. Got EC=%i\nERRSTR = \n%s\n", err, errstr);
                     return FAILED;
                 }
 

@@ -119,7 +119,7 @@ class TestBarrier(unittest.TestCase):
             pass
         elap = time.monotonic() - start
         self.assertGreaterEqual(elap, 0)
-        self.assertLess(elap, def_timeout) 
+        self.assertLess(elap, def_timeout)
 
     def test_requirement_2_1(self):
         """If the wait is called with timeout <0, it has to assume raise a ValueError."""
@@ -370,9 +370,7 @@ class TestBarrier(unittest.TestCase):
         for _ in range(5):
             queue_vals.append(queue.get())
         queue_vals = sorted(queue_vals)
-        self.assertListEqual(
-            [0, 1, 2, 3, 4], queue_vals, "The queue did not receive unique integers between 0 and 5"
-        )
+        self.assertListEqual([0, 1, 2, 3, 4], queue_vals, "The queue did not receive unique integers between 0 and 5")
 
     def test_requirement_3_1(self):
         """

@@ -17,7 +17,8 @@ static unsigned char bit_masks[] = {1,2,4,8,16,32,64,128};
  *
  *  This API provides a bitset implementation that resides in a pre-allocated blob of memory.
  *  This datatype does not do any dynamic allocation of memory on its own. The bitset is a set
- *  of integers ranging from to to num_bits-1.
+ *  of integers ranging from to to num_bits-1. This set is NOT thread or process safe. External
+ *  locking must be done to guarantee order of operations.
  *
  *  @param num_bits The number of integers that may be in the set. Potential members of the set range
  *  from 0 to num_bits-1.
@@ -40,9 +41,9 @@ dragon_bitset_size(const size_t num_bits)
 
     // This guarantees the num_bytes will be a multiple of 8 bytes
     // (for boundary alignment) and big enough to hold all the bits.
+    // The two size_t fields are the size and the number of set bits.
     num_bytes = ((num_bytes + 7) / 8) * 8;
-
-    size = sizeof(size_t) + num_bytes;
+    size = 3*sizeof(size_t) + num_bytes;
 
     return size;
 }
@@ -109,7 +110,19 @@ dragon_bitset_init(void* ptr, dragonBitSet_t* set, const size_t num_bits)
     size_t* size_ptr = (size_t*) ptr;
     *size_ptr = num_bits;
     set->size = num_bits;
-    set->data = (char*) (ptr + sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    size_t* length_ptr = (size_t*) ptr;
+    set->length = length_ptr;
+    *set->length = 0;
+    ptr += sizeof(size_t);
+
+    size_t* leading_ptr = (size_t*) ptr;
+    set->leading_zeroes = leading_ptr;
+    *set->leading_zeroes = num_bits;
+    ptr += sizeof(size_t);
+
+    set->data = (char*) ptr;
 
     dragon_bitset_clear(set); // Called internally this will not fail.
 
@@ -141,6 +154,9 @@ dragon_bitset_clear(dragonBitSet_t* set)
     for (size_t k = 0; k<max_idx; k++)
         set->data[k] = 0;
 
+    *set->length = 0;
+    *set->leading_zeroes = set->size;
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -163,6 +179,8 @@ dragon_bitset_destroy(dragonBitSet_t* set)
 
     set->size = 0;
     set->data = NULL;
+    set->length = NULL;
+    set->leading_zeroes = NULL;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -203,11 +221,13 @@ dragon_bitset_copy(dragonBitSet_t* destination, dragonBitSet_t* source)
     bytes = dragon_bitset_size(bits);
 
     // The actual data for a bitset is contiguous and starts
-    // sizeof(size_t) bytes before the data pointer. See
+    // 3*sizeof(size_t) bytes before the data pointer. See
     // init and attach for reference.
-    void* dest = (void*)(destination->data) - sizeof(size_t);
-    void* src = (void*)(source->data)-sizeof(size_t);
+    void* dest = (void*)(destination->data) - 3*sizeof(size_t);
+    void* src = (void*)(source->data)- 3*sizeof(size_t);
     memcpy(dest, src, bytes);
+    // Copy size value into handle because it does not point into
+    // header.
     destination->size = source->size;
 
     no_err_return(DRAGON_SUCCESS);
@@ -239,7 +259,17 @@ dragon_bitset_attach(void* ptr, dragonBitSet_t* set)
 
     size_t* size_ptr = (size_t*) ptr;
     set->size = *size_ptr;
-    set->data = (char*) (ptr + sizeof(size_t));
+    ptr += sizeof(size_t);
+
+    size_t* length_ptr = (size_t*) ptr;
+    set->length = length_ptr;
+    ptr += sizeof(size_t);
+
+    size_t* leading_ptr = (size_t*) ptr;
+    set->leading_zeroes = leading_ptr;
+    ptr += sizeof(size_t);
+
+    set->data = (char*) ptr;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -264,6 +294,7 @@ dragon_bitset_detach(dragonBitSet_t* set)
 
     set->size = 0;
     set->data = NULL;
+    set->length = NULL;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -297,7 +328,15 @@ dragon_bitset_set(dragonBitSet_t* set, const size_t val_index)
     // reads lexicographically for a bit set from left to right.
     size_t bit_index = 7-(val_index & 0x7);
     unsigned char mask = bit_masks[bit_index];
+    char previous = set->data[byte_index];
     set->data[byte_index] = set->data[byte_index] | mask;
+
+    if (previous != set->data[byte_index])
+        *set->length +=1;
+
+    if (val_index < *set->leading_zeroes) {
+        *set->leading_zeroes = val_index;
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -319,6 +358,8 @@ dragon_bitset_set(dragonBitSet_t* set, const size_t val_index)
 dragonError_t
 dragon_bitset_reset(dragonBitSet_t* set, const size_t val_index)
 {
+    dragonError_t err;
+
     if (set == NULL)
         err_return(DRAGON_BITSET_NULL_POINTER,"The dragonBitSet handle pointer is NULL.");
 
@@ -331,7 +372,24 @@ dragon_bitset_reset(dragonBitSet_t* set, const size_t val_index)
     // reads lexicographically for a bit set from left to right.
     size_t bit_index = 7-(val_index & 0x7);
     unsigned char mask = ~(bit_masks[bit_index]);
+    char previous = set->data[byte_index];
     set->data[byte_index] = set->data[byte_index] & mask;
+
+    if (previous != set->data[byte_index])
+        *set->length -=1;
+
+    if (val_index == *set->leading_zeroes) {
+        if (*set->length == 0)
+            *set->leading_zeroes = set->size;
+        else {
+            size_t zeroes_to_right;
+            err = dragon_bitset_zeroes_to_right(set, val_index, &zeroes_to_right);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Internal Failure while resetting leading zeroes.");
+
+            *set->leading_zeroes = val_index + zeroes_to_right + 1;
+        }
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -343,7 +401,7 @@ dragon_bitset_reset(dragonBitSet_t* set, const size_t val_index)
  *  @param set A pointer to a bitset handle.
  *  @param val_index The integer to test for membership. The integer must be between 0 and
  *  the number of bits in the bitset minus one.
- *  @param val A pointer to an unsigned byte that will hold the result. It will be 0 or 1.
+ *  @param val A pointer to an bool that will hold the result. It will be 0 or 1.
  *  @return
  *      * **DRAGON_SUCCESS** It did its job.
  *      * **DRAGON_BITSET_NULL_POINTER** Either the set or the val was a null-pointer.
@@ -351,7 +409,7 @@ dragon_bitset_reset(dragonBitSet_t* set, const size_t val_index)
  */
 
 dragonError_t
-dragon_bitset_get(const dragonBitSet_t* set, const size_t val_index, unsigned char* val)
+dragon_bitset_get(const dragonBitSet_t* set, const size_t val_index, bool* val)
 {
     if (set == NULL)
         err_return(DRAGON_BITSET_NULL_POINTER,"The dragonBitSet handle pointer is NULL.");
@@ -376,6 +434,31 @@ dragon_bitset_get(const dragonBitSet_t* set, const size_t val_index, unsigned ch
 }
 
 static size_t size_t_mask = (size_t)sizeof(size_t)-1;
+
+/** @brief Return the length (i.e. number of set bits) in the bit set.
+ *
+ *  @param set A pointer to a bitset handle.
+ *  @param length A pointer to an unsigned integer that will hold the number of set bits in the set.
+ *  @return
+ *      * **DRAGON_SUCCESS** It did its job.
+ *      * **DRAGON_BITSET_NULL_POINTER** If either the set or the length pointer were passed in as NULL.
+ *
+ */
+dragonError_t
+dragon_bitset_length(const dragonBitSet_t* set, size_t* length) {
+    if (set == NULL)
+        err_return(DRAGON_BITSET_NULL_POINTER,"The dragonBitSet handle pointer is NULL.");
+
+    if (length == NULL)
+        err_return(DRAGON_BITSET_NULL_POINTER,"The length argument must point to a valid size_t variable.");
+
+    if (set->length == NULL)
+        err_return(DRAGON_BITSET_NULL_POINTER,"The dragonBitSet is not initialized. Call dragon_bitset_init or dragon_bitset_attach first.");
+
+    *length = *set->length;
+
+    no_err_return(DRAGON_SUCCESS);
+}
 
 /** @brief Compute the number of zero bits to the right of a member of the bitset.
  *
@@ -409,9 +492,15 @@ dragon_bitset_zeroes_to_right(const dragonBitSet_t* set, const size_t val_index,
         err_return(DRAGON_BITSET_BOUNDS_ERROR,"The index is bigger than the set size.");
     }
 
+    if (set->length == 0) {
+        // length is the number of set bits. If there are none, then we can return quickly.
+        *val = set->size - val_index;
+        no_err_return(DRAGON_SUCCESS);
+    }
+
     size_t idx = val_index+1;
     size_t lval = 0;
-    unsigned char bit_val;
+    bool bit_val;
     while (idx < set->size) {
         size_t byte_index = idx >> 3;
         size_t addr = (size_t)&set->data[byte_index];
@@ -451,75 +540,87 @@ dragon_bitset_zeroes_to_right(const dragonBitSet_t* set, const size_t val_index,
     no_err_return(DRAGON_SUCCESS);
 }
 
-// dragonError_t
-// dragon_bitset_first(const dragonBitSet_t* set, size_t* first)
-// {
-//     dragonError_t err;
-//     unsigned char val;
-//     size_t count;
+/** @brief Return the first bit found in the set that is a 1.
+ *
+ *  This finds the first 1 that is set in the bit set.
+ *
+ *  @param set A pointer to a bitset handle.
+ *  @param bit_index The index of the least significant bit with value 1 in the set.
+ *  @return
+ *      * **DRAGON_SUCCESS** It did its job.
+ *      * **DRAGON_BITSET_NULL_POINTER** If either the set or the val pointer were passed in as NULL.
+ *      * **DRAGON_NOT_FOUND** If there is no bit with value 1 in the set.
+ */
 
-//     if (set == NULL)
-//         err_return(DRAGON_BITSET_NULL_POINTER,"The dragonBitSet handle pointer is NULL.");
+dragonError_t
+dragon_bitset_first(const dragonBitSet_t* set, size_t* first)
+{
+    dragonError_t err;
+    char err_msg[200];
+    bool val;
 
-//     if (first == NULL)
-//         err_return(DRAGON_BITSET_NULL_POINTER,"The first parameter cannot be NULL.");
+    if (set == NULL)
+        err_return(DRAGON_BITSET_NULL_POINTER,"The dragonBitSet handle pointer is NULL.");
 
-//     err = dragon_bitset_get(set, 0, &val);
+    if (first == NULL)
+        err_return(DRAGON_BITSET_NULL_POINTER,"The first parameter cannot be NULL.");
 
-//     if (err != DRAGON_SUCCESS)
-//         append_err_return(err, "Could not get first element of bitset.");
+    /* for the first element in the iteration, the return value would be the
+       number of zeroes to the right of index 0 but add 1 more for the first
+       non-zero value. */
+    *first = *set->leading_zeroes;
 
-//     if (val == 1) {
-//         *first = 0;
-//         no_err_return(DRAGON_SUCCESS);
-//     }
+    if (*set->length == 0)
+        no_err_return(DRAGON_BITSET_ITERATION_COMPLETE);
 
-//     err = dragon_bitset_zeroes_to_right(set, 0, &count);
+    if (*first >= set->size)
+        no_err_return(DRAGON_BITSET_ITERATION_COMPLETE);
 
-//     if (err != DRAGON_SUCCESS)
-//         append_err_return(err, "Could not get first element of bitset.");
+    err = dragon_bitset_get(set, *first, &val);
 
-//     /* for the first element in the iteration, the return value would be the
-//        number of zeroes to the right of index 0 but add 1 more for the first
-//        non-zero value. */
-//     *first = count + 1;
+    if (err != DRAGON_SUCCESS) {
+        snprintf(err_msg, 199, "Could not get first element from set with index %lu. Size of set is %lu.", *first, set->size);
+        append_err_return(err, err_msg);
+    }
 
-//     if (*first >= set->size)
-//         no_err_return(DRAGON_BITSET_ITERATION_COMPLETE);
+    if (!val) {
+        snprintf(err_msg, 199, "Called dragon_bitset_first with index %lu and got an unset bit.", *first);
+        err_return(DRAGON_FAILURE, err_msg);
+    }
 
-//     no_err_return(DRAGON_SUCCESS);
-// }
+    no_err_return(DRAGON_SUCCESS);
+}
 
-// dragonError_t
-// dragon_bitset_next(const dragonBitSet_t* set, const size_t current, size_t* next)
-// {
-//     dragonError_t err;
-//     size_t count;
+dragonError_t
+dragon_bitset_next(const dragonBitSet_t* set, const size_t current, size_t* next)
+{
+    dragonError_t err;
+    size_t count;
 
-//     if (set == NULL)
-//         err_return(DRAGON_BITSET_NULL_POINTER,"The dragonBitSet handle pointer is NULL.");
+    if (set == NULL)
+        err_return(DRAGON_BITSET_NULL_POINTER,"The dragonBitSet handle pointer is NULL.");
 
-//     if (next == NULL)
-//         err_return(DRAGON_BITSET_NULL_POINTER,"The next parameter cannot be NULL.");
+    if (next == NULL)
+        err_return(DRAGON_BITSET_NULL_POINTER,"The next parameter cannot be NULL.");
 
-//     if (current >= set->size)
-//         no_err_return(DRAGON_BITSET_ITERATION_COMPLETE);
+    if (current >= set->size)
+        no_err_return(DRAGON_BITSET_ITERATION_COMPLETE);
 
-//     err = dragon_bitset_zeroes_to_right(set, current, &count);
+    err = dragon_bitset_zeroes_to_right(set, current, &count);
 
-//     if (err != DRAGON_SUCCESS)
-//         append_err_return(err, "Could not get next element of bitset.");
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get next element of bitset.");
 
-//     /* for the next element in the iteration, the return value would be the
-//        number of zeroes to the right of current but add 1 more for the first
-//        non-zero value and add that to current. */
-//     *next = current + count + 1;
+    /* for the next element in the iteration, the return value would be the
+       number of zeroes to the right of current but add 1 more for the first
+       non-zero value and add that to current. */
+    *next = current + count + 1;
 
-//     if (*next >= set->size)
-//         no_err_return(DRAGON_BITSET_ITERATION_COMPLETE);
+    if (*next >= set->size)
+        no_err_return(DRAGON_BITSET_ITERATION_COMPLETE);
 
-//     no_err_return(DRAGON_SUCCESS);
-// }
+    no_err_return(DRAGON_SUCCESS);
+}
 
 /** @brief Dump a bitset to standard output for debug purposes.
  *
@@ -572,8 +673,10 @@ dragon_bitset_dump_to_fd(FILE* fd, const char* title, const dragonBitSet_t* set,
     size_t num_bytes;
     num_bytes = dragon_bitset_size(set->size);
     num_bytes = num_bytes - sizeof(size_t);
-    fprintf(fd, "%sSize of bitset is %lu\n",indent,num_bytes);
-    hex_dump_to_fd(fd, "BITS",(void*)set->data,num_bytes,indent);
+    fprintf(fd, "%sSize of bitset bytes in memory is %lu\n",indent,num_bytes);
+    fprintf(fd, "%sThe number of bits in set is %lu\n", indent, set->size);
+    fprintf(fd, "%sThe number of items currently in set is %lu\n", indent, *set->length);
+    hex_dump_to_fd(fd, "BITS",(void*)set->data,(set->size+7)/8,indent);
 
     no_err_return(DRAGON_SUCCESS);
 }

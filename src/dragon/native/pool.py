@@ -1,5 +1,4 @@
-"""The Dragon native pool manages a pool of child processes that can be used to run python callables.
-"""
+"""The Dragon native pool manages a pool of child processes that can be used to run python callables."""
 
 from __future__ import annotations
 import logging
@@ -11,8 +10,6 @@ import threading
 import types
 import signal
 from typing import Iterable, Any
-import time
-import os
 
 import dragon
 
@@ -35,8 +32,8 @@ job_counter = itertools.count()
 WORKER_POLL_FREQUENCY = 0.2
 RESULTS_HANDLER_POLL_FREQUENCY = 0.2
 
-def get_logs(name):
 
+def get_logs(name):
     global _LOG
     log = _LOG.getChild(name)
     return log.debug, log.info
@@ -249,7 +246,7 @@ class Pool:
         maxtasksperchild: int = None,
         *,
         policy: Policy = None,
-        processes_per_policy: int = None
+        processes_per_policy: int = None,
     ):
         """Init method
 
@@ -270,11 +267,11 @@ class Pool:
         myp = current_process()
 
         # setup logging
-        fname = f'{dls.PG}_{socket.gethostname()}_pool_main.log'
+        fname = f"{dls.PG}_{socket.gethostname()}_pool_main.log"
         setup_BE_logging(service=dls.PG, fname=fname)
         global _LOG
         _LOG = logging.getLogger(dls.PG)
-        self.fdebug, self.finfo = get_logs('pool main')
+        self.fdebug, self.finfo = get_logs("pool main")
 
         self.fdebug(f"pool init on node {socket.gethostname()} by process {myp.ident}")
         self._inqueue = Queue()
@@ -289,7 +286,7 @@ class Pool:
         if processes is None:
             if processes_per_policy is not None:
                 if isinstance(policy, list):
-                    self._processes = len(policy)*processes_per_policy
+                    self._processes = len(policy) * processes_per_policy
                 else:
                     self._processes = processes_per_policy
             else:
@@ -299,13 +296,15 @@ class Pool:
             if processes_per_policy is not None:
                 raise RuntimeError("cannot provide processes_per_policy and a total number of processes")
             if isinstance(policy, list):
-                raise RuntimeError("cannot provide a list of policies and a total number of processes. must provide the number of processes_per_policy")
+                raise RuntimeError(
+                    "cannot provide a list of policies and a total number of processes. must provide the number of processes_per_policy"
+                )
             self._processes = processes
 
         if self._processes < 1:
             raise ValueError("Number of processes must be at least 1")
 
-        self._start_barrier = Barrier(parties=self._processes+1)
+        self._start_barrier = Barrier(parties=self._processes + 1)
         self._start_barrier_passed = Event()
         self._start_barrier_helper = threading.Thread(
             target=self._start_barrier_helper, args=(self._start_barrier, self._start_barrier_passed)
@@ -315,15 +314,32 @@ class Pool:
 
         self._template = ProcessTemplate(
             self._worker_function,
-            args=(self._inqueue, self._outqueue, self._start_barrier, self._start_barrier_passed,self._initializer, self._initargs, self._maxtasksperchild),
+            args=(
+                self._inqueue,
+                self._outqueue,
+                self._start_barrier,
+                self._start_barrier_passed,
+                self._initializer,
+                self._initargs,
+                self._maxtasksperchild,
+            ),
         )
         if isinstance(policy, list):
             self._pg = ProcessGroup(restart=True, ignore_error_on_exit=True)
             for p in policy:
                 # starts a process group with nproc workers
                 placed_template = ProcessTemplate(
-                self._worker_function,
-                args=(self._inqueue, self._outqueue, self._start_barrier, self._start_barrier_passed,self._initializer, self._initargs, self._maxtasksperchild), policy=p
+                    self._worker_function,
+                    args=(
+                        self._inqueue,
+                        self._outqueue,
+                        self._start_barrier,
+                        self._start_barrier_passed,
+                        self._initializer,
+                        self._initargs,
+                        self._maxtasksperchild,
+                    ),
+                    policy=p,
                 )
                 self._pg.add_process(processes_per_policy, placed_template)
         else:
@@ -353,10 +369,10 @@ class Pool:
         if not (status == "Running"):
             raise ValueError(f"Pool not running. ProcessGroup State = {status}")
 
-    def terminate(self, patience: float = 60.0) -> None:
+    def terminate(self, patience: float = 60) -> None:
         """This sets the threading event immediately and sends signal.SIGINT, signal.SIGTERM, and signal.SIGKILL successively with patience time between the sending of each signal until all processes have exited. Calling this method before blocking on results may lead to some work being undone. If all work should be done before stopping the workers, `close` should be used.
 
-        :param patience: timeout to wait for processes to join after each signal, defaults to None
+        :param patience: timeout to wait for processes to join after each signal, defaults to 60 to prevent indefinite hangs
         :type patience: float, optional
         """
 
@@ -432,7 +448,7 @@ class Pool:
             raise ValueError("Closing when ProcessGroup has been closed")
         # defines and starts thread that waits for work in input queue to be done before sending shutdown signal
         self._close_thread = threading.Thread(
-            target=self._close, args=(self._cache, self._start_barrier_passed,self._end_threading_event, self._pg)
+            target=self._close, args=(self._cache, self._start_barrier_passed, self._end_threading_event, self._pg)
         )
         self.fdebug("starting close thread")
         self._close_thread.start()
@@ -499,8 +515,9 @@ class Pool:
         del self._template
 
     @staticmethod
-    def _worker_function(inqueue, outqueue, start_barrier, start_barrier_passed, initializer=None, initargs=(), maxtasks=None):
-
+    def _worker_function(
+        inqueue, outqueue, start_barrier, start_barrier_passed, initializer=None, initargs=(), maxtasks=None
+    ):
         try:
             termflag = threading.Event()
 
@@ -510,11 +527,11 @@ class Pool:
             signal.signal(signal.SIGUSR2, handler)
 
             # setup logging
-            fname = f'{dls.PG}_{socket.gethostname()}_workers.log'
+            fname = f"{dls.PG}_{socket.gethostname()}_workers.log"
             setup_BE_logging(service=dls.PG, fname=fname)
             global _LOG
-            _LOG = logging.getLogger(dls.PG).getChild('worker')
-            fdebug, finfo = get_logs('worker')
+            _LOG = logging.getLogger(dls.PG).getChild("worker")
+            fdebug, finfo = get_logs("worker")
 
             if not start_barrier_passed.is_set():
                 start_barrier.wait()
@@ -558,7 +575,7 @@ class Pool:
                     outqueue.put((job, i, (False, wrapped)))
                 completed_tasks += 1
         except EOFError:
-            pass # This can happen when barrier is destroyed at end of pool.
+            pass  # This can happen when barrier is destroyed at end of pool.
         except KeyboardInterrupt:
             pass
         finally:
@@ -567,11 +584,8 @@ class Pool:
     @classmethod
     def _handle_results(cls, outqueue, cache, end_event):
         fdebug, finfo = get_logs("results handler")
-        fdebug(
-            f"handle_results on node {socket.gethostname()} with thread id {threading.get_native_id()}"
-        )
+        fdebug(f"handle_results on node {socket.gethostname()} with thread id {threading.get_native_id()}")
         while not end_event.is_set():
-
             # timeout with some frequency so we check if end_event is set
             try:
                 task = outqueue.get(timeout=RESULTS_HANDLER_POLL_FREQUENCY)
@@ -686,8 +700,7 @@ class Pool:
             self._map_launch_thread.join()
         # start thread to put tasks into the input queue
         self._map_launch_thread = threading.Thread(
-            target=Pool._partition_tasks,
-            args=(self._inqueue, result, mapper, task_batches, self._end_threading_event),
+            target=Pool._partition_tasks, args=(self._inqueue, result, mapper, task_batches, self._end_threading_event)
         )
         self._map_launch_thread.start()
 

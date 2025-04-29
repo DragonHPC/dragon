@@ -11,20 +11,19 @@ def main():
     capable of bringing up a serial process on a given compute node.
 
     """
-    _user = os.environ.get('USER', str(os.getuid()))
+    _user = os.environ.get("USER", str(os.getuid()))
     _hostname = socket.gethostname()
     try:
-        filename = os.path.join(os.environ.get('DRAGON_LA_LOG_DIR'),
-                                f'simple_compute_{_user}.txt')
+        filename = os.path.join(os.environ.get("DRAGON_LA_LOG_DIR"), f"simple_compute_{_user}.txt")
     except TypeError:
-        filename = f'/tmp/simple_compute_{_user}.txt'
+        filename = f"/tmp/simple_compute_{_user}.txt"
 
     if os.path.exists(filename):
         os.remove(filename)
 
     for i in range(5):
-        with open(filename, 'a') as f:
-            f.write(f'hello from {_hostname}\n')
+        with open(filename, "a") as f:
+            f.write(f"hello from {_hostname}\n")
         time.sleep(5)
 
 

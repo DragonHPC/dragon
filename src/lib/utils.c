@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <stdatomic.h>
 #include <ctype.h>
@@ -17,10 +18,12 @@
 #define ONE_BILLION 1000000000
 #define ONE_MILLION 1000000
 #define NSEC_PER_SECOND 1000000000
+#define HUGEPAGE_MOUNT_DIR_MAX_LEN 512
 
 bool dg_enable_errstr = true;
 _Thread_local char * errstr = NULL;
 static _Thread_local bool dg_thread_local_mode = false;
+static timespec_t NO_TIMEOUT = {157680000000, 0}; // 5000 years, we'll all be dead.
 
 const char*
 dragon_get_rc_string(const dragonError_t rc)
@@ -89,6 +92,24 @@ dragon_getlasterrstr()
             str = strdup(errstr);
     }
     return str;
+}
+
+char *
+dragon_getrawerrstr()
+{
+    char * str;
+    if (errstr == NULL) {
+        str = strdup("");
+    } else {
+        str = strdup(errstr);
+    }
+    return str;
+}
+
+void
+dragon_setrawerrstr(char* err_str)
+{
+    _set_errstr(err_str);
 }
 
 void
@@ -186,6 +207,19 @@ _get_hostid_from_bootid(uint64_t *host_id)
     no_err_return(DRAGON_SUCCESS);
 }
 
+dragonError_t
+_get_hostid_from_k8s_podid(char *pod_uid, uint64_t *host_id)
+{
+    // Clean out any non-hex charactars and convert to dec
+    if (_sanitize_id(pod_uid) != DRAGON_SUCCESS)
+        err_return(DRAGON_FAILURE, "Unable to sanitize boot ID");
+
+    if (_hex_to_dec(pod_uid, host_id) != DRAGON_SUCCESS)
+        err_return(DRAGON_FAILURE, "Unable to convert boot ID from hex to dec");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
 dragonULInt dg_hostid;
 dragonUInt dg_pid;
 atomic_uint dg_ctr;
@@ -194,11 +228,27 @@ int dg_hostid_called = 0;
 dragonULInt
 dragon_host_id()
 {
+    char *k8s_pod_uid = getenv("POD_UID");
+
     if (dg_hostid_called == 0) {
 
         uint64_t lg_hostid;
-        if (_get_hostid_from_bootid(&lg_hostid) != DRAGON_SUCCESS)
-            err_return(DRAGON_FAILURE, "Unable to generate host ID from boot ID");
+
+        if (k8s_pod_uid != NULL) { // if we are within a Kubernetes Pod
+            char *pod_uid = strdup(k8s_pod_uid);
+
+            if (pod_uid == NULL) {
+                err_return(DRAGON_FAILURE, "Unable to copy the POD_UID environment variable.");
+            }
+            if (_get_hostid_from_k8s_podid(pod_uid, &lg_hostid) != DRAGON_SUCCESS)
+                err_return(DRAGON_FAILURE, "Unable to generate host ID from Kubernetes pod UUID.");
+
+            free(pod_uid);
+        }
+        else {
+            if (_get_hostid_from_bootid(&lg_hostid) != DRAGON_SUCCESS)
+                err_return(DRAGON_FAILURE, "Unable to generate host ID from boot ID");
+        }
         pid_t pid = getpid();
         struct timespec now;
         clock_gettime(CLOCK_MONOTONIC, &now);
@@ -211,6 +261,16 @@ dragon_host_id()
     }
 
     return dg_hostid;
+}
+
+dragonULInt
+dragon_host_id_from_k8s_uuid(char *pod_uid)
+{
+    uint64_t lg_hostid;
+    if (_get_hostid_from_k8s_podid(pod_uid, &lg_hostid) != DRAGON_SUCCESS)
+        err_return(DRAGON_FAILURE, "Unable to generate host ID from Kubernetes pod UUID.");
+
+    return (dragonULInt)lg_hostid;
 }
 
 dragonError_t
@@ -343,6 +403,19 @@ dragon_zero_uuid(dragonUUID uuid)
     *zptr = 0UL;
 }
 
+char* dragon_uuid_to_hex_str(dragonUUID uuid)
+{
+    dragonULInt * uuid_word = (dragonULInt *)uuid;
+    char val[40];
+    char* ret_str;
+    snprintf(val, 39, "%lx%lx", uuid_word[0], uuid_word[1]);
+    ret_str = malloc(strlen(val)+1);
+    if (ret_str == NULL)
+        return NULL;
+    strcpy(ret_str, val);
+    return ret_str;
+}
+
 void
 dragon_generate_uuid(dragonUUID uuid)
 {
@@ -360,27 +433,27 @@ dragon_generate_uuid(dragonUUID uuid)
     *ctr_ptr = ctr;
 }
 
+void
+dragon_copy_uuid(dragonUUID dest, const dragonUUID src)
+{
+    dragonULInt * dest_word = (dragonULInt *)dest;
+    dragonULInt * src_word = (dragonULInt *)src;
+
+    dest_word[0] = src_word[0];
+    dest_word[1] = src_word[1];
+}
+
 int
 dragon_compare_uuid(const dragonUUID u1, const dragonUUID u2)
 {
-    dragonULInt * u1_head = (dragonULInt *)&u1[0];
-    dragonULInt * u1_tail = (dragonULInt *)&u1[8];
+    dragonULInt * u1_word = (dragonULInt *)u1;
+    dragonULInt * u2_word = (dragonULInt *)u2;
 
-    dragonULInt * u2_head = (dragonULInt *)&u2[0];
-    dragonULInt * u2_tail = (dragonULInt *)&u2[8];
-
-    if (u1_head < u2_head)
-        return -1;
-    if (u1_head > u2_head)
+    if (u1_word[0] != u2_word[0])
         return 1;
-    if (u1_head == u2_head) {
-        if (u1_tail < u2_tail)
-            return -1;
-        if (u1_tail > u2_tail)
-            return 1;
-        if (u1_tail == u2_tail)
-            return 0;
-    }
+
+    if (u1_word[1] != u2_word[1])
+        return 1;
 
     return 0;
 }
@@ -492,26 +565,27 @@ dragon_timespec_le(const timespec_t* first, const timespec_t* second)
  **********************************************************************************/
 
 dragonError_t
-dragon_timespec_deadline(const timespec_t* timer, timespec_t* deadline)
+dragon_timespec_deadline(const timespec_t* timeout, timespec_t* deadline)
 {
-    if (timer == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "The timer argument cannot be NULL.");
+    timespec_t current;
+    clock_gettime(CLOCK_MONOTONIC, &current);
 
     if (deadline == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The deadline argument cannot be NULL.");
 
-    if (timer->tv_nsec == 0 && timer->tv_sec == 0) {
+    if (timeout == NULL) {
+        dragon_timespec_add(deadline, &current, &NO_TIMEOUT);
+        no_err_return(DRAGON_SUCCESS);
+    }
+
+    if (timeout->tv_nsec == 0 && timeout->tv_sec == 0) {
         /* A zero timeout corresponds to a try-once attempt */
         deadline->tv_nsec = 0;
         deadline->tv_sec = 0;
         no_err_return(DRAGON_SUCCESS);
     }
 
-    timespec_t current;
-
-    clock_gettime(CLOCK_MONOTONIC, &current);
-
-    dragon_timespec_add(deadline, &current, timer);
+    dragon_timespec_add(deadline, &current, timeout);
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -533,11 +607,13 @@ dragon_timespec_remaining(const timespec_t * deadline, timespec_t * remaining_ti
 {
     timespec_t now_time;
 
-    if (deadline == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "Cannot pass NULL as deadline argument.");
-
     if (remaining_timeout == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Cannot pass NULL as remaining_timeout argument.");
+
+    if (deadline == NULL) {
+        *remaining_timeout = NO_TIMEOUT;
+        no_err_return(DRAGON_SUCCESS);
+    }
 
     if (deadline->tv_nsec == 0 && deadline->tv_sec == 0) {
         /* A zero timeout corresponds to a try-once attempt */
@@ -694,40 +770,57 @@ dragon_hash_ulint(dragonULInt x)
     return z ^ (z >> 31);
 }
 
+/* murmur3_32 comes from Wikipedia at
+   https://en.wikipedia.org/wiki/MurmurHash
+   and has been released into the public domain. */
+
+static inline uint32_t murmur_32_scramble(uint32_t k) {
+    k *= 0xcc9e2d51;
+    k = (k << 15) | (k >> 17);
+    k *= 0x1b873593;
+    return k;
+}
+
+uint32_t murmur3_32(const uint8_t* key, size_t len, uint32_t seed)
+{
+    uint32_t h = seed;
+    uint32_t k;
+    /* Read in groups of 4. */
+    for (size_t i = len >> 2; i; i--) {
+        // Here is a source of differing results across endiannesses.
+        // A swap here has no effects on hash properties though.
+        memcpy(&k, key, sizeof(uint32_t));
+        key += sizeof(uint32_t);
+        h ^= murmur_32_scramble(k);
+        h = (h << 13) | (h >> 19);
+        h = h * 5 + 0xe6546b64;
+    }
+    /* Read the rest. */
+    k = 0;
+    for (size_t i = len & 3; i; i--) {
+        k <<= 8;
+        k |= key[i - 1];
+    }
+    // A swap is *not* necessary here because the preceding loop already
+    // places the low bytes in the low places according to whatever endianness
+    // we use. Swaps only apply when the memory is copied in a chunk.
+    h ^= murmur_32_scramble(k);
+    /* Finalize. */
+    h ^= len;
+    h ^= h >> 16;
+    h *= 0x85ebca6b;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35;
+    h ^= h >> 16;
+    return h;
+}
+
 dragonULInt
 dragon_hash(void* ptr, size_t num_bytes)
 {
-    if (num_bytes == 0)
-        return 0;
-
-    if (ptr == NULL)
-        return 0;
-
-    size_t alignment = sizeof(dragonULInt) - ((dragonULInt)ptr) % sizeof(dragonULInt);
-    if (alignment == sizeof(dragonULInt))
-        alignment = 0;
-
-    size_t num_words = (num_bytes-alignment)/sizeof(dragonULInt);
-
-    size_t rem = (num_bytes-alignment)%sizeof(dragonULInt);
-
-    uint8_t* first_bytes = (uint8_t*) ptr;
-    dragonULInt* arr = (dragonULInt*) (first_bytes + alignment);
-    uint8_t* last_bytes = (uint8_t*)&arr[num_words];
-
-    dragonULInt hashVal = 0;
-
-    long i;
-    for (i=0;i<alignment;i++)
-        hashVal = hashVal + first_bytes[i] * 0x9e3779b97f4a7c15;
-
-    for (i=0;i<num_words;i++)
-        hashVal = hashVal + arr[i] * 0xbf58476d1ce4e5b9;
-
-    for (i=0;i<rem;i++)
-        hashVal = hashVal + last_bytes[i] * 0x94d049bb133111eb;
-
-    return hashVal;
+    //1164799 is a large prime number.
+    dragonULInt hash_val = murmur3_32((const uint8_t*)ptr, num_bytes, 1164799);
+    return hash_val;
 }
 
 bool
@@ -787,3 +880,68 @@ dragon_get_thread_local_mode()
     return dg_thread_local_mode;
 }
 
+bool
+dragon_check_dir_rw_permissions(char *dir)
+{
+    struct stat st;
+
+    if (stat(dir, &st) == 0) {
+        return (bool) (st.st_mode & S_IWOTH) && (bool) (st.st_mode & S_IROTH);
+    }
+    else {
+        return false;
+    }
+}
+
+dragonError_t
+dragon_get_hugepage_mount(char **mount_dir_out)
+{
+    const size_t buf_size = 1024;
+    char buf[buf_size];
+    char *maybe_buf = NULL;
+    FILE *mounts_file = NULL;
+
+    static char mount_dir[HUGEPAGE_MOUNT_DIR_MAX_LEN];
+    static bool found_mount_dir = false;
+
+    if (found_mount_dir) {
+        *mount_dir_out = mount_dir;
+    }
+
+    static bool check_envar = true;
+    static bool enable_huge_pages = true;
+
+    if (check_envar) {
+        char *enable_hugepages_envar = getenv("_DRAGON_ENABLE_HUGEPAGES");
+        if (enable_hugepages_envar != NULL) {
+            enable_huge_pages = (bool) atoi(enable_hugepages_envar);
+        }
+        check_envar = false;
+    }
+
+    if (!enable_huge_pages) {
+        no_err_return(DRAGON_NOT_FOUND);
+    }
+
+    mounts_file = fopen("/proc/mounts", "r");
+    if (!mounts_file) {
+        no_err_return(DRAGON_NOT_FOUND);
+    }
+
+    while ((maybe_buf = fgets(buf, buf_size, mounts_file))) {
+        if (strstr(buf, "hugetlbfs") != NULL && strstr(buf, "pagesize=2M") != NULL) {
+            // get device (not needed)
+            char *tmp_tok = strtok(maybe_buf, " ");
+            // get mount point
+            tmp_tok = strtok(NULL, " ");
+            if (dragon_check_dir_rw_permissions(tmp_tok)) {
+                snprintf(mount_dir, HUGEPAGE_MOUNT_DIR_MAX_LEN, "%s", tmp_tok);
+                *mount_dir_out = mount_dir;
+                found_mount_dir = true;
+                no_err_return(DRAGON_SUCCESS);
+            }
+        }
+    }
+
+    no_err_return(DRAGON_NOT_FOUND);
+}

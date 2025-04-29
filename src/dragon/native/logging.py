@@ -1,4 +1,4 @@
-""" The Dragon native classes to log messages from the runtime.
+"""The Dragon native classes to log messages from the runtime.
 
 This is a stub.
 

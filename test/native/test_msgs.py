@@ -16,11 +16,12 @@ import dragon.infrastructure.facts as facts
 import dragon.infrastructure.parameters as parameters
 import dragon.utils as du
 
+
 class FLISendRecvTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        mp.set_start_method('dragon')
+        mp.set_start_method("dragon")
 
     @classmethod
     def tearDownClass(cls):
@@ -48,25 +49,23 @@ class FLISendRecvTest(unittest.TestCase):
         for i in range(5):
             channel.destroy(self.stream_chs[i].cuid)
 
-
     def test_receive_from_python(self):
         fli_ser = self.fli.serialize()
         b64fli_ser = du.b64encode(fli_ser)
-        path = os.path.abspath('flimsgfrom')
-        proc = Popen(executable=sys.executable, args=['flimsgfrom.py', b64fli_ser], stdout=Popen.PIPE)
+        path = os.path.abspath("flimsgfrom")
+        proc = Popen(executable=sys.executable, args=["flimsgfrom.py", b64fli_ser], stdout=Popen.PIPE)
         recvh = self.fli.recvh()
         ser_msg, arg = recvh.recv_bytes()
         msg = dmsg.parse(ser_msg)
         self.assertEqual(msg.tc, dmsg.MessageTypes.DD_REGISTER_CLIENT)
         self.assertEqual(msg.respFLI, "Hello World")
         status = proc.stdout.recv().strip()
-        self.assertEqual(status, 'OK')
-
+        self.assertEqual(status, "OK")
 
     def test_receive_from_cpp(self):
         fli_ser = self.fli.serialize()
         b64fli_ser = du.b64encode(fli_ser)
-        path = os.path.abspath('flimsgfrom')
+        path = os.path.abspath("flimsgfrom")
         proc = Popen(executable=path, args=[b64fli_ser], stdout=Popen.PIPE)
         recvh = self.fli.recvh()
         ser_msg, arg = recvh.recv_bytes()
@@ -75,34 +74,34 @@ class FLISendRecvTest(unittest.TestCase):
         self.assertEqual(msg.respFLI, "Hello World")
         self.assertEqual(msg.bufferedRespFLI, "Dragon is the best")
         status = proc.stdout.recv().strip()
-        self.assertEqual(status, 'OK')
-
+        self.assertEqual(status, "OK")
 
     def test_send_to_cpp(self):
         fli_ser = self.fli.serialize()
         b64fli_ser = du.b64encode(fli_ser)
-        path = os.path.abspath('flimsgto')
+        path = os.path.abspath("flimsgto")
         proc = Popen(executable=path, args=[b64fli_ser], stdout=Popen.PIPE)
         sendh = self.fli.sendh()
         msg = dmsg.DDRegisterClient(5, "Hello World!", "Dragon is the best")
         sendh.send_bytes(msg.serialize())
         sendh.close()
         status = proc.stdout.recv().strip()
-        self.assertEqual(status, 'OK')
+        self.assertEqual(status, "OK")
 
     def test_set_kv(self):
         du.set_local_kv("Hello", "World")
         value = du.get_local_kv("Hello")
         self.assertEqual(value, "World")
         du.set_local_kv("Hello", "")
-        self.assertRaises(KeyError, du.get_local_kv, 'Hello')
-        self.assertRaises(KeyError, du.get_local_kv, 'NoKey')
+        self.assertRaises(KeyError, du.get_local_kv, "Hello")
+        self.assertRaises(KeyError, du.get_local_kv, "NoKey")
         du.set_local_kv("Dragon", "")
-        self.assertRaises(KeyError, du.get_local_kv, 'Dragon')
+        self.assertRaises(KeyError, du.get_local_kv, "Dragon")
 
     def test_get_channel(self):
         ch = Channel.make_process_local()
         ch.destroy()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     unittest.main()

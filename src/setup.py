@@ -20,13 +20,14 @@ ROOTDIR = str(Path(__file__).parent)
 def make_relative_rpath_args(path):
     """Construct platform-appropriate RPATH to support binary
     wheels that ship with libdragon.so, etc."""
-    return ["-Wl,-rpath,$ORIGIN/" + path]
+    return [f"-Wl,-rpath,{ROOTDIR}/{path}"]
 
 
-DragonExtension = partial(Extension,
-    include_dirs=[f'{ROOTDIR}/lib', f'{ROOTDIR}/include'],
-    library_dirs=[f'{ROOTDIR}/lib'],
-    libraries=['dragon', 'rt'],
+DragonExtension = partial(
+    Extension,
+    include_dirs=[f"{ROOTDIR}/lib", f"{ROOTDIR}/include"],
+    library_dirs=[f"{ROOTDIR}/lib"],
+    libraries=["dragon", "rt"],
     extra_link_args=make_relative_rpath_args("lib"),
 )
 
@@ -38,7 +39,6 @@ extensions = [
     DragonExtension("dragon.pheap", ["dragon/pydragon_heap.pyx"]),
     DragonExtension("dragon.locks", ["dragon/pydragon_lock.pyx"]),
     DragonExtension("dragon.channels", ["dragon/pydragon_channels.pyx"]),
-    DragonExtension("dragon.heapmanager", ["dragon/pydragon_heapmanager.pyx"]),
     DragonExtension("dragon.managed_memory", ["dragon/pydragon_managed_memory.pyx"]),
     DragonExtension("dragon.dlogging.logger", ["dragon/dlogging/pydragon_logging.pyx"]),
     DragonExtension("dragon.pmod", ["dragon/pydragon_pmod.pyx"]),
@@ -46,13 +46,11 @@ extensions = [
     DragonExtension("dragon.fli", ["dragon/pydragon_fli.pyx"]),
 ]
 
+
 class build(_build):
+    user_options = _build.user_options + [("cythonize", None, "cythonize packages and modules")]
 
-    user_options = _build.user_options + [
-        ('cythonize', None, 'cythonize packages and modules'),
-    ]
-
-    boolean_options = _build.boolean_options + ['cythonize']
+    boolean_options = _build.boolean_options + ["cythonize"]
 
     def initialize_options(self):
         super().initialize_options()
@@ -60,67 +58,63 @@ class build(_build):
 
     def run(self):
         rootdir = Path(ROOTDIR)
-        lib_tempdir = rootdir / 'dragon' / 'lib'
+        lib_tempdir = rootdir / "dragon" / "lib"
         try:
             # In order for setuptools to include files in a wheel, those
             # files must be in f'{ROOTDIR}/dragon' or a subdirectory; we
             # create a temporary symlink to point at f'{ROOTDIR}/lib' to
             # include 'libdragon.so' etc. in the binary wheel.
-            lib_tempdir.symlink_to(rootdir / 'lib')
+            lib_tempdir.symlink_to(rootdir / "lib")
         except:
             if not lib_tempdir.is_symlink():
                 raise
 
-        message_defs_file = rootdir / 'dragon' / 'infrastructure' / 'message_defs.capnp'
+        message_defs_file = rootdir / "dragon" / "infrastructure" / "message_defs.capnp"
         try:
-            message_defs_file.symlink_to(rootdir / 'lib' / 'message_defs.capnp')
+            message_defs_file.symlink_to(rootdir / "lib" / "message_defs.capnp")
         except:
             if not message_defs_file.is_symlink():
                 raise
 
-        _cythonize = partial(cythonize,
-            nthreads=int(os.environ.get('DRAGON_BUILD_NTHREADS', os.cpu_count())),
+        _cythonize = partial(
+            cythonize,
+            nthreads=int(os.environ.get("DRAGON_BUILD_NTHREADS", os.cpu_count())),
             show_all_warnings=True,
-            compiler_directives={
-                "language_level": "3",
-                "boundscheck": False,
-            },
+            compiler_directives={"language_level": "3", "boundscheck": False},
             build_dir=self.build_temp,
         )
 
         # Cythonize core extensions
-        self.distribution.ext_modules = _cythonize(
-            self.distribution.ext_modules,
-            force=bool(self.cythonize),
-        )
+        self.distribution.ext_modules = _cythonize(self.distribution.ext_modules, force=bool(self.cythonize))
 
         if self.cythonize:
             # Cythonize everything except dragon.cli and dragon.__main__
-            self.distribution.packages = ['dragon.cli']
-            self.distribution.py_modules = ['dragon.__main__']
-            self.distribution.ext_modules.extend(_cythonize(
-                'dragon/**/*.py',
-                exclude=['dragon/**/setup.py', 'dragon/cli/*.py', 'dragon/__main__.py'],
-                compiler_directives={
-                    "language_level": "3",
-                    # Disable annotation typing when compiling arbitrary
-                    # Python 3.x code.
-                    "annotation_typing": False,
-                    "boundscheck": False,
-                },
-                force=True,
-            ))
-            #build_py_options = self.distribution.command_options.setdefault('build_py', {})
-            #build_py_options['compile'] = ('setup script', 1)
-            build_ext_options = self.distribution.command_options.setdefault('build_ext', {})
-            build_ext_options['inplace'] = ('setup script', 0)
+            self.distribution.packages = ["dragon.cli"]
+            self.distribution.py_modules = ["dragon.__main__"]
+            self.distribution.ext_modules.extend(
+                _cythonize(
+                    "dragon/**/*.py",
+                    exclude=["dragon/**/setup.py", "dragon/cli/*.py", "dragon/__main__.py"],
+                    compiler_directives={
+                        "language_level": "3",
+                        # Disable annotation typing when compiling arbitrary
+                        # Python 3.x code.
+                        "annotation_typing": False,
+                        "boundscheck": False,
+                    },
+                    force=True,
+                )
+            )
+            # build_py_options = self.distribution.command_options.setdefault('build_py', {})
+            # build_py_options['compile'] = ('setup script', 1)
+            build_ext_options = self.distribution.command_options.setdefault("build_ext", {})
+            build_ext_options["inplace"] = ("setup script", 0)
 
         super().run()
         lib_tempdir.unlink()
 
 
 class build_py(_build_py):
-
     # The find_modules() implementation in setuptools (really distutils)
     # automatically adds __init__.py for any non-root package module listed in
     # py_modules. As a result, our implementation is a simplified variant of
@@ -142,8 +136,8 @@ class build_py(_build_py):
         modules = []
 
         for module in self.py_modules:
-            path = module.split('.')
-            package = '.'.join(path[0:-1])
+            path = module.split(".")
+            package = ".".join(path[0:-1])
             module_base = path[-1]
 
             try:
@@ -167,37 +161,38 @@ class build_py(_build_py):
 
 
 class clean(_clean):
-
     def run(self):
         super().run()
 
         # Clean up any in-place extensions
-        ext_suffix = get_config_var('EXT_SUFFIX')
-        for ext_file in Path('dragon').glob(f'**/*{ext_suffix}'):
+        ext_suffix = get_config_var("EXT_SUFFIX")
+        for ext_file in Path("dragon").glob(f"**/*{ext_suffix}"):
             log.info(f"removing '{ext_file}'")
             if not self.dry_run:
                 ext_file.unlink()
 
         # Clean __pycache__ directories
-        for directory in Path('dragon').glob('**/__pycache__'):
+        for directory in Path("dragon").glob("**/__pycache__"):
             remove_tree(str(directory), dry_run=self.dry_run)
 
 
 setup(
     cmdclass={"build": build, "build_py": build_py, "clean": clean},
-    options = {
-        "build_py": {"compile": 1},
-        "build_ext": {"inplace": 1},
-    },
-    name="dragon",
-    version=os.environ.get('DRAGON_VERSION', 'latest'),
-    description="Python multiprocessing over the Dragon distributed runtime",
+    options={"build_py": {"compile": 1}, "build_ext": {"inplace": 1}},
+    name="dragonhpc",
+    version=os.environ.get("DRAGON_VERSION", "latest"),
     packages=find_packages(),
-    package_data={
-        'dragon': ['lib/libdragon.so', 'lib/libpmod.so']
-    },
-    ext_modules = extensions,
+    package_data={"dragon": ["lib/libdragon.so", "lib/libpmod.so"]},
+    ext_modules=extensions,
     entry_points=entry_points,
-    python_requires=">=3.9",
-    install_requires=['cloudpickle', 'numpy', 'gunicorn', 'flask', 'pyyaml', 'requests', 'psutil']
+    python_requires=">=3.10",
+    install_requires=[
+        "cloudpickle>=3.0.0",
+        "gunicorn>=22.0.0",
+        "flask>=3.0.3",
+        "pyyaml>=6.0.2",
+        "requests>=2.32.2",
+        "psutil>=5.9.0",
+        "pycapnp>=2.0.0",
+    ],
 )

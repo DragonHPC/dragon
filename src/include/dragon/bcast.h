@@ -144,6 +144,9 @@ dragon_bcast_num_waiting(dragonBCastDescr_t* bd, int* num_waiters);
 dragonError_t
 dragon_bcast_reset(dragonBCastDescr_t* bd);
 
+char*
+dragon_bcast_state(dragonBCastDescr_t* bd);
+
 #ifdef __cplusplus
 }
 #endif

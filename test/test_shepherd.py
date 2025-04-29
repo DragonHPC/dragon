@@ -27,18 +27,18 @@ import support.util as tsu
 get_msg = tsu.get_and_parse
 
 
-def run_ls(shep_stdin_queue, shep_stdout_queue, name_addition=''):
-    dlog.setup_logging(basename='ls_' + name_addition, level=logging.DEBUG)
-    log = logging.getLogger('outer runner')
+def run_ls(shep_stdin_queue, shep_stdout_queue, name_addition=""):
+    dlog.setup_logging(basename="ls_" + name_addition, level=logging.DEBUG)
+    log = logging.getLogger("outer runner")
     parms.this_process.mode = dfacts.SINGLE_MODE
     os.environ.update(parms.this_process.env())
-    log.info('starting ls from runner')
+
+    log.info("starting ls from runner")
     try:
         dsls.single(ls_stdin=shep_stdin_queue, ls_stdout=shep_stdout_queue)
     except RuntimeError as rte:
-        log.exception('runner')
-        shep_stdout_queue.send(dmsg.AbnormalTermination(tag=dsls.get_new_tag(),
-                                                        err_info=f'{rte!s}').serialize())
+        log.exception("runner")
+        shep_stdout_queue.send(dmsg.AbnormalTermination(tag=dsls.get_new_tag(), err_info=f"{rte!s}").serialize())
 
 
 # TODO: pending pool attach lifecycle solution
@@ -46,7 +46,7 @@ ATTACH_POOLS = True
 
 
 class SingleLS(unittest.TestCase):
-    DEFAULT_TEST_POOL_SIZE = 2 ** 20
+    DEFAULT_TEST_POOL_SIZE = 2**20
 
     def setUp(self) -> None:
         self.shep_stdin_rh, self.shep_stdin_wh = mp.Pipe(duplex=False)
@@ -64,11 +64,14 @@ class SingleLS(unittest.TestCase):
         return tmp
 
     def do_bringup(self):
-        test_name = self.__class__.__name__ + '_' + inspect.stack()[1][0].f_code.co_name
-        self.proc = mp.Process(target=run_ls,
-                               args=(self.shep_stdin_rh, self.shep_stdout_wh),
-                               kwargs={'name_addition': test_name}, daemon=True,
-                               name='local_svc')
+        test_name = self.__class__.__name__ + "_" + inspect.stack()[1][0].f_code.co_name
+        self.proc = mp.Process(
+            target=run_ls,
+            args=(self.shep_stdin_rh, self.shep_stdout_wh),
+            kwargs={"name_addition": test_name},
+            daemon=True,
+            name="local_svc",
+        )
         self.proc.start()
 
         self.shep_stdin_wh.send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=0, net_conf_key="0").serialize())
@@ -189,18 +192,16 @@ class SingleLS(unittest.TestCase):
             self.def_pool.destroy()
             self.inf_pool.destroy()
 
-
     def _make_pool(self, tag, p_uid, r_c_uid, size, m_uid, name):
         self.shep_main_wh.send(
-            dmsg.SHPoolCreate(tag=tag, p_uid=p_uid, r_c_uid=r_c_uid, size=size,
-                              m_uid=m_uid, name=name).serialize())
+            dmsg.SHPoolCreate(tag=tag, p_uid=p_uid, r_c_uid=r_c_uid, size=size, m_uid=m_uid, name=name).serialize()
+        )
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHPoolCreateResponse)
         self.assertEqual(dmsg.SHPoolCreateResponse.Errors.SUCCESS, res.err)
 
     def _destroy_pool(self, tag, p_uid, r_c_uid, m_uid):
         # Destroy the pool
-        self.shep_main_wh.send(dmsg.SHPoolDestroy(tag=tag, p_uid=p_uid,
-                                                  r_c_uid=r_c_uid, m_uid=m_uid).serialize())
+        self.shep_main_wh.send(dmsg.SHPoolDestroy(tag=tag, p_uid=p_uid, r_c_uid=r_c_uid, m_uid=m_uid).serialize())
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHPoolDestroyResponse)
         self.assertEqual(dmsg.SHPoolDestroyResponse.Errors.SUCCESS, res.err)
 
@@ -214,11 +215,16 @@ class SingleLS(unittest.TestCase):
         target_puid = 17777
 
         the_tag = self.next_tag()
-        self.shep_main_wh.send(dmsg.SHProcessCreate(tag=the_tag, exe=sys.executable,
-                                                    args=['shepherd/proc2.py'],
-                                                    p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    t_p_uid=target_puid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHProcessCreate(
+                tag=the_tag,
+                exe=sys.executable,
+                args=["shepherd/proc2.py"],
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=target_puid,
+            ).serialize()
+        )
 
         process_create_resp = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
 
@@ -241,22 +247,34 @@ class SingleLS(unittest.TestCase):
         target_puid = 17777
         the_tag = self.next_tag()
         self.shep_main_wh.send(
-            dmsg.SHProcessCreate(tag=the_tag, exe=sys.executable,
-                                 args=['shepherd/proc4.py'], p_uid=dfacts.GS_PUID,
-                                 r_c_uid=dfacts.GS_INPUT_CUID, t_p_uid=target_puid).serialize())
+            dmsg.SHProcessCreate(
+                tag=the_tag,
+                exe=sys.executable,
+                args=["shepherd/proc4.py"],
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=target_puid,
+            ).serialize()
+        )
 
         process_create_resp = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
 
         self.assertEqual(process_create_resp.ref, the_tag)
 
         self.shep_main_wh.send(
-            dmsg.SHFwdInput(tag=self.next_tag(), p_uid=dfacts.GS_PUID, t_p_uid=target_puid,
-                            r_c_uid=dfacts.GS_INPUT_CUID,
-                            input="Hi There\n", confirm=True).serialize())
+            dmsg.SHFwdInput(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                t_p_uid=target_puid,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                input="Hi There\n",
+                confirm=True,
+            ).serialize()
+        )
 
         tsu.get_and_check_type(self.gs_main_rh, dmsg.SHFwdInputErr)
 
-        output = ''
+        output = ""
         try:
             msg = tsu.get_and_check_type(self.be_main_rh, dmsg.SHFwdOutput)
             output += msg.data
@@ -272,16 +290,24 @@ class SingleLS(unittest.TestCase):
 
         test_muid = 123456
         self.shep_main_wh.send(
-            dmsg.SHPoolCreate(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                              r_c_uid=dfacts.GS_INPUT_CUID, size=self.DEFAULT_TEST_POOL_SIZE,
-                              m_uid=test_muid, name='single_shep_test').serialize())
+            dmsg.SHPoolCreate(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                size=self.DEFAULT_TEST_POOL_SIZE,
+                m_uid=test_muid,
+                name="single_shep_test",
+            ).serialize()
+        )
 
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHPoolCreateResponse)
         self.assertEqual(dmsg.SHPoolCreateResponse.Errors.SUCCESS, res.err)
 
-        self.shep_main_wh.send(dmsg.SHPoolDestroy(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                                                  r_c_uid=dfacts.GS_INPUT_CUID,
-                                                  m_uid=test_muid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHPoolDestroy(
+                tag=self.next_tag(), p_uid=dfacts.GS_PUID, r_c_uid=dfacts.GS_INPUT_CUID, m_uid=test_muid
+            ).serialize()
+        )
 
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHPoolDestroyResponse)
         self.assertEqual(dmsg.SHPoolDestroyResponse.Errors.SUCCESS, res.err)
@@ -291,9 +317,11 @@ class SingleLS(unittest.TestCase):
     def test_sh_pool_invalid_destroy(self):
         self.do_bringup()
         test_muid = 123456
-        self.shep_main_wh.send(dmsg.SHPoolDestroy(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                                                  r_c_uid=dfacts.GS_INPUT_CUID,
-                                                  m_uid=test_muid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHPoolDestroy(
+                tag=self.next_tag(), p_uid=dfacts.GS_PUID, r_c_uid=dfacts.GS_INPUT_CUID, m_uid=test_muid
+            ).serialize()
+        )
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHPoolDestroyResponse)
         self.assertEqual(dmsg.SHPoolDestroyResponse.Errors.FAIL, res.err)
 
@@ -304,25 +332,37 @@ class SingleLS(unittest.TestCase):
         test_muid = 123456
 
         self.shep_main_wh.send(
-            dmsg.SHPoolCreate(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                              r_c_uid=dfacts.GS_INPUT_CUID,
-                              size=self.DEFAULT_TEST_POOL_SIZE, m_uid=test_muid,
-                              name='single_shep_test').serialize())
+            dmsg.SHPoolCreate(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                size=self.DEFAULT_TEST_POOL_SIZE,
+                m_uid=test_muid,
+                name="single_shep_test",
+            ).serialize()
+        )
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHPoolCreateResponse)
         self.assertEqual(dmsg.SHPoolCreateResponse.Errors.SUCCESS, res.err)
 
         self.shep_main_wh.send(
-            dmsg.SHPoolCreate(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                              r_c_uid=dfacts.GS_INPUT_CUID,
-                              size=self.DEFAULT_TEST_POOL_SIZE, m_uid=test_muid,
-                              name='single_shep_test').serialize())
+            dmsg.SHPoolCreate(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                size=self.DEFAULT_TEST_POOL_SIZE,
+                m_uid=test_muid,
+                name="single_shep_test",
+            ).serialize()
+        )
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHPoolCreateResponse)
         self.assertEqual(dmsg.SHPoolCreateResponse.Errors.FAIL, res.err)
 
         # Destroy the pool
-        self.shep_main_wh.send(dmsg.SHPoolDestroy(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                                                  r_c_uid=dfacts.GS_INPUT_CUID,
-                                                  m_uid=test_muid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHPoolDestroy(
+                tag=self.next_tag(), p_uid=dfacts.GS_PUID, r_c_uid=dfacts.GS_INPUT_CUID, m_uid=test_muid
+            ).serialize()
+        )
 
         # Check we succeeded so we know if other tests fail after this
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHPoolDestroyResponse)
@@ -335,18 +375,32 @@ class SingleLS(unittest.TestCase):
         test_muid = 1234
         test_cuid = 4567
 
-        self._make_pool(self.next_tag(), dfacts.GS_PUID, dfacts.GS_INPUT_CUID,
-                        self.DEFAULT_TEST_POOL_SIZE, test_muid, 'single_shep_test')
+        self._make_pool(
+            self.next_tag(),
+            dfacts.GS_PUID,
+            dfacts.GS_INPUT_CUID,
+            self.DEFAULT_TEST_POOL_SIZE,
+            test_muid,
+            "single_shep_test",
+        )
 
-        self.shep_main_wh.send(dmsg.SHChannelCreate(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID, m_uid=test_muid,
-                                                    c_uid=test_cuid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHChannelCreate(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                m_uid=test_muid,
+                c_uid=test_cuid,
+            ).serialize()
+        )
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHChannelCreateResponse)
         self.assertEqual(dmsg.SHChannelCreateResponse.Errors.SUCCESS, res.err)
 
-        self.shep_main_wh.send(dmsg.SHChannelDestroy(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                                                     r_c_uid=dfacts.GS_INPUT_CUID,
-                                                     c_uid=test_cuid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHChannelDestroy(
+                tag=self.next_tag(), p_uid=dfacts.GS_PUID, r_c_uid=dfacts.GS_INPUT_CUID, c_uid=test_cuid
+            ).serialize()
+        )
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHChannelDestroyResponse)
         self.assertEqual(dmsg.SHChannelDestroyResponse.Errors.SUCCESS, res.err)
 
@@ -359,27 +413,45 @@ class SingleLS(unittest.TestCase):
         test_muid = 1234
         test_cuid = 4567
 
-        self._make_pool(self.next_tag(), dfacts.GS_PUID,
-                        dfacts.GS_INPUT_CUID, self.DEFAULT_TEST_POOL_SIZE,
-                        test_muid, 'single_shep_test')
+        self._make_pool(
+            self.next_tag(),
+            dfacts.GS_PUID,
+            dfacts.GS_INPUT_CUID,
+            self.DEFAULT_TEST_POOL_SIZE,
+            test_muid,
+            "single_shep_test",
+        )
 
         # Make a channel
-        self.shep_main_wh.send(dmsg.SHChannelCreate(tag=self.next_tag(),
-                                                    p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    m_uid=test_muid, c_uid=test_cuid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHChannelCreate(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                m_uid=test_muid,
+                c_uid=test_cuid,
+            ).serialize()
+        )
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHChannelCreateResponse)
         self.assertEqual(dmsg.SHChannelCreateResponse.Errors.SUCCESS, res.err)
 
-        self.shep_main_wh.send(dmsg.SHChannelCreate(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    m_uid=test_muid, c_uid=test_cuid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHChannelCreate(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                m_uid=test_muid,
+                c_uid=test_cuid,
+            ).serialize()
+        )
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHChannelCreateResponse)
         self.assertEqual(dmsg.SHChannelCreateResponse.Errors.FAIL, res.err)
 
-        self.shep_main_wh.send(dmsg.SHChannelDestroy(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                                                     r_c_uid=dfacts.GS_INPUT_CUID,
-                                                     c_uid=test_cuid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHChannelDestroy(
+                tag=self.next_tag(), p_uid=dfacts.GS_PUID, r_c_uid=dfacts.GS_INPUT_CUID, c_uid=test_cuid
+            ).serialize()
+        )
         res = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHChannelDestroyResponse)
         self.assertEqual(dmsg.SHChannelDestroyResponse.Errors.SUCCESS, res.err)
 
@@ -392,9 +464,15 @@ class SingleLS(unittest.TestCase):
         target_puid = 177
 
         self.shep_main_wh.send(
-            dmsg.SHFwdInput(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                            confirm=True, t_p_uid=target_puid,
-                            r_c_uid=dfacts.GS_INPUT_CUID, input='Hi There\n').serialize())
+            dmsg.SHFwdInput(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                confirm=True,
+                t_p_uid=target_puid,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                input="Hi There\n",
+            ).serialize()
+        )
 
         tsu.get_and_check_type(self.gs_main_rh, dmsg.SHFwdInputErr)
 
@@ -405,10 +483,15 @@ class SingleLS(unittest.TestCase):
         the_tag = self.next_tag()
         target_puid = 177
         self.shep_main_wh.send(
-            dmsg.SHProcessCreate(tag=the_tag, exe=sys.executable,
-                                 args=['missing_prog.py'], p_uid=dfacts.GS_PUID,
-                                 r_c_uid=dfacts.GS_INPUT_CUID,
-                                 t_p_uid=target_puid).serialize())
+            dmsg.SHProcessCreate(
+                tag=the_tag,
+                exe=sys.executable,
+                args=["missing_prog.py"],
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=target_puid,
+            ).serialize()
+        )
 
         process_create_resp = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
 
@@ -429,19 +512,23 @@ class SingleLS(unittest.TestCase):
 
     def test_dump_state_to_file(self):
         self.do_bringup()
-        self.shep_main_wh.send(dmsg.SHDumpState(tag=self.next_tag(),
-                                                filename='shep_dump.log').serialize())
+        self.shep_main_wh.send(dmsg.SHDumpState(tag=self.next_tag(), filename="shep_dump.log").serialize())
         self.do_teardown()
 
     def test_process_kill(self):
         self.do_bringup()
         target_puid = 177
         the_tag = self.next_tag()
-        self.shep_main_wh.send(dmsg.SHProcessCreate(tag=the_tag, exe=sys.executable,
-                                                    args=['shepherd/proc2.py'],
-                                                    p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    t_p_uid=target_puid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHProcessCreate(
+                tag=the_tag,
+                exe=sys.executable,
+                args=["shepherd/proc2.py"],
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=target_puid,
+            ).serialize()
+        )
 
         process_create_resp = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
 
@@ -450,9 +537,14 @@ class SingleLS(unittest.TestCase):
         process_output = tsu.get_and_check_type(self.be_main_rh, dmsg.SHFwdOutput, timeout=5)
 
         self.shep_main_wh.send(
-            dmsg.SHProcessKill(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                               t_p_uid=target_puid, r_c_uid=dfacts.GS_INPUT_CUID,
-                               sig=signal.SIGKILL).serialize())
+            dmsg.SHProcessKill(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                t_p_uid=target_puid,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                sig=signal.SIGKILL,
+            ).serialize()
+        )
 
         if process_output.data == "Hello World\n":
             process_output = tsu.get_and_check_type(self.be_main_rh, dmsg.SHFwdOutput, timeout=5)
@@ -468,20 +560,30 @@ class SingleLS(unittest.TestCase):
         self.do_bringup()
         target_puid = 177
         the_tag = self.next_tag()
-        self.shep_main_wh.send(dmsg.SHProcessCreate(tag=the_tag, exe=sys.executable,
-                                                    args=['shepherd/proc3.py'],
-                                                    p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    t_p_uid=target_puid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHProcessCreate(
+                tag=the_tag,
+                exe=sys.executable,
+                args=["shepherd/proc3.py"],
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=target_puid,
+            ).serialize()
+        )
 
         process_create_resp = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
 
         self.assertEqual(process_create_resp.ref, the_tag)
 
         self.shep_main_wh.send(
-            dmsg.SHProcessKill(tag=self.next_tag(), p_uid=dfacts.GS_PUID,
-                               t_p_uid=target_puid, r_c_uid=dfacts.GS_INPUT_CUID,
-                               sig=signal.SIGKILL).serialize())
+            dmsg.SHProcessKill(
+                tag=self.next_tag(),
+                p_uid=dfacts.GS_PUID,
+                t_p_uid=target_puid,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                sig=signal.SIGKILL,
+            ).serialize()
+        )
 
         msg = tsu.get_and_parse(self.gs_main_rh)
         self.assertTrue(isinstance(msg, dmsg.SHProcessExit) or isinstance(msg, dmsg.SHProcessKillResponse))
@@ -501,11 +603,16 @@ class SingleLS(unittest.TestCase):
         self.do_bringup()
         the_tag = self.next_tag()
         target_puid = 177
-        self.shep_main_wh.send(dmsg.SHProcessCreate(tag=the_tag, exe=sys.executable,
-                                                    args=['shepherd/proc1.py'],
-                                                    p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    t_p_uid=target_puid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHProcessCreate(
+                tag=the_tag,
+                exe=sys.executable,
+                args=["shepherd/proc1.py"],
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=target_puid,
+            ).serialize()
+        )
 
         process_create_resp = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
 
@@ -521,11 +628,17 @@ class SingleLS(unittest.TestCase):
         self.do_bringup()
         target_puid = 177
         the_tag = self.next_tag()
-        self.shep_main_wh.send(dmsg.SHProcessCreate(tag=the_tag, exe=sys.executable,
-                                                    args=['shepherd/procenv1.py'],
-                                                    env={'new_env_var': 'env_value'},
-                                                    p_uid=dfacts.GS_PUID, r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    t_p_uid=target_puid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHProcessCreate(
+                tag=the_tag,
+                exe=sys.executable,
+                args=["shepherd/procenv1.py"],
+                env={"new_env_var": "env_value"},
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=target_puid,
+            ).serialize()
+        )
 
         process_create_resp = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
         self.assertEqual(process_create_resp.ref, the_tag)
@@ -544,15 +657,19 @@ class SingleLS(unittest.TestCase):
         self.do_bringup()
         target_puid = 177
         the_tag = self.next_tag()
-        self.shep_main_wh.send(dmsg.SHProcessCreate(tag=the_tag, exe=sys.executable,
-                                                    args=['shepherd/procenv2.py'],
-                                                    env={'SHELL': 'shell_value'},
-                                                    p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    t_p_uid=target_puid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHProcessCreate(
+                tag=the_tag,
+                exe=sys.executable,
+                args=["shepherd/procenv2.py"],
+                env={"SHELL": "shell_value"},
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=target_puid,
+            ).serialize()
+        )
 
-        process_create_resp = tsu.get_and_check_type(self.gs_main_rh,
-                                                     dmsg.SHProcessCreateResponse)
+        process_create_resp = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
         self.assertEqual(process_create_resp.ref, the_tag)
 
         self.shep_main_wh.send(dmsg.SHDumpState(tag=self.next_tag()).serialize())
@@ -571,31 +688,39 @@ class SingleLS(unittest.TestCase):
         tag1 = self.next_tag()
         test_puid = 177
 
-        self.shep_main_wh.send(dmsg.SHProcessCreate(tag=tag1, exe=sys.executable,
-                                                    args=['shepherd/proc1.py'],
-                                                    p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    t_p_uid=test_puid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHProcessCreate(
+                tag=tag1,
+                exe=sys.executable,
+                args=["shepherd/proc1.py"],
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=test_puid,
+            ).serialize()
+        )
 
         tag2 = self.next_tag()
-        self.shep_main_wh.send(dmsg.SHProcessCreate(tag=tag2, exe=sys.executable,
-                                                    args=['shepherd/proc1.py'],
-                                                    p_uid=dfacts.GS_PUID,
-                                                    r_c_uid=dfacts.GS_INPUT_CUID,
-                                                    t_p_uid=test_puid).serialize())
+        self.shep_main_wh.send(
+            dmsg.SHProcessCreate(
+                tag=tag2,
+                exe=sys.executable,
+                args=["shepherd/proc1.py"],
+                p_uid=dfacts.GS_PUID,
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                t_p_uid=test_puid,
+            ).serialize()
+        )
 
         process_create_resp1 = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
 
         if process_create_resp1.ref == tag1:
-            process_create_resp2 = tsu.get_and_check_type(self.gs_main_rh,
-                                                          dmsg.SHProcessCreateResponse)
+            process_create_resp2 = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
             self.assertEqual(process_create_resp2.ref, tag2)
             self.assertEqual(process_create_resp2.err, dmsg.SHProcessCreateResponse.Errors.FAIL)
         else:
             self.assertEqual(process_create_resp1.ref, tag2)
             self.assertEqual(process_create_resp1.err, dmsg.SHProcessCreateResponse.Errors.FAIL)
-            process_create_resp2 = tsu.get_and_check_type(self.gs_main_rh,
-                                                          dmsg.SHProcessCreateResponse)
+            process_create_resp2 = tsu.get_and_check_type(self.gs_main_rh, dmsg.SHProcessCreateResponse)
             self.assertEqual(process_create_resp2.ref, tag1)
 
         self.do_teardown()

@@ -1,6 +1,4 @@
-"""Internal objects required for infrastructure process communication.
-"""
-
+"""Internal objects required for infrastructure process communication."""
 
 import multiprocessing  # for BufferTooShort
 import enum
@@ -20,19 +18,20 @@ import dragon.infrastructure.facts as dfacts
 from dragon.managed_memory import MemoryPool
 from dragon.utils import B64
 
-LOG = logging.getLogger('infrastructure.connection')
+LOG = logging.getLogger("infrastructure.connection")
+
 
 class ConnectionOptions:
-    """Options for dragon.Connections
+    """Options class for customizing a :py:class:`~dragon.infrastructure.connection.Connection`
 
-        Separate object because this will expand over time.
+    Separate object because this will expand over time.
 
-        There are a number of different facts about how one might
-        want a Connection object to behave vs. its underlying
-        Channels and its interaction with Global Services, together
-        with anticipated need to let someone customize how the object
-        behaves for performance.  This object is meant to organize
-        all these into one object.
+    There are a number of different facts about how one might
+    want a Connection object to behave vs. its underlying
+    Channels and its interaction with Global Services, together
+    with anticipated need to let someone customize how the object
+    behaves for performance.  This object is meant to organize
+    all these into one object.
     """
 
     class CreationPolicy(enum.Enum):
@@ -41,20 +40,28 @@ class ConnectionOptions:
         RECEIVER_CREATES = enum.auto()
         SENDER_CREATES = enum.auto()
 
-    def __init__(self, *, creation_policy=CreationPolicy.EXTERNALLY_MANAGED,
-                 min_block_size=None, large_block_size=None, huge_block_size=None, default_pool=None):
+    def __init__(
+        self,
+        *,
+        creation_policy=CreationPolicy.EXTERNALLY_MANAGED,
+        min_block_size=None,
+        large_block_size=None,
+        huge_block_size=None,
+        default_pool=None,
+    ):
         self.min_block_size = min_block_size
         self.large_block_size = large_block_size
         self.huge_block_size = huge_block_size
         self.creation_policy = creation_policy
         self.default_pool = default_pool
 
+
 class PipeOptions:
-    """Options for the Pipe factory.
+    """Options class for customizing :py:func:`~dragon.infrastructure.connection.Pipe`
 
-        Separate object because this, too, will expand over time.
+    Separate object because this, too, will expand over time.
 
-        Same rationale as for ConnectionOptions.
+    Same rationale as for ConnectionOptions.
     """
 
     # TODO: PE-38342, CreationPolicy.FIRST for first user to make channel
@@ -65,9 +72,7 @@ class PipeOptions:
         RECEIVER_CREATES = enum.auto()
         SENDER_CREATES = enum.auto()
 
-    def __init__(self, *,
-                 creation_policy=CreationPolicy.EARLY,
-                 conn_options=None):
+    def __init__(self, *, creation_policy=CreationPolicy.EARLY, conn_options=None):
 
         self.creation_policy = creation_policy
 
@@ -85,18 +90,17 @@ class PipeOptions:
         elif self.creation_policy == self.CreationPolicy.EXTERNAL:
             self.creation_policy = self.conn_options.CreationPolicy.EXTERNALLY_MANAGED
         else:
-            raise NotImplementedError('close case')
+            raise NotImplementedError("close case")
 
 
 class CUID(int):
-    """A wrapper around int to allow waiting on a cuid.
-    """
+    """A wrapper around int to allow waiting on a cuid."""
 
     def thread_wait(self, timeout, done_ev, ready):
         if timeout is None:
             timeout = 1000000
         start = time.monotonic()
-        delta = min(0.01, timeout) # TODO: figure out the value for delta
+        delta = min(0.01, timeout)  # TODO: figure out the value for delta
         timed_out = False
 
         if not done_ev.is_set():
@@ -111,7 +115,8 @@ class CUID(int):
 
 
 class Connection:
-    """Dragon infrastructure's internal connection class. """
+    """Uni-directional connection implemented over :py:class:`dragon.channels`"""
+
     class State(enum.Enum):
         CLOSED = enum.auto()  # we have closed and may have deleted backing channels we think we own
         ATTACHED = enum.auto()  # we have channels and we're attached, but haven't sent anything
@@ -119,29 +124,27 @@ class Connection:
         UNBACKED = enum.auto()  # initialized with names but we have not created yet
         UNATTACHED = enum.auto()  # initialized with descriptors but we have not attached yet
 
-    def __init__(self, *, inbound_initializer=None, outbound_initializer=None,
-                 options=None, policy=dparm.POLICY_USER):
+    def __init__(self, *, inbound_initializer=None, outbound_initializer=None, options=None, policy=dparm.POLICY_USER):
         """Initializes the Connection object.
 
-            The object is initialized in an inbound direction, an outbound
-            direction, or both.  These initializers can be either
-            - a Channel object, whose lifecycle is assumed externally managed
-            - a bytes-like descriptor, attached to lazily, destroyed automatically
-            - a string name, for a rendezvous in Global services.
+        The object is initialized in an inbound direction, an outbound direction, or both.  These initializers can be
+        either
 
-            TODO: document current behavior and design intent MUCH more thoroughly
+           * a Channel object, whose lifecycle is assumed externally managed
+           * a bytes-like descriptor, attached to lazily, destroyed automatically
+           * a string name, for a rendezvous in Global services.
 
         :param inbound_initializer: an initializer for the inbound channel
         :param outbound_initializer: an initializer for the outbound channel
-        :param options: ConnectionOptions object
-        :param policy: A Policy object.
+        :param options: a :py:class:`~dragon.infratructure.connection.ConnectionOptions` object
+        :param policy: a :py:class:`~dragon.infratructure.policy.Policy` object
         """
 
         self.at_eof = False
         self.ghost = False  # whether to omit sending EOT on close.
 
         if inbound_initializer is None and outbound_initializer is None:
-            raise ConnectionError('at least one initializer is required')
+            raise ConnectionError("at least one initializer is required")
 
         if options is None:
             self.options = ConnectionOptions()
@@ -159,7 +162,7 @@ class Connection:
             self.write_adapter_options["huge_blk_size"] = self.options.huge_block_size
 
         if not isinstance(policy, dparm.Policy):
-            raise ValueError('The class of service must be a dragon.infrastructure.parameters.Policy value.')
+            raise ValueError("The class of service must be a dragon.infrastructure.parameters.Policy value.")
 
         self.policy = policy
         self.inbound_chan = None
@@ -171,7 +174,7 @@ class Connection:
 
         if isinstance(inbound_initializer, dch.Channel) or isinstance(outbound_initializer, dch.Channel):
             if my_cp != my_cp.EXTERNALLY_MANAGED and my_cp != my_cp.PRE_CREATED:
-                msg = f'init with Channels and {my_cp.name} lifecycle not supported'
+                msg = f"init with Channels and {my_cp.name} lifecycle not supported"
                 raise ConnectionError(msg)
 
             self.inbound_chan = inbound_initializer
@@ -188,7 +191,7 @@ class Connection:
                 self.state = self.State.UNBACKED
             else:  # assume channel descriptor
                 if my_cp != my_cp.PRE_CREATED:
-                    msg = f'init with Channels and {my_cp.name} lifecycle not supported'
+                    msg = f"init with Channels and {my_cp.name} lifecycle not supported"
                     raise ConnectionError(msg)
                 self.state = self.State.UNATTACHED
 
@@ -211,9 +214,10 @@ class Connection:
         return state
 
     def open(self):
+        """Construct the underlying channel resources if not already present."""
         # should construct or attach to the actual channels if not ready.
         if self.state == self.State.CLOSED:
-            raise ConnectionError('reopening closed Connection not allowed')
+            raise ConnectionError("reopening closed Connection not allowed")
         elif self.state == self.State.ATTACHED:
             self.state = self.State.READY
             return
@@ -243,7 +247,7 @@ class Connection:
                     self.outbound_chan = dch.Channel.attach(chan_desc.sdesc)
                     self.outbound_initializer = None
             else:
-                raise NotImplementedError('close case')
+                raise NotImplementedError("close case")
 
             self.state = self.State.READY
 
@@ -259,7 +263,7 @@ class Connection:
             self.state = self.State.READY
 
         else:
-            raise NotImplementedError('open case')
+            raise NotImplementedError("open case")
 
     def _setup_write_adapter(self):
         if not self.outbound_chan.is_local:
@@ -274,15 +278,16 @@ class Connection:
                 write_options["buffer_pool"] = self.options.default_pool
             self.write_adapter = dch.Peer2PeerWritingChannelFile(self.outbound_chan, options=write_options)
         else:
-            self.write_adapter = dch.Peer2PeerWritingChannelFile(self.outbound_chan,
-                                                                 options=self.write_adapter_options, wait_mode=self.policy.wait_mode)
+            self.write_adapter = dch.Peer2PeerWritingChannelFile(
+                self.outbound_chan, options=self.write_adapter_options, wait_mode=self.policy.wait_mode
+            )
 
     def _setup_read_adapter(self):
         self.read_adapter = dch.Peer2PeerReadingChannelFile(self.inbound_chan, wait_mode=self.policy.wait_mode)
 
     def _check_inbound(self):
         if self.inbound_chan is None and self.inbound_initializer is None:
-            raise OSError(f'No receiving on a {self.__class__.__name__} that is not enabled for reading')
+            raise OSError(f"No receiving on a {self.__class__.__name__} that is not enabled for reading")
 
         if self.at_eof:
             raise EOFError()
@@ -292,12 +297,17 @@ class Connection:
 
     def _check_outbound(self):
         if self.outbound_chan is None and self.outbound_initializer is None:
-            raise OSError(f'No sending on a {self.__class__.__name__} that is not enabled for writing')
+            raise OSError(f"No sending on a {self.__class__.__name__} that is not enabled for writing")
 
         if self.state != self.State.READY:
             self.open()
 
     def send(self, obj):
+        """Send an object that can later be received.
+
+        :param obj: Python object to send
+        :type obj: obj
+        """
         self._check_outbound()
         if self.write_adapter is None:
             self._setup_write_adapter()
@@ -312,6 +322,11 @@ class Connection:
             self.write_adapter.close()
 
     def recv(self):
+        """Receive an object that was sent into the connection.
+
+        :return: returns an object
+        :rtype: obj
+        """
         self._check_inbound()
         if self.read_adapter is None:
             self._setup_read_adapter()
@@ -361,12 +376,11 @@ class Connection:
             self._decref_inbound_chan()
 
     def thread_wait(self, timeout, done_ev, ready):
-        """Thread waiter signaling with an ev.
-        """
+        """Thread waiter signaling with an ev."""
         if timeout is None:
             timeout = 1000000
         start = time.monotonic()
-        delta = min(0.01, timeout) # TODO: figure out the value for delta
+        delta = min(0.01, timeout)  # TODO: figure out the value for delta
         timed_out = False
 
         if not done_ev.is_set():
@@ -380,6 +394,9 @@ class Connection:
             done_ev.set()  # if not set here, timed out.
 
     def close(self):
+        """Send an end-of-transmission and detach from channel resources. Channels are ref-counted and automatically
+        cleaned up once all processes detach.
+        """
         if self.state == self.State.CLOSED:
             pass
         elif self.state == self.State.UNBACKED:
@@ -428,17 +445,19 @@ class Connection:
 
                     dgchan.destroy(inbound_cuid)
         else:
-            raise NotImplementedError('close case')
+            raise NotImplementedError("close case")
 
         self.state = self.State.CLOSED
         return
 
     @property
     def inbound_channel(self):
+        """The inbound channel"""
         return self.inbound_chan
 
     @property
     def outbound_channel(self):
+        """The outbound channel"""
         return self.outbound_chan
 
     @property
@@ -466,6 +485,11 @@ class Connection:
     # Just a way to hang an attribute on an integer,
     # TODO: should be the real c_uid.
     def fileno(self):
+        """Get the c_uid for the connection
+
+        :return: returns the underlying c_uid
+        :rtype: int
+        """
         if self.state == self.State.READY:
             the_cuid = CUID(-2)
         else:
@@ -475,6 +499,13 @@ class Connection:
         return the_cuid
 
     def poll(self, timeout=0.0, event_mask=dch.POLLIN):
+        """Wait for an event to occur on the connection, such as data is available.
+
+        :param timeout: Number of seconds to poll for before raising a TimeoutError
+        :type timeout: float
+        :param event_mask: event to monitor for
+        :type event_mask: :py:class:`dragon.channels.EventType`
+        """
         if self.at_eof:
             return True
 
@@ -488,6 +519,15 @@ class Connection:
         return self.inbound_chan.poll(wait_mode=self.policy.wait_mode, event_mask=event_mask, timeout=timeout)
 
     def send_bytes(self, buffer, offset=0, size=None):
+        """Send bytes data into the connection.
+
+        :param buffer: bytes data to send
+        :type buffer: bytearray or bytes
+        :param offset: offset into the buffer to start sending from
+        :type offset: int
+        :param size: number of bytes to send or all of it
+        :type offset: int
+        """
         self._check_outbound()
 
         # lifted from multiprocessing.connection.Connection
@@ -512,7 +552,7 @@ class Connection:
                 self._setup_write_adapter()
             self.write_adapter.open()
             self.write_adapter.write_raw_header(size)
-            self.write_adapter.write(m[offset:offset + size])
+            self.write_adapter.write(m[offset : offset + size])
         except Exception as e:
             raise ConnectionError(f"Could not complete send bytes operation: {e}")
         finally:
@@ -520,6 +560,13 @@ class Connection:
 
     # Todo: refactor recv_bytes and recv_bytes_into? duplicative
     def recv_bytes(self, maxlength=None):
+        """Receive bytes data from the connection.
+
+        :param maxlength: maximum number of bytes data to receive
+        :type maxlength: int
+        :return: bytes data
+        :rtype: bytearray
+        """
         self._check_inbound()
 
         try:
@@ -543,13 +590,13 @@ class Connection:
                 _ = pickle.load(self.read_adapter)
                 if maxlength is not None and len(buf) > maxlength:
                     self.close()
-                    raise OSError(f'recv_bytes (from send) maxlength={maxlength} but msg_len={msg_len}')
+                    raise OSError(f"recv_bytes (from send) maxlength={maxlength} but msg_len={msg_len}")
 
             else:
                 if maxlength is not None and msg_len > maxlength:
                     self.close()  # base multiprocessing says connection is unusable after maxlength error; we could
                     # potentially stay around
-                    raise OSError(f'recv_bytes maxlength={maxlength} but msg_len={msg_len}')
+                    raise OSError(f"recv_bytes maxlength={maxlength} but msg_len={msg_len}")
 
                 self.read_adapter.advance_raw_header(msg_len)
                 buf = bytearray(msg_len)
@@ -562,6 +609,15 @@ class Connection:
         return buf
 
     def recv_bytes_into(self, buffer, offset=0):
+        """Receive bytes data from the connection placing it into the provided buffer.
+
+        :param buffer: bytes or bytes array to write into
+        :type buffer: bytes or bytearray
+        :param offset: bytes offset to start writing data at
+        :type offset: int
+        :return: number of bytes received
+        :rtype: int
+        """
         self._check_inbound()
 
         with memoryview(buffer) as m:
@@ -582,7 +638,7 @@ class Connection:
                     self.at_eof = True
                     raise EOFError()
                 elif send_type == dch.ChannelAdapterMsgTypes.PICKLE_PROT_5:
-                    raise RuntimeError('recv_bytes_into called on a Connection whose sender called send')
+                    raise RuntimeError("recv_bytes_into called on a Connection whose sender called send")
 
                 if msg_len + offset > byte_size:
                     self.read_adapter.advance_raw_header(msg_len)
@@ -590,8 +646,8 @@ class Connection:
                     raise multiprocessing.BufferTooShort(msg)
 
                 self.read_adapter.advance_raw_header(msg_len)
-                target = m.cast('B')
-                self.read_adapter.readinto(target[offset:offset + msg_len])
+                target = m.cast("B")
+                self.read_adapter.readinto(target[offset : offset + msg_len])
             except Exception as e:
                 raise ConnectionError(f"Could not complete recv_bytes_into operation: {e}")
             finally:
@@ -614,12 +670,12 @@ def get_next_ctr():
 
 
 def make_uniq_chan_names():
-    base_name = f'anon_{dparm.this_process.my_puid}_{get_next_ctr()}'
-    return base_name, base_name + '_rev'
+    base_name = f"anon_{dparm.this_process.my_puid}_{get_next_ctr()}"
+    return base_name, base_name + "_rev"
 
 
 def Pipe(duplex=True, *, channels=None, options=None):
-    """Pipe constructor, producing two Connections.
+    """Connection pair generator implemented over :py:class:`dragon.channels`
 
     The channels parameter can be None, indicating that
     this is an anonymous Pipe requiring a new channel to be constructed
@@ -645,8 +701,8 @@ def Pipe(duplex=True, *, channels=None, options=None):
 
     :param channels: None or a Channel object or a 2-element tuple of distinct Channel objects
     :param duplex: default True, whether to produce
-    :param options: a PipeOptions object
-    :return: a pair of Connection objects.
+    :param options: a :py:class:`~dragon.infratructure.connection.PipeOptions` object
+    :return: a pair of :py:class:`~dragon.infratructure.connection.Connection` objects
     """
 
     if options is None:
@@ -664,7 +720,7 @@ def Pipe(duplex=True, *, channels=None, options=None):
             first = Connection(inbound_initializer=channels[0], outbound_initializer=channels[1])
             second = Connection(inbound_initializer=channels[1], outbound_initializer=channels[0])
         else:
-            raise ValueError('unexpected channels/initializer: {channels}')
+            raise ValueError("unexpected channels/initializer: {channels}")
     else:
         if options.creation_policy == options.CreationPolicy.EARLY:
             options.conn_options.creation_policy = options.conn_options.CreationPolicy.PRE_CREATED
@@ -676,12 +732,12 @@ def Pipe(duplex=True, *, channels=None, options=None):
             if duplex:
                 second_desc = dgchan.create(target_muid, options=chan_options).sdesc
                 second_channel = dch.Channel.attach(second_desc)
-                first = Connection(inbound_initializer=first_channel,
-                                   outbound_initializer=second_channel,
-                                   options=options.conn_options)
-                second = Connection(inbound_initializer=second_channel,
-                                    outbound_initializer=first_channel,
-                                    options=options.conn_options)
+                first = Connection(
+                    inbound_initializer=first_channel, outbound_initializer=second_channel, options=options.conn_options
+                )
+                second = Connection(
+                    inbound_initializer=second_channel, outbound_initializer=first_channel, options=options.conn_options
+                )
                 # decref because all counting of the Channel happens in Connection now. Our create did one inc.
                 dgchan.release_refcnt(first_channel.cuid)
                 dgchan.release_refcnt(second_channel.cuid)
@@ -696,10 +752,12 @@ def Pipe(duplex=True, *, channels=None, options=None):
             firstname, secondname = make_uniq_chan_names()
 
             if duplex:
-                first = Connection(inbound_initializer=firstname, outbound_initializer=secondname,
-                                   options=options.conn_options)
-                second = Connection(inbound_initializer=secondname, outbound_initializer=firstname,
-                                    options=options.conn_options)
+                first = Connection(
+                    inbound_initializer=firstname, outbound_initializer=secondname, options=options.conn_options
+                )
+                second = Connection(
+                    inbound_initializer=secondname, outbound_initializer=firstname, options=options.conn_options
+                )
             else:
                 first = Connection(inbound_initializer=firstname, options=options.conn_options)
                 second = Connection(outbound_initializer=firstname, options=options.conn_options)
@@ -708,10 +766,9 @@ def Pipe(duplex=True, *, channels=None, options=None):
 
 
 class Address:
-    """Address class for dragon servers and listeners and all that
-    """
+    """Address class for dragon servers and listeners and all that"""
 
-    def __init__(self, user_name=''):
+    def __init__(self, user_name=""):
         self.user_name = user_name
         self.salt = dparm.this_process.my_puid
 
@@ -720,13 +777,13 @@ class Address:
 
     @property
     def cname(self):
-        return f'{self.user_name!s}.{self.salt!s}'
+        return f"{self.user_name!s}.{self.salt!s}"
 
 
 class Listener:
-    def __init__(self, address='', family='', backlog=1, authkey=None):
+    def __init__(self, address="", family="", backlog=1, authkey=None):
         pass
 
 
-def Client(address='', family='', authkey=None):
+def Client(address="", family="", authkey=None):
     pass

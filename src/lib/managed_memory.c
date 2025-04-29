@@ -6,6 +6,7 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <fcntl.h>
+#include <dlfcn.h>
 #include <unistd.h>
 #include <sys/types.h>
 #include <stdatomic.h>
@@ -16,12 +17,22 @@
 #include <dragon/channels.h>
 #include <dragon/utils.h>
 
+/* Define numa API functions to allow dlopen of said libraries */
+static int _numa_pointers_set = 0;
+
+int (*numa_available_p)(void);
+struct bitmask* (*numa_allocate_nodemask_p)(void);
+struct bitmask* (*numa_bitmask_setall_p)(struct bitmask*);
+void (*numa_interleave_memory_p)(void*, size_t, struct bitmask*);
+void (*numa_free_nodemask_p)(struct bitmask*);
+
+
 /* dragon globals */
 DRAGON_GLOBAL_MAP(pools);
 DRAGON_GLOBAL_MAP(mallocs);
 
-static dragonULInt MANIFEST_MIN_BLOCK_POWER = BLOCK_SIZE_MIN_POWER;
-static dragonULInt MANIFEST_MIN_BLOCK_SIZE = 1 << BLOCK_SIZE_MIN_POWER;
+#define MAX(x, y) (((x) > (y)) ? (x) : (y))
+#define MIN(x, y) (((x) < (y)) ? (x) : (y))
 
 #define _obtain_manifest_lock(pool) ({\
     if (pool == NULL) {\
@@ -77,71 +88,61 @@ static dragonULInt MANIFEST_MIN_BLOCK_SIZE = 1 << BLOCK_SIZE_MIN_POWER;
     }\
 })
 
+
+/* Open numactl function pointers */
+int _set_numa_function_pointers() {
+
+    if (!_numa_pointers_set) {
+        void *lib_numa_handle = dlopen("libnuma.so.1", RTLD_LAZY | RTLD_GLOBAL);
+
+        if (lib_numa_handle != NULL) {
+            numa_available_p = dlsym(lib_numa_handle, "numa_available");
+            numa_allocate_nodemask_p = dlsym(lib_numa_handle, "numa_allocate_nodemask");
+            numa_bitmask_setall_p = dlsym(lib_numa_handle, "numa_bitmask_setall");
+            numa_interleave_memory_p =dlsym(lib_numa_handle, "numa_interleave_memory");
+            numa_free_nodemask_p = dlsym(lib_numa_handle, "numa_free_nodemask");
+
+            _numa_pointers_set = 1;
+        }
+    }
+
+    return _numa_pointers_set;
+}
+
+
 /* This converts from a data pointer to an internal heap manager pointer. */
 static void*
-_to_hptr(dragonMemoryPool_t* pool, void* dptr) {
+_to_hoffset(dragonMemoryPool_t* pool, void* dptr) {
     if (pool==NULL)
         return NULL;
-    void* heap_base_ptr = dragon_heap_base_ptr(&pool->heap.mgrs[0]);
 
-    /* When the pool is destroyed, the heap base pointer is set to NULL. If
+    /* When the pool is destroyed, the lock is destroyed. If
        this happens, then something is trying to use managed mem (or free it)
        after the pool is destroyed. */
-    if (heap_base_ptr == NULL)
+    if (!dragon_lock_is_valid(&pool->heap.mgrs[0].dlock))
         return NULL;
 
-    dragonULInt factor = pool->min_block_size / MANIFEST_MIN_BLOCK_SIZE;
-    void* hptr = (dptr - pool->local_dptr) / factor + heap_base_ptr;
-    if (hptr < heap_base_ptr || hptr >= heap_base_ptr + MANIFEST_MIN_BLOCK_SIZE * pool->num_blocks)
-        return NULL;
+    uint64_t hptr = (uint64_t)dptr - (uint64_t)pool->local_dptr;
 
-    return hptr;
+    return (void*)hptr;
 }
 
 /* This converts from an internal heap manager pointer to a data pointer. */
 static void*
-_to_dptr(dragonMemoryPool_t* pool, void* hptr) {
+_to_dptr(dragonMemoryPool_t* pool,  void* hoffset) {
     if (pool==NULL)
         return NULL;
 
-    void* heap_base_ptr = dragon_heap_base_ptr(&pool->heap.mgrs[0]);
-
-    /* When the pool is destroyed, the heap base pointer is set to NULL. If
+    /* When the pool is destroyed, the lock is destroyed. If
        this happens, then something is trying to use managed mem (or free it)
        after the pool is destroyed. */
-    if (heap_base_ptr == NULL)
+    if (!dragon_lock_is_valid(&pool->heap.mgrs[0].dlock))
         return NULL;
 
-    dragonULInt factor = pool->min_block_size / MANIFEST_MIN_BLOCK_SIZE;
-    void* dptr = (hptr - heap_base_ptr) * factor + pool->local_dptr;
+    void* dptr = (void*)((uint64_t)hoffset + (uint64_t)pool->local_dptr);
 
     return dptr;
 }
-
-/* This converts a data heap size to an internal heap manager size. */
-static size_t
-_to_hsize(dragonMemoryPool_t* pool, const size_t dsize) {
-    if (pool==NULL)
-        return 0;
-
-    if (dsize == 0)
-        return 0;
-
-    return ((dsize - 1) / pool->min_block_size) * MANIFEST_MIN_BLOCK_SIZE + MANIFEST_MIN_BLOCK_SIZE;
-}
-
-/* This converts a heap size value to a nearest data heap size value. */
-static size_t
-_to_dsize(dragonMemoryPool_t* pool, const size_t hsize) {
-    if (pool==NULL)
-        return 0;
-
-    if (hsize == 0)
-        return 0;
-
-    return (hsize / MANIFEST_MIN_BLOCK_SIZE) *  pool->min_block_size;
-}
-
 
 static void
 _find_pow2_requirement(size_t v, size_t * nv, uint32_t * power)
@@ -165,6 +166,21 @@ _find_pow2_requirement(size_t v, size_t * nv, uint32_t * power)
 
     *power = pow;
     *nv = sz;
+}
+
+static uint64_t
+_round_up(uint64_t val, uint64_t multiple)
+{
+    if (multiple == 0UL) {
+        return val;
+    }
+
+    uint64_t remainder = val % multiple;
+    if (remainder == 0UL) {
+        return val;
+    }
+
+    return val + multiple - remainder;
 }
 
 static dragonError_t
@@ -280,16 +296,6 @@ _add_alloc_umap_entry(dragonMemory_t * mem, dragonMemoryDescr_t * mem_descr)
     no_err_return(DRAGON_SUCCESS);
 }
 
-static uint64_t
-_fetch_data_idx(uint64_t * local_dptr)
-{
-    atomic_uint_fast64_t new_idx;
-    atomic_uint_fast64_t * adptr = (atomic_uint_fast64_t *)local_dptr;
-
-    new_idx = atomic_fetch_add_explicit(adptr, 1UL, DRAGON_MEMORY_DATA_IDX_MEM_ORDER);
-    return (uint64_t)new_idx;
-}
-
 static dragonError_t
 _determine_heap_size(size_t requested_size, dragonMemoryPoolAttr_t * attr, size_t * required_size, uint32_t * min_block_power, uint32_t * max_block_power)
 {
@@ -301,12 +307,7 @@ _determine_heap_size(size_t requested_size, dragonMemoryPoolAttr_t * attr, size_
 
     _find_pow2_requirement(requested_size, &req_size, &max_power);
 
-    /* The heap is allocated in the manifest segment. The data segment is the actual data handed back
-       to users. The heap is allocated as small as possible while mirroring what is handed back from
-       the data segment. */
-    uint32_t manifest_max_power = (max_power - min_power) + MANIFEST_MIN_BLOCK_POWER;
-
-    err = dragon_heap_size(manifest_max_power, MANIFEST_MIN_BLOCK_POWER, MANIFEST_MIN_BLOCK_SIZE, attr->lock_type, &req_size);
+    err = dragon_heap_size(max_power, min_power, attr->lock_type, &req_size);
 
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get the heap size.");
@@ -323,11 +324,6 @@ _determine_heap_size(size_t requested_size, dragonMemoryPoolAttr_t * attr, size_
     no_err_return(DRAGON_SUCCESS);
 }
 
-static size_t _determine_manifest_header_alignment(size_t lock_size) {
-    size_t alignment = (MANIFEST_MIN_BLOCK_SIZE - lock_size % MANIFEST_MIN_BLOCK_SIZE) % MANIFEST_MIN_BLOCK_SIZE;
-    return alignment;
-}
-
 /* determine the size of allocations required to fullfill the request data file size and manifest size */
 static dragonError_t
 _determine_pool_allocation_size(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
@@ -336,11 +332,11 @@ _determine_pool_allocation_size(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_
        manifest (max number of records it can hold) and the allocated_size is the number of bytes including
        the manifest header.
     */
-    size_t hashtable_size;
-    dragonError_t err = dragon_hashtable_size(pool->manifest_requested_size, sizeof(dragonULInt)*2, sizeof(dragonULInt)*2, &hashtable_size);
+    size_t blocks_size;
+    dragonError_t err = dragon_blocks_size(pool->manifest_requested_size, sizeof(dragonULInt)*3, &blocks_size);
 
     if (err != DRAGON_SUCCESS) {
-        char * err_str = _errstr_with_code("manifest hashtable error code", (int)err);
+        char * err_str = _errstr_with_code("manifest table error code", (int)err);
         err_noreturn(err_str);
         free(err_str);
         return err;
@@ -354,45 +350,76 @@ _determine_pool_allocation_size(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_
     uint32_t max_block_power, min_block_power;
     uint64_t manifest_heap_size;
     size_t lock_size;
+    size_t bcast_size;
 
     lock_size = dragon_lock_size(attr->lock_type);
 
-    size_t header_alignment = _determine_manifest_header_alignment(lock_size);
-
     err = _determine_heap_size(pool->data_requested_size, attr, &manifest_heap_size,
                                &min_block_power, &max_block_power);
-
     if (err != DRAGON_SUCCESS)
         append_err_return(err,"Could not get heap size in determining pool allocation size.");
 
+    err = dragon_bcast_size(0, DRAGON_MEMORY_MANIFEST_SPIN_WAITERS, NULL, &bcast_size);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the bcast_size for the manifest.");
+
     /* For the fixed header size we take the size of the structure but subtract
-       off the size of four fields: heap, the pre_allocs, the filenames,
-       and the manifest_table. All fields within the header are 8 byte
-       fields so it will have the same size as pointers to each value in
-       the dragonMemoryPoolHeader_t structure. But, we add back in three
-       8 bytes fields that are there for alignment of the heap. */
-    size_t fixed_header_size = sizeof(dragonMemoryPoolHeader_t) - sizeof(void*);
+       off the size of five fields: the manifest_bcast_space, the heap,
+       the pre_allocs, the filenames, and the manifest_table. All fields
+       within the header are 8 byte fields so it will have the same size
+       as pointers to each value in the dragonMemoryPoolHeader_t
+       structure. */
+
+    size_t fixed_header_size = sizeof(dragonMemoryPoolHeader_t) - 5*sizeof(void*);
 
     attr->manifest_allocated_size =
         lock_size +
-        header_alignment +
+        bcast_size +
         fixed_header_size +
         manifest_heap_size +
         attr->npre_allocs * sizeof(size_t) +
         (attr->n_segments + 1) * DRAGON_MEMORY_MAX_FILE_NAME_LENGTH +
-        hashtable_size;
+        blocks_size;
 
     attr->data_min_block_size = 1UL << min_block_power;
     attr->allocatable_data_size = 1UL << max_block_power;
-    attr->manifest_table_size = hashtable_size;
+    attr->manifest_table_size = blocks_size;
     attr->manifest_heap_size = manifest_heap_size;
-    attr->total_data_size = attr->allocatable_data_size; /* No meta-data stored in data segment. */
+    attr->total_data_size = _round_up(attr->allocatable_data_size, DRAGON_TWO_MEG); /* No meta-data stored in data segment. */
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 static dragonError_t
-_unlink_shm_file(const char * file)
+_unlink_data_file(const char * file, dragonMemoryPoolAttr_t * attr)
+{
+    /* Because this is used during error recovery, don't use err_return macros.
+       It would reset the backtrace string and we want the original problem. */
+
+    if (file == NULL)
+        return DRAGON_INVALID_ARGUMENT;
+
+    int ierr;
+
+    if (attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE) {
+        ierr = unlink(file);
+    }
+    else if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
+        ierr = shm_unlink(file);
+    }
+    else {
+        err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE, "invalid memory type");
+    }
+
+    if (ierr == -1)
+        return DRAGON_MEMORY_ERRNO;
+
+
+    return DRAGON_SUCCESS;
+}
+
+static dragonError_t
+_unlink_manifest_file(const char * file)
 {
     /* Because this is used during error recovery, don't use err_return macros.
        It would reset the backtrace string and we want the original problem. */
@@ -405,7 +432,6 @@ _unlink_shm_file(const char * file)
     if (ierr == -1)
         return DRAGON_MEMORY_ERRNO;
 
-
     return DRAGON_SUCCESS;
 }
 
@@ -417,21 +443,30 @@ _open_map_manifest_shm(dragonMemoryPool_t * pool, const char * mfile, size_t fil
         err_return(DRAGON_MEMORY_ERRNO, "failed to shm_open() manifest file (file exist?)");
 
     pool->mptr = mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool->mfd, 0);
-    if (pool->mptr == NULL)
+    if (pool->mptr == MAP_FAILED)
         err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() manifest file");
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 static dragonError_t
-_open_map_data_shm(dragonMemoryPool_t * pool, const char * dfile, size_t file_size)
+_open_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPoolAttr_t * attr)
 {
-    pool->dfd = shm_open(dfile, O_RDWR, 0);
+    if (attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE) {
+        pool->dfd = open(dfile, O_RDWR, 0);
+    }
+    else if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
+        pool->dfd = shm_open(dfile, O_RDWR, 0);
+    }
+    else {
+        err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE, "invalid memory type");
+    }
+
     if (pool->dfd == -1)
         err_return(DRAGON_MEMORY_ERRNO, "failed to shm_open() data file");
 
-    pool->local_dptr = mmap(NULL, file_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool->dfd, 0);
-    if (pool->local_dptr == NULL)
+    pool->local_dptr = mmap(NULL, attr->total_data_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool->dfd, 0);
+    if (pool->local_dptr == MAP_FAILED)
         err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() data file");
 
     no_err_return(DRAGON_SUCCESS);
@@ -441,18 +476,21 @@ static dragonError_t
 _create_map_manifest_shm(dragonMemoryPool_t * pool, const char * mfile, dragonMemoryPoolAttr_t * attr)
 {
     pool->mfd = shm_open(mfile, O_RDWR | O_CREAT | O_EXCL , attr->mode);
-    if (pool->mfd == -1)
-        err_return(DRAGON_MEMORY_ERRNO, "failed to shm_open() and create manifest file (file exist?)");
+    if (pool->mfd == -1) {
+        char err_str[400];
+        snprintf(err_str, 399, "Failed to shm_open() and create the manifest file, ERRNO=%s: %s", strerror(errno), mfile);
+        err_return(DRAGON_MEMORY_ERRNO, err_str);
+    }
 
     int ierr = ftruncate(pool->mfd, attr->manifest_allocated_size);
     if (ierr == -1) {
-        _unlink_shm_file(mfile);
+        _unlink_manifest_file(mfile);
         err_return(DRAGON_MEMORY_ERRNO, "failed to ftruncate() manifest file");
     }
 
     pool->mptr = mmap(NULL, attr->manifest_allocated_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool->mfd, 0);
-    if (pool->mptr == NULL) {
-        _unlink_shm_file(mfile);
+    if (pool->mptr == MAP_FAILED) {
+        _unlink_manifest_file(mfile);
         err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() manifest file");
     }
 
@@ -460,40 +498,51 @@ _create_map_manifest_shm(dragonMemoryPool_t * pool, const char * mfile, dragonMe
 }
 
 static dragonError_t
-_create_map_data_shm(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPoolAttr_t * attr)
+_create_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPoolAttr_t * attr)
 {
     /* create the data file and map it in */
-    pool->dfd = shm_open(dfile, O_RDWR | O_CREAT | O_EXCL , attr->mode);
+    if (attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE) {
+        pool->dfd = open(dfile, O_RDWR | O_CREAT | O_EXCL, attr->mode);
+    }
+    else if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
+        pool->dfd = shm_open(dfile, O_RDWR | O_CREAT | O_EXCL, attr->mode);
+    }
+    else {
+        err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE, "invalid memory type");
+    }
+
     if (pool->mfd == -1)
-        err_return(DRAGON_MEMORY_ERRNO, "failed to shm_open() and create data file (file exist?)");
+        err_return(DRAGON_MEMORY_ERRNO, "failed to open and create data file (file exist?)");
 
     int ierr = ftruncate(pool->dfd, attr->total_data_size);
     if (ierr == -1) {
-        _unlink_shm_file(dfile);
+        _unlink_data_file(dfile, attr);
         err_return(DRAGON_MEMORY_ERRNO, "failed to ftruncate() data file");
     }
 
     pool->local_dptr = mmap(NULL, attr->total_data_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool->dfd, 0);
-    if (pool->local_dptr == NULL) {
-        _unlink_shm_file(dfile);
+    if (pool->local_dptr == MAP_FAILED) {
+        _unlink_data_file(dfile, attr);
         err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() data file");
     }
 
-    if (numa_available() != -1) {
-        struct bitmask *mask = numa_allocate_nodemask();
-        numa_bitmask_setall(mask);
-        numa_interleave_memory(pool->local_dptr, attr->total_data_size, mask);
-        numa_free_nodemask(mask);
+    if (_numa_pointers_set) {
+        if (numa_available_p() != -1) {
+            struct bitmask *mask = numa_allocate_nodemask_p();
+            numa_bitmask_setall_p(mask);
+            numa_interleave_memory_p(pool->local_dptr, attr->total_data_size, mask);
+            numa_free_nodemask_p(mask);
+        }
     }
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 static dragonError_t
-_unmap_manifest_shm(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
+_unmap_manifest_shm(dragonMemoryPool_t * pool)
 {
     if (pool->mptr == NULL)
-        err_return(DRAGON_MEMORY_ERRNO, "cannot munmp() NULL manifest pointer");
+        err_return(DRAGON_MEMORY_ERRNO, "cannot munmap() NULL manifest pointer");
 
     int ierr = munmap(pool->mptr, *(pool->header.manifest_allocated_size));
     if (ierr == -1)
@@ -509,7 +558,7 @@ _unmap_manifest_shm(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
 }
 
 static dragonError_t
-_unmap_data_shm(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
+_unmap_data(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
 {
     if (pool->local_dptr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "cannot munmp() NULL data pointer");
@@ -528,12 +577,13 @@ _unmap_data_shm(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
 }
 
 static dragonError_t
-_alloc_pool_shm(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryPoolAttr_t * attr)
+_alloc_pool(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryPoolAttr_t * attr)
 {
     /* determine the allocation sizes we really need */
     dragonError_t err = _determine_pool_allocation_size(pool, attr);
     if (err != DRAGON_SUCCESS)
-        return err;
+        append_err_return(err, "Could not determine pool allocation size");
+
 
     /* create the file name for the manifest */
     char * mfile = malloc(sizeof(char) * (DRAGON_MEMORY_MAX_FILE_NAME_LENGTH));
@@ -560,38 +610,62 @@ _alloc_pool_shm(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryP
         append_err_return(err, "failed to create manifest");
     }
 
-    /* create the filename for the data file */
-    char * dfile = malloc(sizeof(char) * (DRAGON_MEMORY_MAX_FILE_NAME_LENGTH));
-    if (dfile == NULL) {
-        _unmap_manifest_shm(pool, attr);
-        _unlink_shm_file(mfile);
-        free(mfile);
-        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate data file name string");
-    }
-    nchars = snprintf(dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "/%s%s_part%i",
-                      DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0);
-
     if (nchars == -1) {
-        _unmap_manifest_shm(pool, attr);
-        _unlink_shm_file(mfile);
+        _unmap_manifest_shm(pool);
+        _unlink_manifest_file(mfile);
         free(mfile);
-        free(dfile);
         err_return(DRAGON_MEMORY_FILENAME_ERROR, "encoding error generating data filename");
     }
 
     if (nchars > DRAGON_MEMORY_MAX_FILE_NAME_LENGTH) {
-        _unmap_manifest_shm(pool, attr);
-        _unlink_shm_file(mfile);
+        _unmap_manifest_shm(pool);
+        _unlink_manifest_file(mfile);
         free(mfile);
-        free(dfile);
         err_return(DRAGON_MEMORY_FILENAME_ERROR, "The filename for the pool data segment was too long.");
     }
 
+    /* create the filename for the data file */
+    char * dfile = malloc(sizeof(char) * (DRAGON_MEMORY_MAX_FILE_NAME_LENGTH));
+    if (dfile == NULL) {
+        _unmap_manifest_shm(pool);
+        _unlink_manifest_file(mfile);
+        free(mfile);
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate data file name string");
+    }
+
     /* create the data file and map it in */
-    err = _create_map_data_shm(pool, dfile, attr);
+    bool fallback_dev_shm = false;
+    char *mount_dir = NULL;
+
+    if (dragon_get_hugepage_mount(&mount_dir) == DRAGON_SUCCESS) {
+        nchars = snprintf(
+            dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "%s/%s%s_part%i",
+            mount_dir, DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0
+        );
+
+        attr->mem_type = DRAGON_MEMORY_TYPE_HUGEPAGE;
+        err = _create_map_data(pool, dfile, attr);
+        if (err == DRAGON_MEMORY_ERRNO) {
+            fallback_dev_shm = true;
+        }
+    }
+    else {
+        fallback_dev_shm = true;
+    }
+
+    /* mmapping a hugepage-backed buffer didn't work, so try /dev/shm */
+    if (fallback_dev_shm) {
+        nchars = snprintf(dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "/%s%s_part%i",
+                          DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0);
+
+        attr->mem_type = DRAGON_MEMORY_TYPE_SHM;
+        err = _create_map_data(pool, dfile, attr);
+    }
+
+    /* if we can't allocate memory using either hugepages or /dev/shm, then declare defeat */
     if (err != DRAGON_SUCCESS) {
-        _unmap_manifest_shm(pool, attr);
-        _unlink_shm_file(mfile);
+        _unmap_manifest_shm(pool);
+        _unlink_manifest_file(mfile);
         free(mfile);
         free(dfile);
         append_err_return(err, "failed to create data file");
@@ -600,10 +674,10 @@ _alloc_pool_shm(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryP
     /* add in filename to the attrs */
     attr->names = malloc(sizeof(char *));
     if (attr->names == NULL) {
-        _unmap_manifest_shm(pool, attr);
-        _unmap_data_shm(pool, attr);
-        _unlink_shm_file(mfile);
-        _unlink_shm_file(dfile);
+        _unmap_manifest_shm(pool);
+        _unmap_data(pool, attr);
+        _unlink_manifest_file(mfile);
+        _unlink_data_file(dfile, attr);
         free(mfile);
         free(dfile);
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate attr filename list");
@@ -620,59 +694,19 @@ _alloc_pool_shm(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryP
 }
 
 static dragonError_t
-_free_pool_shm(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
+_free_pool(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
 {
     /* Because this is used during error recovery, don't use err_return macros.
        It would reset the backtrace string and we want the original problem.
        By definition this should always work, so return SUCCESS no matter what. */
 
-    _unmap_manifest_shm(pool, attr);
-    _unmap_data_shm(pool, attr);
-    _unlink_shm_file(attr->mname);
+    _unmap_manifest_shm(pool);
+    _unmap_data(pool, attr);
+    _unlink_manifest_file(attr->mname);
 
     for (int i = 0; i < attr->n_segments + 1; i++)
-        _unlink_shm_file(attr->names[i]);
+        _unlink_data_file(attr->names[i], attr);
 
-    return DRAGON_SUCCESS;
-}
-
-static dragonError_t
-_alloc_pool(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryPoolAttr_t * attr)
-{
-    if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
-
-        dragonError_t err = _alloc_pool_shm(pool, base_name, attr);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "cannot allocate memory pool with shm");
-
-    //} else if (pool->attrs.mem_type == DRAGON_MEMORY_TYPE_FILE) {
-
-    //} else if (pool->attrs.mem_type == DRAGON_MEMORY_TYPE_PRIVATE) {
-
-    } else {
-        no_err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE);
-    }
-
-    no_err_return(DRAGON_SUCCESS);
-}
-
-static dragonError_t
-_free_pool(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
-{
-    if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
-
-        _free_pool_shm(pool, attr);
-
-    //} else if (pool->attrs.mem_type == DRAGON_MEMORY_TYPE_FILE) {
-
-    //} else if (pool->attrs.mem_type == DRAGON_MEMORY_TYPE_PRIVATE) {
-
-    } else {
-        no_err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE);
-    }
-
-    /* Because this is used during error recovery, don't use no_err_return.
-       It would reset the backtrace string and we want the original problem. */
     return DRAGON_SUCCESS;
 }
 
@@ -704,9 +738,7 @@ _instantiate_heap_managers(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * a
        allocated as small as possible while mirroring what is handed back
        from the data segment. */
 
-    size_t manifest_max_power = (max_block_power - min_block_power) + BLOCK_SIZE_MIN_POWER;
-
-    int nsizes = max_block_power - min_block_power;
+    int nsizes = max_block_power - min_block_power + 1;
     size_t * preallocated = malloc(sizeof(size_t) * nsizes);
     for (int i = 0; i < nsizes; i++)
         preallocated[i] = 0;
@@ -721,8 +753,8 @@ _instantiate_heap_managers(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * a
        pool->header.heap Translation to correct addresses will be done when pointers
        are handed back to users. */
     pool->heap.mgrs_dptrs[0] = pool->header.heap;
-    err = dragon_heap_init(pool->heap.mgrs_dptrs[0], &pool->heap.mgrs[0], manifest_max_power,
-                MANIFEST_MIN_BLOCK_POWER, MANIFEST_MIN_BLOCK_SIZE, attr->lock_type, preallocated);
+    err = dragon_heap_init(pool->heap.mgrs_dptrs[0], &pool->heap.mgrs[0], max_block_power,
+                min_block_power, attr->lock_type, preallocated);
 
     free(preallocated);
     if (err != DRAGON_SUCCESS) {
@@ -770,7 +802,7 @@ _attach_heap_managers(dragonMemoryPool_t * const pool)
         append_err_return(err, "failed to attach heap manager to memory");
     }
 
-    err = dragon_hashtable_attach(pool->header.manifest_table, &(heap->mfstmgr));
+    err = dragon_blocks_attach(pool->header.manifest_table, &(heap->mfstmgr));
     if (err != DRAGON_SUCCESS) {
         free(heap->mgrs);
         free(heap->mgrs_dptrs);
@@ -849,22 +881,86 @@ _obtain_filenames(dragonMemoryPool_t * pool, char *** names)
 }
 
 static dragonError_t
-_generate_manifest_record(dragonMemory_t * mem, dragonMemoryPool_t * pool,
-                          const dragonMemoryAllocationType_t type, const dragonULInt type_id)
+_lookup_allocation(dragonMemoryPool_t * pool, uint64_t id, dragonMemory_t * out_mem)
 {
+    /* this routine is used both for positive and negative lookups, don't append an error string */
+    dragonError_t err;
+    out_mem->mfst_record.id = id;
+
+    err = dragon_blocks_get(&(pool->heap.mfstmgr), out_mem->mfst_record.id, &(out_mem->mfst_record.type));
+
+    return err;
+}
+
+static dragonError_t
+_generate_manifest_record(dragonMemory_t * mem, dragonMemoryPool_t * pool,
+                          const dragonMemoryAllocationType_t type, const timespec_t* timeout)
+{
+    dragonError_t err;
+    timespec_t deadline;
+    timespec_t remaining;
+
     /* generate a record and put it in the manifest */
     mem->mfst_record.offset        = (dragonULInt)((char *)mem->local_dptr - (char *)pool->local_dptr);
     mem->mfst_record.size          = (dragonULInt)mem->bytes;
-    mem->mfst_record.alloc_type    = type;
-    mem->mfst_record.alloc_type_id = type_id;
+    mem->mfst_record.type          = type;
 
-    dragonError_t err = dragon_hashtable_add(&(pool->heap.mfstmgr), (char*)&(mem->mfst_record.alloc_type), (char*)&(mem->mfst_record.offset));
+    err = dragon_timespec_deadline(timeout, &deadline);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not compute deadline for timeout.");
+
+    err = dragon_lock(&pool->mlock);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not obtain manifest lock while generating manifest record");
+
+    err = dragon_blocks_alloc(&(pool->heap.mfstmgr), &(mem->mfst_record.type), &(mem->mfst_record.id));
+
+    /* if a zero timeout is supplied, then don't block. This is useful
+       for the managed memory code */
+    if (deadline.tv_sec == 0 && deadline.tv_nsec == 0) {
+        // release the lock. Don't check err and don't return since alloc_err is the
+        // more important error to return.
+        char* msg = dragon_getrawerrstr();
+        dragon_unlock(&(pool->mlock));
+        dragon_setrawerrstr(msg);
+        free(msg);
+        append_err_return(err, "Could not get space in manifest to store allocation record.");
+    }
+
+    while (err == DRAGON_OUT_OF_SPACE) {
+        err = dragon_timespec_remaining(&deadline, &remaining);
+        if (err != DRAGON_SUCCESS) {
+            dragon_unlock(&(pool->mlock));
+            append_err_return(err, "Could not compute time remaining.");
+        }
+
+        /* The bcast wait will unlock regardless of the return code here
+           so no need to call unlock in case of error. */
+        err = dragon_bcast_wait(&pool->manifest_bcast, DRAGON_ADAPTIVE_WAIT, &remaining, NULL, 0, (dragonReleaseFun)dragon_unlock, &pool->mlock);
+        if (err == DRAGON_TIMEOUT)
+            append_err_return(DRAGON_OUT_OF_SPACE, "We timed out waiting for a manifest table entry. The manifest is full.");
+
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Timeout or could not wait for manifest record in memory pool.");
+
+        err = dragon_lock(&pool->mlock);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not obtain manifest lock while generating manifest record");
+
+        err = dragon_blocks_alloc(&(pool->heap.mfstmgr), &(mem->mfst_record.type), &(mem->mfst_record.id));
+    }
+
+    if (err != DRAGON_OBJECT_DESTROYED)
+        // release the lock. Don't check err and don't return since alloc_err is the
+        // more important error to return.
+        dragon_unlock(&(pool->mlock));
 
     if (err != DRAGON_SUCCESS) {
         char err_str[100];
-        snprintf(err_str, 99, "Cannot add manifest record type=%lu and type_id=%lu to pool m_uid=%lu\n", mem->mfst_record.alloc_type, mem->mfst_record.alloc_type_id, *pool->header.m_uid);
+        snprintf(err_str, 99, "Cannot add manifest record type=%lu and id=%lu to pool m_uid=%lu\n", mem->mfst_record.type, mem->mfst_record.id, *pool->header.m_uid);
         append_err_return(err, err_str);
     }
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -876,6 +972,7 @@ _map_manifest_header(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t* attr)
     /* if we are given the lock kind, determine the size and skip over that
         for where to embed the rest */
     size_t lock_size;
+    size_t bcast_size;
     if (attr != NULL) {
 
         lock_size = dragon_lock_size(attr->lock_type);
@@ -904,38 +1001,39 @@ _map_manifest_header(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t* attr)
 
     }
 
+    err = dragon_bcast_size(0, DRAGON_MEMORY_MANIFEST_SPIN_WAITERS, NULL, &bcast_size);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the bcast_size for the manifest.");
+
+
     /* Skip over the area for the lock and any extra for alignment. The header
-       The header itself does not need alignment, just the heap. But it is easier
+       The header itself does not need alignment. But it is easier
        to align both the header and heap because otherwise another header value
        would be needed. */
-    size_t header_alignment = _determine_manifest_header_alignment(lock_size);
     void * ptr = pool->mptr;
-    ptr = ptr + (lock_size + header_alignment);
+    ptr = ptr + lock_size;
 
     dragonULInt * hptr = (dragonULInt *)ptr;
 
     pool->header.m_uid                   = &hptr[0];
-    pool->header.anon_data_idx           = &hptr[1];
-    pool->header.hostid                  = &hptr[2];
-    pool->header.allocatable_data_size   = &hptr[3];
-    pool->header.total_data_size         = &hptr[4];
-    pool->header.data_min_block_size     = &hptr[5];
-    pool->header.manifest_allocated_size = &hptr[6];
-    pool->header.manifest_heap_size      = &hptr[7];
-    pool->header.manifest_table_size     = &hptr[8];
-    pool->header.segment_size            = &hptr[9];
-    pool->header.max_size                = &hptr[10];
-    pool->header.n_segments              = &hptr[11];
-    pool->header.mem_type                = &hptr[12];
-    pool->header.lock_type               = &hptr[13];
-    pool->header.growth_type             = &hptr[14];
-    pool->header.mode                    = (dragonUInt *)&hptr[15];
-    pool->header.npre_allocs             = &hptr[16];
-    /* reserved for alignment h[17] */
-    /* reserved for alignment h[18] */
-    /* reserved for alignment h[19] */
-    /* We position the heap at a 32 byte boundary to match the internal minimum block size. */
-    pool->header.heap                    = (void*) &hptr[20];
+    pool->header.hostid                  = &hptr[1];
+    pool->header.allocatable_data_size   = &hptr[2];
+    pool->header.total_data_size         = &hptr[3];
+    pool->header.data_min_block_size     = &hptr[4];
+    pool->header.manifest_allocated_size = &hptr[5];
+    pool->header.manifest_heap_size      = &hptr[6];
+    pool->header.manifest_table_size     = &hptr[7];
+    pool->header.segment_size            = &hptr[8];
+    pool->header.max_size                = &hptr[9];
+    pool->header.n_segments              = &hptr[10];
+    pool->header.mem_type                = &hptr[11];
+    pool->header.lock_type               = &hptr[12];
+    pool->header.growth_type             = &hptr[13];
+    pool->header.mode                    = (dragonUInt *)&hptr[14];
+    pool->header.npre_allocs             = &hptr[15];
+    pool->header.manifest_bcast_space    = (void*) &hptr[16];
+
+    pool->header.heap                    = (void*) pool->header.manifest_bcast_space + bcast_size;
 
     size_t def_npre_allocs;
     size_t heap_size;
@@ -987,7 +1085,6 @@ _initialize_manifest_header(dragonMemoryPool_t * pool, dragonM_UID_t m_uid, drag
 
     /* assign all of the values into the header */
     *(pool->header.m_uid)                   = m_uid;
-    *(pool->header.anon_data_idx)           = 1UL;
     *(pool->header.hostid)                  = dragon_host_id();
     *(pool->header.allocatable_data_size)   = (dragonULInt)attr->allocatable_data_size;
     *(pool->header.total_data_size)         = (dragonULInt)attr->total_data_size;
@@ -1012,9 +1109,18 @@ _initialize_manifest_header(dragonMemoryPool_t * pool, dragonM_UID_t m_uid, drag
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "cannot instantiate filenames into manifest header");
 
-    /* now instantiate the hashtable for keeping track of manifest records */
-    err = dragon_hashtable_init((char*)pool->header.manifest_table, &pool->heap.mfstmgr,
-                                pool->manifest_requested_size, sizeof(dragonULInt)*2, sizeof(dragonULInt)*2);
+    size_t bcast_size;
+    err = dragon_bcast_size(0, DRAGON_MEMORY_MANIFEST_SPIN_WAITERS, NULL, &bcast_size);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the bcast_size for the manifest.");
+
+    err = dragon_bcast_create_at(pool->header.manifest_bcast_space, bcast_size, 0, DRAGON_MEMORY_MANIFEST_SPIN_WAITERS, NULL, &pool->manifest_bcast);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not initialize the manifest bcast.");
+
+    /* now instantiate the blocks for keeping track of manifest records */
+    err = dragon_blocks_init(pool->header.manifest_table, &pool->heap.mfstmgr,
+                                pool->manifest_requested_size, sizeof(dragonULInt)*3);
 
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to instantiate hash table into manifest memory");
@@ -1059,21 +1165,6 @@ _attrs_from_header(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
 }
 
 static dragonError_t
-_lookup_allocation(dragonMemoryPool_t * pool, dragonMemoryAllocationType_t type, uint64_t type_id,
-                        dragonMemory_t * out_mem)
-{
-    /* this routine is used both for positive and negative lookups, don't append an error string */
-    dragonError_t err;
-
-    out_mem->mfst_record.alloc_type = type;
-    out_mem->mfst_record.alloc_type_id = type_id;
-
-    err = dragon_hashtable_get(&(pool->heap.mfstmgr), (char*)&(out_mem->mfst_record.alloc_type), (char*)&(out_mem->mfst_record.offset));
-
-    return err;
-}
-
-static dragonError_t
 _validate_attr(const dragonMemoryPoolAttr_t * attr)
 {
     if (attr == NULL)
@@ -1089,6 +1180,9 @@ static dragonError_t
 _copy_attr_nonames(dragonMemoryPoolAttr_t * new_attr, const dragonMemoryPoolAttr_t * attr)
 {
     new_attr->data_min_block_size     = attr->data_min_block_size;
+    new_attr->max_allocations         = attr->max_allocations;
+    new_attr->waiters_for_manifest    = attr->waiters_for_manifest;
+    new_attr->manifest_entries        = attr->manifest_entries;
     new_attr->allocatable_data_size   = attr->allocatable_data_size;
     new_attr->total_data_size         = attr->total_data_size;
     new_attr->manifest_allocated_size = attr->manifest_allocated_size;
@@ -1129,6 +1223,35 @@ _set_thread_local_mode_managed_memory(bool set_thread_local)
     }
 }
 
+dragonError_t
+dragon_memory_manifest_info(dragonMemoryDescr_t * mem_descr, dragonULInt* type, dragonULInt* id)
+{
+    if (mem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "memory descriptor is NULL");
+
+    /* Retrieve memory from descriptor, then free local memory struct. */
+    dragonMemory_t * mem;
+    dragonError_t err = _mem_from_descr(mem_descr, &mem);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid memory descriptor");
+
+    *type = mem->mfst_record.type;
+    *id = mem->mfst_record.id;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+// NOT FOR USE BY USERS. DEVELOPER USE ONLY.
+// We can set this flag so that a condition is true at some point in an execution
+// in a process. Then we can write an if statement that won't be true until after
+// this flag is set which can be useful in debugging.
+static int debug_flag = 0;
+
+void
+dragon_memory_set_debug_flag(int the_flag) {
+    debug_flag = the_flag;
+}
+
 /* --------------------------------------------------------------------------------
     BEGIN USER API
    ----------------------------------------------------------------------------- */
@@ -1155,6 +1278,9 @@ dragon_memory_attr_init(dragonMemoryPoolAttr_t * attr)
 
     attr->allocatable_data_size      = DRAGON_MEMORY_DEFAULT_MAX_SIZE;
     attr->data_min_block_size        = DRAGON_MEMORY_DEFAULT_MIN_BLK_SIZE;
+    attr->max_allocations            = 0; // 0 Indicates not set by user.
+    attr->waiters_for_manifest       = 0; // read-only
+    attr->manifest_entries           = 0; // read-only
     attr->max_allocatable_block_size = DRAGON_MEMORY_DEFAULT_MAX_SIZE;
     attr->manifest_allocated_size    = 0;
     attr->max_size                   = DRAGON_MEMORY_DEFAULT_MAX_SIZE;
@@ -1206,6 +1332,49 @@ dragon_memory_attr_destroy(dragonMemoryPoolAttr_t * attr)
 
     if (attr->pre_allocs != NULL)
         free(attr->pre_allocs);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+dragon_memory_get_attr(dragonMemoryPoolDescr_t * pool_descr, dragonMemoryPoolAttr_t * attr) {
+    dragonMemoryPool_t * pool;
+    if (attr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The attr pointer cannot be NULL when getting attributes from the pool.");
+
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    if (pool->local_dptr == NULL) // Not Local
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "Cannot get attributes from non-local pool.");
+
+    err = dragon_memory_attr_init(attr);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not initialize the attributes structure when getting pool attributes.");
+
+    err = _attrs_from_header(pool, attr);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the attributes from the pool header.");
+
+    dragonBlocksStats_t stats;
+    err = dragon_blocks_stats(&(pool->heap.mfstmgr), &stats);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the attributes from the manifest.");
+
+    attr->manifest_entries = stats.current_count;
+    attr->max_manifest_entries = stats.max_count;
+    attr->max_allocations = stats.num_blocks;
+    dragon_memory_pool_get_utilization_pct(pool_descr, &attr->utilization_pct);
+    dragon_memory_pool_get_free_size(pool_descr, &attr->free_space);
+
+    int num_waiters;
+
+    err = dragon_bcast_num_waiting(&pool->manifest_bcast, &num_waiters);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the number waiting on the manifest bcast.");
+
+    attr->waiters_for_manifest = num_waiters;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -1310,14 +1479,26 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
     _find_pow2_requirement(def_attr.data_min_block_size, &min_block_size, &min_block_power);
     _find_pow2_requirement(bytes, &max_block_size, &max_block_power);
 
+    if (max_block_power == min_block_power) {
+        char err_msg[200];
+        snprintf(err_msg, 199, "The max and min block power are both %u which is not valid.", max_block_power);
+        err_return(DRAGON_INVALID_ARGUMENT, err_msg);
+    }
+
     /* This is what the user requested but the allocatable_data_size in the header will
        contain the actually allocated size since they may not have requested a power of 2 */
     pool->data_requested_size = bytes;
-    pool->num_blocks = 1 << (max_block_power - min_block_power);
+    pool->num_blocks = 1UL << (max_block_power - min_block_power);
     /* This is copied into the pool structure for quicker access - it is a constant after
        pool is created - and for safety since if the pool is destroyed the pointer in
        the header (where it is eventually stored) may no longer be valid. */
     pool->min_block_size = def_attr.data_min_block_size;
+
+    if (pool->num_blocks < 5) {
+        char err_msg[200];
+        snprintf(err_msg, 199, "Number of blocks is %lu which is invalid. The max block power is %u and min block power is %u which is not valid.", pool->num_blocks, max_block_power, min_block_power);
+        err_return(DRAGON_INVALID_ARGUMENT, err_msg);
+    }
 
     /* The user may not have chosen a power of 2 for the segment size, so we'll set it to
        the right value which is the smallest power of 2 that is bigger than their original
@@ -1328,14 +1509,68 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
        but we only have one segment for now and n_segments is 0 */
     def_attr.max_size = max_block_size + def_attr.segment_size * def_attr.n_segments;
 
-    /* This computes the max number of entries that will be needed in the hashtable for the
+    /* The maximum allocations is a restriction on how many concurrent allocations there
+       can be in the memory pool at one time. This is needed because the manifest contains
+       a static blocks mapping for all allocations and there must be space for them
+       when the pool is created. To exceed this number, the pool would need to be filled
+       with many, many small allocations. This is not likely to happen, but should it
+       occur, the user can override the default by providing attributes. It just increases
+       the space for the manifest in memory. */
+    size_t max_allocations = 0;
+    if (def_attr.max_allocations == 0) {
+        if (pool->num_blocks > DRAGON_CONCURRENT_MEM_ALLOCATIONS_THRESHOLD) {
+            // user has not provided a maximum number of concurrent allocations
+            // and the number of blocks in the heap is above this
+            // threshold. We will use a heuristic. 2097152 is
+            // double the number of blocks in a 4GB heap with a
+            // minimum block_size of 4K. 1048576 was was used as
+            // our default memory pool for quite a while, but was
+            // are now 4x more efficient in storage for the
+            // manifest and much more efficient in the heap
+            // manager. We'll take the total size/4GB*2097152 to
+            // give us a percentage of 2097152 proportional to
+            // this number of entries. If there are fewer segments
+            // (i.e. called blocks here) in the heap, then we'll
+            // use that since we would never need more entries
+            // than blocks. This 2097152 number of entries equates
+            // to about 64MB of space in shared memory. We'll
+            // keep it proportional to that. For instance, an 8GB
+            // pool would require about 128MB of space in the
+            // manifest using this heuristic.
+            dragonULInt multiple = max_block_size / 4294967296; // 4GB
+            dragonULInt allocs = multiple * DRAGON_CONCURRENT_MEM_ALLOCATIONS_THRESHOLD;
+            if (allocs > DRAGON_CONCURRENT_MEM_ALLOCATIONS_THRESHOLD)
+                max_allocations = allocs;
+            else
+                max_allocations = DRAGON_CONCURRENT_MEM_ALLOCATIONS_THRESHOLD;
+        } else
+            // Below the threshold of 128MB for the manifest blocks
+            // we'll allocate enough block entries to hold all possible
+            // allocations.
+            max_allocations = pool->num_blocks;
+    } else
+        // User-provided, so use it.
+        max_allocations = def_attr.max_allocations;
+
+    if (max_allocations < 5) {
+        char err_msg[200];
+        snprintf(err_msg, 199, "The max allocations was %lu which is too small.", max_allocations);
+        err_return(DRAGON_INVALID_ARGUMENT, err_msg);
+    }
+
+    // This adjusts max allocations if it is bigger than it would ever need to be. We
+    // would never use more than the number of blocks in the heap.
+    max_allocations = MIN(pool->num_blocks, max_allocations);
+
+    /* This computes the max number of entries that will be needed in the blocks for the
        manifest. This is needed to be able to establish the entire needed size for the manifest
        given that it could grow by adding additional segments.
 
        Adding segments is not yet implemented, but this allows for it. The
        n_segments value is 0. */
-    pool->manifest_requested_size = pool->num_blocks +
-            def_attr.n_segments * (1UL << (segment_max_block_power - min_block_power));
+
+    pool->manifest_requested_size = max_allocations +
+            def_attr.n_segments * max_allocations;
 
     // Creating a pool should count as an explicit attach
     // Possibly unnecessary atomic operation since the pool only exists here right now
@@ -1344,8 +1579,11 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
     /* perform the allocation */
     err = _alloc_pool(pool, base_name, &def_attr);
     if (err != DRAGON_SUCCESS) {
+        char* err_str = dragon_getrawerrstr();
         free(pool);
         dragon_memory_attr_destroy(&def_attr);
+        dragon_setrawerrstr(err_str);
+        free(err_str);
         append_err_return(err, "cannot allocate memory pool");
     }
 
@@ -1354,11 +1592,13 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
        on the manifest header being initialized first */
     err = _initialize_manifest_header(pool, m_uid, &def_attr);
     if (err != DRAGON_SUCCESS) {
-        char* err_str = dragon_getlasterrstr();
+        char* err_str = dragon_getrawerrstr();
         _free_pool(pool, &def_attr);
         free(pool);
         dragon_memory_attr_destroy(&def_attr);
-        append_err_return(err, err_str);
+        dragon_setrawerrstr(err_str);
+        free(err_str);
+        append_err_return(err, "Could not initialize the manifest header.");
     }
 
     dragonRT_UID_t rt_uid = dragon_get_local_rt_uid();
@@ -1407,6 +1647,10 @@ dragon_memory_pool_destroy(dragonMemoryPoolDescr_t * pool_descr)
     err = _attrs_from_header(pool, &attrs);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "cannot construct pool attributes from pool");
+
+    err = dragon_bcast_destroy(&pool->manifest_bcast);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "failed to destroy the manifest bcast");
 
     err = _destroy_heap_managers(pool);
     if (err != DRAGON_SUCCESS)
@@ -1856,7 +2100,7 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
         }
 
         /* Load the data file descriptor (by default the first filepath entry in the attributes) */
-        err = _open_map_data_shm(pool, mattr.names[0], mattr.total_data_size);
+        err = _open_map_data(pool, mattr.names[0], &mattr);
         if (err != DRAGON_SUCCESS) {
             dragon_memory_attr_destroy(&mattr);
             if (pool != NULL)
@@ -1875,6 +2119,12 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
 
             append_err_return(err, "failed to attach heap managers");
         }
+
+        /* Attach the manifest bcast */
+        err = dragon_bcast_attach_at(pool->header.manifest_bcast_space, &pool->manifest_bcast);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not attach to manifest bcast");
+
 
         /* This is copied into the pool structure for quicker access - it is a constant after
            pool is created - and for safety since if the pool is destroyed the pointer in
@@ -2012,17 +2262,21 @@ dragon_memory_pool_detach(dragonMemoryPoolDescr_t * pool_descr)
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "cannot construct pool attributes from pool");
 
+        err = dragon_bcast_detach(&pool->manifest_bcast);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "failed to detach the manifest bcast");
+
         err = _detach_heap_managers(pool);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not detach heap manager in pool detach.");
 
         /* @MCB TODO: Need control flow to manage different memory types */
         /* Unmap manifest and data pointers */
-        err = _unmap_manifest_shm(pool, &attrs);
+        err = _unmap_manifest_shm(pool);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "failed to unmap manifest");
 
-        err = _unmap_data_shm(pool, &attrs);
+        err = _unmap_data(pool, &attrs);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "failed to unmap data");
 
@@ -2144,7 +2398,7 @@ dragon_memory_pool_get_free_size(dragonMemoryPoolDescr_t* pool_descr, uint64_t* 
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get pool stats.");
 
-    *free_size = stats.total_free_space * (pool->min_block_size / MANIFEST_MIN_BLOCK_SIZE);
+    *free_size = stats.total_free_space;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2183,7 +2437,7 @@ dragon_memory_pool_get_total_size(dragonMemoryPoolDescr_t* pool_descr, uint64_t*
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get pool stats.");
 
-    *total_size = stats.total_size * (pool->min_block_size / MANIFEST_MIN_BLOCK_SIZE);
+    *total_size = stats.total_size;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2262,9 +2516,6 @@ dragon_memory_pool_get_free_blocks(dragonMemoryPoolDescr_t* pool_descr, dragonHe
         append_err_return(err, "Could not get pool stats.");
 
     memcpy(free_blocks, &stats.free_blocks, stats.num_block_sizes*sizeof(dragonHeapStatsAllocationItem_t));
-
-    for (int k=0;k<stats.num_block_sizes;k++)
-        free_blocks[k].block_size = _to_dsize(pool, free_blocks[k].block_size);
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2395,12 +2646,8 @@ dragon_memory_serialize(dragonMemorySerial_t * mem_ser, const dragonMemoryDescr_
     if (err != DRAGON_SUCCESS)
         return err;
 
-    /* Type of the allocation */
-    *(dragonULInt*)ptr = mem->mfst_record.alloc_type;
-    ptr += sizeof(dragonULInt);
-
     /* Alloc allocation ID */
-    *(dragonULInt*)ptr = mem->mfst_record.alloc_type_id;
+    *(dragonULInt*)ptr = mem->mfst_record.id;
     ptr += sizeof(dragonULInt);
 
     /* offset is included for remote mem descriptors and for clone information
@@ -2494,15 +2741,13 @@ dragon_memory_attach(dragonMemoryDescr_t * mem_descr, const dragonMemorySerial_t
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "could not attach to memory pool");
 
-    dragonMemoryAllocationType_t type = *(dragonULInt*)ptr;
-    ptr += sizeof(dragonULInt);
-    dragonULInt type_id = *(dragonULInt*)ptr;
+    dragonULInt id = *(dragonULInt*)ptr;
     ptr += sizeof(dragonULInt);
     dragonULInt offset = *(dragonULInt*)ptr;
     ptr += sizeof(dragonULInt);
     dragonULInt bytes = *(dragonULInt*)ptr;
 
-    err = dragon_memory_get_alloc_memdescr(mem_descr, &pool_descr, type, type_id, offset, &bytes);
+    err = dragon_memory_get_alloc_memdescr(mem_descr, &pool_descr, id, offset, &bytes);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "could not obtain allocation memory descriptor");
 
@@ -2556,6 +2801,59 @@ dragon_memory_detach(dragonMemoryDescr_t * mem_descr)
 }
 
 /**
+ * @brief Get the unique id for this memory descriptor in its pool.
+ *
+ * This function retrieves the identifier assigned to this memory allocation.
+ * It is unique for this instance of its pool only. It is unique for this
+ * memory allocation in its pool.
+ *
+ * @param mem_descr The given memory descriptor
+ * @param id The memory allocation's unique identifier
+ *
+ * @returns DRAGON_SUCCESS or another dragonError_t return code.
+ */
+dragonError_t dragon_memory_id(dragonMemoryDescr_t * mem_descr, uint64_t* id)
+{
+    if (mem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The mem_descr argument cannot be NULL.");
+
+    if (id == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The id argument cannot be NULL.");
+
+    dragonMemory_t * mem;
+    dragonError_t err = _mem_from_descr(mem_descr, &mem);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "cannot obtain memory from descriptor");
+
+    *id = mem->mfst_record.id;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Get the the memory descriptor associated with a pool given its unique id.
+ *
+ * This function initializes a memory descriptor given its unique id in a pool.
+ *
+ * @param pool_descr The pool in which to look for the memory.
+ * @param id The memory allocation's unique identifier
+ * @param mem_descr The memory descriptor to be initialized.
+ *
+ * @returns DRAGON_SUCCESS or another dragonError_t return code.
+ */
+dragonError_t
+dragon_memory_from_id(const dragonMemoryPoolDescr_t * pool_descr, uint64_t id, dragonMemoryDescr_t * mem_descr)
+{
+    dragonError_t err;
+
+    err = dragon_memory_get_alloc_memdescr(mem_descr, pool_descr, id, 0, NULL);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "could not obtain allocation memory descriptor");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
  * @brief Allocate memory from a pool, waiting if necessary
  *
  * Allocates memory of the given size in bytes from a memory pool. The memory
@@ -2582,6 +2880,7 @@ dragon_memory_detach(dragonMemoryDescr_t * mem_descr)
 dragonError_t
 dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr, const size_t bytes, const timespec_t* timeout)
 {
+    char err_str[400];
     void* hptr = NULL;
 
     if (mem_descr == NULL)
@@ -2619,9 +2918,7 @@ dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemory
     mem->offset = 0;
 
     if (pool->local_dptr != NULL && bytes > 0) {
-        size_t hbytes = _to_hsize(pool, bytes);
-
-        err = dragon_heap_malloc_blocking(&pool->heap.mgrs[0], hbytes, &hptr, timeout);
+        err = dragon_heap_malloc_blocking(&pool->heap.mgrs[0], bytes, &hptr, timeout);
         if (err != DRAGON_SUCCESS) {
             mem->bytes = 0;
             /* Don't use append_err_return. In hot path */
@@ -2631,21 +2928,18 @@ dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemory
         mem->local_dptr = _to_dptr(pool, hptr);
         void* end_ptr = ((void*)pool->local_dptr) + *pool->header.total_data_size;
 
-        if (mem->local_dptr < pool->local_dptr || mem->local_dptr >= end_ptr) {
+        if (mem->local_dptr < pool->local_dptr || mem->local_dptr >= end_ptr)
             err_return(DRAGON_FAILURE, "Pointer out of bounds");
-        }
 
-       /* generate a record in the manifest of this allocation */
-        dragonULInt idx = _fetch_data_idx(pool->header.anon_data_idx);
-
-        _obtain_manifest_lock(pool);
-        err = _generate_manifest_record(mem, pool, DRAGON_MEMORY_ALLOC_DATA, idx);
-        _release_manifest_lock(pool);
-
+        err = _generate_manifest_record(mem, pool, DRAGON_MEMORY_ALLOC_DATA, timeout);
         if (err != DRAGON_SUCCESS) {
-            dragon_heap_free(&pool->heap.mgrs[0], hptr);
+            char* msg = dragon_getrawerrstr();
+            dragon_heap_free(&pool->heap.mgrs[0], hptr, bytes);
             free(mem);
-            append_err_return(err, "cannot create manifest record");
+            dragon_setrawerrstr(msg);
+            free(msg);
+            snprintf(err_str, 399, "Cannot create manifest record.\nThis is frequently caused by too many concurrent allocations in a pool. Pools can be configured\nto allow for more concurrent allocations by specifying the max_allocations attribute when creating the pool.\nThe current max_allocations is set to %lu which requires %lu bytes in shared memory.", pool->manifest_requested_size, *pool->header.manifest_table_size);
+            append_err_return(err, err_str);
         }
     }
 
@@ -2653,7 +2947,7 @@ dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemory
     err = _add_alloc_umap_entry(mem, mem_descr);
     if (err != DRAGON_SUCCESS) {
         if (bytes > 0)
-            dragon_heap_free(&pool->heap.mgrs[0], hptr);
+            dragon_heap_free(&pool->heap.mgrs[0], hptr, bytes);
         free(mem);
         append_err_return(err, "Could not add umap entry");
     }
@@ -2714,9 +3008,6 @@ dragon_memory_alloc(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr
  *
  * @param type is constant value associated with the type of memory to be allocated.
  *
- * @param type_id is a user supplied value to identify the memory allocation of
- * this given type.
- *
  * @param timeout a pointer to the timeout that is to be used. Providing NULL
  * means to wait indefinitely. Providing a zero timeout (both seconds and nanoseconds)
  * means to try once and not block if the space is not available.
@@ -2725,8 +3016,9 @@ dragon_memory_alloc(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr
  */
 dragonError_t
 dragon_memory_alloc_type_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr, const size_t bytes,
-                         const dragonMemoryAllocationType_t type, const dragonULInt type_id, const timespec_t* timeout)
+                         const dragonMemoryAllocationType_t type, const timespec_t* timeout)
 {
+    char err_str[400];
     void* hptr = NULL;
 
     if (mem_descr == NULL)
@@ -2756,16 +3048,6 @@ dragon_memory_alloc_type_blocking(dragonMemoryDescr_t * mem_descr, const dragonM
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate new memory object");
     }
 
-    /* Check if record for type+id already exists.  If so, return error */
-    _obtain_manifest_lock(pool);
-    err = _lookup_allocation(pool, type, type_id, mem);
-    if (err == DRAGON_SUCCESS) {
-        _release_manifest_lock(pool);
-        free(mem);
-        err_return(DRAGON_INVALID_ARGUMENT, "allocation record already exists");
-    }
-
-    // Record does not already exist, reserve it
     /*
       Allocate in the manifest for a record
       Insert that record
@@ -2778,39 +3060,36 @@ dragon_memory_alloc_type_blocking(dragonMemoryDescr_t * mem_descr, const dragonM
     mem->offset = 0;
 
     if (pool->local_dptr != NULL && bytes > 0) {
-
-        size_t hbytes = _to_hsize(pool, bytes);
-
-        err = dragon_heap_malloc_blocking(&pool->heap.mgrs[0], hbytes, &hptr, timeout);
+        err = dragon_heap_malloc_blocking(&pool->heap.mgrs[0], bytes, &hptr, timeout);
 
         if (err != DRAGON_SUCCESS) {
-            _release_manifest_lock(pool);
             free(mem);
             /* Don't use append_err_return. In hot path */
             return err;
         }
 
         mem->local_dptr = _to_dptr(pool, hptr);
-
         void* end_ptr = ((void*)pool->local_dptr) + *pool->header.total_data_size;
 
-        if (mem->local_dptr < pool->local_dptr || mem->local_dptr >= end_ptr) {
+        if (mem->local_dptr < pool->local_dptr || mem->local_dptr >= end_ptr)
             err_return(DRAGON_FAILURE, "Pointer out of bounds");
-        }
 
-        err = _generate_manifest_record(mem, pool, type, type_id);
-        _release_manifest_lock(pool);
+        err = _generate_manifest_record(mem, pool, type, timeout);
         if (err != DRAGON_SUCCESS) {
-            dragon_heap_free(&pool->heap.mgrs[0], hptr);
+            char* msg = dragon_getrawerrstr();
+            dragon_heap_free(&pool->heap.mgrs[0], hptr, bytes);
             free(mem);
-            append_err_return(err, "cannot create manifest record");
+            dragon_setrawerrstr(msg);
+            free(msg);
+            snprintf(err_str, 399, "Cannot create manifest record.\nThis is frequently caused by too many concurrent allocations in a pool. Pools can be configured\nto allow for more concurrent allocations by specifying the max_allocations attribute when creating the pool.\nThe current max_allocations is set to %lu which requires %lu bytes in shared memory.", pool->manifest_requested_size, *pool->header.manifest_table_size);
+            append_err_return(err, err_str);
         }
     }
 
     err = _add_alloc_umap_entry(mem, mem_descr);
     if (err != DRAGON_SUCCESS) {
         if (bytes > 0)
-            dragon_heap_free(&pool->heap.mgrs[0], hptr);
+            dragon_heap_free(&pool->heap.mgrs[0], hptr, bytes);
         free(mem);
         append_err_return(err, "failed to insert item into dg_mallocs umap");
     }
@@ -2846,18 +3125,15 @@ dragon_memory_alloc_type_blocking(dragonMemoryDescr_t * mem_descr, const dragonM
  *
  * @param type is constant value associated with the type of memory to be allocated.
  *
- * @param type_id is a user supplied value to identify the memory allocation of
- * this given type.
- *
  * @returns DRAGON_SUCCESS or another dragonError_t return code. If the requested
  * size is not then DRAGON_DYNHEAP_REQUESTED_SIZE_NOT_AVAILABLE is returned.
  */
 dragonError_t
 dragon_memory_alloc_type(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr, const size_t bytes,
-                         const dragonMemoryAllocationType_t type, const dragonULInt type_id)
+                         const dragonMemoryAllocationType_t type)
 {
     timespec_t timeout = {0,0}; /* a zero timeout tells dragon_heap_malloc_blocking not to block */
-    return dragon_memory_alloc_type_blocking(mem_descr, pool_descr, bytes, type, type_id, &timeout);
+    return dragon_memory_alloc_type_blocking(mem_descr, pool_descr, bytes, type, &timeout);
 }
 
 /**
@@ -2882,6 +3158,7 @@ dragon_memory_free(dragonMemoryDescr_t * mem_descr)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid memory descriptor");
 
     dragonMemory_t * mem;
+    char* err_str;
     dragonError_t err = _mem_from_descr(mem_descr, &mem);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "cannot obtain memory from descriptor");
@@ -2898,20 +3175,26 @@ dragon_memory_free(dragonMemoryDescr_t * mem_descr)
        are not recorded in the heap or manifest */
     if (mem->bytes > 0) {
         _obtain_manifest_lock(pool);
-        err = dragon_hashtable_remove(&(pool->heap.mfstmgr), (char*)&(mem->mfst_record.alloc_type));
+        err = dragon_blocks_free(&(pool->heap.mfstmgr), mem->mfst_record.id);
+        if (err != DRAGON_SUCCESS)
+            err_str = dragon_getlasterrstr();
         _release_manifest_lock(pool);
 
-        if (err != DRAGON_SUCCESS)
+        if (err != DRAGON_SUCCESS) {
+            err_noreturn(err_str);
+            free(err_str);
             append_err_return(err, "cannot remove from manifest");
-
-        void* hptr = _to_hptr(pool, mem->local_dptr);
-
-        if (hptr != NULL) {
-            /* free the data */
-            err = dragon_heap_free(&pool->heap.mgrs[0], hptr);
-            if (err != DRAGON_SUCCESS)
-                append_err_return(err, "cannot release memory back to data pool");
         }
+
+        /* This will not timeout or hang because there is no payload. */
+        dragon_bcast_trigger_one(&pool->manifest_bcast, NULL, NULL, 0);
+
+        void* hptr = _to_hoffset(pool, mem->local_dptr);
+
+        /* free the data */
+        err = dragon_heap_free(&pool->heap.mgrs[0], hptr, mem->mfst_record.size);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "cannot release memory back to data pool");
 
         mem->local_dptr = NULL;
     }
@@ -2923,23 +3206,18 @@ dragon_memory_free(dragonMemoryDescr_t * mem_descr)
 
     free(mem);
     mem_descr->_idx = 0UL;
-
     no_err_return(DRAGON_SUCCESS);
 }
 
 /**
  * @brief Check whether a memory pool allocation exists
  *
- * Given the manifest information (type, type id) for a particular memory allocation in a pool, return
+ * Given a memory descriptor for a particular memory allocation in a pool, return
  * true or false that the allocation exists via the flag argument. This method only works locally
  * on the node where the memory pool exists. The process calling this function and the memory pool must
- * be co-located on the same node.
+ * be co-located on the same node. This method checks to see if memory was deleted after being attached.
  *
- * @param pool_descr is the Memory Pool being queried.
- *
- * @param type is an allocation type for the memory descriptor being queried.
- *
- * @param type_id is the user supplied identifier for the memory descriptor being queried.
+ * @param mem_descr is a user supplied memory descriptor for the memory descriptor being queried.
  *
  * @param flag is a pointer to an integer where 1 will be stored if the memory exists and 0 otherwise.
  *
@@ -2947,11 +3225,12 @@ dragon_memory_free(dragonMemoryDescr_t * mem_descr)
 */
 
 dragonError_t
-dragon_memory_pool_allocation_exists(const dragonMemoryPoolDescr_t * pool_descr, const dragonMemoryAllocationType_t type,
-                                     const dragonULInt type_id, int * flag)
+dragon_memory_pool_allocation_exists(dragonMemoryDescr_t * mem_descr, int * flag)
 {
-    if (pool_descr == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "invalid pool descriptor");
+    dragonError_t err;
+
+    if (mem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "invalid memory descriptor");
 
     if (flag == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid flag pointer");
@@ -2959,20 +3238,22 @@ dragon_memory_pool_allocation_exists(const dragonMemoryPoolDescr_t * pool_descr,
     // Default result to 0
     *flag = 0;
 
+    dragonMemory_t* mem;
+    err = _mem_from_descr(mem_descr, &mem);
+    if (err != DRAGON_SUCCESS)
+        err_return(err, "allocation could not be found.");
+
     // Get Pool
     dragonMemoryPool_t * pool;
-    dragonError_t err = _pool_from_descr(pool_descr, &pool);
-    if (err != DRAGON_SUCCESS) {
-        append_err_return(err, "could not retrieve pool from descriptor");
-    }
+    err = _pool_from_descr(&mem->pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "cannot obtain pool from memory descriptor");
 
     if (pool->local_dptr == NULL)
         err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot check an allocation exists on a non-local pool.");
 
-    // run scan function looking for a match
-    dragonMemory_t mem;
     _obtain_manifest_lock(pool);
-    err = _lookup_allocation(pool, type, type_id, &mem);
+    err = _lookup_allocation(pool, mem->mfst_record.id, mem);
     _release_manifest_lock(pool);
     if (err != DRAGON_SUCCESS) {
         err_return(err, "allocation does not exist");
@@ -2983,6 +3264,7 @@ dragon_memory_pool_allocation_exists(const dragonMemoryPoolDescr_t * pool_descr,
 
     no_err_return(DRAGON_SUCCESS);
 }
+
 
 /**
  * @brief Free local the allocations structure
@@ -3045,21 +3327,26 @@ dragon_memory_pool_get_allocations(const dragonMemoryPoolDescr_t * pool_descr, d
     if (pool->local_dptr == NULL)
         err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot get allocations from a non-local pool.");
 
-    dragonHashtableIterator_t iter;
-    bool iterating = true;
     dragonMemoryManifestRec_t rec;
 
     /* obtain the manifest lock */
     _obtain_manifest_lock(pool);
 
-    dragonHashtableStats_t manifest_stats;
-    err = dragon_hashtable_stats(&pool->heap.mfstmgr, &manifest_stats);
+    uint64_t num_items;
+
+    err = dragon_blocks_count(&pool->heap.mfstmgr, NULL, 0, 0, &num_items);
     if (err != DRAGON_SUCCESS) {
         _release_manifest_lock(pool);
         append_err_return(err, "could not retrieve manifest stats");
     }
 
-    allocs->nallocs = manifest_stats.num_items;
+    allocs->nallocs = num_items;
+
+    if (num_items == 0) {
+        allocs->types = NULL;
+        allocs->ids = NULL;
+        no_err_return(DRAGON_SUCCESS);
+    }
 
     allocs->types = malloc(sizeof(dragonULInt) * allocs->nallocs);
     if (allocs->types == NULL) {
@@ -3077,30 +3364,30 @@ dragon_memory_pool_get_allocations(const dragonMemoryPoolDescr_t * pool_descr, d
     dragonULInt * type_ptr = allocs->types;
     dragonULInt * id_ptr = allocs->ids;
 
-    err = dragon_hashtable_iterator_init(&pool->heap.mfstmgr, &iter);
-    if (err != DRAGON_SUCCESS) {
-        _release_manifest_lock(pool);
-        free(allocs->types);
-        free(allocs->ids);
-        append_err_return(err, "could not initialize manifest iterator");
-    }
+    err = dragon_blocks_first(&pool->heap.mfstmgr, NULL, 0, 0, &rec.id);
 
-    while (iterating) {
-        err = dragon_hashtable_iterator_next(&pool->heap.mfstmgr, &iter, (char*)&rec.alloc_type, (char*)&rec.offset);
-
-        if (err == DRAGON_HASHTABLE_ITERATION_COMPLETE) {
-            iterating = false;
-        } else if (err != DRAGON_SUCCESS) {
+    while (err == DRAGON_SUCCESS) {
+        err = dragon_blocks_get(&pool->heap.mfstmgr, rec.id, &rec.type);
+        if (err != DRAGON_SUCCESS) {
             _release_manifest_lock(pool);
             free(allocs->types);
             free(allocs->ids);
-            append_err_return(err, "could not get manifest record");
-        } else {
-            *(type_ptr) = rec.alloc_type;
-            *(id_ptr) = rec.alloc_type_id;
-            type_ptr++;
-            id_ptr++;
+            append_err_return(err, "could not get value for type in iteration.");
         }
+
+        *(type_ptr) = rec.type;
+        *(id_ptr) = rec.id;
+        type_ptr++;
+        id_ptr++;
+
+        err = dragon_blocks_next(&pool->heap.mfstmgr, NULL, 0, 0, &rec.id);
+    }
+
+    if (err != DRAGON_BLOCKS_ITERATION_COMPLETE) {
+        _release_manifest_lock(pool);
+        free(allocs->types);
+        free(allocs->ids);
+        append_err_return(err, "Could not iterate over manifest.");
     }
 
     /* release the manifest lock */
@@ -3144,30 +3431,29 @@ dragon_memory_pool_get_type_allocations(const dragonMemoryPoolDescr_t * pool_des
     if (pool->local_dptr == NULL)
         err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot get allocations from a non-local pool.");
 
-    dragonHashtableIterator_t iter;
-    bool iterating = true;
     dragonMemoryManifestRec_t rec;
-    dragonULInt count = 0;
+    rec.type = type;
 
     /* obtain the manifest lock */
     _obtain_manifest_lock(pool);
 
-    dragonHashtableStats_t manifest_stats;
-    err = dragon_hashtable_stats(&pool->heap.mfstmgr, &manifest_stats);
+    uint64_t num_items;
+
+    err = dragon_blocks_count(&pool->heap.mfstmgr, &rec.type, 0, sizeof(rec.type), &num_items);
     if (err != DRAGON_SUCCESS) {
         _release_manifest_lock(pool);
         append_err_return(err, "could not retrieve manifest stats");
     }
 
-    allocs->nallocs = manifest_stats.num_items;
+    allocs->nallocs = num_items;
 
-    allocs->types = malloc(sizeof(dragonULInt) * manifest_stats.num_items);
+    allocs->types = malloc(sizeof(dragonULInt) * allocs->nallocs);
     if (allocs->types == NULL) {
         _release_manifest_lock(pool);
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "could not allocate memory for types");
     }
 
-    allocs->ids = malloc(sizeof(dragonULInt) * manifest_stats.num_items);
+    allocs->ids = malloc(sizeof(dragonULInt) * allocs->nallocs);
     if (allocs->ids == NULL) {
         _release_manifest_lock(pool);
         free(allocs->types);
@@ -3177,39 +3463,34 @@ dragon_memory_pool_get_type_allocations(const dragonMemoryPoolDescr_t * pool_des
     dragonULInt * type_ptr = allocs->types;
     dragonULInt * id_ptr = allocs->ids;
 
-    err = dragon_hashtable_iterator_init(&pool->heap.mfstmgr, &iter);
-    if (err != DRAGON_SUCCESS) {
-        _release_manifest_lock(pool);
-        free(allocs->types);
-        free(allocs->ids);
-        append_err_return(err, "could not initialize manifest iterator");
-    }
+    err = dragon_blocks_first(&pool->heap.mfstmgr, &rec.type, 0, sizeof(rec.type), &rec.id);
 
-    while (iterating) {
-        err = dragon_hashtable_iterator_next(&pool->heap.mfstmgr, &iter, (char*)&rec.alloc_type, (char*)&rec.offset);
-
-        if (err == DRAGON_HASHTABLE_ITERATION_COMPLETE) {
-            iterating = false;
-        } else if (err != DRAGON_SUCCESS) {
+    while (err == DRAGON_SUCCESS) {
+        err = dragon_blocks_get(&pool->heap.mfstmgr, rec.id, &rec.type);
+        if (err != DRAGON_SUCCESS) {
             _release_manifest_lock(pool);
             free(allocs->types);
             free(allocs->ids);
-            append_err_return(err, "could not get manifest record");
-        } else {
-            if (type == rec.alloc_type) {
-                *(type_ptr) = rec.alloc_type;
-                *(id_ptr) = rec.alloc_type_id;
-                type_ptr++;
-                id_ptr++;
-                count++;
-            }
+            append_err_return(err, "could not get value for type in iteration.");
         }
+
+        *(type_ptr) = rec.type;
+        *(id_ptr) = rec.id;
+        type_ptr++;
+        id_ptr++;
+
+        err = dragon_blocks_next(&pool->heap.mfstmgr, &rec.type, 0, sizeof(rec.type), &rec.id);
+    }
+
+    if (err != DRAGON_BLOCKS_ITERATION_COMPLETE) {
+        _release_manifest_lock(pool);
+        free(allocs->types);
+        free(allocs->ids);
+        append_err_return(err, "Could not iterate over manifest.");
     }
 
     /* release the manifest lock */
     _release_manifest_lock(pool);
-
-    allocs->nallocs = count;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -3380,9 +3661,7 @@ dragon_memory_get_pool(const dragonMemoryDescr_t * mem_descr, dragonMemoryPoolDe
  *
  * @param pool_descr is the memory pool that is being queried.
  *
- * @param type is the type part of the memory descriptor identifier
- *
- * @param type_id is the id part of the memory descriptor identifier
+ * @param id is the id part of the memory descriptor identifier
  *
  * @param offset is an offset into the memory descriptor used to provide a cloned offset
  * into the returned memory descriptor.
@@ -3395,8 +3674,7 @@ dragon_memory_get_pool(const dragonMemoryDescr_t * mem_descr, dragonMemoryPoolDe
 
 dragonError_t
 dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr,
-                                 const dragonMemoryAllocationType_t type, const dragonULInt type_id,
-                                 const dragonULInt offset, const dragonULInt* bytes_size)
+                                 const dragonULInt id, const dragonULInt offset, const dragonULInt* bytes_size)
 {
     dragonError_t err;
     if (mem_descr == NULL)
@@ -3420,14 +3698,14 @@ dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMe
     if (pool->local_dptr != NULL && ((bytes_size == NULL) || (bytes_size != NULL && *bytes_size > 0))) { /* It is a local pool allocation of non-zero size */
         /* Acquire manifest info for the allocation */
         _obtain_manifest_lock(pool);
-        err = _lookup_allocation(pool, type, type_id, mem);
+        err = _lookup_allocation(pool, id, mem);
         _release_manifest_lock(pool);
 
         if (err != DRAGON_SUCCESS) {
             char err_str[100];
             free(mem);
-            snprintf(err_str, 99, "could not find matching type=%u and id=%lu allocation", type, type_id);
-            err_return(err, err_str);
+            snprintf(err_str, 99, "could not find matching id=%lu allocation", id);
+            append_err_return(err, err_str);
         }
 
         /* Fill out rest of mem_struct */
@@ -3446,7 +3724,7 @@ dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMe
            originally, the bytes was included in the serialization. So
            even remotely this will be valid when used via a clone. If
            a user mistakenly were to call this remotely with their own
-           type, type_id, offset, and bytes_size, it will be verified
+           id, offset, and bytes_size, it will be verified
            before any pointer is handed out on a local node */
 
         if (bytes_size == NULL) {
@@ -3455,6 +3733,10 @@ dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMe
         }
         mem->local_dptr = NULL;
         mem->bytes = *bytes_size;
+        mem->mfst_record.id = id;
+        mem->mfst_record.type = 0; // not known remotely, but not required remotely.
+        mem->mfst_record.offset = offset;
+        mem->mfst_record.size = *bytes_size;
     }
 
     mem->offset = offset;
@@ -3659,6 +3941,51 @@ dragon_memory_equal(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_de
         err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot hash a non-local memory allocation.");
 
     *result = dragon_bytes_equal(mem1->local_dptr + mem1->offset, mem2->local_dptr + mem2->offset, mem1->bytes, mem2->bytes);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Check for to memory allocations are actually the same.
+ *
+ * Check that two memory allocations are the same allocation.
+ *
+ * @param mem_descr1 One memory allocation.
+ * @param mem_descr2 Other memory allocation.
+ *
+ * @param result is true if equal and false otherwise.
+ *
+ * @returns DRAGON_SUCCESS or another dragonError_t return code.
+*/
+
+dragonError_t
+dragon_memory_is(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result)
+{
+    /* Check that the given descriptor points to valid memory */
+    dragonMemory_t* mem1;
+    dragonMemory_t* mem2;
+    dragonError_t err;
+
+    if (result == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "You must pass a pointer to a result location to store the result.");
+
+    *result = false;
+
+    err = _mem_from_descr(mem_descr1, &mem1);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid memory descriptor");
+
+    if (mem1->local_dptr == NULL)
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot hash a non-local memory allocation.");
+
+    err = _mem_from_descr(mem_descr2, &mem2);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid memory descriptor");
+
+    if (mem2->local_dptr == NULL)
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot hash a non-local memory allocation.");
+
+    *result = (mem1->mfst_record.id == mem2->mfst_record.id);
 
     no_err_return(DRAGON_SUCCESS);
 }

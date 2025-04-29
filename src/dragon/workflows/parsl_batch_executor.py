@@ -1,3 +1,5 @@
+"""An expiremental executor for parsl that uses Dragon's multiprocessing pool to submit batches of tasks to workers."""
+
 import dragon
 import multiprocessing as mp
 
@@ -19,7 +21,62 @@ logger = logging.getLogger(__name__)
 
 
 class DragonBatchPoolExecutor(ParslExecutor, RepresentationMixin):
-    """A Parsl executor that can be used with python functions. This executor requires the user to be in an allocation. It will not allocate the resources for the user. This executor uses a multiprocessing pool with the specified number of workers placed in a round-robin fashion across the number of nodes in the allocation. Work submitted to the executor is batched to help reduce overhead. This executor is best for large, embarassingly parrallel python work."""
+    """A Parsl executor that can be used with python functions. This executor requires the user to be in an allocation. It will not allocate the resources for the user. This executor uses a multiprocessing pool with the specified number of workers placed in a round-robin fashion across the number of nodes in the allocation. Work submitted to the executor is batched to help reduce overhead. This executor is best for large, embarassingly parrallel python work.
+
+    Example usage:
+
+    .. highlight:: python
+    .. code-block:: python
+
+        import dragon
+        import multiprocessing as mp
+        import parsl
+        from parsl.config import Config
+        from parsl import python_app
+        from dragon.workflows.parsl_batch_executor import DragonBatchPoolExecutor
+
+        import os
+        import math
+        import argparse
+        import numpy as np
+        import time
+        import itertools
+
+        @python_app
+        def f(arg):
+            return 42
+
+        if __name__ == "__main__":
+            mp.set_start_method("dragon")
+
+            nimages = 1024
+            num_cpus = 256
+            optimal_batch_size=math.floor(nimages/num_cpus)
+
+            config = Config(
+                executors=[
+                    DragonBatchPoolExecutor(
+                        max_processes=num_cpus,
+                        batch_size=optimal_batch_size,
+                    ),
+                ],
+                strategy=None,
+            )
+
+            parsl.load(config)
+
+            results=[]
+            for _ in range(nimages):
+                res_future = f(None)
+                results.append(res_future)
+
+            for res_future in results:
+                # this blocks till each result is available
+                res_future.result()
+
+            config.executors[0].shutdown()
+
+    """
 
     @typeguard.typechecked
     def __init__(
@@ -177,9 +234,7 @@ class DragonBatchPoolExecutor(ParslExecutor, RepresentationMixin):
 
             if len(work_items) >= batch_size or (num_timeouts >= max_num_timeouts and len(work_items) > 0):
                 # send work to pool
-                async_result = executor.map_async(
-                    DragonBatchPoolExecutor._identity, work_items, chunksize=batch_size
-                )
+                async_result = executor.map_async(DragonBatchPoolExecutor._identity, work_items, chunksize=batch_size)
                 # send list of futures and async result to thread handling assignment of futures results
                 output_queue.put((work_items_futures, async_result))
                 # reset everything for next batch of work

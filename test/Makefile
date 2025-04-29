@@ -13,7 +13,7 @@ COMPONENTS := broadcast \
               hashtable \
               heapmanager \
               pmod \
-	      utils
+              utils
 
 DIST_SOURCES := $(wildcard pkg/*) \
 				_ctest_utils.h \
@@ -30,6 +30,7 @@ DIST_SOURCES := $(wildcard pkg/*) \
 				multi-node/test_barrier.py \
 				multi-node/test_connection.py \
 				multi-node/test_distdict.py \
+				multi-node/test_distdict_c.py \
 				multi-node/test_fli.py \
 				multi-node/test_lock.py \
 				multi-node/test_machine.py \
@@ -39,6 +40,8 @@ DIST_SOURCES := $(wildcard pkg/*) \
 				multi-node/test_value.py \
                 multi-node/test_process_group.py \
 				multi-node/mpi_hello.c \
+				multi-node/c_ddict.c \
+                multi-node/cpp_ddict.cpp \
 				multi-node/test_mpi_hello_world.py \
 				multi-node/Makefile
 
@@ -53,6 +56,7 @@ TESTS_PYTHON := test_c_files.py \
                 test_connection.py \
                 test_infrastructure.py \
                 test_globalservices.py \
+                test_policy.py \
                 test_shepherd.py \
                 $(wildcard transport/tcp/test_*.py) \
                 transport/test_lsif.py \
@@ -60,16 +64,26 @@ TESTS_PYTHON := test_c_files.py \
                 test_integration_shep_gs.py \
 				test_launcher.py
 
-
 TESTS_DRAGON := test_mpbridge.py \
                 test_native.py \
-				test_distdict.py
+				test_distdict.py \
+				test_telemetry.py
+
+TESTS_CCFUTURES := test_as_completed.py \
+                   test_deadlock.py \
+                   test_future.py \
+                   test_init.py \
+                   test_interpreter_pool.py \
+                   test_process_pool.py \
+                   test_shutdown.py \
+                   test_thread_pool.py \
+                   test_wait.py
 
 .PHONY: all
 all: test
 
 .PHONY: test
-test: $(TESTS_PYTHON) $(TESTS_DRAGON)
+test: $(TESTS_PYTHON) $(TESTS_DRAGON) $(TESTS_CCFUTURES)
 
 .PHONY: $(TESTS_PYTHON)
 $(TESTS_PYTHON):
@@ -83,6 +97,13 @@ $(TESTS_DRAGON):
 tests_multi_node:
 	@echo "These tests require an allocation !"
 	$(MAKE) -C multi-node
+
+
+.PHONY: $(TESTS_CCFUTURES)
+$(TESTS_CCFUTURES):
+	@echo "Running ccfutures test"
+	cd ccfutures && dragon -s $@ -v -f
+
 
 BUILD_COMPONENTS := $(addprefix build-,$(COMPONENTS))
 

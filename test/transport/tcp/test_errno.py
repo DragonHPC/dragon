@@ -13,5 +13,5 @@ class ErrnoTestCase(unittest.TestCase):
         self.assertEqual(errno.get_errno(TimeoutError()), errno.DRAGON_TIMEOUT)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

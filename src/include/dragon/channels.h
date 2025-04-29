@@ -25,6 +25,8 @@ extern "C" {
 #endif
 
 #define DRAGON_GW_TEST_SLEEP "DRAGON_GW_TEST_SLEEP"
+#define DRAGON_CHANNEL_MINIMUM_BYTES_PER_BLOCK 256
+#define DRAGON_CHANNEL_DEFAULT_CAPACITY 100
 
 /** @defgroup channels_constants Channels Constants
  *
@@ -112,8 +114,24 @@ typedef enum dragonChannelEvent_st {
     DRAGON_CHANNEL_POLLBARRIER_WAITERS = 12,
         /*!< Return the number of waiters on the barrier channel. */
 
-    DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS = 13
+    DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS = 13,
         /*!< Return the number of blocked receivers on a channel. */
+
+    DRAGON_SEMAPHORE_P = 14,
+        /*!< A Semaphore P operation on a channel of capacity==1. It decrements the semaphore's value or
+             waits if the value is 0 for the specified timeout. If a zero timeout is supplied, then it
+             returns the appropriate return code when the value in the channel is 0. */
+
+    DRAGON_SEMAPHORE_V = 15,
+        /*!< A Semaphore V operation on a channel of capacity==1. It increments the semaphore's value. */
+
+    DRAGON_SEMAPHORE_VZ = 16,
+        /*!< A Semaphore wait that unblocks when the count of the semaphore drops to 0. */
+
+    DRAGON_SEMAPHORE_PEEK = 17
+        /*!< Peek at the value of the semaphore. Useful in debugging. */
+
+
 } dragonChannelEvent_t;
 
 /**
@@ -166,22 +184,64 @@ static timespec_t const DRAGON_CHANNEL_TRYONCE_TIMEOUT = { 0, 0 };
  **/
 
 typedef struct dragonChannelAttr_st {
-    dragonC_UID_t c_uid; /*!< The channel's cuid. Read Only. Set it using a separate argument on dragon_channel_create. */
-    size_t bytes_per_msg_block; /*!< The bytes per message block. Larger messages will be stored indirectly. Read/Write. */
-    size_t capacity; /*!< The number of blocks in the channel. Read/Write */
-    dragonLockKind_t lock_type; /*!< The type of locks to use inside the channel. Read/Write */
+    dragonC_UID_t c_uid; /*!< The channel's cuid. Read Only. Set it using a
+    separate argument on dragon_channel_create. */
+
+    size_t bytes_per_msg_block; /*!< The bytes per message block. Larger messages
+    will be stored indirectly. Read/Write. Ingored if semaphore is true. */
+
+    size_t capacity; /*!< The number of blocks in the channel. Read/Write.
+    Ignored if semaphore is true. */
+
+    dragonLockKind_t lock_type; /*!< The type of locks to use inside the channel.
+    Read/Write */
+
     dragonChannelOFlag_t oflag; /*!< Not implemented. */
+
     dragonChannelFC_t fc_type; /*!< Not implemented. */
-    dragonULInt flags; /*!< must be a bitwise combination of dragonChannelFlags_t Read/Write */
-    dragonMemoryPoolDescr_t* buffer_pool; /*!< The memory pool that is used for internal allocations. Read/Write */
-    size_t max_spinners; /*!< The maximum allowed spin processes when waiting on the channel. More waiters are allowed, but will be IDLE waiters instead. Read/Write */
-    size_t max_event_bcasts; /*!< The number of channelsets that can register this channel. Read/Write */
-    int blocked_receivers; /*!< Number of receivers that are currently blocked. The value may change before the attributes are returned. Read Only. */
-    int blocked_senders; /*!< Number of blocked receivers. The value may change before the attributes are returned. Read Only. */
-    size_t num_msgs; /*!< Number of messages in the channel. The value may change before the attributes are returned. Read Only. */
-    size_t num_avail_blocks; /*!< Number of available message blocks in the channel. It will always be capacity - num_msgs. It is a snapshot only. Read Only. */
-    bool broken_barrier; /*!< A channel being used as a barrier is broken if this value is non-zero. Read-only. */
-    int barrier_count; /*!< The number of waiters on this barrier. Waiting is a two-step operation, so this may differ from blocked_receivers. Read Only. */
+
+    dragonULInt flags; /*!< must be a bitwise combination of dragonChannelFlags_t
+    Read/Write */
+
+    dragonMemoryPoolDescr_t* buffer_pool; /*!< The memory pool that is used for
+    internal allocations. Read/Write */
+
+    size_t max_spinners; /*!< The maximum allowed spin processes when waiting on
+    the channel. More waiters are allowed, but will be IDLE waiters instead.
+    Read/Write */
+
+    size_t max_event_bcasts; /*!< The number of channelsets that can register
+    this channel. Read/Write */
+
+    int blocked_receivers; /*!< Number of receivers that are currently blocked.
+    The value may change before the attributes are returned. Read Only. */
+
+    int blocked_senders; /*!< Number of blocked receivers. The value may change
+    before the attributes are returned. Read Only. */
+
+    size_t num_msgs; /*!< Number of messages in the channel. The value may change
+    before the attributes are returned. Read Only. */
+
+    size_t num_avail_blocks; /*!< Number of available message blocks in the
+    channel. It will always be capacity - num_msgs. It is a snapshot only.
+    Read Only. */
+
+    bool broken_barrier; /*!< A channel being used as a barrier is broken if this
+    value is non-zero. Read-only. */
+
+    int barrier_count; /*!< The number of waiters on this barrier. Waiting is a
+    two-step operation, so this may differ from blocked_receivers. Read Only.
+    */
+
+    bool semaphore; /*!< When true the channel will be created as a Semaphore
+    channel. You cannot create a send or receive handle on semaphore
+    channels. Semaphores are controlled via semaphore poll operations. */
+
+    bool bounded; /*!< Indicates the semaphore is a bounded semaphore. */
+
+    dragonULInt initial_sem_value; /*!< The initial value assigned to the
+    semaphore. */
+
 } dragonChannelAttr_t;
 
 /**
@@ -445,7 +505,7 @@ dragonError_t
 dragon_channel_get_hostid(const dragonChannelDescr_t* ch, dragonULInt* hostid);
 
 dragonError_t
-dragon_channel_get_uid_type(const dragonChannelSerial_t* ch_ser, dragonULInt* cuid, dragonULInt* type);
+dragon_channel_get_uid(const dragonChannelSerial_t* ch_ser, dragonULInt* cuid);
 
 dragonError_t
 dragon_channel_pool_get_uid_fname(const dragonChannelSerial_t* ch_ser, dragonULInt* muid, char** pool_fname);
@@ -653,7 +713,10 @@ void
 dragon_gatewaymessage_silence_timeouts();
 
 dragonError_t
-dragon_create_process_local_channel(dragonChannelDescr_t* ch, const timespec_t* timeout);
+dragon_create_process_local_channel(dragonChannelDescr_t* ch, uint64_t block_size, uint64_t capacity, const timespec_t* timeout);
+
+dragonError_t
+dragon_destroy_process_local_channel(dragonChannelDescr_t* ch, const timespec_t* timeout);
 
 #ifdef __cplusplus
 }

@@ -1,5 +1,238 @@
 # Changelog
 
+## [0.12rc1] - 2025-04-29
+
+- Many small bug fixes.
+
+- Jupyter notebook server now can be started with dragon-jupyter and now allows
+  kernel restart and fixes some printing issues.
+
+- DDict broadcast put and get for enhanced performance when all clients need a value.
+
+- Huge cleanup and reorganization of documentation.
+
+- Enhanced semaphore performance.
+
+- Out of memory watcher added for user feedback before a deadlock might occur.
+
+- Enhancements to allow efficiently iterating over keys in the DDict.
+
+
+## [0.11.1] - 2025-03-19
+
+### Changed
+
+Remove numpy requirement, allow older minimum versions of other required packages, and allow empty LD_LIBRARY_PATH #952 by nicholas-hill was merged Mar 19, 2025
+
+Fix Process Group Stderr printing and improve teardown speed #955 by kent-lee was merged on Mar 17, 2025
+
+## [0.11] - 2025-03-07
+
+### Changed
+
+Make explicit use of HSTA backend libs and introduce TCP fallback #930 by nicholas-hill was merged Feb 28, 2025
+
+Update ddict documentation #904 by yian-chen was merged Feb 10, 2025
+
+Remove tcp restriction when using ssh launch #881 by eric-cozzi was merged Jan 17, 2025
+
+Updated DDict manager to save space in bootstrap #872 by kent-lee was merged Jan 10, 2025
+
+Update blocks in managed memory #869 by kent-lee was merged Jan 8, 2025
+
+Changed ddict to murmur_hash3_32 #864 by kent-lee was merged Jan 2, 2025
+
+Overhaul release packaging and wheel install #861 by nicholas-hill was merged Jan 9, 2025
+
+Improved p2p_lat Test Performance #860 by kent-lee was merged Dec 19, 2024
+
+C DDict - handle response messages in better way #858 by yian-chen was merged Jan 7, 2025
+
+FLI Buffered Connection Optimization #854 by kent-lee was merged Dec 11, 2024
+
+Black Formatting Changes #853 by burkemi was merged Jan 13, 2025
+
+New Heap Manager #847 by kent-lee was merged Dec 9, 2024
+
+Improve documentation to give users better getting started experience #816 by mendygra was merged Nov 14, 2024
+
+set c_uid for getmsg response #794 by nick-radcliffe was merged Oct 7, 2024
+
+### Added
+
+Added scalable filtering to ddict #933 by kent-lee was merged Mar 3, 2025
+
+Add local managers and local keys to DDict API #932 by yian-chen was merged Mar 4, 2025
+
+Add __missing__ to DDict #924 by potts was merged Feb 24, 2025
+
+Implement batch put for DDict #918 by yian-chen was merged Mar 5, 2025
+
+Add cloning to DDicts #909 by yian-chen was merged Mar 5, 2025
+
+Add manylinux2014 support #907 by nicholas-hill was merged Feb 19, 2025
+
+Add data loader for Zarr #903 by mendygra was merged Feb 18, 2025
+
+Add telemetry Analysis #897 by wahlc was merged Feb 10, 2025
+
+Use ddict as context manager to support custom pickler #902 by yian-chen was merged Feb 7, 2025
+
+Black Linter Github Action #900 by burkemi was merged Feb 6, 2025
+
+Add automated  py3.12 build #890 by sanian-gaffar was merged Jan 24, 2025
+
+Add ddict cpp examples #888 by yian-chen was merged Jan 28, 2025
+
+Add Manifest Stats #886 by kent-lee was merged Jan 21, 2025
+
+Independent HSTA log level #883 by wahlc was merged Jan 21, 2025
+
+Add Intel GPU metric support in telemetry #882 by wahlc was merged Jan 21, 2025
+
+Add link-line-advisor #877 by nicholas-hill was merged Jan 16, 2025
+
+DDict cpp functionalities #874 by yian-chen was merged Jan 9, 2025
+
+YAML config for Telemetry #873 by indira-pimpalkhare was merged Feb 3, 2025
+
+Cross ddict sync #868 by yian-chen was merged Jan 21, 2025
+
+Add hugepage support #866 by nick-radcliffe was merged Jan 8, 2025
+
+C DDict manager selection #857 by yian-chen was merged Dec 13, 2024
+
+DDict cpp interface #851 by yian-chen was merged Jan 6, 2025
+
+Telemetry Unit Tests #850 by indira-pimpalkhare was merged Dec 19, 2024
+
+Ddict c interface #846 by yian-chen was merged Dec 4, 2024
+
+Add github actions for standardizing processes #844-845 by nicholas-hill was merged Dec 3, 2024
+
+Add PyTorch DL Use Case #826 by veena-venkata-ghorakavi was merged Dec 16, 2024
+
+Local pools with manager selector #819 by kent-lee was merged Nov 5, 2024
+
+adding progress bar for hsta #800 by nick-radcliffe was merged Oct 30, 2024
+
+Added numa check #798 by kent-lee was merged Oct 14, 2024
+
+### Removed
+
+Removed extra line #936 by kent-lee was merged Mar 3, 2025
+
+Removed managed memory type from serialized descriptor #891 by kent-lee was merged Jan 24, 2025
+
+Drop cpython build and code #862 by nicholas-hill was merged Jan 3, 2025
+
+### Fixed
+
+Fix A Scaling Issue with DDict #940 by kent-lee was merged Mar 6, 2025
+
+Fix missing top-level meta files when only loading top-level keys for Zarr #939 by potts was merged Mar 6, 2025
+
+Fixed single node mode for filter to avoid node name problem #934 by kent-lee was merged Mar 3, 2025
+
+Event Fix #931 by kent-lee was merged Feb 28, 2025
+
+Fix policy merge of priorities#928 by eric-cozzi was merged Feb 28, 2025
+
+Fix zarr bugs #927 by mendygra was merged Feb 27, 2025
+
+Fix the timeout argument to queue get #925 by mendygra was merged Feb 24, 2025
+
+Fix Unit Tests #921 by kent-lee was merged Feb 22, 2025
+
+BCast Idle Wait Fix #920 by kent-lee was merged Feb 21, 2025
+
+BitSet Enhancements and various fixes #917 by kent-lee was merged Feb 20, 2025
+
+Fixed broken telemetry tests #913 by wahlc was merged Feb 22, 2025
+
+Update metadata for PyPI publishing #910 by nicholas-hill was merged Feb 20, 2025
+
+Fix /api/suggest endpoint in Telemetry #908 by indira-pimpalkhare was merged Feb 13, 2025
+
+Update ddict documentation #904 by yian-chen was merged Feb 10, 2025
+
+Fix /api/suggest endpoint in Telemetry #908 by indira-pimpalkhare was merged Feb 13, 2025
+
+Update py311-devel package link in automated builds #901 by sanian-gaffar was merged Jan 30, 2025
+
+Fix DDict tests for new loading of dragon libs #899 by nicholas-hill was merged Jan 30, 2025
+
+Fix Zero byte alloc failures #898 by nick-radcliffe was merged Jan 31, 2025
+
+Fixes for manifest leaks #895 by kent-lee was merged Jan 24, 2025
+
+Fix DRAGON_BIN_DIR value #893 by nick-radcliffe was merged Jan 23, 2025
+
+BCast Workaround and other Fixes for ANL Workflow #885 by kent-lee was merged Jan 21, 2025
+
+Add check that the network-config contains a head node element '0' #880 by eric-cozzi was merged Jan 15, 2025
+
+Modify LD_PRELOAD and LD_LIBRARY_PATH to successfully launch MPI apps #879 by nicholas-hill was merged Jan 17, 2025
+
+Fix for cleanup on login node #876 by wahlc was merged Jan 15, 2025
+
+Raise error if unmatched/unknown host_id is received #875 by eric-cozzi was merged Jan 10, 2025
+
+Move hpages cleanup to be accessible w/o modules and with wheel install #871 by nicholas-hill was merged Jan 9, 2025
+
+Turn off skip on lock-fairness test as it works now #870 by nicholas-hill was merged Jan 9, 2025
+
+Fix AMD and Intel gpu detection #867 by wahlc was merged Jan 9, 2025
+
+Fix Compiler Warnings #856 by kent-lee was merged Dec 12, 2024
+
+Fix issue with already existing folder in ProcessGroup cwd test #855 by nicholas-hill was merged Dec 17, 2024
+
+Fixed test cases #852 by kent-lee was merged Dec 9, 2024
+
+Bcast Performance #843 by kent-lee was merged Dec 10, 2024
+
+Fix for cwd from v0.10-rc branch with test #835 by wahlc was merged Nov 25, 2024
+
+Complete MPI workflow example by adding OSU alltoall microbenchmark #834 by nicholas-hill was merged Nov 25, 2024
+
+Telemetry scale testing and one fix for larger node counts #833 by wahlc was merged Nov 26, 2024
+
+Fix Telemetry Shutdown #832 by wahlc was merged Dec 6, 2024
+
+Fixed default memory pool leak with multi-node test. #831 by yian-chen was merged Dec 2, 2024
+
+Bring develop up to date with master #829 by nicholas-hill was merged Nov 18, 2024
+
+Fix Parsl demo code to make runnable #825 by nicholas-hill was merged Nov 6, 2024
+
+Fix HSTA config timeout #824 by nicholas-hill was merged Nov 5, 2024
+
+Add GPU Metrics to Collector #823 by indira-pimpalkhare was merged Nov 27, 2024
+
+Fix for cwd in sdesc for SmartSim #820-821 by wahlc was merged Nov 14, 2024
+
+ddict-logging fix for v0.10-rc branch #818 by wahlc was merged Nov 4, 2024
+
+Delay send_rndvs until ep_addrs is ready #814 by wahlc was merged Nov 26, 2024
+
+Fixed bad reference on Intro Page of Docs #810 by kent-lee was merged Oct 22, 2024
+
+Ddict logging #807 by kent-lee was merged Oct 21, 2024
+
+Fix multinode value test and add mp shared_ctypes test (and several other issues) #801 by nicholas-hill was merged Nov 18, 2024
+
+Reduce number of posted recvs #797 by nick-radcliffe was merged Oct 24, 2024
+
+Add Capnp messaging without need for fds #795 by kent-lee was merged Oct 22, 2024
+
+Hashtable Fix for Invalid Pointer #793 by kent-lee was merged Oct 3, 2024
+
+Update resiliency runtime #791 by nicholas-hill was merged Oct 9, 2024
+
+Launcher ignores nodes without hsn addr if we have enough extra nodes #790 by wahlc was merged Oct 2, 2024
+
+
 ## [0.10] - 2024-10-07
 
 ### Changed
@@ -42,7 +275,7 @@ Omit parent process from termination in dragon-cleanup #711 by chris-mcbride was
 
 Enable more control over infrastructure channel creation for processes and ProcessGroup #708 by mendygra was merged Jun 18, 2024
 
-Additional Tracing and Timeout Handling for distributed dictionary #702 by kent-lee was merged Jun 5, 2024 
+Additional Tracing and Timeout Handling for distributed dictionary #702 by kent-lee was merged Jun 5, 2024
 
 Add checks on gateway message completion to improve debugging #701 by kent-lee was merged Jun 12, 2024
 
@@ -86,7 +319,7 @@ Add UCX backend to HSTA #715 by nick-radcliffe was merged Jul 18, 2024
 
 ### Fixed
 
-Address invalid pointer via a persistent buffer for rehashing dict keys instead of dynamically allocating memory #793 by kent-lee was merged Oct 3, 2024 by kent-lee 
+Address invalid pointer via a persistent buffer for rehashing dict keys instead of dynamically allocating memory #793 by kent-lee was merged Oct 3, 2024 by kent-lee
 
 Fix FLI EOT Handling #781 by kent-lee was merged Sep 23, 2024
 
@@ -98,7 +331,7 @@ Fix issue with gups test caused by channel attr initialization #776 by nick-radc
 
 Fix race in gateway message completion #773 by nick-radcliffe was merged Sep 5, 2024
 
-Allow launcher to avoid nodes with misconfigured networks #790 opened Sep 30, 2024 by wahlc 
+Allow launcher to avoid nodes with misconfigured networks #790 opened Sep 30, 2024 by wahlc
 
 Remove destruction of default mem pool in demo. #772 by nicholas-hill was merged Sep 4, 2024
 
@@ -116,7 +349,7 @@ Remove bad kwarg flush=True from logging Exceptions #759 by garrett-goon was mer
 
 Fix mem leak in pickle adapter #757 by yian-chen was merged Aug 21, 2024
 
-Add fix to keep trying to allocate buffer until timeout #747 by nick-radcliffe was merged Aug 20, 2024 
+Add fix to keep trying to allocate buffer until timeout #747 by nick-radcliffe was merged Aug 20, 2024
 
 Fix response /api/query #756 by indira-pimpalkhare was merged Aug 14, 2024
 
@@ -160,7 +393,7 @@ Fix ordering in distributed dictionary destroy operation #693 by yian-chen was m
 
 ### Fixed
 
-Join on DDict orchestrator during DDict destroy and fix DDict demo for single node #691 was merged May 15, 2024 
+Join on DDict orchestrator during DDict destroy and fix DDict demo for single node #691 was merged May 15, 2024
 
 Added timeout in DDict attach and remove additinoal connection to DDict manager #687 was merged May 15, 2024 by yian-chen
 
@@ -179,7 +412,7 @@ Fix linked list bug in FLI #682 by kent-lee was merged May 10, 2024
 
 Added lock size into required size of Pool #651 by kent-lee was merged Apr 18, 2024
 
-Update python 3.9 build to sle15sp3 #654 by nicholas-hill was merged Apr 18, 2024 
+Update python 3.9 build to sle15sp3 #654 by nicholas-hill was merged Apr 18, 2024
 
 Efficient GS->LS Group Creation of processes #641 by eric-cozzi was merged Apr 11, 2024
 
@@ -227,11 +460,11 @@ Remove HSTA from bring-up if there's only one backend node #632 by nick-radcliff
 
 ### Added
 
-Libfabric support for hsta and multi-NIC support [#620, #614, #594] by nick-radcliffe was merged Mar 7, 2024, Feb 22, 2024, Feb 15, 2024 
+Libfabric support for hsta and multi-NIC support [#620, #614, #594] by nick-radcliffe was merged Mar 7, 2024, Feb 22, 2024, Feb 15, 2024
 
-PyTorch Dataloader process placement patch and example [#610, #608, #601, #599] by veena-venkata-ghorakavi and wahlc was merged Feb 9, 2024, Feb 6, 2024, Jan 4, 2024  
+PyTorch Dataloader process placement patch and example [#610, #608, #601, #599] by veena-venkata-ghorakavi and wahlc was merged Feb 9, 2024, Feb 6, 2024, Jan 4, 2024
 
-Streamline node updates [#607] by eric-cozzi was merged Feb 8, 2024 
+Streamline node updates [#607] by eric-cozzi was merged Feb 8, 2024
 
 Build multiple python versions of dragon [#600] by mohammad-hadi was merged Jan 4, 2024
 

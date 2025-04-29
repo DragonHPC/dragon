@@ -46,11 +46,11 @@ def free_port(host, port):
 
 def get_port(host, start_port, end_port):
 
-    for port in range(start_port, end_port+1):
+    for port in range(start_port, end_port + 1):
         if free_port(host, port):
             return port
 
-    raise RuntimeError('No available ports')
+    raise RuntimeError("No available ports")
 
 
 def get_ip():
@@ -59,10 +59,10 @@ def get_ip():
     s.settimeout(0)
     try:
         # doesn't even have to be reachable
-        s.connect(('10.254.254.254', 1))
+        s.connect(("10.254.254.254", 1))
         IP = s.getsockname()[0]
     except Exception:
-        IP = '127.0.0.1'
+        IP = "127.0.0.1"
     finally:
         s.close()
     return IP
@@ -71,31 +71,32 @@ def get_ip():
 def get_current_inf_env():
 
     rv = {}
-    gs_cd_key = dfacts.env_name('GS_CD')
-    gs_ret_cd_key = dfacts.env_name('GS_RET_CD')
-    ls_cd_key = dfacts.env_name('LOCAL_SHEP_CD')
-    ls_ret_cd_key = dfacts.env_name('SHEP_RET_CD')
+    gs_cd_key = dfacts.env_name("GS_CD")
+    gs_ret_cd_key = dfacts.env_name("GS_RET_CD")
+    ls_cd_key = dfacts.env_name("LOCAL_SHEP_CD")
+    ls_ret_cd_key = dfacts.env_name("SHEP_RET_CD")
     rv[gs_cd_key] = os.environ[gs_cd_key]
     rv[gs_ret_cd_key] = os.environ[gs_ret_cd_key]
     rv[ls_cd_key] = os.environ[ls_cd_key]
     rv[ls_ret_cd_key] = os.environ[ls_ret_cd_key]
     # get runtime ip addrs
-    rt_uid_key = 'DRAGON_RT_UID'
+    rt_uid_key = "DRAGON_RT_UID"
     rv[rt_uid_key] = os.environ[rt_uid_key]
     return rv
 
+
 def set_inf_env(env):
 
-    gs_cd_key = dfacts.env_name('GS_CD')
-    gs_ret_cd_key = dfacts.env_name('GS_RET_CD')
-    ls_cd_key = dfacts.env_name('LOCAL_SHEP_CD')
-    ls_ret_cd_key = dfacts.env_name('SHEP_RET_CD')
+    gs_cd_key = dfacts.env_name("GS_CD")
+    gs_ret_cd_key = dfacts.env_name("GS_RET_CD")
+    ls_cd_key = dfacts.env_name("LOCAL_SHEP_CD")
+    ls_ret_cd_key = dfacts.env_name("SHEP_RET_CD")
     os.environ[gs_cd_key] = env[gs_cd_key]
     os.environ[gs_ret_cd_key] = env[gs_ret_cd_key]
     os.environ[ls_cd_key] = env[ls_cd_key]
     os.environ[ls_ret_cd_key] = env[ls_ret_cd_key]
     # set runtime ip addrs
-    rt_uid_key = 'DRAGON_RT_UID'
+    rt_uid_key = "DRAGON_RT_UID"
     os.environ[rt_uid_key] = env[rt_uid_key]
 
     global current_rt_uid
@@ -148,10 +149,12 @@ def get_sdesc():
     ls_cd = os.environ[dfacts.env_name(dfacts.LOCAL_SHEP_CD)]
     ls_ret_cd = os.environ[dfacts.env_name(dfacts.SHEP_RET_CD)]
 
-    fe_ext_ip_addr = os.environ['DRAGON_FE_EXTERNAL_IP_ADDR']
-    head_node_ip_addr = os.environ['DRAGON_HEAD_NODE_IP_ADDR']
+    fe_ext_ip_addr = os.environ["DRAGON_FE_EXTERNAL_IP_ADDR"]
+    head_node_ip_addr = os.environ["DRAGON_HEAD_NODE_IP_ADDR"]
     oob_port = dfacts.OOB_PORT
-    sdesc = dmsg.RuntimeDesc(0, gs_cd, gs_ret_cd, ls_cd, ls_ret_cd, fe_ext_ip_addr, head_node_ip_addr, oob_port, os.environ)
+    sdesc = dmsg.RuntimeDesc(
+        0, gs_cd, gs_ret_cd, ls_cd, ls_ret_cd, fe_ext_ip_addr, head_node_ip_addr, oob_port, os.environ
+    )
     return sdesc.serialize()
 
 
@@ -164,8 +167,8 @@ def publish(name):
         return get_sdesc()
 
     home_dir = pathlib.Path.home()
-    dragon_dir = home_dir / '.dragon'
-    publish_path = f'{dragon_dir}/{name}'
+    dragon_dir = home_dir / ".dragon"
+    publish_path = f"{dragon_dir}/{name}"
     pathlib.Path(dragon_dir).mkdir(parents=True, exist_ok=True)
 
     # if the file already exists, just read from it and return the sdesc
@@ -174,11 +177,11 @@ def publish(name):
     # than using "already_published" above)
 
     if os.path.exists(publish_path):
-        with open(publish_path, 'r') as publish_file:
+        with open(publish_path, "r") as publish_file:
             return publish_file.read()
 
     try:
-        with open(publish_path, 'w') as publish_file:
+        with open(publish_path, "w") as publish_file:
             publish_file.write(sdesc_str)
 
         already_published[publish_path] = True
@@ -193,7 +196,7 @@ def publish(name):
             atexit.register(proxy_teardown)
             must_register_teardown = False
     except:
-        raise RuntimeError(f'publish failed: {name} has already been published')
+        raise RuntimeError(f"publish failed: {name} has already been published")
 
     return sdesc_str
 
@@ -216,13 +219,13 @@ def lookup(system, name, timeout_in=None):
         timeout = timeout_in
 
     home_dir = pathlib.Path.home()
-    dragon_dir = home_dir / '.dragon'
-    publish_path = f'{dragon_dir}/{name}'
+    dragon_dir = home_dir / ".dragon"
+    publish_path = f"{dragon_dir}/{name}"
 
     while time_so_far < timeout:
-        rc = os.system(f'scp {system}:{publish_path} . > /dev/null 2>&1')
+        rc = os.system(f"scp {system}:{publish_path} . > /dev/null 2>&1")
         if rc == 0:
-            with open(name, 'r') as publish_file:
+            with open(name, "r") as publish_file:
                 sdesc = publish_file.read()
             sdesc_by_system_and_name[(system, name)] = sdesc
             os.remove(name)
@@ -234,7 +237,7 @@ def lookup(system, name, timeout_in=None):
             time.sleep(1)
             time_so_far += 1
 
-    raise RuntimeError(f'lookup failed: could not obtain serialized descriptor for {system=} and {name=}')
+    raise RuntimeError(f"lookup failed: could not obtain serialized descriptor for {system=} and {name=}")
 
 
 def attach(sdesc_str):

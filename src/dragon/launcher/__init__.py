@@ -2,9 +2,10 @@ import enum
 
 from . import launch_selector, network_config, launchargs
 
+
 @enum.unique
 class ConfigOutputType(enum.Enum):
-    JSON = 'json'
+    JSON = "json"
     YAML = "yaml"
 
     def __str__(self):
@@ -13,8 +14,8 @@ class ConfigOutputType(enum.Enum):
 
 @enum.unique
 class WLM(enum.Enum):
-    SLURM = 'slurm'
-    PBS_PALS = 'pbs+pals'
+    SLURM = "slurm"
+    PBS_PALS = "pbs+pals"
 
     def __str__(self):
         return self.value

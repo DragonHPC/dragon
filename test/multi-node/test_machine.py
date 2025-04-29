@@ -1,4 +1,4 @@
-""" This file contains Dragon multi-node acceptance tests for the
+"""This file contains Dragon multi-node acceptance tests for the
 `dragon.native.machine` module. The tests scales with the total number of CPUs
 reported by the allocation, i.e. it becomes tougher on larger allocations.
 

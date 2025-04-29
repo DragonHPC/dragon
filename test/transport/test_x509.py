@@ -1,6 +1,13 @@
 import unittest
 
-from dragon.transport.x509 import CertificateAuthority, dragon_uri, generate_server_csr, generate_server_self_signed_cert, pem_encode, pem_encode_pkcs8
+from dragon.transport.x509 import (
+    CertificateAuthority,
+    dragon_uri,
+    generate_server_csr,
+    generate_server_self_signed_cert,
+    pem_encode,
+    pem_encode_pkcs8,
+)
 
 
 class X509TestCase(unittest.TestCase):
@@ -69,5 +76,5 @@ class CATestCase(unittest.TestCase):
         raise NotImplementedError
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     unittest.main()

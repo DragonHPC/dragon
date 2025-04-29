@@ -1,5 +1,5 @@
-"""A class that uniquely defines properties of a managed memory pool for infrastructure communication.
-"""
+"""A class that uniquely defines properties of a managed memory pool for infrastructure communication."""
+
 import enum
 from ..infrastructure import parameters as dparm
 from .. import utils as du
@@ -30,13 +30,14 @@ class PoolDescriptor:
     @enum.unique
     class State(enum.Enum):
         """Current state of the pool."""
+
         PENDING = enum.auto()
         ACTIVE = enum.auto()
         DEAD = enum.auto()
 
-    def __init__(self, m_uid=0, name='', node=0, state=None, sdesc=''):
+    def __init__(self, m_uid=0, name="", node=0, state=None, sdesc=""):
         """
-            sdesc - serialized library descriptor
+        sdesc - serialized library descriptor
         """
         self.m_uid = int(m_uid)
         self.name = name
@@ -51,7 +52,7 @@ class PoolDescriptor:
             elif isinstance(state, int):
                 self.state = self.State(state)
             else:
-                raise NotImplementedError('unknown state init')
+                raise NotImplementedError("unknown state init")
 
     @property
     def sdesc(self):
@@ -76,15 +77,17 @@ class PoolDescriptor:
         :return: A dictionary with all key-value pairs of the available description of the pool.
         :rtype: Dictionary
         """
-        rv = {'sdesc': du.B64.bytes_to_str(self.sdesc),
-              'name': self.name,
-              'm_uid': self.m_uid,
-              'node': self.node,
-              'state': self.state.value}
+        rv = {
+            "sdesc": du.B64.bytes_to_str(self.sdesc),
+            "name": self.name,
+            "m_uid": self.m_uid,
+            "node": self.node,
+            "state": self.state.value,
+        }
         return rv
 
     def __str__(self):
-        return f'{self.m_uid}:{self.name} on {self.node}: {self.state.name}'
+        return f"{self.m_uid}:{self.name} on {self.node}: {self.state.name}"
 
     @classmethod
     def from_sdict(cls, sdict):
@@ -93,21 +96,22 @@ class PoolDescriptor:
 
 
 class PoolOptions:
-    """Options object for how a Pool is supposed to be created.
-    """
+    """Options object for how a Pool is supposed to be created."""
+
     class Placement(enum.Enum):
         """Enum for placement strategy of the pool for its creation."""
+
         LOCAL = 0
         DEFAULT = 1
         SPECIFIC = 2
 
-    def __init__(self, placement=0, target_node=0, sattr=''):
+    def __init__(self, placement=0, target_node=0, sattr=""):
         """
-            sattr - serialized library attributes
+        sattr - serialized library attributes
 
-            placement - enum for placement strategy
+        placement - enum for placement strategy
 
-            target_node - ignored if placement request isn't for a specific node
+        target_node - ignored if placement request isn't for a specific node
         """
         self.placement = self.Placement(placement)
         self.target_node = int(target_node)
@@ -119,9 +123,7 @@ class PoolOptions:
         :return: A dictionary with key-value pairs of the pool creation options.
         :rtype: Dictionary
         """
-        rv = {'sattr': self.sattr,
-              'target_node': self.target_node,
-              'placement': self.placement.value}
+        rv = {"sattr": self.sattr, "target_node": self.target_node, "placement": self.placement.value}
 
         return rv
 

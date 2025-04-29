@@ -60,8 +60,9 @@ class StreamQueue:
 # of the Dragon Runtime services.
 ########################################################################
 
-def startup_and_run_frontend(launcher_queue, backend_queue, argv, stdout, stderr, name_addition=''):
-    log_setup.setup_logging(basename='la_frontend_' + name_addition, the_level=logging.DEBUG)
+
+def startup_and_run_frontend(launcher_queue, backend_queue, argv, stdout, stderr, name_addition=""):
+    log_setup.setup_logging(basename="la_frontend_" + name_addition, the_level=logging.DEBUG)
     frontend.launcher_start(launcher_queue, backend_queue, argv=argv, stdout=stdout, stderr=stderr)
 
 
@@ -89,13 +90,15 @@ class FrontendTests(unittest.TestCase):
         if args is None:
             args = []
 
-        test_name = self.__class__.__name__ + '_' + inspect.stack()[2][0].f_code.co_name
+        test_name = self.__class__.__name__ + "_" + inspect.stack()[2][0].f_code.co_name
 
-        self.proc = mp.Process(target=startup_and_run_frontend,
-                               args=(self.launcher_main_rh, self.backend_main_wh, args, self.stdout, self.stderr),
-                               kwargs={'name_addition': test_name},
-                               daemon=False,
-                               name='launcher_fe')
+        self.proc = mp.Process(
+            target=startup_and_run_frontend,
+            args=(self.launcher_main_rh, self.backend_main_wh, args, self.stdout, self.stderr),
+            kwargs={"name_addition": test_name},
+            daemon=False,
+            name="launcher_fe",
+        )
 
         self.proc.start()
 
@@ -120,7 +123,7 @@ class FrontendTests(unittest.TestCase):
 
         sh_teardown = dmsg.parse(la_broadcast.data)
 
-        assert isinstance(sh_teardown, dmsg.SHTeardown), 'Expected SHTeardown, got: ' + repr(gs_teardown)
+        assert isinstance(sh_teardown, dmsg.SHTeardown), "Expected SHTeardown, got: " + repr(gs_teardown)
 
         # The rest of the single-node teardown sequence is carried out by the
         # backend code.
@@ -134,7 +137,6 @@ class FrontendTests(unittest.TestCase):
 
         # If the frontend did not exit within 10 seconds, then something is wrong.
         self.assertTrue(self.proc.exitcode is not None)
-
 
     def test_bringup_teardown(self):
         # Tests normal bringup followed by teardown.
@@ -150,15 +152,17 @@ class FrontendTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessJoin)
 
-        self.launcher_main_wh.send(dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                                              err=dmsg.GSProcessJoinResponse.Errors.SUCCESS).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessJoinResponse(
+                tag=0, ref=gs_process_join.tag, err=dmsg.GSProcessJoinResponse.Errors.SUCCESS
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -169,22 +173,29 @@ class FrontendTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessJoin)
 
-        self.launcher_main_wh.send(dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                                              err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                                              ).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         gs_process_kill = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessKill)
 
-        self.launcher_main_wh.send(dmsg.GSProcessKillResponse(tag=0, ref=gs_process_kill.tag,
-                                                              err=dmsg.GSProcessKillResponse.Errors.UNKNOWN,
-                                                              ).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessKillResponse(
+                tag=0,
+                ref=gs_process_kill.tag,
+                err=dmsg.GSProcessKillResponse.Errors.UNKNOWN,
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -207,11 +218,11 @@ class FrontendTests(unittest.TestCase):
         # print("stdout", stdout)
         # print("stderr", stderr)
 
-        self.assertIn('SUCCESS', stdout)
-        self.assertIn('True', stdout)
-        self.assertIn('UNKNOWN', stdout)
+        self.assertIn("SUCCESS", stdout)
+        self.assertIn("True", stdout)
+        self.assertIn("UNKNOWN", stdout)
 
-        self.assertEqual(stderr.strip(), '')
+        self.assertEqual(stderr.strip(), "")
 
     def test_start_proc3(self):
 
@@ -220,35 +231,40 @@ class FrontendTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessJoin)
 
         self.launcher_main_wh.send(
-            dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                       err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         gs_process_kill = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessKill)
 
         self.launcher_main_wh.send(
-            dmsg.GSProcessKillResponse(tag=0, ref=gs_process_kill.tag,
-                                       err=dmsg.GSProcessKillResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessKillResponse(
+                tag=0,
+                ref=gs_process_kill.tag,
+                err=dmsg.GSProcessKillResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
         stdout = self.stdout.read()
         stderr = self.stderr.read()
 
-        self.assertIn('Errors.SUCCESS', stdout)
-        self.assertIn('0', stdout)
-        self.assertIn('True', stdout)
+        self.assertIn("Errors.SUCCESS", stdout)
+        self.assertIn("0", stdout)
+        self.assertIn("True", stdout)
 
-        self.assertEqual(stderr.strip(), '')
+        self.assertEqual(stderr.strip(), "")
 
     def test_start_proc4(self):
         args = ["-r", "launcher/file2.py"]
@@ -256,24 +272,26 @@ class FrontendTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessJoin)
 
-        msg = dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                         err=dmsg.GSProcessJoinResponse.Errors.SUCCESS)
+        msg = dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag, err=dmsg.GSProcessJoinResponse.Errors.SUCCESS)
         self.launcher_main_wh.send(msg.serialize())
 
         self.launcher_main_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Hello World\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
         self.launcher_main_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                             data="Hello World to stderr\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value, data="Hello World to stderr\n"
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -281,11 +299,11 @@ class FrontendTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('Hello World', stdout)
-        self.assertIn('True', stdout)
+        self.assertIn("Hello World", stdout)
+        self.assertIn("True", stdout)
 
-        self.assertIn('Hello World', stderr)
-        self.assertIn('stderr', stderr)
+        self.assertIn("Hello World", stderr)
+        self.assertIn("stderr", stderr)
 
     def test_start_proc5(self):
 
@@ -293,23 +311,23 @@ class FrontendTests(unittest.TestCase):
         self.do_bringup(argv=args)
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessJoin)
 
-        msg = dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0",
-                               fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n")
+        msg = dmsg.SHFwdOutput(
+            tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+        )
         self.launcher_main_wh.send(msg.serialize())
 
-        msg = dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                               data="Hello World to stderr\n")
+        msg = dmsg.SHFwdOutput(
+            tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value, data="Hello World to stderr\n"
+        )
         self.launcher_main_wh.send(msg.serialize())
 
-        msg = dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                         err=dmsg.GSProcessJoinResponse.Errors.SUCCESS)
+        msg = dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag, err=dmsg.GSProcessJoinResponse.Errors.SUCCESS)
         self.launcher_main_wh.send(msg.serialize())
 
         self.do_teardown(timeout=None)
@@ -325,41 +343,50 @@ class FrontendTests(unittest.TestCase):
 
         # '''[stderr: p_uid=4] Hello World to stderr'''
 
-        self.assertIn('SUCCESS', stdout)
-        self.assertIn('True', stdout)
-        self.assertIn('Hello World', stdout)
-        self.assertIn('[Exiting Launcher]', stdout)
+        self.assertIn("SUCCESS", stdout)
+        self.assertIn("True", stdout)
+        self.assertIn("Hello World", stdout)
+        self.assertIn("[Exiting Launcher]", stdout)
 
-        self.assertIn('Hello World', stderr)
-        self.assertIn('stderr', stderr)
+        self.assertIn("Hello World", stderr)
+        self.assertIn("stderr", stderr)
 
     def test_start_proc6(self):
         args = ["-r", "launcher/file4.py"]
         self.do_bringup(argv=args)
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
-        self.launcher_main_wh.send(dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0",
-                                                    fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                                                    data="Hello World\n").serialize())
+        self.launcher_main_wh.send(
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
-        self.launcher_main_wh.send(dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0",
-                                                    fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                                                    data="Hello World to stderr\n").serialize())
+        self.launcher_main_wh.send(
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value, data="Hello World to stderr\n"
+            ).serialize()
+        )
 
-        self.launcher_main_wh.send(dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0",
-                                                    fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                                                    data="Stop\n").serialize())
+        self.launcher_main_wh.send(
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Stop\n"
+            ).serialize()
+        )
 
         gs_process_join = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessJoin)
 
-        self.launcher_main_wh.send(dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                                              err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                                              ).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -376,14 +403,14 @@ class FrontendTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('4', stdout)
-        self.assertIn('Hello World', stdout)
-        self.assertIn('stderr', stdout)
-        self.assertIn('Stop', stdout)
-        self.assertIn('True', stdout)
-        self.assertIn('[Exiting Launcher]', stdout)
+        self.assertIn("4", stdout)
+        self.assertIn("Hello World", stdout)
+        self.assertIn("stderr", stdout)
+        self.assertIn("Stop", stdout)
+        self.assertIn("True", stdout)
+        self.assertIn("[Exiting Launcher]", stdout)
 
-        self.assertEqual(stderr.strip(), '')
+        self.assertEqual(stderr.strip(), "")
 
     def test_start_proc7(self):
 
@@ -392,9 +419,8 @@ class FrontendTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessJoin)
@@ -419,12 +445,12 @@ class FrontendTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('SUCCESS', stdout)
-        self.assertIn('True', stdout)
-        self.assertIn('Kill unsuccessful', stdout)
-        self.assertIn('[Exiting Launcher]', stdout)
+        self.assertIn("SUCCESS", stdout)
+        self.assertIn("True", stdout)
+        self.assertIn("Kill unsuccessful", stdout)
+        self.assertIn("[Exiting Launcher]", stdout)
 
-        self.assertEqual(stderr.strip(), '')
+        self.assertEqual(stderr.strip(), "")
 
     def test_start_proc8(self):
 
@@ -433,9 +459,11 @@ class FrontendTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
 
-        self.launcher_main_wh.send(dmsg.GSProcessCreateResponse(tag=3, err=1, ref=gs_process_create.tag,
-                                                                err_info="[Errno 13] Permission denied: "
-                                                                         "'python3'").serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessCreateResponse(
+                tag=3, err=1, ref=gs_process_create.tag, err_info="[Errno 13] Permission denied: " "'python3'"
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -449,13 +477,13 @@ class FrontendTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('FAIL', stdout)
-        self.assertIn('None', stdout)
-        self.assertIn('Permission denied', stdout)
-        self.assertIn('True', stdout)
-        self.assertIn('[Exiting Launcher]', stdout)
+        self.assertIn("FAIL", stdout)
+        self.assertIn("None", stdout)
+        self.assertIn("Permission denied", stdout)
+        self.assertIn("True", stdout)
+        self.assertIn("[Exiting Launcher]", stdout)
 
-        self.assertEqual(stderr.strip(), '')
+        self.assertEqual(stderr.strip(), "")
 
     def test_start_server(self):
 
@@ -464,14 +492,15 @@ class FrontendTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
         self.launcher_main_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Hello World\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
         self.launcher_main_wh.send(dmsg.LAPassThruBF(tag=0, data="PassThru Message").serialize())
 
@@ -487,8 +516,11 @@ class FrontendTests(unittest.TestCase):
 
         self.launcher_main_wh.send(dmsg.LAPassThruBF(tag=0, data="Exit").serialize())
 
-        self.launcher_main_wh.send(dmsg.LAServerModeExit(tag=0, ref=gs_process_create.tag,
-                                                         err=dmsg.LAServerModeExit.Errors.SUCCESS).serialize())
+        self.launcher_main_wh.send(
+            dmsg.LAServerModeExit(
+                tag=0, ref=gs_process_create.tag, err=dmsg.LAServerModeExit.Errors.SUCCESS
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -500,13 +532,13 @@ class FrontendTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('Hello', stdout)
-        self.assertIn('Server', stdout)
-        self.assertIn('Exited', stdout)
-        self.assertIn('True', stdout)
-        self.assertIn('[Exiting Launcher]', stdout)
+        self.assertIn("Hello", stdout)
+        self.assertIn("Server", stdout)
+        self.assertIn("Exited", stdout)
+        self.assertIn("True", stdout)
+        self.assertIn("[Exiting Launcher]", stdout)
 
-        self.assertEqual(stderr.strip(), '')
+        self.assertEqual(stderr.strip(), "")
 
     def test_proc_list(self):
 
@@ -516,35 +548,45 @@ class FrontendTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
         self.launcher_main_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Hello World\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
         self.launcher_main_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                             data="Hello World to stderr\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value, data="Hello World to stderr\n"
+            ).serialize()
+        )
 
         self.launcher_main_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Stop\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Stop\n"
+            ).serialize()
+        )
 
         gs_process_join = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessJoin)
 
         self.launcher_main_wh.send(
-            dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                       err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         gs_process_list = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessList)
 
         self.launcher_main_wh.send(
-            dmsg.GSProcessListResponse(tag=0, ref=gs_process_list.tag, err=dmsg.GSProcessListResponse.Errors.SUCCESS,
-                                       plist=[('4', '4-name')]).serialize())
+            dmsg.GSProcessListResponse(
+                tag=0, ref=gs_process_list.tag, err=dmsg.GSProcessListResponse.Errors.SUCCESS, plist=[("4", "4-name")]
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -563,13 +605,13 @@ class FrontendTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('python3', stdout)
-        self.assertIn('exit_code', stdout)
-        self.assertIn('4-name', stdout)
-        self.assertIn('True', stdout)
-        self.assertIn('[Exiting Launcher]', stdout)
+        self.assertIn("python3", stdout)
+        self.assertIn("exit_code", stdout)
+        self.assertIn("4-name", stdout)
+        self.assertIn("True", stdout)
+        self.assertIn("[Exiting Launcher]", stdout)
 
-        self.assertEqual(stderr.strip(), '')
+        self.assertEqual(stderr.strip(), "")
 
     def test_send(self):
 
@@ -579,22 +621,23 @@ class FrontendTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.backend_main_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.launcher_main_wh.send(msg.serialize())
 
         sh_process_input = tsu.get_and_check_type(self.backend_main_rh, dmsg.SHFwdInput)
 
         self.launcher_main_wh.send(
-            dmsg.SHFwdInputErr(tag=0, ref=sh_process_input.tag, err=dmsg.SHFwdInputErr.Errors.SUCCESS).serialize())
+            dmsg.SHFwdInputErr(tag=0, ref=sh_process_input.tag, err=dmsg.SHFwdInputErr.Errors.SUCCESS).serialize()
+        )
 
         self.assertEqual(sh_process_input.input, "Hello World")
 
         sh_process_input2 = tsu.get_and_check_type(self.backend_main_rh, dmsg.SHFwdInput)
 
         self.launcher_main_wh.send(
-            dmsg.SHFwdInputErr(tag=0, ref=sh_process_input2.tag, err=dmsg.SHFwdInputErr.Errors.SUCCESS).serialize())
+            dmsg.SHFwdInputErr(tag=0, ref=sh_process_input2.tag, err=dmsg.SHFwdInputErr.Errors.SUCCESS).serialize()
+        )
 
         self.assertEqual(sh_process_input2.input, "Goodbye")
 
@@ -615,22 +658,38 @@ class FrontendTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('4', stdout)
-        self.assertIn('python3', stdout)
-        self.assertIn('True', stdout)
-        self.assertIn('Exit', stdout)
+        self.assertIn("4", stdout)
+        self.assertIn("python3", stdout)
+        self.assertIn("True", stdout)
+        self.assertIn("Exit", stdout)
 
-        self.assertEqual(stderr.strip(), '')
+        self.assertEqual(stderr.strip(), "")
 
 
-def startup_and_run_backend(incoming_channel_queue=None, incoming_frontend_queue=None, incoming_l0_queue=None,
-                            frontend_queue=None, gs_queue=None, sh_queue=None, sh_l0_queue=None,
-                            all_other_channels=None, name_addition=''):
-    log_setup.setup_logging(basename='la_backend_' + name_addition, the_level=logging.DEBUG)
+def startup_and_run_backend(
+    incoming_channel_queue=None,
+    incoming_frontend_queue=None,
+    incoming_l0_queue=None,
+    frontend_queue=None,
+    gs_queue=None,
+    sh_queue=None,
+    sh_l0_queue=None,
+    all_other_channels=None,
+    name_addition="",
+):
+    log_setup.setup_logging(basename="la_backend_" + name_addition, the_level=logging.DEBUG)
 
-    backend.backend_launcher_start(incoming_channel_queue, incoming_frontend_queue, incoming_l0_queue,
-                                   frontend_queue, gs_queue, sh_queue, sh_l0_queue, all_other_channels,
-                                   mode=dfacts.TEST_MODE)
+    backend.backend_launcher_start(
+        incoming_channel_queue,
+        incoming_frontend_queue,
+        incoming_l0_queue,
+        frontend_queue,
+        gs_queue,
+        sh_queue,
+        sh_l0_queue,
+        all_other_channels,
+        mode=dfacts.TEST_MODE,
+    )
 
 
 class BackendTests(unittest.TestCase):
@@ -679,14 +738,24 @@ class BackendTests(unittest.TestCase):
             # If the backend did not exit within 10 seconds, then something is wrong.
             self.assertTrue(self.proc.exitcode is not None)
 
-        test_name = self.__class__.__name__ + '_' + inspect.stack()[2][0].f_code.co_name
+        test_name = self.__class__.__name__ + "_" + inspect.stack()[2][0].f_code.co_name
 
-        self.proc = mp.Process(target=startup_and_run_backend,
-                               args=(self.launcher_main_rh, self.from_frontend_queue_rh, self.l0_queue_rh,
-                                     self.to_frontend_queue_wh, self.gs_queue_wh, self.sh_queue_wh, self.sh_l0_queue_wh,
-                                     self.all_other_channels_wh),
-                               kwargs={'name_addition': test_name},
-                               daemon=False, name='backend')
+        self.proc = mp.Process(
+            target=startup_and_run_backend,
+            args=(
+                self.launcher_main_rh,
+                self.from_frontend_queue_rh,
+                self.l0_queue_rh,
+                self.to_frontend_queue_wh,
+                self.gs_queue_wh,
+                self.sh_queue_wh,
+                self.sh_l0_queue_wh,
+                self.all_other_channels_wh,
+            ),
+            kwargs={"name_addition": test_name},
+            daemon=False,
+            name="backend",
+        )
 
         self.proc.start()
 
@@ -700,15 +769,22 @@ class BackendTests(unittest.TestCase):
 
         # Send the BEPingSH as part of the single node startup sequence
         self.l0_queue_wh.send(
-            dmsg.SHPingBE(tag=0, shep_cd="", be_cd="", gs_cd="", default_pd="", inf_pd="").serialize())
+            dmsg.SHPingBE(tag=0, shep_cd="", be_cd="", gs_cd="", default_pd="", inf_pd="").serialize()
+        )
 
         # Then the Shepherd is sent the SHPingBE message
         tsu.get_and_check_type(self.sh_queue_rh, dmsg.BEPingSH)
 
         # Next, SHChannelsUp
         self.launcher_main_wh.send(
-            dmsg.SHChannelsUp(tag=0, host_id='ubuntu', ip_addrs=['127.0.0.1'], shep_cd=du.B64.bytes_to_str(b''),
-                              gs_cd=du.B64.bytes_to_str(b'')).serialize())
+            dmsg.SHChannelsUp(
+                tag=0,
+                host_id="ubuntu",
+                ip_addrs=["127.0.0.1"],
+                shep_cd=du.B64.bytes_to_str(b""),
+                gs_cd=du.B64.bytes_to_str(b""),
+            ).serialize()
+        )
 
         # Next, GSIsUp
         self.launcher_main_wh.send(dmsg.GSIsUp(tag=0).serialize())
@@ -756,59 +832,76 @@ class BackendTests(unittest.TestCase):
     def test_message_routes(self):
         self.do_bringup()
 
-        self.launcher_main_wh.send(dmsg.GSProcessCreate(tag=1, p_uid=dfacts.LAUNCHER_PUID,
-                                                        r_c_uid=dfacts.BASE_BE_CUID, exe="launcher/test.py",
-                                                        args=[]).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessCreate(
+                tag=1, p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID, exe="launcher/test.py", args=[]
+            ).serialize()
+        )
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
-        proc_desc = proc.ProcessDescriptor(p_uid=4, name='TestProc', node=1, p_p_uid=0)
-        msg = dmsg.GSProcessCreateResponse(tag=0, ref=gs_process_create.tag,
-                                           err=dmsg.GSProcessCreateResponse.Errors.SUCCESS, desc=proc_desc)
+        proc_desc = proc.ProcessDescriptor(p_uid=4, name="TestProc", node=1, p_p_uid=0)
+        msg = dmsg.GSProcessCreateResponse(
+            tag=0, ref=gs_process_create.tag, err=dmsg.GSProcessCreateResponse.Errors.SUCCESS, desc=proc_desc
+        )
         self.launcher_main_wh.send(msg.serialize())
 
         tsu.get_and_check_type(self.to_frontend_queue_rh, dmsg.GSProcessCreateResponse)
 
-        self.launcher_main_wh.send(dmsg.GSProcessKill(tag=1, t_p_uid=4, p_uid=dfacts.LAUNCHER_PUID,
-                                                      r_c_uid=dfacts.BASE_BE_CUID, sig=9).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessKill(
+                tag=1, t_p_uid=4, p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID, sig=9
+            ).serialize()
+        )
 
         tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessKill)
 
-        self.launcher_main_wh.send(dmsg.GSProcessKillResponse(tag=0, ref=4,
-                                                              err=dmsg.GSProcessKillResponse.Errors.UNKNOWN,
-                                                              exit_code=0).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessKillResponse(
+                tag=0, ref=4, err=dmsg.GSProcessKillResponse.Errors.UNKNOWN, exit_code=0
+            ).serialize()
+        )
 
         tsu.get_and_check_type(self.to_frontend_queue_rh, dmsg.GSProcessKillResponse)
 
-        self.launcher_main_wh.send(dmsg.GSProcessJoin(tag=1, p_uid=dfacts.LAUNCHER_PUID, t_p_uid=4,
-                                                      r_c_uid=dfacts.BASE_BE_CUID).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessJoin(tag=1, p_uid=dfacts.LAUNCHER_PUID, t_p_uid=4, r_c_uid=dfacts.BASE_BE_CUID).serialize()
+        )
 
         tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessJoin)
 
-        self.launcher_main_wh.send(dmsg.GSProcessJoinResponse(tag=0, ref=1,
-                                                              err=dmsg.GSProcessJoinResponse.Errors.SUCCESS).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessJoinResponse(tag=0, ref=1, err=dmsg.GSProcessJoinResponse.Errors.SUCCESS).serialize()
+        )
 
         tsu.get_and_check_type(self.to_frontend_queue_rh, dmsg.GSProcessJoinResponse)
 
-        self.launcher_main_wh.send(dmsg.GSProcessList(tag=0, r_c_uid=dfacts.BASE_BE_CUID,
-                                                      p_uid=dfacts.LAUNCHER_PUID).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessList(tag=0, r_c_uid=dfacts.BASE_BE_CUID, p_uid=dfacts.LAUNCHER_PUID).serialize()
+        )
 
         gs_process_list = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessList)
 
-        self.launcher_main_wh.send(dmsg.GSProcessListResponse(tag=0, ref=gs_process_list.tag,
-                                                              err=dmsg.GSProcessListResponse.Errors.SUCCESS,
-                                                              plist=[('4', '4-name')]).serialize())
+        self.launcher_main_wh.send(
+            dmsg.GSProcessListResponse(
+                tag=0, ref=gs_process_list.tag, err=dmsg.GSProcessListResponse.Errors.SUCCESS, plist=[("4", "4-name")]
+            ).serialize()
+        )
 
         tsu.get_and_check_type(self.to_frontend_queue_rh, dmsg.GSProcessListResponse)
 
-        self.launcher_main_wh.send(dmsg.SHFwdInput(tag=0, p_uid=dfacts.LAUNCHER_PUID, t_p_uid=4,
-                                                   r_c_uid=dfacts.BASE_BE_CUID,
-                                                   input="Hello World").serialize())
+        self.launcher_main_wh.send(
+            dmsg.SHFwdInput(
+                tag=0, p_uid=dfacts.LAUNCHER_PUID, t_p_uid=4, r_c_uid=dfacts.BASE_BE_CUID, input="Hello World"
+            ).serialize()
+        )
 
         tsu.get_and_check_type(self.sh_queue_rh, dmsg.SHFwdInput)
 
-        self.launcher_main_wh.send(dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0",
-                                                    fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                                                    data="Hello World\n").serialize())
+        self.launcher_main_wh.send(
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
         tsu.get_and_check_type(self.to_frontend_queue_rh, dmsg.SHFwdOutput)
 
@@ -821,7 +914,8 @@ class BackendTests(unittest.TestCase):
         tsu.get_and_check_type(self.all_other_channels_rh, dmsg.LAPassThruFB)
 
         self.launcher_main_wh.send(
-            dmsg.LAServerModeExit(tag=0, ref=0, err=dmsg.LAServerModeExit.Errors.SUCCESS).serialize())
+            dmsg.LAServerModeExit(tag=0, ref=0, err=dmsg.LAServerModeExit.Errors.SUCCESS).serialize()
+        )
 
         tsu.get_and_check_type(self.to_frontend_queue_rh, dmsg.LAServerModeExit)
 
@@ -862,22 +956,34 @@ class CombinedTests(unittest.TestCase):
     def start_combined(self, args=None):
         if args is None:
             args = []
-        test_name = self.__class__.__name__ + '_' + inspect.stack()[2][0].f_code.co_name
+        test_name = self.__class__.__name__ + "_" + inspect.stack()[2][0].f_code.co_name
 
-        self.backend = mp.Process(target=startup_and_run_backend,
-                                  args=(self.backend_channel_rh, self.frontend_to_backend_rh, self.l0_queue_rh,
-                                        self.backend_to_frontend_wh, self.gs_queue_wh, self.sh_queue_wh,
-                                        self.sh_l0_queue_wh, self.all_other_channels_wh),
-                                  kwargs={'name_addition': test_name},
-                                  daemon=False, name='backend')
+        self.backend = mp.Process(
+            target=startup_and_run_backend,
+            args=(
+                self.backend_channel_rh,
+                self.frontend_to_backend_rh,
+                self.l0_queue_rh,
+                self.backend_to_frontend_wh,
+                self.gs_queue_wh,
+                self.sh_queue_wh,
+                self.sh_l0_queue_wh,
+                self.all_other_channels_wh,
+            ),
+            kwargs={"name_addition": test_name},
+            daemon=False,
+            name="backend",
+        )
 
         self.backend.start()
 
-        self.frontend = mp.Process(target=startup_and_run_frontend,
-                                   args=(self.backend_to_frontend_rh, self.frontend_to_backend_wh,
-                                         args, self.stdout, self.stderr),
-                                   kwargs={'name_addition': test_name},
-                                   daemon=False, name='frontend')
+        self.frontend = mp.Process(
+            target=startup_and_run_frontend,
+            args=(self.backend_to_frontend_rh, self.frontend_to_backend_wh, args, self.stdout, self.stderr),
+            kwargs={"name_addition": test_name},
+            daemon=False,
+            name="frontend",
+        )
 
         self.frontend.start()
 
@@ -898,14 +1004,20 @@ class CombinedTests(unittest.TestCase):
 
         # Send the BEPingSH as part of the single node startup sequence
         self.l0_queue_wh.send(
-            dmsg.SHPingBE(tag=0, shep_cd="", be_cd="", gs_cd="", default_pd="", inf_pd="").serialize())
+            dmsg.SHPingBE(tag=0, shep_cd="", be_cd="", gs_cd="", default_pd="", inf_pd="").serialize()
+        )
 
         # First receive the SHPingBE message
         tsu.get_and_check_type(self.sh_queue_rh, dmsg.BEPingSH)
 
         # Send the SHChannelsUp to complete the Shepherd part of the sequence
-        up_msg = dmsg.SHChannelsUp(tag=0, host_id='ubuntu', ip_addrs=['127.0.0.1'],
-                                   shep_cd=du.B64.bytes_to_str(b''), gs_cd=du.B64.bytes_to_str(b''))
+        up_msg = dmsg.SHChannelsUp(
+            tag=0,
+            host_id="ubuntu",
+            ip_addrs=["127.0.0.1"],
+            shep_cd=du.B64.bytes_to_str(b""),
+            gs_cd=du.B64.bytes_to_str(b""),
+        )
         self.backend_channel_wh.send(up_msg.serialize())
 
         # Send the GSIsUp to complete the sequence
@@ -958,9 +1070,9 @@ class CombinedTests(unittest.TestCase):
         stderr = self.stderr.read()
 
         # removes all whitespace, but order is enforced within the output
-        self.assertIn('True', stdout)
-        self.assertIn('Exiting', stdout)
-        self.assertEqual('', stderr.strip())
+        self.assertIn("True", stdout)
+        self.assertIn("Exiting", stdout)
+        self.assertEqual("", stderr.strip())
 
     def test_start_proc1(self):
         args = ["launcher/test.py"]
@@ -968,17 +1080,19 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessJoin)
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                       err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -986,9 +1100,9 @@ class CombinedTests(unittest.TestCase):
         # '''[Exiting Launcher]'''
 
         stderr = self.stderr.read()
-        self.assertIn('Exiting', stdout)
+        self.assertIn("Exiting", stdout)
 
-        self.assertEqual('', stderr.strip())
+        self.assertEqual("", stderr.strip())
 
     def test_start_proc2(self):
         args = ["-r", "launcher/file1.py"]
@@ -997,24 +1111,29 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessJoin)
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                       err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         gs_process_kill = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessKill)
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessKillResponse(tag=0, ref=gs_process_kill.tag,
-                                       err=dmsg.GSProcessKillResponse.Errors.UNKNOWN,
-                                       ).serialize())
+            dmsg.GSProcessKillResponse(
+                tag=0,
+                ref=gs_process_kill.tag,
+                err=dmsg.GSProcessKillResponse.Errors.UNKNOWN,
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -1030,12 +1149,12 @@ class CombinedTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('SUCCESS', stdout)
-        self.assertIn('Kill', stdout)
-        self.assertIn('unsuccessful', stdout)
-        self.assertIn('True', stdout)
+        self.assertIn("SUCCESS", stdout)
+        self.assertIn("Kill", stdout)
+        self.assertIn("unsuccessful", stdout)
+        self.assertIn("True", stdout)
 
-        self.assertEqual('', stderr.strip())
+        self.assertEqual("", stderr.strip())
 
     def test_start_proc3(self):
         args = ["-r", "launcher/file1.py"]
@@ -1044,24 +1163,29 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessJoin)
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                       err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         gs_process_kill = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessKill)
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessKillResponse(tag=0, ref=gs_process_kill.tag,
-                                       err=dmsg.GSProcessKillResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessKillResponse(
+                tag=0,
+                ref=gs_process_kill.tag,
+                err=dmsg.GSProcessKillResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -1078,11 +1202,11 @@ class CombinedTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('SUCCESS', stdout)
-        self.assertIn('Killed', stdout)
-        self.assertIn('0', stdout)
-        self.assertIn('True', stdout)
-        self.assertEqual('', stderr.strip())
+        self.assertIn("SUCCESS", stdout)
+        self.assertIn("Killed", stdout)
+        self.assertIn("0", stdout)
+        self.assertIn("True", stdout)
+        self.assertEqual("", stderr.strip())
 
     def test_start_proc4(self):
         args = ["-r", "launcher/file2.py"]
@@ -1090,34 +1214,38 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessJoin)
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                       err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0",
-                             fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Hello World\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0",
-                             fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                             data="Hello World to stderr\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value, data="Hello World to stderr\n"
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
         stdout = self.stdout.read()
 
-        self.assertIn('Hello World', stdout)
-        self.assertIn('True', stdout)
+        self.assertIn("Hello World", stdout)
+        self.assertIn("True", stdout)
 
     def test_start_proc5(self):
         args = ["-r", "launcher/file3.py"]
@@ -1125,25 +1253,31 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessJoin)
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Hello World\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                             data="Hello World to stderr\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value, data="Hello World to stderr\n"
+            ).serialize()
+        )
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                       err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -1158,10 +1292,10 @@ class CombinedTests(unittest.TestCase):
 
         # '[stderr: p_uid=4] Hello World to stderr'
 
-        self.assertIn('SUCCESS', stdout)
-        self.assertIn('True', stdout)
+        self.assertIn("SUCCESS", stdout)
+        self.assertIn("True", stdout)
 
-        self.assertIn('Hello', stderr)
+        self.assertIn("Hello", stderr)
 
     def test_start_proc6(self):
         args = ["-r", "launcher/file4.py"]
@@ -1169,29 +1303,37 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Hello World\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                             data="Hello World to stderr\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value, data="Hello World to stderr\n"
+            ).serialize()
+        )
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Stop\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Stop\n"
+            ).serialize()
+        )
 
         gs_process_join = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessJoin)
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                       err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -1210,14 +1352,14 @@ class CombinedTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('4', stdout)
-        self.assertIn('Hello World', stdout)
-        self.assertIn('stderr', stdout)
-        self.assertIn('Stop', stdout)
-        self.assertIn('True', stdout)
-        self.assertIn('[Exiting Launcher]', stdout)
+        self.assertIn("4", stdout)
+        self.assertIn("Hello World", stdout)
+        self.assertIn("stderr", stdout)
+        self.assertIn("Stop", stdout)
+        self.assertIn("True", stdout)
+        self.assertIn("[Exiting Launcher]", stdout)
 
-        self.assertEqual(stderr.strip(), '')
+        self.assertEqual(stderr.strip(), "")
 
     def test_start_proc7(self):
         args = ["-r", "launcher/file1.py"]
@@ -1225,9 +1367,8 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         gs_process_join = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessJoin)
@@ -1252,13 +1393,13 @@ class CombinedTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('SUCCESS', stdout)
-        self.assertIn('Kill', stdout)
-        self.assertIn('unsuccessful', stdout)
-        self.assertIn('UNKNOWN', stdout)
-        self.assertIn('True', stdout)
+        self.assertIn("SUCCESS", stdout)
+        self.assertIn("Kill", stdout)
+        self.assertIn("unsuccessful", stdout)
+        self.assertIn("UNKNOWN", stdout)
+        self.assertIn("True", stdout)
 
-        self.assertEqual('', stderr.strip())
+        self.assertEqual("", stderr.strip())
 
     def test_start_server(self):
         args = ["-r", "launcher/file5.py"]
@@ -1266,14 +1407,15 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Hello World\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
         self.backend_channel_wh.send(dmsg.LAPassThruBF(tag=0, data="PassThru Message").serialize())
 
@@ -1289,8 +1431,11 @@ class CombinedTests(unittest.TestCase):
 
         self.backend_channel_wh.send(dmsg.LAPassThruBF(tag=0, data="Exit").serialize())
 
-        self.backend_channel_wh.send(dmsg.LAServerModeExit(tag=0, ref=gs_process_create.tag,
-                                                           err=dmsg.LAServerModeExit.Errors.SUCCESS).serialize())
+        self.backend_channel_wh.send(
+            dmsg.LAServerModeExit(
+                tag=0, ref=gs_process_create.tag, err=dmsg.LAServerModeExit.Errors.SUCCESS
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -1302,13 +1447,13 @@ class CombinedTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('Hello', stdout)
-        self.assertIn('World', stdout)
-        self.assertIn('Server', stdout)
-        self.assertIn('Mode', stdout)
-        self.assertIn('True', stdout)
+        self.assertIn("Hello", stdout)
+        self.assertIn("World", stdout)
+        self.assertIn("Server", stdout)
+        self.assertIn("Mode", stdout)
+        self.assertIn("True", stdout)
 
-        self.assertEqual('', stderr.strip())
+        self.assertEqual("", stderr.strip())
 
     def test_proc_list(self):
         args = ["-r", "launcher/file6.py"]
@@ -1317,35 +1462,45 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_uid=4, name='TestProc', node=1, p_p_uid=0)
-        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS,
-                    desc=proc_desc)
+        proc_desc = PDESC(p_uid=4, name="TestProc", node=1, p_p_uid=0)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Hello World\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Hello World\n"
+            ).serialize()
+        )
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                             data="Hello World to stderr\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value, data="Hello World to stderr\n"
+            ).serialize()
+        )
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdOutput(tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                             data="Stop\n").serialize())
+            dmsg.SHFwdOutput(
+                tag=0, p_uid="4", idx="0", fd_num=dmsg.SHFwdOutput.FDNum.STDOUT.value, data="Stop\n"
+            ).serialize()
+        )
 
         gs_process_join = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessJoin)
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessJoinResponse(tag=0, ref=gs_process_join.tag,
-                                       err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
-                                       ).serialize())
+            dmsg.GSProcessJoinResponse(
+                tag=0,
+                ref=gs_process_join.tag,
+                err=dmsg.GSProcessJoinResponse.Errors.SUCCESS,
+            ).serialize()
+        )
 
         gs_process_list = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessList)
 
         self.backend_channel_wh.send(
-            dmsg.GSProcessListResponse(tag=0, ref=gs_process_list.tag, err=dmsg.GSProcessListResponse.Errors.SUCCESS,
-                                       plist=[('4', '4-name')]).serialize())
+            dmsg.GSProcessListResponse(
+                tag=0, ref=gs_process_list.tag, err=dmsg.GSProcessListResponse.Errors.SUCCESS, plist=[("4", "4-name")]
+            ).serialize()
+        )
 
         self.do_teardown(timeout=None)
 
@@ -1363,13 +1518,13 @@ class CombinedTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('python3', stdout)
-        self.assertIn('test.py', stdout)
-        self.assertIn('env', stdout)
-        self.assertIn('0', stdout)
-        self.assertIn('True', stdout)
+        self.assertIn("python3", stdout)
+        self.assertIn("test.py", stdout)
+        self.assertIn("env", stdout)
+        self.assertIn("0", stdout)
+        self.assertIn("True", stdout)
 
-        self.assertEqual('', stderr.strip())
+        self.assertEqual("", stderr.strip())
 
     def test_send(self):
         args = ["-r", "launcher/file7.py"]
@@ -1378,23 +1533,25 @@ class CombinedTests(unittest.TestCase):
 
         gs_process_create = tsu.get_and_check_type(self.gs_queue_rh, dmsg.GSProcessCreate)
 
-        proc_desc = PDESC(p_p_uid=0, p_uid=4, name='TestProc', node=1)
-        msg = PRESP(tag=0, ref=gs_process_create.tag,
-                    err=PRESPERR.SUCCESS, desc=proc_desc)
+        proc_desc = PDESC(p_p_uid=0, p_uid=4, name="TestProc", node=1)
+        msg = PRESP(tag=0, ref=gs_process_create.tag, err=PRESPERR.SUCCESS, desc=proc_desc)
         self.backend_channel_wh.send(msg.serialize())
 
         sh_fwd_input = tsu.get_and_check_type(self.sh_queue_rh, dmsg.SHFwdInput)
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdInputErr(tag=0, ref=sh_fwd_input.tag, err=dmsg.SHFwdInputErr.Errors.SUCCESS).serialize())
+            dmsg.SHFwdInputErr(tag=0, ref=sh_fwd_input.tag, err=dmsg.SHFwdInputErr.Errors.SUCCESS).serialize()
+        )
 
         self.assertEqual(sh_fwd_input.input, "Hello World")
 
         sh_fwd_input2 = tsu.get_and_check_type(self.sh_queue_rh, dmsg.SHFwdInput)
 
         self.backend_channel_wh.send(
-            dmsg.SHFwdInputErr(tag=0, ref=sh_fwd_input2.tag, err=dmsg.SHFwdInputErr.Errors.FAIL,
-                               err_info='Error Information').serialize())
+            dmsg.SHFwdInputErr(
+                tag=0, ref=sh_fwd_input2.tag, err=dmsg.SHFwdInputErr.Errors.FAIL, err_info="Error Information"
+            ).serialize()
+        )
 
         self.assertEqual(sh_fwd_input2.input, "Goodbye")
 
@@ -1415,10 +1572,10 @@ class CombinedTests(unittest.TestCase):
 
         stderr = self.stderr.read()
 
-        self.assertIn('4', stdout)
-        self.assertIn('SUCCESS', stdout)
-        self.assertIn('True', stdout)
-        self.assertEqual('', stderr.strip())
+        self.assertIn("4", stdout)
+        self.assertIn("SUCCESS", stdout)
+        self.assertIn("True", stdout)
+        self.assertEqual("", stderr.strip())
 
 
 if __name__ == "__main__":

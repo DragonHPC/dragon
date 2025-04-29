@@ -531,46 +531,6 @@ _check_client_cmplt(dragonGatewayMessage_t * gmsg, timespec_t *deadline)
     }
 }
 
-static dragonError_t
-_wait_on_client_cmplt(dragonGatewayMessage_t * gmsg)
-{
-    timespec_t deadline;
-    _get_deadline_for_cmplt(&deadline);
-
-    dragonError_t err;
-
-    do {
-        err = _check_client_cmplt(gmsg, &deadline);
-        PAUSE();
-    } while (err == DRAGON_EAGAIN);
-
-    if (err != DRAGON_SUCCESS && err != DRAGON_TIMEOUT) {
-        append_err_return(err, "Failure while waiting for client to complete its gateway message processing");
-    }
-
-    no_err_return(DRAGON_SUCCESS);
-}
-
-static dragonError_t
-_deadline_to_timeout(const timespec_t* deadline, timespec_t** timeout)
-{
-    if (*timeout != NULL)
-        free(*timeout);
-
-    if (deadline != NULL) {
-        *timeout = malloc(sizeof(timespec_t));
-        if (timeout == NULL)
-            err_return(DRAGON_INTERNAL_MALLOC_FAIL, "failed to allocate timespec for timeout");
-
-        dragonError_t err = dragon_timespec_remaining(deadline, *timeout);
-        if (err != DRAGON_SUCCESS) {
-            free(*timeout);
-            append_err_return(err, "failed to compute timeout from deadline");
-        }
-    }
-
-    no_err_return(DRAGON_SUCCESS);
-}
 
 static dragonError_t
 _validate_and_copy_msg_attr(const dragonMessageAttr_t * mattr, dragonMessageAttr_t * attr_cpy)
@@ -952,22 +912,17 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to determine allocation size needed for gateway message.");
 
-    timespec_t * timeout = NULL;
-    err = _deadline_to_timeout(deadline, &timeout);
+    timespec_t timeout;
+    err = dragon_timespec_remaining(deadline, &timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not compute timeout ahead of blocking allocation.");
         goto gwmsg_serial_fail;
     }
 
-    err = dragon_memory_alloc_blocking(&gmsg->_obj_mem_descr, pool_descr, required_nbytes, timeout);
+    err = dragon_memory_alloc_blocking(&gmsg->_obj_mem_descr, pool_descr, required_nbytes, &timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not allocate space for GatewayMessage from Pool.");
-        goto gwmsg_deadline_fail;
-    }
-
-    if (timeout != NULL) {
-        free(timeout);
-        timeout = NULL;
+        goto gwmsg_serial_fail;
     }
 
     err = dragon_memory_get_pointer(&gmsg->_obj_mem_descr, &gmsg->_obj_ptr);
@@ -1019,9 +974,6 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
 
 gwmsg_alloc_fail:
     dragon_memory_free(&gmsg->_obj_mem_descr);
-gwmsg_deadline_fail:
-    if (timeout != NULL)
-        free(timeout);
 gwmsg_serial_fail:
     dragon_channel_serial_free(&target_ch_ser);
 
@@ -1101,22 +1053,17 @@ dragon_channel_gatewaymessage_get_create(dragonMemoryPoolDescr_t * pool_descr, d
         goto gwmsg_serial_fail;
     }
 
-    timespec_t * timeout = NULL;
-    err = _deadline_to_timeout(deadline, &timeout);
+    timespec_t timeout;
+    err = dragon_timespec_remaining(deadline, &timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("could compute timeout ahead of blocking allocation");
         goto gwmsg_serial_fail;
     }
 
-    err = dragon_memory_alloc_blocking(&gmsg->_obj_mem_descr, pool_descr, required_nbytes, timeout);
+    err = dragon_memory_alloc_blocking(&gmsg->_obj_mem_descr, pool_descr, required_nbytes, &timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("could not allocate space for GatewayMessage from Pool");
-        goto gwmsg_deadline_fail;
-    }
-
-    if (timeout != NULL) {
-        free(timeout);
-        timeout = NULL;
+        goto gwmsg_serial_fail;
     }
 
     err = dragon_memory_get_pointer(&gmsg->_obj_mem_descr, &gmsg->_obj_ptr);
@@ -1155,9 +1102,6 @@ dragon_channel_gatewaymessage_get_create(dragonMemoryPoolDescr_t * pool_descr, d
 
 gwmsg_alloc_fail:
     dragon_memory_free(&gmsg->_obj_mem_descr);
-gwmsg_deadline_fail:
-    if (timeout != NULL)
-        free(timeout);
 gwmsg_serial_fail:
     dragon_channel_serial_free(&target_ch_ser);
 
@@ -1226,22 +1170,17 @@ dragon_channel_gatewaymessage_event_create(dragonMemoryPoolDescr_t * pool_descr,
         goto gwmsg_serial_fail;
     }
 
-    timespec_t * timeout = NULL;
-    err = _deadline_to_timeout(deadline, &timeout);
+    timespec_t timeout;
+    err = dragon_timespec_remaining(deadline, &timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("could compute timeout ahead of blocking allocation");
         goto gwmsg_serial_fail;
     }
 
-    err = dragon_memory_alloc_blocking(&gmsg->_obj_mem_descr, pool_descr, required_nbytes, timeout);
+    err = dragon_memory_alloc_blocking(&gmsg->_obj_mem_descr, pool_descr, required_nbytes, &timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("could not allocate space for GatewayMessage from Pool");
-        goto gwmsg_deadline_fail;
-    }
-
-    if (timeout != NULL) {
-        free(timeout);
-        timeout = NULL;
+        goto gwmsg_serial_fail;
     }
 
     err = dragon_memory_get_pointer(&gmsg->_obj_mem_descr, &gmsg->_obj_ptr);
@@ -1280,9 +1219,6 @@ dragon_channel_gatewaymessage_event_create(dragonMemoryPoolDescr_t * pool_descr,
 
 gwmsg_alloc_fail:
     dragon_memory_free(&gmsg->_obj_mem_descr);
-gwmsg_deadline_fail:
-    if (timeout != NULL)
-        free(timeout);
 gwmsg_serial_fail:
     dragon_channel_serial_free(&target_ch_ser);
 
@@ -1753,21 +1689,26 @@ dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, c
         has not quit waiting. If it has, then we may not be able to trust the data. */
         if (atomic_exchange(gmsg->_header.client_cmplt, desired) != 0UL)
             err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
-    } else if (err == DRAGON_BCAST_DESTROYED)
+    } else if (err == DRAGON_OBJECT_DESTROYED)
         err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
+
+    if (send_err == DRAGON_SUCCESS && err != DRAGON_SUCCESS) {
+        char err_str[200];
+        char* saved_err_msg = dragon_getlasterrstr();
+        double end_time = dragon_get_current_time_as_double();
+        double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
+        double diff = end_time-start_time;
+        snprintf(err_str, 199, "The completion of the send gateway message, for process GW_PID=%lu, PID=%lu and GW_PUID(if available)=%lu,PUID=%lu , timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, _getpid(), *gmsg->_header.client_puid, _get_my_puid(),diff);
+        dragon_channel_gatewaymessage_detach(gmsg);
+        err_noreturn(saved_err_msg);
+        free(saved_err_msg);
+        append_err_return(err, err_str);
+    }
 
     dragonError_t derr = dragon_channel_gatewaymessage_detach(gmsg);
     if (send_err == DRAGON_SUCCESS && err == DRAGON_SUCCESS && derr != DRAGON_SUCCESS)
         append_err_return(derr, "The client send completion could not detach from the gateway message for some reason.");
 
-    if (send_err == DRAGON_SUCCESS && err != DRAGON_SUCCESS) {
-        char err_str[200];
-        double end_time = dragon_get_current_time_as_double();
-        double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
-        double diff = end_time-start_time;
-        snprintf(err_str, 199, "The completion of the send gateway message, for process GW_PID=%lu, PID=%lu and GW_PUID(if available)=%lu,PUID=%lu , timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, _getpid(), *gmsg->_header.client_puid, _get_my_puid(),diff);
-        append_err_return(err, err_str);
-    }
 
     return send_err;
 }
@@ -1961,17 +1902,43 @@ dragon_channel_gatewaymessage_transport_check_get_cmplt(dragonGatewayMessage_t *
        can safely destroy the message */
     err = _check_client_cmplt(gmsg, deadline);
     if (err == DRAGON_TIMEOUT) {
+        char* bcast_state = NULL;
+
+        if (!silence_gw_timeout_msgs)
+            bcast_state = dragon_bcast_state(&gmsg->_cmplt_bcast);
+
         dragonULInt desired = 1UL;
         /* Try one more time, but also mark the flag so client knows no one is waiting. */
         if (atomic_exchange(gmsg->_header.client_cmplt, desired))
             err = DRAGON_SUCCESS;
 
-        if (err == DRAGON_TIMEOUT && !silence_gw_timeout_msgs) {
+        if (!silence_gw_timeout_msgs) {
             /* The completion interaction with the client timed out. We'll gather some more information. */
             /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
             char err_str[200];
             snprintf(err_str, 199, "ERROR: GATEWAY GET MSG COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
             fprintf(stderr, "%s\n", err_str);
+            if (bcast_state != NULL) {
+                fprintf(stderr, "%s\n", bcast_state);
+                char* dbg_str = getenv("__DRAGON_BCAST_DEBUG");
+                if (dbg_str != NULL) {
+                    FILE *fptr;
+                    // Open a file in writing mode
+                    fptr = fopen("bcast_gw_timeout.txt", "w");
+
+                    // Write some text to the file
+                    fprintf(fptr, "This should never happen. It indicates that a process was waiting for the transport\n");
+                    fprintf(fptr, "to complete a remote send/recv/event operation. The transport completed it,\n");
+                    fprintf(fptr, "and the user process did not pick up the completion of the operation for some reason.\n");
+                    fprintf(fptr, "Here is the BCAST STATE when the error occurred along with error message.\n");
+                    fprintf(fptr, "%s\n", err_str);
+                    fprintf(fptr, "%s\n", bcast_state);
+
+                    // Close the file
+                    fclose(fptr);
+                }
+                free(bcast_state);
+            }
         }
     }
 
@@ -2094,12 +2061,12 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not initialize message in get completion of gateway receive.");
     } else {
-        err_noreturn("There was an error returned from the remote side by the transport or the local transport timed out while waiting for gateway message completion.");
         /* Since DRAGON_SUCCESS was not achieved, we'll init the message to empty */
         dragon_channel_message_init(msg_recv, NULL, NULL);
         /* We don't check the return code of this call to message_init because there
            will be an error returned from the given gateway message and that is more
            important to get that error code. Besides, the above call will not fail. */
+        err_noreturn("There was an error returned from the remote side by the transport or the local transport timed out while waiting for gateway message completion.");
     }
 
     if (err == DRAGON_SUCCESS) {
@@ -2118,18 +2085,21 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
         if (atomic_exchange(gmsg->_header.client_cmplt, desired) != 0UL) {
             err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
         }
-    } else if (err == DRAGON_BCAST_DESTROYED) {
+    } else if (err == DRAGON_OBJECT_DESTROYED) {
         called_path=2;
         err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
     }
 
     if (get_rc == DRAGON_SUCCESS && err != DRAGON_SUCCESS) {
         char err_str[200];
+        char* saved_err_msg = dragon_getlasterrstr();
         double end_time = dragon_get_current_time_as_double();
         double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
         double diff = end_time-start_time;
         snprintf(err_str, 199, "The completion of the get gateway message, for process PID=%lu and PUID(if available)=%lu, timed out in the transport  on path %d with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, called_path, diff);
         dragon_channel_gatewaymessage_detach(gmsg);
+        err_noreturn(saved_err_msg);
+        free(saved_err_msg);
         append_err_return(err, err_str);
     }
 
@@ -2332,21 +2302,25 @@ dragon_channel_gatewaymessage_client_event_cmplt(dragonGatewayMessage_t * gmsg, 
         has not quit waiting. If it has, then we may not be able to trust the data. */
         if (atomic_exchange(gmsg->_header.client_cmplt, desired) != 0UL)
             err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
-    } else if (err == DRAGON_BCAST_DESTROYED)
+    } else if (err == DRAGON_OBJECT_DESTROYED)
         err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
-
-    dragonError_t derr = dragon_channel_gatewaymessage_detach(gmsg);
-    if (event_rc == DRAGON_SUCCESS && err == DRAGON_SUCCESS && derr != DRAGON_SUCCESS)
-        append_err_return(derr, "The client event completion could not detach from the gateway message for some reason.");
 
     if (event_rc == DRAGON_SUCCESS && err != DRAGON_SUCCESS) {
         char err_str[200];
+        char* saved_err_msg = dragon_getlasterrstr();
         double end_time = dragon_get_current_time_as_double();
         double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
         double diff = end_time-start_time;
         snprintf(err_str, 199, "The completion of the event gateway message, for process PID=%lu and PUID(if available)=%lu, timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, diff);
+        dragon_channel_gatewaymessage_detach(gmsg);
+        err_noreturn(saved_err_msg);
+        free(saved_err_msg);
         append_err_return(err, err_str);
     }
+
+    dragonError_t derr = dragon_channel_gatewaymessage_detach(gmsg);
+    if (event_rc == DRAGON_SUCCESS && err == DRAGON_SUCCESS && derr != DRAGON_SUCCESS)
+        append_err_return(derr, "The client event completion could not detach from the gateway message for some reason.");
 
     no_err_return(event_rc);
 }

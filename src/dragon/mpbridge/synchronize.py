@@ -1,4 +1,4 @@
-"""Dragon's replacements for the synchronization primitives in Multiprocessing.  
+"""Dragon's replacements for the synchronization primitives in Multiprocessing.
 Except for `Condition`, all components are based on `dragon.native` component
 and are implemented over one or more dragon channels.  `Lock` is patched with a
 dummy `_SemLock` class, so `Condition` works out of the box.
@@ -41,11 +41,13 @@ class AugmentedDragonNativeLock(dragon.native.lock.Lock):
 
 
 class DragonLock(AugmentedDragonNativeLock):
+    """A lock co-located on the same node by default as the creating process"""
     def __init__(self, *args, ctx, **kwargs):
         super().__init__(*args, **kwargs, recursive=False)
 
 
 class DragonRLock(AugmentedDragonNativeLock):
+    """A recursive lock co-located on the same node by default as the creating process"""
     def __init__(self, *args, ctx, **kwargs):
         super().__init__(*args, **kwargs, recursive=True)
 
@@ -64,10 +66,10 @@ class BaseImplRLock(multiprocessing.synchronize.RLock):
 
 
 class DragonCondition(multiprocessing.synchronize.Condition):
-    """Dragons replacement for the Multiprocessing Condition removes
-    all references to _semlock and the test for assert_spawning.
-    The _semlock interface is mapped onto Dragon's native Lock
-    implementation.
+    """A condition co-located on the same node by default as the creating process
+
+    This implementation removes all references to _semlock and the test for assert_spawning.
+    The _semlock interface is mapped onto Dragon's native Lock implementation.
     """
 
     def __getstate__(self):
@@ -88,11 +90,13 @@ class BaseImplCondition(multiprocessing.synchronize.Condition):
 
 # Semaphore
 class DragonSemaphore(dragon.native.semaphore.Semaphore):
+    """A sempahore co-located on the same node by default as the creating process"""
     def __init__(self, *args, ctx, **kwargs):
         super().__init__(*args, **kwargs, bounded=False)
 
 
 class DragonBoundedSemaphore(dragon.native.semaphore.Semaphore):
+    """A bounded sempahore co-located on the same node by default as the creating process"""
     def __init__(self, *args, ctx, **kwargs):
         super().__init__(*args, **kwargs, bounded=True)
 
@@ -109,6 +113,7 @@ class BaseImplBoundedSemaphore(multiprocessing.synchronize.BoundedSemaphore):
 
 # Event
 class DragonEvent(dragon.native.event.Event):
+    """An event co-located on the same node by default as the creating process"""
     def __init__(self, *args, ctx, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -122,6 +127,7 @@ class BaseImplEvent(multiprocessing.synchronize.Event):
 
 
 class DragonBarrier(dragon.native.barrier.Barrier):
+    """A barrier co-located on the same node by default as the creating process"""
     def __init__(self, parties: int, action: callable = None, timeout: float = None, *, ctx=None):
         if timeout is not None:
             if timeout < 0:

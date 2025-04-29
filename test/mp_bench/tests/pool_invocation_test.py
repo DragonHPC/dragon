@@ -8,6 +8,7 @@ import multiprocessing
 import time
 import test_util
 
+
 class PoolInvocationTest:
 
     def __init__(self):
@@ -15,21 +16,20 @@ class PoolInvocationTest:
         self.results = None
 
     def __setup(self):
-        parser = test_util.add_default_args('Does a basic speed test of dispatching a task in an existingPool')
+        parser = test_util.add_default_args("Does a basic speed test of dispatching a task in an existingPool")
         self.args = test_util.process_args(parser)
-        multiprocessing.set_start_method('spawn')
+        multiprocessing.set_start_method("spawn")
 
     def run(self):
         self.__setup()
         times = test_util.iterations(self.do_spawn_gather, self.args)
-        self.results = test_util.Results(self.args, times, 'pool_invocation_test')
+        self.results = test_util.Results(self.args, times, "pool_invocation_test")
         if self.args.json:
             return self.dump()
         return self.results
 
     def dump(self):
-        return self.results.dump() 
-
+        return self.results.dump()
 
     def dummy_func(self, x):
         return 42
@@ -48,7 +48,7 @@ class PoolInvocationTest:
         completions2 = []
         with multiprocessing.Pool(num_workers) as the_pool:
             for idx in range(num_workers):
-                completions.append( the_pool.apply_async(self.dummy_func, (idx,)))
+                completions.append(the_pool.apply_async(self.dummy_func, (idx,)))
 
             for k in completions:
                 k.get()
@@ -63,8 +63,6 @@ class PoolInvocationTest:
         return time.time_ns() - start_time
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test = PoolInvocationTest()
     print(test.run())
-
-

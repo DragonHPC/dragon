@@ -1,5 +1,6 @@
 import time
 
+
 def foo():
     print("Hello World")
     time.sleep(3)

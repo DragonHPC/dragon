@@ -6,7 +6,7 @@ import dragon.infrastructure.standalone_conn as disc
 
 
 def write_actor(writer):
-    writer.send('hyenas')
+    writer.send("hyenas")
 
 
 SUCCESS = 0
@@ -30,8 +30,9 @@ def echo_actor(handle):
         handle.close()
         exit(SUCCESS)
     except Exception as e:
-        print(f'got some other exception: {e}')
+        print(f"got some other exception: {e}")
         import traceback
+
         traceback.print_exc()
 
     exit(FAILURE)
@@ -57,7 +58,7 @@ class TestStandaloneConn(unittest.TestCase):
 
     def test_single_oneway(self):
         reader, writer = disc.Pipe(duplex=False)
-        send_msg = 'hyenas'
+        send_msg = "hyenas"
         read_proc = multiprocessing.Process(target=read_actor, args=(reader, send_msg))
         read_proc.start()
         writer.send(send_msg)
@@ -70,7 +71,7 @@ class TestStandaloneConn(unittest.TestCase):
         echo_proc = multiprocessing.Process(target=echo_actor, args=(remote,))
         echo_proc.start()
 
-        msg = 'hyenas'
+        msg = "hyenas"
         local.send(msg)
         recvmsg = local.recv()
 
@@ -83,8 +84,8 @@ class TestStandaloneConn(unittest.TestCase):
     def test_single_swap(self):
         firstlocal, firstremote = disc.Pipe()
         secondlocal, secondremote = disc.Pipe()
-        first_msg = 'hyenas'
-        second_msg = 'weasels'
+        first_msg = "hyenas"
+        second_msg = "weasels"
         swap_proc = multiprocessing.Process(target=swap_actor, args=(firstremote, secondremote))
         swap_proc.start()
         firstlocal.send(first_msg)
@@ -96,6 +97,6 @@ class TestStandaloneConn(unittest.TestCase):
         self.assertEqual(srep, first_msg)
 
 
-if __name__ == '__main__':
-    multiprocessing.set_start_method('spawn')
+if __name__ == "__main__":
+    multiprocessing.set_start_method("spawn")
     unittest.main()

@@ -1,4 +1,4 @@
-""" This file contains tests of the mpbridge interfaces, i.e. classes, methods, attributes and how they
+"""This file contains tests of the mpbridge interfaces, i.e. classes, methods, attributes and how they
 are hooked into multiprocessing context.
 
 This is driven by the requirement that Python multiprocessing should **just work** with Dragon.
@@ -76,8 +76,8 @@ class TestMultiprocessingAPI(unittest.TestCase):
         self.assertIsInstance(mp.RawValue(typecode_or_type="i"), dragon.mpbridge.sharedctypes.DragonRawValue)
         self.assertIsInstance(mp.Barrier(5), dragon.mpbridge.synchronize.DragonBarrier)
         self.assertIsInstance(mp.Condition(), dragon.mpbridge.synchronize.DragonCondition)
-        self.assertIsInstance(mp.Array('i', []), dragon.mpbridge.sharedctypes.DragonArray)
-        self.assertIsInstance(mp.RawArray('i', []), dragon.mpbridge.sharedctypes.DragonRawArray)
+        self.assertIsInstance(mp.Array("i", []), dragon.mpbridge.sharedctypes.DragonArray)
+        self.assertIsInstance(mp.RawArray("i", []), dragon.mpbridge.sharedctypes.DragonRawArray)
 
         self.assertIsInstance(Arena(1024), dragon.mpbridge.heap.DragonArena)
         self.assertIsInstance(BufferWrapper(1024)._heap._arenas[0], dragon.mpbridge.heap.DragonArena)
@@ -85,9 +85,7 @@ class TestMultiprocessingAPI(unittest.TestCase):
         with mp.Pool(1) as dut:  # it is not correct to rely on the garbage collector to destroy the pool
             self.assertIsInstance(dut, dragon.mpbridge.pool.DragonPool)
 
-        self.assertTrue(
-            callable(getattr(mp, "Pipe"))
-        )  # this should be dragon.mpbridge.connection.DragonConnection
+        self.assertTrue(callable(getattr(mp, "Pipe")))  # this should be dragon.mpbridge.connection.DragonConnection
         r, w = mp.Pipe()
         self.assertIsInstance(r, dragon.infrastructure.connection.Connection)  # TODO: PE-41642
         self.assertIsInstance(w, dragon.infrastructure.connection.Connection)
@@ -99,9 +97,6 @@ class TestMultiprocessingAPI(unittest.TestCase):
         self.assertRaises(NotImplementedError, BaseProxy)
         self.assertRaises(NotImplementedError, Token)
         self.assertRaises(NotImplementedError, SharedMemoryManager)
-
-        self.assertRaises(NotImplementedError, SharedMemory)
-        self.assertRaises(NotImplementedError, ShareableList)
 
         self.assertRaises(NotImplementedError, mp.connection.Listener)
         self.assertRaises(NotImplementedError, mp.connection.Client, "")

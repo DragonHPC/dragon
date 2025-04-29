@@ -7,11 +7,11 @@ import ctypes
 import random
 import string
 
-import dragon
 from dragon.globalservices.process import create, multi_join
 from dragon.infrastructure.process_desc import ProcessOptions
-from dragon.native.array import Array, _TYPECODE_TO_TYPE, _SUPPORTED_TYPES
+from dragon.native.array import Array, _SUPPORTED_TYPES
 from dragon.native.queue import Queue
+from dragon.native.process import Process
 from dragon.native.lock import Lock
 import dragon.utils as du
 from ctypes import Structure, c_double
@@ -27,11 +27,14 @@ def create_array_assignment(type):
         return [b"0", b"1", bytes(str(random.choice(string.ascii_letters)).encode("utf-8"))]
     elif type is ctypes.c_wchar:
         # wchar can take up to 4 bytes on most machines. We need to test at least up to 4 charcters
-        return ["0", "1",
-                str(random.choice(string.ascii_letters)),
-                ''.join(str(random.choice(string.ascii_letters)) for i in range(2)),
-                ''.join(str(random.choice(string.ascii_letters)) for i in range(3)),
-                ''.join(str(random.choice(string.ascii_letters)) for i in range(4))]
+        return [
+            "0",
+            "1",
+            str(random.choice(string.ascii_letters)),
+            "".join(str(random.choice(string.ascii_letters)) for i in range(2)),
+            "".join(str(random.choice(string.ascii_letters)) for i in range(3)),
+            "".join(str(random.choice(string.ascii_letters)) for i in range(4)),
+        ]
     elif type in [ctypes.c_double, ctypes.c_float]:
         return [
             0.0,
@@ -54,6 +57,14 @@ def test_array(args):
     child_queue.put(True)
     # wait on the queue and exit cleanly
     assert parent_queue.get(timeout=None)
+
+
+def square(A):
+    """Square a Point structure"""
+
+    for a in A:
+        a.x **= 2
+        a.y **= 2
 
 
 class TestArray(unittest.TestCase):
@@ -88,6 +99,36 @@ class TestArray(unittest.TestCase):
             [(3.515625, 39.0625), (33.0625, 4.0), (5.640625, 90.25)],
             "Array assignment does not work for structure",
         )
+
+    def test_pickled_structure(self):
+        """tests that Structure works in array when pickled"""
+        lock = Lock()
+
+        A = Array(Point, [(1.875, -6.25), (-5.75, 2.0), (2.375, 9.5)], lock=lock)
+
+        p = Process(target=square, args=(A,))
+        p.daemon = True
+        p.start()
+        p.join()
+
+        self.assertEqual(
+            [(a.x, a.y) for a in A],
+            [(3.515625, 39.0625), (33.0625, 4.0), (5.640625, 90.25)],
+            "Array assignment does not work for structure",
+        )
+
+    def test_char_value_raw(self):
+        """Tests that char type returns a bytes array and only char does"""
+
+        x = Array("c", 5)
+        x.value = b"hello"
+        y = Array("i", range(10))
+
+        self.assertEqual(x.value, b"hello")
+        self.assertEqual(x.raw, b"hello")
+
+        with self.assertRaises(AttributeError):
+            y.value
 
     def test_ping_pong(self):
         """queue ping pong between 2 processes that tests array assignment in

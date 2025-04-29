@@ -1,4 +1,4 @@
-""" This file contains Dragon multi-node acceptance tests for the
+"""This file contains Dragon multi-node acceptance tests for the
 `dragon.native.Lock` object.  The test scales with the total number of CPUs
 reported by the allocation, i.e. it becomes tougher on larger allocations.
 
@@ -24,7 +24,6 @@ import dragon.utils as du
 
 
 def _burner(env_str):
-
     num_acq = 128
 
     # unpack the lock from the environment string
@@ -34,11 +33,10 @@ def _burner(env_str):
     for _ in range(num_acq):
         success = lock.acquire(block=True, timeout=None)
         lock.release()  # burn it !
-        assert success == True, "Could not acquire lock"
+        assert success is True, "Could not acquire lock"
 
 
 def _releaser(env_str):
-
     # unpack the lock from the environment string
     bytes = du.B64.str_to_bytes(env_str)
     rlock = pickle.loads(bytes)
@@ -53,7 +51,6 @@ def _releaser(env_str):
 
 
 def _acquirer(env_str):
-
     # unpack the lock from the environment string
     bytes = du.B64.str_to_bytes(env_str)
     lock = pickle.loads(bytes)
@@ -233,7 +230,6 @@ class TestLockMultiNode(unittest.TestCase):
 
 
 if __name__ == "__main__":
-
     if len(sys.argv) > 1 and sys.argv[1] == "_acquirer":
         _acquirer(sys.argv[2])
     elif len(sys.argv) > 1 and sys.argv[1] == "_releaser":

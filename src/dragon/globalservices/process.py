@@ -1,5 +1,5 @@
-"""Global Services API for the Process primary resource component.
-"""
+"""Global Services API for the Process primary resource component."""
+
 import signal
 import logging
 import enum
@@ -24,8 +24,9 @@ from ..infrastructure import connection as dconn
 from ..utils import B64
 from ..infrastructure.policy import Policy
 import os
+import json
 
-log = logging.getLogger('process_api')
+log = logging.getLogger("process_api")
 
 
 @enum.unique
@@ -40,45 +41,96 @@ _capture_stderr_conn = None
 _capture_stdout_chan = None
 _capture_stderr_chan = None
 
-DRAGON_CAPTURE_MP_CHILD_OUTPUT = 'DRAGON_CAPTURE_MP_CHILD_OUTPUT'
-DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT = 'DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT'
+DRAGON_CAPTURE_MP_CHILD_OUTPUT = "DRAGON_CAPTURE_MP_CHILD_OUTPUT"
+DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT = "DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT"
+
 _capture_shutting_down = False
 
 
 # This is for user processes to use when they wish to capture the
 # output of child multiprocessing processes.
 def start_capturing_child_mp_output():
-    os.environ[DRAGON_CAPTURE_MP_CHILD_OUTPUT] = 'True'
+    os.environ[DRAGON_CAPTURE_MP_CHILD_OUTPUT] = "True"
+
+def cleanup():
+    global _capture_shutting_down
+
+    try:
+        _capture_shutting_down = True
+        stop_capturing_child_mp_output()
+        destroy_capture_connections()
+    except:
+        pass
+
+def mk_capture_threads():
+    global _capture_stdout_conn, _capture_stderr_conn, _capture_shutting_down
+
+    def forward(strm_conn: dconn.Connection, strm_dest: StreamDestination):
+
+        file_dest = sys.stdout if strm_dest == StreamDestination.STDOUT else sys.stderr
+
+        try:
+            while not _capture_shutting_down:
+                data = strm_conn.recv()
+                if data == DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT:
+                    return
+
+                print(data, file=file_dest, flush=True, end="")
+        except EOFError:
+            pass
+        except Exception as ex:
+            log.debug(f"While forwarding output to {strm_dest} an unexpected error occurred:{repr(ex)}")
+
+
+    stdout_monitor = threading.Thread(
+        name="stdout monitor", target=forward, args=(_capture_stdout_conn, StreamDestination.STDOUT)
+    )
+    stdout_monitor.start()
+
+    stderr_monitor = threading.Thread(
+        name="stderr monitor", target=forward, args=(_capture_stderr_conn, StreamDestination.STDERR)
+    )
+    stderr_monitor.start()
+
+    atexit.register(cleanup)
 
 
 def stop_capturing_child_mp_output():
-    global _capture_shutting_down, _capture_stdout_chan, _capture_stderr_chan
+    global _capture_stdout_chan, _capture_stderr_chan
 
-    _capture_shutting_down = True
+    stdout = dconn.Connection(
+        outbound_initializer=_capture_stdout_chan,
+        options=dconn.ConnectionOptions(min_block_size=512),
+        policy=dparm.POLICY_INFRASTRUCTURE,
+    )
 
-    stdout = dconn.Connection(outbound_initializer=_capture_stdout_chan,
-                options=dconn.ConnectionOptions(min_block_size=512), policy=dparm.POLICY_INFRASTRUCTURE)
-
-    stderr = dconn.Connection(outbound_initializer=_capture_stderr_chan,
-                options=dconn.ConnectionOptions(min_block_size=512), policy=dparm.POLICY_INFRASTRUCTURE)
+    stderr = dconn.Connection(
+        outbound_initializer=_capture_stderr_chan,
+        options=dconn.ConnectionOptions(min_block_size=512),
+        policy=dparm.POLICY_INFRASTRUCTURE,
+    )
 
     stdout.send(DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT)
     stderr.send(DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT)
 
+
+def destroy_capture_connections():
+    global _capture_stdout_chan, _capture_stderr_chan
+
     if _capture_stdout_chan is not None:
         try:
-            log.info('destroying the MP child capturing stdout channel')
+            log.info("destroying the MP child capturing stdout channel")
             dgchan.destroy(_capture_stdout_chan.cuid)
-            log.info('stdout channel destroy complete')
+            log.info("stdout channel destroy complete")
             _capture_stdout_chan = None
         except Exception:
             pass
 
     if _capture_stderr_chan is not None:
         try:
-            log.info('destroying the MP child capturing stderr channel')
+            log.info("destroying the MP child capturing stderr channel")
             dgchan.destroy(_capture_stderr_chan.cuid)
-            log.info('stderr channel destroy complete')
+            log.info("stderr channel destroy complete")
             _capture_stderr_chan = None
         except Exception:
             pass
@@ -87,56 +139,32 @@ def stop_capturing_child_mp_output():
 def _capture_child_output_setup():
     global _capture_stdout_conn, _capture_stderr_conn, _capture_stdout_chan, _capture_stderr_chan
 
-    default_muid = dfacts.default_pool_muid_from_index(dparm.this_process.index)
+    if _capture_stdout_conn is None:
+        default_muid = dfacts.default_pool_muid_from_index(dparm.this_process.index)
 
-    # ask GS to create a dragon channel
-    stdout_descriptor = dgchan.create(default_muid, user_name=f'stdout_channel_{os.getpid()}')
-    _capture_stdout_chan = dch.Channel.attach(stdout_descriptor.sdesc)
-    os.environ[dfacts.STDOUT_DESC] = B64.bytes_to_str(stdout_descriptor.sdesc)
-    _capture_stdout_conn = dconn.Connection(inbound_initializer=_capture_stdout_chan,
-                            options=dconn.ConnectionOptions(min_block_size=512), policy=dparm.POLICY_INFRASTRUCTURE)
+        # ask GS to create a dragon channel
+        stdout_descriptor = dgchan.create(default_muid)
+        _capture_stdout_chan = dch.Channel.attach(stdout_descriptor.sdesc)
+        os.environ[dfacts.STDOUT_DESC] = B64.bytes_to_str(stdout_descriptor.sdesc)
+        _capture_stdout_conn = dconn.Connection(
+            inbound_initializer=_capture_stdout_chan,
+            options=dconn.ConnectionOptions(min_block_size=512),
+            policy=dparm.POLICY_INFRASTRUCTURE,
+        )
 
-
-    stderr_descriptor = dgchan.create(default_muid, user_name=f'stderr_channel_{os.getpid()}')
-    _capture_stderr_chan = dch.Channel.attach(stderr_descriptor.sdesc)
-    os.environ[dfacts.STDERR_DESC] = B64.bytes_to_str(stderr_descriptor.sdesc)
-    _capture_stderr_conn = dconn.Connection(inbound_initializer=_capture_stderr_chan,
-                            options=dconn.ConnectionOptions(min_block_size=512), policy=dparm.POLICY_INFRASTRUCTURE)
-
-    def forward(strm_conn:dconn.Connection, strm_dest:StreamDestination):
-        file_dest = sys.stdout if strm_dest == StreamDestination.STDOUT else sys.stderr
-
-        try:
-            while not _capture_shutting_down:
-                data = strm_conn.recv()
-                if _capture_shutting_down and data == DRAGON_STOP_CAPTURING_MP_CHILD_OUTPUT:
-                    return
-
-                print(data, file=file_dest, flush=True, end="")
-        except EOFError:
-            pass
-        except Exception as ex:
-            log.debug(f'While forwarding output to {strm_dest} an unexpected error occurred:{repr(ex)}')
-
-    def cleanup():
-        try:
-            stop_capturing_child_mp_output()
-        except:
-            pass
-
-    stdout_monitor = threading.Thread(name='stdout monitor', target=forward, args=(_capture_stdout_conn, StreamDestination.STDOUT))
-    stdout_monitor.start()
-
-    stderr_monitor = threading.Thread(name='stderr monitor', target=forward, args=(_capture_stderr_conn, StreamDestination.STDERR))
-    stderr_monitor.start()
-
-    atexit.register(cleanup)
-
-
+        stderr_descriptor = dgchan.create(default_muid)
+        _capture_stderr_chan = dch.Channel.attach(stderr_descriptor.sdesc)
+        os.environ[dfacts.STDERR_DESC] = B64.bytes_to_str(stderr_descriptor.sdesc)
+        _capture_stderr_conn = dconn.Connection(
+            inbound_initializer=_capture_stderr_chan,
+            options=dconn.ConnectionOptions(min_block_size=512),
+            policy=dparm.POLICY_INFRASTRUCTURE,
+        )
 
 PIPE = dmsg.PIPE
 STDOUT = dmsg.STDOUT
 DEVNULL = dmsg.DEVNULL
+
 
 class ProcessError(Exception):
     pass
@@ -153,8 +181,13 @@ def _create_stdio_connections(the_desc):
         # one for when this connection is closed, and one for when the process
         # exits and local services closes its end of the connection.
         ch = dch.Channel.attach(B64.from_str(the_desc.stdin_sdesc).decode())
-        conn = dconn.Connection(outbound_initializer=ch, options=dconn.ConnectionOptions(min_block_size=512,
-                            creation_policy=dconn.ConnectionOptions.CreationPolicy.PRE_CREATED), policy=dparm.POLICY_INFRASTRUCTURE)
+        conn = dconn.Connection(
+            outbound_initializer=ch,
+            options=dconn.ConnectionOptions(
+                min_block_size=512, creation_policy=dconn.ConnectionOptions.CreationPolicy.PRE_CREATED
+            ),
+            policy=dparm.POLICY_INFRASTRUCTURE,
+        )
         the_desc.stdin_conn = conn
         dgchan.release_refcnt(ch.cuid)
 
@@ -164,8 +197,13 @@ def _create_stdio_connections(the_desc):
         # (please read the comment above). The analagous behaviour is coded
         # here.
         ch = dch.Channel.attach(B64.from_str(the_desc.stdout_sdesc).decode())
-        conn = dconn.Connection(inbound_initializer=ch, options=dconn.ConnectionOptions(min_block_size=512,
-                            creation_policy=dconn.ConnectionOptions.CreationPolicy.PRE_CREATED), policy=dparm.POLICY_INFRASTRUCTURE)
+        conn = dconn.Connection(
+            inbound_initializer=ch,
+            options=dconn.ConnectionOptions(
+                min_block_size=512, creation_policy=dconn.ConnectionOptions.CreationPolicy.PRE_CREATED
+            ),
+            policy=dparm.POLICY_INFRASTRUCTURE,
+        )
         the_desc.stdout_conn = conn
         dgchan.release_refcnt(ch.cuid)
 
@@ -175,17 +213,36 @@ def _create_stdio_connections(the_desc):
         # (please read the comment above). The analagous behaviour is coded
         # here.
         ch = dch.Channel.attach(B64.from_str(the_desc.stderr_sdesc).decode())
-        conn = dconn.Connection(inbound_initializer=ch, options=dconn.ConnectionOptions(min_block_size=512,
-                            creation_policy=dconn.ConnectionOptions.CreationPolicy.PRE_CREATED), policy=dparm.POLICY_INFRASTRUCTURE)
+        conn = dconn.Connection(
+            inbound_initializer=ch,
+            options=dconn.ConnectionOptions(
+                min_block_size=512, creation_policy=dconn.ConnectionOptions.CreationPolicy.PRE_CREATED
+            ),
+            policy=dparm.POLICY_INFRASTRUCTURE,
+        )
         the_desc.stderr_conn = conn
         dgchan.release_refcnt(ch.cuid)
 
     return the_desc
 
 
-def get_create_message(exe, run_dir, args, env, user_name='', options=None,
-           stdin=None, stdout=None, stderr=None, group=None,
-           user=None, umask=- 1, pipesize=- 1, pmi_required=False, policy=None):
+def get_create_message(
+    exe,
+    run_dir,
+    args,
+    env,
+    user_name="",
+    options=None,
+    stdin=None,
+    stdout=None,
+    stderr=None,
+    group=None,
+    user=None,
+    umask=-1,
+    pipesize=-1,
+    pmi_required=False,
+    policy=None,
+):
     """Return a GSProcessCreate object.
 
     :param exe: executable to run
@@ -210,7 +267,11 @@ def get_create_message(exe, run_dir, args, env, user_name='', options=None,
     # Using dict below makes a copy.
     the_env = dict(os.environ)
     if env is not None:
-        the_env.update(env) # layer on the user supplied environment.
+        the_env.update(env)  # layer on the user supplied environment.
+
+    thread_policy = Policy.thread_policy()
+    if thread_policy:
+        the_env[dfacts.DRAGON_POLICY_CONTEXT_ENV] = json.dumps(thread_policy.get_sdict())
 
     # Ensure that the executable is a string and not a bytes object
     try:
@@ -218,21 +279,47 @@ def get_create_message(exe, run_dir, args, env, user_name='', options=None,
     except (UnicodeDecodeError, AttributeError):
         pass
 
-    log.debug('creating GSProcessCreate')
-    return dmsg.GSProcessCreate(tag=das.next_tag(),
-                                p_uid=this_process.my_puid,
-                                r_c_uid=das.get_gs_ret_cuid(),
-                                exe=exe, args=args, env=the_env,
-                                rundir=run_dir, user_name=user_name,
-                                options=options, stdin=stdin, stdout=stdout,
-                                stderr=stderr, group=group, user=user, umask=umask,
-                                pipesize=pipesize, pmi_required=pmi_required,
-                                policy=policy)
+    log.debug("creating GSProcessCreate")
+    return dmsg.GSProcessCreate(
+        tag=das.next_tag(),
+        p_uid=this_process.my_puid,
+        r_c_uid=das.get_gs_ret_cuid(),
+        exe=exe,
+        args=args,
+        env=the_env,
+        rundir=run_dir,
+        user_name=user_name,
+        options=options,
+        stdin=stdin,
+        stdout=stdout,
+        stderr=stderr,
+        group=group,
+        user=user,
+        umask=umask,
+        pipesize=pipesize,
+        pmi_required=pmi_required,
+        policy=policy,
+    )
 
 
-def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_name='', options=None,
-           stdin=None, stdout=None, stderr=None, group=None,
-           user=None, umask=- 1, pipesize=- 1, pmi_required=False, policy=None):
+def get_create_message_with_argdata(
+    exe,
+    run_dir,
+    args,
+    env,
+    argdata=None,
+    user_name="",
+    options=None,
+    stdin=None,
+    stdout=None,
+    stderr=None,
+    group=None,
+    user=None,
+    umask=-1,
+    pipesize=-1,
+    pmi_required=False,
+    policy=None,
+):
     """Return a GSProcessCreate object with starting args.
 
         This is an extension of the 'get_create_message' method that encapsulates our scheme for getting
@@ -268,7 +355,11 @@ def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_
     # Using dict below makes a copy.
     the_env = dict(os.environ)
     if env is not None:
-        the_env.update(env) # layer on the user supplied environment.
+        the_env.update(env)  # layer on the user supplied environment.
+
+    thread_policy = Policy.thread_policy()
+    if thread_policy:
+        the_env[dfacts.DRAGON_POLICY_CONTEXT_ENV] = str(thread_policy.get_sdict())
 
     # Ensure that the executable is a string and not a bytes object
     try:
@@ -276,20 +367,32 @@ def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_
     except (UnicodeDecodeError, AttributeError):
         pass
 
-    log.debug('creating GSProcessCreate')
+    log.debug("creating GSProcessCreate")
 
     if argdata is None:
         # no arguments, so set the mode and start the normal way
         options.mode = pdesc.ArgMode.NONE
         options.argdata = None
-        return dmsg.GSProcessCreate(tag=das.next_tag(),
-                                p_uid=this_process.my_puid,
-                                r_c_uid=das.get_gs_ret_cuid(),
-                                exe=exe, args=args, env=the_env,
-                                rundir=run_dir, user_name=user_name,
-                                options=options, stdin=stdin, stdout=stdout,
-                                stderr=stderr, group=group, user=user, umask=umask,
-                                pipesize=pipesize, pmi_required=pmi_required, policy=policy)
+        return dmsg.GSProcessCreate(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            exe=exe,
+            args=args,
+            env=the_env,
+            rundir=run_dir,
+            user_name=user_name,
+            options=options,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            group=group,
+            user=user,
+            umask=umask,
+            pipesize=pipesize,
+            pmi_required=pmi_required,
+            policy=policy,
+        )
 
     if len(argdata) <= dfacts.ARG_IMMEDIATE_LIMIT:
         # deliver arguments in the argdata directly.
@@ -297,21 +400,50 @@ def get_create_message_with_argdata(exe, run_dir, args, env, argdata=None, user_
 
         # todo: make a setter for options.argdata?
         options.argdata = prepare_argdata_for_immediate(argdata)
-        return dmsg.GSProcessCreate(tag=das.next_tag(),
-                                p_uid=this_process.my_puid,
-                                r_c_uid=das.get_gs_ret_cuid(),
-                                exe=exe, args=args, env=the_env,
-                                rundir=run_dir, user_name=user_name,
-                                options=options, stdin=stdin, stdout=stdout,
-                                stderr=stderr, group=group, user=user, umask=umask,
-                                pipesize=pipesize, pmi_required=pmi_required, policy=policy)
+        return dmsg.GSProcessCreate(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            exe=exe,
+            args=args,
+            env=the_env,
+            rundir=run_dir,
+            user_name=user_name,
+            options=options,
+            stdin=stdin,
+            stdout=stdout,
+            stderr=stderr,
+            group=group,
+            user=user,
+            umask=umask,
+            pipesize=pipesize,
+            pmi_required=pmi_required,
+            policy=policy,
+        )
     else:
-        raise NotImplementedError(f"Argument data larger than {dfacts.ARG_IMMEDIATE_LIMIT} bytes is not supported at the moment.")
+        raise NotImplementedError(
+            f"Argument data larger than {dfacts.ARG_IMMEDIATE_LIMIT} bytes is not supported at the moment."
+        )
 
 
-def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
-           stdin=None, stdout=None, stderr=None, group=None,
-           user=None, umask=- 1, pipesize=- 1, pmi_required=False, policy=None):
+def create(
+    exe,
+    run_dir,
+    args,
+    env,
+    user_name="",
+    options=None,
+    soft=False,
+    stdin=None,
+    stdout=None,
+    stderr=None,
+    group=None,
+    user=None,
+    umask=-1,
+    pipesize=-1,
+    pmi_required=False,
+    policy=None,
+):
     """Asks Global Services to create a new process.
 
     :param exe: executable to run
@@ -332,9 +464,18 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
     :param policy: If a policy other than the global default is to be used for this process.
     :return: ProcessDescriptor object
     """
+    global _capture_stdout_conn, _capture_stderr_conn, _capture_stdout_chan, _capture_stderr_chan
 
-    if policy is None:
-        policy = Policy.global_policy()
+    thread_policy = Policy.thread_policy()
+    if all([policy, thread_policy]):
+        # Since both policy and thread_policy are not None, we are likely within a
+        # Policy context manager. In this case we need to merge the supplied policy
+        # with the policy of the context manager.
+        policy = Policy.merge(thread_policy, policy)
+    elif policy is None:
+        # If policy is None, then let's assign thread_policy to policy. thread_policy
+        # may also be None, but that's OK.
+        policy = thread_policy
 
     # When a new process is requested we want to check to see if we are supposed to
     # redirect output from new processes to the parent process (this process). If so, we
@@ -342,17 +483,36 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
     # check and call is done here to delay the setup as long as possible. This is
     # especially needed for something like Jupyter notebooks which do an execve and
     # need this setup done after that occurs.
-    if bool(strtobool(os.environ.get(DRAGON_CAPTURE_MP_CHILD_OUTPUT, 'False'))):
+    if bool(strtobool(os.environ.get(DRAGON_CAPTURE_MP_CHILD_OUTPUT, "False"))):
         _capture_child_output_setup()
+        mk_capture_threads()
         del os.environ[DRAGON_CAPTURE_MP_CHILD_OUTPUT]
+
+    elif _capture_stdout_conn is not None:
+        # This means we are capturing output already, but we are creating a new
+        # dragon process. When we do this we shutdown the output capturing, but
+        # immediately start it back up again. Why? This seems like it deserves an
+        # explanation. Under a Jupyter notebook, the primary reason for capturing
+        # output, shutting down the thread here and starting a new one makes the
+        # output appear where it should in the notebook. It seems (a theory really,
+        # but not completely verified) that a notebook evaluates each cell in its own
+        # environment. So essentiallly we stop capturing output for the previous cell
+        # and start capturing output again to get the output in the current cell. This
+        # works except that this code is not called for every cell. It is only called when
+        # a multiprocessing process is created. Which means that for things like mp.Pool,
+        # the output appears in the cell where the pool was created, not where "map" was
+        # called for instance. This is exactly what base multiprocessing does in notebooks
+        # too, so this should be acceptable.
+        stop_capturing_child_mp_output()
+        mk_capture_threads()
 
     if options is None:
         options = {}
 
     if soft and not user_name:
-        raise ProcessError('soft create requires a user supplied process name')
+        raise ProcessError("soft create requires a user supplied process name")
 
-    log.debug('creating GSProcessCreate')
+    log.debug("creating GSProcessCreate")
     req_msg = get_create_message(
         exe=exe,
         run_dir=run_dir,
@@ -372,7 +532,7 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
     )
 
     reply_msg = das.gs_request(req_msg)
-    log.debug('got GSProcessCreateResponse')
+    log.debug("got GSProcessCreateResponse")
 
     assert isinstance(reply_msg, dmsg.GSProcessCreateResponse)
 
@@ -384,7 +544,7 @@ def create(exe, run_dir, args, env, user_name='', options=None, soft=False,
         if soft and ec.ALREADY == reply_msg.err:
             the_desc = reply_msg.desc
         else:
-            raise ProcessError(f'process create {req_msg} failed: {reply_msg.err_info}')
+            raise ProcessError(f"process create {req_msg} failed: {reply_msg.err_info}")
 
     return _create_stdio_connections(the_desc)
 
@@ -397,9 +557,21 @@ def prepare_argdata_for_immediate(argdata):
     return B64.bytes_to_str(argdata)
 
 
-def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
-                        options=None, soft=False, pmi_required=False,
-                        stdin=None, stdout=None, stderr=None, policy=None):
+def create_with_argdata(
+    exe,
+    run_dir,
+    args,
+    env,
+    argdata=None,
+    user_name="",
+    options=None,
+    soft=False,
+    pmi_required=False,
+    stdin=None,
+    stdout=None,
+    stderr=None,
+    policy=None,
+):
     """Asks Global services to create a new process and deliver starting args to it thru messaging.
 
         This is an extension of the 'create' method that encapsulates our scheme for getting
@@ -443,7 +615,8 @@ def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
-            policy=policy)
+            policy=policy,
+        )
 
     elif len(argdata) <= dfacts.ARG_IMMEDIATE_LIMIT:
         # deliver arguments in the argdata directly.
@@ -463,7 +636,8 @@ def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
-            policy=policy)
+            policy=policy,
+        )
     else:
         # TODO: capture these comments in documentation
         # Here we don't set argdata to anything at all.
@@ -491,7 +665,8 @@ def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
-            policy=policy)
+            policy=policy,
+        )
 
         # Another transaction to gs but we are only here if
         # we are sending a lot of data.  Could be returned with create call
@@ -501,9 +676,11 @@ def create_with_argdata(exe, run_dir, args, env, argdata=None, user_name='',
         gs_ret_desc = dgchan.query(the_desc.gs_ret_cuid)
         gsret = dch.Channel.attach(gs_ret_desc.sdesc)
         # TODO PE-38745
-        arg_conn = dconn.Connection(outbound_initializer=gsret,
-                                    options=dconn.ConnectionOptions(min_block_size=2**16),
-                                    policy=dparm.POLICY_INFRASTRUCTURE)
+        arg_conn = dconn.Connection(
+            outbound_initializer=gsret,
+            options=dconn.ConnectionOptions(min_block_size=2**16),
+            policy=dparm.POLICY_INFRASTRUCTURE,
+        )
         arg_conn.send_bytes(argdata)
         arg_conn.ghost_close()  # avoids sending an extra EOT message
         gsret.detach()
@@ -521,8 +698,7 @@ def get_list():
 
     :return: list of the p_uids of all processes, alive and dead
     """
-    req_msg = dmsg.GSProcessList(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                 r_c_uid=das.get_gs_ret_cuid())
+    req_msg = dmsg.GSProcessList(tag=das.next_tag(), p_uid=this_process.my_puid, r_c_uid=das.get_gs_ret_cuid())
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSProcessListResponse)
@@ -541,13 +717,19 @@ def query(identifier):
     :raises: ProcessError if there is no such process
     """
     if isinstance(identifier, str):
-        req_msg = dmsg.GSProcessQuery(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                      r_c_uid=das.get_gs_ret_cuid(),
-                                      user_name=identifier)
+        req_msg = dmsg.GSProcessQuery(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            user_name=identifier,
+        )
     else:
-        req_msg = dmsg.GSProcessQuery(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                      r_c_uid=das.get_gs_ret_cuid(),
-                                      t_p_uid=int(identifier))
+        req_msg = dmsg.GSProcessQuery(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            t_p_uid=int(identifier),
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSProcessQueryResponse)
@@ -555,28 +737,43 @@ def query(identifier):
     if dmsg.GSProcessQueryResponse.Errors.SUCCESS == reply_msg.err:
         the_desc = reply_msg.desc
     else:
-        raise ProcessError(f'process query {req_msg} failed: {reply_msg.err_info}')
+        raise ProcessError(f"process query {req_msg} failed: {reply_msg.err_info}")
 
     return _create_stdio_connections(the_desc)
 
 
-def runtime_reboot(puids: List[int]):
-    """For a list of puids, find their host IDs and request a restart"""
+def runtime_reboot(*, puids: List[int] = None, huids: List[int] = None, hostnames: List[str] = None):
+    """For a list of puids, h_uids, or hostnames, find their host IDs and request a restart"""
 
-    huids = []
-    for puid in puids:
-        p_desc = query(puid)
+    from ..globalservices import node as dgnode
 
-        # Map the node id to a host id
-        log.debug(f'process {p_desc.p_uid} was on node {p_desc.node}')
-        huids.append(p_desc.h_uid)
+    huids_to_restart = set()
+    if puids is not None:
+        for puid in puids:
+            p_desc = query(puid)
 
-    req_msg = dmsg.GSGroupRebootRuntime(tag=das.next_tag(), h_uid=huids,
-                                        r_c_uid=das.get_gs_ret_cuid(),)
+            # Map the node id to a host id
+            log.debug(f"process {p_desc.p_uid} was on node {p_desc.node}")
+            huids_to_restart.add(p_desc.h_uid)
+
+    if huids is not None:
+        for huid in huids:
+            huids_to_restart.add(huid)
+
+    if hostnames is not None:
+        for hostname in hostnames:
+            n_desc = dgnode.query(hostname)
+            # Map the hostname to a host id
+            log.debug(f"hostname {hostname} is associated with node {n_desc.h_uid}")
+            huids_to_restart.add(n_desc.h_uid)
+
+    req_msg = dmsg.GSRebootRuntime(
+        tag=das.next_tag(),
+        h_uid=list(huids_to_restart),
+        r_c_uid=das.get_gs_ret_cuid(),
+    )
     reply_msg = das.gs_request(req_msg)
-    assert isinstance(reply_msg, dmsg.GSGroupRebootRuntimeResponse)
-
-    return reply_msg.exit_code
+    assert isinstance(reply_msg, dmsg.GSRebootRuntimeResponse)
 
 
 def kill(identifier, sig=signal.SIGKILL, hide_stderr=False):
@@ -594,13 +791,23 @@ def kill(identifier, sig=signal.SIGKILL, hide_stderr=False):
     :raises: ProcessError if there is no such process, or if the process has not yet started.
     """
     if isinstance(identifier, str):
-        req_msg = dmsg.GSProcessKill(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                     r_c_uid=das.get_gs_ret_cuid(),
-                                     user_name=identifier, sig=int(sig), hide_stderr=hide_stderr)
+        req_msg = dmsg.GSProcessKill(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            user_name=identifier,
+            sig=int(sig),
+            hide_stderr=hide_stderr,
+        )
     else:
-        req_msg = dmsg.GSProcessKill(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                     r_c_uid=das.get_gs_ret_cuid(),
-                                     t_p_uid=int(identifier), sig=int(sig), hide_stderr=hide_stderr)
+        req_msg = dmsg.GSProcessKill(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            t_p_uid=int(identifier),
+            sig=int(sig),
+            hide_stderr=hide_stderr,
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSProcessKillResponse)
@@ -609,11 +816,11 @@ def kill(identifier, sig=signal.SIGKILL, hide_stderr=False):
     if ec.SUCCESS == reply_msg.err or ec.DEAD == reply_msg.err:
         return
     elif ec.UNKNOWN == reply_msg.err or ec.FAIL_KILL == reply_msg.err:
-        raise ProcessError(f'process kill {req_msg} failed: {reply_msg.err_info}')
+        raise ProcessError(f"process kill {req_msg} failed: {reply_msg.err_info}")
     elif ec.PENDING == reply_msg.err:
-        raise ProcessError(f'process kill {req_msg} failed pending: {reply_msg.err_info}')
+        raise ProcessError(f"process kill {req_msg} failed pending: {reply_msg.err_info}")
     else:
-        raise NotImplementedError('close case')
+        raise NotImplementedError("close case")
 
 
 def join(identifier, timeout=None):
@@ -636,13 +843,21 @@ def join(identifier, timeout=None):
         msg_timeout = int(1000000 * timeout)
 
     if isinstance(identifier, str):
-        req_msg = dmsg.GSProcessJoin(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                     r_c_uid=das.get_gs_ret_cuid(), timeout=msg_timeout,
-                                     user_name=identifier)
+        req_msg = dmsg.GSProcessJoin(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            timeout=msg_timeout,
+            user_name=identifier,
+        )
     else:
-        req_msg = dmsg.GSProcessJoin(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                     r_c_uid=das.get_gs_ret_cuid(), timeout=msg_timeout,
-                                     t_p_uid=int(identifier))
+        req_msg = dmsg.GSProcessJoin(
+            tag=das.next_tag(),
+            p_uid=this_process.my_puid,
+            r_c_uid=das.get_gs_ret_cuid(),
+            timeout=msg_timeout,
+            t_p_uid=int(identifier),
+        )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSProcessJoinResponse)
@@ -654,9 +869,9 @@ def join(identifier, timeout=None):
     elif ec.TIMEOUT == reply_msg.err:
         return None
     elif ec.SELF == reply_msg.err:
-        raise ProcessError(f'join to {identifier} is a deadlocking self-join: {reply_msg.err_info}')
+        raise ProcessError(f"join to {identifier} is a deadlocking self-join: {reply_msg.err_info}")
     else:
-        raise ProcessError(f'process join {req_msg} failed: {reply_msg.err_info}')
+        raise ProcessError(f"process join {req_msg} failed: {reply_msg.err_info}")
 
 
 def get_multi_join_success_puids(statuses: Dict[str, List[int]]) -> Tuple[List[Tuple[int, int]], bool]:
@@ -701,10 +916,12 @@ def get_multi_join_failure_puids(statuses: Dict[str, List[int]]) -> Tuple[List[T
     return failure_list, timeout_flag
 
 
-def multi_join(identifiers: List[int or str],
-               timeout: bool = None,
-               join_all: bool = False,
-               return_on_bad_exit: bool = False) -> Tuple[List[Tuple[int, int]], Dict]:
+def multi_join(
+    identifiers: List[int or str],
+    timeout: bool = None,
+    join_all: bool = False,
+    return_on_bad_exit: bool = False,
+) -> Tuple[List[Tuple[int, int]], Dict]:
     """Asks Global Services to join a list of specified managed processes.
 
     If join_all is False, it returns when 'any' process has exited or there is a timeout.
@@ -727,7 +944,7 @@ def multi_join(identifiers: List[int or str],
     """
 
     if len(identifiers) == 0:
-        raise ProcessError('multi_join attempted on zero processes. Empty multi_join is disallowed.')
+        raise ProcessError("multi_join attempted on zero processes. Empty multi_join is disallowed.")
 
     if timeout is None:
         msg_timeout = -1
@@ -744,10 +961,16 @@ def multi_join(identifiers: List[int or str],
         else:
             puid_identifiers.append(item)
 
-    req_msg = dmsg.GSProcessJoinList(tag=das.next_tag(), p_uid=this_process.my_puid,
-                                     r_c_uid=das.get_gs_ret_cuid(), timeout=msg_timeout,
-                                     t_p_uid_list=puid_identifiers, user_name_list=name_identifiers,
-                                     join_all=join_all, return_on_bad_exit=return_on_bad_exit)
+    req_msg = dmsg.GSProcessJoinList(
+        tag=das.next_tag(),
+        p_uid=this_process.my_puid,
+        r_c_uid=das.get_gs_ret_cuid(),
+        timeout=msg_timeout,
+        t_p_uid_list=puid_identifiers,
+        user_name_list=name_identifiers,
+        join_all=join_all,
+        return_on_bad_exit=return_on_bad_exit,
+    )
 
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSProcessJoinListResponse)
@@ -757,9 +980,12 @@ def multi_join(identifiers: List[int or str],
         if join_all:  # 'all' option
             # we want all the processes finished, otherwise return None
             if len(success_list) == len(identifiers):
-                return success_list, reply_msg.puid_status  # also return the dict with the status of all processes
-                                                            # in the list for future use outside the
-                                                            # Connection.wait() context
+                return (
+                    success_list,
+                    reply_msg.puid_status,
+                )  # also return the dict with the status of all processes
+                # in the list for future use outside the
+                # Connection.wait() context
             else:  # there is at least one process exited and at least one errored/timed out
                 return None, reply_msg.puid_status
         else:  # 'any' option and at least one process exited
@@ -768,5 +994,5 @@ def multi_join(identifiers: List[int or str],
     elif timeout_flag:  # none has exited and all timed out
         return None, reply_msg.puid_status
     else:
-        log.debug(f'process join {req_msg} failed: {reply_msg.puid_status.items()}')
-        raise ProcessError(f'process join {req_msg} failed')
+        log.debug(f"process join {req_msg} failed: {reply_msg.puid_status.items()}")
+        raise ProcessError(f"process join {req_msg} failed")

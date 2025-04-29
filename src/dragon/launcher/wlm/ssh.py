@@ -22,46 +22,45 @@ from .base import BaseNetworkConfig
 #       wish to propagate Dragon out absent a shared filesystem.
 ENV_VARS = None
 BASE_ENV_VARNAMES = (
-    'DRAGON_BASE_DIR',
-    'DRAGON_VERSION',
-    'DRAGON_HSTA_DEBUG',
-    'PATH',
-    'PYTHONPATH',
-    'LD_LIBRARY_PATH',
-    'PYTHONSTARTUP',
-    'VIRTUAL_ENV',
-    'DRAGON_FE_EXTERNAL_IP_ADDR',
-    'DRAGON_HEAD_NODE_IP_ADDR',
-    'DRAGON_RT_UID'
+    "DRAGON_BASE_DIR",
+    "DRAGON_VERSION",
+    "DRAGON_HSTA_DEBUG",
+    "PATH",
+    "PYTHONPATH",
+    "LD_LIBRARY_PATH",
+    "PYTHONSTARTUP",
+    "VIRTUAL_ENV",
+    "DRAGON_FE_EXTERNAL_IP_ADDR",
+    "DRAGON_HEAD_NODE_IP_ADDR",
+    "DRAGON_RT_UID",
 )
+
 
 def get_ssh_env_vars(args_map=None, propagate_base=BASE_ENV_VARNAMES) -> None:
 
     global ENV_VARS
-    ENV_VARS = [
-        f'{varname}={environ.get(varname, "")}' for varname in propagate_base
-    ]
+    ENV_VARS = [f'{varname}={environ.get(varname, "")}' for varname in propagate_base]
 
     # Make sure we propogate the device logging
     try:
-        local_env = [f"{log_device}={log_level}" for log_device, log_level in args_map['log_device_level_map'].items()]
+        local_env = [f"{log_device}={log_level}" for log_device, log_level in args_map["log_device_level_map"].items()]
     except (KeyError, TypeError):
         local_env = []
     ENV_VARS.extend(local_env)
 
     # Construct a list of all the environment variables
-    this_process_envs = [f'{var}={quote(val)}' for var, val in this_process.env().items()]
+    this_process_envs = [f"{var}={quote(val)}" for var, val in this_process.env().items()]
     ENV_VARS.extend(this_process_envs)
 
 
-def get_ssh_launch_be_args(args_map : Dict, launch_args : Dict) -> List:
+def get_ssh_launch_be_args(args_map: Dict, launch_args: Dict) -> List:
 
     global ENV_VARS
     if ENV_VARS is None or args_map is not None:
         get_ssh_env_vars(args_map=args_map)
 
-    bash_cmd =f"cd {getcwd()} && {' '.join(ENV_VARS + launch_args)}"
-    return ["ssh", "-oBatchMode=yes", args_map['hostname'], bash_cmd]
+    bash_cmd = f"cd {getcwd()} && {' '.join(ENV_VARS + launch_args)}"
+    return ["ssh", "-oBatchMode=yes", args_map["hostname"], bash_cmd]
 
 
 class SSHIOStream(BufferedIOBase):
@@ -72,7 +71,7 @@ class SSHIOStream(BufferedIOBase):
         self.selectors = {}
 
     def _iterative_poll(self, idx, stream, timeout=0):
-        '''Test if there's a read event in the input stream'''
+        """Test if there's a read event in the input stream"""
 
         try:
             sel = self.selectors[idx]
@@ -88,17 +87,17 @@ class SSHIOStream(BufferedIOBase):
         return False
 
     def poll(self, timeout=0):
-        '''Loop through our streams testing for a read event
+        """Loop through our streams testing for a read event
 
         Return as soon as an event is found with True. False otherwise
-        '''
+        """
         for idx, stream in self._inputs:
             if self._iterative_poll(idx, stream, timeout=timeout):
                 return True
         return False
 
     def readline(self, **kwargs):
-        '''Find a line to read and return it, prefixed with an index'''
+        """Find a line to read and return it, prefixed with an index"""
         for idx, stream in self._inputs:
             if self._iterative_poll(idx, stream):
                 msg = stream.readline()
@@ -119,7 +118,7 @@ class SSHIOStream(BufferedIOBase):
                 return msg
 
     def close(self):
-        '''Close the streams'''
+        """Close the streams"""
         for _, stream in self._inputs:
             try:
                 stream.close()
@@ -135,7 +134,7 @@ class SSHIOStream(BufferedIOBase):
             stream.flush()
 
 
-class SSHSubprocessPopen():
+class SSHSubprocessPopen:
     """A convenience class providing Popen methods and attributes on a list of Popen objects"""
 
     def __init__(self, popen_dict: dict[str, subprocess.Popen]):
@@ -149,12 +148,9 @@ class SSHSubprocessPopen():
         self._ret_codes = []
 
         # Set up newlinestreamwrappers for each of the subprocess stdout/stderr
-        self._stdouts = [(i, proc.stdout) for i, proc in enumerate(self.procs.values())
-                         if proc.stdout is not None]
-        self._stderrs = [(i, proc.stderr) for i, proc in enumerate(self.procs.values())
-                         if proc.stderr is not None]
-        self._stdins = [(i, proc.stdin) for i, proc in enumerate(self.procs.values())
-                        if proc.stdin is not None]
+        self._stdouts = [(i, proc.stdout) for i, proc in enumerate(self.procs.values()) if proc.stdout is not None]
+        self._stderrs = [(i, proc.stderr) for i, proc in enumerate(self.procs.values()) if proc.stderr is not None]
+        self._stdins = [(i, proc.stdin) for i, proc in enumerate(self.procs.values()) if proc.stdin is not None]
 
         self.stdout = None
         self.stderr = None
@@ -169,10 +165,10 @@ class SSHSubprocessPopen():
             self.stdin = SSHIOStream(self._stdins)
 
     def poll(self):
-        '''Check exit status on all Popen objects
+        """Check exit status on all Popen objects
 
         If not all procs have exited, return None. Otherwise returncode
-        '''
+        """
         for proc in self.procs.values():
             if proc.poll() is not None:
                 self._ret_codes.append(proc.returncode)
@@ -183,7 +179,7 @@ class SSHSubprocessPopen():
             return None
 
     def wait(self, timeout=None):
-        '''Wait on exit for all Popen objects'''
+        """Wait on exit for all Popen objects"""
 
         for proc in self.procs.values():
             # TODO: We don't want to necessarily wait the full timeout
@@ -198,22 +194,22 @@ class SSHSubprocessPopen():
             return None
 
     def terminate(self):
-        '''Send SIGTERM to all Popen objects'''
+        """Send SIGTERM to all Popen objects"""
         for proc in self.procs.values():
             proc.terminate()
 
     def kill(self):
-        '''Send SIGKILL to all Popen objects'''
+        """Send SIGKILL to all Popen objects"""
         for proc in self.procs.values():
             proc.kill()
 
     def send_signal(self, signal):
-        '''Send signal to all Popen objects'''
+        """Send signal to all Popen objects"""
         for proc in self.procs.values():
             proc.send_signal(signal)
 
     def communicate(self, input=None, timeout=None):
-        '''Send data to stdin or recv data from stdout,stderr of all Popen objects'''
+        """Send data to stdin or recv data from stdout,stderr of all Popen objects"""
         if input is not None:
             self.stdin.write(input)
 
@@ -229,9 +225,9 @@ class SSHSubprocessPopen():
 
     @property
     def returncode(self):
-        '''Return return codes for Popen objects'''
+        """Return return codes for Popen objects"""
 
-        if isinstance(self._ret_codes, list):
+        if isinstance(self._ret_codes, list) and len(self._ret_codes):
             code_group = groupby(self._ret_codes)
             # If they're all the same, return any one of them
             if next(code_group, True) and not next(code_group, False):
@@ -247,9 +243,7 @@ class SSHNetworkConfig(BaseNetworkConfig):
 
     def __init__(self, network_prefix, port, hostlist):
 
-        super().__init__(
-            'ssh', network_prefix, port, len(hostlist)
-        )
+        super().__init__("ssh", network_prefix, port, len(hostlist))
         self.hostlist = hostlist
 
     @classmethod
@@ -261,7 +255,7 @@ class SSHNetworkConfig(BaseNetworkConfig):
         return True
 
     def _get_wlm_job_id(self) -> str:
-        raise RuntimeError('SSHNetworkConfig does not implement _get_wlm_job_id')
+        raise RuntimeError("SSHNetworkConfig does not implement _get_wlm_job_id")
 
     def _supports_net_conf_cache(self) -> bool:
         return False
@@ -270,16 +264,12 @@ class SSHNetworkConfig(BaseNetworkConfig):
         popen_dict = {}
 
         for host in self.hostlist:
-            args_map = { 'hostname': host }
+            args_map = {"hostname": host}
             ssh_args = get_ssh_launch_be_args(args_map=args_map, launch_args=self.NETWORK_CFG_HELPER_LAUNCH_SHELL_CMD)
             self.LOGGER.debug(f"Launching config with: {ssh_args}")
 
             popen_dict[host] = subprocess.Popen(
-                                   args=ssh_args,
-                                   stdout=subprocess.PIPE,
-                                   stderr=subprocess.PIPE,
-                                   bufsize=0,
-                                   start_new_session=True
-                                   )
+                args=ssh_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0, start_new_session=True
+            )
 
         return SSHSubprocessPopen(popen_dict)

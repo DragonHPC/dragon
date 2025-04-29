@@ -1,3 +1,6 @@
+"""Channels is the base communication mechanism for Dragon. Channels implements a multi-thread/multi-process safe
+communication queue using :py:class:`dragon.managed_memory`.
+"""
 from dragon.dtypes_inc cimport *
 from dragon.channels cimport *
 from dragon.managed_memory cimport *
@@ -53,34 +56,8 @@ cdef timespec_t* _compute_timeout(timeout, timespec_t* default_val_ptr, timespec
 
     return time_ptr
 
-class ChannelError(Exception):
-    def __init__(self, msg, lib_err=None, lib_msg=None, lib_err_str=None):
-        self._msg = msg
-        self._lib_err = lib_err
-        cdef char * errstr
-        if lib_err is not None and lib_msg is None and lib_err_str is None:
-            errstr = dragon_getlasterrstr()
-            self._lib_msg = errstr[:].decode('utf-8')
-            free(errstr)
-            rcstr = dragon_get_rc_string(lib_err)
-            self._lib_err_str = rcstr[:].decode('utf-8')
-        else:
-            self._lib_err = lib_err
-            self._lib_msg = lib_msg
-            self._lib_err_str = lib_err_str
-
-    def __str__(self):
-        if self._lib_err is None:
-            return f'Channel Error: {self._msg}'
-
-        return f'Channel Library Error: {self._msg} | Dragon Msg: {self._lib_msg} | Dragon Error Code: {self._lib_err_str}'
-
-    @property
-    def lib_err(self):
-        return self._lib_err
-
-    def __repr__(self):
-        return f'{self.__class__}({self._msg!r}, {self._lib_err!r}, {self._lib_msg!r}, {self._lib_err_str!r})'
+class ChannelError(dtypes.DragonException):
+    pass
 
 class ChannelTimeout(ChannelError, TimeoutError):
     pass
@@ -92,6 +69,9 @@ class ChannelSendError(ChannelError):
     pass
 
 class ChannelSendTimeout(ChannelSendError, TimeoutError):
+    pass
+
+class ChannelValueError(ChannelError, ValueError):
     pass
 
 class ChannelFull(ChannelSendError, TimeoutError):
@@ -106,9 +86,6 @@ class ChannelRecvTimeout(ChannelRecvError, TimeoutError):
 class ChannelEmpty(ChannelRecvError, TimeoutError):
     pass
 
-class ChannelExistsError(ChannelError):
-    pass
-
 class ChannelBarrierBroken(ChannelError, threading.BrokenBarrierError):
     pass
 
@@ -116,6 +93,9 @@ class ChannelBarrierReady(ChannelError):
     pass
 
 class ChannelRemoteOperationNotSupported(ChannelError):
+    pass
+
+class ChannelDestroyed(ChannelError, dtypes.DragonObjectDestroyed, EOFError):
     pass
 
 class ChannelSetError(Exception):
@@ -492,6 +472,10 @@ cpdef enum EventType:
     POLLBARRIER_ISBROKEN = DRAGON_CHANNEL_POLLBARRIER_ISBROKEN
     POLLBARRIER_WAITERS = DRAGON_CHANNEL_POLLBARRIER_WAITERS
     POLLBLOCKED_RECEIVERS = DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS
+    SEMAPHORE_P = DRAGON_SEMAPHORE_P
+    SEMAPHORE_V = DRAGON_SEMAPHORE_V
+    SEMAPHORE_VZ = DRAGON_SEMAPHORE_VZ
+    SEMAPHORE_PEEK = DRAGON_SEMAPHORE_PEEK
 
 cpdef enum FlowControl:
     NO_FLOW_CONTROL = DRAGON_CHANNEL_FC_NONE
@@ -781,10 +765,10 @@ cdef class ChannelRecvH:
             rerr = dragon_chrecv_get_msg_blocking(&self._recvh, &dest_msg._msg, time_ptr)
 
         if rerr != DRAGON_SUCCESS:
-            if rerr == DRAGON_BCAST_DESTROYED:
+            if rerr == DRAGON_OBJECT_DESTROYED:
                 # this indicate the channel was destroyed but likely because
                 # other end destroyed it.
-                raise EOFError('Channel was destroyed')
+                raise ChannelDestroyed('Channel was destroyed')
 
             if rerr == DRAGON_CHANNEL_RECV_NOT_OPENED:
                 raise ChannelHandleNotOpenError("Cannot receive with handle that is not open", rerr)
@@ -927,12 +911,12 @@ cdef class Channel:
 
     ######## BEGIN USER API #########
 
-    def __init__(self, MemoryPool mem_pool, dragonC_UID_t c_uid, block_size=None, capacity=None, lock_type=None, fc_type=None, flags=None, def_alloc_pool=None, max_spinners=None, max_event_bcasts=None):
+    def __init__(self, MemoryPool mem_pool, dragonC_UID_t c_uid, block_size=None, capacity=None, lock_type=None, fc_type=None, flags=None, def_alloc_pool=None, max_spinners=None, max_event_bcasts=None, bool semaphore=False, bool bounded_semaphore=False, int initial_sem_value=0):
         """
         Create a new Channel object, tied to the provided MemoryPool. The c_uid specifies a unique
         identifier name to share with other processes. For another process to use the channel, it needs to be given
         a serialized instance of this channel or it can inherit access to it through the current process using
-        this object.
+        this object. Either semaphore or bounded_semaphore may be True, but not both.
 
         :param mem_pool: Dragon MemoryPool object the channel should use for allocating its resources.
         :param c_uid: A unique identifier for the channel
@@ -941,6 +925,9 @@ cdef class Channel:
         :param lock_type: The type of lock to be used in locking the channel. Optional, defaults to None
         :param fc_type: Unimplemented. Optional, defaults to None.
         :param flags: ChannelFlags to use. Optional, defaults to None.
+        :param semaphore: A boolean value indicating whether this channel is to be used as a semaphore. If True, then capacity will be ignored.
+        :param bounded_semaphore: True if this channel will be used as a bounded semephore. if True, capacity is ignored.
+        :param initial_sem_value: The initial value of the semaphore. Only used when bounded_semaphore or semaphore is True.
         :return: A new Channel object using c_uid as its channel identifier.
         """
 
@@ -950,9 +937,16 @@ cdef class Channel:
 
         self._is_remote = C_FALSE
 
+        if semaphore and bounded_semaphore:
+            raise ChannelError("Only one of semaphore and bounded_semaphore may be True.")
+
         derr = dragon_channel_attr_init(&self._attr)
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Could not initialize Channel Attributes", derr)
+
+        self._attr.semaphore = (semaphore or bounded_semaphore)
+        self._attr.bounded = bounded_semaphore
+        self._attr.initial_sem_value = initial_sem_value
 
         if not block_size is None:
             if not isinstance(block_size, int) or block_size <= 0:
@@ -1005,21 +999,20 @@ cdef class Channel:
         self._creator = C_TRUE
 
     @classmethod
-    def serialized_uid_type(cls, ch_ser):
+    def serialized_uid(cls, ch_ser):
         cdef:
             dragonError_t derr
             dragonULInt uid
-            dragonULInt alloctype
             const unsigned char[:] cdata = ch_ser
             dragonChannelSerial_t _ser
 
         _ser.len = len(ch_ser)
         _ser.data = <uint8_t*>&cdata[0]
-        derr = dragon_channel_get_uid_type(&_ser, &uid, &alloctype)
+        derr = dragon_channel_get_uid(&_ser, &uid)
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Error retrieving data from serialized channel", derr)
 
-        return (uid, alloctype)
+        return uid
 
     @classmethod
     def serialized_pool_uid_fname(cls, ch_ser):
@@ -1062,7 +1055,7 @@ cdef class Channel:
 
 
     @classmethod
-    def make_process_local(cls, timeout=None):
+    def make_process_local(cls, block_size=None, capacity=None, timeout=None):
         """
         Create a process local channel which is a channel that exists for the
         sole purpose of use by the current process. The channel is unique
@@ -1094,6 +1087,8 @@ cdef class Channel:
             timespec_t val_timeout
             dragonChannelDescr_t ch
             dragonChannelSerial_t ser
+            uint64_t blockSize
+            uint64_t numBlocks
 
         if timeout is None:
             time_ptr = NULL
@@ -1107,8 +1102,22 @@ cdef class Channel:
         else:
             raise ValueError('make_process_local timeout must be a float or int')
 
+        if block_size is None:
+            blockSize = 0 # default will be used
+        else:
+            if not type(block_size) is int or block_size < 0:
+                raise ChannelError("Block size must be a non-negative integer", DRAGON_INVALID_ARGUMENT)
+            blockSize = block_size
+
+        if capacity is None:
+            numBlocks = 0 # default will be used
+        else:
+            if not type(capacity) is int or capacity < 0:
+                raise ChannelError("Capacity must be a non-negative integer", DRAGON_INVALID_ARGUMENT)
+            numBlocks = capacity
+
         with nogil:
-            derr = dragon_create_process_local_channel(&ch, time_ptr)
+            derr = dragon_create_process_local_channel(&ch, blockSize, numBlocks, time_ptr)
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Could not create process local channel", derr)
 
@@ -1123,6 +1132,50 @@ cdef class Channel:
         # This inits the rest of the object given the channel descriptor above.
         return Channel.attach(py_obj)
 
+
+    def destroy_process_local(self, timeout=None):
+        """
+        Destroy a process local channel which is a channel that exists for the
+        sole purpose of use by the current process. The channel being destroyed
+        should have been created by calling make_process_local.
+
+        In certain circumstances process local channels may have temporary usefulness.
+        When no longer needed, they can be destroyed by a process.
+
+        :param timeout: Default is None which means to block without timeout until the
+            channel is made. This should not timeout and should be processed quickly. If a
+            timeout value is specified, it is the number of seconds to wait which may be a
+            float.
+
+        :return: None
+
+        :raises: ChannelError if there was an error. Note that the Dragon run-time
+            must be running to use this function as it interacts with Local Services on the
+            node on which it is called.
+        """
+        cdef:
+            dragonError_t derr
+            timespec_t * time_ptr
+            timespec_t val_timeout
+
+        if timeout is None:
+            time_ptr = NULL
+        elif isinstance(timeout, int) or isinstance(timeout, float):
+            if timeout < 0:
+                raise ValueError('Cannot provide timeout < 0 to destroy_process_local operation')
+            # Anything > 0 means use that as seconds for timeout.
+            time_ptr = & val_timeout
+            val_timeout.tv_sec =  int(timeout)
+            val_timeout.tv_nsec = int((timeout - val_timeout.tv_sec)*1000000000)
+        else:
+            raise ValueError('destroy_process_local timeout must be a float or int')
+
+        with nogil:
+            derr = dragon_destroy_process_local_channel(&self._channel, time_ptr)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not destroy process local channel", derr)
+
+
     def destroy(self):
         """
         Destroys the channel.
@@ -1131,8 +1184,8 @@ cdef class Channel:
             dragonError_t derr
 
         derr = dragon_channel_destroy(&self._channel)
-        if derr == DRAGON_CHANNEL_ALREADY_DESTROYED:
-            raise ChannelExistsError('The channel does not exist. It was likely already destroyed or was garbage collected', derr)
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise ChannelDestroyed('The channel does not exist. It was likely already destroyed or was garbage collected', derr)
 
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Could not destroy Channel", derr)
@@ -1279,21 +1332,23 @@ cdef class Channel:
             # why there are two separate return codes for timeout.
             return False
 
-        if poll_result is not None:
-            poll_result.value = result
-            poll_result.rc = err
-            return True
-
         if err == DRAGON_BARRIER_BROKEN:
             raise ChannelBarrierBroken('The Channel Barrier must be reset via a DRAGON_CHANNEL_POLLRESET poll operation.', err)
 
         if err == DRAGON_BARRIER_READY_TO_RELEASE:
             raise ChannelBarrierReady('The Channel Barrier is ready for the DRAGON_CHANNEL_POLLBARRIER_RELEASE poll operation. All waiters are present', err)
 
+        if err == DRAGON_INVALID_VALUE:
+            raise ChannelValueError("There was a problem with the value returned.", err)
+
         if err != DRAGON_SUCCESS:
             raise ChannelError("Unexpected Error while polling channel.", err)
 
-        return True
+        if poll_result is not None:
+            poll_result.value = result
+            poll_result.rc = err
+
+        return err == DRAGON_SUCCESS
 
 
     @property
@@ -2097,10 +2152,10 @@ cdef class Peer2PeerReadingChannelFile:
             derr = dragon_chrecv_get_msg_blocking(&self._recvh, &self._current_message, &val_timeout)
 
 
-        if derr == DRAGON_BCAST_DESTROYED:
+        if derr == DRAGON_OBJECT_DESTROYED:
             # this indicate the channel was destroyed but likely because
             # other end destroyed it.
-            raise EOFError('Channel was destroyed')
+            raise ChannelDestroyed('Channel was destroyed')
 
         if derr != DRAGON_SUCCESS:
             raise ChannelRecvError("Could not get message from channel", derr)
@@ -2289,10 +2344,10 @@ cdef class Many2ManyReadingChannelFile:
         with nogil:
             derr = dragon_chrecv_get_msg_blocking(&self._recvh, &self._current_message, self.time_ptr)
         if derr != DRAGON_SUCCESS:
-            if derr == DRAGON_BCAST_DESTROYED:
+            if derr == DRAGON_OBJECT_DESTROYED:
                 # this indicate the channel was destroyed but likely because
                 # other end destroyed it.
-                raise EOFError('Channel was destroyed')
+                raise ChannelDestroyed('Channel was destroyed')
 
             if derr == DRAGON_CHANNEL_RECV_NOT_OPENED:
                 raise ChannelHandleNotOpenError("Cannot receive with handle that is not open", derr)

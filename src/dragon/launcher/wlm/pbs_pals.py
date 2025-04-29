@@ -7,7 +7,18 @@ from .base import BaseNetworkConfig
 
 
 def get_pbs_pals_launch_be_args(args_map, launch_args):
-    pbs_pals_launch_be_args = ['mpiexec', '--np', str(args_map['nnodes']), '--ppn', '1', '--cpu-bind', 'none', '--hosts', args_map['nodelist'], '--line-buffer']
+    pbs_pals_launch_be_args = [
+        "mpiexec",
+        "--np",
+        str(args_map["nnodes"]),
+        "--ppn",
+        "1",
+        "--cpu-bind",
+        "none",
+        "--hosts",
+        args_map["nodelist"],
+        "--line-buffer",
+    ]
     return pbs_pals_launch_be_args + launch_args
 
 
@@ -32,7 +43,7 @@ Resubmit as part of a 'qsub' execution"""
             raise RuntimeError(msg)
 
         super().__init__(
-            'pbs+pals',
+            "pbs+pals",
             network_prefix,
             port,
             get_nodefile_node_count(os.environ.get("PBS_NODEFILE")),
@@ -45,13 +56,15 @@ Resubmit as part of a 'qsub' execution"""
     def check_for_wlm_support(cls) -> bool:
         # Look for qstat which is part of PBS
         qstat = shutil.which("qstat")
-        if not qstat or re.match('.*/pbs/.*', qstat) is None:
+        if not qstat or re.match(".*/pbs/.*", qstat) is None:
             return False
 
         # Now to see if we have a supported version of mpiexec
         if mpiexec := shutil.which("mpiexec"):
-            if re.match('.*/pals/.*', mpiexec) is None:
-                raise RuntimeError("PBS has been detected on the system. However, Dragon is only compatible with a PALS mpiexec and it was not found.")
+            if re.match(".*/pals/.*", mpiexec) is None:
+                raise RuntimeError(
+                    "PBS has been detected on the system. However, Dragon is only compatible with a PALS mpiexec and it was not found."
+                )
             return True
 
         raise RuntimeError("PBS was detected on the system, but Dragon cannot find the mpiexec command.")
@@ -74,9 +87,5 @@ Resubmit as part of a 'qsub' execution"""
         self.LOGGER.debug(f"Launching config with: {mpiexec_launch_args=}")
 
         return subprocess.Popen(
-            args=mpiexec_launch_args,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            bufsize=0,
-            start_new_session=True
+            args=mpiexec_launch_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0, start_new_session=True
         )

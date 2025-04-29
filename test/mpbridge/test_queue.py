@@ -60,9 +60,7 @@ class TestQueue(unittest.TestCase):
             msg_list[i] = "Hello msg with id " + str(i)
 
         q = dragon.mpbridge.queues.DragonQueue()
-        q_ver = (
-            dragon.mpbridge.queues.DragonQueue()
-        )  # used to verify that all messages are gotten from the queue
+        q_ver = dragon.mpbridge.queues.DragonQueue()  # used to verify that all messages are gotten from the queue
 
         writers = []
         for i in range(num_writers):

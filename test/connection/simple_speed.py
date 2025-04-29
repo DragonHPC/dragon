@@ -34,7 +34,7 @@ def send_n_obj(conn_or_init, num, obj_size):
 
 def cheesy_measure_speed(num, obj_size, new_obj=True):
     if new_obj:
-        mpool = dmm.MemoryPool(2 ** 30, 'hyenas', 17, None)
+        mpool = dmm.MemoryPool(2**30, "hyenas", 17, None)
         chan = dch.Channel(mpool, 42)
         read_init = chan.serialize()
         write_init = read_init
@@ -62,11 +62,11 @@ def cheesy_measure_speed(num, obj_size, new_obj=True):
 if __name__ == "__main__":
 
     num_objs = 1000
-    print('sending {} objects between 2 processes'.format(num_objs))
+    print("sending {} objects between 2 processes".format(num_objs))
 
     for lg_size in range(10, 24):
         size = 2**lg_size
         existing = cheesy_measure_speed(num_objs, size, False)
         new = cheesy_measure_speed(num_objs, size)
-        fmt = 'size 2**{}: old {:.3}\tnew {:.3}\tratio {:.3}'
-        print(fmt.format(lg_size, existing, new, existing/new))
+        fmt = "size 2**{}: old {:.3}\tnew {:.3}\tratio {:.3}"
+        print(fmt.format(lg_size, existing, new, existing / new))

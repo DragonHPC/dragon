@@ -64,7 +64,7 @@ proc_waiter(dragonBCastDescr_t* bd, dragonWaitMode_t wait_mode, size_t expected_
     if (err == DRAGON_TIMEOUT)
         exit(err);
 
-    if (err == DRAGON_BCAST_DESTROYED)
+    if (err == DRAGON_OBJECT_DESTROYED)
         exit(err);
 
     if (err != DRAGON_SUCCESS)
@@ -859,7 +859,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     wait(&status);
-    check_result(WEXITSTATUS(status), DRAGON_BCAST_DESTROYED, &tests_passed, &tests_attempted);
+    check_result(WEXITSTATUS(status), DRAGON_OBJECT_DESTROYED, &tests_passed, &tests_attempted);
 
     clock_gettime(CLOCK_MONOTONIC, &end);
 

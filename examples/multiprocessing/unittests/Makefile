@@ -6,7 +6,7 @@ TEST_FILES = $(shell find . -type f -name "test_*.py")
 TEST_CASES = $(shell grep unittest.TestCase $(TEST_FILES) | cut -d " " -f 2 | cut -d '(' -f 1)
 TEST_NAMES = $(shell grep "def test_" $(TEST_FILES) | cut -d " " -f 6 | cut -d '(' -f 1)
 
-VERBOSE = -v # --locals
+VERBOSE = -f -v # --locals
 
 .DEFAULT_GOAL := all
 

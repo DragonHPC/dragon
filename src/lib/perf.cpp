@@ -51,8 +51,8 @@ public:
 
     dragonMemoryPoolDescr_t mpool;
     std::vector<dragonChPerfKernel *> kernels;
-    std::vector<dragonChannelSendh_t> sendh; 
-    std::vector<dragonChannelRecvh_t> recvh; 
+    std::vector<dragonChannelSendh_t> sendh;
+    std::vector<dragonChannelRecvh_t> recvh;
 
     dragonChPerfSession(dragonChannelSerial_t *sdesc_array, int num_channels)
     {
@@ -304,10 +304,10 @@ public:
 
     ~dragonChPerfKernel()
     {
-        for (auto *op : this->ops) {
+        for (auto op : this->ops) {
             delete op;
         }
-        for (auto *op : this->barrier_ops) {
+        for (auto op : this->barrier_ops) {
             delete op;
         }
     }
@@ -349,7 +349,7 @@ dragonChPerfKernel::run(double *run_time)
 {
     // do warm-up if necessary
     if (this->first_run) {
-        for (auto *op : this->ops) {
+        for (auto op : this->ops) {
             auto err = op->exec();
             if (err != DRAGON_SUCCESS) {
                 append_err_return(err, "channel operation failed");
@@ -360,7 +360,7 @@ dragonChPerfKernel::run(double *run_time)
     }
 
     // run barrier
-    for (auto *op : this->barrier_ops) {
+    for (auto op : this->barrier_ops) {
         auto err = op->exec();
         if (err != DRAGON_SUCCESS) {
             append_err_return(err, "channel operation failed");
@@ -372,7 +372,7 @@ dragonChPerfKernel::run(double *run_time)
     // run user's kernel
     int num_iters = 10;
     for (auto i = 0; i < num_iters; ++i) {
-        for (auto *op : this->ops) {
+        for (auto op : this->ops) {
             auto err = op->exec();
             if (err != DRAGON_SUCCESS) {
                 append_err_return(err, "channel operation failed");

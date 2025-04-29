@@ -5,8 +5,6 @@ import unittest
 from dragon.native.lock import Lock
 from multiprocessing import Process
 from dragon.mpbridge.sharedctypes import Array
-import ctypes
-import multiprocessing as mp
 from ctypes import Structure, c_double
 
 

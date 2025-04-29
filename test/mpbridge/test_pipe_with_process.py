@@ -110,20 +110,14 @@ class SendReceiveTest(unittest.TestCase):
             handle.join()
 
         num_logs = dragon_logger.num_logs()
-        self.assertEqual(
-            num_logs, num_workers, f"expected {num_workers} log entries, but there's only {num_logs}"
-        )
+        self.assertEqual(num_logs, num_workers, f"expected {num_workers} log entries, but there's only {num_logs}")
         found_worker_log_msg = [False for _ in range(num_workers)]
         for i in range(num_workers):
             msg = dmsg.parse(dragon_logger.get(i))
             worker = int(msg.msg.split(":")[0])
-            self.assertFalse(
-                found_worker_log_msg[worker - 1], f"duplicate log message received for node {worker}"
-            )
+            self.assertFalse(found_worker_log_msg[worker - 1], f"duplicate log message received for node {worker}")
             found_worker_log_msg[worker - 1] = True
-        self.assertTrue(
-            all(found_worker_log_msg), "One or more log messages not found in DragonLogging chanel"
-        )
+        self.assertTrue(all(found_worker_log_msg), "One or more log messages not found in DragonLogging chanel")
         dragon_logger.destroy()
 
         return time.time_ns() - start_time

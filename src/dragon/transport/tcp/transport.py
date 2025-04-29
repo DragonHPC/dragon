@@ -19,7 +19,7 @@ from .task import TaskMixin, run_forever
 from .util import unget_nowait
 
 
-LOGGER = logging.getLogger('dragon.transport.tcp.transport')
+LOGGER = logging.getLogger("dragon.transport.tcp.transport")
 
 
 @dataclass(frozen=True)
@@ -58,20 +58,20 @@ class Address:
 
         """
         if not netloc:
-            raise ValueError('A valid hostname or IPv4 or IPv6 address is required.')
-        info = urlsplit('tcp://' + str(netloc))
+            raise ValueError("A valid hostname or IPv4 or IPv6 address is required.")
+        info = urlsplit("tcp://" + str(netloc))
         host = ip_address(info.hostname)
         return cls(host, info.port)
 
     def __str__(self):
         """Returns netloc string."""
         if isinstance(self.host, IPv6Address):
-            host = f'[{self.host}]'
+            host = f"[{self.host}]"
         else:
             host = str(self.host)
         if self.port is None:
             return host
-        return f'{host}:{self.port}'
+        return f"{host}:{self.port}"
 
     def hello(self) -> Union[Hello, Hello6]:
         """Returns corresponding Hello message for this address."""
@@ -97,8 +97,8 @@ class Address:
         return type(self).from_hello(resp)
 
 
-LOOPBACK_ADDRESS_IPv4 = Address.from_netloc('127.0.0.1')
-LOOPBACK_ADDRESS_IPv6 = Address.from_netloc('[::1]')
+LOOPBACK_ADDRESS_IPv4 = Address.from_netloc("127.0.0.1")
+LOOPBACK_ADDRESS_IPv6 = Address.from_netloc("[::1]")
 
 
 class Transport:
@@ -125,7 +125,7 @@ class Transport:
             when the corresponding response is available.
 
         """
-        LOGGER.debug(f'Writing request to {addr}: {req}')
+        LOGGER.debug(f"Writing request to {addr}: {req}")
         # Set seqno before queuing or handling request
         req.seqno = next(self._seqno)
         # Create future that will be completed when the response is received
@@ -147,7 +147,7 @@ class Transport:
         :param resp: `Response` message to send
         :param addr: Recipient `Address`
         """
-        LOGGER.debug(f'Writing response to {addr}: {resp}')
+        LOGGER.debug(f"Writing response to {addr}: {resp}")
         self._handle_send(resp, addr)
 
     def _handle_send(self, msg: TransportMessage, addr: Address, /) -> None:
@@ -160,7 +160,10 @@ class Transport:
         # passed immediately to the receive handler, it still needs to process
         # the SendResponse for SendRequests with IMMEDIATELY or WHEN_BUFFERED
         # return modes.
-        if isinstance(msg, SendRequest) and msg.return_mode in (SendReturnMode.IMMEDIATELY, SendReturnMode.WHEN_BUFFERED):
+        if isinstance(msg, SendRequest) and msg.return_mode in (
+            SendReturnMode.IMMEDIATELY,
+            SendReturnMode.WHEN_BUFFERED,
+        ):
             resp = SendResponse(msg.seqno)
             self._handle_recv(resp, self.addr)
 
@@ -177,11 +180,13 @@ class Transport:
     def _handle_recv(self, msg: TransportMessage, addr: Address, /) -> None:
         """Handle a message received from the specified address."""
         # Default handler immediately sends error response
-        LOGGER.error(f'Received unsupported type of message from {addr}: {type(msg)}')
+        LOGGER.error(f"Received unsupported type of message from {addr}: {type(msg)}")
         # An unsupported message most likely does not have a sequence number,
         # so default to seqno=0 in that case, which should NOT be used
         # by any valid transport since sequence numbers start at 1.
-        resp = ErrorResponse(getattr(msg, 'seqno', 0), DRAGON_NOT_IMPLEMENTED, f'Unsupported type of message: {type(msg)}')
+        resp = ErrorResponse(
+            getattr(msg, "seqno", 0), DRAGON_NOT_IMPLEMENTED, f"Unsupported type of message: {type(msg)}"
+        )
         self.write_response(resp, addr)
         # This handler is a dead end; no client or server will ever process
         # this transport message. As a result, we need to ensure the I/O event
@@ -195,9 +200,9 @@ class Transport:
         try:
             fut = self._responses.pop(resp.seqno)
         except KeyError:
-            LOGGER.warning(f'Received unexpected response: {resp}')
+            LOGGER.warning(f"Received unexpected response: {resp}")
             # May include additional text (e.g., ErrorResponse)
-            text = getattr(resp, 'text', '')
+            text = getattr(resp, "text", "")
             if text:
                 LOGGER.warning(resp.text)
         else:
@@ -205,12 +210,12 @@ class Transport:
 
     @_handle_recv.register
     def _(self, req: Request, addr: Address, /) -> None:
-        """"Handle a `Request."""
+        """ "Handle a `Request."""
         LOGGER.debug(f"Received request from {addr}: {req}")
         # Protect against inadvertant replays by checking the last seqno from
         # each address.
         if req.seqno <= self._last_request[addr]:
-            LOGGER.error('Received duplicate request from {addr}: {req}')
+            LOGGER.error("Received duplicate request from {addr}: {req}")
             return
         self._last_request[addr] = req.seqno
         # Queue request so it can be read
@@ -219,14 +224,14 @@ class Transport:
     async def read_request(self) -> tuple[Request, Address]:
         """:return: Next `Request` received, when available."""
         req, addr = await self._requests.get()
-        LOGGER.debug(f'Read request from {addr}: {req}')
+        LOGGER.debug(f"Read request from {addr}: {req}")
         return req, addr
 
     async def read_response(self, seqno) -> tuple[Response, Address]:
         try:
             fut = self._responses[seqno]
         except KeyError:
-            raise ValueError(f'Invalid sequence number: {seqno}')
+            raise ValueError(f"Invalid sequence number: {seqno}")
         resp, addr = await fut
         return resp, addr
 
@@ -385,9 +390,13 @@ class StreamTransport(Transport, TaskMixin):
         Typically ran in a separate `asyncio.Task` via `StreamTransport.start`.
         """
         if self._oob_accept:
-            self._server = await asyncio.start_server(self.accept_connection, 'localhost', int(self.addr.port), **self.server_options)
+            self._server = await asyncio.start_server(
+                self.accept_connection, "localhost", int(self.addr.port), **self.server_options
+            )
         else:
-            self._server = await asyncio.start_server(self.accept_connection, str(self.addr.host), int(self.addr.port), **self.server_options)
+            self._server = await asyncio.start_server(
+                self.accept_connection, str(self.addr.host), int(self.addr.port), **self.server_options
+            )
         try:
             async with self._server:
                 await self._server.serve_forever()
@@ -395,8 +404,8 @@ class StreamTransport(Transport, TaskMixin):
             self._server = None
 
     async def stop(self) -> None:
-        await super().stop()
         await self.close()
+        await super().stop()
 
     async def close(self) -> None:
         # Cancel and clean up recv tasks
@@ -440,10 +449,10 @@ class StreamTransport(Transport, TaskMixin):
             await asyncio.sleep(interval)
 
     async def wait_started(self, *args, **kwds):
-        warn('Use wait_serving() instead of wait_started()', DeprecationWarning)
+        warn("Use wait_serving() instead of wait_started()", DeprecationWarning)
         return self.wait_serving(*args, **kwds)
 
-    async def accept_connection(self, reader:asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def accept_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         """Accept a client connection.
 
         Completes handshake with client before starting the receive-loop with
@@ -461,8 +470,8 @@ class StreamTransport(Transport, TaskMixin):
         # XXX certificate.
         ## Verify connection is to the advertised host; port is not applicable
         ## from the server side.
-        #host, _ = writer.get_extra_info('peername')
-        #assert addr.host == ip_address(host)
+        # host, _ = writer.get_extra_info('peername')
+        # assert addr.host == ip_address(host)
         self.add_connection(addr, reader, writer)
 
     async def _open_connection(self, addr: Address, /) -> tuple[asyncio.StreamReader, asyncio.StreamWriter]:
@@ -473,7 +482,7 @@ class StreamTransport(Transport, TaskMixin):
         """
         opts = self.default_connection_options.new_child(self.connection_options[addr])
         if self._oob_connect or self._oob_accept:
-            reader, writer = await asyncio.open_connection('localhost', int(addr.port), **opts)
+            reader, writer = await asyncio.open_connection("localhost", int(addr.port), **opts)
             await self.addr.do_handshake(reader, writer)
         else:
             reader, writer = await asyncio.open_connection(str(addr.host), int(addr.port), **opts)
@@ -482,18 +491,18 @@ class StreamTransport(Transport, TaskMixin):
         # XXX See comment above in accept_connection() on why this is not a
         # XXX tenable workaround for actual server authentication.
         ## Verify connection is to the advertised address
-        #host, port = writer.get_extra_info('peername')
-        #assert addr == Address(ip_address(host), int(port))
+        # host, port = writer.get_extra_info('peername')
+        # assert addr == Address(ip_address(host), int(port))
         self.add_connection(addr, reader, writer)
         return reader, writer
 
     def add_connection(self, addr: Address, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         self._writers[addr].append(writer)
-        task = asyncio.create_task(self._do_recv(addr, reader), name=f'{type(self).__name__}-Receiver-{addr}')
+        task = asyncio.create_task(self._do_recv(addr, reader), name=f"{type(self).__name__}-Receiver-{addr}")
         self._recv_tasks[addr].add(task)
-        LOGGER.debug(f'Added connection to {addr}')
+        LOGGER.debug(f"Added connection to {addr}")
 
-    async def connect(self, addr: Address) ->  asyncio.StreamWriter:
+    async def connect(self, addr: Address) -> asyncio.StreamWriter:
         """Returns an open `asyncio.StreamWriter` connected to the specified
         address, opening a new connection if necessary.
 
@@ -530,7 +539,7 @@ class StreamTransport(Transport, TaskMixin):
                 try:
                     await self._open_connection(addr)
                 except ConnectionRefusedError:
-                    LOGGER.exception(f'Failed to open connection to {addr}')
+                    LOGGER.exception(f"Failed to open connection to {addr}")
                     continue
             # TODO I now think sorting the open_writers is pointless, remove?
             # Sort open writers to increase the chance that both peers choose
@@ -557,7 +566,7 @@ class StreamTransport(Transport, TaskMixin):
                 self._handle_recv(msg, addr)
             except Exception as e:
                 if isinstance(msg, Request):
-                    resp = ErrorResponse(msg.seqno, DRAGON_FAILURE, 'Uncaught exception handling message')
+                    resp = ErrorResponse(msg.seqno, DRAGON_FAILURE, "Uncaught exception handling message")
                     self.write_response(resp, addr)
                 raise
 
@@ -587,8 +596,10 @@ class StreamTransport(Transport, TaskMixin):
                 task = None
         if task is None:
             # (Re-)Start send task
-            LOGGER.debug(f'Starting sender: {type(self).__name__}-Sender-{addr}')
-            self._send_tasks[addr] = asyncio.create_task(self._do_send(addr), name=f'{type(self).__name__}-Sender-{addr}')
+            LOGGER.debug(f"Starting sender: {type(self).__name__}-Sender-{addr}")
+            self._send_tasks[addr] = asyncio.create_task(
+                self._do_send(addr), name=f"{type(self).__name__}-Sender-{addr}"
+            )
 
     @run_forever
     async def _do_send(self, addr: Address) -> None:
@@ -598,7 +609,7 @@ class StreamTransport(Transport, TaskMixin):
                 msg = await asyncio.wait_for(self._mailboxes[addr].get(), self.IDLE_SEND_TIMEOUT)
             except asyncio.TimeoutError:
                 if self._mailboxes[addr].empty():
-                    LOGGER.debug('Cleaning up idle mailbox')
+                    LOGGER.debug("Cleaning up idle mailbox")
                     # Idle timeout and still no outgoing messages, shutdown
                     del self._mailboxes[addr]
                     break
@@ -614,13 +625,13 @@ class StreamTransport(Transport, TaskMixin):
             try:
                 await write_message(writer, msg)
             except ConnectionError:
-                LOGGER.exception(f'Connection error while writing to {addr}: {msg}')
+                LOGGER.exception(f"Connection error while writing to {addr}: {msg}")
                 unget_nowait(self._mailboxes[addr], msg)
                 # Close existing writer, then get a new one and retry
                 await close_writer(writer)
                 writer = await self.connect(addr)
             except:
-                LOGGER.exception(f'Uncaught error while writing to {addr}: {msg}')
+                LOGGER.exception(f"Uncaught error while writing to {addr}: {msg}")
                 unget_nowait(self._mailboxes[addr], msg)
                 raise
             else:
@@ -631,7 +642,7 @@ class StreamTransport(Transport, TaskMixin):
 
 
 def writer_addrs(writer):
-    addrs = [writer.get_extra_info('sockname'), writer.get_extra_info('peername')]
+    addrs = [writer.get_extra_info("sockname"), writer.get_extra_info("peername")]
     addrs.sort()
     return addrs
 
@@ -665,7 +676,7 @@ async def create_streams(rfile: Optional[IO], wfile: Optional[IO]) -> tuple[asyn
 
     """
     if rfile is None and wfile is None:
-        raise ValueError('Requires at least one file object')
+        raise ValueError("Requires at least one file object")
     loop = asyncio.get_event_loop()
     if rfile is not None:
         reader = asyncio.StreamReader(loop=loop)
@@ -673,7 +684,9 @@ async def create_streams(rfile: Optional[IO], wfile: Optional[IO]) -> tuple[asyn
     else:
         reader = None
     if wfile is not None:
-        w_transport, w_protocol = await loop.connect_write_pipe(lambda: asyncio.streams.FlowControlMixin(loop=loop), wfile)
+        w_transport, w_protocol = await loop.connect_write_pipe(
+            lambda: asyncio.streams.FlowControlMixin(loop=loop), wfile
+        )
         writer = asyncio.StreamWriter(w_transport, w_protocol, reader, loop)
     else:
         writer = None
@@ -702,12 +715,14 @@ async def create_pipe_streams() -> tuple[asyncio.StreamReader, asyncio.StreamWri
 
     """
     r, w = os.pipe()
-    reader, _ = await create_streams(os.fdopen(r, 'rb'), None)
-    _, writer = await create_streams(None, os.fdopen(w, 'wb'))
+    reader, _ = await create_streams(os.fdopen(r, "rb"), None)
+    _, writer = await create_streams(None, os.fdopen(w, "wb"))
     return reader, writer
 
 
-async def create_pipe_connections() -> tuple[tuple[asyncio.StreamReader, asyncio.StreamWriter], tuple[asyncio.StreamReader, asyncio.StreamWriter]]:
+async def create_pipe_connections() -> (
+    tuple[tuple[asyncio.StreamReader, asyncio.StreamWriter], tuple[asyncio.StreamReader, asyncio.StreamWriter]]
+):
     """Creates a connection pair (i.e., two pair of `asyncio.StreamReader` and
     `asyncio.StreamWriter` instances) from `os.pipe` file descriptors.
 
@@ -749,8 +764,8 @@ async def create_pipe_connections() -> tuple[tuple[asyncio.StreamReader, asyncio
     """
     r0, w0 = os.pipe()
     r1, w1 = os.pipe()
-    connA = await create_streams(os.fdopen(r0, 'rb'), os.fdopen(w1, 'wb'))
-    connB = await create_streams(os.fdopen(r1, 'rb'), os.fdopen(w0, 'wb'))
+    connA = await create_streams(os.fdopen(r0, "rb"), os.fdopen(w1, "wb"))
+    connB = await create_streams(os.fdopen(r1, "rb"), os.fdopen(w0, "wb"))
     return connA, connB
 
 
@@ -760,9 +775,8 @@ if __name__ == "__main__":
     from uuid import uuid4
     from .task import cancel_all_tasks
 
-
     logging.basicConfig(
-        format='%(asctime)-15s %(levelname)-8s %(taskName)-15s %(message)s',
+        format="%(asctime)-15s %(levelname)-8s %(taskName)-15s %(message)s",
         level=logging.DEBUG,
     )
 
@@ -780,14 +794,22 @@ if __name__ == "__main__":
     for h in logging.getLogger().handlers:
         h.addFilter(asyncio_task_log_filter)
 
-    localhost = ip_address('127.0.0.1')
+    localhost = ip_address("127.0.0.1")
 
     async def sender(from_addr, to_addr):
         transport = StreamTransport(from_addr)
-        transport.start(name=f'Sender-transport-{transport.addr}')
+        transport.start(name=f"Sender-transport-{transport.addr}")
         await transport.wait_serving()
         while True:
-            req = SendMemoryRequest(None, timeout=0.5, channel_sd=b'channel desc', return_mode=choice(list(SendReturnMode)), sendhid=uuid4().bytes, payload=b'payload', mem_sd=b'memory desc')
+            req = SendMemoryRequest(
+                None,
+                timeout=0.5,
+                channel_sd=b"channel desc",
+                return_mode=choice(list(SendReturnMode)),
+                sendhid=uuid4().bytes,
+                payload=b"payload",
+                mem_sd=b"memory desc",
+            )
             fut = transport.write_request(req, to_addr)
             LOGGER.info(f"Waiting for response")
             resp, resp_addr = await fut
@@ -800,28 +822,28 @@ if __name__ == "__main__":
                 assert resp_addr == to_addr
             assert req.seqno == resp.seqno
             await asyncio.sleep(0.1)
-            LOGGER.info(f'Send tasks: {len(transport._send_tasks)}')
+            LOGGER.info(f"Send tasks: {len(transport._send_tasks)}")
 
     async def receiver(addr):
         transport = StreamTransport(addr)
-        transport.start(name=f'Receiver-transport-{transport.addr}')
+        transport.start(name=f"Receiver-transport-{transport.addr}")
         await transport.wait_serving()
         while True:
             req, from_addr = await transport.read_request()
             if req.return_mode in (SendReturnMode.WHEN_DEPOSITED, SendReturnMode.WHEN_RECEIVED):
                 transport.write_response(SendResponse(req.seqno), from_addr)
-            LOGGER.info(f'Receiver send tasks: {len(transport._send_tasks)}')
+            LOGGER.info(f"Receiver send tasks: {len(transport._send_tasks)}")
 
     async def main():
         to_addr = Address(localhost, 8888)
         for port in range(to_addr.port + 1, to_addr.port + 1 + 1):
-            asyncio.create_task(sender(Address(localhost, port), to_addr), name=f'Sender-{port}')
+            asyncio.create_task(sender(Address(localhost, port), to_addr), name=f"Sender-{port}")
         try:
             await receiver(to_addr)
         except KeyboardInterrupt:
             pass
         finally:
-            LOGGER.critical('Shutting down...')
+            LOGGER.critical("Shutting down...")
             await cancel_all_tasks()
 
     asyncio.run(main())

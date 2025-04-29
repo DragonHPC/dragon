@@ -21,22 +21,13 @@ static const int DRAGON_MEMORY_TEMPORARY_TIMEOUT_SECS = DRAGON_MEMORY_TEMPORARY_
 static const timespec_t DRAGON_MEMORY_TEMPORARY_TIMEOUT = {DRAGON_MEMORY_TEMPORARY_TIMEOUT_CONST,0};
 
 /**
- * @brief The number of free memory blocks with the memory size.
- *
- * dyn_mem stats provide statistics for the heap.
-*/
-typedef struct dragonHeapStatsAllocationItem_st {
-    uint64_t block_size;
-    uint64_t num_blocks;
-} dragonHeapStatsAllocationItem_t;
-
-/**
  * @brief The type of memory pool.
  *
  * For future use. Currently, the only valid value is DRAGON_MEMORY_TYPE_SHM.
 */
 typedef enum dragonMemoryPoolType_st {
     DRAGON_MEMORY_TYPE_SHM = 0,
+    DRAGON_MEMORY_TYPE_HUGEPAGE,
     DRAGON_MEMORY_TYPE_FILE,
     DRAGON_MEMORY_TYPE_PRIVATE
 } dragonMemoryPoolType_t;
@@ -62,7 +53,9 @@ typedef enum dragonMemoryPoolGrowthType_st {
 typedef enum dragonMemoryAllocationType_st {
     DRAGON_MEMORY_ALLOC_DATA = 0, /*!< Allocation is used for general-purpose data. */
     DRAGON_MEMORY_ALLOC_CHANNEL,  /*!< Internal Use Only. */
-    DRAGON_MEMORY_ALLOC_CHANNEL_BUFFER /*!< Internal Use Only. */
+    DRAGON_MEMORY_ALLOC_CHANNEL_BUFFER, /*!< Internal Use Only. */
+    DRAGON_MEMORY_ALLOC_BOOTSTRAP /* This may be used as a special type for user-specified data.
+                                     It makes it possible to retrieve a set of special allocations. */
 } dragonMemoryAllocationType_t;
 
 /** @brief The attributes of the Dragon Memory Pool.
@@ -84,23 +77,46 @@ typedef struct dragonMemoryPoolAttr_st {
      * Ignored if set by user. This is the total size of the data segment
      * including meta information. */
 
+    size_t free_space;
+    /*!< Free space in the pool in bytes. Read-only. */
+
+    double utilization_pct;
+    /*!< Free space as a percentage of total space of the pool. Read-only. */
+
     size_t data_min_block_size;
     /*!< The requested minimum allocation size from
      * the pool. The actual minimum block size is reported via
      * dragon_memory_pool_getattr. All allocations will be at least this
      * size. */
 
+    size_t max_allocations;
+    /*!< The maximum number of concurrent allocations among all processes.
+    * This number is set to 1048576 entries (1024^2 entries) or the number of
+    * segments in the pool, whichever is smaller. This can be set by the user
+    * to something bigger if needed. */
+
+    size_t waiters_for_manifest;
+    /*!< Read-only. At the time of the call, this is the number of processes
+         that are awaiting a manifest table entry because the manifest is
+         currently full. Read-only. */
+
+    size_t manifest_entries;
+    /*!< Read-only. This is the number of entries of the total max_allocations
+         that are currently in use. If there are waiters, then manifest_entries
+         should equal max_allocations. Read-only. */
+
+    size_t max_manifest_entries;
+    /*!< The maximum concurrently used manifest locations of the pool since
+     * pool creation. Read-only. */
+
     size_t manifest_allocated_size;
-    /*!< The size in bytes of the manifest.
-     * Ignored if set by user. */
+    /*!< The size in bytes of the manifest. Read-only. */
 
     size_t manifest_table_size;
-    /*!< The size in bytes of the internal allocation table.
-     * Ignored if set by user. */
+    /*!< The size in bytes of the internal allocation table. Read-only. */
 
     size_t manifest_heap_size;
-    /*!< The size in bytes of the internal heap manager.
-     * Ignored if set by user. */
+    /*!< The size in bytes of the internal heap manager. Read-only. */
 
     size_t segment_size;
     /*!< The requested size of segments when pool size is increased by the user.
@@ -232,11 +248,33 @@ typedef struct dragonMemoryPoolAllocations_st {
     dragonULInt * ids;
 } dragonMemoryPoolAllocations_t;
 
+/**
+ * @brief The number of free memory blocks with the memory size.
+ *
+ * dyn_mem stats provide statistics for the heap. This struture
+ * is returned as an array for the free blocks of each
+ * block size. The array starts at 0 and runs to the number of
+ * block sizes - 1. Each item of the array contains the
+ * items given here.
+ *
+*/
+typedef struct dragonHeapStatsAllocationItem_st {
+    size_t block_size;
+    /*!< The size of the block for which this free blocks applies. */
+
+    size_t num_blocks;
+    /*!< The number of blocks of this size that are free. */
+
+} dragonHeapStatsAllocationItem_t;
+
 dragonError_t
 dragon_memory_attr_init(dragonMemoryPoolAttr_t * attr);
 
 dragonError_t
 dragon_memory_attr_destroy(dragonMemoryPoolAttr_t * attr);
+
+dragonError_t
+dragon_memory_get_attr(dragonMemoryPoolDescr_t * pool_descr, dragonMemoryPoolAttr_t * attr);
 
 dragonError_t
 dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, size_t bytes, const char * base_name,
@@ -288,13 +326,11 @@ dragonError_t
 dragon_memory_pool_allocations_free(dragonMemoryPoolAllocations_t * allocs);
 
 dragonError_t
-dragon_memory_pool_allocation_exists(const dragonMemoryPoolDescr_t * pool_descr, const dragonMemoryAllocationType_t type,
-                                     const dragonULInt type_id, int * flag);
+dragon_memory_pool_allocation_exists(dragonMemoryDescr_t * mem_descr, int * flag);
 
 dragonError_t
 dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr,
-                                 const dragonMemoryAllocationType_t type, const dragonULInt type_id,
-                                 const dragonULInt offset, const dragonULInt* bytes_size);
+                                 const dragonULInt id, const dragonULInt offset, const dragonULInt* bytes_size);
 
 dragonError_t
 dragon_memory_pool_allocations_destroy(dragonMemoryPoolAllocations_t * allocs);
@@ -338,11 +374,11 @@ dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemory
 
 dragonError_t
 dragon_memory_alloc_type(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr, const size_t bytes,
-                         const dragonMemoryAllocationType_t type, const dragonULInt type_id);
+                         const dragonMemoryAllocationType_t type);
 
 dragonError_t
 dragon_memory_alloc_type_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemoryPoolDescr_t * pool_descr, const size_t bytes,
-                         const dragonMemoryAllocationType_t type, const dragonULInt type_id, const timespec_t* timer);
+                         const dragonMemoryAllocationType_t type, const timespec_t* timer);
 
 dragonError_t
 dragon_memory_get_size(const dragonMemoryDescr_t * mem_descr, size_t * bytes);
@@ -361,6 +397,12 @@ dragon_memory_attach(dragonMemoryDescr_t * mem_descr, const dragonMemorySerial_t
 
 dragonError_t
 dragon_memory_detach(dragonMemoryDescr_t * mem_descr);
+
+dragonError_t
+dragon_memory_id(dragonMemoryDescr_t * mem_descr, uint64_t* id);
+
+dragonError_t
+dragon_memory_from_id(const dragonMemoryPoolDescr_t * pool_descr, uint64_t id, dragonMemoryDescr_t * mem_descr);
 
 dragonError_t
 dragon_memory_serial_free(dragonMemorySerial_t * mem_ser);
@@ -385,10 +427,29 @@ dragonError_t
 dragon_memory_equal(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result);
 
 dragonError_t
+dragon_memory_is(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result);
+
+dragonError_t
 dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout);
 
 dragonError_t
 dragon_memory_clear(dragonMemoryDescr_t* mem_descr, size_t start, size_t stop);
+
+dragonError_t
+dragon_create_process_local_pool(dragonMemoryPoolDescr_t* pool, size_t bytes, const char* name, dragonMemoryPoolAttr_t * attr, const timespec_t* timeout);
+
+dragonError_t
+dragon_register_process_local_pool(dragonMemoryPoolDescr_t* pool, const timespec_t* timeout);
+
+dragonError_t
+dragon_deregister_process_local_pool(dragonMemoryPoolDescr_t* pool, const timespec_t* timeout);
+
+/* These are only for debug purposes. */
+dragonError_t
+dragon_memory_manifest_info(dragonMemoryDescr_t * mem_descr, dragonULInt* type, dragonULInt* type_id);
+
+void
+dragon_memory_set_debug_flag(int the_flag);
 
 #ifdef __cplusplus
 }

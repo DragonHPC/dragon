@@ -1,4 +1,4 @@
-""" A class that uniquely defines properties of a managed hardware node for infrastructure communication.
+"""A class that uniquely defines properties of a managed hardware node for infrastructure communication.
 
 This is a stub at the moment, and should be extended for dynamic hardware
 allocations/elasticity aka The Cloud (TM) and more complex node properties
@@ -56,11 +56,11 @@ class NodeDescriptor:
         physical_mem: int = 0,
         is_primary: bool = False,
         host_id: int = None,
-        shep_cd: str = '',
-        overlay_cd: str = '',
-        host_name: str = '',
+        shep_cd: str = "",
+        overlay_cd: str = "",
+        host_name: str = "",
         cpu_devices: Optional[list[int]] = None,
-        accelerators: Optional[AcceleratorDescriptor] = None
+        accelerators: Optional[AcceleratorDescriptor] = None,
     ):
         self.h_uid = h_uid
         self.name = name
@@ -82,13 +82,15 @@ class NodeDescriptor:
         self.num_policies = 0
 
         if port is not None:
-            self.ip_addrs = [f'{ip_addr}:{port}' for ip_addr in ip_addrs]
+            self.ip_addrs = [f"{ip_addr}:{port}" for ip_addr in ip_addrs]
         else:
             self.ip_addrs = ip_addrs
 
-        if fabric_ep_addrs is None:
+        if fabric_ep_addrs is None and not os.getenv("DRAGON_HSTA_NO_NET_CONFIG", True):
             num_nics = len(ip_addrs)
-            self.fabric_ep_addrs_available, self.fabric_ep_addrs, self.fabric_ep_addr_lens = get_fabric_ep_addrs(num_nics, False)
+            self.fabric_ep_addrs_available, self.fabric_ep_addrs, self.fabric_ep_addr_lens = get_fabric_ep_addrs(
+                num_nics, False
+            )
         else:
             self.fabric_ep_addrs_available = fabric_ep_addrs_available
             self.fabric_ep_addrs = fabric_ep_addrs
@@ -101,15 +103,17 @@ class NodeDescriptor:
         return f"name:{self.name}, host_id:{self.host_id} at {self.ip_addrs}, state:{self.state.name}"
 
     @classmethod
-    def get_localservices_node_conf(cls,
-                                    name: Optional[str] = None,
-                                    host_name: Optional[str] = None,
-                                    host_id: Optional[int] = None,
-                                    is_primary: bool = False,
-                                    ip_addrs: Optional[list[str]] = None,
-                                    shep_cd: Optional[str] = None,
-                                    cpu_devices: Optional[list[int]] = None,
-                                    accelerators: Optional[AcceleratorDescriptor] = None):
+    def get_localservices_node_conf(
+        cls,
+        name: Optional[str] = None,
+        host_name: Optional[str] = None,
+        host_id: Optional[int] = None,
+        is_primary: bool = False,
+        ip_addrs: Optional[list[str]] = None,
+        shep_cd: Optional[str] = None,
+        cpu_devices: Optional[list[int]] = None,
+        accelerators: Optional[AcceleratorDescriptor] = None,
+    ):
         """Return a NodeDescriptor object for Local Services to pass into its SHChannelsUp message
 
         Populates the values in a NodeDescriptor object that Local Services needs to provide to the
@@ -163,24 +167,32 @@ class NodeDescriptor:
         physical_mem = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
 
         num_nics = len(ip_addrs)
-        get_fabric_ep_addrs(num_nics, os.environ.get("DRAGON_HSTA_GET_FABRIC", "True").lower() == "true")
+        if not os.getenv("DRAGON_HSTA_NO_NET_CONFIG", True):
+            get_fabric_ep_addrs(num_nics, os.environ.get("DRAGON_HSTA_GET_FABRIC", "True").lower() == "true")
 
-        return cls(state=state,
-                   name=name,
-                   host_name=host_name,
-                   ip_addrs=ip_addrs,
-                   host_id=host_id,
-                   shep_cd=shep_cd,
-                   is_primary=is_primary,
-                   num_cpus=num_cpus,
-                   physical_mem=physical_mem,
-                   cpu_devices=cpu_devices,
-                   accelerators=accelerators)
+        return cls(
+            state=state,
+            name=name,
+            host_name=host_name,
+            ip_addrs=ip_addrs,
+            host_id=host_id,
+            shep_cd=shep_cd,
+            is_primary=is_primary,
+            num_cpus=num_cpus,
+            physical_mem=physical_mem,
+            cpu_devices=cpu_devices,
+            accelerators=accelerators,
+        )
 
     @classmethod
-    def get_local_node_network_conf(cls,
-                                    network_prefix: str = DEFAULT_TRANSPORT_NETIF,
-                                    port_range: Union[Tuple[int, int], int] = (DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_OVERLAY_NETWORK_PORT+DEFAULT_PORT_RANGE)):
+    def get_local_node_network_conf(
+        cls,
+        network_prefix: str = DEFAULT_TRANSPORT_NETIF,
+        port_range: Union[Tuple[int, int], int] = (
+            DEFAULT_OVERLAY_NETWORK_PORT,
+            DEFAULT_OVERLAY_NETWORK_PORT + DEFAULT_PORT_RANGE,
+        ),
+    ):
         """Return NodeDescriptor with IP for given network prefix, hostname, and host ID
 
         :param network_prefix: network prefix used to find IP address of this node. Defaults to DEFAULT_TRANSPORT_NETIF
@@ -196,7 +208,7 @@ class NodeDescriptor:
         from dragon.transport.ifaddrs import getifaddrs, InterfaceAddressFilter
 
         if type(port_range) is int:
-            port_range = (port_range, port_range+DEFAULT_PORT_RANGE)
+            port_range = (port_range, port_range + DEFAULT_PORT_RANGE)
         hostname = gethostname()
         ifaddr_filter = InterfaceAddressFilter()
         ifaddr_filter.af_inet(inet6=False)  # Disable IPv6 for now
@@ -206,7 +218,7 @@ class NodeDescriptor:
         except OSError:
             raise
         if not ifaddrs:
-            _msg = 'No network interface with an AF_INET address was found'
+            _msg = "No network interface with an AF_INET address was found"
             raise RuntimeError(_msg)
 
         try:
@@ -217,21 +229,21 @@ class NodeDescriptor:
 
         ifaddr_filter.clear()
         ifaddr_filter.name_re(re.compile(re_prefix))
-        ip_addrs = [ifa['addr']['addr'] for ifa in filter(ifaddr_filter, ifaddrs)]
+        ip_addrs = [ifa["addr"]["addr"] for ifa in filter(ifaddr_filter, ifaddrs)]
         if not ip_addrs:
-            _msg = f'No high speed NICs found for {hostname} with regex pattern {network_prefix}'
+            _msg = f"No high speed NICs found for {hostname} with regex pattern {network_prefix}"
             print(_msg, file=sys.stderr, flush=True)
-            node_info = cls(state=NodeDescriptor.State.ACTIVE,
-                            name=hostname,
-                            host_name=hostname,
-                            ip_addrs=ip_addrs,
-                            host_id=get_host_id(),
-                            port=port_range[0])
+            node_info = cls(
+                state=NodeDescriptor.State.ACTIVE,
+                name=hostname,
+                host_name=hostname,
+                ip_addrs=ip_addrs,
+                host_id=get_host_id(),
+                port=port_range[0],
+            )
             return node_info
         else:
             ip_addr = ip_addrs[0]
-
-
 
         # There is a small chance (very small) that the port could appear to be available
         # and then in the next second or so, something else could grab it. In that case
@@ -243,16 +255,18 @@ class NodeDescriptor:
 
         for port in range(port_range[0], port_range[1]):
             if port_check((ip_addr, port)):
-                node_info = cls(state=NodeDescriptor.State.ACTIVE,
-                                name=hostname,
-                                host_name=hostname,
-                                ip_addrs=ip_addrs,
-                                host_id=get_host_id(),
-                                port=port)
+                node_info = cls(
+                    state=NodeDescriptor.State.ACTIVE,
+                    name=hostname,
+                    host_name=hostname,
+                    ip_addrs=ip_addrs,
+                    host_id=get_host_id(),
+                    port=port,
+                )
 
                 return node_info
 
-        raise RuntimeError(f'Could not find available port for IP address={ip_addr} in port range {port_range}')
+        raise RuntimeError(f"Could not find available port for IP address={ip_addr} in port range {port_range}")
 
     @property
     def sdesc(self):
@@ -276,7 +290,7 @@ class NodeDescriptor:
             "shep_cd": self.shep_cd,
             "overlay_cd": self.overlay_cd,
             "cpu_devices": self.cpu_devices,
-            "state": self.state
+            "state": self.state,
         }
 
         # Account for a NULL accelerator giving us a None for now

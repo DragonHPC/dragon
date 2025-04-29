@@ -275,7 +275,7 @@ How to run
 ==========
 
 Example Output when run on 16 nodes with 8 MPI ranks-per-node used to generate data and four MPI ranks to compute the cheap approximation
--------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------------------------------
 
 .. code-block:: console
     :linenos:

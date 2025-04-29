@@ -14,8 +14,8 @@ sh = ch.sendh()
 sh.open()
 
 # create a message we will keep sending over and over again
-sm=Message().create_alloc(512)
-mb=sm.bytes_memview()
+sm = Message().create_alloc(512)
+mb = sm.bytes_memview()
 mb[1] = b"K"
 mb[511] = b"b"
 

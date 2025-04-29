@@ -31,5 +31,6 @@ class PolicyTester(unittest.TestCase):
 
         self.assertInstance(Policy.global_policy(), dragon.infrastructure.policy.Policy)
 
+
 if __name__ == "__main__":
     unittest.main()

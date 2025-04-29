@@ -9,13 +9,14 @@ import operator
 import gc
 
 import test.support
-try: 
+
+try:
     from test.support.import_helper import import_module
-    from test.support.threading_helper import join_thread 
+    from test.support.threading_helper import join_thread
 except ImportError:
-    #location prior to Python 3.10
+    # location prior to Python 3.10
     from test.support import import_module
-    from test.support import join_thread 
+    from test.support import join_thread
 
 
 import threading
@@ -100,9 +101,7 @@ def check_enough_semaphores():
         return
     if nsems == -1 or nsems >= nsems_min:
         return
-    raise unittest.SkipTest(
-        "The OS doesn't support enough semaphores " "to run the test (required: %d)." % nsems_min
-    )
+    raise unittest.SkipTest("The OS doesn't support enough semaphores " "to run the test (required: %d)." % nsems_min)
 
 
 #
@@ -320,6 +319,7 @@ start_method = "dragon"
 
 dangling = [None, None]
 old_start_method = [None]
+
 
 # DRAGON this was the init code in setUpModule()
 def setUpModule():

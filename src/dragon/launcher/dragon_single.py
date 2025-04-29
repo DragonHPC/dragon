@@ -36,21 +36,21 @@ TIMEOUT_PATIENCE = 1  # seconds, 1 second.
 # time to yield to let other things happen esp in unexpected shutdowns.
 TIMEOUT_YIELD = 0.200  # seconds, 200 milliseconds
 
-LOGBASE = 'launcher'
+LOGBASE = "launcher"
 
 
 def ls_start(ls_args):
-    log = logging.getLogger(LOGBASE).getChild('ls_start')
+    log = logging.getLogger(LOGBASE).getChild("ls_start")
     try:
         dsls.single(**ls_args)
-        log.info('normal exit')
+        log.info("normal exit")
     except RuntimeError:
-        log.exception('fail exit')
+        log.exception("fail exit")
 
 
 def build_stdmsg(msg, arg_map, is_stdout=True):
-    if arg_map['no_label']:
-        return f'{msg.data}'
+    if arg_map["no_label"]:
+        return f"{msg.data}"
 
     msg_str = ""
     if is_stdout:
@@ -58,16 +58,17 @@ def build_stdmsg(msg, arg_map, is_stdout=True):
     else:
         msg_str += "[stderr: "
 
-    if arg_map['verbose_label']:
+    if arg_map["verbose_label"]:
         msg_str += f"PID {msg.pid} @ {msg.hostname}]"
-    elif arg_map['basic_label']:
+    elif arg_map["basic_label"]:
         msg_str += f"Dragon PID {msg.p_uid}]"
 
     msg_str += f" {msg.data}"
     return msg_str
 
+
 def output_monitor(la_in):
-    arg_map = launchargs.get_args() # Get args once to check decoration options
+    arg_map = launchargs.get_args()  # Get args once to check decoration options
     while True:
         msg = dmsg.parse(la_in.recv())
         if isinstance(msg, dmsg.SHFwdOutput):
@@ -81,17 +82,20 @@ def output_monitor(la_in):
                 sys.stderr.flush()
         elif isinstance(msg, dmsg.GSProcessCreateResponse):
             if msg.err != msg.Errors.SUCCESS:
-                print('+++ head proc did not start')
+                print("+++ head proc did not start")
                 return LAUNCHER_FAIL_EXIT
         elif isinstance(msg, dmsg.GSHeadExit):
-            print('+++ head proc exited, code {}'.format(msg.exit_code))
+            print("+++ head proc exited, code {}".format(msg.exit_code))
             return msg.exit_code
         elif isinstance(msg, dmsg.Breakpoint):
-            log = logging.getLogger(LOGBASE).getChild('breakpoint')
-            log.info(f'p_uid {msg.p_uid} node {msg.index}')
+            log = logging.getLogger(LOGBASE).getChild("breakpoint")
+            log.info(f"p_uid {msg.p_uid} node {msg.index}")
             dds.handle_breakpoint(msg)
+        elif isinstance(msg, dmsg.AbnormalTermination):
+            print(f"\n+++ Abnormal Termination of Dragon run-time with message:\n{msg.err_info}", flush=True)
+            return -1 # Something else?
         else:
-            print('unexpected message: {}'.format(msg))
+            print("unexpected message: {}".format(msg))
 
 
 def shutdown_monitor(la_in):
@@ -114,29 +118,27 @@ def main():
     arg_map = launchargs.get_args()
 
     try:
-        runtime_ip_addr = dutil.get_external_ip_addr().split(':')[0]
+        runtime_ip_addr = dutil.get_external_ip_addr().split(":")[0]
     except OSError:
         runtime_ip_addr = None
-    
-    if runtime_ip_addr is not None: 
-        os.environ['DRAGON_FE_EXTERNAL_IP_ADDR'] = runtime_ip_addr
-        os.environ['DRAGON_HEAD_NODE_IP_ADDR'] = runtime_ip_addr
-        os.environ['DRAGON_RT_UID'] = str(dutil.rt_uid_from_ip_addrs(runtime_ip_addr, runtime_ip_addr))
 
-    dlog.setup_FE_logging(log_device_level_map=arg_map['log_device_level_map'],
-                          basename='dragon', basedir=os.getcwd())
+    if runtime_ip_addr is not None:
+        os.environ["DRAGON_FE_EXTERNAL_IP_ADDR"] = runtime_ip_addr
+        os.environ["DRAGON_HEAD_NODE_IP_ADDR"] = runtime_ip_addr
+        os.environ["DRAGON_RT_UID"] = str(dutil.rt_uid_from_ip_addrs(runtime_ip_addr, runtime_ip_addr))
 
-    log = logging.getLogger(LOGBASE).getChild('main')
-    log.info(f'start in pid {os.getpid()}, pgid {os.getpgid(0)}')
+    dlog.setup_FE_logging(log_device_level_map=arg_map["log_device_level_map"], basename="dragon", basedir=os.getcwd())
+
+    log = logging.getLogger(LOGBASE).getChild("main")
+    log.info(f"start in pid {os.getpid()}, pgid {os.getpgid(0)}")
 
     start_msg = dlutil.mk_head_proc_start_msg()
 
     ls_stdin = dlutil.SRQueue()
     ls_stdout = dlutil.SRQueue()
-    ls_args = {'ls_stdin': ls_stdin, 'ls_stdout': ls_stdout}
+    ls_args = {"ls_stdin": ls_stdin, "ls_stdout": ls_stdout}
 
-    ls_thread = threading.Thread(name='local services', target=ls_start,
-                                 args=(ls_args,), daemon=True)
+    ls_thread = threading.Thread(name="local services", target=ls_start, args=(ls_args,), daemon=True)
 
     shm_status = dutil.survey_dev_shm()
 
@@ -161,14 +163,13 @@ def main():
 
         assert isinstance(ch_up, dmsg.SHChannelsUp)
     except (AssertionError, dch.ChannelError, TimeoutError) as err:
-        log.exception('ls startup')
-        print(f'ls startup failed:\n{err}')
+        log.exception("ls startup")
+        print(f"ls startup failed:\n{err}")
         dutil.compare_dev_shm(shm_status)
         return LAUNCHER_FAIL_EXIT
 
     try:  # gs startup
-        gs_thread = threading.Thread(name='global services', target=dgs.single_thread,
-                                     args=(ls_in_wh,), daemon=True)
+        gs_thread = threading.Thread(name="global services", target=dgs.single_thread, args=(ls_in_wh,), daemon=True)
         gs_thread.start()
 
         # Set a long timeout for DST
@@ -176,16 +177,16 @@ def main():
         assert isinstance(gs_up, dmsg.GSIsUp)
         gs_in_wh.send(start_msg.serialize())
     except (AssertionError, TimeoutError) as err:
-        log.exception('gs startup')
-        print(f'gs startup failed:\n{err}')
+        log.exception("gs startup")
+        print(f"gs startup failed:\n{err}")
         dutil.compare_dev_shm(shm_status)
         return LAUNCHER_FAIL_EXIT
 
     try:
         exit_code = output_monitor(la_in_rh)
     except KeyboardInterrupt:
-        print('KeyboardInterrupt - going to teardown')
-        log.warning('KeyboardInterrupt - tearing down')
+        print("KeyboardInterrupt - going to teardown")
+        log.warning("KeyboardInterrupt - tearing down")
         exit_code = LAUNCHER_FAIL_EXIT
 
     try:
@@ -199,28 +200,28 @@ def main():
         sh_halt = dmsg.parse(ls_stdout.recv())
 
         if not isinstance(gs_halt, dmsg.GSHalted):
-            log.warning(f'expected GSHalted got {gs_halt}')
+            log.warning(f"expected GSHalted got {gs_halt}")
 
         if not isinstance(be_halt, dmsg.SHHaltBE):
-            log.warning(f'expected SHHaltBE got {be_halt}')
+            log.warning(f"expected SHHaltBE got {be_halt}")
 
         if not isinstance(sh_halt, dmsg.SHHalted):
-            log.warning(f'expected SHHalted got {sh_halt}')
+            log.warning(f"expected SHHalted got {sh_halt}")
     except TimeoutError:
-        log.exception('teardown error')
+        log.exception("teardown error")
 
     try:
         gs_thread.join(timeout=TIMEOUT_PATIENCE)
         ls_thread.join(timeout=TIMEOUT_PATIENCE)
     except TimeoutError:
-        log.warning('infrastructure thread hang')
-        print('warning: infrastructure thread hang')
+        log.warning("infrastructure thread hang")
+        print("warning: infrastructure thread hang")
 
     dutil.compare_dev_shm(shm_status)
 
     return exit_code
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     ecode = main()
     sys.exit(ecode)

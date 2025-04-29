@@ -13,8 +13,7 @@ from ...infrastructure.util import NewlineStreamWrapper
 
 
 class NetworkConfigState(Enum):
-    """Enumerated states of Dragon FrontEnd
-    """
+    """Enumerated states of Dragon FrontEnd"""
 
     NONE = 0
     IN_PROGRESS = 1
@@ -28,15 +27,17 @@ class BaseNetworkConfig(ABC):
         self.NNODES = nnodes
         self.NETWORK_CFG_HELPER_LAUNCH_CMD = [
             "dragon-network-config-launch-helper",
-            "--network-prefix", f"{network_prefix}",
-            "--port", f"{port}",
+            "--network-prefix",
+            f"{network_prefix}",
+            "--port",
+            f"{port}",
         ]
         self.NETWORK_CFG_HELPER_LAUNCH_SHELL_CMD = [
             "dragon-network-config-launch-helper",
-            "--network-prefix", f"{quote(network_prefix)}",
-            "--port", f"{port}",
-
-
+            "--network-prefix",
+            f"{quote(network_prefix)}",
+            "--port",
+            f"{port}",
         ]
         self.NET_CONF_CACHE = this_process.net_conf_cache
 
@@ -77,7 +78,7 @@ class BaseNetworkConfig(ABC):
             lines = []
             node_descriptor_count = len(self.node_descriptors.keys())
             if last_node_descriptor_count != node_descriptor_count:
-                self.LOGGER.debug(f'received {node_descriptor_count} of {self.NNODES} expected NodeDescriptors')
+                self.LOGGER.debug(f"received {node_descriptor_count} of {self.NNODES} expected NodeDescriptors")
                 last_node_descriptor_count = node_descriptor_count
 
             if self.config_helper.poll():  # Is the helper process still running?
@@ -91,7 +92,7 @@ class BaseNetworkConfig(ABC):
                     err_line = stderr_stream.recv()
                     if len(err_line) != 0:
                         _, msg = err_line.split(": ", maxsplit=1)
-                        print(f'Network Config Error Detected: {msg}', flush=True)
+                        print(f"Network Config Error Detected: {msg}", flush=True)
                 # sattach returns an empty string if nothing to report. ignore
                 if line == "":
                     break
@@ -104,10 +105,10 @@ class BaseNetworkConfig(ABC):
                     break
                 else:
                     _, msg = err_line.split(": ", maxsplit=1)
-                    print(f'Network Config Error Detected: {msg}', flush=True)
+                    print(f"Network Config Error Detected: {msg}", flush=True)
 
             for line in lines:
-                self.LOGGER.debug(f'{line=}')
+                self.LOGGER.debug(f"{line=}")
                 node_index, node_desc = line.split(": ", maxsplit=1)
                 if " " in node_index:
                     node_index = node_index.split(" ")[-1]
@@ -116,18 +117,16 @@ class BaseNetworkConfig(ABC):
                     node = NodeDescriptor.from_sdict(json.loads(node_desc))
                     node_returns += 1
                     if len(node.ip_addrs) > 0:
-                        self.node_descriptors[
-                        str(node_index)
-                        ] = node
+                        self.node_descriptors[str(node_index)] = node
 
-        self.LOGGER.debug(f'received {self.NNODES} of {self.NNODES} expected NodeDescriptors')
+        self.LOGGER.debug(f"received {self.NNODES} of {self.NNODES} expected NodeDescriptors")
 
     def _sigint_teardown(self):
         """Safely teardown network config infrastructure"""
 
         try:
             if self.config_helper.is_alive():
-                self.LOGGER.info('Transmitting SIGINT to config helper')
+                self.LOGGER.info("Transmitting SIGINT to config helper")
                 self.config_helper.send_signal(signal.SIGINT)
                 self.config_helper.wait()
         except AttributeError:
@@ -136,11 +135,9 @@ class BaseNetworkConfig(ABC):
         raise KeyboardInterrupt
 
     def _sigint_handler(self, *args):
-        """Handler for SIGINT signals for graceful teardown
-        """
+        """Handler for SIGINT signals for graceful teardown"""
         self._sigint_triggered = True
-        if self._state == NetworkConfigState.NONE or \
-           self._state == NetworkConfigState.CONFIG_DONE:
+        if self._state == NetworkConfigState.NONE or self._state == NetworkConfigState.CONFIG_DONE:
             self._sigint_teardown()
 
     @abstractmethod
@@ -148,20 +145,16 @@ class BaseNetworkConfig(ABC):
         raise NotImplementedError
 
     def load_net_conf_cache(self):
-        """
-        """
+        """ """
         if os.path.isfile(self.NET_CONF_CACHE):
             try:
-                with open(self.NET_CONF_CACHE, 'r') as inf:
+                with open(self.NET_CONF_CACHE, "r") as inf:
                     data = json.load(inf)
 
-                    if data['wlm'] == self.wlm and \
-                       data['job_id'] == self._get_wlm_job_id():
+                    if data["wlm"] == self.wlm and data["job_id"] == self._get_wlm_job_id():
                         self.LOGGER.debug("Loading cached network data")
-                        for node_index, node_desc in data['nodes'].items():
-                            self.node_descriptors[
-                                str(node_index)
-                            ] = NodeDescriptor.from_sdict(node_desc)
+                        for node_index, node_desc in data["nodes"].items():
+                            self.node_descriptors[str(node_index)] = NodeDescriptor.from_sdict(node_desc)
                         return
 
             except (ValueError, json.JSONDecodeError):
@@ -171,14 +164,11 @@ class BaseNetworkConfig(ABC):
             os.remove(self.NET_CONF_CACHE)
 
     def save_net_conf_cache(self) -> None:
-        with open(self.NET_CONF_CACHE, 'w', encoding='utf-8') as outf:
+        with open(self.NET_CONF_CACHE, "w", encoding="utf-8") as outf:
             data = {
-                'wlm': self.wlm,
-                'job_id': self._get_wlm_job_id(),
-                'nodes': {
-                    node_id: node_desc.get_sdict()
-                    for node_id, node_desc in self.node_descriptors.items()
-                }
+                "wlm": self.wlm,
+                "job_id": self._get_wlm_job_id(),
+                "nodes": {node_id: node_desc.get_sdict() for node_id, node_desc in self.node_descriptors.items()},
             }
             json.dump(data, outf, ensure_ascii=False, indent=4)
 

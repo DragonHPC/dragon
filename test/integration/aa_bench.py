@@ -7,25 +7,21 @@ import threading
 
 
 def get_args():
-    parser = argparse.ArgumentParser(description='All-all connection/queue test')
+    parser = argparse.ArgumentParser(description="All-all connection/queue test")
 
-    parser.add_argument('--num_workers', type=int, default=4,
-                        help='number of workers in all-all')
+    parser.add_argument("--num_workers", type=int, default=4, help="number of workers in all-all")
 
-    parser.add_argument('--iterations', type=int, default=100,
-                        help='number of iterations to do')
+    parser.add_argument("--iterations", type=int, default=100, help="number of iterations to do")
 
-    parser.add_argument('--burn_iterations', type=int, default=5,
-                        help='number of iterations to burn first time')
+    parser.add_argument("--burn_iterations", type=int, default=5, help="number of iterations to burn first time")
 
-    parser.add_argument('--lg_message_size', type=int, default=4,
-                        help='log base 2 of msg size between each pair')
+    parser.add_argument("--lg_message_size", type=int, default=4, help="log base 2 of msg size between each pair")
 
-    parser.add_argument('--dragon', action='store_true', help='run with dragon objs')
-    parser.add_argument('--queues', action='store_true', help='measure aa with per-worker queues')
+    parser.add_argument("--dragon", action="store_true", help="run with dragon objs")
+    parser.add_argument("--queues", action="store_true", help="measure aa with per-worker queues")
     my_args = parser.parse_args()
 
-    assert my_args.lg_message_size <= 24, 'arbitrary limit: 16MB message size'
+    assert my_args.lg_message_size <= 24, "arbitrary limit: 16MB message size"
 
     return my_args
 
@@ -102,16 +98,17 @@ def run_test(with_queues, nworkers, its, burns, msg_sz):
     result_links = [multiprocessing.Pipe(duplex=False) for _ in range(nworkers)]
 
     if with_queues:
-        print(f'using {nworkers} Queues')
+        print(f"using {nworkers} Queues")
         queues = [multiprocessing.Queue(maxsize=nworkers) for _ in range(nworkers)]
 
-        all_workers = [multiprocessing.Process(target=test_worker_queue,
-                                               args=(queues, i,
-                                                     result_links[i][1], msg_sz,
-                                                     total_iterations))
-                       for i in range(nworkers)]
+        all_workers = [
+            multiprocessing.Process(
+                target=test_worker_queue, args=(queues, i, result_links[i][1], msg_sz, total_iterations)
+            )
+            for i in range(nworkers)
+        ]
     else:
-        print(f'using {nworkers * (nworkers - 1) // 2} Pipes')
+        print(f"using {nworkers * (nworkers - 1) // 2} Pipes")
         all_links = {}
 
         # full duplex links; nworkers * (nworkers-1)/2 of them
@@ -128,9 +125,9 @@ def run_test(with_queues, nworkers, its, burns, msg_sz):
                 if k != i:
                     links.append(all_links[min(i, k), max(i, k)][int(k < i)])
 
-            proc = multiprocessing.Process(target=test_worker_conn,
-                                           args=(links, result_links[i][1],
-                                                 msg_sz, total_iterations))
+            proc = multiprocessing.Process(
+                target=test_worker_conn, args=(links, result_links[i][1], msg_sz, total_iterations)
+            )
 
             all_workers.append(proc)
 
@@ -147,14 +144,14 @@ def run_test(with_queues, nworkers, its, burns, msg_sz):
     avg_aa_completion_time = sum(avg_times) / nworkers  # seconds
     bandwidth = msg_sz * nworkers / avg_aa_completion_time  # bytes/second
 
-    msg_size_in_k = msg_sz / (2 ** 10)
-    bw_in_mb_sec = bandwidth / (2 ** 20)
+    msg_size_in_k = msg_sz / (2**10)
+    bw_in_mb_sec = bandwidth / (2**20)
     completion_time_in_ms = avg_aa_completion_time * 1000
 
     for worker in all_workers:
         worker.join()
 
-    print(f'{nworkers=} {its=} {msg_size_in_k=} {completion_time_in_ms=:.3f} {bw_in_mb_sec=:.2f}')
+    print(f"{nworkers=} {its=} {msg_size_in_k=} {completion_time_in_ms=:.3f} {bw_in_mb_sec=:.2f}")
 
 
 def main():
@@ -164,19 +161,23 @@ def main():
         import dragon.infrastructure.parameters as dparms
 
         if dparms.this_process.my_puid <= 1:
-            print('not running under dragon infrastructure, exiting')
+            print("not running under dragon infrastructure, exiting")
             exit(-3)
 
-        print('using dragon runtime')
-        multiprocessing.set_start_method('dragon')
+        print("using dragon runtime")
+        multiprocessing.set_start_method("dragon")
     else:
-        print('using regular mp libs/calls')
-        multiprocessing.set_start_method('spawn')
+        print("using regular mp libs/calls")
+        multiprocessing.set_start_method("spawn")
 
-    run_test(with_queues=args.queues, nworkers=args.num_workers,
-             msg_sz=2 ** args.lg_message_size,
-             its=args.iterations, burns=args.burn_iterations)
+    run_test(
+        with_queues=args.queues,
+        nworkers=args.num_workers,
+        msg_sz=2**args.lg_message_size,
+        its=args.iterations,
+        burns=args.burn_iterations,
+    )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     exit(main())

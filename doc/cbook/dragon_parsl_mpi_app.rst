@@ -1,18 +1,18 @@
-An example Parsl `@mpi_app` using Dragon based executor
-=================================================
+Example Parsl `@mpi_app` Using Dragon Based Executor
+++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 This shows an example workflow using Parsl with Dragon. In this example we use a Dragon implementation of the `@mpi_app` decorator and the `DragonMPIExecutor`. The executor expects five arguments to be returned from the decorated function: the executable, the directory containing the executable, the policy for process placement, the number of MPI processes to launch, and the arguments to pass to the executable. The arguments are expected to be returned in this order. The executor returns a future thats result is a dictionary containing a connection to stdin and stdout to rank 0.
 
-In this example we compute the factorial of the largest MPI rank. We multiply this factorial by a scale factor that is sent using the stdin connection and add a bias to the scaled factorial that is passed to the MPI app via the args. The result is printed out by rank 0 and received by the head process from the stdout connection. This result is printed out and compared to the expected exact solution.  
+In this example we compute the factorial of the largest MPI rank. We multiply this factorial by a scale factor that is sent using the stdin connection and add a bias to the scaled factorial that is passed to the MPI app via the args. The result is printed out by rank 0 and received by the head process from the stdout connection. This result is printed out and compared to the expected exact solution.
 
 .. code-block:: python
     :linenos:
     :caption: parsl_mpi_app_demo.py: Example of running a Parsl MPI App with DragonMPIExecutor
-    
+
     import dragon
     import multiprocessing as mp
 
-    from dragon.workflows.parsl_mpi_app import mpi_app, DragonMPIExecutor 
+    from dragon.workflows.parsl_mpi_app import mpi_app, DragonMPIExecutor
     from dragon.infrastructure.connection import Connection
     from dragon.infrastructure.policy import Policy
     import parsl
@@ -21,7 +21,7 @@ In this example we compute the factorial of the largest MPI rank. We multiply th
 
     @mpi_app
     def mpi_factorial_app(num_ranks: int, bias: float, policy: Policy = None):
-        """Example of what an mpi_app needs to return. The ordering of these arguments is important. 
+        """Example of what an mpi_app needs to return. The ordering of these arguments is important.
 
         :param num_ranks: number of mpi ranks
         :type num_ranks: int
@@ -115,9 +115,9 @@ The program output can be seen below:
     :linenos:
     :caption: **Output when running parsl_mpi_app_demo.py**
 
-    > salloc -N 2 
+    > salloc -N 2
     > make
     gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.27/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.27/ofi/gnu/9.1/lib   -c -o factorial.o factorial.c
     gcc -g  -pedantic -Wall -I /opt/cray/pe/mpich/8.1.27/ofi/gnu/9.1/include -L /opt/cray/pe/mpich/8.1.27/ofi/gnu/9.1/lib  factorial.o -o factorial -lm -L /opt/cray/pe/mpich/8.1.27/ofi/gnu/9.1/lib -lmpich
     >$dragon dragon parsl_mpi_app_demo.py
-    mpi computation: 0.000100 * 362880.000000 + 10.000000 = 46.288000 , exact = 46.288000000000004 
+    mpi computation: 0.000100 * 362880.000000 + 10.000000 = 46.288000 , exact = 46.288000000000004

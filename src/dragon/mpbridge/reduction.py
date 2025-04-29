@@ -1,6 +1,6 @@
 """Dragon's replacements for Multiprocessings 'reduction' module.
 
-To prevent users from sharing file descriptors between child processes, we always 
+To prevent users from sharing file descriptors between child processes, we always
 raise an exception.
 
 See the documentation 'Multiprocessing with Dragon'.

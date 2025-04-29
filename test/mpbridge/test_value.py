@@ -8,7 +8,6 @@ from dragon.native.lock import (
 from dragon.mpbridge.sharedctypes import (
     Value,
 )
-import ctypes
 from ctypes import Structure, c_double
 from multiprocessing import Process
 
@@ -19,6 +18,11 @@ def modify(value):
 
 class Point(Structure):
     _fields_ = [("x", c_double), ("y", c_double)]
+
+
+def _double(foo):
+    foo.x *= 2
+    foo.y *= 2
 
 
 class TestValue(unittest.TestCase):
@@ -67,6 +71,20 @@ class TestValue(unittest.TestCase):
         v.value.y = 100
         self.assertEqual(v.value.x, 100, "Assignment to x in Point did not happen properly")
         self.assertEqual(v.value.y, 100, "Assignment to y in Point did not happen properly")
+
+    def test_pickled_structure(self):
+        """test that Value can handle Structure"""
+        v = Value(Point, (10, 10))
+        self.assertEqual(v.value.x, 10, "Assignment to x in Point did not happen properly")
+        self.assertEqual(v.value.y, 10, "Assignment to y in Point did not happen properly")
+
+        p = Process(target=_double, args=(v,))
+        p.daemon = True
+        p.start()
+        p.join()
+
+        self.assertEqual(v.value.x, 20, "Assignment to x in Point did not happen properly")
+        self.assertEqual(v.value.y, 20, "Assignment to y in Point did not happen properly")
 
     def proc_test_float_power(self):
         value = Value(c_double, 1.0 / 3.0)

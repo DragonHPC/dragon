@@ -61,7 +61,8 @@ cdef extern from "<dragon/managed_memory.h>":
     ctypedef enum dragonMemoryAllocationType_t:
         DRAGON_MEMORY_ALLOC_DATA = 0,
         DRAGON_MEMORY_ALLOC_CHANNEL,
-        DRAGON_MEMORY_ALLOC_CHANNEL_BUFFER
+        DRAGON_MEMORY_ALLOC_CHANNEL_BUFFER,
+        DRAGON_MEMORY_ALLOC_BOOTSTRAP
 
     ctypedef struct dragonMemoryDescr_t:
         pass
@@ -78,6 +79,15 @@ cdef extern from "<dragon/managed_memory.h>":
         uint8_t * data
 
     ctypedef struct dragonMemoryPoolAttr_t:
+        size_t allocatable_data_size
+        size_t total_data_size
+        size_t free_space
+        double utilization_pct
+        size_t data_min_block_size
+        size_t max_allocations
+        size_t waiters_for_manifest
+        size_t manifest_entries
+        size_t max_manifest_entries
         size_t npre_allocs
         size_t * pre_allocs
 
@@ -98,18 +108,16 @@ cdef extern from "<dragon/managed_memory.h>":
     dragonError_t dragon_memory_pool_descr_clone(dragonMemoryPoolDescr_t * newpool_descr, const dragonMemoryPoolDescr_t * oldpool_descr) nogil
     dragonError_t dragon_memory_pool_serial_free(dragonMemoryPoolSerial_t * pool_ser) nogil
     dragonError_t dragon_memory_pool_get_allocations(dragonMemoryPoolDescr_t * pool_descr, dragonMemoryPoolAllocations_t * allocs) nogil
-    dragonError_t dragon_memory_pool_allocation_exists(dragonMemoryPoolDescr_t * pool_descr,
-                                                             dragonMemoryAllocationType_t type,
-                                                             uint64_t id,
-                                                             int * flag) nogil
+    dragonError_t dragon_memory_pool_get_type_allocations(const dragonMemoryPoolDescr_t * pool_descr, const dragonMemoryAllocationType_t type,
+                                        dragonMemoryPoolAllocations_t * allocs) nogil
+    dragonError_t dragon_memory_pool_allocation_exists(dragonMemoryDescr_t * mem_descr, int * flag) nogil
     dragonError_t dragon_memory_pool_allocations_destroy(dragonMemoryPoolAllocations_t * allocs) nogil
     dragonError_t dragon_memory_pool_get_uid_fname(const dragonMemoryPoolSerial_t * pool_ser, dragonULInt * uid_out, char ** fname) nogil
-    dragonError_t dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr,
-                                                         dragonMemoryPoolDescr_t * pool_descr,
-                                                         dragonMemoryAllocationType_t type,
+    dragonError_t dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, dragonMemoryPoolDescr_t * pool_descr,
                                                          uint64_t type_id, uint64_t offset, const dragonULInt* bytes_size) nogil
     dragonError_t dragon_memory_attr_init(dragonMemoryPoolAttr_t * attr) nogil
     dragonError_t dragon_memory_attr_destroy(dragonMemoryPoolAttr_t * attr) nogil
+    dragonError_t dragon_memory_get_attr(dragonMemoryPoolDescr_t * pool_descr, dragonMemoryPoolAttr_t * attr) nogil
     bool dragon_memory_pool_is_local(dragonMemoryPoolDescr_t * pool_descr) nogil
     dragonError_t dragon_memory_pool_muid(dragonMemoryPoolDescr_t* pool_descr, dragonULInt* muid) nogil
     dragonError_t dragon_memory_pool_get_free_size(dragonMemoryPoolDescr_t* pool_descr, uint64_t* free_size) nogil
@@ -124,19 +132,33 @@ cdef extern from "<dragon/managed_memory.h>":
     # Memory allocation actions
     dragonError_t dragon_memory_alloc(dragonMemoryDescr_t * mem_descr, dragonMemoryPoolDescr_t * pool_descr, size_t bytes) nogil
     dragonError_t dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, dragonMemoryPoolDescr_t * pool_descr, size_t bytes, timespec_t* timer) nogil
+    dragonError_t dragon_memory_alloc_type(dragonMemoryDescr_t * mem_descr, dragonMemoryPoolDescr_t * pool_descr, size_t bytes, dragonMemoryAllocationType_t type) nogil
+    dragonError_t dragon_memory_alloc_type_blocking(dragonMemoryDescr_t * mem_descr, dragonMemoryPoolDescr_t * pool_descr, size_t bytes, dragonMemoryAllocationType_t type, timespec_t* timer) nogil
     dragonError_t dragon_memory_free(dragonMemoryDescr_t * mem_descr) nogil
     dragonError_t dragon_memory_serialize(dragonMemorySerial_t * mem_ser, const dragonMemoryDescr_t * mem_descr) nogil
     dragonError_t dragon_memory_serial_free(dragonMemorySerial_t * mem_ser) nogil
     dragonError_t dragon_memory_attach(dragonMemoryDescr_t * mem_descr, dragonMemorySerial_t * mem_ser) nogil
     dragonError_t dragon_memory_detach(dragonMemoryDescr_t * mem_descr) nogil
+    dragonError_t dragon_memory_id(dragonMemoryDescr_t * mem_descr, uint64_t* id) nogil
+    dragonError_t dragon_memory_from_id(const dragonMemoryPoolDescr_t * pool_descr, uint64_t id, dragonMemoryDescr_t * mem_descr) nogil
     dragonError_t dragon_memory_get_pointer(dragonMemoryDescr_t * mem_descr, void ** ptr) nogil
     dragonError_t dragon_memory_get_size(dragonMemoryDescr_t * mem_descr, size_t * bytes) nogil
     dragonError_t dragon_memory_descr_clone(dragonMemoryDescr_t * newmem_descr, const dragonMemoryDescr_t * oldmem_descr, ptrdiff_t offset, size_t * custom_length) nogil
     dragonError_t dragon_memory_hash(dragonMemoryDescr_t* mem_descr, dragonULInt* hash_value) nogil
     dragonError_t dragon_memory_equal(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result) nogil
+    dragonError_t dragon_memory_is(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result) nogil
     dragonError_t dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout)
     dragonError_t dragon_memory_get_pool(const dragonMemoryDescr_t * mem_descr, dragonMemoryPoolDescr_t * pool_descr) nogil
     dragonError_t dragon_memory_clear(dragonMemoryDescr_t* mem_descr, size_t start, size_t stop) nogil
+
+    # Memory utility functions
+    dragonError_t dragon_create_process_local_pool(dragonMemoryPoolDescr_t* pool, size_t bytes, const char* name, dragonMemoryPoolAttr_t * attr, const timespec_t* timeout) nogil
+    dragonError_t dragon_register_process_local_pool(dragonMemoryPoolDescr_t* pool, const timespec_t* timeout) nogil
+    dragonError_t dragon_deregister_process_local_pool(dragonMemoryPoolDescr_t* pool, const timespec_t* timeout) nogil
+
+    # Memory debug functions
+    dragonError_t dragon_memory_manifest_info(dragonMemoryDescr_t * mem_descr, dragonULInt* type, dragonULInt* type_id)
+    void dragon_memory_set_debug_flag(int the_flag)
 
 cdef extern from "<dragon/channels.h>":
 
@@ -165,6 +187,10 @@ cdef extern from "<dragon/channels.h>":
         DRAGON_CHANNEL_POLLBARRIER_ISBROKEN,
         DRAGON_CHANNEL_POLLBARRIER_WAITERS,
         DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS
+        DRAGON_SEMAPHORE_P
+        DRAGON_SEMAPHORE_V
+        DRAGON_SEMAPHORE_VZ
+        DRAGON_SEMAPHORE_PEEK
 
     ctypedef enum dragonChannelFlags_t:
         DRAGON_CHANNEL_FLAGS_NONE,
@@ -202,6 +228,9 @@ cdef extern from "<dragon/channels.h>":
         size_t num_avail_blocks
         bool broken_barrier
         int barrier_count
+        bool semaphore
+        bool bounded
+        dragonULInt initial_sem_value
 
     ctypedef struct dragonChannelDescr_t:
         uint64_t _idx
@@ -273,7 +302,7 @@ cdef extern from "<dragon/channels.h>":
     dragonError_t dragon_channel_get_pool(const dragonChannelDescr_t * ch, dragonMemoryPoolDescr_t * pool_descr) nogil
     bint dragon_channel_is_local(const dragonChannelDescr_t * ch) nogil
     dragonError_t dragon_channel_poll(const dragonChannelDescr_t * ch, dragonWaitMode_t wait_mode, const uint8_t event_mask, timespec_t * timeout, dragonULInt* result) nogil
-    dragonError_t dragon_channel_get_uid_type(const dragonChannelSerial_t * ch_ser, dragonULInt * uid_out, dragonULInt * type_out) nogil
+    dragonError_t dragon_channel_get_uid(const dragonChannelSerial_t * ch_ser, dragonULInt * uid_out) nogil
     dragonError_t dragon_channel_pool_get_uid_fname(const dragonChannelSerial_t * ch_ser, dragonULInt * pool_uid_out, char ** pool_fname_out) nogil
 
     # Attributes
@@ -327,7 +356,8 @@ cdef extern from "<dragon/channels.h>":
 
     # Utility functions
     void dragon_gatewaymessage_silence_timeouts() nogil
-    dragonError_t dragon_create_process_local_channel(dragonChannelDescr_t* ch, const timespec_t* timeout) nogil
+    dragonError_t dragon_create_process_local_channel(dragonChannelDescr_t* ch, uint64_t block_size, uint64_t capacity, const timespec_t* timeout) nogil
+    dragonError_t dragon_destroy_process_local_channel(dragonChannelDescr_t* ch, const timespec_t* timeout) nogil
 
 cdef extern from "<dragon/channelsets.h>":
     ctypedef struct dragonChannelSetAttrs_t:
@@ -400,8 +430,11 @@ cdef extern from "_bitset.h":
     dragonError_t dragon_bitset_detach(dragonBitSet_t* set)
     dragonError_t dragon_bitset_set(dragonBitSet_t* set, const size_t val_index)
     dragonError_t dragon_bitset_reset(dragonBitSet_t* set, const size_t val_index)
-    dragonError_t dragon_bitset_get(const dragonBitSet_t* set, const size_t val_index, unsigned char* val)
+    dragonError_t dragon_bitset_get(const dragonBitSet_t* set, const size_t val_index, bool* val)
+    dragonError_t dragon_bitset_length(const dragonBitSet_t* set, size_t* length)
     dragonError_t dragon_bitset_zeroes_to_right(const dragonBitSet_t* set, const size_t val_index, size_t* val)
+    dragonError_t dragon_bitset_first(const dragonBitSet_t* set, size_t* first)
+    dragonError_t dragon_bitset_next(const dragonBitSet_t* set, const size_t current, size_t* next)
     dragonError_t dragon_bitset_dump(const char* title, const dragonBitSet_t* set, const char* indent)
     dragonError_t dragon_bitset_dump_to_fd(FILE* fd, const char* title, const dragonBitSet_t* set, const char* indent)
 
@@ -413,8 +446,8 @@ cdef extern from "_heap_manager.h":
         BLOCK_SIZE_MIN_POWER
 
     ctypedef struct dragonHeapStatsAllocationItem_t:
-        uint64_t block_size
-        uint64_t num_blocks
+        size_t block_size
+        size_t num_blocks
 
     ctypedef struct dragonHeapStats_t:
         uint64_t num_segments
@@ -429,28 +462,26 @@ cdef extern from "_heap_manager.h":
 
     ctypedef struct dragonDynHeap_t:
         uint64_t * base_pointer
-        uint64_t num_segments
+        uint64_t * num_waiting
         uint64_t segment_size
-        size_t num_freelists
-        size_t * recovery_needed_ptr
-        dragonBitSet_t block_set
-        dragonBitSet_t free_set
-        dragonDynHeapSegment_t ** free_lists
-        dragonDynHeapSegment_t * segments
-        void * end_ptr
+        uint64_t num_segments
+        uint64_t total_size
+        uint64_t num_block_sizes
+        uint64_t biggest_block
+        dragonBitSet_t* free
+        dragonBitSet_t preallocated
 
-    dragonError_t dragon_heap_size(const size_t max_block_size_power, const size_t min_block_size_power, const size_t alignment, const dragonLockKind_t lock_kind, size_t * size)
-    dragonError_t dragon_heap_init(void * ptr, dragonDynHeap_t* heap, const size_t max_block_size_power, const size_t min_block_size_power, const size_t alignment, const dragonLockKind_t lock_kind, const size_t* preallocated)
+    dragonError_t dragon_heap_size(const size_t max_block_size_power, const size_t min_block_size_power, const dragonLockKind_t lock_kind, size_t* size)
+    dragonError_t dragon_heap_init(void* ptr, dragonDynHeap_t* heap, const size_t max_block_size_power,  const size_t min_block_size_power, const dragonLockKind_t lock_kind, const size_t* preallocated)
     dragonError_t dragon_heap_attach(void* ptr, dragonDynHeap_t* heap)
     dragonError_t dragon_heap_destroy(dragonDynHeap_t * heap)
     dragonError_t dragon_heap_detach(dragonDynHeap_t * heap)
-    dragonError_t dragon_heap_malloc(dragonDynHeap_t * heap, const size_t size, void ** ptr)
-    dragonError_t dragon_heap_malloc_blocking(dragonDynHeap_t * heap, const size_t size, void ** ptr, timespec_t * timeout)
-    dragonError_t dragon_heap_free(dragonDynHeap_t * heap, void * ptr)
-    dragonError_t dragon_heap_recover(dragonDynHeap_t * heap)
-    dragonError_t dragon_heap_get_stats(const dragonDynHeap_t * heap, dragonHeapStats_t * data)
-    dragonError_t dragon_heap_dump(const char * title, const dragonDynHeap_t * heap)
-    dragonError_t dragon_heap_dump_to_fd(FILE * fd, const char * title, const dragonDynHeap_t * heap)
+    dragonError_t dragon_heap_malloc(dragonDynHeap_t* heap, const size_t size, void** offset)
+    dragonError_t dragon_heap_malloc_blocking(dragonDynHeap_t* heap, const size_t size, void** offset, const timespec_t * timer)
+    dragonError_t dragon_heap_free(dragonDynHeap_t* heap, void* offset, size_t size)
+    dragonError_t dragon_heap_get_stats(dragonDynHeap_t* heap, dragonHeapStats_t* data)
+    dragonError_t dragon_heap_dump(const char* title, dragonDynHeap_t* heap)
+    dragonError_t dragon_heap_dump_to_fd(FILE* fd, const char* title, dragonDynHeap_t* heap)
 
 cdef extern from "<dragon/utils.h>":
     dragonULInt dragon_get_local_rt_uid()
@@ -463,6 +494,7 @@ cdef extern from "<dragon/utils.h>":
     bool dragon_bytes_equal(void* ptr1, void* ptr2, size_t ptr1_numbytes, size_t ptr2_numbytes)
     dragonError_t dragon_ls_set_kv(const unsigned char* key, const unsigned char* value, const timespec_t* timeout) nogil
     dragonError_t dragon_ls_get_kv(const unsigned char* key, char** value, const timespec_t* timeout) nogil
+    dragonError_t dragon_get_hugepage_mount(char **mount_dir) nogil
 
 cdef extern from "<string.h>":
     size_t strlen(const char *s)
@@ -570,6 +602,7 @@ cdef extern from "<dragon/shared_lock.h>":
 cdef extern from "hostid.h":
     dragonULInt dragon_host_id()
     dragonError_t dragon_set_host_id(dragonULInt id)
+    dragonULInt dragon_host_id_from_k8s_uuid(char *pod_uid)
 
 cdef extern from "dragon/pmod.h":
 
@@ -640,7 +673,7 @@ cdef extern from "dragon/fli.h":
     dragonError_t dragon_fli_get_available_streams(dragonFLIDescr_t* adapter, uint64_t* num_streams, const timespec_t* timeout) nogil
     dragonError_t dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered) nogil
     dragonError_t dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandleDescr_t* send_handle,
-                                              dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, const timespec_t* timeout) nogil
+                                              dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, bool allow_strm_term, const timespec_t* timeout) nogil
     dragonError_t dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_handle,
                                                const timespec_t* timeout) nogil
     dragonError_t dragon_fli_open_recv_handle(const dragonFLIDescr_t* adapter, dragonFLIRecvHandleDescr_t* recv_handle,

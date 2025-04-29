@@ -24,8 +24,8 @@ sys.path.insert(0, os.path.abspath("."))
 # -- Project information -----------------------------------------------------
 
 project = "Dragon"
-DragonVersion = "0.10"
-copyright = "2024, Hewlett Packard Enterprise"
+DragonVersion = "0.11"
+copyright = "2025, DragonHPC"
 author = "Michael Burke, Yian Chen, Eric Cozzi, Zach Crisler, Julius Donnert, Veena Ghorakavi, Nick Hill, Maria Kalantzi, Ben Keen, Kent D. Lee, Pete Mendygral, Davin Potts, Nick Radcliffe, and Colin Wahl"
 
 # -- General configuration ---------------------------------------------------
@@ -42,8 +42,11 @@ extensions = [
     "sphinxfortran.fortran_domain",
     "sphinxfortran.fortran_autodoc",
     "sphinx_copybutton",
-    "sphinxcontrib.plantuml"
+    "sphinxcontrib.plantuml",
+    "sphinx_new_tab_link"
 ]
+
+tls_verify = False
 
 # autodoc_typehints = 'description'
 autodoc_typehints_format = "short"
@@ -55,6 +58,8 @@ autosummary_generate = True
 default_role = "code"
 
 intersphinx_mapping = {"python": ("https://docs.python.org/3", None)}
+html_show_sphinx = False
+new_tab_link_show_external_link_icon = True
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
@@ -75,6 +80,9 @@ autosectionlabel_maxdepth = None
 # provides numbering of figures for free.
 numfig = True
 
+# temporary as we worj through the docs
+exclude_patterns = ["old_devguide/*", "old_cython/*"]
+
 # -- Options for HTML output -------------------------------------------------
 
 # The theme to use for HTML and HTML Help pages.  See the documentation for
@@ -92,7 +100,9 @@ html_css_files = [
 ]
 
 # See https://sphinx-rtd-theme.readthedocs.io/en/stable/configuring.html
-html_theme_options = {}
+html_theme_options = {
+    "navigation_depth": 6
+}
 
 breathe_projects = {"dragon": "../src/doxygen/xml"}
 breathe_default_project = "dragon"

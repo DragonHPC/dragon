@@ -16,6 +16,7 @@ Nothing in here is user facing.
 Once there are a few things doing similar kinds of things in this file,
 they need to be broken out into another file.
 """
+
 from collections.abc import Iterable
 import fcntl
 import heapq
@@ -528,13 +529,14 @@ def port_check(ip_port):
 
 def get_port():
     host = gethostname()
-    min_port = 1025; max_port = 65536
+    min_port = 1025
+    max_port = 65536
 
     for port in range(min_port, max_port + 1):
         if port_check((host, port)):
             return port
 
-    raise RuntimeError('No available ports')
+    raise RuntimeError("No available ports")
 
 
 def get_host_info(network_prefix) -> tuple[str, str, list[str]]:
@@ -577,46 +579,6 @@ def get_host_info(network_prefix) -> tuple[str, str, list[str]]:
     return _user, ip_addrs
 
 
-class stack:
-    """This provides a traditional stack implementation for use in the dragon infrastructure."""
-
-    def __init__(self, initial_items=[]):
-        # A stack can be given an initial contents. The first item in initial_items will be on the bottom of the constructed stack.
-        self.items = []
-        for item in initial_items:
-            self.push(item)
-
-    def pop(self):
-        # Pop returns the last item pushed and raises a RuntimeError if the stack is currently empty.
-        if self.isEmpty():
-            raise RuntimeError("Attempt to pop an empty stack")
-
-        topIdx = len(self.items) - 1
-        item = self.items[topIdx]
-        del self.items[topIdx]
-        return item
-
-    def push(self, item):
-        # pushes an item onto the top of the stack
-        self.items.append(item)
-
-    def top(self):
-        # Top returns the top item of the stack or raises an RuntimeError if the stack is currently empty.
-        if self.isEmpty():
-            raise RuntimeError("Attempt to get top of empty stack")
-
-        topIdx = len(self.items) - 1
-        return self.items[topIdx]
-
-    def isEmpty(self):
-        # isEmpty returns true when the stack is not empty and false otherwise.
-        return len(self.items) == 0
-
-    def clear(self):
-        # Clears the stack of all items, resetting it to an empty stack.
-        self.items = []
-
-
 # get external IP address
 def get_external_ip_addr():
     s = socket(AF_INET, SOCK_DGRAM)
@@ -624,7 +586,7 @@ def get_external_ip_addr():
     connected = False
     try:
         # doesn't even have to be reachable
-        s.connect(('10.254.254.254', 1))
+        s.connect(("10.254.254.254", 1))
         connected = True
         ip_addr = s.getsockname()[0]
         s.close()

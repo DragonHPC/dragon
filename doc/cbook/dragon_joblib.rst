@@ -29,6 +29,8 @@ In alphabetical order, these are the following joblib use cases and their useful
 
 .. literalinclude:: ../../examples/multiprocessing/joblib/bench_auto_batching.py
 
+.. Code for autobatching
+
 The timing for the base multiprocessing runtime is:
 
 .. list-table:: Base Multiprocessing Timings for Bench Auto Batching
@@ -304,6 +306,8 @@ The timing for the multi-node Dragon runtime is:
 
 .. literalinclude:: ../../examples/multiprocessing/joblib/compressor_comparison.py
 
+.. Code for compressor comparision
+
 The timing for the base multiprocessing runtime is:
 
 .. list-table:: Base Multiprocessing Timings for Compressor Comparison
@@ -399,6 +403,8 @@ The timing for the multi-node Dragon runtime is:
 
 .. literalinclude:: ../../examples/multiprocessing/joblib/delayed_comparison.py
 
+.. Code for delayed comparison
+
 The timing for the base multiprocessing runtime is:
 
 .. list-table:: Base Multiprocessing Timings for Delayed Comparison
@@ -439,6 +445,8 @@ The timing for the multi-node Dragon runtime is:
      - 0.015844576992094517
 
 .. literalinclude:: ../../examples/multiprocessing/joblib/memory_basic_usage.py
+
+.. Code for memory basic usage
 
 The timing for the base multiprocessing runtime is:
 
@@ -498,6 +506,8 @@ The timing for the multi-node Dragon runtime is:
      - 0.02
 
 .. literalinclude:: ../../examples/multiprocessing/joblib/nested_parallel_memory.py
+
+.. Code for nested parallel memory
 
 The timing for the base multiprocessing runtime is:
 
@@ -576,6 +586,8 @@ The timing for the multi-node Dragon runtime is:
 
 .. literalinclude:: ../../examples/multiprocessing/joblib/parallel_memmap.py
 
+.. Code for parallel memmap
+
 The timing for the base multiprocessing runtime is:
 
 .. list-table:: Base Multiprocessing Timings for Parallel Memory Map
@@ -624,7 +636,9 @@ The timing for the multi-node Dragon runtime
 
 .. literalinclude:: ../../examples/multiprocessing/joblib/parallel_random_state.py
 
-  The timing for the base multiprocessing runtime is:
+
+
+The timing for the base multiprocessing runtime is:
 
 .. list-table:: Base Multiprocessing Timings for Parallel Random State
    :widths: 25 25
@@ -672,7 +686,9 @@ The timing for the multi-node Dragon runtime is:
 
 .. literalinclude:: ../../examples/multiprocessing/joblib/serialization_and_wrappers.py
 
-  The timing for the base multiprocessing runtime is:
+.. Code for serialization and wrappers
+
+The timing for the base multiprocessing runtime is:
 
 .. list-table:: Base Multiprocessing Timings for Serialization and Wrappers
    :widths: 25 25

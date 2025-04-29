@@ -2,11 +2,14 @@ import socket
 import re
 import argparse
 from os import environ
+import signal
 from time import sleep, monotonic
 
-from dragon.native.process_group import ProcessGroup, ExitErrorCodes
+from dragon.native.process_group import ProcessGroup, DragonProcessGroupException
 from dragon.native.process import ProcessTemplate
 from dragon.native.queue import Queue
+
+from dragon.globalservices.process import runtime_reboot
 
 from dragon.transport.ifaddrs import getifaddrs, InterfaceAddressFilter
 from dragon.infrastructure.facts import DEFAULT_TRANSPORT_NETIF
@@ -122,8 +125,8 @@ def looped_function(rank_queue, ip_addrs, network_prefix, port, trigger_restart,
             try:
                 client.sendall(b'hello, friend')
             except BrokenPipeError as e:
-                print(f'client sender hit error: {type(e)}: {e}. Exiting with {ExitErrorCodes.NONROOT_FAILURE.value}', flush=True)
-                exit(ExitErrorCodes.NONROOT_FAILURE.value)
+                print(f'client sender hit error: {type(e)}: {e}. Exiting with {22}', flush=True)
+                exit(22)
             sleep(0.1)
         client.close()
         print("client close its connection")
@@ -157,9 +160,16 @@ def main():
                                             args=(rank_queue, ip_addrs, net_prefix, port, args.trigger_restart, is_a_restart)))
 
     pg.init()
-    pg.start()
-
-    pg.join()
+    try:
+        pg.start()
+        pg.join()
+    except DragonProcessGroupException:
+        # Get the puid that was the source of the exception:
+        puids_and_ecs = pg.inactive_puids
+        restart_puids = [puid for puid, ec in puids_and_ecs if ec not in {signal.SIGINT, signal.SIGKILL, signal.SIGTERM}]
+        runtime_reboot(restart_puids)
+    except Exception as e:
+        raise RuntimeError("Unable to successfully start or join on ProcessGroup") from e
     pg.close()
 
 

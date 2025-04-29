@@ -26,7 +26,17 @@ import support.util as tsu
 from dragon.globalservices.process import get_create_message, multi_join
 from dragon.globalservices.process import create as process_create
 from dragon.globalservices.group import create as group_create
-from dragon.globalservices.group import GroupError, add_to, create_add_to, remove_from, destroy_remove_from, kill, destroy, get_list, query
+from dragon.globalservices.group import (
+    GroupError,
+    add_to,
+    create_add_to,
+    remove_from,
+    destroy_remove_from,
+    kill,
+    destroy,
+    get_list,
+    query,
+)
 from dragon.infrastructure.group_desc import GroupDescriptor
 from dragon.infrastructure.process_desc import ProcessDescriptor
 from dragon.infrastructure.policy import Policy
@@ -71,7 +81,7 @@ def bringup_channels(gs_stdout, env_updates, channel_overrides, logname=""):
         gs_stdout.send(dmsg.AbnormalTermination(tag=0).serialize())
 
 
-class GSGroupAPI(unittest.TestCase):
+class GSGroupBaseClass(unittest.TestCase):
     def setUp(self) -> None:
         self.gs_stdout_rh, self.gs_stdout_wh = multiprocessing.Pipe(duplex=False)
 
@@ -195,7 +205,7 @@ class GSGroupAPI(unittest.TestCase):
             args=[],
             env={},
             user_name="dummy",
-            head_proc=True
+            head_proc=True,
         )
 
         self.gs_input_wh.send(create_msg.serialize())
@@ -229,9 +239,7 @@ class GSGroupAPI(unittest.TestCase):
 
     def _create_proc(self, proc_name):
         def create_wrap(the_exe, the_run_dir, the_args, the_env, the_name, result_list):
-            res = process_create(
-                exe=the_exe, run_dir=the_run_dir, args=the_args, env=the_env, user_name=the_name
-            )
+            res = process_create(exe=the_exe, run_dir=the_run_dir, args=the_args, env=the_env, user_name=the_name)
             result_list.append(res)
 
         create_result = []
@@ -252,7 +260,7 @@ class GSGroupAPI(unittest.TestCase):
         return desc
 
     def _send_get_responses(self, nitems, result):
-        if result == 'fail':
+        if result == "fail":
             shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessCreate)
             responses = []
             for i in range(nitems):
@@ -261,32 +269,30 @@ class GSGroupAPI(unittest.TestCase):
                         tag=self.next_tag(),
                         ref=shep_msg.procs[i].tag,
                         err=dmsg.SHProcessCreateResponse.Errors.FAIL,
-                        err_info='simulated failure'
+                        err_info="simulated failure",
                     )
                 )
             shep_reply_msg = dmsg.SHMultiProcessCreateResponse(
                 tag=self.next_tag(),
                 ref=shep_msg.tag,
                 err=dmsg.SHMultiProcessCreateResponse.Errors.SUCCESS,
-                responses=responses
+                responses=responses,
             )
             self.gs_input_wh.send(shep_reply_msg.serialize())
-        elif result == 'success':
+        elif result == "success":
             shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessCreate)
             responses = []
             for i in range(nitems):
                 responses.append(
                     dmsg.SHProcessCreateResponse(
-                        tag=self.next_tag(),
-                        ref=shep_msg.procs[i].tag,
-                        err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
+                        tag=self.next_tag(), ref=shep_msg.procs[i].tag, err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
                     )
                 )
             shep_reply_msg = dmsg.SHMultiProcessCreateResponse(
                 tag=self.next_tag(),
                 ref=shep_msg.tag,
                 err=dmsg.SHMultiProcessCreateResponse.Errors.SUCCESS,
-                responses=responses
+                responses=responses,
             )
             self.gs_input_wh.send(shep_reply_msg.serialize())
         else:
@@ -294,22 +300,20 @@ class GSGroupAPI(unittest.TestCase):
             shep_msg = tsu.get_and_check_type(self.shep_input_rh, dmsg.SHMultiProcessCreate)
 
             responses = []
-            for i in range(0, nitems//2):
+            for i in range(0, nitems // 2):
                 responses.append(
                     dmsg.SHProcessCreateResponse(
-                        tag=self.next_tag(),
-                        ref=shep_msg.procs[i].tag,
-                        err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
+                        tag=self.next_tag(), ref=shep_msg.procs[i].tag, err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
                     )
                 )
 
-            for i in range(nitems//2, nitems):
+            for i in range(nitems // 2, nitems):
                 responses.append(
                     dmsg.SHProcessCreateResponse(
                         tag=self.next_tag(),
                         ref=shep_msg.procs[i].tag,
                         err=dmsg.SHProcessCreateResponse.Errors.FAIL,
-                        err_info='simulated failure'
+                        err_info="simulated failure",
                     )
                 )
 
@@ -317,7 +321,7 @@ class GSGroupAPI(unittest.TestCase):
                 tag=self.next_tag(),
                 ref=shep_msg.tag,
                 err=dmsg.SHMultiProcessCreateResponse.Errors.SUCCESS,
-                responses=responses
+                responses=responses,
             )
             self.gs_input_wh.send(shep_reply_msg.serialize())
 
@@ -339,8 +343,8 @@ class GSGroupAPI(unittest.TestCase):
 
         # in the case that we're trying to create a group that already exists,
         # we don't need the following code
-        if not existing: # not already existing group
-            self._send_get_responses(nitems, 'success')
+        if not existing:  # not already existing group
+            self._send_get_responses(nitems, "success")
 
         create_thread.join()
 
@@ -370,9 +374,11 @@ class GSGroupAPI(unittest.TestCase):
         desc = create_result[0]
         return desc
 
+
+class GSGroupAPI(GSGroupBaseClass):
     def test_create(self):
         n = 10
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -380,23 +386,25 @@ class GSGroupAPI(unittest.TestCase):
         self.assertEqual(descr.name, "bob")
         self.assertEqual(int(descr.state), GroupDescriptor.State.ACTIVE)
         self.assertEqual(type(descr.sets[0]), list)
-        self.assertEqual(len(descr.sets), 1) # 1 list in the sets
-        self.assertEqual(len(descr.sets[0]), n) # n members inside the list
+        self.assertEqual(len(descr.sets), 1)  # 1 list in the sets
+        self.assertEqual(len(descr.sets[0]), n)  # n members inside the list
         self.assertEqual(all(isinstance(item, GroupDescriptor.GroupMember) for item in descr.sets[0]), True)
         self.assertEqual(all(isinstance(item.desc, ProcessDescriptor) for item in descr.sets[0]), True)
         self.assertEqual(all(item.desc.state == ProcessDescriptor.State.ACTIVE for item in descr.sets[0]), True)
         self.assertEqual(all(item.desc.p_uid == item.uid for item in descr.sets[0]), True)
-        self.assertEqual(all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in descr.sets[0]), True)
+        self.assertEqual(
+            all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in descr.sets[0]), True
+        )
 
-        self.assertEqual(descr.policy.placement, policy.Placement.DEFAULT)
-        self.assertEqual(descr.policy.host_name, '')
+        self.assertEqual(descr.policy.placement, policy.Placement.ANYWHERE)
+        self.assertEqual(descr.policy.host_name, "")
         self.assertEqual(descr.policy.host_id, -1)
-        self.assertEqual(descr.policy.distribution, Policy.Distribution.DEFAULT)
+        self.assertEqual(descr.policy.distribution, Policy.Distribution.ROUNDROBIN)
 
         # test each member's name when a user_name is provided by the user
         for lst_idx, lst in enumerate(descr.sets):
             for item_idx, item in enumerate(lst):
-                self.assertEqual(item.desc.name, f'solver.{descr.g_uid}.{lst_idx}.{item_idx}')
+                self.assertEqual(item.desc.name, f"solver.{descr.g_uid}.{lst_idx}.{item_idx}")
 
     def test_create_multiple_tuples(self):
         n1 = 10
@@ -407,27 +415,31 @@ class GSGroupAPI(unittest.TestCase):
         policy = Policy()
         descr = self._create_group(items, policy, None)
 
-        self.assertEqual(descr.name, dfacts.DEFAULT_GROUP_NAME_BASE + str(dfacts.FIRST_GUID)) # check that the default group name was given
+        self.assertEqual(
+            descr.name, dfacts.DEFAULT_GROUP_NAME_BASE + str(dfacts.FIRST_GUID)
+        )  # check that the default group name was given
         self.assertEqual(int(descr.state), GroupDescriptor.State.ACTIVE)
         self.assertEqual(all(isinstance(lst, list) for lst in descr.sets), True)
-        self.assertEqual(len(descr.sets), 2) # 2 lists in the sets
-        self.assertEqual(len(descr.sets[0]), n1) # n1 members inside the first list
-        self.assertEqual(len(descr.sets[1]), n2) # n2 members inside the second list
-        self.assertEqual(len(descr.sets[0])+len(descr.sets[1]), n1+n2) # n1+n2 members in total
+        self.assertEqual(len(descr.sets), 2)  # 2 lists in the sets
+        self.assertEqual(len(descr.sets[0]), n1)  # n1 members inside the first list
+        self.assertEqual(len(descr.sets[1]), n2)  # n2 members inside the second list
+        self.assertEqual(len(descr.sets[0]) + len(descr.sets[1]), n1 + n2)  # n1+n2 members in total
 
         group_puids = []
         for lst in descr.sets:
             self.assertEqual(all(isinstance(item, GroupDescriptor.GroupMember) for item in lst), True)
             self.assertEqual(all(isinstance(item.desc, ProcessDescriptor) for item in lst), True)
             self.assertEqual(all(item.desc.state == ProcessDescriptor.State.ACTIVE for item in lst), True)
-            self.assertEqual(all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in lst), True)
+            self.assertEqual(
+                all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in lst), True
+            )
             self.assertEqual(all(item.desc.p_uid == item.uid for item in lst), True)
 
             group_puids.extend([item.uid for item in lst if item.desc.state == ProcessDescriptor.State.ACTIVE])
 
             # test each member's name when a user_name is NOT provided by the user and the default is used
             for item in lst:
-                self.assertEqual(item.desc.name, f'dragon_process_{item.desc.p_uid}')
+                self.assertEqual(item.desc.name, f"dragon_process_{item.desc.p_uid}")
 
                 # now, kill the process
                 death_msg = dmsg.SHProcessExit(tag=self.next_tag(), p_uid=item.uid)
@@ -435,10 +447,10 @@ class GSGroupAPI(unittest.TestCase):
 
         multi_join(group_puids, join_all=True)
 
-        self.assertEqual(descr.policy.placement, policy.Placement.DEFAULT)
-        self.assertEqual(descr.policy.host_name, '')
+        self.assertEqual(descr.policy.placement, policy.Placement.ANYWHERE)
+        self.assertEqual(descr.policy.host_name, "")
         self.assertEqual(descr.policy.host_id, -1)
-        self.assertEqual(descr.policy.distribution, Policy.Distribution.DEFAULT)
+        self.assertEqual(descr.policy.distribution, Policy.Distribution.ROUNDROBIN)
 
     def test_create_when_group_already_exists(self):
         n = 5
@@ -450,7 +462,9 @@ class GSGroupAPI(unittest.TestCase):
         for i in range(2):
             if i == 1:
                 existing = True
-            process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+            process_msg = get_create_message(
+                exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver"
+            )
             items = [(n, process_msg.serialize())]
             policy = Policy()
             descr = self._create_group(items, policy, "bob", existing)
@@ -462,7 +476,7 @@ class GSGroupAPI(unittest.TestCase):
         """All the processes/members of the group fail to create"""
 
         n = 5
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group_with_failed_processes(items, policy, "bob", "fail")
@@ -470,27 +484,29 @@ class GSGroupAPI(unittest.TestCase):
         self.assertEqual(descr.name, "bob")
         self.assertEqual(int(descr.state), GroupDescriptor.State.ACTIVE)
         self.assertEqual(type(descr.sets[0]), list)
-        self.assertEqual(len(descr.sets), 1) # 1 list in the sets
-        self.assertEqual(len(descr.sets[0]), n) # n members inside the list
+        self.assertEqual(len(descr.sets), 1)  # 1 list in the sets
+        self.assertEqual(len(descr.sets[0]), n)  # n members inside the list
         self.assertEqual(all(isinstance(item, GroupDescriptor.GroupMember) for item in descr.sets[0]), True)
         self.assertEqual(all(isinstance(item.desc, ProcessDescriptor) for item in descr.sets[0]), True)
         self.assertEqual(all(item.desc.state == ProcessDescriptor.State.DEAD for item in descr.sets[0]), True)
-        self.assertEqual(all(item.error_code == dmsg.GSProcessCreateResponse.Errors.FAIL.value for item in descr.sets[0]), True)
+        self.assertEqual(
+            all(item.error_code == dmsg.GSProcessCreateResponse.Errors.FAIL.value for item in descr.sets[0]), True
+        )
         self.assertEqual(all(item.desc.p_uid == item.uid for item in descr.sets[0]), True)
 
-        self.assertEqual(descr.policy.placement, policy.Placement.DEFAULT)
-        self.assertEqual(descr.policy.host_name, '')
+        self.assertEqual(descr.policy.placement, policy.Placement.ANYWHERE)
+        self.assertEqual(descr.policy.host_name, "")
         self.assertEqual(descr.policy.host_id, -1)
-        self.assertEqual(descr.policy.distribution, Policy.Distribution.DEFAULT)
+        self.assertEqual(descr.policy.distribution, Policy.Distribution.ROUNDROBIN)
 
         # test each member's name when a user_name is provided by the user
         for lst_idx, lst in enumerate(descr.sets):
             for item_idx, item in enumerate(lst):
-                self.assertEqual(item.desc.name, f'solver.{descr.g_uid}.{lst_idx}.{item_idx}')
+                self.assertEqual(item.desc.name, f"solver.{descr.g_uid}.{lst_idx}.{item_idx}")
 
     def test_create_with_half_failures(self):
         n = 10
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group_with_failed_processes(items, policy, "bob", "mix")
@@ -498,36 +514,53 @@ class GSGroupAPI(unittest.TestCase):
         self.assertEqual(descr.name, "bob")
         self.assertEqual(int(descr.state), GroupDescriptor.State.ACTIVE)
         self.assertEqual(type(descr.sets[0]), list)
-        self.assertEqual(len(descr.sets), 1) # 1 list in the sets
-        self.assertEqual(len(descr.sets[0]), n) # n members inside the list
+        self.assertEqual(len(descr.sets), 1)  # 1 list in the sets
+        self.assertEqual(len(descr.sets[0]), n)  # n members inside the list
         self.assertEqual(all(isinstance(item, GroupDescriptor.GroupMember) for item in descr.sets[0]), True)
         self.assertEqual(all(isinstance(item.desc, ProcessDescriptor) for item in descr.sets[0]), True)
         self.assertEqual(all(item.desc.p_uid == item.uid for item in descr.sets[0]), True)
 
-        self.assertEqual(all(descr.sets[0][i].desc.state == ProcessDescriptor.State.ACTIVE for i in range(0, n//2)), True)
-        self.assertEqual(all(descr.sets[0][i].desc.state == ProcessDescriptor.State.DEAD for i in range(n//2, n)), True)
-        self.assertEqual(all(descr.sets[0][i].error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for i in range(0, n//2)), True)
-        self.assertEqual(all(descr.sets[0][i].error_code == dmsg.GSProcessCreateResponse.Errors.FAIL.value for i in range(n//2, n)), True)
+        self.assertEqual(
+            all(descr.sets[0][i].desc.state == ProcessDescriptor.State.ACTIVE for i in range(0, n // 2)), True
+        )
+        self.assertEqual(
+            all(descr.sets[0][i].desc.state == ProcessDescriptor.State.DEAD for i in range(n // 2, n)), True
+        )
+        self.assertEqual(
+            all(
+                descr.sets[0][i].error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value
+                for i in range(0, n // 2)
+            ),
+            True,
+        )
+        self.assertEqual(
+            all(
+                descr.sets[0][i].error_code == dmsg.GSProcessCreateResponse.Errors.FAIL.value for i in range(n // 2, n)
+            ),
+            True,
+        )
 
-        self.assertEqual(descr.policy.placement, policy.Placement.DEFAULT)
-        self.assertEqual(descr.policy.host_name, '')
+        self.assertEqual(descr.policy.placement, policy.Placement.ANYWHERE)
+        self.assertEqual(descr.policy.host_name, "")
         self.assertEqual(descr.policy.host_id, -1)
-        self.assertEqual(descr.policy.distribution, Policy.Distribution.DEFAULT)
+        self.assertEqual(descr.policy.distribution, Policy.Distribution.ROUNDROBIN)
 
         # test each member's name when a user_name is provided by the user
         for lst_idx, lst in enumerate(descr.sets):
             for item_idx, item in enumerate(lst):
-                self.assertEqual(item.desc.name, f'solver.{descr.g_uid}.{lst_idx}.{item_idx}')
+                self.assertEqual(item.desc.name, f"solver.{descr.g_uid}.{lst_idx}.{item_idx}")
 
     def test_create_invalid_members(self):
         n = 10
         # send inappropriate message type
-        process_msg = dmsg.SHProcessCreate(tag=dapi.next_tag(),
-                                           p_uid=dfacts.GS_PUID,
-                                           r_c_uid=dfacts.GS_INPUT_CUID,
-                                           t_p_uid=dfacts.FIRST_PUID+1000,
-                                           exe="test",
-                                           args=["foo", "bar"])
+        process_msg = dmsg.SHProcessCreate(
+            tag=dapi.next_tag(),
+            p_uid=dfacts.GS_PUID,
+            r_c_uid=dfacts.GS_INPUT_CUID,
+            t_p_uid=dfacts.FIRST_PUID + 1000,
+            exe="test",
+            args=["foo", "bar"],
+        )
         items = [(n, process_msg.serialize())]
         policy = Policy()
         with self.assertRaises(GroupError):
@@ -535,7 +568,7 @@ class GSGroupAPI(unittest.TestCase):
 
     def test_create_multiple_groups(self):
         n = 10
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -562,16 +595,16 @@ class GSGroupAPI(unittest.TestCase):
                 dmsg.SHProcessKillResponse(
                     tag=self.next_tag(),
                     ref=sh_multi_kill_msg.procs[i].tag,
-                    err=dmsg.SHProcessKillResponse.Errors.SUCCESS
+                    err=dmsg.SHProcessKillResponse.Errors.SUCCESS,
                 )
             )
 
         sh_multi_kill_reply = dmsg.SHMultiProcessKillResponse(
-                tag=self.next_tag(),
-                ref=sh_multi_kill_msg.tag,
-                responses=responses,
-                failed=False,
-                err=dmsg.SHMultiProcessKillResponse.Errors.SUCCESS
+            tag=self.next_tag(),
+            ref=sh_multi_kill_msg.tag,
+            responses=responses,
+            failed=False,
+            err=dmsg.SHMultiProcessKillResponse.Errors.SUCCESS,
         )
         self.gs_input_wh.send(sh_multi_kill_reply.serialize())
 
@@ -580,7 +613,7 @@ class GSGroupAPI(unittest.TestCase):
 
     def test_kill(self):
         n = 10
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -601,7 +634,7 @@ class GSGroupAPI(unittest.TestCase):
     def test_kill_a_pending_group(self):
         # try to destroy a group that is still pending
         n = 20
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
 
@@ -610,9 +643,7 @@ class GSGroupAPI(unittest.TestCase):
             result_list.append(res)
 
         create_result = []
-        create_thread = threading.Thread(
-            target=create_wrap, args=(items, policy, "bob", create_result)
-        )
+        create_thread = threading.Thread(target=create_wrap, args=(items, policy, "bob", create_result))
         create_thread.start()
 
         # immediately try to destroy the group, that is still pending
@@ -621,7 +652,7 @@ class GSGroupAPI(unittest.TestCase):
             kill("bob")
 
         # complete the construction of the group
-        self._send_get_responses(n, 'success')
+        self._send_get_responses(n, "success")
         create_thread.join()
 
         descr = create_result[0]
@@ -645,16 +676,16 @@ class GSGroupAPI(unittest.TestCase):
                 dmsg.SHProcessKillResponse(
                     tag=self.next_tag(),
                     ref=sh_multi_kill_msg.procs[i].tag,
-                    err=dmsg.SHProcessKillResponse.Errors.SUCCESS
+                    err=dmsg.SHProcessKillResponse.Errors.SUCCESS,
                 )
             )
 
         sh_multi_kill_reply = dmsg.SHMultiProcessKillResponse(
-                tag=self.next_tag(),
-                ref=sh_multi_kill_msg.tag,
-                responses=responses,
-                failed=False,
-                err=dmsg.SHMultiProcessKillResponse.Errors.SUCCESS
+            tag=self.next_tag(),
+            ref=sh_multi_kill_msg.tag,
+            responses=responses,
+            failed=False,
+            err=dmsg.SHMultiProcessKillResponse.Errors.SUCCESS,
         )
         self.gs_input_wh.send(sh_multi_kill_reply.serialize())
 
@@ -667,7 +698,7 @@ class GSGroupAPI(unittest.TestCase):
 
     def test_destroy(self):
         n = 10
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -683,7 +714,7 @@ class GSGroupAPI(unittest.TestCase):
     def test_destroy_alt(self):
         # first call kill on the group and then destroy
         n = 10
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -714,7 +745,7 @@ class GSGroupAPI(unittest.TestCase):
     def test_destroy_a_pending_group(self):
         # try to destroy a group that is still pending
         n = 20
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
 
@@ -723,9 +754,7 @@ class GSGroupAPI(unittest.TestCase):
             result_list.append(res)
 
         create_result = []
-        create_thread = threading.Thread(
-            target=create_wrap, args=(items, policy, "bob", create_result)
-        )
+        create_thread = threading.Thread(target=create_wrap, args=(items, policy, "bob", create_result))
         create_thread.start()
 
         # immediately try to destroy the group, that is still pending
@@ -734,7 +763,7 @@ class GSGroupAPI(unittest.TestCase):
             destroy("bob")
 
         # complete the construction of the group
-        self._send_get_responses(n, 'success')
+        self._send_get_responses(n, "success")
         create_thread.join()
 
         descr = create_result[0]
@@ -747,23 +776,21 @@ class GSGroupAPI(unittest.TestCase):
         for i in range(nitems):
             responses.append(
                 dmsg.SHProcessCreateResponse(
-                    tag=self.next_tag(),
-                    ref=shep_msg.procs[i].tag,
-                    err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
+                    tag=self.next_tag(), ref=shep_msg.procs[i].tag, err=dmsg.SHProcessCreateResponse.Errors.SUCCESS
                 )
             )
         shep_reply_msg = dmsg.SHMultiProcessCreateResponse(
             tag=self.next_tag(),
             ref=shep_msg.tag,
             err=dmsg.SHMultiProcessCreateResponse.Errors.SUCCESS,
-            responses=responses
+            responses=responses,
         )
         self.gs_input_wh.send(shep_reply_msg.serialize())
 
     def test_create_add_to(self):
         # first create a group
         n = 5
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -773,7 +800,7 @@ class GSGroupAPI(unittest.TestCase):
         add_thread = threading.Thread(target=self._send_responses, args=(n1,))
         add_thread.start()
 
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='addition')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="addition")
         items = [(n1, process_msg.serialize())]
         descr = create_add_to(descr.g_uid, items, policy)
         add_thread.join()
@@ -781,30 +808,32 @@ class GSGroupAPI(unittest.TestCase):
         self.assertEqual(descr.name, "bob")
         self.assertEqual(int(descr.state), GroupDescriptor.State.ACTIVE)
         self.assertEqual(type(descr.sets[0]), list)
-        self.assertEqual(len(descr.sets), 2) # 2 lists in the sets
-        self.assertEqual(len(descr.sets[0]), n) # n members inside the 1st list
-        self.assertEqual(len(descr.sets[1]), n1) # n1 members inside the 2nd list
-        self.assertEqual(len(descr.sets[0])+len(descr.sets[1]), n1+n) # n1+n members in total
+        self.assertEqual(len(descr.sets), 2)  # 2 lists in the sets
+        self.assertEqual(len(descr.sets[0]), n)  # n members inside the 1st list
+        self.assertEqual(len(descr.sets[1]), n1)  # n1 members inside the 2nd list
+        self.assertEqual(len(descr.sets[0]) + len(descr.sets[1]), n1 + n)  # n1+n members in total
 
         for lst in descr.sets:
             self.assertEqual(all(isinstance(item, GroupDescriptor.GroupMember) for item in lst), True)
             self.assertEqual(all(isinstance(item.desc, ProcessDescriptor) for item in lst), True)
             self.assertEqual(all(item.desc.state == ProcessDescriptor.State.ACTIVE for item in lst), True)
-            self.assertEqual(all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in lst), True)
+            self.assertEqual(
+                all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in lst), True
+            )
             self.assertEqual(all(item.desc.p_uid == item.uid for item in lst), True)
 
         # test each member's name when a user_name is provided by the user
         for lst_idx, lst in enumerate(descr.sets):
             for item_idx, item in enumerate(lst):
                 if lst_idx == 0:
-                    self.assertEqual(item.desc.name, f'solver.{descr.g_uid}.{lst_idx}.{item_idx}')
+                    self.assertEqual(item.desc.name, f"solver.{descr.g_uid}.{lst_idx}.{item_idx}")
                 elif lst_idx == 1:
-                    self.assertEqual(item.desc.name, f'addition.{descr.g_uid}.{lst_idx}.{item_idx}')
+                    self.assertEqual(item.desc.name, f"addition.{descr.g_uid}.{lst_idx}.{item_idx}")
 
     def test_add_to(self):
         # first create a group
         n = 5
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -822,32 +851,34 @@ class GSGroupAPI(unittest.TestCase):
 
         self.assertEqual(descr1.name, "bob")
         self.assertEqual(int(descr1.state), GroupDescriptor.State.ACTIVE)
-        self.assertEqual(len(descr1.sets), 4) # 4 lists in the sets: 1+n1
-        self.assertEqual(len(descr1.sets[0]), n) # n members inside the 1st list
+        self.assertEqual(len(descr1.sets), 4)  # 4 lists in the sets: 1+n1
+        self.assertEqual(len(descr1.sets[0]), n)  # n members inside the 1st list
 
         for lst in descr1.sets:
             self.assertEqual(all(isinstance(item, GroupDescriptor.GroupMember) for item in lst), True)
             self.assertEqual(all(isinstance(item.desc, ProcessDescriptor) for item in lst), True)
             self.assertEqual(all(item.desc.state == ProcessDescriptor.State.ACTIVE for item in lst), True)
-            self.assertEqual(all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in lst), True)
+            self.assertEqual(
+                all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in lst), True
+            )
             self.assertEqual(all(item.desc.p_uid == item.uid for item in lst), True)
 
         # test each member's name when a user_name is provided by the user
         for lst_idx, lst in enumerate(descr1.sets):
             for item_idx, item in enumerate(lst):
                 if lst_idx == 0:
-                    self.assertEqual(item.desc.name, f'solver.{descr.g_uid}.{lst_idx}.{item_idx}')
+                    self.assertEqual(item.desc.name, f"solver.{descr.g_uid}.{lst_idx}.{item_idx}")
                 else:
                     self.assertEqual(item.desc.name, f"alice{lst_idx-1}")
 
     def test_remove_from(self):
         # first create a group
         n = 8
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
-        self.assertEqual(len(descr.sets[0]), n) # descr should have 8 items in descr.sets
+        self.assertEqual(len(descr.sets[0]), n)  # descr should have 8 items in descr.sets
 
         group_puids = []
         for lst in descr.sets:
@@ -855,9 +886,9 @@ class GSGroupAPI(unittest.TestCase):
 
         # now, let's remove a few processes
         # remove specific processes
-        name = f'solver.{descr.g_uid}.0.0' # this should be the name of the first created process
+        name = f"solver.{descr.g_uid}.0.0"  # this should be the name of the first created process
         descr1 = remove_from(descr.g_uid, [name, group_puids[6]])
-        self.assertEqual(len(descr1.sets[0]), 6) # descr1 should have 6 items in descr1.sets
+        self.assertEqual(len(descr1.sets[0]), 6)  # descr1 should have 6 items in descr1.sets
 
         # update group_puids
         del group_puids[6]
@@ -866,7 +897,7 @@ class GSGroupAPI(unittest.TestCase):
         # remove the first n1 processes
         n1 = 3
         descr2 = remove_from(descr1.g_uid, group_puids[0:n1])
-        self.assertEqual(len(descr2.sets[0]), 3) # descr2 should have 3 items in descr2.sets
+        self.assertEqual(len(descr2.sets[0]), 3)  # descr2 should have 3 items in descr2.sets
 
         # update group_puids
         del group_puids[0:n1]
@@ -881,21 +912,21 @@ class GSGroupAPI(unittest.TestCase):
         # try to remove processes that are not members of the group
         # first create a group
         n = 5
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
         self.assertEqual(len(descr.sets[0]), n)
 
         # try to remove non-existing processes
-        name = f'solver1.{descr.g_uid}.0.0'
+        name = f"solver1.{descr.g_uid}.0.0"
         with self.assertRaises(GroupError):
             remove_from(descr.g_uid, [name])
 
     def test_remove_non_existing_procs(self):
         # first create a group
         n = 3
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -914,27 +945,27 @@ class GSGroupAPI(unittest.TestCase):
                 dmsg.SHProcessKillResponse(
                     tag=self.next_tag(),
                     ref=sh_multi_kill_msg.procs[i].tag,
-                    err=dmsg.SHProcessKillResponse.Errors.SUCCESS
+                    err=dmsg.SHProcessKillResponse.Errors.SUCCESS,
                 )
             )
 
         sh_multi_kill_reply = dmsg.SHMultiProcessKillResponse(
-                tag=self.next_tag(),
-                ref=sh_multi_kill_msg.tag,
-                responses=responses,
-                failed=False,
-                err=dmsg.SHMultiProcessKillResponse.Errors.SUCCESS
+            tag=self.next_tag(),
+            ref=sh_multi_kill_msg.tag,
+            responses=responses,
+            failed=False,
+            err=dmsg.SHMultiProcessKillResponse.Errors.SUCCESS,
         )
         self.gs_input_wh.send(sh_multi_kill_reply.serialize())
 
     def test_destroy_remove_from(self):
         # first create a group
         n = 8
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
-        self.assertEqual(len(descr.sets[0]), n) # descr should have 8 items in descr.sets
+        self.assertEqual(len(descr.sets[0]), n)  # descr should have 8 items in descr.sets
 
         group_puids = []
         for lst in descr.sets:
@@ -945,9 +976,9 @@ class GSGroupAPI(unittest.TestCase):
         kill_thread = threading.Thread(target=self._send_kill_messages, args=(n1,))
         kill_thread.start()
         # remove specific processes
-        name = f'solver.{descr.g_uid}.0.0' # this should be the name of the first created process
+        name = f"solver.{descr.g_uid}.0.0"  # this should be the name of the first created process
         descr1 = destroy_remove_from(descr.g_uid, [name, group_puids[6]])
-        self.assertEqual(len(descr1.sets[0]), 6) # descr1 should have 6 items in descr1.sets
+        self.assertEqual(len(descr1.sets[0]), 6)  # descr1 should have 6 items in descr1.sets
         kill_thread.join()
 
         # update group_puids
@@ -959,7 +990,7 @@ class GSGroupAPI(unittest.TestCase):
         kill_thread = threading.Thread(target=self._send_kill_messages, args=(n1,))
         kill_thread.start()
         descr2 = destroy_remove_from(descr1.g_uid, group_puids[0:n1])
-        self.assertEqual(len(descr2.sets[0]), 3) # descr2 should have 3 items in descr2.sets
+        self.assertEqual(len(descr2.sets[0]), 3)  # descr2 should have 3 items in descr2.sets
         kill_thread.join()
 
         # update group_puids
@@ -982,7 +1013,7 @@ class GSGroupAPI(unittest.TestCase):
     def test_destroy_remove_from_already_dead_procs(self):
         # first create a group
         n = 5
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -1009,7 +1040,7 @@ class GSGroupAPI(unittest.TestCase):
 
         # first create a group
         n = 5
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -1020,7 +1051,7 @@ class GSGroupAPI(unittest.TestCase):
             puids_list.append(item.uid)
 
         # kill some of the procs that belong to the group without letting the group know
-        for item in puids_list[:n-2]:
+        for item in puids_list[: n - 2]:
             death_msg = dmsg.SHProcessExit(tag=self.next_tag(), p_uid=item)
             self.gs_input_wh.send(death_msg.serialize())
 
@@ -1028,14 +1059,14 @@ class GSGroupAPI(unittest.TestCase):
         kill_thread.start()
 
         # remove all the members except for the last one
-        descr1 = destroy_remove_from(descr.g_uid, puids_list[:n-1])
+        descr1 = destroy_remove_from(descr.g_uid, puids_list[: n - 1])
         kill_thread.join()
         self.assertEqual(int(descr1.state), GroupDescriptor.State.ACTIVE)
         self.assertEqual(len(descr1.sets[0]), 1)
 
         # compare with the initial group.sets
         for i, item in enumerate(descr.sets[0]):
-            if i < n-1:
+            if i < n - 1:
                 assert item not in descr1.sets[0]
             else:
                 self.assertEqual(item.uid, descr1.sets[0][0].uid)
@@ -1043,7 +1074,7 @@ class GSGroupAPI(unittest.TestCase):
     def test_destroy_remove_from_non_existing_comb_procs(self):
         # first create a group
         n = 3
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -1056,7 +1087,7 @@ class GSGroupAPI(unittest.TestCase):
     def test_destroy_remove_from_non_existing_procs(self):
         # first create a group
         n = 3
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -1069,7 +1100,7 @@ class GSGroupAPI(unittest.TestCase):
     def test_remove_from_and_then_destroy_group(self):
         # first create a group
         n = 8
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -1081,16 +1112,16 @@ class GSGroupAPI(unittest.TestCase):
 
         # now, let's remove a few processes
         # remove specific processes
-        name = f'solver.{descr.g_uid}.0.0' # this should be the name of the first created process
+        name = f"solver.{descr.g_uid}.0.0"  # this should be the name of the first created process
         descr1 = remove_from(descr.g_uid, [name, group_puids[6]])
-        self.assertEqual(len(descr1.sets[0]), 6) # descr1 should have 6 items in descr1.sets
+        self.assertEqual(len(descr1.sets[0]), 6)  # descr1 should have 6 items in descr1.sets
 
         # update group_puids
         del group_puids[6]
         del group_puids[0]
 
         # now, let's destroy the group
-        descr2 = self._destroy_a_group(descr1.g_uid, n-2, descr1.sets[0])
+        descr2 = self._destroy_a_group(descr1.g_uid, n - 2, descr1.sets[0])
         self.assertEqual(all(item.desc.state == ProcessDescriptor.State.DEAD for item in descr2.sets[0]), True)
         self.assertEqual(int(descr2.state), GroupDescriptor.State.DEAD)
 
@@ -1099,7 +1130,7 @@ class GSGroupAPI(unittest.TestCase):
 
         # first create a group
         n = 8
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -1124,34 +1155,36 @@ class GSGroupAPI(unittest.TestCase):
 
         self.assertEqual(descr2.name, "bob")
         self.assertEqual(int(descr2.state), GroupDescriptor.State.ACTIVE)
-        self.assertEqual(len(descr2.sets), 4) # 4 lists in the sets: 1+n1
-        self.assertEqual(len(descr2.sets[0]), n) # n members inside the 1st list
+        self.assertEqual(len(descr2.sets), 4)  # 4 lists in the sets: 1+n1
+        self.assertEqual(len(descr2.sets[0]), n)  # n members inside the 1st list
 
         for lst in descr2.sets:
             self.assertEqual(all(isinstance(item, GroupDescriptor.GroupMember) for item in lst), True)
             self.assertEqual(all(isinstance(item.desc, ProcessDescriptor) for item in lst), True)
             self.assertEqual(all(item.desc.state == ProcessDescriptor.State.ACTIVE for item in lst), True)
-            self.assertEqual(all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in lst), True)
+            self.assertEqual(
+                all(item.error_code == dmsg.GSProcessCreateResponse.Errors.SUCCESS.value for item in lst), True
+            )
             self.assertEqual(all(item.desc.p_uid == item.uid for item in lst), True)
 
         # test each member's name when a user_name is provided by the user
         for lst_idx, lst in enumerate(descr2.sets):
             for item_idx, item in enumerate(lst):
                 if lst_idx == 0:
-                    self.assertEqual(item.desc.name, f'solver.{descr.g_uid}.{lst_idx}.{item_idx}')
+                    self.assertEqual(item.desc.name, f"solver.{descr.g_uid}.{lst_idx}.{item_idx}")
                 else:
                     self.assertEqual(item.desc.name, f"alice{lst_idx-1}")
 
     def test_query(self):
         # create two groups
         n = 3
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr1 = self._create_group(items, policy, "bob")
 
         n = 5
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr2 = self._create_group(items, policy, "alice")
@@ -1165,7 +1198,7 @@ class GSGroupAPI(unittest.TestCase):
 
     def test_query_alive(self):
         n = 3
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -1181,7 +1214,7 @@ class GSGroupAPI(unittest.TestCase):
 
     def test_query_dead(self):
         n = 3
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr = self._create_group(items, policy, "bob")
@@ -1201,14 +1234,14 @@ class GSGroupAPI(unittest.TestCase):
         glist_orig = []
 
         n = 3
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr1 = self._create_group(items, policy, "bob")
         glist_orig.append(descr1.g_uid)
 
         n = 5
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr2 = self._create_group(items, policy, "alice")
@@ -1222,14 +1255,14 @@ class GSGroupAPI(unittest.TestCase):
         glist_orig = []
 
         n = 3
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr1 = self._create_group(items, policy, "bob")
         glist_orig.append(descr1.g_uid)
 
         n = 5
-        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name='solver')
+        process_msg = get_create_message(exe="test", run_dir="/tmp", args=["foo", "bar"], env={}, user_name="solver")
         items = [(n, process_msg.serialize())]
         policy = Policy()
         descr2 = self._create_group(items, policy, "alice")

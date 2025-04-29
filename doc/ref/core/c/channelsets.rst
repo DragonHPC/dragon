@@ -3,19 +3,9 @@
 ChannelSets
 ===============
 
-This is a placeholder for future doc work on ChannelSets. See the Channels documentation for an example with
-more detail.
 
 .. _ChannelSetAPI:
 
-Description
-'''''''''''''''
-
-TBD.
-
-Example
-'''''''''''
-TBD.
 
 API
 '''''''

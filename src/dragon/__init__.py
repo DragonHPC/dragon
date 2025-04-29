@@ -1,4 +1,4 @@
-""" This code is first executed when the `import dragon` statement is encountered
+"""This code is first executed when the `import dragon` statement is encountered
 in the user code.
 
 If the environment variable `DRAGON_PATCH_MP` is set, we assume the user wants
@@ -36,7 +36,6 @@ functionality.
 """
 
 import os
-from distutils.util import strtobool
 
 
 def _patch_multiprocessing():
@@ -45,20 +44,23 @@ def _patch_multiprocessing():
     os.environ["DRAGON_PATCH_MP"] = str(True)
 
     from .mpbridge.monkeypatching import patch_multiprocessing
+
     patch_multiprocessing()
 
 
 def _patch_torch():
 
     from .ai.torch.monkeypatching import patch_torch
+
     patch_torch()
 
     from .ai.torch.dataloader_monkeypatch import patch_mpdataloader_torch
+
     patch_mpdataloader_torch()
 
 
-if bool(strtobool(os.environ.get("DRAGON_PATCH_MP", "False"))):
+if os.environ.get("DRAGON_PATCH_MP", False):
     _patch_multiprocessing()
 
-if bool(strtobool(os.environ.get("DRAGON_PATCH_TORCH", "False"))):
+if os.environ.get("DRAGON_PATCH_TORCH", False):
     _patch_torch()

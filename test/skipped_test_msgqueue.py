@@ -26,7 +26,7 @@ class PMsgQueueUnitTest(unittest.TestCase):
 
     def test_bad_create(self):
         with self.assertRaises(pq.PMsgQueueOpenException):
-            pq.PMsgQueue('test')
+            pq.PMsgQueue("test")
 
     def test_bad_create2(self):
         with self.assertRaises(pq.PMsgQueueConfigException):
@@ -55,7 +55,7 @@ class PMsgQueueUnitTest(unittest.TestCase):
         sendh = pq.PMsgQueue("/test", write_intent=True)
         recvh = pq.PMsgQueue("/test", read_intent=True)
 
-        orig = 'msg' * 10000
+        orig = "msg" * 10000
         with self.assertRaises(pq.PMsgQueueSendException):
             sendh.send(orig)
 
@@ -66,7 +66,7 @@ class PMsgQueueUnitTest(unittest.TestCase):
         sendh = pq.PMsgQueue("/test", write_intent=True)
         recvh = pq.PMsgQueue("/test", read_intent=True)
 
-        orig = 'msg' * 10000
+        orig = "msg" * 10000
         with self.assertRaises(pq.PMsgQueueSendException):
             recvh.send(orig)
 

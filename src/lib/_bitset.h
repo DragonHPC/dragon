@@ -7,6 +7,7 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <stdbool.h>
 #include <dragon/return_codes.h>
 
 /* -----------------------------------------------------------------------------
@@ -40,11 +41,13 @@ extern "C" {
  *  occurs via its API functions. This structure is meant to meant to be used
  *  internally within some larger structure and will be self-contained completely
  *  within the larger structure. The bitset implementation does no dynamic
- *  memory allocation.
+ *  memory allocation. The length field is the number of bits set.
  **/
 
 typedef struct dragonBitSet_st {
     size_t size; /**< For internal use only */
+    size_t* length; /**< For internal use only */
+    size_t* leading_zeroes; /**< For internal use only */
     char* data;  /**< For internal use only */
 } dragonBitSet_t;
 
@@ -84,16 +87,19 @@ dragonError_t
 dragon_bitset_reset(dragonBitSet_t* set, const size_t val_index);
 
 dragonError_t
-dragon_bitset_get(const dragonBitSet_t* set, const size_t val_index, unsigned char* val);
+dragon_bitset_get(const dragonBitSet_t* set, const size_t val_index, bool* val);
+
+dragonError_t
+dragon_bitset_length(const dragonBitSet_t* set, size_t* length);
 
 dragonError_t
 dragon_bitset_zeroes_to_right(const dragonBitSet_t* set, const size_t val_index, size_t* val);
 
-// dragonError_t
-// dragon_bitset_first(const dragonBitSet_t* set, size_t* first);
+dragonError_t
+dragon_bitset_first(const dragonBitSet_t* set, size_t* first);
 
-// dragonError_t
-// dragon_bitset_next(const dragonBitSet_t* set, const size_t current, size_t* next);
+dragonError_t
+dragon_bitset_next(const dragonBitSet_t* set, const size_t current, size_t* next);
 
 dragonError_t
 dragon_bitset_dump(const char* title, const dragonBitSet_t* set, const char* indent);

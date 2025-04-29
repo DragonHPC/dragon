@@ -16,20 +16,21 @@ from ..dlogging import util as dlog
 from .launchargs import HOSTFILE_HELP, HOSTLIST_HELP, WLM_HELP
 from .launchargs import SplitArgsAtComma, parse_hosts
 from .wlm import WLM, wlm_cls_dict
-from .wlm import SlurmNetworkConfig, PBSPalsNetworkConfig, SSHNetworkConfig
+from .wlm import SlurmNetworkConfig, PBSPalsNetworkConfig, SSHNetworkConfig, KubernetesNetworkConfig
 
 
 @enum.unique
 class ConfigOutputType(enum.Enum):
     """Enumerated list of supported network config I/O formats"""
-    JSON = 'json'
+
+    JSON = "json"
     YAML = "yaml"
 
     def __str__(self):
         return self.value
 
 
-class NetworkConfig():
+class NetworkConfig:
     """Class for constructing network configurations for backend compute"""
 
     def __init__(self):
@@ -47,10 +48,12 @@ class NetworkConfig():
         """
         return self.network_config
 
-    def output_to_file(self,
-                       basename: str = "network-config",
-                       basedir: str = None,
-                       output_type: ConfigOutputType = ConfigOutputType.YAML):
+    def output_to_file(
+        self,
+        basename: str = "network-config",
+        basedir: str = None,
+        output_type: ConfigOutputType = ConfigOutputType.YAML,
+    ):
         """Output network config to formatted file
 
         Args:
@@ -66,13 +69,15 @@ class NetworkConfig():
         filename = os.path.join(basedir, ".".join([basename, str(output_type)]))
 
         if output_type == ConfigOutputType.JSON:
-            with open(filename, 'w+') as f:
+            with open(filename, "w+") as f:
                 from json import dumps
+
                 f.write(dumps(self.serialize(), indent=4))
 
         elif output_type == ConfigOutputType.YAML:
             from yaml import dump
-            with open(filename, 'w+') as f:
+
+            with open(filename, "w+") as f:
                 f.write(dump(self.serialize(), indent=4))
 
     def serialize(self):
@@ -89,7 +94,7 @@ class NetworkConfig():
         """Serialize and compress the network configuration"""
 
         sdesc = self.serialize()
-        compressed = b64encode(zlib.compress(json.dumps(sdesc).encode('utf-8'))).decode('ascii')
+        compressed = b64encode(zlib.compress(json.dumps(sdesc).encode("utf-8"))).decode("ascii")
         return compressed
 
     def decompress(self, compressed_config):
@@ -122,12 +127,12 @@ class NetworkConfig():
     def _set_primary_index_to_zero(self, ref_key):
         """Make sure the primary node is indexed to 0"""
         if int(ref_key) != 0:
-            old_zero = self.network_config['0']
-            self.network_config['0'] = self.network_config[ref_key]
-            self.network_config['0'].is_primary = True
+            old_zero = self.network_config["0"]
+            self.network_config["0"] = self.network_config[ref_key]
+            self.network_config["0"].is_primary = True
             self.network_config[ref_key] = old_zero
         else:
-            self.network_config['0'].is_primary = True
+            self.network_config["0"].is_primary = True
 
     def _select_primary(self, primary_hostname: Optional[str] = None):
         """Select a backend node to be primary
@@ -153,7 +158,7 @@ class NetworkConfig():
             try:
                 key = [k for k, v in self.network_config.items() if v.name == primary_hostname]
                 if len(key) == 0:
-                    raise RuntimeError('Input hostname does not match any available')
+                    raise RuntimeError("Input hostname does not match any available")
                 elif len(key) > 1:
                     raise RuntimeError("Invalid network configuration. hostname's are not all unique")
                 else:
@@ -163,13 +168,15 @@ class NetworkConfig():
                 raise
 
     @classmethod
-    def from_wlm(cls,
-                 workload_manager: WLM = WLM.SLURM,
-                 network_prefix: str = DEFAULT_TRANSPORT_NETIF,
-                 port: str = DEFAULT_OVERLAY_NETWORK_PORT,
-                 primary_hostname: Optional[str] = None,
-                 hostlist: Optional[list[str]] = None,
-                 sigint_trigger=None):
+    def from_wlm(
+        cls,
+        workload_manager: WLM = WLM.SLURM,
+        network_prefix: str = DEFAULT_TRANSPORT_NETIF,
+        port: str = DEFAULT_OVERLAY_NETWORK_PORT,
+        primary_hostname: Optional[str] = None,
+        hostlist: Optional[list[str]] = None,
+        sigint_trigger=None,
+    ):
         """Obtain a network configuration for a given worklaod manager
 
         :param workload_manager: Workload manager to be used to obtain info, defaults to WLM.SLURM
@@ -191,7 +198,10 @@ class NetworkConfig():
 
         obj = cls()
         wlm_generator = wlm_cls_dict.get(workload_manager)(network_prefix, port, hostlist)
-        obj.network_config = wlm_generator.get_network_config(sigint_trigger=sigint_trigger)
+        if workload_manager is WLM.K8S:
+            obj.network_config = wlm_generator._launch_network_config_helper()
+        else:
+            obj.network_config = wlm_generator.get_network_config(sigint_trigger=sigint_trigger)
         obj.allocation_nnodes = wlm_generator.get_allocation_node_count()
         # If coming from the workload manager, we need to use the host ID to select the primary
         # node (unless overruled by user input) and assign a node index
@@ -200,10 +210,9 @@ class NetworkConfig():
         return obj
 
     @classmethod
-    def from_file(cls,
-                  filename: str,
-                  format: ConfigOutputType = ConfigOutputType.YAML,
-                  primary_hostname: Optional[str] = None):
+    def from_file(
+        cls, filename: str, format: ConfigOutputType = ConfigOutputType.YAML, primary_hostname: Optional[str] = None
+    ):
         """Read input from a YAML or JSON network configuration file
 
         Args:
@@ -226,18 +235,20 @@ class NetworkConfig():
             clean_read = False
 
             if not clean_read:
-                with open(filename, 'r') as f:
+                with open(filename, "r") as f:
                     try:
                         from json import load
+
                         sdict = load(f)
                         clean_read = True
                     except Exception:
                         pass
 
             if not clean_read:
-                with open(filename, 'r') as f:
+                with open(filename, "r") as f:
                     try:
                         from yaml import safe_load
+
                         sdict = safe_load(f)
                         clean_read = True
                     except Exception:
@@ -254,7 +265,7 @@ class NetworkConfig():
             if not has_primary:
                 obj._select_primary(primary_hostname=primary_hostname)
             elif has_primary and primary_hostname is not None:
-                raise RuntimeError('Primary hostname input by user but is already set in network config file')
+                raise RuntimeError("Primary hostname input by user but is already set in network config file")
 
         except Exception:
             raise
@@ -279,8 +290,7 @@ class NetworkConfig():
         return obj
 
 
-def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF,
-                                    port=DEFAULT_OVERLAY_NETWORK_PORT):
+def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF, port=DEFAULT_OVERLAY_NETWORK_PORT):
     """Print to stdout the node descriptor of node being executed on
 
     Args:
@@ -291,10 +301,10 @@ def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF,
 
     from dragon.launcher.launchargs import valid_port_int
 
-    parser = argparse.ArgumentParser(description='Starts the Dragon launch helper for generating network topology')
+    parser = argparse.ArgumentParser(description="Starts the Dragon launch helper for generating network topology")
 
-    parser.add_argument('--network-prefix', required=True, type=str, help='Network prefix to look for.')
-    parser.add_argument('--port', required=True, type=valid_port_int, help='Port to connect to.')
+    parser.add_argument("--network-prefix", required=True, type=str, help="Network prefix to look for.")
+    parser.add_argument("--port", required=True, type=valid_port_int, help="Port to connect to.")
 
     parser.set_defaults(
         port=DEFAULT_OVERLAY_NETWORK_PORT,
@@ -321,20 +331,22 @@ def get_args(inputs=None):
     """
     from dragon.launcher.launchargs import NETWORK_HELP, valid_port_int
 
-    parser = argparse.ArgumentParser(description='Runs Dragon internal tool for generating network topology')
+    parser = argparse.ArgumentParser(description="Runs Dragon internal tool for generating network topology")
 
-    parser.add_argument('-p', '--port', type=valid_port_int, help="Infrastructure listening port (default: %(default)s)")
-    parser.add_argument('--network-prefix', metavar='NETWORK_PREFIX', type=str, help=NETWORK_HELP)
-    parser.add_argument('--wlm', '-w', metavar='WORKLOAD_MANAGER', type=WLM.from_str, choices=list(WLM), help=WLM_HELP)
-    parser.add_argument('--log', '-l', help="Enable debug logging", action='store_true')
-    parser.add_argument('--output-to-yaml', '-y', action='store_true', help='Output configuration to YAML file')
-    parser.add_argument('--output-to-json', '-j', action='store_true', help='Output configuration to JSON file')
-    parser.add_argument('--no-stdout', action='store_true', help='Do not print the configuration to stdout')
-    parser.add_argument('--primary', type=str, help='Specify the hostname to be used for the primary compute node')
+    parser.add_argument(
+        "-p", "--port", type=valid_port_int, help="Infrastructure listening port (default: %(default)s)"
+    )
+    parser.add_argument("--network-prefix", metavar="NETWORK_PREFIX", type=str, help=NETWORK_HELP)
+    parser.add_argument("--wlm", "-w", metavar="WORKLOAD_MANAGER", type=WLM.from_str, choices=list(WLM), help=WLM_HELP)
+    parser.add_argument("--log", "-l", help="Enable debug logging", action="store_true")
+    parser.add_argument("--output-to-yaml", "-y", action="store_true", help="Output configuration to YAML file")
+    parser.add_argument("--output-to-json", "-j", action="store_true", help="Output configuration to JSON file")
+    parser.add_argument("--no-stdout", action="store_true", help="Do not print the configuration to stdout")
+    parser.add_argument("--primary", type=str, help="Specify the hostname to be used for the primary compute node")
 
     host_group = parser.add_mutually_exclusive_group()
-    host_group.add_argument('--hostlist', action=SplitArgsAtComma, metavar='HOSTLIST', type=str, help=HOSTLIST_HELP)
-    host_group.add_argument('--hostfile', type=str, metavar='HOSTFILE', help=HOSTFILE_HELP)
+    host_group.add_argument("--hostlist", action=SplitArgsAtComma, metavar="HOSTLIST", type=str, help=HOSTLIST_HELP)
+    host_group.add_argument("--hostfile", type=str, metavar="HOSTFILE", help=HOSTFILE_HELP)
 
     parser.set_defaults(
         port=DEFAULT_OVERLAY_NETWORK_PORT,
@@ -345,7 +357,7 @@ def get_args(inputs=None):
         no_stdout=False,
         primary=None,
         hostlist=None,
-        hostfile=None
+        hostfile=None,
     )
 
     if inputs is None:
@@ -354,32 +366,32 @@ def get_args(inputs=None):
         args = parser.parse_args(inputs)
 
     if args.log:
-        dlog.setup_logging(basename='wlm_config', level=logging.DEBUG)
-        LOGGER = logging.getLogger('wlm_config')
-        LOGGER.debug(f'Command line arguments: {args}')
+        dlog.setup_logging(basename="wlm_config", level=logging.DEBUG)
+        LOGGER = logging.getLogger("wlm_config")
+        LOGGER.debug(f"Command line arguments: {args}")
 
-    wlm = vars(args).get('wlm', None)
+    wlm = vars(args).get("wlm", None)
     if not wlm:
         for wlm, cls in wlm_cls_dict.items():
             if cls.check_for_wlm_support():
-                print(f'Detected a {str(wlm)} environment.')
+                print(f"Detected a {str(wlm)} environment.")
                 break
 
         if not wlm:
-            raise RuntimeError('Could not detect a supported WLM environment.')
+            raise RuntimeError("Could not detect a supported WLM environment.")
 
     # Handle the ssh case
     if wlm is WLM.SSH:
         args.hostlist = parse_hosts(args.hostlist, args.hostfile)
     else:
         if args.hostlist is not None or args.hostfile is not None:
-            raise NotImplementedError('hostlist and hostfile arguments are only supported in the SSH case')
+            raise NotImplementedError("hostlist and hostfile arguments are only supported in the SSH case")
 
     return wlm, args
 
 
 def main():
-    '''
+    """
     .. code-block::
         :caption: **Dragon Network Config (dragon-network-config) tool's help and basic use**
 
@@ -393,7 +405,7 @@ def main():
           -p PORT, --port PORT  Infrastructure listening port (default: 6565)
           --network-prefix NETWORK_PREFIX
                                 NETWORK_PREFIX specifies the network prefix the dragon runtime will use to determine which IP addresses it should use to build
-                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib)\d+$' is used -- the prefix for known HPE-Cray XC
+                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib)\\d+$' is used -- the prefix for known HPE-Cray XC
                                 and EX high speed networks. If uncertain which networks are available, the following will return them in pretty formatting: `dragon-
                                 network-ifaddrs --ip --no-loopback --up --running | jq`. Prepending with `srun` may be necessary to get networks available on
                                 backend compute nodes
@@ -411,17 +423,18 @@ def main():
 
         # To create YAML and JSON files with a slurm WLM:
         $ dragon-network-config --wlm slurm --output-to-yaml --output-to-json
-    '''
+    """
 
     try:
         wlm, args = get_args()
 
-        net = NetworkConfig.from_wlm(workload_manager=wlm,
-                                     port=args.port,
-                                     network_prefix=args.network_prefix,
-                                     primary_hostname=args.primary,
-                                     hostlist=args.hostlist
-                                     )
+        net = NetworkConfig.from_wlm(
+            workload_manager=wlm,
+            port=args.port,
+            network_prefix=args.network_prefix,
+            primary_hostname=args.primary,
+            hostlist=args.hostlist,
+        )
         if not args.no_stdout:
             config = net.get_network_config()
             local_sdict = {}
@@ -439,5 +452,5 @@ def main():
         raise
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

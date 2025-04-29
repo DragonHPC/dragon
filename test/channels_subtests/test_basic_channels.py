@@ -6,15 +6,38 @@ import os
 import multiprocessing as mp
 import dragon.infrastructure.parameters as dparms
 from dragon.utils import B64
-from dragon.channels import Channel, Message, ChannelSendH, ChannelRecvH, ChannelError, ChannelSendError, \
-    ChannelRecvError, OwnershipOnSend, LockType, FlowControl, ChannelFull, ChannelEmpty, ChannelHandleNotOpenError, \
-    ChannelRecvTimeout, ChannelSendTimeout, EventType, ChannelBarrierBroken, ChannelBarrierReady, MASQUERADE_AS_REMOTE, \
-    ChannelSet, ChannelSetTimeout, POLLIN, SPIN_WAIT, ADAPTIVE_WAIT
+from dragon.channels import (
+    Channel,
+    Message,
+    ChannelSendH,
+    ChannelRecvH,
+    ChannelError,
+    ChannelSendError,
+    ChannelRecvError,
+    OwnershipOnSend,
+    LockType,
+    FlowControl,
+    ChannelFull,
+    ChannelEmpty,
+    ChannelHandleNotOpenError,
+    ChannelRecvTimeout,
+    ChannelSendTimeout,
+    EventType,
+    ChannelBarrierBroken,
+    ChannelBarrierReady,
+    MASQUERADE_AS_REMOTE,
+    ChannelSet,
+    ChannelSetTimeout,
+    POLLIN,
+    SPIN_WAIT,
+    ADAPTIVE_WAIT,
+)
 from dragon.managed_memory import MemoryPool, DragonMemoryError
 import sys
 
 BARRIER_CHANNEL_CAPACITY = 5
 MAX_SPINNERS = 5
+
 
 def worker_attach_detach(ch_ser, pool_ser):
     mpool = MemoryPool.attach(pool_ser)
@@ -32,6 +55,7 @@ def worker_attach_detach(ch_ser, pool_ser):
     mpool.detach()
     ch.detach()
 
+
 def worker_pickled_attach(ch, mpool):
     sendh = ch.sendh()
     sendh.open()
@@ -45,6 +69,7 @@ def worker_pickled_attach(ch, mpool):
     msg.destroy()
     mpool.detach()
     ch.detach()
+
 
 def worker_send_recv(id, ch_ser, ch2_ser, pool_ser):
     try:
@@ -72,6 +97,7 @@ def worker_send_recv(id, ch_ser, ch2_ser, pool_ser):
         print(ex)
         sys.exit(1)
 
+
 def worker_fill_poll_empty(ch_ser, pool_ser):
     try:
         mpool = MemoryPool.attach(pool_ser)
@@ -90,10 +116,10 @@ def worker_fill_poll_empty(ch_ser, pool_ser):
                 print("Error in polling for empty")
                 sys.exit(1)
 
-
     except Exception as ex:
         print(ex)
         sys.exit(1)
+
 
 def worker_empty_poll_full(ch_ser):
     try:
@@ -126,7 +152,7 @@ def worker_barrier_wait(ch_ser):
 
         try:
             if not ch.poll(event_mask=EventType.POLLBARRIER, timeout=30):
-                print('Error calling Barrier Poll', flush=True)
+                print("Error calling Barrier Poll", flush=True)
                 sys.exit(1)
         except ChannelBarrierReady:
             ch.poll(event_mask=EventType.POLLBARRIER_RELEASE, timeout=30)
@@ -134,7 +160,7 @@ def worker_barrier_wait(ch_ser):
         msg = recvh.recv(timeout=30)
         x = int.from_bytes(msg.bytes_memview(), byteorder=sys.byteorder, signed=True)
         if x < -1 or x > BARRIER_CHANNEL_CAPACITY:
-            print(f'Error: Got Barrier Value {x}', flush=True)
+            print(f"Error: Got Barrier Value {x}", flush=True)
             sys.exit(1)
 
         if x == -1:
@@ -189,13 +215,13 @@ class ChannelCreateTest(unittest.TestCase):
         with Channel(self.mpool, 1) as ch:
             with ch.recvh() as recvh:
                 with self.assertRaises(TimeoutError):
-                    recvh.recv(timeout = 1.5)
+                    recvh.recv(timeout=1.5)
 
             with ch.sendh() as sendh:
                 sendh.send(msg)
 
             with ch.recvh() as recvh:
-                msg2 = recvh.recv(timeout = 1.5)
+                msg2 = recvh.recv(timeout=1.5)
                 mview2 = msg2.bytes_memview()
                 self.assertEqual(1, mview2[0])
 
@@ -212,7 +238,7 @@ class ChannelCreateTest(unittest.TestCase):
 
         with Channel.attach(ch_ser) as ch2:
             with ch2.recvh() as recvh:
-                msg2 = recvh.recv(timeout = 1.5)
+                msg2 = recvh.recv(timeout=1.5)
                 mview2 = msg2.bytes_memview()
                 self.assertEqual(1, mview2[0])
 
@@ -340,7 +366,7 @@ class ChannelCreateTest(unittest.TestCase):
         mview2[0] = 1
 
         with self.assertRaises(TimeoutError):
-            sendh.send(msg2, blocking = True, timeout=1)
+            sendh.send(msg2, blocking=True, timeout=1)
 
         msg = recvh.recv()
         msg.destroy()
@@ -348,7 +374,6 @@ class ChannelCreateTest(unittest.TestCase):
         sendh.close()
         recvh.close()
         ch.destroy()
-
 
     def test_attr_channel2(self):
         ch = Channel(self.mpool, 1, fc_type=FlowControl.RESOURCES_FLOW_CONTROL, lock_type=LockType.GREEDY)
@@ -371,7 +396,6 @@ class ChannelCreateTest(unittest.TestCase):
 
         msg.destroy()
         ch.destroy()
-
 
     def test_multiple_channels(self):
         channels = []
@@ -397,15 +421,6 @@ class ChannelCreateTest(unittest.TestCase):
             recvh.close()
             msg.destroy()
             ch.destroy()
-
-    def test_uid_in_use(self):
-        # @MCB TODO: Review the error messages on this.
-        # It fails, but in an unexpected way.  The error
-        # comes back through the managed memory library in a weird way.
-        ch1 = Channel(self.mpool, 1)
-        with self.assertRaises(ChannelError):
-            Channel(self.mpool, 1)
-        ch1.destroy()
 
     @unittest.skip("Cython auto-truncates floats to integer types where possible.  Need to determine behavior.")
     def test_uid_float(self):
@@ -451,7 +466,7 @@ class ChannelCreateTest(unittest.TestCase):
         sh.open()
         rh.open()
 
-        x = bytearray("Hello", 'utf-8')
+        x = bytearray("Hello", "utf-8")
         sh.send_bytes(x, len(x))
 
         self.assertEqual(1, ch.num_msgs)
@@ -467,9 +482,8 @@ class ChannelCreateTest(unittest.TestCase):
         ch = Channel(self.mpool, cuid)
         ch_ser = ch.serialize()
 
-        (s_cuid, typeid) = Channel.serialized_uid_type(ch_ser)
+        s_cuid = Channel.serialized_uid(ch_ser)
         self.assertEqual(s_cuid, cuid, "ID's do not match")
-        self.assertEqual(typeid, 1, "Expected enum type 1")
 
         ch.destroy()
 
@@ -520,7 +534,7 @@ class ChannelTests(unittest.TestCase):
         delta = time.monotonic() - start
 
         self.assertFalse(result)
-        self.assertGreater(delta, timeout, 'delta should be bigger than timeout')
+        self.assertGreater(delta, timeout, "delta should be bigger than timeout")
 
     def test_unopened_recv_hdl(self):
         recvh = self.ch.recvh()
@@ -529,14 +543,14 @@ class ChannelTests(unittest.TestCase):
 
     def test_poll_time(self):
         # Without a message it times out
-        self.assertEqual(self.ch.poll(timeout=1.1),False)
+        self.assertEqual(self.ch.poll(timeout=1.1), False)
 
     def test_poll(self):
         recvh = self.ch.recvh()
         recvh.open()
 
         self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLIN), False)
-        self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLIN|EventType.POLLOUT), True)
+        self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLIN | EventType.POLLOUT), True)
 
         sendh = self.ch.sendh()
         sendh.open()
@@ -570,21 +584,21 @@ class ChannelTests(unittest.TestCase):
 
         proc1.join()
         proc2.join()
-        self.assertTrue(proc1.exitcode == 0, 'The fill and poll for empty process did not complete successfully')
-        self.assertTrue(proc2.exitcode == 0, 'The empty and poll for full process did not complete successfully')
+        self.assertTrue(proc1.exitcode == 0, "The fill and poll for empty process did not complete successfully")
+        self.assertTrue(proc2.exitcode == 0, "The empty and poll for full process did not complete successfully")
 
     def test_poll_barrier(self):
         ch_ser = self.ch2.serialize()
         proc_list = []
 
         for i in range(BARRIER_CHANNEL_CAPACITY):
-            proc = mp.Process(target=worker_barrier_wait, args=(ch_ser, ))
+            proc = mp.Process(target=worker_barrier_wait, args=(ch_ser,))
             proc.start()
             proc_list.append(proc)
 
         for i in range(BARRIER_CHANNEL_CAPACITY):
             proc_list[i].join()
-            self.assertEqual(proc_list[i].exitcode, 0, 'Non-zero exitcode from barrier proc')
+            self.assertEqual(proc_list[i].exitcode, 0, "Non-zero exitcode from barrier proc")
 
     def test_poll_barrier2(self):
         ch_ser = self.ch2.serialize()
@@ -592,20 +606,20 @@ class ChannelTests(unittest.TestCase):
             for j in range(5):
                 proc_list = []
 
-                for i in range(BARRIER_CHANNEL_CAPACITY*2):
-                    proc = mp.Process(target=worker_barrier_wait, args=(ch_ser, ))
+                for i in range(BARRIER_CHANNEL_CAPACITY * 2):
+                    proc = mp.Process(target=worker_barrier_wait, args=(ch_ser,))
                     proc.start()
                     proc_list.append(proc)
 
-                for i in range(BARRIER_CHANNEL_CAPACITY*2):
+                for i in range(BARRIER_CHANNEL_CAPACITY * 2):
                     proc_list[i].join()
-                    self.assertEqual(proc_list[i].exitcode, 0, 'Non-zero exitcode from barrier proc')
+                    self.assertEqual(proc_list[i].exitcode, 0, "Non-zero exitcode from barrier proc")
         except Exception as ex:
             print(ex)
-            print('**** Error in test_poll_barrier2')
-            print(f'*** Receivers={self.ch2.blocked_receivers}')
-            print(f'*** Number of messages={self.ch2.num_msgs}')
-            print(f'*** Barrier Count is {self.ch2.barrier_count}')
+            print("**** Error in test_poll_barrier2")
+            print(f"*** Receivers={self.ch2.blocked_receivers}")
+            print(f"*** Number of messages={self.ch2.num_msgs}")
+            print(f"*** Barrier Count is {self.ch2.barrier_count}")
 
     def test_poll_barrier3_with_abort(self):
         ch_ser = self.ch2.serialize()
@@ -616,7 +630,7 @@ class ChannelTests(unittest.TestCase):
             proc_list = []
 
             for i in range(BARRIER_CHANNEL_CAPACITY):
-                proc = mp.Process(target=worker_barrier_wait, args=(ch_ser, ))
+                proc = mp.Process(target=worker_barrier_wait, args=(ch_ser,))
                 proc.start()
                 proc_list.append(proc)
 
@@ -624,66 +638,66 @@ class ChannelTests(unittest.TestCase):
                 proc_list[i].join()
                 ec = proc_list[i].exitcode
                 if ec == 0:
-                    success+=1
+                    success += 1
                 elif ec == 2:
-                    aborted+=1
+                    aborted += 1
 
             proc_list = []
 
-            for i in range(BARRIER_CHANNEL_CAPACITY*2):
-                proc = mp.Process(target=worker_barrier_wait, args=(ch_ser, ))
-                if i==4:
+            for i in range(BARRIER_CHANNEL_CAPACITY * 2):
+                proc = mp.Process(target=worker_barrier_wait, args=(ch_ser,))
+                if i == 4:
                     self.ch2.poll(event_mask=EventType.POLLBARRIER_ABORT)
                 proc.start()
                 proc_list.append(proc)
 
-            for i in range(BARRIER_CHANNEL_CAPACITY*2):
+            for i in range(BARRIER_CHANNEL_CAPACITY * 2):
                 proc_list[i].join()
                 ec = proc_list[i].exitcode
                 if ec == 0:
-                    success+=1
+                    success += 1
                 elif ec == 2:
-                    aborted+=1
+                    aborted += 1
 
-            self.assertEqual(success, 5, f'Five should have succeeded. Instead there were {success}')
-            self.assertEqual(aborted, 10, f'Ten should have aborted, instead there were {aborted}')
+            self.assertEqual(success, 5, f"Five should have succeeded. Instead there were {success}")
+            self.assertEqual(aborted, 10, f"Ten should have aborted, instead there were {aborted}")
             self.ch2.poll(event_mask=EventType.POLLRESET)
 
         except Exception as ex:
             print(ex)
-            print('**** Error in test_poll_barrier3_with_abort')
-            print(f'*** Receivers={self.ch2.blocked_receivers}')
-            print(f'*** Number of messages={self.ch2.num_msgs}')
-            print(f'*** Barrier Count is {self.ch2.barrier_count}')
+            print("**** Error in test_poll_barrier3_with_abort")
+            print(f"*** Receivers={self.ch2.blocked_receivers}")
+            print(f"*** Number of messages={self.ch2.num_msgs}")
+            print(f"*** Barrier Count is {self.ch2.barrier_count}")
 
     def test_poll_barrier_abort(self):
         ch_ser = self.ch2.serialize()
         proc_list = []
 
-        for i in range(BARRIER_CHANNEL_CAPACITY-1):
-            proc = mp.Process(target=worker_barrier_wait, args=(ch_ser, ))
+        for i in range(BARRIER_CHANNEL_CAPACITY - 1):
+            proc = mp.Process(target=worker_barrier_wait, args=(ch_ser,))
             proc.start()
             proc_list.append(proc)
 
         time.sleep(1)
         self.ch2.poll(event_mask=EventType.POLLBARRIER_ABORT, timeout=5)
 
-        for i in range(BARRIER_CHANNEL_CAPACITY-1):
+        for i in range(BARRIER_CHANNEL_CAPACITY - 1):
             proc_list[i].join()
-            self.assertEqual(proc_list[i].exitcode, 2, 'Non-zero exitcode from barrier proc')
+            self.assertEqual(proc_list[i].exitcode, 2, "Non-zero exitcode from barrier proc")
 
         self.ch2.poll(event_mask=EventType.POLLRESET, timeout=5)
 
         proc_list = []
 
         for i in range(BARRIER_CHANNEL_CAPACITY):
-            proc = mp.Process(target=worker_barrier_wait, args=(ch_ser, ))
+            proc = mp.Process(target=worker_barrier_wait, args=(ch_ser,))
             proc.start()
             proc_list.append(proc)
 
         for i in range(BARRIER_CHANNEL_CAPACITY):
             proc_list[i].join()
-            self.assertEqual(proc_list[i].exitcode, 0, 'Non-zero exitcode from barrier proc')
+            self.assertEqual(proc_list[i].exitcode, 0, "Non-zero exitcode from barrier proc")
 
     def test_blocking_recv(self):
         recvh = self.ch.recvh()
@@ -735,7 +749,7 @@ class ChannelTests(unittest.TestCase):
         ser_ch2 = self.ch2.serialize()
         ser_pool = self.mpool.serialize()
 
-        for k in range(MAX_SPINNERS*2):
+        for k in range(MAX_SPINNERS * 2):
             proc = mp.Process(target=worker_send_recv, args=(k, ser_ch, ser_ch2, ser_pool))
             proc_list.append(proc)
             proc.start()
@@ -743,7 +757,7 @@ class ChannelTests(unittest.TestCase):
         recvh = self.ch.recvh(wait_mode=SPIN_WAIT)
         recvh.open()
 
-        for _ in range(MAX_SPINNERS*2):
+        for _ in range(MAX_SPINNERS * 2):
             msg = recvh.recv()
             msg.destroy()
 
@@ -752,7 +766,7 @@ class ChannelTests(unittest.TestCase):
         sendh = self.ch2.sendh(wait_mode=SPIN_WAIT)
         sendh.open()
 
-        for _ in range(MAX_SPINNERS*2):
+        for _ in range(MAX_SPINNERS * 2):
             msg = Message.create_alloc(self.mpool, 32)
             mview = msg.bytes_memview()
             mview[0:5] = b"Hello"
@@ -817,7 +831,7 @@ class ChannelTests(unittest.TestCase):
             self.fail("Expected ChannelFull exception")
 
         self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLOUT), False)
-        self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLOUT|EventType.POLLIN), True)
+        self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLOUT | EventType.POLLIN), True)
         msg.destroy()
         sendh.close()
         recvh = self.ch.recvh()
@@ -839,7 +853,7 @@ class ChannelTests(unittest.TestCase):
 
         self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLIN), False)
         self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLOUT), True)
-        self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLOUT|EventType.POLLIN), True)
+        self.assertEqual(self.ch.poll(timeout=0, event_mask=EventType.POLLOUT | EventType.POLLIN), True)
 
         self.assertEqual(i, j)
         recvh.close()
@@ -1076,7 +1090,7 @@ class MessageTest(unittest.TestCase):
         with self.assertRaises(ChannelError):
             msg.bytes_memview()
 
-    @unittest.skip('This is not currently supported.')
+    @unittest.skip("This is not currently supported.")
     def test_zero_size(self):
         msg = Message.create_alloc(self.mpool, 0)
         self.assertEqual(len(msg.tobytes()), 0)
@@ -1150,7 +1164,7 @@ class ChannelSetTests(unittest.TestCase):
             self.ch_set.poll(timeout=timeout)
 
         delta = time.monotonic() - start
-        self.assertGreater(delta, timeout, 'delta should be bigger than timeout')
+        self.assertGreater(delta, timeout, "delta should be bigger than timeout")
 
     def test_poll(self):
         ch_ser = self.channel_list[0].serialize()
@@ -1223,7 +1237,7 @@ class ChannelSetTests(unittest.TestCase):
         # by initializing the set with capture_all_events=False
         channel_list = []
         for i in range(3):
-            channel_list.append(Channel(self.mpool, c_uid=i+10))
+            channel_list.append(Channel(self.mpool, c_uid=i + 10))
         ch_set = ChannelSet(self.mpool, channel_list, capture_all_events=False)
 
         # poll an empty channel set
@@ -1278,6 +1292,6 @@ class ChannelSetTests(unittest.TestCase):
             proc.join()
 
 
-if __name__ == '__main__':
-    mp.set_start_method('spawn', force=True)
+if __name__ == "__main__":
+    mp.set_start_method("spawn", force=True)
     unittest.main(verbosity=2)

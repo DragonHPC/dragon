@@ -6,6 +6,7 @@ import scipy.signal
 import time
 import itertools
 from dragon.telemetry.telemetry import Telemetry as dragon_telem
+import dragon.infrastructure.parameters as di_param
 
 def get_args():
     parser = argparse.ArgumentParser(description="Basic SciPy test")
@@ -42,10 +43,12 @@ def f(args):
     elapsed = 0.
     start = time.perf_counter()
     last = None
+    dt = dragon_telem()
     # Explicitly control compute time per image
     while elapsed < work_time:
         last = scipy.signal.convolve2d(image, random_filter)[::5, ::5]
         elapsed = time.perf_counter() - start
+        dt.add_data(ts_metric_name="elapsed_time", ts_data=elapsed, telemetry_level=3, tagk="puid", tagv=str(di_param.this_process.my_puid))
 
     return last
 

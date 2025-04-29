@@ -8,16 +8,17 @@ import multiprocessing
 import time
 import test_util
 
+
 class BasicProcessTest:
-    
+
     def __init__(self):
         self.args = None
         self.results = None
 
     def __setup(self):
-        parser = test_util.add_default_args('Does a basic speed test of spawning processes')
+        parser = test_util.add_default_args("Does a basic speed test of spawning processes")
         self.args = test_util.process_args(parser)
-        multiprocessing.set_start_method('spawn')
+        multiprocessing.set_start_method("spawn")
 
     def run(self):
         self.__setup()
@@ -29,7 +30,6 @@ class BasicProcessTest:
 
     def dump(self):
         return self.results.dump()
-
 
     def dummy_func(self, x):
         return x
@@ -60,9 +60,9 @@ class BasicProcessTest:
         return time.time_ns() - start_time
 
 
-if __name__ == '__main__':
-    #f = open("basic_pool_test.py", "r")
+if __name__ == "__main__":
+    # f = open("basic_pool_test.py", "r")
     test = BasicProcessTest()
     results = test.run()
     print(results)
-    #f.close()
+    # f.close()

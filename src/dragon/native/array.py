@@ -9,6 +9,7 @@ can be accessed via the array attribute of a Array.
 
 import logging
 import ctypes
+from collections.abc import Iterable
 
 import dragon
 from ..channels import Channel, Message, ChannelError
@@ -21,7 +22,14 @@ from ..localservices.options import ChannelOptions as LSChannelOptions
 from ..globalservices.channel import create, get_refcnt, release_refcnt
 from ..dtypes import WHEN_DEPOSITED
 from .lock import Lock
-from .value import PseudoStructure, ValueConversion, _get_nbytes, _map_structure_to_list, _extract_structure_types
+from .value import (
+    PseudoStructure,
+    Value,
+    ValueConversion,
+    _get_nbytes,
+    _map_structure_to_list,
+    _extract_structure_types,
+)
 from .value import _TYPECODE_TO_TYPE, _SUPPORTED_TYPES, _ALIGNMENT, _TYPE_CONV_VAL
 
 
@@ -35,55 +43,8 @@ _TYPE_CONV_ARR = {}  # dispatch router for manipulating the arrays based on data
 class Array:
     """This class implements Dragon array resides in the Dragon channel."""
 
-    def __getstate__(self):
-        ret = (self._channel.serialize(),
-               self._type,
-               self._data_len,
-               self._alignment,
-               self.subclass_types, self.tuple_type_list,
-               self._struct0_sizes, self._summed_s0_sizes,
-               self._struct1_sizes, self._summed_s1_sizes
-               )
-        return ret
-
-    def __setstate__(self, state):
-        (serialized_bytes, self._type, self._data_len, self._alignment,
-         self.subclass_types, self.tuple_type_list,
-         self._struct0_sizes, self._summed_s0_sizes,
-         self._struct1_sizes, self._summed_s1_sizes) = state
-
-        self._channel = dragon.channels.Channel.attach(serialized_bytes)
-        self._reset()
-        get_refcnt(self._channel.cuid)
-
-    def __repr__(self):
-        return (
-            f"{self.__class__.__name__}(typecode_or_type={self._type}, lock={self._lock}, m_uid={self._muid})"
-        )
-
-    def __del__(self):
-        try:
-            self._sendh.close()
-        except (AttributeError, ChannelError):
-            pass
-        try:
-            self._recvh.close()
-        except (AttributeError, ChannelError):
-            pass
-        try:
-            self._channel.detach()
-        except (AttributeError, ChannelError):
-            pass
-        try:
-            release_refcnt(self._channel.cuid)
-        except (AttributeError, ChannelError):
-            pass
-
-    def __enter__(self):
-        self.acquire()
-
-    def __exit__(self, *args):
-        self.release()
+    _lock = None  # This ensures _get_lock is sane during any point of evaluation
+    _type = None  # Needed to make __getattr__ behave correctly
 
     def __init__(
         self,
@@ -124,30 +85,43 @@ class Array:
         else:
             self._alignment = _ALIGNMENT
 
-        LOGGER.debug(
-            "Init Dragon Native Array with %s, %s, %s, %s", typecode_or_type, size_or_initializer, lock, m_uid
-        )
+        LOGGER.debug("Init Dragon Native Array with %s, %s, %s, %s", typecode_or_type, size_or_initializer, lock, m_uid)
 
         # Figure out how much size we need in our message
-        no_input_val = False
         if isinstance(size_or_initializer, int):
-            size_or_initializer = [0] * size_or_initializer  # convert to list
+            initial_length = size_or_initializer  # Used for initializing a value for string length
+            size_or_initializer = [0] * size_or_initializer  # convert int to list of requested length
             no_input_val = True
+        else:
+            no_input_val = False
+            initial_length = len(size_or_initializer)
+
+        self._data_len = len(size_or_initializer)
+
+        # If we have a c_char, we need to track the length of the joined string since the API allows
+        # users to query value and expect a concat-ed string of correct length as return type
+        if typecode_or_type is ctypes.c_char:
+            self._str_len = Value("i", initial_length)
+        else:
+            self._str_len = 0
 
         # Work out a stride per data element.
         stride = 1
         if self._is_structure(typecode_or_type):
-            self.subclass_types, self.tuple_type_list = _extract_structure_types(self._type._fields_, len(size_or_initializer))
-            self._struct0_sizes, self._summed_s0_sizes = self._get_packed_struct_size(self.subclass_types, pack_length=True)
-            self._struct1_sizes, self._summed_s1_sizes = self._get_packed_struct_size(self.subclass_types, pack_length=False)
+            self._var_names, self.subclass_types, self.tuple_type_list = _extract_structure_types(
+                self._type._fields_, len(size_or_initializer)
+            )
+            self._struct0_sizes, self._summed_s0_sizes = self._get_packed_struct_size(
+                self.subclass_types, pack_length=True
+            )
+            self._struct1_sizes, self._summed_s1_sizes = self._get_packed_struct_size(
+                self.subclass_types, pack_length=False
+            )
         else:
             self.subclass_types, self.tuple_type_list = (None, None)
             self._struct0_sizes, self._summed_s0_sizes = (None, None)
             self._struct1_sizes, self._summed_s1_sizes = (None, None)
-
             stride = self._alignment
-
-        self._data_len = len(size_or_initializer)
 
         # Get a msg and a memview for the value inside our pool
         msg = self._get_msg_from_pool(size_or_initializer, stride, m_uid)
@@ -155,6 +129,8 @@ class Array:
 
         # Pack the array into a Dragon msg via a memoryview object
         pack_length = True
+
+        size_or_initializer = self._process_input(size_or_initializer)
 
         # Structures have to be handled carefully as they're essentially doubly-nested arrays
         if self._is_structure(typecode_or_type):
@@ -171,9 +147,13 @@ class Array:
                     l_mview = self._get_struct_mview_slice(mview, s_idx, e_idx, pack_length)
                     self.item_type = self.tuple_type_list[e_idx]
                     if no_input_val:
-                        _TYPE_CONV_VAL[self.item_type][0](mview=l_mview, convert=ValueConversion.OBJ_TO_BYTES, pack_length=pack_length)
+                        _TYPE_CONV_VAL[self.item_type][0](
+                            mview=l_mview, convert=ValueConversion.OBJ_TO_BYTES, pack_length=pack_length
+                        )
                     else:
-                        _TYPE_CONV_VAL[self.item_type][0](mview=l_mview, convert=ValueConversion.OBJ_TO_BYTES, val=v, pack_length=pack_length)
+                        _TYPE_CONV_VAL[self.item_type][0](
+                            mview=l_mview, convert=ValueConversion.OBJ_TO_BYTES, val=v, pack_length=pack_length
+                        )
 
                 if pack_length:
                     pack_length = False
@@ -187,11 +167,20 @@ class Array:
                 l_mview = self._get_mview_slice(mview, idx, pack_length)
 
                 if no_input_val:
-                    _TYPE_CONV_VAL[self._type][0](mview=l_mview, convert=ValueConversion.OBJ_TO_BYTES,
-                                                  pack_length=pack_length, alignment=self._alignment)
+                    _TYPE_CONV_VAL[self._type][0](
+                        mview=l_mview,
+                        convert=ValueConversion.OBJ_TO_BYTES,
+                        pack_length=pack_length,
+                        alignment=self._alignment,
+                    )
                 else:
-                    _TYPE_CONV_VAL[self._type][0](mview=l_mview, convert=ValueConversion.OBJ_TO_BYTES,
-                                                  val=value, pack_length=pack_length, alignment=self._alignment)
+                    _TYPE_CONV_VAL[self._type][0](
+                        mview=l_mview,
+                        convert=ValueConversion.OBJ_TO_BYTES,
+                        val=value,
+                        pack_length=pack_length,
+                        alignment=self._alignment,
+                    )
 
                 if pack_length:
                     pack_length = False
@@ -200,85 +189,191 @@ class Array:
         self._sendh.send(msg)
         msg.destroy()
 
-        # if lock is False, return the subclass value
-        if lock in (True, None):
-            lock = Lock(recursive=True)
-
-        if isinstance(lock, bool):
-            pass
-        elif isinstance(lock, Lock):
-            self._lock = lock
+        # The strange logic in here flows from requirements outlined in cpython multiprocessing unittests for Value.
+        # We respect the absurdity.
+        _lock_instance = isinstance(lock, dragon.mpbridge.synchronize.DragonLock) or isinstance(
+            lock, dragon.native.lock.Lock
+        )
+        if lock in [True, None] or _lock_instance:
+            if not _lock_instance:
+                lock = Lock(recursive=True)
             self.get_lock = self._get_lock
             self.get_obj = self._type
+        elif lock is False:
+            pass
         else:
-            raise AttributeError(f"The Lock must be a bool or dragon.native.lock.Lock, but is  {type(lock)}")
+            raise AttributeError(f"Invalid type specificied for lock: {lock}: {type(lock)}")
 
-    def acquire(self):
-        """Acquire the internal lock object"""
-        return self._lock.acquire()
+        self._lock = lock
 
-    def release(self):
-        """Release the internal lock object"""
-        return self._lock.release()
+    def __getstate__(self):
+        ret = (
+            self._channel.serialize(),
+            self._type,
+            self._data_len,
+            self._str_len,
+            self._alignment,
+            self._lock,
+            self._muid,
+            self.subclass_types,
+            self.tuple_type_list,
+            self._struct0_sizes,
+            self._summed_s0_sizes,
+            self._struct1_sizes,
+            self._summed_s1_sizes,
+        )
+        return ret
 
-    def _reset(self) -> None:
-        self._recvh = self._channel.recvh()
-        self._sendh = self._channel.sendh(return_mode=WHEN_DEPOSITED)
-        self._recvh.open()
-        self._sendh.open()
-        self._mpool = MemoryPool.attach(B64.str_to_bytes(this_process.default_pd))
+    def __setstate__(self, state):
+        (
+            serialized_bytes,
+            self._type,
+            self._data_len,
+            self._str_len,
+            self._alignment,
+            self._lock,
+            self._muid,
+            self.subclass_types,
+            self.tuple_type_list,
+            self._struct0_sizes,
+            self._summed_s0_sizes,
+            self._struct1_sizes,
+            self._summed_s1_sizes,
+        ) = state
+
+        self._channel = dragon.channels.Channel.attach(serialized_bytes)
+        self._reset()
+        get_refcnt(self._channel.cuid)
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(typecode_or_type={self._type}, lock={self._lock}, m_uid={self._muid})"
+
+    def __del__(self):
+        try:
+            self._sendh.close()
+        except (AttributeError, ChannelError):
+            pass
+        try:
+            self._recvh.close()
+        except (AttributeError, ChannelError):
+            pass
+        try:
+            self._channel.detach()
+        except (AttributeError, ChannelError):
+            pass
+        try:
+            release_refcnt(self._channel.cuid)
+        except (AttributeError, ChannelError):
+            pass
+
+    def __enter__(self):
+        self.acquire()
+
+    def __exit__(self, *args):
+        self.release()
 
     def __len__(self):
         return self._data_len
 
+    def __getattr__(self, name):
+        """This allows structure attributes to be accessed as if part of the class"""
+
+        try:
+            x = super().__getattr__(name)
+            return x
+        except AttributeError:
+            # Docs require c_char array have a 'value' and 'raw' attribute that returns
+            # array as a string
+            if self._type is ctypes.c_char and name in ["value", "raw"]:
+                # join the list
+                x = b"".join(self.__getitem__(slice(0, self._str_len.value)))
+                return x
+
+        raise AttributeError(f"{name} is not an attribute of DragonArray")
+
+    def __setattr__(self, name, val):
+        """This allows structure attributes to be modded as if they're part of the base class"""
+
+        raise_ex = None
+        non_val = None
+        try:
+            super().__setattr__(name, val)
+        except AttributeError as e:
+            raise_ex = e
+
+        if self._type is ctypes.c_char and name == "value":
+            self.__setitem__(slice(0, len(val)), val)
+
+            # If the user has wholesale changed the string, we need to update the string length
+            self._str_len.value = len(val)
+
+        else:
+            non_val = True
+
+        if raise_ex and non_val:
+            raise raise_ex
+
     def __setitem__(self, pos, arr):
 
-        # grab bytes from memory pool
+        # grab mview from memory pool
         msg = self._recvh.recv()
         mview = msg.bytes_memview()
 
-        # Structure is placed in array
-        if self._is_structure(arr):
-            stride = ctypes.sizeof(self._type)
-            start = pos * stride
-            stop = (pos + 1) * stride
-            msg.clear_payload(start, stop)
-            mview[start:stop] = memoryview(arr).cast("B")
-
-        elif isinstance(arr, tuple):
-            stride = ctypes.sizeof(self._type)
-            start = pos * stride
-            stop = (pos + 1) * stride
-            msg.clear_payload(start, stop)
-            mview[start:stop] = memoryview(self._type(*arr)).cast("B")
-
-        # array placed in shared memory
+        # Construct a list of indices that need to be updated
+        if isinstance(pos, slice):
+            try:
+                arr_indices = range(pos.stop)[pos]
+            # Handle the scenario where stop wasn't defined, eg: arr[:]
+            except TypeError:
+                arr_indices = range(self._data_len)
         else:
-            # overwrite only input values if that's what we've been given
-            if isinstance(pos, slice) or isinstance(arr, int) or isinstance(arr, float):
-                # Get the original array out of memory
-                msg_val = self._unpack_array(mview)
+            arr_indices = [pos]
 
-                # Update the values
-                msg_val[pos] = arr
-                arr = msg_val
-
-            # Now stick it all into memory
+        # Now stick it all into memory
+        if arr_indices[0] == 0:
             pack_length = True
-            for idx, value in enumerate(arr):
+        else:
+            pack_length = False
 
+        arr = self._process_input(arr)
+
+        for idx, value in enumerate(arr):
+
+            # Handle the special structure case. Blergh.
+            if self._is_structure(value):
+
+                # Convert the component of one structure instance into a list for each manipulation
+                val = _map_structure_to_list(value)
+
+                # Since a structure obviously has multiple values to go through the individual elements in one
+                # structure element
+                for e_idx, v in enumerate(val):
+
+                    l_mview = self._get_struct_mview_slice(mview, arr_indices[idx], e_idx, pack_length)
+                    self.item_type = self.tuple_type_list[e_idx]
+
+                    _TYPE_CONV_VAL[self.item_type][0](
+                        mview=l_mview, convert=ValueConversion.OBJ_TO_BYTES, val=v, pack_length=pack_length
+                    )
+
+            # The simple cases
+            else:
                 # The first 8 bytes are for data length
-                l_mview = self._get_mview_slice(mview, idx, pack_length)
-                # puts array in shared memory
+                l_mview = self._get_mview_slice(mview, arr_indices[idx], pack_length)
 
                 ## note: if type is wchar, we always pack the length into the array for each element, so pack_length
                 ## is ignored if type == ctypes.c_wchar. This helps prevent returning empty bytes if the input element
                 ## doesn't make use of all 4 bytes of wchar
-                _TYPE_CONV_VAL[self._type][0](mview=l_mview, convert=ValueConversion.OBJ_TO_BYTES,
-                                              val=value, pack_length=pack_length, alignment=self._alignment)
+                _TYPE_CONV_VAL[self._type][0](
+                    mview=l_mview,
+                    convert=ValueConversion.OBJ_TO_BYTES,
+                    val=value,
+                    pack_length=pack_length,
+                    alignment=self._alignment,
+                )
 
-                if pack_length:
-                    pack_length = False
+            if pack_length:
+                pack_length = False
 
         # puts array back into memory
         self._sendh.send(msg)
@@ -301,7 +396,6 @@ class Array:
             arr = self._unpack_array(mview)
 
             # Now grab the value, send the message back out there and return
-            ## Note: this could be optimized to not return the full array, but I didn't do that here
             val = arr[pos]
 
             self._sendh.send(msg)
@@ -316,7 +410,43 @@ class Array:
 
         return target
 
-# Private methods
+    def _process_input(self, arr):
+        """Make sure the input array is configured in such a way to make it fit into our scheme"""
+
+        if isinstance(arr, range):
+            arr = list(arr)
+
+        # Make sure we have the the right flavor of iterable
+        if not isinstance(arr, Iterable) and not isinstance(arr, (str, bytes)):
+            arr = [arr]
+        # If we were given a bytes string with c_char, make it a string so we dont' lose info
+        elif isinstance(arr, bytes) and len(arr) > 0 and self._type == ctypes.c_char:
+            arr = arr.decode("utf-8")
+        return arr
+
+    # Public  methods
+
+    def acquire(self):
+        """Acquire the internal lock object"""
+        return self._lock.acquire()
+
+    def release(self):
+        """Release the internal lock object"""
+        return self._lock.release()
+
+    # This seems crazy, but it necessary to always force evaluation of value from
+    # the memory pool, which only exists for strings implemented by ctypes.c_char
+    @property
+    def value(self):
+
+        return self.__getattr__("value")
+
+    @property
+    def raw(self):
+
+        return self.__getattr__("raw")
+
+    # Private methods
     def _unpack_array(self, mview: memoryview):
 
         if self._type is not ctypes.c_wchar:
@@ -324,17 +454,35 @@ class Array:
             nbytes = _get_nbytes(mview[: self._alignment])
 
             # Construct the array
-            arr = [_TYPE_CONV_VAL[self._type][0](mview=mview[i: i + self._alignment],
-                                                 convert=ValueConversion.BYTES_TO_OBJ, nbytes=nbytes, alignment=self._alignment)
-                   for i in range(self._alignment, len(mview), self._alignment)]
+            arr = [
+                _TYPE_CONV_VAL[self._type][0](
+                    mview=mview[i : i + self._alignment],
+                    convert=ValueConversion.BYTES_TO_OBJ,
+                    nbytes=nbytes,
+                    alignment=self._alignment,
+                )
+                for i in range(self._alignment, len(mview), self._alignment)
+            ]
 
         # Handle wchar whose return length can vary from array element to array element
         else:
-            arr = [_TYPE_CONV_VAL[self._type][0](mview=self._get_mview_slice(mview, i, True),
-                                                 convert=ValueConversion.BYTES_TO_OBJ, alignment=self._alignment)
-                   for i in range(0, int(len(mview) / (2 * self._alignment)))]
+            arr = [
+                _TYPE_CONV_VAL[self._type][0](
+                    mview=self._get_mview_slice(mview, i, True),
+                    convert=ValueConversion.BYTES_TO_OBJ,
+                    alignment=self._alignment,
+                )
+                for i in range(0, int(len(mview) / (2 * self._alignment)))
+            ]
 
         return arr
+
+    def _reset(self) -> None:
+        self._recvh = self._channel.recvh()
+        self._sendh = self._channel.sendh(return_mode=WHEN_DEPOSITED)
+        self._recvh.open()
+        self._sendh.open()
+        self._mpool = MemoryPool.attach(B64.str_to_bytes(this_process.default_pd))
 
     def _is_structure(self, t):
         """Quick check on whether the type is a structure"""
@@ -358,12 +506,12 @@ class Array:
 
         if s_idx > 0:
             base_offset = self._summed_s0_sizes + (s_idx - 1) * self._summed_s1_sizes
-            element_offset = base_offset + sum(self._struct1_sizes[: e_idx])
+            element_offset = base_offset + sum(self._struct1_sizes[:e_idx])
             start = element_offset
             stop = start + self._struct1_sizes[e_idx]
         else:
             if e_idx > 0:
-                start = sum(self._struct0_sizes[: e_idx])
+                start = sum(self._struct0_sizes[:e_idx])
             else:
                 start = 0
             stop = start + self._struct0_sizes[e_idx]
@@ -376,7 +524,7 @@ class Array:
         # compute the offset to the current array element
         start, stop = self._get_struct_mview_indices(s_idx, e_idx, pack_length)
 
-        return mview[start: stop]
+        return mview[start:stop]
 
     def _get_mview_slice(self, mview: memoryview, index: int, pack_length: bool):
         """Get a slice of memoryview for reading/writing based on type and whether to pack the length"""
@@ -388,7 +536,7 @@ class Array:
             start = index * (2 * self._alignment)
             stop = start + (2 * self._alignment)
 
-        return mview[start: stop]
+        return mview[start:stop]
 
     def _get_msg_from_pool(self, size_or_initializer: int or range or list, stride: int, m_uid: int = _DEF_MUID):
 

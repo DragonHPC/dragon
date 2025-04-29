@@ -6,15 +6,25 @@ import string
 import pickle
 import math
 import multiprocessing as mp
-from dragon.managed_memory import MemoryPool, MemoryAlloc, MemoryAllocations, MemoryPoolAttr, \
-    DragonPoolError, DragonPoolAttachFail, DragonPoolCreateFail, DragonMemoryError, AllocType
+from dragon.managed_memory import (
+    MemoryPool,
+    MemoryAlloc,
+    MemoryAllocations,
+    MemoryPoolAttr,
+    DragonPoolError,
+    DragonPoolAttachFail,
+    DragonPoolCreateFail,
+    DragonMemoryError,
+    AllocType,
+)
 
 from dragon.dtypes import DragonError
 
 # limits are for tests
 MIN_POOL_SIZE = 32768
-MAX_POOL_SIZE = 2 ** 31
+MAX_POOL_SIZE = 2**31
 DEFAULT_UID = 123456
+
 
 # NOTE: The following function is dependent on the serialization of memory descriptors.
 # It relies on the following format:
@@ -25,10 +35,11 @@ DEFAULT_UID = 123456
 #    ...              No dependencies beginning at byte offset 24
 def mk_remote_mem_ser(local_mem_ser):
     mem_ser_array = bytearray(local_mem_ser)
-    mem_ser_array[8] = 99 # change m_uid
-    mem_ser_array[16] = mem_ser_array[16] ^ 99 # change hostid
+    mem_ser_array[8] = 99  # change m_uid
+    mem_ser_array[16] = mem_ser_array[16] ^ 99  # change hostid
     mem_ser_remote = bytes(mem_ser_array)
     return mem_ser_remote
+
 
 # NOTE: The following function is dependent on the serialization of memory pool descriptors.
 # It relies on the following format:
@@ -38,8 +49,8 @@ def mk_remote_mem_ser(local_mem_ser):
 #    ...              No dependencies beginning at byte offset 16
 def mk_remote_pool_ser(local_pool_ser):
     pool_ser_array = bytearray(local_pool_ser)
-    pool_ser_array[0] = 99 # change m_uid
-    pool_ser_array[8] = pool_ser_array[8] ^ 99 # change hostid
+    pool_ser_array[0] = 99  # change m_uid
+    pool_ser_array[8] = pool_ser_array[8] ^ 99  # change hostid
     pool_ser_remote = bytes(pool_ser_array)
     return pool_ser_remote
 
@@ -55,8 +66,7 @@ class MemPoolCreateTest(unittest.TestCase):
     def test_create(self):
         size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
         mpool = MemoryPool(size, "mpool_test", DEFAULT_UID, None)
-        self.assertIsInstance(mpool, MemoryPool,
-                              msg=f'Create failed to produce a memory pool of size {size}')
+        self.assertIsInstance(mpool, MemoryPool, msg=f"Create failed to produce a memory pool of size {size}")
         mpool.destroy()
 
     def test_destroy(self):
@@ -105,13 +115,11 @@ class MemPoolCreateTest(unittest.TestCase):
     def test_destroy_not_created(self):
         # This doesn't really make sense to do, but it does validate destroy errors correctly
         mpool = MemoryPool.__new__(MemoryPool)
-        with self.assertRaises(DragonPoolError,
-                               msg=f'Destroying an uncreated pool did not raise error'):
+        with self.assertRaises(DragonPoolError, msg=f"Destroying an uncreated pool did not raise error"):
             mpool.destroy()
 
     def test_negative_size(self):
-        with self.assertRaises(OverflowError,
-                               msg=f'Creating a negative size pool did not raise an OverflowError'):
+        with self.assertRaises(OverflowError, msg=f"Creating a negative size pool did not raise an OverflowError"):
             _ = MemoryPool(-12, "mpool_test", DEFAULT_UID, None)
 
     def test_negative_uid(self):
@@ -124,25 +132,26 @@ class MemPoolCreateTest(unittest.TestCase):
         mpool.destroy()
 
     def test_create_prealloc_blocks(self):
-        prealloc_blocks = [8,16,11]
+        prealloc_blocks = [8, 16, 11]
         mpool = MemoryPool(MAX_POOL_SIZE, "mpool_test", DEFAULT_UID, prealloc_blocks)
-        self.assertIsInstance(mpool, MemoryPool,
-                              msg=f'Failed to create memory pool of size f{MAX_POOL_SIZE} with pre-allocated blocks')
+        self.assertIsInstance(
+            mpool, MemoryPool, msg=f"Failed to create memory pool of size f{MAX_POOL_SIZE} with pre-allocated blocks"
+        )
         mpool.destroy()
 
     def test_create_large_mpool(self):
         mpool = MemoryPool(MAX_POOL_SIZE, "mpool_test", DEFAULT_UID, None)
-        self.assertIsInstance(mpool, MemoryPool,
-                              msg=f'Failed to create memory pool of size f{MAX_POOL_SIZE}')
+        self.assertIsInstance(mpool, MemoryPool, msg=f"Failed to create memory pool of size f{MAX_POOL_SIZE}")
         mpool.destroy()
 
     def test_create_small_mpool(self):
-        with self.assertRaises(DragonPoolCreateFail, msg=f'Creating an undersized pool did not raise a RuntimeError'):
-            self.mpool = MemoryPool(100, "mpool_test", DEFAULT_UID, None)
+        with self.assertRaises(DragonPoolCreateFail, msg=f"Creating an undersized pool did not raise a RuntimeError"):
+            self.mpool = MemoryPool(32, "mpool_test", DEFAULT_UID, None)
 
     def test_create_zero_mpool(self):
-        with self.assertRaises(DragonPoolCreateFail,
-                               msg=f'Failed to raise RuntimeError on creation of 0 size memory pool'):
+        with self.assertRaises(
+            DragonPoolCreateFail, msg=f"Failed to raise RuntimeError on creation of 0 size memory pool"
+        ):
             _ = MemoryPool(0, "mpool_test", DEFAULT_UID, None)
 
     def test_create_empty_name_mpool(self):
@@ -150,7 +159,7 @@ class MemPoolCreateTest(unittest.TestCase):
             _ = MemoryPool(MIN_POOL_SIZE, "", DEFAULT_UID, None)
 
     def test_create_large_uid_mpool(self):
-        mpool = MemoryPool(MIN_POOL_SIZE, "mpool_test", 2 ** 63 + 1234, None)
+        mpool = MemoryPool(MIN_POOL_SIZE, "mpool_test", 2**63 + 1234, None)
         self.assertIsInstance(mpool, MemoryPool)
         mpool.destroy()
 
@@ -219,7 +228,7 @@ class MemPoolCreateTest(unittest.TestCase):
         self.assertIsInstance(mpool, MemoryPool)
         mpool.destroy()
 
-    #@unittest.skip("Limit is 236, bugfix PE-38813 incoming")
+    # @unittest.skip("Limit is 236, bugfix PE-38813 incoming")
     def test_create_too_long_name(self):
         size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
         # Based on the comment above, you might think any name over 238 bytes
@@ -232,18 +241,16 @@ class MemPoolCreateTest(unittest.TestCase):
             _ = MemoryPool(size, name, 1, None)
 
     def test_create_random_name(self):
-        name = ''.join(random.choices(string.ascii_letters + string.digits,
-                                      k=random.randint(1, 236)))
+        name = "".join(random.choices(string.ascii_letters + string.digits, k=random.randint(1, 236)))
         size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
         mpool = MemoryPool(size, name, 1, None)
         self.assertIsInstance(mpool, MemoryPool)
         mpool.destroy()
 
     def test_create_random(self):
-        name = ''.join(random.choices(string.ascii_letters + string.digits,
-                                      k=random.randint(1, 236)))
+        name = "".join(random.choices(string.ascii_letters + string.digits, k=random.randint(1, 236)))
         size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
-        uid = random.randint(0, 2 ** 64)
+        uid = random.randint(0, 2**64)
         mpool = MemoryPool(size, name, uid, None)
         self.assertIsInstance(mpool, MemoryPool)
         mpool.destroy()
@@ -262,7 +269,7 @@ class MemPoolCreateTest(unittest.TestCase):
 
     def test_create_too_many_args(self):
         with self.assertRaises(TypeError):
-            _ = MemoryPool(MIN_POOL_SIZE, "mpool_test", DEFAULT_UID, None, None)
+            _ = MemoryPool(MIN_POOL_SIZE, "mpool_test", DEFAULT_UID, None, None, None, None)
 
 
 class MemoryPoolAllocTest(unittest.TestCase):
@@ -315,9 +322,15 @@ class MemoryPoolAllocTest(unittest.TestCase):
 
     def test_get_id(self):
         mem = self.mpool.alloc(512)
+        id = mem.id
         allocs = self.mpool.get_allocations()
         self.assertIsInstance(allocs, MemoryAllocations)
-        self.assertEqual(allocs.alloc_id(0), 1)
+        # Blocks allocator will always have this ID for first allocation.
+        self.assertEqual(allocs.alloc_id(0), id)
+
+        mem2 = self.mpool.alloc_from_id(id)
+
+        self.assertTrue(mem.is_the_same_as(mem2))
         mem.free()
 
     def test_alloc_string(self):
@@ -327,50 +340,50 @@ class MemoryPoolAllocTest(unittest.TestCase):
     def test_alloc_hash(self):
         mem = self.mpool.alloc(5)
         memview = mem.get_memview()
-        memview[:5] = b'hello'
-        self.assertGreaterEqual(hash(mem),0)
+        memview[:5] = b"hello"
+        self.assertGreaterEqual(hash(mem), 0)
 
     def test_alloc_hash2(self):
         mem = self.mpool.alloc(15)
         memview = mem.get_memview()
-        memview[:15] = b'hellohellohello'
-        self.assertGreaterEqual(hash(mem),0)
+        memview[:15] = b"hellohellohello"
+        self.assertGreaterEqual(hash(mem), 0)
 
     def test_alloc_equals(self):
         mem = self.mpool.alloc(5)
         memview = mem.get_memview()
-        memview[:5] = b'hello'
+        memview[:5] = b"hello"
         mem2 = self.mpool.alloc(15)
         memview2 = mem2.get_memview()
-        memview2[:15] = b'hellohellohello'
+        memview2[:15] = b"hellohellohello"
         self.assertNotEqual(mem, mem2)
 
     def test_alloc_eq(self):
         mem = self.mpool.alloc(5)
         memview = mem.get_memview()
-        memview[:5] = b'hello'
+        memview[:5] = b"hello"
         mem2 = self.mpool.alloc(5)
         memview2 = mem2.get_memview()
-        memview2[:5] = b'hello'
-        self.assertEqual(mem,mem2)
+        memview2[:5] = b"hello"
+        self.assertEqual(mem, mem2)
 
     def test_alloc_eq2(self):
         mem = self.mpool.alloc(5)
         memview = mem.get_memview()
-        memview[:5] = b'hello'
+        memview[:5] = b"hello"
         mem2 = self.mpool.alloc(15)
         memview2 = mem2.get_memview()
-        memview2[:5] = b'hello'
-        self.assertNotEqual(mem,mem2)
+        memview2[:5] = b"hello"
+        self.assertNotEqual(mem, mem2)
 
     def test_alloc_eq3(self):
         mem = self.mpool.alloc(5)
         memview = mem.get_memview()
-        memview[:5] = b'hello'
+        memview[:5] = b"hello"
         mem2 = self.mpool.alloc(15)
         memview2 = mem2.get_memview()
-        memview2[:15] = b'hellohellohello'
-        self.assertNotEqual(mem,mem2)
+        memview2[:15] = b"hellohellohello"
+        self.assertNotEqual(mem, mem2)
 
     def test_alloc_negative(self):
         with self.assertRaises(Exception):
@@ -395,7 +408,6 @@ class MemoryPoolAllocTest(unittest.TestCase):
         with self.assertRaises(TimeoutError):
             mem2 = self.mpool.alloc_blocking(self.size, timeout=2)
         mem.free()
-
 
     def test_alloc_small(self):
         mem = self.mpool.alloc(1)
@@ -433,20 +445,18 @@ class MemoryPoolAllocTest(unittest.TestCase):
 
     def test_return_codes(self):
         x = DragonError.SUCCESS
-        self.assertEqual(x.name, 'SUCCESS')
+        self.assertEqual(x.name, "SUCCESS")
         self.assertEqual(x.value, 0)
 
         y = DragonError.INVALID_ARGUMENT
-        self.assertEqual(y.name, 'INVALID_ARGUMENT')
-
+        self.assertEqual(y.name, "INVALID_ARGUMENT")
 
 
 class MemoryPoolAllocNoSetupTests(unittest.TestCase):
 
     def test_alloc_after_destroy(self):
         with self.assertRaises(DragonPoolError):
-            self.mpool = MemoryPool(random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE),
-                                           "mpool_test", 1, None)
+            self.mpool = MemoryPool(random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE), "mpool_test", 1, None)
             self.mpool.destroy()
             _ = self.mpool.alloc(512)
 
@@ -478,12 +488,12 @@ class MemoryPoolAttachTests(unittest.TestCase):
         mem2 = MemoryAlloc.attach(mem_ser)
         memview1 = mem1.get_memview()
         memview2 = mem2.get_memview()
-        memview2[0:5] = b'Hello'
+        memview2[0:5] = b"Hello"
         self.assertEqual(memview1[0:5], memview2[0:5])
-        self.assertEqual(memview1[0:5], b'Hello')
-        memview1[0:11] = b'Hello world'
+        self.assertEqual(memview1[0:5], b"Hello")
+        memview1[0:11] = b"Hello world"
         self.assertEqual(memview1[0:11], memview2[0:11])
-        self.assertEqual(memview1[0:11], b'Hello world')
+        self.assertEqual(memview1[0:11], b"Hello world")
         mem1.free()
 
     def test_attach_to_number(self):
@@ -522,14 +532,14 @@ class MemoryPoolAttachTests(unittest.TestCase):
         memview1 = mem1.get_memview()
         memview2 = mem2.get_memview()
         memview3 = mem3.get_memview()
-        memview2[0:5] = b'Hello'
+        memview2[0:5] = b"Hello"
         self.assertEqual(memview1[0:5], memview2[0:5])
         self.assertEqual(memview1[0:5], memview3[0:5])
-        self.assertEqual(memview1[0:5], b'Hello')
-        memview1[0:11] = b'Hello world'
+        self.assertEqual(memview1[0:5], b"Hello")
+        memview1[0:11] = b"Hello world"
         self.assertEqual(memview1[0:11], memview2[0:11])
         self.assertEqual(memview1[0:11], memview3[0:11])
-        self.assertEqual(memview1[0:11], b'Hello world')
+        self.assertEqual(memview1[0:11], b"Hello world")
         mem1.free()
 
     def test_attach_detach(self):
@@ -538,9 +548,9 @@ class MemoryPoolAttachTests(unittest.TestCase):
         mem2 = MemoryAlloc.attach(mem_ser)
         memview1 = mem1.get_memview()
         memview2 = mem2.get_memview()
-        memview2[0:5] = b'Hello'
+        memview2[0:5] = b"Hello"
         self.assertEqual(memview1[0:5], memview2[0:5])
-        self.assertEqual(memview1[0:5], b'Hello')
+        self.assertEqual(memview1[0:5], b"Hello")
 
         # Assert that after detaching, we cannot get a reference to the underlying memory
         with self.assertRaises(DragonMemoryError):
@@ -556,7 +566,7 @@ class MemoryPoolAttachTests(unittest.TestCase):
         mem2 = MemoryAlloc.attach(mem_ser_remote)
         mem_ser2 = mem2.serialize()
         mem3 = MemoryAlloc.attach(mem_ser2)
-        mem4 =  mem3.clone(100)
+        mem4 = mem3.clone(100)
         mem4_ser = mem4.serialize()
         mem5 = MemoryAlloc.attach(mem4_ser)
 
@@ -578,7 +588,7 @@ class MemoryPoolAttachTests(unittest.TestCase):
             allocs = rmt_pool.get_allocations()
 
         with self.assertRaises(DragonPoolError):
-            rmt_pool.allocation_exists(AllocType.DATA,20)
+            rmt_pool.allocation_exists(20)
 
         rmt_pool.detach()
 
@@ -590,6 +600,7 @@ class MemoryPoolAttachTests(unittest.TestCase):
 
         mem1.free()
 
-if __name__ == '__main__':
-    mp.set_start_method('spawn', force=True)
+
+if __name__ == "__main__":
+    mp.set_start_method("spawn", force=True)
     unittest.main(verbosity=2)

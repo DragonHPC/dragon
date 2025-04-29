@@ -22,17 +22,17 @@ def determine_environment(args=None):
     # Check if the user requested a specific launcher mode
     arg_map = launchargs.get_args(args)
 
-    wlm = str(arg_map.get('wlm', ''))
-    single_arg = arg_map['single_node_override']
-    multi_arg = arg_map['multi_node_override']
+    wlm = str(arg_map.get("wlm", ""))
+    single_arg = arg_map["single_node_override"]
+    multi_arg = arg_map["multi_node_override"]
 
     if single_arg and multi_arg:
         msg = """Cannot request both single node and multi-node launcher simultaneously.
 Please specify only '--single-node-override' or '--multi-node-override'"""
         raise ValueError(msg)
 
-    if single_arg and wlm != '':
-        msg = 'Cannot request single node deployment of Dragon and specify a workload manager.'
+    if single_arg and wlm != "":
+        msg = "Cannot request single node deployment of Dragon and specify a workload manager."
         raise ValueError(msg)
 
     if single_arg:
@@ -45,7 +45,7 @@ Please specify only '--single-node-override' or '--multi-node-override'"""
     multi_mode = False
 
     # Try to determine if we're on a supported multinode system
-    if wlm != '':
+    if wlm != "":
         # only one of these will be true
         is_pbs = wlm == str(WLM.PBS_PALS)
         is_slurm = wlm == str(WLM.SLURM)
@@ -55,12 +55,18 @@ Please specify only '--single-node-override' or '--multi-node-override'"""
         is_pbs = wlm_cls_dict[WLM.PBS_PALS].check_for_wlm_support()
         is_slurm = wlm_cls_dict[WLM.SLURM].check_for_wlm_support()
         is_ssh = False
+        is_k8s = (os.getenv("KUBERNETES_SERVICE_HOST") and os.getenv("KUBERNETES_SERVICE_PORT")) != None
 
-    if is_ssh + is_pbs + is_slurm >= 2:
+    if is_ssh + is_pbs + is_slurm + is_k8s >= 2:
         # adding the booleans here is a quick check that two or more are not True.
-        raise RuntimeError('Dragon cannot determine the correct multi-node launch mode. Please specify the workload manager with --wlm')
+        raise RuntimeError(
+            "Dragon cannot determine the correct multi-node launch mode. Please specify the workload manager with --wlm"
+        )
 
     if is_ssh:
+        return True
+
+    if is_k8s:
         return True
 
     if is_pbs:
@@ -95,7 +101,7 @@ def get_launcher():
 
 
 def main():
-    '''
+    """
     .. code-block::
 
         usage: dragon [-h] [-N NODE_COUNT] [--hostlist HOSTLIST | --hostfile HOSTFILE] [--network-prefix NETWORK_PREFIX] [--network-config NETWORK_CONFIG]
@@ -121,7 +127,7 @@ def main():
                                 `--hostfile` or `--hostlist` is a required argument for WLM SSH and is only used for SSH
           --network-prefix NETWORK_PREFIX
                                 NETWORK_PREFIX specifies the network prefix the dragon runtime will use to determine which IP addresses it should use to build
-                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib)\d+$' is used -- the prefix for known HPE-Cray XC
+                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib)\\d+$' is used -- the prefix for known HPE-Cray XC
                                 and EX high speed networks. If uncertain which networks are available, the following will return them in pretty formatting: `dragon-
                                 network-ifaddrs --ip --no-loopback --up --running | jq`. Prepending with `srun` may be necessary to get networks available on
                                 backend compute nodes
@@ -134,8 +140,8 @@ def main():
                                 Specify what workload manager is used. Currently supported WLMs are: slurm, pbs+pals, ssh
           -p PORT, --port PORT  PORT specifies the port to be used for multinode communication. By default, 7575 is used.
           --transport TRANSPORT_AGENT, -t TRANSPORT_AGENT
-                                TRANSPORT_AGENT selects which transport agent will be used for backend node-to-node communication. By default, the TCP
-                                transport agent (tcp) is selected. Currently supported agents are: hsta, tcp
+                                TRANSPORT_AGENT selects which transport agent will be used for backend node-to-node communication. By default, the high speed
+                                transport agent (hsta) is selected. Currently supported agents are: hsta, tcp
           -s, --single-node-override
                                 Override automatic launcher selection to force use of the single node launcher
           -m, --multi-node-override
@@ -156,12 +162,13 @@ def main():
           --basic-label
           --verbose-label
           --version             show program's version number and exit
-    '''
+    """
     from dragon import _patch_multiprocessing
+
     _patch_multiprocessing()
     dl = get_launcher()
-    return dl.main()
+    sys.exit(dl.main())
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())

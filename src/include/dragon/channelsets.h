@@ -1,5 +1,6 @@
 /*
  * Dragon ChannelSets communication API
+ * Copyright Cray/HPE 2020
 */
 
 #ifndef HAVE_DRAGON_CHANNELSETS_H

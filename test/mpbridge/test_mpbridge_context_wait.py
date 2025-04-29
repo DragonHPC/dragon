@@ -1,4 +1,4 @@
-""" Test for our context wait.
+"""Test for our context wait.
 When the wait is lowered into dragon.native, these tests should move along.
 """
 
@@ -125,9 +125,7 @@ class TestDragonContextWait(unittest.TestCase):
         procs = []
 
         for i in range(num_workers):
-            p = dragon.mpbridge.DragonProcess(
-                target=self._waitev_and_ready, args=(events[i], writers[i], messages[i])
-            )
+            p = dragon.mpbridge.DragonProcess(target=self._waitev_and_ready, args=(events[i], writers[i], messages[i]))
             procs.append(p)
 
         # there should be no message yet
@@ -172,9 +170,7 @@ class TestDragonContextWait(unittest.TestCase):
         procs = []
 
         for i in range(num_workers):
-            p = dragon.mpbridge.DragonProcess(
-                target=self._waitev_and_ready, args=(events[i], queues[i], items[i])
-            )
+            p = dragon.mpbridge.DragonProcess(target=self._waitev_and_ready, args=(events[i], queues[i], items[i]))
             procs.append(p)
 
         # there should be no message yet
@@ -275,9 +271,7 @@ class TestDragonContextWait(unittest.TestCase):
 
         num_pipes = num_queues = num_sentinels = num_fakers = num_channels = num_mp_objects = 4
 
-        num_workers = (
-            num_sentinels + num_pipes + num_queues
-        )  # + num_mp_objects  # + num_channels + num_fakers
+        num_workers = num_sentinels + num_pipes + num_queues  # + num_mp_objects  # + num_channels + num_fakers
 
         items = [f"Test-Item-{i}" for i in range(num_workers)]  # wont need all of them
 
@@ -304,9 +298,7 @@ class TestDragonContextWait(unittest.TestCase):
         # mp_readers = []
 
         proc_handles = pseudo_sentinels + writers + queues  # + mp_writers  # + chan_writers + faker_writers
-        events = [
-            dragon.native.event.Event() for _ in range(num_workers // 4)
-        ]  # that'll make it pretty messy ...
+        events = [dragon.native.event.Event() for _ in range(num_workers // 4)]  # that'll make it pretty messy ...
 
         # start the processes
         procs = []
@@ -475,43 +467,33 @@ class TestDragonContextWait(unittest.TestCase):
         t = threading.Thread(target=dragon.mpbridge.DragonContext.wait, args=(queues[2:5],))
         t.start()
         wait_threads.append(t)
-        self.assertTrue(
-            self._check_num_threads(spawn_counter[2] + 4)
-        )  # + 3 service threads (conns) + 1 wait thread
+        self.assertTrue(self._check_num_threads(spawn_counter[2] + 4))  # + 3 service threads (conns) + 1 wait thread
         spawn_counter.append(self._get_linux_num_threads(pid))
 
         # have a fourth thread wait on a single queue
         t = threading.Thread(target=dragon.mpbridge.DragonContext.wait, args=([queues[5]],))
         t.start()
         wait_threads.append(t)
-        self.assertTrue(
-            self._check_num_threads(spawn_counter[3] + 2)
-        )  # + 1 service threads (conns) + 1 wait thread
+        self.assertTrue(self._check_num_threads(spawn_counter[3] + 2))  # + 1 service threads (conns) + 1 wait thread
         spawn_counter.append(self._get_linux_num_threads(pid))
 
         # have the third wait thread and 4 service thread exit
         queues[4].put(items[4])
         wait_threads[2].join()
-        self.assertTrue(
-            self._check_num_threads(spawn_counter[4] - 4)
-        )  # - 3 service threads (conns) - 1 wait thread
+        self.assertTrue(self._check_num_threads(spawn_counter[4] - 4))  # - 3 service threads (conns) - 1 wait thread
         spawn_counter.append(self._get_linux_num_threads(pid))
 
         # have the first 2 service threads + 2x1 wait threads exit
         queues[0].put(items[0])
         wait_threads[0].join()
         wait_threads[1].join()  # this one should wake up and exit too.
-        self.assertTrue(
-            self._check_num_threads(spawn_counter[5] - 4)
-        )  # - 2 service threads (conns) - 2 wait threads
+        self.assertTrue(self._check_num_threads(spawn_counter[5] - 4))  # - 2 service threads (conns) - 2 wait threads
         spawn_counter.append(self._get_linux_num_threads(pid))
 
         # have the single wait thread exit last
         queues[5].put(items[5])
         wait_threads[3].join()
-        self.assertTrue(
-            self._check_num_threads(spawn_counter[6] - 2)
-        )  # - 1 service threads (conns) - 1 wait thread
+        self.assertTrue(self._check_num_threads(spawn_counter[6] - 2))  # - 1 service threads (conns) - 1 wait thread
 
         # make sure we shut down all service threads of WaitService class
         # before moving to the next test
@@ -612,6 +594,7 @@ class TestDragonContextWait(unittest.TestCase):
         # Reset global _wait_service so that init() is called again
         # and the garbage_collect thread initiated
         dragon.mpbridge.context._wait_service = None
+
 
 if __name__ == "__main__":
     unittest.main()

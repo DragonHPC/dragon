@@ -1,12 +1,4 @@
-"""Setup and global objects for Dragon's GS client API.
-
-This module includes initialization code  for
-getting handles to and from the local shepherd and global services
-through which API generated messages are sent.
-
-Python thread locks are provided here so that threaded Python clients
-can have more than one transaction outstanding to GS at once.
-"""
+"""API for managing the life-cycle of objects, such as processes and channels, through Global Services"""
 
 import logging
 import sys
@@ -24,7 +16,7 @@ import dragon.infrastructure.debug_support as ddbg
 import dragon.infrastructure.facts as dfacts
 import dragon.utils as du
 
-LOG = logging.getLogger('api_setup')
+LOG = logging.getLogger("api_setup")
 
 _GS_API_LOCK = threading.RLock()
 _GS_SEND_LOCK = threading.RLock()
@@ -66,7 +58,7 @@ def get_gs_ret_cuid():
 
 def load_launch_parameter(name):
     param = getattr(dp.this_process, name.lower())
-    assert param, f'Launch parameter not initialized: {name}'
+    assert param, f"Launch parameter not initialized: {name}"
     return du.B64.str_to_bytes(param)
 
 
@@ -77,8 +69,11 @@ def _connect_gs_input():
     _GS_INPUT_CHANNEL = dch.Channel.attach(channel_descriptor)
     # size chosen to be safely above ARG_IMMEDIATE_LIMIT
     # TODO PE-38745
-    return dconn.Connection(outbound_initializer=_GS_INPUT_CHANNEL,
-                            options=dconn.ConnectionOptions(min_block_size=2 ** 21, large_block_size=2**22, huge_block_size=2**23), policy=dp.POLICY_INFRASTRUCTURE)
+    return dconn.Connection(
+        outbound_initializer=_GS_INPUT_CHANNEL,
+        options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23),
+        policy=dp.POLICY_INFRASTRUCTURE,
+    )
 
 
 def _connect_gs_return():
@@ -151,6 +146,7 @@ _RESULTS = dict()
 
 _INFRASTRUCTURE_CONNECTED = False
 
+
 def gs_request(req_msg, *, expecting_response=True):
     """Posts a message to GS and gets the response in a thread safe way
 
@@ -220,7 +216,8 @@ def gs_request(req_msg, *, expecting_response=True):
                     try:
                         wakeup = _WAKEUPS.pop(resp.ref)
                     except KeyError:
-                        logging.warning(f"Received unexpected message {resp.ref}")
+                        if resp.ref is not None:
+                            logging.warning(f"Received unexpected message {resp.ref}")
                     else:
                         # Save response message
                         _RESULTS[resp.ref] = resp
@@ -258,10 +255,14 @@ def gs_request(req_msg, *, expecting_response=True):
     return _RESULTS.pop(req_msg.tag)
 
 
-def test_connection_override(test_gs_input=None, test_gs_return=None,
-                             test_gs_return_cuid=None,
-                             test_shep_input=None, test_shep_return=None,
-                             test_shep_return_cuid=None):
+def test_connection_override(
+    test_gs_input=None,
+    test_gs_return=None,
+    test_gs_return_cuid=None,
+    test_shep_input=None,
+    test_shep_return=None,
+    test_shep_return_cuid=None,
+):
     global _GS_INPUT
     global _GS_RETURN
     global _SHEP_INPUT
@@ -270,7 +271,7 @@ def test_connection_override(test_gs_input=None, test_gs_return=None,
     global _GS_RETURN_CUID
     global _SHEP_RETURN_CUID
 
-    LOG.debug('dragon connection override')
+    LOG.debug("dragon connection override")
 
     with _GS_API_LOCK:
 
@@ -318,7 +319,7 @@ def connect_to_infrastructure(force=False):
         if not force and _INFRASTRUCTURE_CONNECTED:
             return
 
-        LOG.info(f'connecting to infrastructure from {os.getpid()}')
+        LOG.info(f"connecting to infrastructure from {os.getpid()}")
 
         _GS_INPUT = _connect_gs_input()
         _GS_RETURN = _connect_gs_return()
@@ -329,13 +330,13 @@ def connect_to_infrastructure(force=False):
         if force:
             return
 
-        LOG.debug('waiting for handshake')
+        LOG.debug("waiting for handshake")
 
         global _ARG_PAYLOAD
 
         # recv something from gs_return
         handshake = dmsg.parse(_GS_RETURN.recv())
-        LOG.debug(f'Got response {handshake}')
+        LOG.debug(f"Got response {handshake}")
         assert isinstance(handshake, dmsg.GSPingProc)
 
         if handshake.mode == dpdesc.ArgMode.NONE:
@@ -351,12 +352,12 @@ def connect_to_infrastructure(force=False):
             # until this message is received
             _ARG_PAYLOAD = _GS_RETURN.recv_bytes()
         else:
-            raise NotImplementedError('close case')
+            raise NotImplementedError("close case")
 
-        LOG.debug('got handshake')
+        LOG.debug("got handshake")
 
         sys.breakpointhook = ddbg.dragon_debug_hook
-        LOG.info('debug entry hooked')
+        LOG.info("debug entry hooked")
 
         # Would like to do this, but the bare except:
         # on line 327 of lib/python3.9/multiprocessing/process.py prevents

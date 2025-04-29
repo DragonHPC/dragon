@@ -50,41 +50,46 @@ import pathlib
 
 # make sure we use a safe pool uid for creating a pool
 # that will never overlap with infra/default/user pool uids
-CUSTOM_POOL_MUID = 2 ** 60
+CUSTOM_POOL_MUID = 2**60
 
-path_to_slow_echo = pathlib.Path(__file__).parent / 'slow_echo.sh'
+path_to_slow_echo = pathlib.Path(__file__).parent / "slow_echo.sh"
 if not path_to_slow_echo.exists():
-    path_to_slow_echo = pathlib.Path(__file__).parent / 'integration' / 'slow_echo.sh'
+    path_to_slow_echo = pathlib.Path(__file__).parent / "integration" / "slow_echo.sh"
 SLOW_ECHO = str(path_to_slow_echo)
 
 
 def mk_sleep_msg(seconds, tag, p_uid, r_c_uid):
-    return dmsg.GSProcessCreate(tag=tag, exe='/bin/sleep', args=[str(seconds)],
-                                p_uid=p_uid, r_c_uid=r_c_uid, head_proc=True)
+    return dmsg.GSProcessCreate(
+        tag=tag, exe="/bin/sleep", args=[str(seconds)], p_uid=p_uid, r_c_uid=r_c_uid, head_proc=True
+    )
 
 
 def mk_slow_echo_msg(seconds, msg, tag, p_uid, r_c_uid):
-    return dmsg.GSProcessCreate(tag=tag, exe=SLOW_ECHO, args=[str(seconds), msg],
-                                p_uid=p_uid, r_c_uid=r_c_uid, head_proc=True)
+    return dmsg.GSProcessCreate(
+        tag=tag, exe=SLOW_ECHO, args=[str(seconds), msg], p_uid=p_uid, r_c_uid=r_c_uid, head_proc=True
+    )
 
 
-def start_ls(shep_stdin_queue, shep_stdout_queue, env_update, name_addition=''):
-    dlog.setup_logging(basename='ls_' + name_addition, level=logging.DEBUG)
-    log = logging.getLogger('ls-gs integration test channels, ls starts gs')
-    log.info('--------------------ls started-----------------------')
+def start_ls(shep_stdin_queue, shep_stdout_queue, env_update, name_addition=""):
+    dlog.setup_logging(basename="ls_" + name_addition, level=logging.DEBUG)
+    log = logging.getLogger("ls-gs integration test channels, ls starts gs")
+    log.info("--------------------ls started-----------------------")
 
     dparm.this_process.mode = dfacts.SINGLE_MODE
     os.environ.update(dparm.this_process.env())
-    log.info('starting')
+
+    log.info("starting")
     try:
-        dsls.single(ls_stdin=shep_stdin_queue, ls_stdout=shep_stdout_queue,
-                    gs_args=[sys.executable, '-c', dfacts.GS_SINGLE_LAUNCH_CMD],
-                    gs_env=env_update)
-        log.info('exited')
+        dsls.single(
+            ls_stdin=shep_stdin_queue,
+            ls_stdout=shep_stdout_queue,
+            gs_args=[sys.executable, "-c", dfacts.GS_SINGLE_LAUNCH_CMD],
+            gs_env=env_update,
+        )
+        log.info("exited")
     except RuntimeError as rte:
-        log.exception('runtime failure\n')
-        shep_stdout_queue.send(dmsg.AbnormalTermination(tag=dsls.get_new_tag(),
-                                                        err_info=f'{rte!s}').serialize())
+        log.exception("runtime failure\n")
+        shep_stdout_queue.send(dmsg.AbnormalTermination(tag=dsls.get_new_tag(), err_info=f"{rte!s}").serialize())
     finally:
         shep_stdin_queue.close()
         shep_stdout_queue.close()
@@ -93,8 +98,7 @@ def start_ls(shep_stdin_queue, shep_stdout_queue, env_update, name_addition=''):
 
 
 class GSLS(unittest.TestCase):
-    """ Global Services / Local Services (Shepherd) Integration tests
-    """
+    """Global Services / Local Services (Shepherd) Integration tests"""
 
     SLEEPY_HEAD_TIME = 60  # seconds, 60 seconds
 
@@ -105,8 +109,8 @@ class GSLS(unittest.TestCase):
         self.shep_stdin_rh, self.shep_stdin_wh = multiprocessing.Pipe(duplex=False)
         self.shep_stdout_rh, self.shep_stdout_wh = multiprocessing.Pipe(duplex=False)
 
-        self.pool_name = 'gslsinttest_' + os.environ.get('USER', str(os.getuid())) + str(uuid.uuid4())
-        self.pool_size = 2 ** 30
+        self.pool_name = "gslsinttest_" + os.environ.get("USER", str(os.getuid())) + str(uuid.uuid4())
+        self.pool_size = 2**30
         self.pool_uid = CUSTOM_POOL_MUID
         self.test_pool = dmm.MemoryPool(self.pool_size, self.pool_name, self.pool_uid)
 
@@ -114,7 +118,7 @@ class GSLS(unittest.TestCase):
         # from GS to the test bench.  Picking cuid for these high enough
         # that they won't be used in the tests
 
-        self.gs_return_cuid = 2 ** 64 - CUSTOM_POOL_MUID
+        self.gs_return_cuid = 2**64 - CUSTOM_POOL_MUID
         self.proc_gs_return_chan = dch.Channel(self.test_pool, self.gs_return_cuid)
         self.proc_gs_return_rh = dconn.Connection(inbound_initializer=self.proc_gs_return_chan)
 
@@ -127,21 +131,21 @@ class GSLS(unittest.TestCase):
         return tmp
 
     def start_duts(self):
-        test_name = self.__class__.__name__ + '_' + inspect.stack()[1][0].f_code.co_name
+        test_name = self.__class__.__name__ + "_" + inspect.stack()[1][0].f_code.co_name
 
         # Make a list of channels to pass thru the environment to GS for testing purposes.
-        test_chan_list = [(self.gs_return_cuid, self.test_pool.serialize(),
-                           self.proc_gs_return_chan.serialize(), False)]
+        test_chan_list = [
+            (self.gs_return_cuid, self.test_pool.serialize(), self.proc_gs_return_chan.serialize(), False)
+        ]
 
         val = pickle.dumps(test_chan_list)
-        env_update = {dfacts.GS_TEST_CH_EV: dutils.B64.bytes_to_str(val),
-                      dfacts.GS_LOG_BASE: 'gs_' + test_name}
+        env_update = {dfacts.GS_TEST_CH_EV: dutils.B64.bytes_to_str(val), dfacts.GS_LOG_BASE: "gs_" + test_name}
 
         start_args = (self.shep_stdin_rh, self.shep_stdout_wh, env_update)
 
-        self.ls_dut = multiprocessing.Process(target=start_ls, args=start_args,
-                                              kwargs={'name_addition': test_name},
-                                              name='local svc')
+        self.ls_dut = multiprocessing.Process(
+            target=start_ls, args=start_args, kwargs={"name_addition": test_name}, name="local svc"
+        )
 
         self.ls_dut.start()
 
@@ -162,10 +166,12 @@ class GSLS(unittest.TestCase):
         self.gs_input_chan = dch.Channel.attach(env2b(ping_be_msg.gs_cd))
         self.gs_input_wh = dconn.Connection(outbound_initializer=self.gs_input_chan)
 
-        dapi.test_connection_override(test_gs_input=self.gs_input_wh,
-                                      test_gs_return=self.proc_gs_return_rh,
-                                      test_gs_return_cuid=self.gs_return_cuid,
-                                      test_shep_input=self.shep_input_wh)
+        dapi.test_connection_override(
+            test_gs_input=self.gs_input_wh,
+            test_gs_return=self.proc_gs_return_rh,
+            test_gs_return_cuid=self.gs_return_cuid,
+            test_shep_input=self.shep_input_wh,
+        )
 
         self.shep_input_wh.send(dmsg.BEPingSH(tag=self.next_tag()).serialize())
 
@@ -183,22 +189,22 @@ class GSLS(unittest.TestCase):
     def tearDown(self) -> None:
         self.gs_input_wh.send(dmsg.GSTeardown(tag=self.next_tag()).serialize())
         if self.chatty_teardown:
-            print('sent GSTeardown')
+            print("sent GSTeardown")
             sys.stdout.flush()
 
         tsu.get_and_check_several_ignore_SHFwdOutput(self, self.bela_input_rh, {dmsg.GSHalted: 1})
         if self.chatty_teardown:
-            print('got GSHalted')
+            print("got GSHalted")
             sys.stdout.flush()
 
         self.shep_input_wh.send(dmsg.SHTeardown(tag=self.next_tag()).serialize())
         if self.chatty_teardown:
-            print('sent SHTeardown')
+            print("sent SHTeardown")
             sys.stdout.flush()
 
         tsu.get_and_check_several_ignore_SHFwdOutput(self, self.bela_input_rh, {dmsg.SHHaltBE: 1})
         if self.chatty_teardown:
-            print('got SHHaltBE')
+            print("got SHHaltBE")
             sys.stdout.flush()
 
         self.shep_input_chan.detach()
@@ -231,23 +237,28 @@ class GSLS(unittest.TestCase):
         dutil.compare_dev_shm(self.starting_shm)
         if self.proc_direct_test_failed:
             import glob
-            filepath = os.getcwd()+"/ls_GSLS_test_proc_direct_*.log"
+
+            filepath = os.getcwd() + "/ls_GSLS_test_proc_direct_*.log"
             txt = glob.glob(filepath)
             for textfile in txt:
-                with open(textfile, 'r') as f:
+                with open(textfile, "r") as f:
                     print(f.read())
 
     def kill_sleepy_head(self):
-        msg = dmsg.GSProcessKill(tag=self.next_tag(), p_uid=dfacts.LAUNCHER_PUID,
-                                 r_c_uid=dfacts.BASE_BE_CUID,
-                                 sig=signal.SIGKILL, t_p_uid=self.head_puid)
+        msg = dmsg.GSProcessKill(
+            tag=self.next_tag(),
+            p_uid=dfacts.LAUNCHER_PUID,
+            r_c_uid=dfacts.BASE_BE_CUID,
+            sig=signal.SIGKILL,
+            t_p_uid=self.head_puid,
+        )
         self.gs_input_wh.send(msg.serialize())
 
         # Since the backend can still be receiving messages from LS,
         # discard its SHFwdOutput messages that still may be in the channel
         # queue
         msg = tsu.get_and_parse(self.bela_input_rh)
-        while (isinstance(msg, dmsg.SHFwdOutput)):
+        while isinstance(msg, dmsg.SHFwdOutput):
             msg = tsu.get_and_parse(self.bela_input_rh)
 
         if isinstance(msg, dmsg.GSProcessKillResponse):
@@ -257,8 +268,7 @@ class GSLS(unittest.TestCase):
             tsu.get_and_check_type(self.bela_input_rh, dmsg.GSProcessKillResponse)
 
     def start_sleepy_head(self, timeout):
-        msg = mk_sleep_msg(timeout, self.next_tag(), p_uid=dfacts.LAUNCHER_PUID,
-                           r_c_uid=dfacts.BASE_BE_CUID)
+        msg = mk_sleep_msg(timeout, self.next_tag(), p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID)
 
         self.gs_input_wh.send(msg.serialize())
 
@@ -273,11 +283,16 @@ class GSLS(unittest.TestCase):
 
         self.proc_direct_test_failed = True
         self.start_duts()
-        echotxt = 'Hello World'
+        echotxt = "Hello World"
 
-        msg = dmsg.GSProcessCreate(tag=self.next_tag(), exe='/bin/echo',
-                                args=[echotxt], p_uid=dfacts.LAUNCHER_PUID,
-                                r_c_uid=dfacts.BASE_BE_CUID, head_proc=True)
+        msg = dmsg.GSProcessCreate(
+            tag=self.next_tag(),
+            exe="/bin/echo",
+            args=[echotxt],
+            p_uid=dfacts.LAUNCHER_PUID,
+            r_c_uid=dfacts.BASE_BE_CUID,
+            head_proc=True,
+        )
 
         self.gs_input_wh.send(msg.serialize())
 
@@ -285,16 +300,16 @@ class GSLS(unittest.TestCase):
         # the output could be in any order but the PCR will precede
         # the HeadExit.
 
-        msgs = tsu.get_and_check_several_ignore_SHFwdOutput(self, self.bela_input_rh,
-                                        {dmsg.GSProcessCreateResponse: 1,
-                                        dmsg.GSHeadExit: 1})
+        msgs = tsu.get_and_check_several_ignore_SHFwdOutput(
+            self, self.bela_input_rh, {dmsg.GSProcessCreateResponse: 1, dmsg.GSHeadExit: 1}
+        )
 
         pcr_msg, _ = msgs[dmsg.GSProcessCreateResponse][0]
         self.assertEqual(pcr_msg.err, dmsg.GSProcessCreateResponse.Errors.SUCCESS)
 
         if len(msgs[dmsg.SHFwdOutput]) > 0:
             output_msg, _ = msgs[dmsg.SHFwdOutput][0]
-            self.assertEqual(echotxt + '\n', output_msg.data)
+            self.assertEqual(echotxt + "\n", output_msg.data)
         self.proc_direct_test_failed = False
 
     def test_sleepy_exit(self):
@@ -307,21 +322,20 @@ class GSLS(unittest.TestCase):
     def test_sleepy_echo_head(self):
         self.start_duts()
 
-        output = 'hyenas are awesome'
-        msg = mk_slow_echo_msg(1, output, self.next_tag(), p_uid=dfacts.LAUNCHER_PUID,
-                               r_c_uid=dfacts.BASE_BE_CUID)
+        output = "hyenas are awesome"
+        msg = mk_slow_echo_msg(1, output, self.next_tag(), p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID)
         self.gs_input_wh.send(msg.serialize())
 
-        msgs = tsu.get_and_check_several_ignore_SHFwdOutput(self, self.bela_input_rh, {dmsg.GSProcessCreateResponse: 1,
-                                                              dmsg.GSHeadExit: 1})
+        msgs = tsu.get_and_check_several_ignore_SHFwdOutput(
+            self, self.bela_input_rh, {dmsg.GSProcessCreateResponse: 1, dmsg.GSHeadExit: 1}
+        )
 
         create_msg, create_order = msgs[dmsg.GSProcessCreateResponse][0]
         self.assertEqual(create_msg.err, dmsg.GSProcessCreateResponse.Errors.SUCCESS)
 
         if len(msgs[dmsg.SHFwdOutput]) > 0:
             output_msg, _ = msgs[dmsg.SHFwdOutput][0]
-            self.assertEqual(output + '\n', output_msg.data)
-
+            self.assertEqual(output + "\n", output_msg.data)
 
     def test_head_kill(self):
         self.start_duts()
@@ -331,28 +345,27 @@ class GSLS(unittest.TestCase):
     def test_api_create(self):
         self.start_duts()
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
-        res = dproc.create(exe='/bin/sleep', run_dir='', args=['1'], env={}, user_name='hproc')
-        self.assertEqual(res.name, 'hproc')
+        res = dproc.create(exe="/bin/sleep", run_dir="", args=["1"], env={}, user_name="hproc")
+        self.assertEqual(res.name, "hproc")
         self.kill_sleepy_head()
 
-    @unittest.skip('derp')
+    @unittest.skip("derp")
     def test_api_create_output(self):
         self.start_duts()
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        res = dproc.create(exe=SLOW_ECHO, run_dir='', args=['10', 'hyena'],
-                           env={}, user_name='hproc')
-        self.assertEqual(res.name, 'hproc')
+        res = dproc.create(exe=SLOW_ECHO, run_dir="", args=["10", "hyena"], env={}, user_name="hproc")
+        self.assertEqual(res.name, "hproc")
 
         resp = tsu.get_and_check_type(self.bela_input_rh, dmsg.SHFwdOutput, 3)
-        self.assertEqual('hyena\n', resp.data)
+        self.assertEqual("hyena\n", resp.data)
         self.kill_sleepy_head()
 
     def test_api_join(self):
         self.start_duts()
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        res = dproc.create(exe='/bin/sleep', run_dir='', args=['1'], env={})
+        res = dproc.create(exe="/bin/sleep", run_dir="", args=["1"], env={})
 
         dproc.join(res.p_uid)
 
@@ -365,7 +378,7 @@ class GSLS(unittest.TestCase):
         self.start_duts()
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        _ = dgpool.create(2 ** 20)
+        _ = dgpool.create(2**20)
 
         self.kill_sleepy_head()
 
@@ -374,9 +387,9 @@ class GSLS(unittest.TestCase):
 
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        res = dproc.create(exe='/bin/sleep', run_dir='', args=['1'], env={})
+        res = dproc.create(exe="/bin/sleep", run_dir="", args=["1"], env={})
         procs = dproc.get_list()
-        self.assertEqual([res.p_uid-1, res.p_uid], procs)
+        self.assertEqual([res.p_uid - 1, res.p_uid], procs)
 
         self.kill_sleepy_head()
 
@@ -384,8 +397,7 @@ class GSLS(unittest.TestCase):
         self.start_duts()
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        res = dproc.create(exe='python3', run_dir='', env={},
-                           args=['globalservices/managed_proc_test_target.py'])
+        res = dproc.create(exe="python3", run_dir="", env={}, args=["globalservices/managed_proc_test_target.py"])
         dproc.join(res.p_uid)
         dead_pd = dproc.query(res.p_uid)
         self.kill_sleepy_head()
@@ -398,10 +410,13 @@ class GSLS(unittest.TestCase):
 
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        res = dproc.create(exe='python3', run_dir='',
-                           args=['globalservices/managed_proc_test_target.py', '--gs-ret'],
-                           env={},
-                           options=pdesc.ProcessOptions(make_inf_channels=True))
+        res = dproc.create(
+            exe="python3",
+            run_dir="",
+            args=["globalservices/managed_proc_test_target.py", "--gs-ret"],
+            env={},
+            options=pdesc.ProcessOptions(make_inf_channels=True),
+        )
 
         dproc.join(res.p_uid)
 
@@ -418,10 +433,13 @@ class GSLS(unittest.TestCase):
         self.start_duts()
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        res = dproc.create(exe='python3', run_dir='',
-                           args=['globalservices/managed_proc_test_target.py', '--args'],
-                           env={},
-                           options=pdesc.ProcessOptions(make_inf_channels=True))
+        res = dproc.create(
+            exe="python3",
+            run_dir="",
+            args=["globalservices/managed_proc_test_target.py", "--args"],
+            env={},
+            options=pdesc.ProcessOptions(make_inf_channels=True),
+        )
 
         dproc.join(res.p_uid)
         dead_pd = dproc.query(res.p_uid)
@@ -435,15 +453,21 @@ class GSLS(unittest.TestCase):
 
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        res = dproc.create(exe=sys.executable, run_dir='',
-                           args=['globalservices/managed_proc_test_target.py', '--args'],
-                           env={},
-                           options=pdesc.ProcessOptions(make_inf_channels=True))
+        res = dproc.create(
+            exe=sys.executable,
+            run_dir="",
+            args=["globalservices/managed_proc_test_target.py", "--args"],
+            env={},
+            options=pdesc.ProcessOptions(make_inf_channels=True),
+        )
 
-        res2 = dproc.create(exe=sys.executable, run_dir='',
-                            args=['globalservices/managed_proc_test_target.py', '--args'],
-                            env={},
-                            options=pdesc.ProcessOptions(make_inf_channels=True))
+        res2 = dproc.create(
+            exe=sys.executable,
+            run_dir="",
+            args=["globalservices/managed_proc_test_target.py", "--args"],
+            env={},
+            options=pdesc.ProcessOptions(make_inf_channels=True),
+        )
 
         dproc.join(res.p_uid)
         dproc.join(res2.p_uid)
@@ -464,16 +488,12 @@ class GSLS(unittest.TestCase):
         # Checks that the args got there.
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        test_script_args = ['globalservices/managed_proc_test_target.py',
-                            '--args',
-                            '23',
-                            '45',
-                            '17']
+        test_script_args = ["globalservices/managed_proc_test_target.py", "--args", "23", "45", "17"]
 
         the_argdata = pickle.dumps((23, 45, 17))
-        res = dproc.create_with_argdata(exe=sys.executable, run_dir='',
-                                        args=test_script_args,
-                                        env={}, argdata=the_argdata)
+        res = dproc.create_with_argdata(
+            exe=sys.executable, run_dir="", args=test_script_args, env={}, argdata=the_argdata
+        )
 
         dproc.join(res.p_uid)
 
@@ -488,14 +508,13 @@ class GSLS(unittest.TestCase):
         self.start_duts()
 
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
-        arg_size = 2 ** 25
+        arg_size = 2**25
 
-        test_script_args = ['globalservices/jumbo_arg_test_target.py',
-                            str(arg_size)]
+        test_script_args = ["globalservices/jumbo_arg_test_target.py", str(arg_size)]
 
-        res = dproc.create_with_argdata(exe=sys.executable, run_dir='',
-                                        args=test_script_args,
-                                        env={}, argdata=bytearray(arg_size))
+        res = dproc.create_with_argdata(
+            exe=sys.executable, run_dir="", args=test_script_args, env={}, argdata=bytearray(arg_size)
+        )
 
         dproc.join(res.p_uid)
 
@@ -510,28 +529,28 @@ class GSLS(unittest.TestCase):
         self.start_duts()
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
-        first_cn = 'bob'
-        second_cn = 'fred'
+        first_cn = "bob"
+        second_cn = "fred"
 
         my_muid = dfacts.default_pool_muid_from_index(0)
 
         dgchan.create(my_muid, first_cn)
         dgchan.create(my_muid, second_cn)
 
-        first_args = ['connection/conn_arg_test_target.py', 'first']
-        second_args = ['connection/conn_arg_test_target.py', 'second']
+        first_args = ["connection/conn_arg_test_target.py", "first"]
+        second_args = ["connection/conn_arg_test_target.py", "second"]
 
         delivered_args = (first_cn, second_cn)
         the_argdata = pickle.dumps(delivered_args)
-        first_pd = dproc.create_with_argdata(exe=sys.executable, run_dir='',
-                                             args=first_args,
-                                             env={}, argdata=the_argdata)
+        first_pd = dproc.create_with_argdata(
+            exe=sys.executable, run_dir="", args=first_args, env={}, argdata=the_argdata
+        )
 
         delivered_args = (second_cn, first_cn)
         the_argdata = pickle.dumps(delivered_args)
-        second_pd = dproc.create_with_argdata(exe=sys.executable, run_dir='',
-                                              args=second_args,
-                                              env={}, argdata=the_argdata)
+        second_pd = dproc.create_with_argdata(
+            exe=sys.executable, run_dir="", args=second_args, env={}, argdata=the_argdata
+        )
 
         dproc.join(first_pd.p_uid)
         dproc.join(second_pd.p_uid)
@@ -552,8 +571,7 @@ class GSLS(unittest.TestCase):
         self.assertEqual(second_pd.ecode, 0)
 
     def test_channel_refcount(self):
-        """PE-38654 Test ref counted channels and channel parameters
-        """
+        """PE-38654 Test ref counted channels and channel parameters"""
 
         self.start_duts()
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
@@ -562,13 +580,13 @@ class GSLS(unittest.TestCase):
         m_uid = dfacts.default_pool_muid_from_index(0)
 
         the_options = dgchan_desc.ChannelOptions(ref_count=True)
-        the_name = "test_channel_refcount-"+os.environ.get('USER', str(os.getuid()))
+        the_name = "test_channel_refcount-" + os.environ.get("USER", str(os.getuid()))
 
         descr = dgchan.create(m_uid, the_name)
 
         # get identifiers
         c_uid = descr.c_uid
-        c_name= descr.name
+        c_name = descr.name
 
         # Functions for the threads
         def call_get_refcnt(name, c_uid):
@@ -583,7 +601,7 @@ class GSLS(unittest.TestCase):
         maxproc = 16
 
         # Create a few threads and have them run get_refcnt()
-        threads = [ threading.Thread(target=call_get_refcnt, args=(c_name, c_uid)) for i in range(0,maxproc)]
+        threads = [threading.Thread(target=call_get_refcnt, args=(c_name, c_uid)) for i in range(0, maxproc)]
 
         for th in threads:
             th.start()
@@ -594,10 +612,10 @@ class GSLS(unittest.TestCase):
         # See what's going on with the channel
         new_descr = dgchan.query(c_uid, inc_refcnt=False)
 
-        self.assertEqual(descr.sdesc, new_descr.sdesc) # at the least ...
+        self.assertEqual(descr.sdesc, new_descr.sdesc)  # at the least ...
 
         # Create a bunch of threads have them run release_refcnt()
-        threads = [ threading.Thread(target=call_release_refcnt, args=(c_name, c_uid)) for i in range(0,maxproc)]
+        threads = [threading.Thread(target=call_release_refcnt, args=(c_name, c_uid)) for i in range(0, maxproc)]
 
         for th in threads:
             th.start()
@@ -614,49 +632,52 @@ class GSLS(unittest.TestCase):
         self.kill_sleepy_head()
 
 
-def start_multi_ls(shep_stdin_queue, shep_stdout_queue, env_update, name_addition=''):
+def start_multi_ls(shep_stdin_queue, shep_stdout_queue, env_update, name_addition=""):
     dparm.this_process.mode = dfacts.CRAYHPE_MULTI_MODE
-    dparm.this_process.debug = '1'
+    dparm.this_process.debug = "1"
     os.environ.update(dparm.this_process.env())
     try:
-        dsls.multinode(ls_stdin=shep_stdin_queue, ls_stdout=shep_stdout_queue,
-                       gs_args=[sys.executable, '-c', dfacts.GS_MULTI_LAUNCH_CMD],
-                       gs_env=env_update, fname='LS_' + name_addition,
-                       ta_args=[sys.executable, '-c', dfacts.TA_MULTI_LAUNCH_CMD])
+        dsls.multinode(
+            ls_stdin=shep_stdin_queue,
+            ls_stdout=shep_stdout_queue,
+            gs_args=[sys.executable, "-c", dfacts.GS_MULTI_LAUNCH_CMD],
+            gs_env=env_update,
+            fname="LS_" + name_addition,
+            ta_args=[sys.executable, "-c", dfacts.TA_MULTI_LAUNCH_CMD],
+        )
     except RuntimeError as rte:
-        shep_stdout_queue.send(dmsg.AbnormalTermination(tag=dsls.get_new_tag(),
-                                                        err_info=f'{rte!s}').serialize())
+        shep_stdout_queue.send(dmsg.AbnormalTermination(tag=dsls.get_new_tag(), err_info=f"{rte!s}").serialize())
     finally:
         shep_stdin_queue.close()
         shep_stdout_queue.close()
 
 
 class GSLSMulti(unittest.TestCase):
-    """ Global Services / Local Services (Shepherd) Integration tests
+    """Global Services / Local Services (Shepherd) Integration tests
     where GS process talks to two or more LS processes on the same node
     """
 
     SLEEPY_HEAD_TIME = 60  # seconds, 60 seconds
 
     def setUp(self) -> None:
-        self.nls = 3 # number of LS processes
+        self.nls = 3  # number of LS processes
         self.tag = 0
         self.mode = dfacts.CRAYHPE_MULTI_MODE
-        self.names = {} # helper dict that holds all the necessary names for connections for the different LS processes
+        self.names = {}  # helper dict that holds all the necessary names for connections for the different LS processes
 
         for i in range(self.nls):
-            self.names[f'shep_stdin_rh_{i}'], self.names[f'shep_stdin_wh_{i}'] = multiprocessing.Pipe(duplex=False)
-            self.names[f'shep_stdout_rh_{i}'], self.names[f'shep_stdout_wh_{i}'] = multiprocessing.Pipe(duplex=False)
+            self.names[f"shep_stdin_rh_{i}"], self.names[f"shep_stdin_wh_{i}"] = multiprocessing.Pipe(duplex=False)
+            self.names[f"shep_stdout_rh_{i}"], self.names[f"shep_stdout_wh_{i}"] = multiprocessing.Pipe(duplex=False)
 
         # need a test pool and test channels to hold the return channel
         # from GS to the test bench.  Picking cuid for these high enough
         # that they won't be used in the tests
-        self.pool_name = 'gslsinttest_' + os.environ.get('USER', str(os.getuid())) + str(uuid.uuid4())
-        self.pool_size = 2 ** 30
+        self.pool_name = "gslsinttest_" + os.environ.get("USER", str(os.getuid())) + str(uuid.uuid4())
+        self.pool_size = 2**30
         self.pool_uid = CUSTOM_POOL_MUID
         self.test_pool = dmm.MemoryPool(self.pool_size, self.pool_name, self.pool_uid)
 
-        self.gs_return_cuid = 2 ** 64 - CUSTOM_POOL_MUID
+        self.gs_return_cuid = 2**64 - CUSTOM_POOL_MUID
         self.proc_gs_return_chan = dch.Channel(self.test_pool, self.gs_return_cuid)
         self.proc_gs_return_rh = dconn.Connection(inbound_initializer=self.proc_gs_return_chan)
 
@@ -671,173 +692,184 @@ class GSLSMulti(unittest.TestCase):
 
     def start_multi_duts(self):
         for i in range(self.nls):
-            test_name = f'{i}_{self.__class__.__name__}_{inspect.stack()[1][0].f_code.co_name}'
-            if i == 0: # primary LS
+            test_name = f"{i}_{self.__class__.__name__}_{inspect.stack()[1][0].f_code.co_name}"
+            if i == 0:  # primary LS
                 # Make a list of channels to pass thru the environment to GS for testing purposes.
-                test_chan_list = [(self.gs_return_cuid, self.test_pool.serialize(),
-                                   self.proc_gs_return_chan.serialize(), False)]
+                test_chan_list = [
+                    (self.gs_return_cuid, self.test_pool.serialize(), self.proc_gs_return_chan.serialize(), False)
+                ]
                 val = pickle.dumps(test_chan_list)
-                env_update = {dfacts.GS_TEST_CH_EV: dutils.B64.bytes_to_str(val),
-                              dfacts.GS_LOG_BASE: 'gs_' + test_name}
-                start_args = (self.names[f'shep_stdin_rh_{i}'], self.names[f'shep_stdout_wh_{i}'], env_update)
+                env_update = {dfacts.GS_TEST_CH_EV: dutils.B64.bytes_to_str(val), dfacts.GS_LOG_BASE: "gs_" + test_name}
+                start_args = (self.names[f"shep_stdin_rh_{i}"], self.names[f"shep_stdout_wh_{i}"], env_update)
             else:
-                start_args = (self.names[f'shep_stdin_rh_{i}'], self.names[f'shep_stdout_wh_{i}'], None)
+                start_args = (self.names[f"shep_stdin_rh_{i}"], self.names[f"shep_stdout_wh_{i}"], None)
 
-            self.names[f'ls_dut_{i}'] = multiprocessing.Process(target=start_multi_ls, args=start_args,
-                                                                kwargs={'name_addition': test_name},
-                                                                name=f'local_svc_{i}')
-            self.names[f'ls_dut_{i}'].start()
+            self.names[f"ls_dut_{i}"] = multiprocessing.Process(
+                target=start_multi_ls, args=start_args, kwargs={"name_addition": test_name}, name=f"local_svc_{i}"
+            )
+            self.names[f"ls_dut_{i}"].start()
 
         if self.chatty_teardown:
-            print(f'The {self.nls} local services have started', flush=True)
+            print(f"The {self.nls} local services have started", flush=True)
 
         chs_up = []
         for i in range(self.nls):
             if i == 0:
-                self.names[f'shep_stdin_wh_{i}'].send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=True, net_conf_key=str(i)).serialize())
+                self.names[f"shep_stdin_wh_{i}"].send(
+                    dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=True, net_conf_key=str(i)).serialize()
+                )
             else:
-                self.names[f'shep_stdin_wh_{i}'].send(dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=False, net_conf_key=str(i)).serialize())
+                self.names[f"shep_stdin_wh_{i}"].send(
+                    dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=False, net_conf_key=str(i)).serialize()
+                )
 
-            ping_be_msg = tsu.get_and_check_type(self.names[f'shep_stdout_rh_{i}'], dmsg.SHPingBE)
+            ping_be_msg = tsu.get_and_check_type(self.names[f"shep_stdout_rh_{i}"], dmsg.SHPingBE)
             if self.chatty_teardown:
-                print(f'got SHPingBE for LS {i}', flush=True)
+                print(f"got SHPingBE for LS {i}", flush=True)
 
             env2b = dutils.B64.str_to_bytes
 
-            self.names[f'shep_input_chan_{i}'] = dch.Channel.attach(env2b(ping_be_msg.shep_cd))
-            self.names[f'shep_input_wh_{i}'] = dconn.Connection(outbound_initializer=self.names[f'shep_input_chan_{i}'])
+            self.names[f"shep_input_chan_{i}"] = dch.Channel.attach(env2b(ping_be_msg.shep_cd))
+            self.names[f"shep_input_wh_{i}"] = dconn.Connection(outbound_initializer=self.names[f"shep_input_chan_{i}"])
 
-
-            self.names[f'bela_input_chan_{i}'] = dch.Channel.attach(env2b(ping_be_msg.be_cd))
-            self.names[f'bela_input_rh_{i}'] = dconn.Connection(inbound_initializer=self.names[f'bela_input_chan_{i}'])
+            self.names[f"bela_input_chan_{i}"] = dch.Channel.attach(env2b(ping_be_msg.be_cd))
+            self.names[f"bela_input_rh_{i}"] = dconn.Connection(inbound_initializer=self.names[f"bela_input_chan_{i}"])
 
             if i == 0:
                 self.gs_cd = ping_be_msg.gs_cd
                 self.gs_input_chan = dch.Channel.attach(env2b(ping_be_msg.gs_cd))
                 self.gs_input_wh = dconn.Connection(outbound_initializer=self.gs_input_chan)
 
-                dapi.test_connection_override(test_gs_input=self.gs_input_wh,
-                                              test_gs_return=self.proc_gs_return_rh,
-                                              test_gs_return_cuid=self.gs_return_cuid,
-                                              test_shep_input=self.names[f'shep_input_wh_{i}'])
+                dapi.test_connection_override(
+                    test_gs_input=self.gs_input_wh,
+                    test_gs_return=self.proc_gs_return_rh,
+                    test_gs_return_cuid=self.gs_return_cuid,
+                    test_shep_input=self.names[f"shep_input_wh_{i}"],
+                )
 
-            self.names[f'shep_input_wh_{i}'].send(dmsg.BEPingSH(tag=self.next_tag()).serialize())
+            self.names[f"shep_input_wh_{i}"].send(dmsg.BEPingSH(tag=self.next_tag()).serialize())
 
-            msg = tsu.get_and_check_type(self.names[f'bela_input_rh_{i}'], dmsg.SHChannelsUp)
+            msg = tsu.get_and_check_type(self.names[f"bela_input_rh_{i}"], dmsg.SHChannelsUp)
             assert isinstance(msg, dmsg.SHChannelsUp)
             self.assertEqual(dutils.host_id(), msg.node_desc.host_id)
             if self.chatty_teardown:
-                print(f'got SHChannelsUp from LS {i}', flush=True)
-                print(f'Info from SHChannelsUp: host_id={msg.node_desc.host_id}, hostname={msg.node_desc.host_name}', flush=True)
+                print(f"got SHChannelsUp from LS {i}", flush=True)
+                print(
+                    f"Info from SHChannelsUp: host_id={msg.node_desc.host_id}, hostname={msg.node_desc.host_name}",
+                    flush=True,
+                )
 
             chs_up.append(msg)
 
         nodes_desc = {ch_up.idx: ch_up.node_desc for ch_up in chs_up}
-        la_ch_info = dmsg.LAChannelsInfo(tag=self.next_tag(), nodes_desc=nodes_desc,
-                                         gs_cd=self.gs_cd, num_gw_channels=0)
+        la_ch_info = dmsg.LAChannelsInfo(
+            tag=self.next_tag(), nodes_desc=nodes_desc, gs_cd=self.gs_cd, num_gw_channels=0
+        )
         for i in range(self.nls):
             # communicate gs_cd to all local services process so that they
             # can communicate with gs
-            self.names[f'shep_input_wh_{i}'].send(la_ch_info.serialize())
+            self.names[f"shep_input_wh_{i}"].send(la_ch_info.serialize())
             if self.chatty_teardown:
-                print(f'sent LACHannelsInfo to LS {i}', flush=True)
+                print(f"sent LACHannelsInfo to LS {i}", flush=True)
 
             # we need to receive TAUp
-            tsu.get_and_check_type(self.names[f'bela_input_rh_{i}'], dmsg.TAUp)
+            tsu.get_and_check_type(self.names[f"bela_input_rh_{i}"], dmsg.TAUp)
             if self.chatty_teardown:
-                print(f'received TAUp from LS {i}')
+                print(f"received TAUp from LS {i}")
                 sys.stdout.flush()
 
-        tsu.get_and_check_type(self.names['bela_input_rh_0'], dmsg.GSIsUp)
+        tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSIsUp)
         if self.chatty_teardown:
-            print('received GSIsUp')
+            print("received GSIsUp")
             sys.stdout.flush()
 
         self.starting_shm = dutil.survey_dev_shm()
 
-
     def tearDown(self) -> None:
         self.gs_input_wh.send(dmsg.GSTeardown(tag=self.next_tag()).serialize())
         if self.chatty_teardown:
-            print('sent GSTeardown')
+            print("sent GSTeardown")
             sys.stdout.flush()
 
-        tsu.get_and_check_type(self.names['bela_input_rh_0'], dmsg.GSHalted)
+        tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSHalted)
         if self.chatty_teardown:
-            print('got GSHalted')
+            print("got GSHalted")
             sys.stdout.flush()
 
-        self.names['shep_input_wh_0'].send(dmsg.SHHaltTA(tag=self.next_tag()).serialize())
+        self.names["shep_input_wh_0"].send(dmsg.SHHaltTA(tag=self.next_tag()).serialize())
         if self.chatty_teardown:
-            print('sent SHHaltTA')
+            print("sent SHHaltTA")
             sys.stdout.flush()
 
-        tsu.get_and_check_type(self.names['bela_input_rh_0'], dmsg.TAHalted)
+        tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.TAHalted)
         if self.chatty_teardown:
-            print('got TAHalted')
+            print("got TAHalted")
             sys.stdout.flush()
 
         for i in range(self.nls):
-            self.names[f'shep_input_wh_{i}'].send(dmsg.SHTeardown(tag=self.next_tag()).serialize())
+            self.names[f"shep_input_wh_{i}"].send(dmsg.SHTeardown(tag=self.next_tag()).serialize())
             if self.chatty_teardown:
-                print(f'sent SHTeardown to LS {i}')
+                print(f"sent SHTeardown to LS {i}")
                 sys.stdout.flush()
 
-            tsu.get_and_check_type(self.names[f'bela_input_rh_{i}'], dmsg.SHHaltBE)
+            tsu.get_and_check_type(self.names[f"bela_input_rh_{i}"], dmsg.SHHaltBE)
             if self.chatty_teardown:
-                print(f'got SHHaltBE from LS {i}')
+                print(f"got SHHaltBE from LS {i}")
                 sys.stdout.flush()
 
         for i in range(self.nls):
-            self.names[f'shep_input_chan_{i}'].detach()
-            self.names[f'bela_input_chan_{i}'].detach()
+            self.names[f"shep_input_chan_{i}"].detach()
+            self.names[f"bela_input_chan_{i}"].detach()
 
-            self.names[f'shep_stdin_wh_{i}'].send(dmsg.BEHalted(tag=self.next_tag()).serialize())
+            self.names[f"shep_stdin_wh_{i}"].send(dmsg.BEHalted(tag=self.next_tag()).serialize())
             if self.chatty_teardown:
-                print(f'sent BEHalted to LS {i}')
+                print(f"sent BEHalted to LS {i}")
                 sys.stdout.flush()
 
         self.gs_input_chan.detach()
         self.proc_gs_return_chan.destroy()
 
         for i in range(self.nls):
-            self.names[f'shep_stdin_rh_{i}'].close()
-            self.names[f'shep_stdin_wh_{i}'].close()
-            self.names[f'shep_stdout_rh_{i}'].close()
-            self.names[f'shep_stdout_wh_{i}'].close()
+            self.names[f"shep_stdin_rh_{i}"].close()
+            self.names[f"shep_stdin_wh_{i}"].close()
+            self.names[f"shep_stdout_rh_{i}"].close()
+            self.names[f"shep_stdout_wh_{i}"].close()
 
         for i in range(self.nls):
-            self.names[f'ls_dut_{i}'].join()
+            self.names[f"ls_dut_{i}"].join()
 
         self.test_pool.destroy()
         dutil.compare_dev_shm(self.starting_shm)
 
     def kill_sleepy_head(self):
-        msg = dmsg.GSProcessKill(tag=self.next_tag(), p_uid=dfacts.LAUNCHER_PUID,
-                                 r_c_uid=dfacts.BASE_BE_CUID,
-                                 sig=signal.SIGKILL, t_p_uid=self.head_puid)
+        msg = dmsg.GSProcessKill(
+            tag=self.next_tag(),
+            p_uid=dfacts.LAUNCHER_PUID,
+            r_c_uid=dfacts.BASE_BE_CUID,
+            sig=signal.SIGKILL,
+            t_p_uid=self.head_puid,
+        )
         self.gs_input_wh.send(msg.serialize())
 
         # Since the backend can still be receiving messages from LS,
         # discard its SHFwdOutput messages that still may be in the channel
         # queue
-        msg = tsu.get_and_parse(self.names['bela_input_rh_0'])
-        while (isinstance(msg, dmsg.SHFwdOutput)):
-            msg = tsu.get_and_parse(self.names['bela_input_rh_0'])
+        msg = tsu.get_and_parse(self.names["bela_input_rh_0"])
+        while isinstance(msg, dmsg.SHFwdOutput):
+            msg = tsu.get_and_parse(self.names["bela_input_rh_0"])
 
         if isinstance(msg, dmsg.GSProcessKillResponse):
-            tsu.get_and_check_type(self.names['bela_input_rh_0'], dmsg.GSHeadExit)
+            tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSHeadExit)
         else:
             self.assertIsInstance(msg, dmsg.GSHeadExit)
-            tsu.get_and_check_type(self.names['bela_input_rh_0'], dmsg.GSProcessKillResponse)
+            tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSProcessKillResponse)
 
     def start_sleepy_head(self, timeout):
-        msg = mk_sleep_msg(timeout, self.next_tag(), p_uid=dfacts.LAUNCHER_PUID,
-                           r_c_uid=dfacts.BASE_BE_CUID)
+        msg = mk_sleep_msg(timeout, self.next_tag(), p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID)
 
         self.gs_input_wh.send(msg.serialize())
 
-        resp = tsu.get_and_check_type(self.names['bela_input_rh_0'], dmsg.GSProcessCreateResponse)
+        resp = tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSProcessCreateResponse)
 
         self.assertEqual(resp.err, dmsg.GSProcessCreateResponse.Errors.SUCCESS)
 
@@ -848,7 +880,7 @@ class GSLSMulti(unittest.TestCase):
     def test_gs_ls_comm(self):
         self.start_multi_duts()
         if self.chatty_teardown:
-            print('Everything is set up. Ready to fire up a few processes.', flush=True)
+            print("Everything is set up. Ready to fire up a few processes.", flush=True)
         self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
 
         # create processes
@@ -856,7 +888,7 @@ class GSLSMulti(unittest.TestCase):
         # in a cyclic order
         procs = []
         for i in range(2 * self.nls):
-            res = dproc.create(exe='/bin/sleep', run_dir='', args=['1'], env={})
+            res = dproc.create(exe="/bin/sleep", run_dir="", args=["1"], env={})
             procs.append(res.p_uid)
 
         dproc.multi_join(procs, join_all=True)
@@ -865,5 +897,5 @@ class GSLSMulti(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    multiprocessing.set_start_method('spawn')
+    multiprocessing.set_start_method("spawn")
     unittest.main()
