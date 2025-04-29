@@ -1,0 +1,70 @@
+
+name: pages-build-deployment
+run-name: pages build and deployment
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [closed]
+
+jobs:
+  my_job:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if merged
+        if: ${{ github.event.pull_request.merged }}
+        run: |
+          echo "Pull request merged!"
+
+  # Build job
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          submodules: 'recursive'
+      
+      - name: Build Image
+        run: |
+          docker build -t my_image ./.devcontainer
+
+      - name: Run Container
+        run: |
+          docker run -t -d --name my_container my_image
+      
+      - name: Build
+        run: |
+          set -x
+          docker exec -i my_container mkdir dragon
+          docker cp ./ my_container:/dragon
+          docker exec -i my_container bash -c "cd dragon && source /etc/profile.d/modules.sh && source hack/clean_build && cd doc && make"
+          docker cp my_container:/dragon/doc .
+          rm -rf ./external
+      
+      - name: Setup Pages
+        id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: .
+  
+  # Deployment job
+  deploy:
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{steps.deployment.outputs.page_url}}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
