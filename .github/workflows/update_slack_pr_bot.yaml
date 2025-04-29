@@ -1,0 +1,26 @@
+# This workflow runs a cron job that updates slack with current PR statuses
+
+name: Dragon PR grabber
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "54 13 * * 1-5"
+
+permissions:
+  contents: read
+
+# Run on pe27rome with a runner going from nhill's account
+jobs:
+  pr-notifier-bot:
+    runs-on: [ self-hosted ]
+
+    steps:
+    - name: Run Pull Request Grabber and notify Slack
+      run: |
+        module swap PrgEnv-cray PrgEnv-gnu
+        module load cray-python
+        python3 -m venv _env
+        . _env/bin/activate
+        python3 -m pip install PyGithub
+        python3 .github/workflows/pr_bot_grabber.py

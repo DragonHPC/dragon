@@ -19,8 +19,8 @@ RUN git clone https://github.com/pyenv/pyenv.git $PYENV_ROOT
 # Compile dynamic bash extension to speed up pyenv
 RUN cd $PYENV_ROOT && src/configure && make -C src
 
-# Build Python 3.9.4 by default.
-ARG python_version=3.9.4
+# Build Python 3.11.2 by default.
+ARG python_version=3.11.2
 # Keep Python source files in /usr/local/src
 ENV PYTHON_BUILD_BUILD_PATH=/usr/local/src/
 # Install a Python with a shared object
@@ -46,9 +46,6 @@ RUN sed -i '/disable ghostscript format types/,+6d' /etc/ImageMagick-6/policy.xm
 RUN curl https://raw.githubusercontent.com/git/git/master/contrib/completion/git-completion.bash -o ~/.git-completion.bash
 COPY git_completion.bash /tmp/git_completion.bash
 RUN cat /tmp/git_completion.bash >> ~/.bashrc
-# Next line insures a newline before the cd && source line
-RUN echo >> ~/.bashrc
-RUN echo 'cd /workspaces/hpc-pe-dragon-dragon && source hack/setup' >> ~/.bashrc
 
 # Install SRMStoFigs (required to build Dragon docs)
 RUN cd /usr/local/src && git clone https://github.com/kentdlee/SRMStoFigs.git
@@ -60,18 +57,18 @@ RUN cd /usr/local/src/SRMStoFigs \
 RUN apt-get update \
     && export DEBIAN_FRONTEND=noninteractive \
     && apt-get install -y \
-    debianutils environment-modules gdb git-lfs git-man graphviz man \
+    debianutils gdb git-lfs git-man graphviz man \
     manpages manpages-dev manpages-posix manpages-posix-dev ssh psmisc \
     rsync sshpass tree vim xfsprogs \
     && rm -rf /var/lib/apt/lists/*
 
 # Python packages required by Dragon
 COPY requirements.txt /usr/src/requirements.txt
-COPY constraints.txt /usr/src/constraints.txt
 
+# Zarr/numcodecs requires special attention to work around a bug in numcodecs (w/o going to the latest Zarr)
 RUN /usr/local/bin/python3 -m ensurepip \
     && /usr/local/bin/python3 -m pip install --no-cache-dir --upgrade pip \
-    && /usr/local/bin/python3 -m pip install --no-cache-dir -r /usr/src/requirements.txt -c /usr/src/constraints.txt
+    && /usr/local/bin/python3 -m pip install --no-cache-dir -r /usr/src/requirements.txt
 
 # Packages for building dragon multinode dependencies
 RUN apt-get update \

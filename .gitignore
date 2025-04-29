@@ -65,3 +65,8 @@ test/native/flimsgfrom
 test/native/flimsgto
 src/lib/_message_tcs.hpp
 src/.dragon-config.mk
+test/native/c_ddict
+test/native/cpp_ddict
+test/utils/test_blocks
+src/dragon/bin
+src/include/python3*

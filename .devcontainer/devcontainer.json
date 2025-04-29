@@ -4,6 +4,8 @@
     },
     "runArgs": [
         "--privileged", // so gdb can attach to processes
+        "--ulimit", // These two lines allow core files in the container.
+        "core=-1", // Helpful in debugging.
         "--shm-size=6gb", // 4GB user pool, 1GB inf pool, 1GB extra pool
         "--cpus=2", // explicit hard limits for CPUs and mem
         "--memory=8GB",
