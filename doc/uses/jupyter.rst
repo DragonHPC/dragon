@@ -76,8 +76,8 @@ Then, on your laptop you start another tunnel.
 
 This will allow you to connect on your laptop to port 1234. If that port were taken, you can use
 whatever port you like. The first time you connect you'll be asked for a token. The token
-it refers to is the token in the URL that was printed to the login node when the start_jupyter.py
-program was run.
+it refers to is the token in the URL that was printed to the login node when the dragon-jupyter
+was started.
 
 That's it. You now have the ability to create Jupyter Notebooks with full access to all the
 nodes in your supercomputer allocation.

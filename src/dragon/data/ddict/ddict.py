@@ -2640,19 +2640,9 @@ class DDict:
         may/will have smaller numbers of children.
 
         The filter function returns a Context Manager that supplies an Iterator
-        over which you can iterate on the filtered values.
-
-        Example
-        ---------
-
-        ```
-        candidate_list=[]
-        with dd.filter(get_largest, (num_needed,), comparator) as candidates:
-            for candidate in candidates:
-                candidate_list.append(candidate)
-                if len(candidate_list) == num_needed:
-                    break
-        ```
+        over which you can iterate on the filtered values. So you can write
+        `with dd.filter(...) as candidates:` and then iterate over `candidates`
+        inside the context to read the filtered values.
 
         Assuming your distributed dictionary is called dd, this will get
         num_needed elements from the result of filtering the distributed
@@ -2673,8 +2663,10 @@ class DDict:
         node in the filtering tree (i.e. any aggregator).
 
         :returns: A Context Manager that supplies an iterator over which you can
-        iterate over the filtered values. See the example above.
+        iterate over the filtered values.
+
         """
+
         stats = self.dstats
         nodes = query_all()
         if len(nodes) == 1:

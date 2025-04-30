@@ -6,7 +6,7 @@ for a tighter experience, but this example shows how this might be done.
 
 To run the example, from the terminal window run
 
-    dragon start_jupyter.py
+    dragon-jupyter
 
 This will print a URL for the loopback interface to open in a web browser.
 Copy and paste that 127.0.0.1 URL to your favorite browser. Then open
@@ -72,7 +72,7 @@ response ID back to the prompter. In this case, that is done by printing this
 output; however, if you have multiple users, the response workers would be
 responsible for returning the response to the correct prompt ID. The structure
 of a `response worker` is similar to that of an `inference worker` in that each
-worker enters a while loop where they greedily get from the shared 
+worker enters a while loop where they greedily get from the shared
 `response queue` and exit when the queue is empty and the end event is set.
 
 Each of the `telemetry workers` executes the `telem_work()` function, inside
@@ -115,7 +115,7 @@ here: https://pytorch.org/get-started/locally/.
 > pip install torch torchvision torchaudio
 > pip install py3nvml
 > pip install huggingface-hub
-> pip install transformers 
+> pip install transformers
 ```
 
 

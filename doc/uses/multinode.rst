@@ -243,26 +243,33 @@ config JSON file):
 High Speed Transport Agent (HSTA)
 ---------------------------------
 
-The HSTA is new in Dragon 0.4. The HSTA transport is an RDMA based transport agent that
-combines MPI-like performance using Dragon Channels. There are no network ports to configure
-for HSTA, but it does depend on Cray-MPICH being installed on the system.
+HSTA is a high-speed transport agent that provides MPI-like performance using
+Dragon Channels. HSTA uses libfrabric or libucp for communication over Slingshot
+or Infiniband high-speed interconnection networks. If you have one of these networks
+you can configure HSTA to run on it using the appropriate `dragon-config` options. See
+the :ref:`installation-guide` section for examples of how to configure Dragon to use HSTA.
 
-The HSTA transport agent is currently not available in the opensource version of Dragon. For
-inquiries about Dragon's high speed RDMA-based transport, please contact HPE by emailing
-dragonhpc@hpe.com.
+The HSTA transport agent is currently not available in the opensource version of
+Dragon. For inquiries about Dragon's high speed RDMA-based transport, please
+contact HPE by emailing dragonhpc@hpe.com.
 
 .. _tcp_transport_agent:
 
 TCP-based Transport Agent
 -------------------------
 
-As of Dragon 0.5, the TCP-based transport agent is the default transport agent
+The TCP-based transport agent is the default transport agent
 for the Dragon opensource package. The TCP transport agent utilizes standard TCP
 for inter-node communication through Dragon Channels.
 
 When using a version of Dragon that includes the HSTA transport agent and you prefer to
 use the TCP transport agent, the `--transport tcp` option can be passed to the launcher (see:
-:ref:`FAQ <Transport FAQ>` and :ref:`Launcher options <Dragon CLI Options>`).
+:ref:`FAQ <Transport FAQ>` and :ref:`Launcher options <Dragon CLI Options>`). The dragon-config
+command can also be used to specify that the TCP transport should be used. To do that you run
+dragon-config as follows.
+
+.. code-block:: console
+  dragon-config -a 'tcp-runtime=True'
 
 The TCP agent is configured to use port 7575 by default. If that port is blocked,
 it can be changed with the `--port` argument to `dragon`. If not specific,
