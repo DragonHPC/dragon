@@ -40,7 +40,7 @@ jobs:
           set -x
           docker exec -i my_container mkdir dragon
           docker cp ./ my_container:/dragon
-          docker exec -i my_container bash -c "cd dragon && source /etc/profile.d/modules.sh && source hack/clean_build && cd doc && make"
+          docker exec -i my_container bash -c "cd dragon && source hack/clean_build && cd doc && make"
           docker cp my_container:/dragon/doc .
           rm -rf ./external
       
