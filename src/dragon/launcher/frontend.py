@@ -162,13 +162,13 @@ class LauncherFrontEnd:
             if fabric_backend is None:
                 print(
 """
-By default Dragon will look for a configuration file to determine which
-transport implementation to use. However, no such configuration file was found.
+By default Dragon looks for a configuration file to determine which transport
+agent implementation to use. However, no such configuration file was found.
 Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
-to determine the best way to configure the network transport backend to your
-compute environment. In the meantime, we will use the base TCP transport agent
-for backend network communication. To eliminate this message and continue to use
-the TCP transport, run:
+to determine the best way to configure the transport agent for your
+compute environment. In the meantime, Dragon will use the TCP transport agent
+for network communication. To eliminate this message and continue to use
+the TCP transport agent, run:
 
     dragon-config -a 'tcp-runtime=True'
 """
