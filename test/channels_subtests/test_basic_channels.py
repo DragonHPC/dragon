@@ -25,10 +25,10 @@ from dragon.channels import (
     EventType,
     ChannelBarrierBroken,
     ChannelBarrierReady,
-    MASQUERADE_AS_REMOTE,
+    ChannelFlags,
     ChannelSet,
     ChannelSetTimeout,
-    POLLIN,
+    EventType,
     SPIN_WAIT,
     ADAPTIVE_WAIT,
 )
@@ -438,7 +438,7 @@ class ChannelCreateTest(unittest.TestCase):
     @unittest.skip("Not valid yet. Need to do some investigation as to similar problem.")
     def test_destroy_after_detach(self):
         # Make sure we can store a serializer after detaching
-        ch = Channel(self.mpool, 1, flags=MASQUERADE_AS_REMOTE)
+        ch = Channel(self.mpool, 1, flags=ChannelFlags.MASQUERADE_AS_REMOTE)
         ch.detach()
         ch.destroy()
 
@@ -1184,8 +1184,8 @@ class ChannelSetTests(unittest.TestCase):
         proc.start()
         # now, the first channel should have a message
         result, revent = self.ch_set.poll()
-        self.assertEqual((result, revent), (self.channel_list[0], POLLIN))
-        self.assertEqual(revent, POLLIN)
+        self.assertEqual((result, revent), (self.channel_list[0], EventType.POLLIN))
+        self.assertEqual(revent, EventType.POLLIN)
 
         # receive the message to empty the channel
         recvh.recv()
@@ -1217,7 +1217,7 @@ class ChannelSetTests(unittest.TestCase):
 
             # there is a message in channel i
             result, revent = self.ch_set.poll()
-            self.assertEqual((result, revent), (self.channel_list[i], POLLIN))
+            self.assertEqual((result, revent), (self.channel_list[i], EventType.POLLIN))
 
             # receive the message and poll again
             recvh.recv()

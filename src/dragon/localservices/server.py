@@ -1874,10 +1874,10 @@ class LocalServer:
                     connector = None
                     channel, event = channel_set.poll(self.SHUTDOWN_RESP_TIMEOUT)
                     connector = self.cuid_to_input_connector[channel.cuid]
-                    if event == dch.POLLIN:
+                    if event == dch.EventType.POLLIN:
                         EOF = connector.forward()
 
-                    if EOF or event == dch.POLLNOTHING or not connector.proc_is_alive:
+                    if EOF or event == dch.EventType.POLLNOTHING or not connector.proc_is_alive:
                         dead_connector = connector
                         connector.close()
 

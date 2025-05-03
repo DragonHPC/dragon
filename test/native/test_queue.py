@@ -6,14 +6,8 @@ import time
 import dragon
 from dragon.native.queue import Queue
 
-from dragon.channels import Channel, MASQUERADE_AS_REMOTE
-from dragon.managed_memory import MemoryPool
-
 from dragon.globalservices.process import create as process_create, join as process_join
-from dragon.globalservices.pool import query as pool_query, get_list as pool_get_list
 from dragon.infrastructure.process_desc import ProcessOptions
-from dragon.infrastructure.channel_desc import ChannelOptions
-from dragon.infrastructure.facts import default_pool_muid_from_index
 import dragon.utils as du
 
 

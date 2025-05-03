@@ -498,7 +498,7 @@ class Connection:
         the_cuid.conn = self
         return the_cuid
 
-    def poll(self, timeout=0.0, event_mask=dch.POLLIN):
+    def poll(self, timeout=0.0, event_mask=dch.EventType.POLLIN):
         """Wait for an event to occur on the connection, such as data is available.
 
         :param timeout: Number of seconds to poll for before raising a TimeoutError

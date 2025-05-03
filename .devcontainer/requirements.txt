@@ -6,7 +6,7 @@ black>=24.8.0
 breathe>=4.35.0
 cloudpickle>=3.0.0
 cryptography>=43.0.1
-Cython~=3.0a
+Cython==3.0.12
 flask>=3.0.3
 gunicorn>=23.0.0
 numpy>=2.0.2

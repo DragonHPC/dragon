@@ -15,8 +15,8 @@ from dragon.channels import (
     ChannelRecvH,
     register_gateways_from_env,
     discard_gateways,
-    MASQUERADE_AS_REMOTE,
-    POLLIN,
+    ChannelFlags,
+    EventType,
 )
 from dragon.managed_memory import MemoryPool
 from dragon.utils import B64
@@ -234,8 +234,8 @@ class SingleNodeTransportBench(unittest.TestCase):
         cls.mpool.destroy()
 
     def setUp(self):
-        self.user_ch1 = Channel(self.mpool, 3, flags=MASQUERADE_AS_REMOTE)
-        self.user_ch2 = Channel(self.mpool, 4, flags=MASQUERADE_AS_REMOTE)
+        self.user_ch1 = Channel(self.mpool, 3, flags=ChannelFlags.MASQUERADE_AS_REMOTE)
+        self.user_ch2 = Channel(self.mpool, 4, flags=ChannelFlags.MASQUERADE_AS_REMOTE)
 
     def tearDown(self):
         self.user_ch1.destroy()
@@ -340,7 +340,7 @@ class SingleNodeTransportBench(unittest.TestCase):
         ret_value = mp.Value("i", FAILURE, lock=False)
         proc = mp.Process(target=send_msg_to_channel, args=(ch_ser, 1, ret_value, None, 2))
         proc.start()
-        rc = self.user_ch1.poll(event_mask=POLLIN)
+        rc = self.user_ch1.poll(event_mask=EventType.POLLIN)
         self.assertEqual(rc, True)
         msg = recvh.recv()
         # Here we can do any message validation that needs

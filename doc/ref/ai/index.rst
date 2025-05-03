@@ -10,10 +10,10 @@ for enhanced data loading.
 Python Reference
 ================
 
-.. currentmodule:: dragon.ai
+.. currentmodule:: dragon.ai.torch
 
 .. autosummary::
     :toctree:
     :recursive:
 
-    torch.DragonDataset
+    DragonDataset

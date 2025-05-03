@@ -6,7 +6,7 @@ import time
 import pickle
 import multiprocessing as mp
 
-from dragon.channels import Channel, register_gateways_from_env, POLLIN
+from dragon.channels import Channel, register_gateways_from_env, EventType
 from dragon.utils import B64
 
 import dragon.infrastructure.parameters as dparms
@@ -97,7 +97,7 @@ def send_message_around_ring_of_nodes(this_node_index, send_to_node_index, recv_
 
 def poll_ch(ch_descr):
     _ch = Channel.attach(ch_descr)
-    rc = _ch.poll(event_mask=POLLIN)
+    rc = _ch.poll(event_mask=EventType.POLLIN)
     return rc
 
 
