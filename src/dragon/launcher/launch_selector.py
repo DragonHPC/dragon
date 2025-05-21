@@ -50,6 +50,7 @@ Please specify only '--single-node-override' or '--multi-node-override'"""
         is_pbs = wlm == str(WLM.PBS_PALS)
         is_slurm = wlm == str(WLM.SLURM)
         is_ssh = wlm == str(WLM.SSH)
+        is_k8s = wlm == str(WLM.K8S)
     else:
         # Likewise, only one of these will be true (unless somehow they have both PBS and slurm installed)
         is_pbs = wlm_cls_dict[WLM.PBS_PALS].check_for_wlm_support()
@@ -127,10 +128,11 @@ def main():
                                 `--hostfile` or `--hostlist` is a required argument for WLM SSH and is only used for SSH
           --network-prefix NETWORK_PREFIX
                                 NETWORK_PREFIX specifies the network prefix the dragon runtime will use to determine which IP addresses it should use to build
-                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib)\\d+$' is used -- the prefix for known HPE-Cray XC
-                                and EX high speed networks. If uncertain which networks are available, the following will return them in pretty formatting: `dragon-
-                                network-ifaddrs --ip --no-loopback --up --running | jq`. Prepending with `srun` may be necessary to get networks available on
-                                backend compute nodes
+                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth)\\d+$' is used -- the prefix for known
+                                HPE-Cray XC and EX high speed networks as well as the common eth interface. If uncertain which networks are available, the
+                                following will return them in pretty formatting: `dragon-network-ifaddrs --ip --no-loopback --up --running | jq`. Prepending
+                                with `srun` may be necessary to get networks available on backend compute nodes. The eth prefix is only used as a last resort
+                                if no high-speed networks are found.
           --network-config NETWORK_CONFIG
                                 NETWORK_CONFIG specifies a YAML or JSON file generated via a call to the launcher's network config tool that successfully generated
                                 a corresponding YAML or JSON file (eg: `dragon-network-config --output-to-yaml`) describing the available backend compute nodes

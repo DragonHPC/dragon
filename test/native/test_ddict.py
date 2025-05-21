@@ -33,10 +33,13 @@ from dragon.utils import b64encode, b64decode, hash as dhash, host_id
 from dragon.data.ddict import (
     DDict,
     DDictManagerFull,
+    DDictUnableToCreateDDict,
+    DDictError,
     DDictCheckpointSync,
     DDictFutureCheckpoint,
-    DDictError,
+    DDictPersistCheckpointError,
     strip_pickled_bytes,
+    PosixCheckpointPersister,
 )
 from dragon.rc import DragonError
 from dragon.native.machine import System, Node
@@ -675,10 +678,10 @@ def client_func_1_wait_writers_rollback(d, ev):
     ## 0
     d["key0"] = "val0"
     d.checkpoint()  ## 1
-    assert d.current_checkpoint_id == 1
+    assert d.checkpoint_id == 1
     d["key0"] = "val1"
     d.rollback()  ## 0
-    assert d.current_checkpoint_id == 0
+    assert d.checkpoint_id == 0
     assert d["key0"] == "val0"
     d.checkpoint()  ## 1
     d.checkpoint()  ## 2
@@ -690,10 +693,10 @@ def client_func_1_wait_writers_rollback(d, ev):
 def client_func_2_wait_writers_rollback(d):
     ## 0
     d.checkpoint()  ## 1
-    assert d.current_checkpoint_id == 1
+    assert d.checkpoint_id == 1
     assert d["key0"] == "val1"
     d.checkpoint()  ## 2
-    assert d.current_checkpoint_id == 2
+    assert d.checkpoint_id == 2
     assert d["key0"] == "val2"
     d.rollback()  ## 1
     d.rollback()  ## 0
@@ -1039,7 +1042,7 @@ class TestDDict(unittest.TestCase):
     def test_ddict_client_response_message(self):
         manager_nodes = b64encode(cloudpickle.dumps([Node(ident=host_id()) for _ in range(2)]))
         msg = dmsg.DDRegisterClientResponse(
-            42, 43, DragonError.SUCCESS, 0, 2, 3, manager_nodes, "this is name", 10, "this is dragon error info"
+            42, 43, DragonError.SUCCESS, 0, 2, 3, manager_nodes, "this is name", 10, False, "this is dragon error info"
         )
         ser = msg.serialize()
         newmsg = dmsg.parse(ser)
@@ -1499,9 +1502,9 @@ class TestDDict(unittest.TestCase):
         proc1.start()
         proc1.join()
         self.assertEqual(0, proc1.exitcode)
-        self.assertEqual(d.current_checkpoint_id, 0)
+        self.assertEqual(d.checkpoint_id, 0)
         d.sync_to_newest_checkpoint()
-        self.assertEqual(d.current_checkpoint_id, 4)
+        self.assertEqual(d.checkpoint_id, 4)
         d.destroy()
 
     def test_wait_keys_put_get(self):
@@ -2427,9 +2430,10 @@ class TestDDict(unittest.TestCase):
     def test_copy(self):
         d = DDict(2, 1, 3000000, wait_for_keys=True, working_set_size=4, trace=True)
         d["hello"] = "world"
-        d_copy = d.copy(name="test_copy_name")
+        name = f"test_copy_name_{getpass.getuser()}"
+        d_copy = d.copy(name=name)
         self.assertEqual(d_copy["hello"], "world")
-        self.assertEqual("test_copy_name", d_copy.get_name())
+        self.assertEqual(name, d_copy.get_name())
         d.destroy()
         d_copy.destroy()
 
@@ -2615,6 +2619,1291 @@ class TestDDict(unittest.TestCase):
         self.assertEqual(0, proc2.exitcode)
 
         ddict.destroy()
+
+
+class TestDDictPersist(unittest.TestCase):
+
+    ################################################
+    # test_persist: read only mode
+    ################################################
+
+    def tearDown(cls):
+        for p in pathlib.Path(".").glob("*.dat"):
+            os.remove(p)
+
+    def test_persist_1_checkpoint_freq_1_cnt_1_restore_from_0(self):
+        """Persist one checkpoint and restore."""
+        # This test persists chkpt 0 to disk. Persist count is 1 so the chkpt is kept.
+        # A new dictionary then restores from chkpt 0 later.
+        NUM_MANAGERS = 1
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=1,
+            persister_class=PosixCheckpointPersister,
+        )
+        d["key"] = "v0"
+        d.checkpoint()  ## 1
+        d["key"] = "v1"
+        d.checkpoint()  ## 2
+        d["key"] = "v2"  ## retire and write checkpoint 0 to disk
+
+        restore_name = d.get_name()
+        d.destroy()
+
+        chkpt_restore = 0
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            name=restore_name,
+            restore_from=chkpt_restore,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        # chkpt ID should be set to the one ddict restored from
+        self.assertEqual(dd_restore.current_checkpoint_id, chkpt_restore)
+        self.assertEqual(dd_restore["key"], "v0")
+        dd_restore.destroy()
+
+    def test_persist_2_checkpoint_freq_1_cnt_1_restore_from_1(self):
+        """
+        Persist more than one checkpoints and restore from the second checkpoint. Also make sure the
+        older persist file is removed when the number of persistedcheckpoints exceeds persist count.
+        """
+        # This test persists chkpt 0 and 1 to disk. Persist count is 1 so the oldest persist chkpt, which
+        # is chkpt 0 is removed from disk before persisting chkpt 1. A new dicitonary than restores from
+        # chkpt 1 later.
+        NUM_MANAGERS = 1
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=1,
+            name="ddict_restore_test",
+            persister_class=PosixCheckpointPersister,
+        )
+        d["key"] = "v0"
+        d.checkpoint()  ## 1
+        d["key"] = "v1"
+        d.checkpoint()  ## 2
+        d["key"] = "v2"  ## retire and write checkpoint 0 to disk
+        d.checkpoint()  ## 3
+        # Retire and write checkpoint 1 to disk, persist checkpoint 0
+        # is removed as the persist count is 1, so only 1 persisted checkpint
+        # file is allowed in the persist path at any time.
+        d["key"] = "v3"
+
+        restore_name = d.get_name()
+        d.destroy()
+
+        chkpt_restore = 1
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path="",
+            name=restore_name,
+            restore_from=chkpt_restore,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        # checkpoint ID should be set to the one ddict restored from
+        self.assertEqual(dd_restore.current_checkpoint_id, chkpt_restore)
+        self.assertEqual(dd_restore["key"], "v1")
+        dd_restore.destroy()
+
+    def test_persist_2_checkpoint_freq_1_cnt_2_restore_from_1(self):
+        """
+        Persist more than one checkpoint and restore from the second checkpoint. Also make sure the
+        older persisted checkpoint is not removed when the number of persisted checkpoints has not
+        exceeded the persist count.
+        """
+        # This test persists chkpt 0 and 1 to disk. Persist count is 2 so both persisted files
+        # are kept. A new dictionary restores from chkpt 1 later.
+        NUM_MANAGERS = 1
+        persist_freq = 1
+        persist_count = 2
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=persist_freq,
+            persist_count=persist_count,
+            persister_class=PosixCheckpointPersister,
+        )
+        d["key"] = "v0"
+        d.checkpoint()  ## 1
+        d["key"] = "v1"
+        d.checkpoint()  ## 2
+        d["key"] = "v2"  ## retire and write checkpoint 0 to disk
+        d.checkpoint()  ## 3
+        # Retire and write checkpoint 1 to disk, persist checkpoint 0
+        # is kept as the persist count is 2, so at most 2 persisted chkpt
+        # files can exist in the persist path at any time.
+        d["key"] = "v3"
+
+        restore_name = d.get_name()
+        d.destroy()
+
+        # Check if the persist chkpts are written to disk with the correct filenames.
+        path = pathlib.Path(".")
+        self.assertEqual(len(list(path.glob(f"{restore_name}*.dat"))), persist_count)
+        MIN_PERSISTED_CHKPT_ID = 0
+        MAX_PERSISTED_CHKPT_ID = 1
+        for managerID in range(NUM_MANAGERS):
+            for chkptID in range(MIN_PERSISTED_CHKPT_ID, MAX_PERSISTED_CHKPT_ID + 1, persist_freq):
+                pfile = pathlib.Path(f"./{restore_name}_{managerID}_{chkptID}.dat")
+                self.assertTrue(pfile.exists())
+
+        chkpt_restore = 1
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            name=restore_name,
+            restore_from=chkpt_restore,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        # checkpoint ID should be set to the one ddict restored from
+        self.assertEqual(dd_restore.current_checkpoint_id, chkpt_restore)
+        self.assertEqual(dd_restore["key"], "v1")
+        dd_restore.destroy()
+
+    def test_persist_2_checkpoint_freq_2_cnt_2_restore_from_2(self):
+        """
+        Make sure checkopints persist with persist frequency > 1 and the persist checkpoints
+        are saved.
+        """
+        # This test persists chkpt 0 and 2 to disk. Persist count is 2 so both persist files
+        # are kept. A new dictionary restore from chkpt 2 later.
+
+        NUM_MANAGERS = 1
+        working_set_size = 2
+        persist_freq = 2
+        persist_count = 2
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=working_set_size,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=persist_freq,
+            persist_count=persist_count,
+            persister_class=PosixCheckpointPersister,
+        )
+        d["key"] = "v0"
+        d.checkpoint()  ## 1
+        d["key"] = "v1"
+        d.checkpoint()  ## 2
+        d["key"] = "v2"  ## retire and write checkpoint 0 to disk
+        d.checkpoint()  ## 3
+        # retire chkpt 1 but don't write it to disk as we only write every 2
+        # retiring chkpts to disk(persist_freq=2), persisted checkpoint 0
+        # is still kept in the disk.
+        d["key"] = "v3"
+        d.checkpoint()  ## 4
+        # Retire and write chkpt 2 to disk as persist_freq=2, the last persisted
+        # chkpt is 0. Because 0 + 2 = 2, we should persist chkpt 2.
+        d["key"] = "v4"
+
+        restore_name = d.get_name()
+        d.destroy()
+
+        # Check if the persist chkpts are written to disk with the correct filenames.
+        path = pathlib.Path(".")
+        self.assertEqual(len(list(path.glob(f"{restore_name}*.dat"))), persist_count)
+        MIN_PERSISTED_CHKPT_ID = 0
+        MAX_PERSISTED_CHKPT_ID = 2
+        for managerID in range(NUM_MANAGERS):
+            for chkptID in range(MIN_PERSISTED_CHKPT_ID, MAX_PERSISTED_CHKPT_ID + 1, persist_freq):
+                pfile = pathlib.Path(f"./{restore_name}_{managerID}_{chkptID}.dat")
+                self.assertTrue(pfile.exists())
+
+        chkpt_restore = 2
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            name=restore_name,
+            restore_from=chkpt_restore,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(dd_restore.persisted_ids(), [0, 2])
+        # checkpoint ID should be set to the one ddict restored from
+        self.assertEqual(dd_restore.current_checkpoint_id, chkpt_restore)
+        self.assertEqual(dd_restore["key"], "v2")
+        dd_restore.destroy()
+
+    def test_persist_3_checkpoint_freq_2_cnt_2_restore_from_4(self):
+        """
+        Make sure we can persist more than one checkpoint and restore from the latest persisted
+        checkpoint with persist frequency > 1. Also make sure the older persisted checkpoint is removed
+        when the number of persisted checkpoints exceeds persist count.
+        """
+        # This test persists chkpt 0, 2, and 4 to disk. Persisted chkpt 0 is removed from disk eventually as
+        # the persist count is 2 so we only keep chkpt 2 and 4 and removed the oldest persist chkpt. A new
+        # dictionary than restore from chkpt 4 later.
+        NUM_MANAGERS = 1
+        working_set_size = 2
+        persist_freq = 2
+        persist_count = 2
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=working_set_size,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=persist_freq,
+            persist_count=persist_count,
+            persister_class=PosixCheckpointPersister,
+        )
+        d["key"] = "v0"
+        d.checkpoint()  ## 1
+        d["key"] = "v1"
+        d.checkpoint()  ## 2
+        d["key"] = "v2"  ## retire and write checkpoint 0 to disk
+        d.checkpoint()  ## 3
+        # Retire chkpt 1 but don't write it to disk as we only write every 2
+        # retiring chkpt to disk(persist_freq=2), persisted checkpoint 0
+        # is still kept in the disk.
+        d["key"] = "v3"
+        d.checkpoint()  ## 4
+        # Retire and write chkpt 2 to disk as persist_freq=2, the last persisted
+        # chkpt is 0. Because 0 + 2 = 2, we should persist chkpt 2.
+        d["key"] = "v4"
+        d.checkpoint()  ## 5
+        # Retire chkpt 3 but don't write it to disk as we only write every 2
+        # retiring chkpt to disk(persist_freq=2), persisted chkpt 2
+        # is still kept in the disk.
+        d["key"] = "v5"
+        d.checkpoint()  ## 6
+        # Retire and write chkpt 4 to disk as persist_freq=2(persisted chkpt 0, 2, 4),
+        # persisted chkpt 2 is still kept in the disk but persisted chkpt 0 is removed
+        # as the max number of persist files allows at any time is 2 (persist_count=2)
+        d["key"] = "v6"
+
+        restore_name = d.get_name()
+        d.destroy()
+
+        # Check if the persisted chkpts are written to disk with the correct filenames
+        path = pathlib.Path(".")
+        self.assertEqual(len(list(path.glob(f"{restore_name}*.dat"))), persist_count)
+        MIN_PERSISTED_CHKPT_ID = 2
+        MAX_PERSISTED_CHKPT_ID = 4
+        for managerID in range(NUM_MANAGERS):
+            for chkptID in range(MIN_PERSISTED_CHKPT_ID, MAX_PERSISTED_CHKPT_ID + 1, persist_freq):
+                pfile = pathlib.Path(f"./{restore_name}_{managerID}_{chkptID}.dat")
+                self.assertTrue(pfile.exists())
+
+        chkpt_restore = 4
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            name=restore_name,
+            restore_from=chkpt_restore,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(dd_restore.persisted_ids(), [2, 4])
+        # checkpoint ID should be set to the one ddict restored from
+        self.assertEqual(dd_restore.current_checkpoint_id, chkpt_restore)
+        self.assertEqual(dd_restore["key"], "v4")
+        dd_restore.destroy()
+
+    def test_persist_restore_from_non_existing_persist_chkpt(self):
+        """
+        Make sure that the dictionary raise exception when it is brought up with a non-existing
+        persisted chkpt to restore from.
+        """
+        # This test persists chkpt 0 and restores from chkpt 1 later while bringing up dictionary.
+        # It should raise exception saying that the persisted chkpt 1 is not available.
+        NUM_MANAGERS = 1
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=1,
+            persister_class=PosixCheckpointPersister,
+        )
+        d["key"] = "v0"
+        d.checkpoint()  ## 1
+        d["key"] = "v1"
+        d.checkpoint()  ## 2
+        d["key"] = "v2"  ## retire and write checkpoint 0 to disk
+
+        restore_name = d.get_name()
+        d.destroy()
+
+        chkpt_restore = 1
+        with self.assertRaises(RuntimeError) as ex:
+            dd_restore = DDict(
+                NUM_MANAGERS,
+                1,
+                1500000 * NUM_MANAGERS,
+                trace=True,
+                persist_path=".",
+                name=restore_name,
+                restore_from=chkpt_restore,
+                read_only=True,
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertIn(
+            "DRAGON_DDICT_PERSIST_CHECKPOINT_UNAVAILABLE",
+            str(ex.exception),
+            "The expected dragon error code DRAGON_DDICT_PERSIST_CHECKPOINT_UNAVAILABLE is not presented in the exception.",
+        )
+
+    def test_persist_read_only_advance(self):
+        """
+        Restore dictioanry and advance to next available persisted chkpt in ready-only mode.
+        """
+        # This test persists chkpt 0 and 2. Both are kept in disk. A dictionary
+        # then restores from chkpt 0 and advances to chkpt 2.
+        NUM_MANAGERS = 1
+        working_set_size = 2
+        persist_freq = 2
+        persist_count = 2
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=working_set_size,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=persist_freq,
+            persist_count=persist_count,
+            persister_class=PosixCheckpointPersister,
+        )
+        d["key"] = "v0"
+        d.checkpoint()  ## 1
+        d["key"] = "v1"
+        d.checkpoint()  ## 2
+        d["key"] = "v2"  ## retire and write checkpoint 0 to disk
+        d.checkpoint()  ## 3
+        # Retire chkpt 1 but don't write it to disk as we only write every 2
+        # retiring chkpts to disk(persist_freq=2), persisted checkpoint 0
+        # is still kept in the disk.
+        d["key"] = "v3"
+        d.checkpoint()  ## 4
+        # Retire and write chkpt 2 to disk as persist_freq=2, the last persisted
+        # chkpt is 0. Because 0 + 2 = 2, we should persist chkpt 2.
+        d["key"] = "v4"
+
+        restore_name = d.get_name()
+        d.destroy()
+
+        # Check if the persisted chkpts are written to disk with the correct filenames.
+        path = pathlib.Path(".")
+        self.assertEqual(len(list(path.glob(f"{restore_name}*.dat"))), persist_count)
+        MIN_PERSISTED_CHKPT_ID = 0
+        MAX_PERSISTED_CHKPT_ID = 2
+        for managerID in range(NUM_MANAGERS):
+            for chkptID in range(MIN_PERSISTED_CHKPT_ID, MAX_PERSISTED_CHKPT_ID + 1, persist_freq):
+                pfile = pathlib.Path(f"./{restore_name}_{managerID}_{chkptID}.dat")
+                self.assertTrue(pfile.exists())
+
+        chkpt_restore = 0
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            persist_freq=persist_freq,
+            name=restore_name,
+            restore_from=chkpt_restore,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        # checkpoint ID should be set to the one ddict restored from
+        self.assertEqual(dd_restore.current_checkpoint_id, chkpt_restore)
+        self.assertEqual(dd_restore["key"], "v0")
+
+        # advancing to chkpt 2
+        dd_restore.advance()
+        self.assertEqual(dd_restore.current_checkpoint_id, chkpt_restore + persist_freq)
+        dd_restore.restore(dd_restore.current_checkpoint_id)
+        self.assertEqual(dd_restore["key"], "v2")
+        dd_restore.destroy()
+
+    def test_persist_read_only_advance_to_non_existing_persist_chkpt(self):
+        """
+        Make sure ddict reports invalid ops err when advancing to a non-existing persisted chkpt.
+        """
+        # This test persists chkpt 0. A new dictionary than restores from chkpt 0 and tries to advance
+        # to chkpt 2, which is not persisted earlier. It should raise persistent chkpt error.
+        NUM_MANAGERS = 1
+        working_set_size = 2
+        persist_freq = 2
+        persist_count = 2
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=working_set_size,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=persist_freq,
+            persist_count=persist_count,
+            persister_class=PosixCheckpointPersister,
+        )
+        d["key"] = "v0"
+        d.checkpoint()  ## 1
+        d["key"] = "v1"
+        d.checkpoint()  ## 2
+        d["key"] = "v2"  ## retire and write checkpoint 0 to disk
+        d.checkpoint()  ## 3
+        # Retire chkpt 1 but don't write it to disk as we only write every 2
+        # retiring chkpt to disk(persist_freq=2), persisted checkpoint 0
+        # is still kept in the disk.
+        d["key"] = "v3"
+
+        restore_name = d.get_name()
+        d.destroy()
+
+        # Check if the persisted chkpts are written to disk with the correct filenames.
+        path = pathlib.Path(".")
+        self.assertEqual(len(list(path.glob(f"{restore_name}*.dat"))), 1)
+        MIN_PERSISTED_CHKPT_ID = 0
+        MAX_PERSISTED_CHKPT_ID = 0
+        for managerID in range(NUM_MANAGERS):
+            for chkptID in range(MIN_PERSISTED_CHKPT_ID, MAX_PERSISTED_CHKPT_ID + 1, persist_freq):
+                pfile = pathlib.Path(f"./{restore_name}_{managerID}_{chkptID}.dat")
+                self.assertTrue(pfile.exists())
+
+        chkpt_restore = 0
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            persist_freq=persist_freq,
+            name=restore_name,
+            restore_from=chkpt_restore,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        # checkpoint ID should be set to the one ddict restored from
+        self.assertEqual(dd_restore.current_checkpoint_id, chkpt_restore)
+        self.assertEqual(dd_restore["key"], "v0")
+        with self.assertRaises(DDictPersistCheckpointError) as ex:
+            dd_restore.advance()
+            self.assertEqual(ex.lib_err, "DRAGON_DDICT_PERSIST_CHECKPOINT_UNAVAILABLE")
+        dd_restore.destroy()
+
+    def test_persist_read_only_persist_no_cnt_limit(self):
+        """
+        Test that when persist_cnt is -1, persist_freq != 0, every chkpt is persisted.
+        """
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=-1,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        # persist chkpt 0 - 14
+        for i in range(17):
+            d["key"] = "val" + str(i)
+            d.checkpoint()
+
+        name = d.get_name()
+        d.destroy()
+
+        # chkpt 0 - 14 are persisted
+        # check persisted chkpt files
+        managerID = 0
+        MIN_PERSISTED_CHKPT_ID = 0
+        MAX_PERSISTED_CHKPT_ID = 14
+        persist_freq = 1
+        for chkptID in range(MIN_PERSISTED_CHKPT_ID, MAX_PERSISTED_CHKPT_ID + 1, persist_freq):
+            pfile = pathlib.Path(f"./{name}_{managerID}_{chkptID}.dat")
+            self.assertTrue(pfile.exists())
+
+        # restore persisted chkpt
+        dd_restore = DDict(
+            1,
+            1,
+            1500000,
+            persist_path="",
+            persist_freq=1,
+            read_only=True,
+            name=name,
+            restore_from=0,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(dd_restore.persisted_ids(), [i for i in range(MAX_PERSISTED_CHKPT_ID + 1)])
+        for i in range(MAX_PERSISTED_CHKPT_ID + 1):
+            dd_restore.restore(i)
+            self.assertEqual(dd_restore["key"], "val" + str(i))
+            if i != MAX_PERSISTED_CHKPT_ID:
+                dd_restore.advance()
+        dd_restore.destroy()
+
+    def test_persist_no_chkpt_persist_freq_0(self):
+        """
+        Test that when persist_freq=0, no chkpt is persisted.
+        """
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=0,
+            persist_count=-1,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        for i in range(10):
+            d["key"] = "val" + str(i)
+            d.checkpoint()
+
+        name = d.get_name()
+        d.destroy()
+
+        dat_files = list(pathlib.Path(".").glob(f"{name}_0_*.dat"))
+        self.assertEqual(len(dat_files), 0)
+
+    def test_persist_no_chkpt_persist_cnt_0(self):
+        """
+        Test that when persist_cnt=0, no chkpt is persisted.
+        """
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=0,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        for i in range(10):
+            d["key"] = "val" + str(i)
+            d.checkpoint()
+
+        name = d.get_name()
+        d.destroy()
+
+        dat_files = list(pathlib.Path(".").glob(f"{name}_0_*.dat"))
+        self.assertEqual(len(dat_files), 0)
+
+    ################################################
+    # test_persist: non read-only mode
+    ################################################
+
+    def test_persist_restore_write_retire(self):
+        """Restore from a persisted chkpt and writes, and persist it again."""
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=-1,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        # chkpt 0 is persisted
+        for i in range(3):
+            d["key"] = "val" + str(i)
+            d.checkpoint()
+        name = d.get_name()
+        d.destroy()
+
+        # restore and write chkpt 0, and persist it to disk again.
+        d_restore = DDict(
+            1,
+            1,
+            1500000,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=-1,
+            restore_from=0,
+            name=name,
+            trace=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(d_restore.persisted_ids(), [0])
+        self.assertEqual(d_restore["key"], "val0")
+        d_restore["key"] = "valrestore0"
+        d_restore["hello"] = "world0"
+        d_restore.checkpoint()  ## 1
+        d_restore["key"] = "valrestore1"
+        d_restore["hello"] = "world1"
+        d_restore.checkpoint()  ## 2
+        d_restore["key"] = "valrestore2"  # persist chkpt 0 again with updated key value
+        d_restore.destroy()
+
+        # verify that updated data are persisted
+        d_second_restore = DDict(
+            1,
+            1,
+            1500000,
+            persist_path="",
+            persist_freq=1,
+            restore_from=0,
+            name=name,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(d_second_restore["key"], "valrestore0")
+        self.assertEqual(d_second_restore["hello"], "world0")
+
+        d_second_restore.destroy()
+
+    def test_persist_restore_write_restore(self):
+        # persist chkpt 0, 1, 2
+        # restore from chkpt 0
+        # checkpoint and write chkpt 1 (new, not persist)
+        # restore from chkpt 1
+        # the value in chkpt 1 should still be the one written in persisted chkpt
+        # as restore doesn't write the new chkpt 1 to disk
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=-1,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        # chkpt 0, 1 is persisted
+        for i in range(4):
+            d["key"] = "val" + str(i)
+            d.checkpoint()
+        name = d.get_name()
+        d.destroy()
+
+        # restore and write chkpt 0, and persist it to disk again.
+        d_restore = DDict(
+            1,
+            1,
+            1500000,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=-1,
+            restore_from=0,
+            name=name,
+            trace=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(d_restore["key"], "val0")
+        d_restore["key"] = "valrestore0"
+        d_restore["hello"] = "world0"
+        d_restore.checkpoint()  ## 1
+        d_restore["key"] = "valrestore1"
+        d_restore["hello"] = "world1"
+        # restore persisted chkpt 1, the new key written in current working
+        # set that hasn't been persisted is discarded
+        d_restore.restore(1)
+        self.assertEqual(d_restore.current_checkpoint_id, 1)
+        self.assertEqual(d_restore["key"], "val1")
+        self.assertTrue("hello" not in d_restore)
+        d_restore.restore(0)
+        self.assertEqual(d_restore.current_checkpoint_id, 0)
+        self.assertEqual(d_restore["key"], "val0")
+        self.assertTrue("hello" not in d_restore)
+        d_restore.destroy()
+
+    def test_persist_path(self):
+        # test persist with a different persist path
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="../",
+            persist_freq=1,
+            persist_count=-1,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        # chkpt 0, 1, 2 is persisted
+        for i in range(5):
+            d["key"] = "val" + str(i)
+            d.checkpoint()
+        restore_name = d.get_name()
+        d.destroy()
+
+        # Check if the persist chkpts are written to disk with the correct filenames
+        path = pathlib.Path("../")
+        self.assertEqual(len(list(path.glob(f"{restore_name}*.dat"))), 3)
+        MIN_PERSISTED_CHKPT_ID = 0
+        MAX_PERSISTED_CHKPT_ID = 2
+        managerID = 0
+        for chkptID in range(MIN_PERSISTED_CHKPT_ID, MAX_PERSISTED_CHKPT_ID + 1):
+            pfile = pathlib.Path(f"../{restore_name}_{managerID}_{chkptID}.dat")
+            self.assertTrue(pfile.exists())
+            os.remove(pfile)
+
+    def test_persist_ids(self):
+        """
+        Query the available persisted chkpt.
+        """
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=-1,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        # chkpt 0, 1, 2 is persisted
+        for i in range(5):
+            d["key"] = "val" + str(i)
+            d.checkpoint()
+        restore_name = d.get_name()
+        d.destroy()
+
+        d_restore = DDict(
+            1,
+            1,
+            1500000,
+            read_only=True,
+            persist_path="",
+            persist_freq=1,
+            name=restore_name,
+            restore_from=0,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(d_restore.persisted_ids(), [i for i in range(3)])
+        d_restore.destroy()
+
+    def test_persist_intersection_persisted_ids_between_managers(self):
+        """
+        Make sure client return the intersection of the persisted chkpt ID among managers.
+        """
+        d = DDict(
+            2,
+            1,
+            1500000 * 2,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=3,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        # Goal:
+        # manager 0 persists chkpt 0, 1, 2
+        # manager 1 persists chkpt 1, 2, 3
+
+        dm0 = d.manager(0)
+        for i in range(5):
+            dm0["m0"] = "m0val" + str(i)
+            dm0.checkpoint()
+
+        dm1 = d.manager(1)
+        for i in range(6):
+            dm1["m1"] = "m1val" + str(i)
+            dm1.checkpoint()
+
+        restore_name = d.get_name()
+        d.destroy()
+
+        # Check if the persisted chkpts are written to disk with the correct filenames
+        path = pathlib.Path(".")
+        self.assertEqual(len(list(path.glob(f"{restore_name}*.dat"))), 6)
+        # Check manager 0 persisted chkpts
+        managerID = 0
+        MIN_PERSISTED_CHKPT_ID = 0
+        MAX_PERSISTED_CHKPT_ID = 2
+        for chkptID in range(MIN_PERSISTED_CHKPT_ID, MAX_PERSISTED_CHKPT_ID + 1):
+            pfile = pathlib.Path(f"./{restore_name}_{managerID}_{chkptID}.dat")
+            self.assertTrue(pfile.exists())
+        # Check manager 1 persisted chkpts
+        managerID = 1
+        MIN_PERSISTED_CHKPT_ID = 1
+        MAX_PERSISTED_CHKPT_ID = 3
+        for chkptID in range(MIN_PERSISTED_CHKPT_ID, MAX_PERSISTED_CHKPT_ID + 1):
+            pfile = pathlib.Path(f"./{restore_name}_{managerID}_{chkptID}.dat")
+            self.assertTrue(pfile.exists())
+
+        d_restore = DDict(
+            2,
+            1,
+            1500000 * 2,
+            trace=True,
+            persist_path="",
+            persist_freq=1,
+            read_only=True,
+            name=restore_name,
+            restore_from=1,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(d_restore.persisted_ids(), [1, 2])
+        d_restore.destroy()
+
+    def test_persist_current_checkpoint(self):
+        d = DDict(
+            2,
+            1,
+            1500000 * 2,
+            trace=True,
+            working_set_size=4,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=-1,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        d["hello"] = "world0"
+        d.checkpoint()  ## 1
+        d["hello"] = "world1"
+        d.persist()  ## persist chkpt 1
+
+        restore_name = d.get_name()
+
+        d.destroy()
+
+        d_restore = DDict(
+            2,
+            1,
+            1500000 * 2,
+            trace=True,
+            persist_path="",
+            persist_freq=1,
+            read_only=True,
+            name=restore_name,
+            restore_from=1,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(d_restore.persisted_ids(), [1])
+        self.assertEqual(d_restore["hello"], "world1")
+        d_restore.destroy()
+
+    ################################################
+    # test_persist: client input args check
+    ################################################
+
+    def test_persist_invalid_arg_read_only_name(self):
+        """
+        Test that ddict raise attr error when ddict name is not provided in read-only mode.
+        """
+        with self.assertRaises(AttributeError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                persist_path="",
+                read_only=True,
+                restore_from=1,
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertEqual(
+            "When creating a read-only Dragon Distributed Dict you must provide the name to restore the dictionary.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+    def test_persist_invalid_arg_read_only_restore_from(self):
+        """
+        Test that ddict raise attr error when restore_from is not provided in read-only mode.
+        """
+        # ready-only is True only when restore from is specified
+        with self.assertRaises(AttributeError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                persist_path="",
+                read_only=True,
+                name="hello",
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertEqual(
+            "When creating a read-only Dragon Distributed Dict you must provide the checkpoint ID to restore from.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+    def test_persist_invalid_arg_read_only_wait_for_keys_writers(self):
+        """
+        Test that ddict raise attr error when user specifies wait for keys or wait for writers in read-only mode.
+        """
+        with self.assertRaises(AttributeError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                working_set_size=2,
+                wait_for_keys=True,
+                persist_path="",
+                name="hello",
+                read_only=True,
+                restore_from=0,
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertEqual(
+            "When creating a read-only Dragon Distributed Dict, specifying wait_for_keys or wait_for_writers is invalid.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+        with self.assertRaises(AttributeError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                working_set_size=2,
+                wait_for_writers=True,
+                persist_path="",
+                name="hello",
+                read_only=True,
+                restore_from=0,
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertEqual(
+            "When creating a read-only Dragon Distributed Dict, specifying wait_for_keys or wait_for_writers is invalid.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+    def test_persist_invalid_arg_read_only_working_set_size(self):
+        """
+        Test that ddict raise attr error when user specifies invalid working set size in read-only mode.
+        """
+        # In read-only mode, working set size should be 1
+        with self.assertRaises(AttributeError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                working_set_size=2,
+                persist_path="",
+                name="hello",
+                read_only=True,
+                restore_from=0,
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertEqual(
+            "When creating a read-only Dragon Distributed Dict, working set size should be 1.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+    def test_persist_invalid_arg_read_only_persist_cnt(self):
+        """
+        Test that ddict raise attr error when user specifies persist count in read-only mode.
+        """
+        with self.assertRaises(AttributeError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                name="hello",
+                restore_from=0,
+                read_only=True,
+                persist_count=2,
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertEqual(
+            "When creating a read-only Dragon Distributed Dict, specifying a non-zero persist count is invalid.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+    def test_persist_invalid_persist_freq(self):
+        """
+        Test that ddict raise attr error when persist frequency is negative.
+        """
+        # persist_freq should be >= 0
+        with self.assertRaises(ValueError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                working_set_size=2,
+                wait_for_keys=True,
+                persist_freq=-1,
+                name="hello",
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertEqual(
+            "Persist frequency should be non-negative.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+    def test_persist_invalid_persist_cnt(self):
+        """
+        Test that ddict raise attr error when persist frequency is <= -1.
+        """
+        # persist_cnt should be >= -1
+        with self.assertRaises(ValueError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                working_set_size=2,
+                wait_for_keys=True,
+                persist_count=-2,
+                name="hello",
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertEqual(
+            "Persist count should be greater or equal to -1.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+    def test_persist_invalid_arg_restore_from_without_name(self):
+        """
+        Test that DDict raise attr error when restore from is specified but the name is not provided.
+        """
+        with self.assertRaises(AttributeError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                restore_from=0,
+                persister_class=PosixCheckpointPersister,
+            )
+        self.assertEqual(
+            "When restoring from a checkpoint in Dragon Distributed Dict you must provide the name to restore the dictionary.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+    def test_persist_invalid_arg_null_persister_non_zero_persist_freq(self):
+        with self.assertRaises(AttributeError) as ex:
+            d = DDict(
+                1,
+                1,
+                1500000,
+                trace=True,
+                restore_from=0,
+                persist_freq=1,
+            )
+        self.assertEqual(
+            "When using NULLCheckpointPersister, specifying a non-zero persist_freq is invalid.",
+            str(ex.exception),
+            "Failed to raise attribute error with expected details.",
+        )
+
+    ################################################
+    # test_persist: invalid operation with read only
+    ################################################
+
+    def test_persist_invalid_op_restore_during_batch(self):
+        """
+        Restoring checkpoint during batch put is invalid and DDict should raise exception.
+        """
+        d = DDict(1, 1, 1500000, working_set_size=2, wait_for_keys=True)
+        d.start_batch_put()
+        with self.assertRaises(DDictError) as ex:
+            d.restore(0)
+        self.assertIn(
+            "DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise DDictError with expected details."
+        )
+        d.destroy()
+
+    def test_persist_invalid_op_write_when_read_only(self):
+        """
+        Any writes, deletes, clears op is not valid in read-only mode.
+        """
+        # In read-only mode, calling put, batch put, pop, clear is invalid
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=1,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        d["hello"] = "world0"
+        d.checkpoint()  ## 1
+        d["hello"] = "world1"
+        d.checkpoint()  ## 2
+        d["hello"] = "world2"  # persist chkpt 0 to disk
+        name = d.get_name()
+        d.destroy()
+
+        d_restore = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            read_only=True,
+            name=name,
+            restore_from=0,
+            persister_class=PosixCheckpointPersister,
+        )
+        # put
+        with self.assertRaises(DDictError) as ex:
+            d_restore["hello"] = "world"
+        self.assertIn("DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise exception with expected details.")
+        # pput
+        with self.assertRaises(DDictError) as ex:
+            d_restore.pput("hello", "world")
+        self.assertIn("DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise exception with expected details.")
+        # batch put
+        with self.assertRaises(DDictError) as ex:
+            d_restore.start_batch_put()
+        self.assertIn("DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise exception with expected details.")
+        # bcast put
+        with self.assertRaises(DDictError) as ex:
+            d_restore.bput("hello", "world")
+        self.assertIn("DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise exception with expected details.")
+        # pop
+        with self.assertRaises(DDictError) as ex:
+            d_restore.pop("hello")
+        self.assertIn("DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise exception with expected details.")
+        # clear
+        with self.assertRaises(DDictError) as ex:
+            d_restore.clear()
+        self.assertIn("DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise exception with expected details.")
+
+        d_restore.destroy()
+
+    def test_persist_invalid_op_advance_without_readonly(self):
+        # Calling advance under non read-only mode is invalid.
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=1,
+            persister_class=PosixCheckpointPersister,
+        )
+        with self.assertRaises(DDictError) as ex:
+            d.advance()
+        self.assertIn("DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise exception with expected details.")
+        d.destroy()
+
+    def test_persist_invalid_op_checkpoint_and_rollback_with_readonly(self):
+        d = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=1,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        d["hello"] = "world0"
+        d.checkpoint()  ## 1
+        d["hello"] = "world1"
+        d.checkpoint()  ## 2
+        d["hello"] = "world2"  # persist chkpt 0 to disk
+        name = d.get_name()
+        d.destroy()
+
+        d_restore = DDict(
+            1,
+            1,
+            1500000,
+            trace=True,
+            read_only=True,
+            name=name,
+            restore_from=0,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        with self.assertRaises(DDictError) as ex:
+            d_restore.checkpoint()
+        self.assertIn("DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise exception with expected details.")
+
+        with self.assertRaises(DDictError) as ex:
+            d_restore.rollback()
+        self.assertIn("DRAGON_INVALID_OPERATION", str(ex.exception), "Failed to raise exception with expected details.")
+
+        d_restore.destroy()
 
 
 class TestTooBig(unittest.TestCase):

@@ -161,7 +161,7 @@ class LauncherFrontEnd:
         if self.transport is dfacts.TransportAgentOptions.DRAGON_CONFIG:
             if fabric_backend is None:
                 print(
-"""
+                    """
 By default Dragon looks for a configuration file to determine which transport
 agent implementation to use. However, no such configuration file was found.
 Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
@@ -172,11 +172,14 @@ the TCP transport agent, run:
 
     dragon-config -a 'tcp-runtime=True'
 """
-                    )
+                )
 
                 self.transport = dfacts.TransportAgentOptions.TCP
             else:
-                self.transport = dfacts.TransportAgentOptions.HSTA
+                if fabric_backend == dfacts.TransportAgentOptions.TCP.value:
+                    self.transport = dfacts.TransportAgentOptions.TCP
+                else:
+                    self.transport = dfacts.TransportAgentOptions.HSTA
 
         if self.transport is dfacts.TransportAgentOptions.HSTA:
             # First check that there is an HSTA binary
@@ -192,7 +195,7 @@ the TCP transport agent, run:
                 if fabric_lib is None:
                     self.transport = dfacts.TransportAgentOptions.TCP
                     print(
-"""
+                        """
 Dragon was unable to find a high-speed network backend configuration.
 Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
 to determine the best way to configure the high-speed network backend to your
@@ -335,13 +338,14 @@ lower performing TCP transport agent for backend network communication.
             pass
 
         try:
-            log.debug("waiting on wlm_proc exit")
             if self.resilient:
                 # We need to make sure there's nothing hanging around on the backend if we
                 # do a restart. So, kill all our work on the backend first
+                log.debug("dragon bumpy cleanup")
                 self._dragon_cleanup_bumpy_exit()
                 if self._wlm is not WLM.K8S:
-                    self._wait_on_wlm_proc_exit(timeout=None)
+                    log.debug("waiting on wlm_proc exit")
+                    self._wait_on_wlm_proc_exit(timeout=dfacts.DEFAULT_WLM_TIMEOUT)
             else:
                 if self._wlm is not WLM.K8S:
                     self._wait_on_wlm_proc_exit(timeout=self._sigint_timeout)
@@ -1421,6 +1425,8 @@ Performance may be suboptimal."""
         # Receive BEIsUp msg - Try getting a backend channel descriptor
         be_ups = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
         assert len(be_ups) == self.nnodes
+        for be_up in be_ups:
+            assert isinstance(be_up, dmsg.BEIsUp), "la_fe received invalid backend up message"
 
         # Construct the number of backend connections based on
         # the hierarchical bcast info and send FENodeIdxBE to those

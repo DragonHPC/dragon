@@ -6,6 +6,7 @@ import os
 from itertools import chain
 from threading import get_ident
 import logging
+from http import HTTPStatus
 
 from dragon.globalservices.process import runtime_reboot
 
@@ -58,12 +59,12 @@ def post_query() -> object:
         except queue.Empty as e:
             continue
         except Exception as e:
-            LOG.warn(f"Aggregator Error: {e}")
+            LOG.warning(f"Aggregator Error: {e}")
             return Response(json.dumps(app.config["result_dict"]))
     # Grafana allocates label colors by result order -
     result = sorted(list(chain.from_iterable(app.config["result_dict"][uid])), key=lambda d: d["tags"]["host"])
 
-    return Response(json.dumps(result).encode("utf-8"), mimetype="application/json"), 200
+    return Response(json.dumps(result).encode("utf-8"), mimetype="application/json"), HTTPStatus.OK
 
 
 @app.route("/api/suggest")
@@ -105,7 +106,7 @@ def suggest() -> list:
     if _query is not None:
         result = list(filter(lambda k: _query in k, result))
     app.config["result_dict"].pop(uid, None)
-    return Response(json.dumps(result).encode("utf-8"), mimetype="application/json")
+    return Response(json.dumps(result).encode("utf-8"), mimetype="application/json"), HTTPStatus.OK
 
 
 @app.route("/api/telemetry_shutdown", methods=["GET"])
@@ -122,7 +123,7 @@ def set_telemetry_shutdown() -> object:
     """
     LOG.debug(f"Shutdown request Aggregator on: {os.uname().nodename}")
     resp = {"shutdown_begin": True}
-    return Response(json.dumps(resp), mimetype="application/json"), 200
+    return Response(json.dumps(resp), mimetype="application/json"), HTTPStatus.OK
 
 
 @app.route("/api/reboot", methods=["POST"])
@@ -163,8 +164,7 @@ def reboot_dragon() -> object:
         LOG.warn(f"Aggregator Error: {e}")
         resp["error"] = str(e)
 
-    return Response(json.dumps(resp), mimetype="application/json"), 200
-
+    return Response(json.dumps(resp), mimetype="application/json"), HTTPStatus.OK
 
 if __name__ == "__main__":
     app.run()

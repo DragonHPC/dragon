@@ -48,4 +48,9 @@ def patch_torch():
     original_fp_register.switch_out()
     import torch
 
+    # Avoid some versions of PyTorch defaulting to trying to share a file
+    # descriptor associated with single-node cpu model sharing whether
+    # cpu compute is requested or not.
+    torch.multiprocessing.set_sharing_strategy("file_system")
+
     original_fp_register.switch_in()

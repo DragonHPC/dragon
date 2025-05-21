@@ -5,11 +5,21 @@ me=`whoami`
 # Setting the argument to 1 prevents ddict pools from being cleaned up
 dragon-hugepages-cleanup $1
 
-pids=`ps -U $me -ux  | grep dragon | awk '$0 !~ /grep/' | awk '$0 !~ /bash/'| awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+if [ -n "${_DRAGON_HSTA_TESTING_MODE:+1}" ]; then
+    echo "Avoiding hsta test process"
+    pids=`ps -U $me -ux  | grep dragon | awk '$0 !~ /grep/' | awk '$0 !~ /bash/'| awk '$0 !~ /test_hsta.py/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+else
+    pids=`ps -U $me -ux  | grep dragon | awk '$0 !~ /grep/' | awk '$0 !~ /bash/'| awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+fi
 echo "Here are Dragon PIDS to kill on" $(hostname): $pids
 echo $pids | xargs -r kill -9
 
-pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+if [ -n "${_DRAGON_HSTA_TESTING_MODE:+1}" ]; then
+    echo "Avoiding hsta test process"
+    pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /test_hsta.py/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+else
+    pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+fi
 echo "Here are the Python PIDS to kill on" $(hostname): $pids
 echo $pids | xargs -r kill -9
 

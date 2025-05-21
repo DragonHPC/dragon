@@ -58,6 +58,10 @@ def main(args_map=None):
             if not fe_server.resilient:
                 return LAUNCHER_FAIL_EXIT
 
+            # pass testing mode along to the backend if set
+            if os.getenv("_DRAGON_HSTA_TESTING_MODE", None):
+                os.environ["_DRAGON_HSTA_TESTING_MODE"] = str(int(os.environ["_DRAGON_HSTA_TESTING_MODE"]) + 1)
+
             # Check if the sum of active and idle nodes is > 0:
             if last_avail_nodes is None:
                 last_avail_nodes_list = [idx for idx, node in net_conf.items()]

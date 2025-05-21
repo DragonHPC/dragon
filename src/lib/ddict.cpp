@@ -2330,7 +2330,7 @@ dragonError_t dragon_ddict_sync_to_newest_checkpoint(const dragonDDictDescr_t * 
     append_err_return(err, "Failed to perform sync to newest checkpoint.");
 }
 
-dragonError_t dragon_ddict_current_checkpoint_id(const dragonDDictDescr_t * dd_descr, uint64_t * chkpt_id) {
+dragonError_t dragon_ddict_checkpoint_id(const dragonDDictDescr_t * dd_descr, uint64_t * chkpt_id) {
 
     dragonError_t err;
     dragonDDict_t * dd = nullptr;
@@ -2346,6 +2346,23 @@ dragonError_t dragon_ddict_current_checkpoint_id(const dragonDDictDescr_t * dd_d
         err_return(err, "Could not find ddict object.");
 
     *chkpt_id = dd->chkpt_id;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+dragon_ddict_set_checkpoint_id(const dragonDDictDescr_t * dd_descr, uint64_t chkpt_id) {
+    dragonError_t err;
+    dragonDDict_t * dd = nullptr;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        err_return(err, "Could not find ddict object.");
+
+    dd->chkpt_id = chkpt_id;
 
     no_err_return(DRAGON_SUCCESS);
 }

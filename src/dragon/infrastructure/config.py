@@ -28,11 +28,32 @@ dragon-config -a 'ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_li
 
 Set TCP transport as always-on default backend:
 dragon-config -a 'tcp-runtime=True'
-
 """
 
 SERIALIZE_HELP = """Serialize all key-value pairs currently in the configuration file into a single,
 colon-separated string that can be passed to the --add command.
+"""
+
+DRAGON_CONFIG_ADD_MPIEXEC_HELP = """Add mpiexec override commands for Dragon's PBS+PALS launcher. This is used to add overrides for the mpiexec commands used to launch the network config tool, the backend processes, and the cleanup processes. The commands need to launch one process per node, line buffer the output, and tag the output with the process rank with some unique identifying information (global rank, hostname, etc). The commands should be passed as a single string. The following special strings are necessary and will be automatically filled in at the time of use by Dragon:
+Network config tool: {nnodes} = number of nodes
+Backend: {nnodes} = number of nodes, {nodelist} = comma separated list of nodes
+
+Examples
+--------
+Set launcher mpiexec override for OpenMPI 5.0.6:
+dragon-config -ame 'launcher-mpiexec-override-netconfig=mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output'
+dragon-config -ame 'launcher-mpiexec-override-be=mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output --host {nodelist}'
+
+
+Set launcher mpiexec override for Cray-PALS:
+dragon-config -ame 'launcher-mpiexec-override-netconfig=mpiexec --np {nnodes} -ppn 1 -l --line-buffer'
+dragon-config -ame 'launcher-mpiexec-override-be=mpiexec --np {nnodes} --ppn 1 --cpu-bind none --hosts {nodelist} --line-buffer'
+These commands are used by default when the dragon launcher detects PBS+PALS.
+
+To avoid checks with the automatic wlm detection and utilize the overriden mpiexec commands, run dragon with the workload manager specified as '--wlm=pbs+pals'.
+"""
+
+GET_KV_HELP = """Get value for given key that can be passed to the --add or --add-mpiexec command.
 """
 
 
@@ -159,8 +180,10 @@ def hsta_config():
     )
 
     parser.add_argument("-a", "--add", help=DRAGON_CONFIG_ADD_HELP)
+    parser.add_argument("-ame", "--add-mpiexec", help=DRAGON_CONFIG_ADD_MPIEXEC_HELP)
     parser.add_argument("-c", "--clean", help="Clean out all config information.", action="store_true")
     parser.add_argument("-s", "--serialize", help=SERIALIZE_HELP, action="store_true")
+    parser.add_argument("-g", "--get", help=GET_KV_HELP)
 
     compile_group = parser.add_mutually_exclusive_group()
     compile_group.add_argument("-l", "--linker-options", action="store_true", help=LINKER_HELP)
@@ -228,6 +251,24 @@ def hsta_config():
             print(ser_config, flush=True)
         else:
             print("no environment configuration available", flush=True)
+
+    # handle 'clean' command (do this first, so clean+set acts as a reset)
+
+    if args.get:
+        if config_filename == "":
+            print("", flush=True)
+
+        if os.path.isfile(config_filename):
+            with open(config_filename) as config_file:
+                config_dict = json.load(config_file)
+
+            try:
+                ser_config = f"{config_dict[args.get]}"
+                print(ser_config, flush=True)
+            except KeyError:
+                print("", flush=True)
+        else:
+            print("", flush=True)
 
     # handle 'clean' command (do this first, so clean+set acts as a reset)
 
@@ -345,3 +386,42 @@ def hsta_config():
                             print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
 
                         make_file.write(f"CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_MPI_INCLUDE\n")
+
+    # handle 'add-mpiexec' command
+    # a separate add command is needed for mpiexec because they often use colons and commas in the list so there is no obvious way to deliniate between what is the command and what is the key=value pair in the add command above.
+    if args.add_mpiexec is not None:
+        if base_dir == "":
+            print("failed to update environment: DRAGON_BASE_DIR not set, try hack/setup", flush=True)
+            sys.exit()
+
+        if config_filename == "" or makefile_filename == "":
+            print("failed to update environment: unable to find environment file(s)", flush=True)
+
+        if os.path.isfile(config_filename):
+            with open(config_filename) as config_file:
+                config_dict = json.load(config_file)
+        else:
+            config_dict = {}
+
+        kv = args.add_mpiexec.split("=", 1)
+        new_env = {kv[0]: kv[1]}
+        config_dict.update(new_env)
+
+        with open(config_filename, "w") as config_file:
+            json.dump(config_dict, config_file)
+
+
+def dragon_config():
+    try:
+        from ..infrastructure.facts import CONFIG_FILE_PATH
+
+        if CONFIG_FILE_PATH.exists():
+            with open(CONFIG_FILE_PATH) as config_file:
+                config_dict = json.load(config_file)
+
+            return config_dict
+
+    except:
+        pass
+
+    return {}

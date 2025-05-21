@@ -37,7 +37,7 @@ class Telemetry:
             dt.finalize()
     """
 
-    def __init__(self, metrics_url="http://localhost:4243/api/metrics"):
+    def __init__(self, metrics_url="http://localhost:4243/api/metrics", timeout= None):
         telem_cfg = os.getenv("DRAGON_TELEMETRY_CONFIG", None)
 
         if telem_cfg is None:
@@ -56,11 +56,13 @@ class Telemetry:
         if self._telemetry_level > 0:
             while True:
                 try:
-                    api_resp = requests.get(self._ready_url)
+                    api_resp = requests.get(self._ready_url, timeout=(timeout, timeout))
                     break
-                except requests.exceptions.RequestException as e:
+                except requests.exceptions.ConnectionError as e:
                     time.sleep(0.1)
                     pass
+                except requests.exceptions.ReadTimeout as e:
+                    raise TimeoutError("Telemetry took longer than expected to start.")
 
     @property
     def level(self):

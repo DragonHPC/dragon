@@ -71,10 +71,14 @@ def get_nvidia_metrics(gpu_count, telemetry_level):
             "value": pynvml.nvmlDeviceGetUtilizationRates(handle).gpu,
             "tags": {"gpu": gpu_count},
         },
-        {"metric": "DeviceMemoryUtilization", "value": memory_utilization, "tags": {"gpu": gpu_count}},
+        {
+            "metric": "DeviceMemoryUtilization", 
+            "value": memory_utilization, 
+            "tags": {"gpu": gpu_count}
+        },
         {
             "metric": "DevicePowerUsage",
-            "value": pynvml.nvmlDeviceGetPowerUsage(handle),
+            "value": pynvml.nvmlDeviceGetPowerUsage(handle)/1000, # Unit mW to W
             "tags": {"gpu": gpu_count},
         },
     ]
@@ -130,7 +134,7 @@ def get_intel_metrics(telemetry_level):
         if device_info[3].strip() == "N/A":
             power = 0
         else:
-            power = float(device_info[3])
+            power = float(device_info[3]) # Unit: W
 
         all_gpu_results_dict[device_id] = [
             {"metric": "DevicePowerUsage", "value": power, "tags": {"gpu": device_id}},

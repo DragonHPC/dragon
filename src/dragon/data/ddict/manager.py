@@ -17,8 +17,8 @@ import os
 import logging
 import traceback
 import socket
-import os
 import cloudpickle
+import pickle
 import threading
 from queue import SimpleQueue
 
@@ -35,7 +35,15 @@ from ...localservices.options import ChannelOptions as LSChannelOptions
 from ...channels import Channel
 from ... import fli
 from ...rc import DragonError
-from .ddict import KEY_HINT, VALUE_HINT, DDictManagerFull, DDictCheckpointSync, DDictManagerStats, DDictFutureCheckpoint
+from .ddict import (
+    KEY_HINT,
+    VALUE_HINT,
+    DDictManagerFull,
+    DDictCheckpointSync,
+    DDictManagerStats,
+    DDictFutureCheckpoint,
+    DDictPersistCheckpointError,
+)
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 
 log = None
@@ -141,6 +149,8 @@ class Checkpoint:
         self.writers = set()
         self.manager = manager
         self._lock = threading.Lock()
+        self._kvs_to_clear = []
+        self._reattach = None
 
     def __setstate__(self, args):
         (self.id, key_allocs, map, deleted, persist, self.writers, thePool, reattach) = args
@@ -151,8 +161,18 @@ class Checkpoint:
 
         self._move_to_pool = None
         self._lock = threading.Lock()
+        self._kvs_to_clear = []
+        self._reattach = None
 
     def __getstate__(self):
+        # If we don't want manager to reattach to pool, there's no point packing the pool and return.
+        # Otherwise the process still tries to reattach to pool while deserializing checkpoint.
+        reattach = (self._reattach is None and self.manager._reattach) or self._reattach
+        if not reattach:
+            ret_pool = None
+        else:
+            ret_pool = self.manager._pool
+
         # Do not pickle move_to_pool as it is a manager function. If pickle the function, the
         # pickle structure is cyclic, leading to system stack overflow.
         return (
@@ -162,8 +182,8 @@ class Checkpoint:
             id_set(self.deleted),
             id_set(self.persist),
             self.writers,
-            self.manager._pool,
-            self.manager._reattach,
+            ret_pool,
+            reattach,
         )
 
     def build_allocs(self, allocs: dict):
@@ -255,6 +275,39 @@ class Checkpoint:
         self.persist.clear()
         self.deleted.clear()
         self.writers.clear()
+
+    def retire(self):
+
+        while len(self._kvs_to_clear) > 0:
+            key = self._kvs_to_clear.pop()
+            values = self.map[key]
+            while len(values) > 0:
+                val_mem = values.pop()
+                val_mem.free()
+            # We must del the key in the two maps
+            # below because otherwise the dictionary
+            # implementation, looking for another key
+            # that maps to the same position in the
+            # map or key_allocs dictionaries, would get
+            # an error while probing because this key's
+            # memory would be freed and could not
+            # be compared for equality. This was seen
+            # in some demo code so it is known that this
+            # would be a problem without the code written
+            # as it is here even though we clear the maps
+            # just below.
+            del self.map[key]
+            key_mem = self.key_allocs[key]
+            del self.key_allocs[key]
+            key_mem.free()
+
+        self.key_allocs.clear()
+        self.map.clear()
+        self.deleted.clear()
+        self.writers.clear()
+
+    def set_kvs_to_clear(self, kvs_to_clear):
+        self._kvs_to_clear = kvs_to_clear
 
     @property
     def lock(self):
@@ -960,25 +1013,70 @@ class ClearOp(DictOp):
 
 class WorkingSet:
     def __init__(
-        self, *, manager, move_to_pool, deferred_ops, working_set_size, wait_for_keys, wait_for_writers, start=0
+        self,
+        *,
+        manager,
+        move_to_pool,
+        deferred_ops,
+        working_set_size,
+        wait_for_keys,
+        wait_for_writers,
+        start=0,
+        read_only=False,
+        persist_freq=0,
     ):
         self._manager = manager
         self._move_to_pool = move_to_pool  # This is a function from the manager.
         self._deferred_ops = deferred_ops
-        self._working_set_size = working_set_size
         self._wait_for_keys = wait_for_keys
         self._wait_for_writers = wait_for_writers
         self._chkpts = {}
         self._lock = threading.Lock()
+        self._persist_freq = persist_freq
+        self._read_only = read_only
 
-        for i in range(start, start + working_set_size):
-            self._chkpts[i] = Checkpoint(id=i, move_to_pool=move_to_pool, manager=self._manager)
+        if not read_only:
+            for i in range(start, start + working_set_size):
+                self._chkpts[i] = Checkpoint(id=i, move_to_pool=move_to_pool, manager=self._manager)
 
-        self._next_id = start + working_set_size
+            self._next_id = start + working_set_size
+            self._working_set_size = working_set_size
+        else:
+            # The working set holds at most 1 checkpoint at a time during read-only mode.
+            # If no persisted checkpoint has been restored and loaded to working set, the next
+            # ID is set to -1, otherwise the next_id is set to the checkpoint ID of the loaded
+            # persistent checkpoint.
+            self._next_id = -1
+            self._working_set_size = 0
+
+    def set_persist_vars(self, read_only: bool = False, persist_freq: int = 0):
+        self._read_only = read_only
+        self._persist_freq = persist_freq
 
     def clear_states(self):
+        # reset working set variables
         for chkpt_id in self._chkpts:
             self._chkpts[chkpt_id].clear()
+        self._next_id = 0
+        self._chkpts.clear()
+
+    def clear_and_add_restored_chkpt(self, chkpt: Checkpoint):
+        self.clear_states()
+        self._chkpts[chkpt.id] = chkpt
+        if self._read_only:
+            # In ready-only mode, there's only a single checkpoint in the working set at any time. So no
+            # next checkpoint in the working set. The next checkpoint ID is supposed to be current checkpoint
+            # ID + persist frequency, but it has not been loaded to the working set.
+            # Since in read-only mode, the working set holds at most a single checkpoint at any time, the existing
+            # checkpoint needs to be clear when adding a new restored checkoint.
+            self._next_id = chkpt.id
+        else:
+            # Not in ready-only mode, client might restore a persisted checkpoint and proceed to the next checkpoint,
+            # and continue the work.
+            self._next_id = chkpt.id + self._working_set_size
+            # Instantiate each chkpt again
+            for i in range(chkpt.id + 1, self._next_id):
+                self._chkpts[i] = Checkpoint(id=i, move_to_pool=self._move_to_pool, manager=self._manager)
 
     def __setstate__(self, args):
         (self._working_set_size, self._wait_for_keys, self._wait_for_writers, self._chkpts, self._next_id) = args
@@ -1028,8 +1126,30 @@ class WorkingSet:
             if not found_in_working_set:
                 key.free()
 
-    def _retire_checkpoint(self, parent, child):
-        kvs_to_free = set()
+    def _force_persist(self, chkptID: int):
+
+        def retire_thread_func(chkpt):
+            self._manager._persister.dump(chkpt, force=True)
+            chkpt.retire()
+
+        chkpt = self._chkpts[chkptID]
+        kvs_to_clear = set(chkpt.map.keys())
+        chkpt.set_kvs_to_clear(kvs_to_clear)
+
+        chkpt._reattach = False
+        t = threading.Thread(target=retire_thread_func, args=(chkpt,))
+        t.start()
+        self._manager._threads.append(t)
+
+    def _retire_checkpoint(self, parent: Checkpoint, child: Checkpoint):
+        # This method is invoked only under non read-only mode. In read-only mode
+        # there's no point to write the same persisted chkpt to disk again.
+
+        def retire_thread_func(chkpt):
+            self._manager._persister.dump(chkpt)
+            chkpt.retire()
+
+        kvs_to_clear = set()
         for key in parent.map:
             copied = False
             if key not in child.map and key not in child.deleted:
@@ -1042,35 +1162,16 @@ class WorkingSet:
                 copied = True
 
             if not copied:
-                kvs_to_free.add(key)
+                kvs_to_clear.add(key)
 
-        while len(kvs_to_free) > 0:
-            key = kvs_to_free.pop()
-            values = parent.map[key]
-            while len(values) > 0:
-                val_mem = values.pop()
-                val_mem.free()
-            # We must del the key in the two maps
-            # below because otherwise the dictionary
-            # implementation, looking for another key
-            # that maps to the same position in the
-            # map or key_allocs dictionaries, would get
-            # an error while probing because this key's
-            # memory would be freed and could not
-            # be compared for equality. This was seen
-            # in some demo code so it is known that this
-            # would be a problem without the code written
-            # as it is here even though we clear the maps
-            # just below.
-            del parent.map[key]
-            key_mem = parent.key_allocs[key]
-            del parent.key_allocs[key]
-            key_mem.free()
+        parent.set_kvs_to_clear(kvs_to_clear)
 
-        parent.key_allocs.clear()
-        parent.map.clear()
-        parent.deleted.clear()
-        parent.writers.clear()
+        # Write the retiring checkpoint to disk.
+        parent._reattach = False
+        t = threading.Thread(target=retire_thread_func, args=(parent,))
+        t.start()
+        self._manager._threads.append(t)
+
         child.deleted.clear()
 
         del self._chkpts[parent.id]
@@ -1320,6 +1421,9 @@ class WorkingSet:
 
         return self._chkpts[chkpt_id]
 
+    def chkpt_avail(self, chkptID: int) -> bool:
+        return chkptID in self._chkpts
+
     @property
     def key_count(self):
         """
@@ -1342,7 +1446,14 @@ class Manager:
     _DTBL = {}  # dispatch router, keyed by type of message
 
     def __init__(
-        self, pool_size: int, serialized_return_orc, serialized_main_orc, trace, args, manager_id, ser_pool_desc
+        self,
+        pool_size: int,
+        serialized_return_orc,
+        serialized_main_orc,
+        trace,
+        args,
+        manager_id,
+        ser_pool_desc,
     ):
         (
             self._working_set_size,
@@ -1353,6 +1464,11 @@ class Manager:
             self._name,
             self._timeout,
             self._restart,
+            self._read_only,
+            self._restore_from,
+            self._persist_path,
+            self._persist_count,
+            self._persister,
         ) = args
         self._puid = parameters.this_process.my_puid
         self._trace = trace
@@ -1382,6 +1498,17 @@ class Manager:
 
         # bput (broadcast put) with batch
         self._num_bput = {}
+
+        # Checkpoint persistence
+        self._persister = self._persister(
+            self._name,
+            self._persist_path,
+            self._manager_id,
+            self._traceit,
+            self,
+            self._persist_freq,
+            self._persist_count,
+        )
 
         err_str = ""
         err_code = DragonError.SUCCESS
@@ -1414,9 +1541,12 @@ class Manager:
 
             self._next_stream = 0
         except Exception as ex:
-            log.debug("Exception caught while creating manager return channel for manager %s", self._manager_id)
+            tb = traceback.format_exc()
+            err_str = (
+                f"Exception caught while creating manager return channel for manager {self._manager_id}: {ex}\n{tb}"
+            )
+            log.debug(err_str)
             err_code = DragonError.FAILURE
-            err_str = str(ex)
             self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
             return
 
@@ -1445,13 +1575,11 @@ class Manager:
                 return
             except Exception as ex:
                 tb = traceback.format_exc()
-                log.debug(
-                    "caught exception in manager %s while reattaching to memory pool. %s\n %s", self._manager_id, ex, tb
-                )
-                err_code = DragonError.FAILURE
                 err_str = (
                     f"caught exception in manager {self._manager_id} while reattaching to memory pool. {ex}\n {tb}"
                 )
+                log.debug(err_str)
+                err_code = DragonError.FAILURE
                 self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
                 return
 
@@ -1466,20 +1594,18 @@ class Manager:
                 bootstrap_mem_alloc_view = bootstrap_mem_alloc.get_memview()
             except dmem.DragonMemoryError as ex:
                 tb = traceback.format_exc()
-                log.debug(
-                    "caught exception in manager %s while accessing bootstrap memory. %s\n %s", self._manager_id, ex, tb
+                err_str = (
+                    f"caught exception in manager {self._manager_id} while accessing bootstrap memory. {ex}\n {tb}"
                 )
+                log.debug(err_str)
                 err_code = ex.rc
-                err_str = str(ex)
                 self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
                 return
             except Exception as ex:
                 tb = traceback.format_exc()
-                log.debug(
-                    "Failed to read bootstrap memeory. Manager %s losts all keys. %s\n %s", self._manager_id, ex, tb
-                )
-                err_code = DragonError.FAILURE
                 err_str = f"Failed to read bootstrap memeory. Manager {self._manager_id} losts all keys. {ex}\n {tb}"
+                log.debug(err_str)
+                err_code = DragonError.FAILURE
                 self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
                 return
 
@@ -1493,6 +1619,8 @@ class Manager:
                 # free BOOTSTRAP memory after unpickle successfully
                 bootstrap_mem_alloc.free()
                 self._working_set.set_manager(self)
+                # allow restarted working set to run with possibly different mode and persist frequency.
+                self._working_set.set_persist_vars(self._read_only, self._persist_freq)
 
             except AssertionError as e:
                 log.debug("Manager %s metadata mismatch: %s", self._manager_id, e)
@@ -1501,11 +1629,10 @@ class Manager:
                 self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
                 return
             except Exception as ex:
-                log.debug(
-                    "Exception caught in manager %s while retrieving data from bootstrap memory.", self._manager_id
-                )
+                tb = traceback.format_exc()
+                err_str = f"Exception caught in manager {self._manager_id} while retrieving data from bootstrap memory: {ex}\n{tb}"
+                log.debug(err_str)
                 err_code = DragonError.FAILURE
-                err_str = ex
                 self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
                 return
 
@@ -1522,9 +1649,9 @@ class Manager:
                 self._pool_sdesc = self._pool.serialize()
             except Exception as ex:
                 tb = traceback.format_exc()
-                log.debug("Exception caught in manager %s while creating manager pool:%s\n%s", self._manager_id, ex, tb)
+                err_str = f"Exception caught in manager {self._manager_id} while creating manager pool:{ex}\n{tb}"
+                log.debug(err_str)
                 err_code = DragonError.FAILURE
-                err_str = str(ex)
                 self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
                 return
 
@@ -1540,9 +1667,10 @@ class Manager:
             self._buffered_client_connections_map = {}
             self._deferred_ops = {}
         except Exception as ex:
+            tb = traceback.format_exc()
             log.debug("Exception caught in manager %s while creating manager.", self._manager_id)
             err_code = DragonError.FAILURE
-            err_str = str(ex)
+            err_str = str(ex) + "\n" + str(tb)
             self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
             return
 
@@ -1558,7 +1686,28 @@ class Manager:
                 working_set_size=self._working_set_size,
                 wait_for_keys=self._wait_for_keys,
                 wait_for_writers=self._wait_for_writers,
+                read_only=self._read_only,
+                persist_freq=self._persist_freq,
             )
+
+        # Restore from the persistent checkpoint.
+        try:
+            if self._restore_from is not None:
+                self._persister.position(self._restore_from)
+                chkpt = self._persister.load(self._pool)
+                self._working_set.clear_and_add_restored_chkpt(chkpt)
+        except DDictPersistCheckpointError:
+            err_code = DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE
+            err_str = f"The persist checkpoint {self._restore_from} is unavailable in manager {self._manager_id}"
+            self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
+            return
+        except Exception as ex:
+            tb = traceback.format_exc()
+            err_str = f"Exception caught in manager {self._manager_id} while restoring from persistent checkpoint {self._restore_from}: {ex}\n{tb}"
+            log.debug(err_str)
+            err_code = DragonError.FAILURE
+            self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
+            return
 
         # send the manager information to local service and orchestrator to register manager
         self._register_with_local_service()
@@ -1864,7 +2013,6 @@ class Manager:
                 self._manager_id,
                 "",
                 self._serialized_buffered_return_connector,
-                "",
                 self._host_id,
                 "",
                 errInfo=err_str,
@@ -2056,6 +2204,7 @@ class Manager:
                 managerNodes=self._serialized_manager_nodes,
                 name=self._name,
                 timeout=self._timeout,
+                readOnly=self._read_only,
             )
             self._send_msg(resp_msg, self._buffered_client_connections_map[client_id])
 
@@ -3296,7 +3445,6 @@ class Manager:
                     # key: id from the full manager, value: the memory in new pool of the empty manager
                     id = cloudpickle.loads(pickled_id)
                     indirect[id] = mem
-                recvh.close()
             except EOFError:
                 pass
             except Exception as ex:
@@ -3306,6 +3454,8 @@ class Manager:
                 raise RuntimeError(
                     f"There was an exception in empty manager {self._manager_id} with PUID {self._puid} while receiving stream memory"
                 )
+            finally:
+                recvh.close()
 
             try:
                 # Repopulate maps of each checkpoint with the memory
@@ -3324,6 +3474,152 @@ class Manager:
 
         finally:
             resp_msg = dmsg.DDManagerSetStateResponse(self._tag_inc(), ref=msg.tag, err=err, errInfo=errInfo)
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+
+    @dutil.route(dmsg.DDPersistedChkptAvail, _DTBL)
+    def persisted_chkpt_avail(self, msg: dmsg.DDChkptAvail, recvh):
+        recvh.close()
+
+        # broadcast message to left and right managers
+        self._send_dmsg_to_children(msg)
+
+        available = msg.chkptID in self._persister.checkpoints()
+        resp_msg = dmsg.DDPersistedChkptAvailResponse(
+            self._tag_inc(),
+            ref=msg.tag,
+            err=DragonError.SUCCESS,
+            errInfo="",
+            available=available,
+            managerID=self._manager_id,
+        )
+        connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+        self._send_msg(resp_msg, connection)
+        connection.detach()
+
+    @dutil.route(dmsg.DDRestore, _DTBL)
+    def restore(self, msg: dmsg.DDRestore, recvh):
+        try:
+            recvh.close()
+
+            # broadcast message to left and right managers
+            self._send_dmsg_to_children(msg)
+
+            self._persister.position(msg.chkptID)
+            checkpoint = self._persister.load(self._pool)
+            checkpoint.set_pool_mover(self._move_to_pool)
+
+            # Add restored checkpoint to working set
+            self._working_set.clear_and_add_restored_chkpt(checkpoint)
+
+            err = DragonError.SUCCESS
+            errInfo = ""
+
+        except DDictPersistCheckpointError:
+            err = DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE
+            errInfo = f"The persist checkpoint is unavailable in manager {self._manager_id} with PUID {self._puid}"
+
+        except Exception as ex:
+            tb = traceback.format_exc()
+            err = DragonError.FAILURE
+            errInfo = f"There is an exception while restoring checkpoint {msg.chkptID} for client {msg.clientID} in manager {self._manager_id} with PUID {self._puid}: {ex}\n{tb}"
+
+        finally:
+            recvh.close()
+            resp_msg = dmsg.DDRestoreResponse(self._tag_inc(), ref=msg.tag, err=err, errInfo=errInfo)
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+
+    @dutil.route(dmsg.DDAdvance, _DTBL)
+    def advance(self, msg: dmsg.DDAdvance, recvh):
+        try:
+            recvh.close()
+
+            # broadcast message to left and right managers
+            self._send_dmsg_to_children(msg)
+
+            self._persister.advance()
+            err = DragonError.SUCCESS
+            errInfo = ""
+
+        except DDictPersistCheckpointError:
+            err = DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE
+            errInfo = f"The persist checkpoint is unavailable in manager {self._manager_id} with PUID {self._puid}"
+
+        except Exception as ex:
+            tb = traceback.format_exc()
+            err = DragonError.FAILURE
+            errInfo = f"There is an exception while advancing checkpoint for client {msg.clientID} in manager {self._manager_id} with PUID {self._puid}: {ex}\n{tb}"
+
+        finally:
+            recvh.close()
+            resp_msg = dmsg.DDAdvanceResponse(
+                self._tag_inc(), ref=msg.tag, err=err, errInfo=errInfo, chkptID=self._persister.current_chkpt
+            )
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+
+    @dutil.route(dmsg.DDPersistChkpts, _DTBL)
+    def persist_chkpts(self, msg: dmsg.DDPersistChkpts, recvh):
+        recvh.close()
+
+        # broadcast message to left and right managers
+        self._send_dmsg_to_children(msg)
+
+        resp_msg = dmsg.DDPersistChkptsResponse(
+            self._tag_inc(), ref=msg.tag, err=DragonError.SUCCESS, errInfo="", chkptIDs=self._persister.checkpoints()
+        )
+        connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+        self._send_msg(resp_msg, connection)
+        connection.detach()
+
+    @dutil.route(dmsg.DDChkptAvail, _DTBL)
+    def chkpt_avail(self, msg: dmsg.DDChkptAvail, recvh):
+        recvh.close()
+
+        # broadcast message to left and right managers
+        self._send_dmsg_to_children(msg)
+
+        resp_msg = dmsg.DDChkptAvailResponse(
+            self._tag_inc(),
+            ref=msg.tag,
+            err=DragonError.SUCCESS,
+            errInfo="",
+            available=self._working_set.chkpt_avail(msg.chkptID),
+            managerID=self._manager_id,
+        )
+        connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+        self._send_msg(resp_msg, connection)
+        connection.detach()
+
+    @dutil.route(dmsg.DDPersist, _DTBL)
+    def persist(self, msg: dmsg.DDPersist, recvh):
+        try:
+            recvh.close()
+
+            # broadcast message to left and right managers
+            self._send_dmsg_to_children(msg)
+
+            self._working_set._force_persist(msg.chkptID)
+
+            err = DragonError.SUCCESS
+            errInfo = ""
+
+        except DDictPersistCheckpointError:
+            err = DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE
+            errInfo = f"The persist checkpoint is unavailable in manager {self._manager_id} with PUID {self._puid}"
+
+        except Exception as ex:
+            tb = traceback.format_exc()
+            err = DragonError.FAILURE
+            errInfo = f"There is an exception while persisting checkpoint {msg.chkptID} in manager {self._manager_id} with PUID {self._puid}: {ex}\n{tb}"
+
+        finally:
+            recvh.close()
+            resp_msg = dmsg.DDPersistResponse(self._tag_inc(), ref=msg.tag, err=err, errInfo=errInfo)
             connection = fli.FLInterface.attach(b64decode(msg.respFLI))
             self._send_msg(resp_msg, connection)
             connection.detach()

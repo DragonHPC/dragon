@@ -104,6 +104,7 @@ struct DDRegisterClientResponseDef {
     managerNodes @3: List(Text);
     name @4: Text;
     timeout @5: UInt64;
+    readOnly @6: Bool;
 }
 
 struct DDConnectToManagerDef {
@@ -305,6 +306,55 @@ struct DDBPutResponseDef {
     managerID @1: UInt64;
 }
 
+struct DDPersistedChkptAvailDef {
+    chkptID @0: UInt64;
+    respFLI @1: Text;
+}
+
+struct DDPersistedChkptAvailResponseDef {
+    available @0: Bool;
+    managerID @1: UInt64;
+}
+
+struct DDRestoreDef {
+    chkptID @0: UInt64;
+    clientID @1: UInt64;
+    respFLI @2: Text;
+}
+
+struct DDAdvanceDef {
+    clientID @0: UInt64;
+    respFLI @1: Text;
+}
+
+struct DDAdvanceResponseDef {
+    chkptID @0: UInt64;
+}
+
+struct DDPersistChkptsDef {
+    clientID @0: UInt64;
+    respFLI @1: Text;
+}
+
+struct DDPersistChkptsResponseDef {
+    chkptIDs @0: List(UInt64);
+}
+
+struct DDChkptAvailDef {
+    chkptID @0: UInt64;
+    respFLI @1: Text;
+}
+
+struct DDChkptAvailResponseDef {
+    available @0: Bool;
+    managerID @1: UInt64;
+}
+
+struct DDPersistDef {
+    chkptID @0: UInt64;
+    respFLI @1: Text;
+}
+
 struct NoMessageSpecificData {
     none @0: Void;
 }
@@ -384,5 +434,15 @@ struct MessageDef {
         ddItems @62: DDItemsDef;
         ddBPut @63: DDBPutDef;
         ddBPutResponse @64: DDBPutResponseDef;
+        ddPersistedChkptAvail @65: DDPersistedChkptAvailDef;
+        ddPersistedChkptAvailResponse @66: DDPersistedChkptAvailResponseDef;
+        ddRestore @67: DDRestoreDef;
+        ddAdvance @68: DDAdvanceDef;
+        ddAdvanceResponse @69: DDAdvanceResponseDef;
+        ddPersistChkpts @70: DDPersistChkptsDef;
+        ddPersistChkptsResponse @71: DDPersistChkptsResponseDef;
+        ddChkptAvail @72: DDChkptAvailDef;
+        ddChkptAvailResponse @73: DDChkptAvailResponseDef;
+        ddPersist @74: DDPersistDef;
     }
 }

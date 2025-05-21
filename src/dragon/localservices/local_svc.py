@@ -336,7 +336,9 @@ def multinode(
         ip_addrs = msg.ip_addrs
         is_primary = msg.primary
         logger_sdesc = msg.logger_sdesc
-        log.info("got BENodeIdxSH (id=%s, ips=%s, host=%s, primary=%s) - m2.1" % (node_index, ip_addrs, hostname, is_primary))
+        log.info(
+            "got BENodeIdxSH (id=%s, ips=%s, host=%s, primary=%s) - m2.1" % (node_index, ip_addrs, hostname, is_primary)
+        )
 
         # Add the dragon logging handler to our already existing log
         setup_BE_logging(service=dls.LS, logger_sdesc=logger_sdesc, fname=fname)

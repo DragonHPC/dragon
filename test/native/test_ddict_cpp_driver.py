@@ -209,11 +209,11 @@ class TestDDictCPP(unittest.TestCase):
         ddict.destroy()
         self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
 
-    def test_current_checkpoint_id(self):
+    def test_checkpoint_id(self):
         exe = "cpp_ddict"
         ddict = DDict(2, 1, 3000000, wait_for_keys=True, working_set_size=2, trace=True)
         ser_ddict = ddict.serialize()
-        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_current_checkpoint_id"], env=ENV)
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_checkpoint_id"], env=ENV)
         proc.wait()
         ddict.destroy()
         self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")

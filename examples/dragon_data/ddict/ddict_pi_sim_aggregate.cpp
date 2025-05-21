@@ -98,7 +98,7 @@ int main(int argc, char* argv[]) {
             aggregate_dd[key] = val;
 
             if (trace) {
-                int chkpt = aggregate_dd.current_checkpoint_id();
+                int chkpt = aggregate_dd.checkpoint_id();
                 cout<<"Step "<<chkpt<<" result: "<<4*avg<<endl;
             }
 

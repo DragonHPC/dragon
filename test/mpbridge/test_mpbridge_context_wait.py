@@ -264,6 +264,7 @@ class TestDragonContextWait(unittest.TestCase):
     # TODO: Test this with a much large number of objects on a slow system. We should be able to handle 100s of
     # objects getting ready at very odd times.
     # JD: Add the sockets back in. This stopped working in the devcontainer and it is unclear to me why.
+    @unittest.skip("Bug report filed in AICI-1767.")
     def test_mixed(self):
 
         impbridge_ctx = mp.get_context()

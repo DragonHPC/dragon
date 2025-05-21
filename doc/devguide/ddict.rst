@@ -968,7 +968,7 @@ Dragon Distributed Dictionary for reference.
     # writes non-persistent keys using batch put
     ddict.start_batch_put(persist=False) # batch put starts
     ddict["key1"] = "value"
-    ddict["key2"] = "value"git
+    ddict["key2"] = "value"
     ddict.end_batch_put() # batch put ends
 
     ddict.destroy()

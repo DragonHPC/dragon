@@ -28,6 +28,8 @@ from ..infrastructure.connection import Connection, ConnectionOptions
 from ..infrastructure.parameters import POLICY_INFRASTRUCTURE, this_process
 from ..infrastructure.util import NewlineStreamWrapper, route
 
+from ..infrastructure.watchers import CriticalPopen
+
 
 def _get_host_info(network_prefix) -> tuple[str, str, list[str]]:
     """Return username, hostname, and list of IP addresses."""
@@ -450,7 +452,14 @@ class LauncherBackEnd:
         log.info("standing up local services")
         try:
             ls_args = [dfacts.PROCNAME_LS]
-            ls_proc = subprocess.Popen(args=ls_args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+            ls_proc = CriticalPopen(
+                args=ls_args,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                name="local services",
+                notify_channel=self.infra_out,
+                notify_msg=dmsg.AbnormalTermination,
+            )
         except Exception as ex:
             log.fatal("BE failed to stand up LS")
             raise RuntimeError("Local Services launch failed from launcher backend") from ex

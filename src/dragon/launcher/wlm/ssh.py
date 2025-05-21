@@ -10,7 +10,10 @@ from typing import Dict, List
 
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.parameters import this_process
+from ...infrastructure.config import dragon_config
 from .base import BaseNetworkConfig
+
+SSH_OPTIONS = 'ssh-options'
 
 # TODO: we're propagating environment variables to make sure
 #       the SSH envionment has the same envrionment as the
@@ -60,7 +63,15 @@ def get_ssh_launch_be_args(args_map: Dict, launch_args: Dict) -> List:
         get_ssh_env_vars(args_map=args_map)
 
     bash_cmd = f"cd {getcwd()} && {' '.join(ENV_VARS + launch_args)}"
-    return ["ssh", "-oBatchMode=yes", args_map["hostname"], bash_cmd]
+
+    ssh_cmd = ["ssh", "-oBatchMode=yes"]
+    cfg_dict = dragon_config()
+    if SSH_OPTIONS in cfg_dict:
+        ssh_cmd.append(cfg_dict[SSH_OPTIONS])
+
+    ssh_cmd.extend([args_map["hostname"], bash_cmd])
+
+    return ssh_cmd
 
 
 class SSHIOStream(BufferedIOBase):

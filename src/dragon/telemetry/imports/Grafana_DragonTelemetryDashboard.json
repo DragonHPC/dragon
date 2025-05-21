@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 7,
+  "id": 9,
   "links": [],
   "liveNow": true,
   "panels": [
@@ -30,13 +30,10 @@
         "x": 0,
         "y": 0
       },
-      "id": 18,
+      "id": 5,
       "panels": [
         {
-          "datasource": {
-            "type": "opentsdb",
-            "uid": "P3F9FDC87EEA6B335"
-          },
+          "datasource": {},
           "description": "",
           "fieldConfig": {
             "defaults": {
@@ -98,7 +95,7 @@
             "x": 0,
             "y": 1
           },
-          "id": 19,
+          "id": 2,
           "options": {
             "legend": {
               "calcs": [],
@@ -119,7 +116,6 @@
                 "type": "opentsdb",
                 "uid": "adg5rnop5kbggc"
               },
-              "disableDownsampling": false,
               "downsampleAggregator": "avg",
               "downsampleFillPolicy": "none",
               "explicitTags": false,
@@ -131,12 +127,12 @@
                   "type": "wildcard"
                 }
               ],
-              "metric": "pool_start_time",
+              "metric": "load_average",
               "refId": "A",
               "tags": {}
             }
           ],
-          "title": "Pool Start Time",
+          "title": "Load Average",
           "transformations": [
             {
               "id": "concatenate",
@@ -204,34 +200,10 @@
                     "value": 80
                   }
                 ]
-              }
+              },
+              "unit": "percent"
             },
-            "overrides": [
-              {
-                "__systemRef": "hideSeriesFrom",
-                "matcher": {
-                  "id": "byNames",
-                  "options": {
-                    "mode": "exclude",
-                    "names": [
-                      "elapsed_time{puid=4294967318}"
-                    ],
-                    "prefix": "All except:",
-                    "readOnly": true
-                  }
-                },
-                "properties": [
-                  {
-                    "id": "custom.hideFrom",
-                    "value": {
-                      "legend": false,
-                      "tooltip": false,
-                      "viz": true
-                    }
-                  }
-                ]
-              }
-            ]
+            "overrides": []
           },
           "gridPos": {
             "h": 10,
@@ -239,7 +211,7 @@
             "x": 8,
             "y": 1
           },
-          "id": 24,
+          "id": 26,
           "options": {
             "legend": {
               "calcs": [],
@@ -260,7 +232,6 @@
                 "type": "opentsdb",
                 "uid": "adg5rnop5kbggc"
               },
-              "disableDownsampling": false,
               "downsampleAggregator": "avg",
               "downsampleFillPolicy": "none",
               "explicitTags": false,
@@ -268,17 +239,16 @@
                 {
                   "filter": "*",
                   "groupBy": false,
-                  "tagk": "puid",
+                  "tagk": "host",
                   "type": "wildcard"
                 }
               ],
-              "hide": false,
-              "metric": "elapsed_time",
+              "metric": "used_RAM",
               "refId": "A",
               "tags": {}
             }
           ],
-          "title": "Elapsed Time",
+          "title": "Used RAM",
           "transformations": [
             {
               "id": "concatenate",
@@ -346,7 +316,8 @@
                     "value": 80
                   }
                 ]
-              }
+              },
+              "unit": "percent"
             },
             "overrides": []
           },
@@ -356,7 +327,7 @@
             "x": 16,
             "y": 1
           },
-          "id": 23,
+          "id": 13,
           "options": {
             "legend": {
               "calcs": [],
@@ -377,7 +348,6 @@
                 "type": "opentsdb",
                 "uid": "adg5rnop5kbggc"
               },
-              "disableDownsampling": false,
               "downsampleAggregator": "avg",
               "downsampleFillPolicy": "none",
               "explicitTags": false,
@@ -389,13 +359,12 @@
                   "type": "wildcard"
                 }
               ],
-              "hide": false,
-              "metric": "iteration_time",
+              "metric": "used_RAM",
               "refId": "A",
               "tags": {}
             }
           ],
-          "title": "Iteration Time",
+          "title": "Memory Usage",
           "transformations": [
             {
               "id": "concatenate",
@@ -408,7 +377,7 @@
           "type": "timeseries"
         }
       ],
-      "title": "Custom Metrics",
+      "title": "CPU Metrics (telemetry_level=2)",
       "type": "row"
     },
     {
@@ -476,7 +445,8 @@
                     "value": 80
                   }
                 ]
-              }
+              },
+              "unit": "percent"
             },
             "overrides": []
           },
@@ -484,7 +454,7 @@
             "h": 11,
             "w": 8,
             "x": 0,
-            "y": 12
+            "y": 2
           },
           "id": 15,
           "options": {
@@ -584,7 +554,8 @@
                     "value": 80
                   }
                 ]
-              }
+              },
+              "unit": "percent"
             },
             "overrides": []
           },
@@ -592,7 +563,7 @@
             "h": 11,
             "w": 8,
             "x": 8,
-            "y": 12
+            "y": 2
           },
           "id": 21,
           "options": {
@@ -692,7 +663,8 @@
                     "value": 80
                   }
                 ]
-              }
+              },
+              "unit": "percent"
             },
             "overrides": []
           },
@@ -700,7 +672,7 @@
             "h": 11,
             "w": 8,
             "x": 16,
-            "y": 12
+            "y": 2
           },
           "id": 22,
           "options": {
@@ -746,7 +718,7 @@
           "type": "timeseries"
         }
       ],
-      "title": "GPU Metrics",
+      "title": "GPU Metrics (telemetry_level=3)",
       "type": "row"
     },
     {
@@ -757,7 +729,7 @@
         "x": 0,
         "y": 2
       },
-      "id": 5,
+      "id": 19,
       "panels": [
         {
           "datasource": {},
@@ -822,7 +794,7 @@
             "x": 0,
             "y": 3
           },
-          "id": 2,
+          "id": 23,
           "options": {
             "legend": {
               "calcs": [],
@@ -831,11 +803,12 @@
               "showLegend": true
             },
             "tooltip": {
+              "hideZeros": false,
               "mode": "single",
               "sort": "none"
             }
           },
-          "pluginVersion": "10.0.0",
+          "pluginVersion": "12.0.0",
           "targets": [
             {
               "aggregator": "sum",
@@ -854,12 +827,12 @@
                   "type": "wildcard"
                 }
               ],
-              "metric": "load_average",
+              "metric": "num_running_tasks",
               "refId": "A",
               "tags": {}
             }
           ],
-          "title": "Load Average",
+          "title": "Running Tasks",
           "transformations": [
             {
               "id": "concatenate",
@@ -934,7 +907,7 @@
             "x": 8,
             "y": 3
           },
-          "id": 26,
+          "id": 24,
           "options": {
             "legend": {
               "calcs": [],
@@ -943,11 +916,12 @@
               "showLegend": true
             },
             "tooltip": {
+              "hideZeros": false,
               "mode": "single",
               "sort": "none"
             }
           },
-          "pluginVersion": "10.0.0",
+          "pluginVersion": "12.0.0",
           "targets": [
             {
               "aggregator": "sum",
@@ -966,127 +940,12 @@
                   "type": "wildcard"
                 }
               ],
-              "metric": "load_average",
+              "metric": "num_completed_tasks",
               "refId": "A",
               "tags": {}
             }
           ],
-          "title": "Load Average",
-          "transformations": [
-            {
-              "id": "concatenate",
-              "options": {
-                "frameNameLabel": "frame",
-                "frameNameMode": "field"
-              }
-            }
-          ],
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "opentsdb",
-            "uid": "P3F9FDC87EEA6B335"
-          },
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 10,
-            "w": 8,
-            "x": 16,
-            "y": 3
-          },
-          "id": 13,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "pluginVersion": "10.0.0",
-          "targets": [
-            {
-              "aggregator": "sum",
-              "datasource": {
-                "type": "opentsdb",
-                "uid": "adg5rnop5kbggc"
-              },
-              "downsampleAggregator": "avg",
-              "downsampleFillPolicy": "none",
-              "explicitTags": false,
-              "filters": [
-                {
-                  "filter": "*",
-                  "groupBy": false,
-                  "tagk": "host",
-                  "type": "wildcard"
-                }
-              ],
-              "metric": "used_RAM",
-              "refId": "A",
-              "tags": {}
-            }
-          ],
-          "title": "Memory Usage",
+          "title": "Completed Tasks",
           "transformations": [
             {
               "id": "concatenate",
@@ -1099,7 +958,7 @@
           "type": "timeseries"
         }
       ],
-      "title": "CPU Metrics",
+      "title": "Batch Service Metrics",
       "type": "row"
     },
     {
@@ -1168,7 +1027,8 @@
                     "value": 80
                   }
                 ]
-              }
+              },
+              "unit": "decmbytes"
             },
             "overrides": []
           },
@@ -1215,7 +1075,7 @@
               "tags": {}
             }
           ],
-          "title": "CPU Utilization",
+          "title": "Database Size",
           "transformations": [
             {
               "id": "concatenate",
@@ -1244,8 +1104,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Dragon Telemetry",
-  "uid": "f4810b2f-ad19-4c0d-9260-96bfa8e1a63229",
-  "version": 7,
+  "title": "Dragon Telemetry - Batch Changes",
+  "uid": "f4810b2f-ad19-4c0d-9260-96bfa8e1a63211",
+  "version": 6,
   "weekStart": ""
 }

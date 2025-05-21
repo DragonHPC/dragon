@@ -297,7 +297,13 @@ def get_args(args_input=None):
         if args.basic_label or args.verbose_label:
             args.no_label = False
 
-        return {key: value for key, value in vars(args).items() if value is not None}
+        args_dict = {key: value for key, value in vars(args).items() if value is not None}
+
+        # If no workload manager is specified and hostfile is provided, assume ssh
+        if ('hostfile' in args_dict or 'hostlist' in args_dict) and not 'wlm' in args_dict:
+            args_dict['wlm'] = WLM.SSH
+
+        return args_dict
 
     except Exception:
         raise

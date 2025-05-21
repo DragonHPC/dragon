@@ -309,12 +309,20 @@ class DDict {
             throw DragonError(err, "Could not sync to newest DDict checkpoint.");
     }
 
-    uint64_t current_checkpoint_id() {
+    uint64_t checkpoint_id() {
         dragonError_t err;
         uint64_t chkpt_id = 0;
-        err = dragon_ddict_current_checkpoint_id(&mCDict, &chkpt_id);
+        err = dragon_ddict_checkpoint_id(&mCDict, &chkpt_id);
         if (err != DRAGON_SUCCESS)
-            throw DragonError(err, "Could not get current DDict checkpoint id.");
+            throw DragonError(err, "Could not get the DDict checkpoint id.");
+        return chkpt_id;
+    }
+
+    uint64_t set_checkpoint_id(uint64_t chkpt_id) {
+        dragonError_t err;
+        err = dragon_ddict_set_checkpoint_id(&mCDict, chkpt_id);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not set the DDict checkpoint id.");
         return chkpt_id;
     }
 

@@ -73,6 +73,7 @@ class BaseNetworkConfig(ABC):
         stdout_stream = NewlineStreamWrapper(self.config_helper.stdout)
         stderr_stream = NewlineStreamWrapper(self.config_helper.stderr)
         node_returns = 0
+        temp_uniqueness_guarantee = {}
         while node_returns != self.NNODES:
 
             lines = []
@@ -88,36 +89,43 @@ class BaseNetworkConfig(ABC):
 
             while stdout_stream.poll():
                 line = stdout_stream.recv()
-                if stderr_stream.poll():
-                    err_line = stderr_stream.recv()
-                    if len(err_line) != 0:
-                        _, msg = err_line.split(": ", maxsplit=1)
-                        print(f"Network Config Error Detected: {msg}", flush=True)
+
                 # sattach returns an empty string if nothing to report. ignore
-                if line == "":
+                if line.strip() == "":
                     break
                 else:
                     lines.append(line)
 
-            while stderr_stream.poll():
-                err_line = stderr_stream.recv()
-                if err_line == "":
-                    break
-                else:
-                    _, msg = err_line.split(": ", maxsplit=1)
-                    print(f"Network Config Error Detected: {msg}", flush=True)
+                # Only check stderr while we don't yet have the output on stdout. Once
+                # we have the output, ignore stderr because in some circumstances we keep
+                # reading empty strings anyway.
+                if stderr_stream.poll():
+                    err_line = stderr_stream.recv()
+                    if len(err_line.strip()) == 0:
+                        break
+
+                    try:
+                        _, msg = err_line.split(": ", maxsplit=1)
+                    except ValueError:
+                        print(f"Network Config Error Dettected: {err_line}", flush=True)
+                        break
+
+                    if len(msg.strip()) > 0:
+                        print(f"Network Config Error Detected: {msg.strip()}", flush=True)
+                        break
 
             for line in lines:
                 self.LOGGER.debug(f"{line=}")
                 node_index, node_desc = line.split(": ", maxsplit=1)
                 if " " in node_index:
                     node_index = node_index.split(" ")[-1]
-                if str(node_index) not in self.node_descriptors.keys():
+                if str(node_index) not in temp_uniqueness_guarantee.keys():
                     self.LOGGER.debug(json.loads(node_desc))
                     node = NodeDescriptor.from_sdict(json.loads(node_desc))
-                    node_returns += 1
                     if len(node.ip_addrs) > 0:
-                        self.node_descriptors[str(node_index)] = node
+                        self.node_descriptors[str(node_returns)] = node
+                        temp_uniqueness_guarantee[str(node_index)] = node_returns
+                    node_returns += 1
 
         self.LOGGER.debug(f"received {self.NNODES} of {self.NNODES} expected NodeDescriptors")
 

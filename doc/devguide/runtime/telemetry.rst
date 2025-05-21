@@ -56,19 +56,42 @@ Table: metrics
 ===============     ==============  ============
 column_name         type            description
 ---------------     --------------  ------------
-metric              text            name of the metric
-tags                text            GPU tag value
-dps                 BLOB            time series data stored as a JSON
+metric              text            metric name
+timestamp           text            timestamp
+value               real            metric value
+tags                BLOB            tag key and tag value
 ===============     ==============  ============
 
 Sample dps
 
-``{"1713379493": 0.08, "1713379494": 0.08, "1713379495": 0.08, "1713379496": 0.15}``
+``{
+    "dps": [
+        {
+            "metric": "load_average",
+            "value": 0.3115234375
+        },
+        {
+            "metric": "used_RAM",
+            "value": 6.2
+        },
+        {
+            "metric": "DevicePowerUsage",
+            "value": 89.0,
+            "tags": {
+                "gpu": 0
+            }
+        },
+        {
+            "metric": "DeviceUtilization",
+            "value": 0,
+            "tags": {
+                "gpu": 0
+            }
+        }
+    ],
+    "timestamp": 1746652796
+}``
 
-key: epoch time in seconds (type: string)
-value: metric value (type: double)
-
-NOTE: The tags column only stores the GPU tag right now.
 Table: flags
 ```````````````
 

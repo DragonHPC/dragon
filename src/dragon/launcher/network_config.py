@@ -405,7 +405,7 @@ def main():
           -p PORT, --port PORT  Infrastructure listening port (default: 6565)
           --network-prefix NETWORK_PREFIX
                                 NETWORK_PREFIX specifies the network prefix the dragon runtime will use to determine which IP addresses it should use to build
-                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib)\\d+$' is used -- the prefix for known HPE-Cray XC
+                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth)\\d+$' is used -- the prefix for known HPE-Cray XC
                                 and EX high speed networks. If uncertain which networks are available, the following will return them in pretty formatting: `dragon-
                                 network-ifaddrs --ip --no-loopback --up --running | jq`. Prepending with `srun` may be necessary to get networks available on
                                 backend compute nodes

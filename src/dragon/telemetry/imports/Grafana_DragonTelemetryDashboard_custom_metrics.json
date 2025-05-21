@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 4,
+  "id": 7,
   "links": [],
   "liveNow": true,
   "panels": [
@@ -88,18 +88,158 @@
                     "value": 80
                   }
                 ]
-              },
-              "unit": "s"
+              }
             },
             "overrides": []
           },
           "gridPos": {
-            "h": 8,
+            "h": 10,
             "w": 8,
             "x": 0,
             "y": 1
           },
-          "id": 30,
+          "id": 19,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.0.0",
+          "targets": [
+            {
+              "aggregator": "sum",
+              "datasource": {
+                "type": "opentsdb",
+                "uid": "adg5rnop5kbggc"
+              },
+              "disableDownsampling": false,
+              "downsampleAggregator": "avg",
+              "downsampleFillPolicy": "none",
+              "explicitTags": false,
+              "filters": [
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "host",
+                  "type": "wildcard"
+                }
+              ],
+              "metric": "pool_start_time",
+              "refId": "A",
+              "tags": {}
+            }
+          ],
+          "title": "Pool Start Time",
+          "transformations": [
+            {
+              "id": "concatenate",
+              "options": {
+                "frameNameLabel": "frame",
+                "frameNameMode": "field"
+              }
+            }
+          ],
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "opentsdb",
+            "uid": "P3F9FDC87EEA6B335"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": [
+              {
+                "__systemRef": "hideSeriesFrom",
+                "matcher": {
+                  "id": "byNames",
+                  "options": {
+                    "mode": "exclude",
+                    "names": [
+                      "elapsed_time{puid=4294967318}"
+                    ],
+                    "prefix": "All except:",
+                    "readOnly": true
+                  }
+                },
+                "properties": [
+                  {
+                    "id": "custom.hideFrom",
+                    "value": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": true
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 8,
+            "x": 8,
+            "y": 1
+          },
+          "id": 24,
           "options": {
             "legend": {
               "calcs": [],
@@ -130,14 +270,9 @@
                   "groupBy": false,
                   "tagk": "puid",
                   "type": "wildcard"
-                },
-                {
-                  "filter": "*",
-                  "groupBy": false,
-                  "tagk": "host",
-                  "type": "wildcard"
                 }
               ],
+              "hide": false,
               "metric": "elapsed_time",
               "refId": "A",
               "tags": {}
@@ -216,12 +351,12 @@
             "overrides": []
           },
           "gridPos": {
-            "h": 8,
+            "h": 10,
             "w": 8,
-            "x": 8,
+            "x": 16,
             "y": 1
           },
-          "id": 32,
+          "id": 23,
           "options": {
             "legend": {
               "calcs": [],
@@ -254,12 +389,13 @@
                   "type": "wildcard"
                 }
               ],
-              "metric": "merge_cutoff",
+              "hide": false,
+              "metric": "iteration_time",
               "refId": "A",
               "tags": {}
             }
           ],
-          "title": "Merge Cutoff",
+          "title": "Iteration Time",
           "transformations": [
             {
               "id": "concatenate",
@@ -282,565 +418,6 @@
         "w": 24,
         "x": 0,
         "y": 1
-      },
-      "id": 29,
-      "panels": [
-        {
-          "datasource": {
-            "type": "yesoreyeram-infinity-datasource",
-            "uid": "aecntlbcrpb7kc"
-          },
-          "fieldConfig": {
-            "defaults": {
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 13,
-            "w": 6,
-            "x": 0,
-            "y": 10
-          },
-          "id": 28,
-          "options": {
-            "afterRender": "",
-            "content": "<form action=\"http://localhost:34383/api/reboot\" method=\"post\" target=\"hidden_if\">\n  <label for=\"hostnames\"> Enter hostnames (Comma Separated)</label>\n  <br>\n  <input style=\"width: 100%;\n  padding: 12px 20px;\n  margin: 8px 0;\n  display: inline-block;\n  border: 1px solid #ccc;\n  border-radius: 4px;\n  box-sizing: border-box;\" type=\"text\" id=\"hostnames\" name=\"hostnames\" placeholder=\"node_A,node_B,node_C\">\n  <br>\n  <label for=\"h_uids\"> Enter h_uids (Comma Separated)</label>\n  <br>\n  <input style=\"width: 100%;\n    padding: 12px 20px;\n    margin: 8px 0;\n    display: inline-block;\n    border: 1px solid #ccc;\n    border-radius: 4px;\n    box-sizing: border-box;\" type=\"text\" id=\"h_uids\" name=\"h_uids\" placeholder=\"node_A,node_B,node_C\">\n  <br>\n  <hr>\n  <button style=\"background-color: #04AA6D;\n    border: none;\n    color: white;\n    padding: 15px 32px;\n    text-align: center;\n    text-decoration: none;\n    display: inline-block;\n    font-size: 16px;\" type=\"submit\">Reboot</button>\n</form>\n<hr>\n<iframe name=\"hidden_if\" width=\"100%\" height=\"100\"></iframe>",
-            "contentPartials": [],
-            "defaultContent": "The query didn't return any results.",
-            "editor": {
-              "format": "auto",
-              "language": "html"
-            },
-            "editors": [],
-            "externalStyles": [],
-            "helpers": "",
-            "renderMode": "allRows",
-            "styles": "",
-            "wrap": true
-          },
-          "pluginVersion": "5.6.0",
-          "targets": [
-            {
-              "columns": [],
-              "datasource": {
-                "type": "yesoreyeram-infinity-datasource",
-                "uid": "aecntlbcrpb7kc"
-              },
-              "filters": [],
-              "format": "table",
-              "global_query_id": "",
-              "refId": "A",
-              "root_selector": "",
-              "source": "url",
-              "type": "json",
-              "url": "",
-              "url_options": {
-                "data": "",
-                "method": "GET"
-              }
-            }
-          ],
-          "title": "Reboot Nodes",
-          "type": "marcusolsson-dynamictext-panel"
-        }
-      ],
-      "title": "Reboot Nodes",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 2
-      },
-      "id": 5,
-      "panels": [
-        {
-          "datasource": {
-            "type": "opentsdb",
-            "uid": "P3F9FDC87EEA6B335"
-          },
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 8,
-            "x": 0,
-            "y": 4
-          },
-          "id": 19,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "pluginVersion": "10.0.0",
-          "targets": [
-            {
-              "aggregator": "sum",
-              "datasource": {
-                "type": "opentsdb",
-                "uid": "adg5rnop5kbggc"
-              },
-              "disableDownsampling": false,
-              "downsampleAggregator": "avg",
-              "downsampleFillPolicy": "none",
-              "explicitTags": false,
-              "filters": [
-                {
-                  "filter": "*",
-                  "groupBy": false,
-                  "tagk": "host",
-                  "type": "wildcard"
-                }
-              ],
-              "metric": "num_running_processes",
-              "refId": "A",
-              "tags": {}
-            }
-          ],
-          "title": "# Running Procs",
-          "transformations": [
-            {
-              "id": "concatenate",
-              "options": {
-                "frameNameLabel": "frame",
-                "frameNameMode": "field"
-              }
-            }
-          ],
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "opentsdb",
-            "uid": "P3F9FDC87EEA6B335"
-          },
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 8,
-            "x": 8,
-            "y": 4
-          },
-          "id": 33,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "pluginVersion": "10.0.0",
-          "targets": [
-            {
-              "aggregator": "sum",
-              "datasource": {
-                "type": "opentsdb",
-                "uid": "adg5rnop5kbggc"
-              },
-              "disableDownsampling": false,
-              "downsampleAggregator": "avg",
-              "downsampleFillPolicy": "none",
-              "explicitTags": false,
-              "filters": [
-                {
-                  "filter": "*",
-                  "groupBy": false,
-                  "tagk": "host",
-                  "type": "wildcard"
-                }
-              ],
-              "metric": "def_pool_utilization",
-              "refId": "A",
-              "tags": {}
-            }
-          ],
-          "title": "# Running Procs",
-          "transformations": [
-            {
-              "id": "concatenate",
-              "options": {
-                "frameNameLabel": "frame",
-                "frameNameMode": "field"
-              }
-            }
-          ],
-          "type": "timeseries"
-        },
-        {
-          "datasource": {},
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              },
-              "unit": "percent"
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 8,
-            "w": 8,
-            "x": 16,
-            "y": 4
-          },
-          "id": 3,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "pluginVersion": "10.0.0",
-          "targets": [
-            {
-              "aggregator": "sum",
-              "datasource": {
-                "type": "opentsdb",
-                "uid": "adg5rnop5kbggc"
-              },
-              "downsampleAggregator": "avg",
-              "downsampleFillPolicy": "none",
-              "explicitTags": false,
-              "filters": [
-                {
-                  "filter": "*",
-                  "groupBy": false,
-                  "tagk": "host",
-                  "type": "wildcard"
-                }
-              ],
-              "metric": "cpu_percent",
-              "refId": "A",
-              "tags": {}
-            }
-          ],
-          "title": "CPU Utilization",
-          "transformations": [
-            {
-              "id": "concatenate",
-              "options": {
-                "frameNameLabel": "frame",
-                "frameNameMode": "field"
-              }
-            }
-          ],
-          "type": "timeseries"
-        },
-        {
-          "datasource": {
-            "type": "opentsdb",
-            "uid": "P3F9FDC87EEA6B335"
-          },
-          "description": "",
-          "fieldConfig": {
-            "defaults": {
-              "color": {
-                "mode": "palette-classic"
-              },
-              "custom": {
-                "axisBorderShow": false,
-                "axisCenteredZero": false,
-                "axisColorMode": "text",
-                "axisLabel": "",
-                "axisPlacement": "auto",
-                "barAlignment": 0,
-                "drawStyle": "line",
-                "fillOpacity": 0,
-                "gradientMode": "none",
-                "hideFrom": {
-                  "legend": false,
-                  "tooltip": false,
-                  "viz": false
-                },
-                "insertNulls": false,
-                "lineInterpolation": "linear",
-                "lineWidth": 1,
-                "pointSize": 5,
-                "scaleDistribution": {
-                  "type": "linear"
-                },
-                "showPoints": "auto",
-                "spanNulls": false,
-                "stacking": {
-                  "group": "A",
-                  "mode": "none"
-                },
-                "thresholdsStyle": {
-                  "mode": "off"
-                }
-              },
-              "mappings": [],
-              "thresholds": {
-                "mode": "absolute",
-                "steps": [
-                  {
-                    "color": "green",
-                    "value": null
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
-                  }
-                ]
-              }
-            },
-            "overrides": []
-          },
-          "gridPos": {
-            "h": 9,
-            "w": 8,
-            "x": 0,
-            "y": 12
-          },
-          "id": 13,
-          "options": {
-            "legend": {
-              "calcs": [],
-              "displayMode": "list",
-              "placement": "bottom",
-              "showLegend": true
-            },
-            "tooltip": {
-              "mode": "single",
-              "sort": "none"
-            }
-          },
-          "pluginVersion": "10.0.0",
-          "targets": [
-            {
-              "aggregator": "sum",
-              "datasource": {
-                "type": "opentsdb",
-                "uid": "adg5rnop5kbggc"
-              },
-              "downsampleAggregator": "avg",
-              "downsampleFillPolicy": "none",
-              "explicitTags": false,
-              "filters": [
-                {
-                  "filter": "*",
-                  "groupBy": false,
-                  "tagk": "host",
-                  "type": "wildcard"
-                }
-              ],
-              "metric": "used_RAM",
-              "refId": "A",
-              "tags": {}
-            }
-          ],
-          "title": "Memory Usage",
-          "transformations": [
-            {
-              "id": "concatenate",
-              "options": {
-                "frameNameLabel": "frame",
-                "frameNameMode": "field"
-              }
-            }
-          ],
-          "type": "timeseries"
-        }
-      ],
-      "title": "CPU Metrics (telemetry_level = 2)",
-      "type": "row"
-    },
-    {
-      "collapsed": true,
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 3
       },
       "id": 8,
       "panels": [
@@ -899,16 +476,15 @@
                     "value": 80
                   }
                 ]
-              },
-              "unit": "percent"
+              }
             },
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
+            "h": 11,
             "w": 8,
             "x": 0,
-            "y": 42
+            "y": 12
           },
           "id": 15,
           "options": {
@@ -1008,16 +584,15 @@
                     "value": 80
                   }
                 ]
-              },
-              "unit": "percent"
+              }
             },
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
+            "h": 11,
             "w": 8,
             "x": 8,
-            "y": 42
+            "y": 12
           },
           "id": 21,
           "options": {
@@ -1059,7 +634,7 @@
               "refId": "A"
             }
           ],
-          "title": "GPU Utilization",
+          "title": "Utilization",
           "type": "timeseries"
         },
         {
@@ -1117,18 +692,17 @@
                     "value": 80
                   }
                 ]
-              },
-              "unit": "watt"
+              }
             },
             "overrides": []
           },
           "gridPos": {
-            "h": 9,
+            "h": 11,
             "w": 8,
             "x": 16,
-            "y": 42
+            "y": 12
           },
-          "id": 34,
+          "id": 22,
           "options": {
             "legend": {
               "calcs": [],
@@ -1172,7 +746,7 @@
           "type": "timeseries"
         }
       ],
-      "title": "GPU Metrics (telemetry_level=3)",
+      "title": "GPU Metrics",
       "type": "row"
     },
     {
@@ -1181,9 +755,362 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 4
+        "y": 2
       },
-      "id": 35,
+      "id": 5,
+      "panels": [
+        {
+          "datasource": {},
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 8,
+            "x": 0,
+            "y": 3
+          },
+          "id": 2,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.0.0",
+          "targets": [
+            {
+              "aggregator": "sum",
+              "datasource": {
+                "type": "opentsdb",
+                "uid": "adg5rnop5kbggc"
+              },
+              "downsampleAggregator": "avg",
+              "downsampleFillPolicy": "none",
+              "explicitTags": false,
+              "filters": [
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "host",
+                  "type": "wildcard"
+                }
+              ],
+              "metric": "load_average",
+              "refId": "A",
+              "tags": {}
+            }
+          ],
+          "title": "Load Average",
+          "transformations": [
+            {
+              "id": "concatenate",
+              "options": {
+                "frameNameLabel": "frame",
+                "frameNameMode": "field"
+              }
+            }
+          ],
+          "type": "timeseries"
+        },
+        {
+          "datasource": {},
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 8,
+            "x": 8,
+            "y": 3
+          },
+          "id": 26,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.0.0",
+          "targets": [
+            {
+              "aggregator": "sum",
+              "datasource": {
+                "type": "opentsdb",
+                "uid": "adg5rnop5kbggc"
+              },
+              "downsampleAggregator": "avg",
+              "downsampleFillPolicy": "none",
+              "explicitTags": false,
+              "filters": [
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "host",
+                  "type": "wildcard"
+                }
+              ],
+              "metric": "load_average",
+              "refId": "A",
+              "tags": {}
+            }
+          ],
+          "title": "Load Average",
+          "transformations": [
+            {
+              "id": "concatenate",
+              "options": {
+                "frameNameLabel": "frame",
+                "frameNameMode": "field"
+              }
+            }
+          ],
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "opentsdb",
+            "uid": "P3F9FDC87EEA6B335"
+          },
+          "description": "",
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 10,
+            "w": 8,
+            "x": 16,
+            "y": 3
+          },
+          "id": 13,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "10.0.0",
+          "targets": [
+            {
+              "aggregator": "sum",
+              "datasource": {
+                "type": "opentsdb",
+                "uid": "adg5rnop5kbggc"
+              },
+              "downsampleAggregator": "avg",
+              "downsampleFillPolicy": "none",
+              "explicitTags": false,
+              "filters": [
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "host",
+                  "type": "wildcard"
+                }
+              ],
+              "metric": "used_RAM",
+              "refId": "A",
+              "tags": {}
+            }
+          ],
+          "title": "Memory Usage",
+          "transformations": [
+            {
+              "id": "concatenate",
+              "options": {
+                "frameNameLabel": "frame",
+                "frameNameMode": "field"
+              }
+            }
+          ],
+          "type": "timeseries"
+        }
+      ],
+      "title": "CPU Metrics",
+      "type": "row"
+    },
+    {
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
+      "id": 25,
       "panels": [
         {
           "datasource": {
@@ -1246,12 +1173,12 @@
             "overrides": []
           },
           "gridPos": {
-            "h": 8,
+            "h": 10,
             "w": 8,
             "x": 0,
-            "y": 1
+            "y": 4
           },
-          "id": 31,
+          "id": 3,
           "options": {
             "legend": {
               "calcs": [],
@@ -1280,7 +1207,7 @@
                   "filter": "*",
                   "groupBy": false,
                   "tagk": "host",
-                  "type": "iliteral_or"
+                  "type": "wildcard"
                 }
               ],
               "metric": "db_size",
@@ -1288,7 +1215,7 @@
               "tags": {}
             }
           ],
-          "title": "Database Size (MB)",
+          "title": "CPU Utilization",
           "transformations": [
             {
               "id": "concatenate",
@@ -1301,12 +1228,13 @@
           "type": "timeseries"
         }
       ],
-      "title": "telemetry_level=4",
+      "title": "telemetry_level = 4",
       "type": "row"
     }
   ],
-  "refresh": "auto",
-  "schemaVersion": 39,
+  "preload": false,
+  "refresh": "10s",
+  "schemaVersion": 41,
   "tags": [],
   "templating": {
     "list": []
@@ -1317,8 +1245,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Dragon Telemetry Resilient",
-  "uid": "f4810b2f-ad19-4c0d-9260-96bfa8e1a63222",
-  "version": 54,
+  "title": "Dragon Telemetry",
+  "uid": "f4810b2f-ad19-4c0d-9260-96bfa8e1a63229",
+  "version": 7,
   "weekStart": ""
 }

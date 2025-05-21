@@ -404,6 +404,18 @@ class MessageTypes(enum.Enum):
     DD_MANAGER_NODES_RESPONSE = enum.auto()  #:
     DD_B_PUT = enum.auto()  #:
     DD_B_PUT_RESPONSE = enum.auto()  #:
+    DD_PERSISTED_CHKPT_AVAIL = enum.auto()  #:
+    DD_PERSISTED_CHKPT_AVAIL_RESPONSE = enum.auto()  #:
+    DD_RESTORE = enum.auto()  #:
+    DD_RESTORE_RESPONSE = enum.auto()  #:
+    DD_ADVANCE = enum.auto()  #:
+    DD_ADVANCE_RESPONSE = enum.auto()  #:
+    DD_PERSIST_CHKPTS = enum.auto()  #:
+    DD_PERSIST_CHKPTS_RESPONSE = enum.auto()  #:
+    DD_CHKPT_AVAIL = enum.auto()  #:
+    DD_CHKPT_AVAIL_RESPONSE = enum.auto()  #:
+    DD_PERSIST = enum.auto()  #:
+    DD_PERSIST_RESPONSE = enum.auto()  #:
     PG_REGISTER_CLIENT = enum.auto()  #:
     PG_UNREGISTER_CLIENT = enum.auto()  #:
     PG_CLIENT_RESPONSE = enum.auto()  #:
@@ -1373,7 +1385,9 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
 
     _tc = MessageTypes.DD_REGISTER_CLIENT_RESPONSE
 
-    def __init__(self, tag, ref, err, clientID, numManagers, managerID, managerNodes, name, timeout, errInfo=""):
+    def __init__(
+        self, tag, ref, err, clientID, numManagers, managerID, managerNodes, name, timeout, readOnly=False, errInfo=""
+    ):
         super().__init__(tag, ref, err, errInfo)
         self._clientID = clientID
         self._num_managers = numManagers
@@ -1384,6 +1398,7 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
         if timeout is None:
             timeout = NO_TIMEOUT_VALUE
         self._timeout = timeout
+        self._readOnly = readOnly
 
     def get_sdict(self):
         rv = super().get_sdict()
@@ -1396,7 +1411,7 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
             rv["timeout"] = None
         else:
             rv["timeout"] = self._timeout
-
+        rv["readOnly"] = self._readOnly
         return rv
 
     def builder(self):
@@ -1410,6 +1425,7 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
             msg_mgr_nodes[i] = self._managerNodes[i]
         client_msg.name = self._name
         client_msg.timeout = self._timeout
+        client_msg.readOnly = self._readOnly
         return cap_msg
 
     @property
@@ -1435,6 +1451,10 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
     @property
     def timeout(self):
         return self._timeout
+
+    @property
+    def readOnly(self):
+        return self._readOnly
 
 
 class DDConnectToManager(CapNProtoMsg):
@@ -2881,6 +2901,327 @@ class DDBPutResponse(CapNProtoResponseMsg):
     @property
     def managerID(self):
         return self._managerID
+
+
+class DDPersistedChkptAvail(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_PERSISTED_CHKPT_AVAIL
+
+    def __init__(self, tag, chkptID, respFLI):
+        super().__init__(tag)
+        self._chkptID = chkptID
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["chkptID"] = self._chkptID
+        rv["respFLI"] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.chkptID = self._chkptID
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def chkptID(self):
+        return self._chkptID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class DDPersistedChkptAvailResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_PERSISTED_CHKPT_AVAIL_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo, available, managerID):
+        super().__init__(tag, ref, err, errInfo)
+        self._available = available
+        self._managerID = managerID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["available"] = self._available
+        rv["managerID"] = self._managerID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.available = self._available
+        client_msg.managerID = self._managerID
+        return cap_msg
+
+    @property
+    def available(self):
+        return self._available
+
+    @property
+    def managerID(self):
+        return self._managerID
+
+
+class DDRestore(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_RESTORE
+
+    def __init__(self, tag, chkptID, clientID, respFLI):
+        super().__init__(tag)
+        self._chkptID = chkptID
+        self._clientID = clientID
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["chkptID"] = self._chkptID
+        rv["clientID"] = self._clientID
+        rv["respFLI"] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.chkptID = self._chkptID
+        client_msg.clientID = self._clientID
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def chkptID(self):
+        return self._chkptID
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class DDRestoreResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_RESTORE_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=""):
+        super().__init__(tag, ref, err, errInfo)
+
+
+class DDAdvance(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_ADVANCE
+
+    def __init__(self, tag, clientID, respFLI):
+        super().__init__(tag)
+        self._clientID = clientID
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["clientID"] = self._clientID
+        rv["respFLI"] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class DDAdvanceResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_ADVANCE_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo, chkptID):
+        super().__init__(tag, ref, err, errInfo)
+        self._chkptID = chkptID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["chkptID"] = self._chkptID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.chkptID = self._chkptID
+        return cap_msg
+
+    @property
+    def chkptID(self):
+        return self._chkptID
+
+
+class DDPersistChkpts(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_PERSIST_CHKPTS
+
+    def __init__(self, tag, clientID, respFLI):
+        super().__init__(tag)
+        self._clientID = clientID
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["clientID"] = self._clientID
+        rv["respFLI"] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class DDPersistChkptsResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_PERSIST_CHKPTS_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo, chkptIDs):
+        super().__init__(tag, ref, err, errInfo)
+        self._chkptIDs = chkptIDs
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["chkptIDs"] = self._chkptIDs
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        msg_chkptIDs = client_msg.init("chkptIDs", len(self._chkptIDs))
+        for i in range(len(self._chkptIDs)):
+            msg_chkptIDs[i] = self._chkptIDs[i]
+        return cap_msg
+
+    @property
+    def chkptIDs(self):
+        return self._chkptIDs
+
+
+class DDChkptAvail(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_CHKPT_AVAIL
+
+    def __init__(self, tag, chkptID, respFLI):
+        super().__init__(tag)
+        self._chkptID = chkptID
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["chkptID"] = self._chkptID
+        rv["respFLI"] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.chkptID = self._chkptID
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def chkptID(self):
+        return self._chkptID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class DDChkptAvailResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_CHKPT_AVAIL_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo, available, managerID):
+        super().__init__(tag, ref, err, errInfo)
+        self._available = available
+        self._managerID = managerID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["available"] = self._available
+        rv["managerID"] = self._managerID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.available = self._available
+        client_msg.managerID = self._managerID
+        return cap_msg
+
+    @property
+    def available(self):
+        return self._available
+
+    @property
+    def managerID(self):
+        return self._managerID
+
+
+class DDPersist(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_PERSIST
+
+    def __init__(self, tag, chkptID, respFLI):
+        super().__init__(tag)
+        self._chkptID = chkptID
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["chkptID"] = self._chkptID
+        rv["respFLI"] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.chkptID = self._chkptID
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def chkptID(self):
+        return self._chkptID
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class DDPersistResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_PERSIST_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=""):
+        super().__init__(tag, ref, err, errInfo)
 
 
 class DDDeregisterClient(CapNProtoMsg):

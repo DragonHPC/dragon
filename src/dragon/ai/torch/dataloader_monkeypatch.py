@@ -3,9 +3,9 @@
 import dragon
 import os
 from dragon.infrastructure.policy import Policy
+from dragon.native.machine import System, current
 import dragon.ai.torch
 import torch
-import socket
 
 
 class _DragonMultiProcessingDataLoaderIter(torch.utils.data.dataloader._MultiProcessingDataLoaderIter):
@@ -15,7 +15,10 @@ class _DragonMultiProcessingDataLoaderIter(torch.utils.data.dataloader._MultiPro
     """
 
     def __init__(self, loader, *args, **kwargs):
-        with Policy(placement=Policy.Placement.HOST_NAME, host_name=socket.gethostname()):
+        if System().nnodes > 1:
+            with Policy(placement=Policy.Placement.HOST_NAME, host_name=current().hostname):
+                super().__init__(loader, **kwargs)
+        else:
             super().__init__(loader, **kwargs)
 
 

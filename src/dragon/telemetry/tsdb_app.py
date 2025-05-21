@@ -6,6 +6,7 @@ import os
 from pickle import loads
 import logging
 from yaml import safe_load
+from http import HTTPStatus
 
 LOG = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ def check_is_ready() -> object:
           is_ready: boolean (True)
     """
     resp = {"is_ready": True}
-    return Response(json.dumps(resp), mimetype="application/json"), 200
+    return Response(json.dumps(resp), mimetype="application/json"), HTTPStatus.OK
 
 
 @app.route("/api/metrics", methods=["POST"])
@@ -107,7 +108,7 @@ def add_metrics() -> object:
 
   resp = {"success": success, "failed": failed, "errors": error_msg}
 
-  return Response(json.dumps(resp), mimetype="application/json"), 201
+  return Response(json.dumps(resp), mimetype="application/json"), HTTPStatus.CREATED
 
 
 @app.route("/api/set_shutdown", methods=["GET"])
@@ -143,7 +144,7 @@ def set_is_shutdown() -> object:
     error_msg.append(str(e))
 
   resp = {"success": success, "failed": failed, "errors": error_msg}
-  return Response(json.dumps(resp), mimetype="application.json"), 200
+  return Response(json.dumps(resp), mimetype="application.json"), HTTPStatus.OK
 
 @app.route("/api/tsdb_cleanup", methods=['POST'])
 def cleanup_tsdb() -> object:
@@ -184,7 +185,7 @@ def cleanup_tsdb() -> object:
   failed = 0
   error_msg = []
   resp = {"success": success, "failed":failed, "errors": error_msg }
-  return Response(json.dumps(resp), mimetype="application/json"), 201
+  return Response(json.dumps(resp), mimetype="application/json"), HTTPStatus.CREATED
 
 
 @app.route("/api/telemetry_shutdown", methods=["GET"])
@@ -200,7 +201,7 @@ def set_telemetry_shutdown():
     """
     LOG.debug(f"Shutdown request on: {os.uname().nodename}")
     resp = {"shutdown": True}
-    return Response(json.dumps(resp), mimetype="application/json"), 200
+    return Response(json.dumps(resp), mimetype="application/json"), HTTPStatus.OK
 
 
 if __name__ == "__main__":

@@ -2,14 +2,18 @@ from __future__ import print_function
 import unittest
 import dragon
 import multiprocessing as mp
-import dragon.ai.torch
-import torch
-from torchvision import datasets, transforms
+
+try:
+    import dragon.ai.torch
+    import torch
+    from torchvision import datasets, transforms
+    from dragon.ai.torch.monkeypatching import dragon_fp_register
+except ImportError:
+    torch = None  # Control unit tests below.
 import os
-import socket
 import inspect
-from dragon.ai.torch.monkeypatching import dragon_fp_register
 from multiprocessing.reduction import ForkingPickler
+from dragon.native.machine import System, current
 
 
 def simple_fill(queue, event):
@@ -21,21 +25,46 @@ def simple_fill(queue, event):
 class PyTorchPatches(unittest.TestCase):
     """The test is designed to run on GPU systems."""
 
-    def test_placement(self):
+    @classmethod
+    def setUpClass(cls):
         mp.set_start_method("dragon")
-        host_name = socket.gethostname()
-        print(f"Dataloader python processes should be on {host_name}", flush=True)
+
+    @unittest.skipIf(
+        torch is None or not torch.cuda.is_available(), "torch module not available or CUDA device unavailable"
+    )
+    def test_placement_use_cuda(self):
+        return self.helper_test_placement(use_cuda=True)
+
+    @unittest.skipIf(torch is None, "torch module not available")
+    def test_placement_use_cpu(self):
+        return self.helper_test_placement(use_cuda=False)
+
+    def helper_test_placement(self, use_cuda=True):
+        if System().nnodes > 1:
+            host_name = current().hostname
+            print(f"Dataloader python processes should be on {host_name}", flush=True)
         # Training settings
-        device = torch.device("cuda", 0)
         train_kwargs = {"batch_size": 32}
-        cuda_kwargs = {
-            "num_workers": 4,
-            "pin_memory": True,
-            "shuffle": True,
-            "multiprocessing_context": "dragon",
-            "persistent_workers": True,
-        }
-        train_kwargs.update(cuda_kwargs)
+        if use_cuda:
+            device = torch.device("cuda", 0)
+            cuda_kwargs = {
+                "num_workers": 4,
+                "pin_memory": True,
+                "shuffle": True,
+                "multiprocessing_context": "dragon",
+                "persistent_workers": True,
+            }
+            train_kwargs.update(cuda_kwargs)
+        else:
+            device = torch.device("cpu")
+            cpu_kwargs = {
+                "num_workers": 4,
+                "pin_memory": False,
+                "shuffle": True,
+                "multiprocessing_context": "dragon",
+                "persistent_workers": True,
+            }
+            train_kwargs.update(cpu_kwargs)
 
         # normalize and scale the MNIST dataset
         transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
@@ -51,8 +80,8 @@ class PyTorchPatches(unittest.TestCase):
             self.assertIsInstance(data, torch.Tensor)
             self.assertIsInstance(target, torch.Tensor)
 
+    @unittest.skipIf(torch is None, "torch module not available")
     def test_reductions_patch(self):
-        mp.set_start_method("dragon")
         os_patch = False
         if "DRAGON_PATCH_TORCH" in os.environ:
             os_patch = True

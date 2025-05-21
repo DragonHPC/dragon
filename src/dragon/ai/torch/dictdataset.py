@@ -99,11 +99,11 @@ class DragonDataset(Dataset):
 
         # iterate through the dataset and put each sample in the dictionary
         # this can be done with multiple workers if the dataset is large
-        keys = [0] * len(dataset)
+
         # build with or without labels
         for i, data in enumerate(dataset):
-            keys[i] = i
             data_dict[i] = data
+        keys = list(range(i + 1))
 
         return data_dict, keys
 

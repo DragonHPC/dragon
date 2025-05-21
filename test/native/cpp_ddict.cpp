@@ -261,33 +261,33 @@ dragonError_t test_keys(const char * ddict_ser) {
 dragonError_t test_checkpoint(const char * ddict_ser) {
     DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
     dd.checkpoint();
-    assert (dd.current_checkpoint_id() == 1);
+    assert (dd.checkpoint_id() == 1);
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_rollback(const char * ddict_ser) {
     DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
     dd.rollback(); // should return chkpt 0 when rolling back with chkpt 0
-    assert (dd.current_checkpoint_id() == 0);
+    assert (dd.checkpoint_id() == 0);
     dd.checkpoint(); // chkpt 1
-    assert (dd.current_checkpoint_id() == 1);
+    assert (dd.checkpoint_id() == 1);
     dd.checkpoint(); // chkpt 2
-    assert (dd.current_checkpoint_id() == 2);
+    assert (dd.checkpoint_id() == 2);
     dd.rollback(); // chkpt 1
-    assert (dd.current_checkpoint_id() == 1);
+    assert (dd.checkpoint_id() == 1);
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_sync_to_newest_checkpoint(const char * ddict_ser) {
     DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
     dd.sync_to_newest_checkpoint();
-    assert (dd.current_checkpoint_id() == 2);
+    assert (dd.checkpoint_id() == 2);
     return DRAGON_SUCCESS;
 }
 
-dragonError_t test_current_checkpoint_id(const char * ddict_ser) {
+dragonError_t test_checkpoint_id(const char * ddict_ser) {
     DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
-    assert (dd.current_checkpoint_id() == 0);
+    assert (dd.checkpoint_id() == 0);
     return DRAGON_SUCCESS;
 }
 
@@ -455,8 +455,8 @@ int main(int argc, char* argv[]) {
             err = test_rollback(ddict_descr);
         } else if (test.compare("test_sync_to_newest_checkpoint") == 0) {
             err = test_sync_to_newest_checkpoint(ddict_descr);
-        } else if (test.compare("test_current_checkpoint_id") == 0) {
-            err = test_current_checkpoint_id(ddict_descr);
+        } else if (test.compare("test_checkpoint_id") == 0) {
+            err = test_checkpoint_id(ddict_descr);
         } else if (test.compare("test_local_manager") == 0) {
             std::string local_manager = argv[3];
             err = test_local_manager(ddict_descr, local_manager);

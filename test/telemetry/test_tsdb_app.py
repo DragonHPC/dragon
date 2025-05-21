@@ -12,6 +12,8 @@ from pickle import dumps
 from dragon.globalservices.node import get_list, query
 from dragon.telemetry.tsdb_app import app
 
+from telemetry.telemetry_data import SAMPLE_DATA
+
 
 def get_dps_of_each_row(filename):
     connection = sqlite3.connect(filename)
@@ -24,7 +26,6 @@ def get_dps_of_each_row(filename):
             final[row[0]].update({row[1]: row[2]})
         else:
            final[row[0]] = {row[1]: row[2]} 
-    
     return final
 
 
@@ -46,13 +47,7 @@ class TestDragonTelemetryTSDBApp(unittest.TestCase):
         connection.commit()
 
         sql_insert = "INSERT INTO datapoints VALUES (?,?,?,?)"
-        cls.sample_data = {
-            "load_average": {"1722010526": 0.58, "1722010527": 0.58, "1722010528": 0.62},
-            "used_RAM": {"1722010526": 9.3, "1722010527": 9.3, "1722010528": 9.3},
-            "cpu_percent": {"1722010526": 0.8, "1722010527": 1.6, "1722010528": 0.8},
-            "num_running_processes": {"1722010526": 21, "1722010527": 20, "1722010528": 23},
-            "def_pool_utilization": {"1722010526": 0.003910064, "1722010527": 0.00093, "1722010528": 0.001234},
-        }
+        cls.sample_data = SAMPLE_DATA
         for k, v in cls.sample_data.items():
             for t, d in v.items():
                 cursor.execute(sql_insert, [k, t, d, json.dumps(None)])
@@ -97,7 +92,7 @@ class TestDragonTelemetryTSDBApp(unittest.TestCase):
         self.assertEqual((json.loads(response.get_data(as_text=True)))["success"], len(query["dps"]))
         for k, v in post_mock_db.items():
             with self.subTest(k):
-                self.assertEqual(len(v), len(pre_mock_db[k]) + 1)
+                self.assertEqual(len(v), len(pre_mock_db.get(k, {})) + 1)
 
     def test_add_dps_without_timestamp(self):
         pre_mock_db = get_dps_of_each_row(self.filename)
@@ -158,7 +153,7 @@ class TestDragonTelemetryTSDBApp(unittest.TestCase):
         for k, v in post_mock_db.items():
             if k != "new_metric":
                 with self.subTest(k):
-                    self.assertEqual(len(v), len(pre_mock_db[k]) - 1)
+                    self.assertEqual(len(v), len(pre_mock_db.get(k, {})) - 1)
 
     def tearDown(self):
         pass

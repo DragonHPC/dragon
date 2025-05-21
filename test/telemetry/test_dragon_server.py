@@ -14,25 +14,7 @@ from dragon.globalservices.node import get_list, query
 from dragon.telemetry.dragon_server import DragonServer
 from dragon.infrastructure.policy import Policy
 
-# sample data put into DB, please use existing start and end times if you add data
-SAMPLE_DATA = {
-    "load_average": {"1722010526": 0.58, "1722010527": 0.58, "1722010528": 0.62},
-    "used_RAM": {"1722010526": 9.3, "1722010527": 9.3, "1722010528": 9.3},
-    "cpu_percent": {"1722010526": 0.8, "1722010527": 1.6, "1722010528": 0.8},
-}
-
-# sample query that works with the above data
-BASE_GRAFANA_QUERY = {
-    "start": 1722010526,
-    "queries": [{"metric": "load_average", "aggregator": "sum", "downsample": "100ms-avg", "tags": {}, "filters": 
-        [{"type": "iliteral_or", "tagk": "host", "filter": "*", "groupBy": False}]}],
-    "msResolution": False,
-    "globalAnnotations": True,
-    "showQuery": True,
-    "end": 1722010528,
-    "return_queue": "aggregator",
-}
-
+from telemetry.telemetry_data import SAMPLE_DATA, BASE_GRAFANA_QUERY
 
 class TestDragonTelemetryDragonServer(unittest.TestCase):
 

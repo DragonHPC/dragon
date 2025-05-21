@@ -47,7 +47,13 @@ class Orchestrator:
 
     _DTBL = {}  # dispatch router, keyed by type of message
 
-    def __init__(self, managers_per_node, n_nodes, total_mem, trace):
+    def __init__(
+        self,
+        managers_per_node,
+        n_nodes,
+        total_mem,
+        trace,
+    ):
         try:
             # Use this connection for the managers to respond to the orchestrator
             # so clients sending to main channel are ignored until registration of
@@ -274,6 +280,11 @@ class Orchestrator:
             self._name,
             self._timeout,
             self._restart,
+            self._read_only,
+            self._restore_from,
+            self._persist_path,
+            self._persist_count,
+            self._persister,
         ) = args
 
         # the dictionary is restarted with previous manager pool
@@ -326,6 +337,11 @@ class Orchestrator:
                 self._name,
                 self._timeout,
                 self._restart,
+                self._read_only,
+                self._restore_from,
+                self._persist_path,
+                self._persist_count,
+                self._persister,
             )
         self._pickle_new = "/tmp/ddict_orc_" + self._name
 
@@ -453,11 +469,11 @@ class Orchestrator:
                 self._err_str = msg.errInfo
 
             if msg.err == DragonError.SUCCESS:
-                self._manager_nodes[msg.managerID] = b64encode(cloudpickle.dumps(Node(msg.hostID)))
                 self._manager_connections[msg.managerID] = fli.FLInterface.attach(b64decode(msg.mainFLI))
                 self._serialized_manager_flis[msg.managerID] = msg.mainFLI
                 self._serialized_manager_pool[msg.managerID] = msg.poolSdesc
 
+            self._manager_nodes[msg.managerID] = b64encode(cloudpickle.dumps(Node(msg.hostID)))
             self._serialized_manager_return_flis[msg.managerID] = (msg.respFLI, msg.tag)
 
             if self._num_managers_created == self._num_managers:
@@ -493,8 +509,10 @@ class Orchestrator:
                     self._serving = False
         except Exception as ex:
             tb = traceback.format_exc()
-            log.debug("There was an exception while registering managers: %s\n Traceback: %s", ex, tb)
-            raise RuntimeError(f"There was an exception while registering managers: {ex} \n Traceback: {tb}")
+            err_str = f"There was an exception while registering managers: {ex} \n Traceback: {tb}"
+            log.debug(err_str)
+            self._return_create_failure(DragonError.FAILURE, err_str)
+            raise RuntimeError(err_str)
 
     @dutil.route(dmsg.DDRandomManager, _DTBL)
     def get_random_manager(self, msg: dmsg.DDRandomManager) -> None:

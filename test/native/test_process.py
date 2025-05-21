@@ -1,6 +1,7 @@
 import unittest
 import sys
 import time
+import os
 
 from dragon.native.queue import Queue
 from dragon.native.process import Process, current, ProcessTemplate
@@ -14,7 +15,6 @@ def simple_mod_2x(v, A):
     v.value *= 2
     for idx, _ in enumerate(A):
         A[idx] *= 2
-
 
 def exception_raiser():
     raise RuntimeError("Intentional Exception")
@@ -192,6 +192,38 @@ class TestDragonNativeProcess(unittest.TestCase):
 
         self.assertTrue(pyproc.is_alive == False)
         self.assertTrue(pyproc.returncode == 0)
+
+    def test_proc_cwd(self):
+
+        def test_cwd(temp_cwd):
+            temp_cwd.value = os.getcwd().encode('utf-8')
+
+        initial_cwd = os.getcwd()
+        os.chdir("..")
+        head_cwd = os.getcwd()
+
+        # use a mutable object
+        temp_cwd = Array("c", 256)
+        temp_cwd.value = os.getcwd().encode('utf-8')
+
+        p = Process(target=test_cwd, args=(temp_cwd,))
+        p.start()
+        p.join()
+
+        self.assertEqual(head_cwd, temp_cwd.value.decode().rstrip('\x00'))
+
+        # re-set temp_cwd
+        temp_cwd.value = os.getcwd().encode('utf-8')
+
+        templ = ProcessTemplate(target=test_cwd, args=(temp_cwd,))
+        p1 = Process.from_template(templ)
+        p1.start()
+        p1.join()
+
+        self.assertEqual(head_cwd, temp_cwd.value.decode().rstrip('\x00'))
+
+        # bring back the cwd to its original value
+        os.chdir(initial_cwd)
 
 
 if __name__ == "__main__":

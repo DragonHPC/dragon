@@ -1315,7 +1315,7 @@ dragonError_t test_checkpoint(const char * ddict_ser) {
         err_fail(err, "Could not perform checkpoint op.");
 
     uint64_t chkpt_id = 0;
-    err = dragon_ddict_current_checkpoint_id(&ddict, &chkpt_id);
+    err = dragon_ddict_checkpoint_id(&ddict, &chkpt_id);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not get current checkpoint ID.");
     assert (chkpt_id == 1);
@@ -1348,7 +1348,7 @@ dragonError_t test_rollback(const char * ddict_ser) {
         err_fail(err, "Could not perform rollback op.");
 
     uint64_t chkpt_id = 0;
-    err = dragon_ddict_current_checkpoint_id(&ddict, &chkpt_id);
+    err = dragon_ddict_checkpoint_id(&ddict, &chkpt_id);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not get current checkpoint ID.");
     assert (chkpt_id == 1);
@@ -1374,7 +1374,7 @@ dragonError_t test_rollback_zero_chkpt_id(const char * ddict_ser) {
         err_fail(err, "Could not perform rollback op.");
 
     uint64_t chkpt_id = 0;
-    err = dragon_ddict_current_checkpoint_id(&ddict, &chkpt_id);
+    err = dragon_ddict_checkpoint_id(&ddict, &chkpt_id);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not get current checkpoint ID.");
     assert (chkpt_id == 0);
@@ -1401,7 +1401,7 @@ dragonError_t test_sync_to_newest_checkpoint(const char * ddict_ser) {
         err_fail(err, "Could not sync to newest checkpoint.");
 
     uint64_t chkpt_id = 0;
-    err = dragon_ddict_current_checkpoint_id(&ddict, &chkpt_id);
+    err = dragon_ddict_checkpoint_id(&ddict, &chkpt_id);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not get current checkpoint ID.");
     assert (chkpt_id == 2);
@@ -1414,7 +1414,7 @@ dragonError_t test_sync_to_newest_checkpoint(const char * ddict_ser) {
     return DRAGON_SUCCESS;
 }
 
-dragonError_t test_current_checkpoint_id(const char * ddict_ser) {
+dragonError_t test_checkpoint_id(const char * ddict_ser) {
 
     dragonDDictDescr_t ddict;
 
@@ -1424,7 +1424,7 @@ dragonError_t test_current_checkpoint_id(const char * ddict_ser) {
         err_fail(err, "Could not attach");
 
     uint64_t chkpt_id = 0;
-    err = dragon_ddict_current_checkpoint_id(&ddict, &chkpt_id);
+    err = dragon_ddict_checkpoint_id(&ddict, &chkpt_id);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not get current checkpoint ID.");
     assert (chkpt_id == 0);
@@ -1512,7 +1512,7 @@ dragonError_t test_custom_manager_attach(const char * ddict_ser) {
         err_fail(err, "Could not choose manager");
 
     uint64_t chkpt_id = 0;
-    err = dragon_ddict_current_checkpoint_id(&ddict_m1, &chkpt_id);
+    err = dragon_ddict_checkpoint_id(&ddict_m1, &chkpt_id);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not get current checkpoint ID.");
     assert (chkpt_id == 3);
@@ -1707,7 +1707,7 @@ dragonError_t test_custom_manager_sync_to_newest_checkpoint(const char * ddict_s
         err_fail(err, "Could not sync to newest checkpoint.");
 
     uint64_t chkpt_id = 0;
-    err = dragon_ddict_current_checkpoint_id(&ddict, &chkpt_id);
+    err = dragon_ddict_checkpoint_id(&ddict, &chkpt_id);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not get current checkpoint ID.");
     assert (chkpt_id == 3);
@@ -1722,7 +1722,7 @@ dragonError_t test_custom_manager_sync_to_newest_checkpoint(const char * ddict_s
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not sync to newest checkpoint.");
 
-    err = dragon_ddict_current_checkpoint_id(&ddict_m0, &chkpt_id);
+    err = dragon_ddict_checkpoint_id(&ddict_m0, &chkpt_id);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not get current checkpoint ID.");
     assert (chkpt_id == 3);
@@ -1737,7 +1737,7 @@ dragonError_t test_custom_manager_sync_to_newest_checkpoint(const char * ddict_s
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not sync to newest checkpoint.");
 
-    err = dragon_ddict_current_checkpoint_id(&ddict_m1, &chkpt_id);
+    err = dragon_ddict_checkpoint_id(&ddict_m1, &chkpt_id);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not get current checkpoint ID.");
     assert (chkpt_id == 2);
@@ -2185,8 +2185,8 @@ int main(int argc, char* argv[]) {
         err = test_rollback_zero_chkpt_id(ddict_descr);
     } else if (strcmp(test, "test_sync_to_newest_checkpoint") == 0) {
         err = test_sync_to_newest_checkpoint(ddict_descr);
-    } else if (strcmp(test, "test_current_checkpoint_id") == 0) {
-        err = test_current_checkpoint_id(ddict_descr);
+    } else if (strcmp(test, "test_checkpoint_id") == 0) {
+        err = test_checkpoint_id(ddict_descr);
     } else if (strcmp(test, "test_local_manager") == 0) {
         char * local_manager = argv[3];
         err = test_local_manager(ddict_descr, local_manager);

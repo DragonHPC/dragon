@@ -229,9 +229,20 @@ class NodeDescriptor:
 
         ifaddr_filter.clear()
         ifaddr_filter.name_re(re.compile(re_prefix))
-        ip_addrs = [ifa["addr"]["addr"] for ifa in filter(ifaddr_filter, ifaddrs)]
+        all_ifs = list(filter(ifaddr_filter, ifaddrs))
+        non_eth_ifs = [ifa for ifa in all_ifs if not ifa["name"].startswith('eth')]
+
+        # We check for high-speed interfaces, other than eth, here and if we have them
+        # then eliminate the eth interfaces since they would be slower. However, if no
+        # other interfaces are available, then use the eth interface.
+        if len(non_eth_ifs) > 0:
+            filtered_ifs = non_eth_ifs
+        else:
+            filtered_ifs = all_ifs
+
+        ip_addrs = [ifa["addr"]["addr"] for ifa in filtered_ifs]
         if not ip_addrs:
-            _msg = f"No high speed NICs found for {hostname} with regex pattern {network_prefix}"
+            _msg = f"No NICs found for {hostname} with regex pattern {network_prefix}"
             print(_msg, file=sys.stderr, flush=True)
             node_info = cls(
                 state=NodeDescriptor.State.ACTIVE,
@@ -290,7 +301,7 @@ class NodeDescriptor:
             "shep_cd": self.shep_cd,
             "overlay_cd": self.overlay_cd,
             "cpu_devices": self.cpu_devices,
-            "state": self.state,
+            "state": self.state.value,
         }
 
         # Account for a NULL accelerator giving us a None for now

@@ -10,6 +10,7 @@ from telemetry.test_dragon_server import TestDragonTelemetryDragonServer
 from telemetry.test_tsdb_app import TestDragonTelemetryTSDBApp, TestDragonTelemetryTSDBAppErrors
 from telemetry.test_tsdb_server import TestDragonTelemetryTSDBServer
 from telemetry.test_analysis import TestDragonTelemetryAnalysisClient, TestDragonTelemetryAnalysisServer
+import telemetry.telemetry_data
 
 
 if __name__ == "__main__":

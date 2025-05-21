@@ -243,7 +243,7 @@ class LaunchOptionsTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             run_frontend(args_map)
 
-        self.assertTrue("No high speed NICs found for" in mock_stderr.getvalue())
+        self.assertTrue("No NICs found for" in mock_stderr.getvalue())
         self.assertTrue("with regex pattern garbage-prefix" in mock_stderr.getvalue())
 
 

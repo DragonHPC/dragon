@@ -815,7 +815,7 @@ class DragonContext(multiprocessing.context.BaseContext):
             if ctx:
                 return multiprocessing.get_context().RLock(ctx=ctx)
             else:
-                return multiprocessing.get_context().RLock(ctx=self.get_context())
+                return multiprocessing.get_context().RLock()
 
     def Condition(self, *, ctx=None, lock=None):
         """A condition variable: a close analog of :external+python:py:class:`threading.Condition`. See

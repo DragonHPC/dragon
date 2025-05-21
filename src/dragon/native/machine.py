@@ -147,6 +147,14 @@ class Node:
         """
         return self._descr.host_name
 
+    @property
+    def is_primary(self) -> bool:
+        """Returns true if this is the primary node for the runtime. The primary node is important in that it is the node with global services.
+        :return: is the primary node
+        :rtype: bool
+        """
+        return self._descr.is_primary
+
     def _update_descriptor(self, ident=None):
         if ident is not None:
             self._descr = query(ident)

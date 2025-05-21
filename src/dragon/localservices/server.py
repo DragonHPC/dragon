@@ -541,8 +541,8 @@ class LocalServer:
 
     SHUTDOWN_RESP_TIMEOUT = 0.010  # seconds, 10 ms
     QUIESCE_TIME = 1  # seconds, 1 second, join timeout for thread shutdown.
-    OOM_SLOW_SLEEP_TIME = 5 # seconds, the oom_monitor sleeps that long in normal conditions
-    OOM_RAPID_SLEEP_TIME = 1 # seconds, when nearing OOM
+    OOM_SLOW_SLEEP_TIME = 5  # seconds, the oom_monitor sleeps that long in normal conditions
+    OOM_RAPID_SLEEP_TIME = 1  # seconds, when nearing OOM
 
     def __init__(self, channels=None, pools=None, transport_test_mode=False, hostname="NONE"):
         self.transport_test_mode = transport_test_mode

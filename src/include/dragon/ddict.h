@@ -338,7 +338,7 @@ dragon_ddict_write_bytes(const dragonDDictRequestDescr_t* req, size_t num_bytes,
 /**
  * @brief Calling this retrieves the number of keys in the distributed dictionary.
  *
- * @param dd_descr is a serialized descriptor of the dictionay.
+ * @param dd_descr is a serialized descriptor of the dictionary.
  *
  * @param length is a pointer to an uint64_t that will hold the number of keys up
  * return from the function call when DRAGON_SUCCESS is returned as the return code.
@@ -352,7 +352,7 @@ dragon_ddict_write_bytes(const dragonDDictRequestDescr_t* req, size_t num_bytes,
 /**
  * @brief This removes all key/value pairs from the distributed dictionary.
  *
- * @param dd_descr is a serialized descriptor of the dictionay.
+ * @param dd_descr is a serialized descriptor of the dictionary.
  *
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
  **/
@@ -378,7 +378,7 @@ dragon_ddict_write_bytes(const dragonDDictRequestDescr_t* req, size_t num_bytes,
  * @brief Calling this tells the ddict client to send request to all managers
  * to get all keys.
  *
- * @param dd_descr is a serialized descriptor of the dictionay.
+ * @param dd_descr is a serialized descriptor of the dictionary.
  *
  * @param keys is a pointer to an byte array that store an array of
  * keys following the response from managers.
@@ -393,7 +393,7 @@ dragon_ddict_write_bytes(const dragonDDictRequestDescr_t* req, size_t num_bytes,
 /**
  * @brief Calling this to get the stats of all managers.
  *
- * @param dd_descr is a serialized descriptor of the dictionay.
+ * @param dd_descr is a serialized descriptor of the dictionary.
  *
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
  **/
@@ -441,7 +441,20 @@ dragon_ddict_write_bytes(const dragonDDictRequestDescr_t* req, size_t num_bytes,
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
  **/
  dragonError_t
- dragon_ddict_current_checkpoint_id(const dragonDDictDescr_t * dd_descr, uint64_t * chkpt_id);
+ dragon_ddict_checkpoint_id(const dragonDDictDescr_t * dd_descr, uint64_t * chkpt_id);
+
+  /**
+ * @brief Set the client's current checkpoint ID
+ *
+ * @param dd_descr is a valid DDict descriptor that has previously been created or attached.
+ *
+ * @param chkpt_id a non-negative checkpoint ID.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ **/
+dragonError_t
+dragon_ddict_set_checkpoint_id(const dragonDDictDescr_t * dd_descr, uint64_t chkpt_id);
+
 
  /**
  * @brief Get client's local manager if there is one.

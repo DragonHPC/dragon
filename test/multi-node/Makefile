@@ -63,11 +63,16 @@ TESTS_DRAGON_MULTI_NODE_PMI := test_mpi_hello_world.py
 
 TESTS_DRAGON_RUNTIME_REBOOT := test_runtime_restart.py
 
+TESTS_DRAGON_HSTA := test_hsta.py
+
 .PHONY: all
-all: c_ddict cpp_ddict $(TESTS_DRAGON_MULTI_NODE) resiliency
+all: c_ddict cpp_ddict $(TESTS_DRAGON_MULTI_NODE) resiliency test_hsta
 
 .PHONY: resiliency
 resiliency: $(TESTS_DRAGON_RUNTIME_REBOOT)
+
+.PHONY: test_hsta 
+test_hsta: $(TESTS_DRAGON_HSTA)
 
 .PHONY: $(TESTS_DRAGON_MULTI_NODE)
 $(TESTS_DRAGON_MULTI_NODE):
@@ -76,6 +81,10 @@ $(TESTS_DRAGON_MULTI_NODE):
 .PHONY: $(TESTS_DRAGON_RUNTIME_REBOOT)
 $(TESTS_DRAGON_RUNTIME_REBOOT):
 	$(PYTHON) -m dragon --resilient --nodes=$(RES_NNODES) $@ -v -f
+
+.PHONY: $(TESTS_DRAGON_HSTA)
+$(TESTS_DRAGON_HSTA):
+	$(PYTHON) $@ -v -f
 
 c_ddict: c_ddict.c
 	$(CC) $(INCLUDE) $(CFLAGS) -o c_ddict $< $(LIBS) -ldl

@@ -35,9 +35,9 @@ OOM_CRITICAL_BYTES_VAR = "MEMORY_CRITICAL_BYTES"
 QUIET_VAR = "WARNINGS_OFF"
 
 OOM_DEFAULT_WARN_PCT = 10
-OOM_DEFAULT_WARN_BYTES = 6 * 1024 * 1024 * 1024 # 6GB
+OOM_DEFAULT_WARN_BYTES = 6 * 1024 * 1024 * 1024  # 6GB
 OOM_DEFAULT_CRITICAL_PCT = 2
-OOM_DEFAULT_CRITICAL_BYTES = 600 * 1024 * 1024 # 600MB
+OOM_DEFAULT_CRITICAL_BYTES = 600 * 1024 * 1024  # 600MB
 
 # For environment variable passing, this set is the list of dragon parameters
 # in capital letters.
@@ -704,7 +704,7 @@ DEFAULT_TRANSPORT_AGENT = shlex.split(str(TransportAgentOptions.HSTA))
 # Prefer to use high-speed network interfaces. Be cautious about matching any
 # interface (e.g., r'^.*$') as it may expose the transport agent on an
 # unintended network (e.g., the internet).
-DEFAULT_TRANSPORT_NETIF = r"^(hsn|ipogif|ib)\d+$"
+DEFAULT_TRANSPORT_NETIF = r"^(hsn|ipogif|ib|eth)\w+$"
 DEFAULT_TRANSPORT_PORT = 7575
 DEFAULT_OVERLAY_NETWORK_PORT = 6565
 DEFAULT_FRONTEND_PORT = 6566
@@ -762,3 +762,6 @@ DEFAULT_NET_CONF_CACHE = os.path.join(os.getcwd(), ".dragon-net-conf")
 # Default dragon config directory and file
 DRAGON_CONFIG_DIR = Path(DRAGON_BASE_DIR) / ".hsta-config"
 CONFIG_FILE_PATH = DRAGON_CONFIG_DIR / "dragon-config.json"
+
+# Default timeout for WLM process in launcher after calling cleanup
+DEFAULT_WLM_TIMEOUT = 60

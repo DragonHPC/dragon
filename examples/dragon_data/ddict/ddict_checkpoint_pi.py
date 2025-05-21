@@ -122,7 +122,7 @@ def main():
     # sync up head process to the newest checkpoint - not needed, but demonstrates
     d.sync_to_newest_checkpoint()
 
-    print(f"Globally there were {d.current_checkpoint_id+1} checkpoints that were performed.", flush=True)
+    print(f"Globally there were {d.checkpoint_id+1} checkpoints that were performed.", flush=True)
 
     # calculate the average result from final iteration
     # This would be one way to do it. In this case we have the results from the map function.

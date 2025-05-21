@@ -4,7 +4,15 @@
 run_backend_cleanup() {
 
     launcher=''
-    if command -v srun &> /dev/null && [ ! -z "$SLURM_JOB_ID" ]; then
+    # check if an override exists. if it exists, then use it
+    mpiexec_override=$(dragon-config --get="launcher-mpiexec-override-netconfig")
+    if [ -n "$mpiexec_override" ]; then
+        # get the number of nodes from the PBS_NODEFILE and substitute it in the override
+        nnodes="$(echo $(cat ${PBS_NODEFILE} | wc -l))"
+        launcher=${mpiexec_override/\{nnodes\}/$nnodes}
+        # set nnodes to be empty to conform with the below launch structure
+        nnodes=""
+    elif command -v srun &> /dev/null && [ ! -z "$SLURM_JOB_ID" ]; then
         launcher="srun --overlap --oversubscribe"
         nnodes="-N ${SLURM_JOB_NUM_NODES}"
     elif command -v mpiexec | grep "pals" &> /dev/null; then
@@ -41,7 +49,12 @@ if [ $# -ne 1 ]; then
     echo $pids | xargs -r kill -9
 
     if [ $# -eq 0 ]; then
-        pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk -v ppid=$ppid '$2 !~ ppid' | awk -F ' ' '{print $2}'`
+        if [ -n "${_DRAGON_HSTA_TESTING_MODE:+1}" ]; then
+            echo "Avoiding hsta test process"
+            pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /test_hsta.py/' | awk -v ppid=$ppid '$2 !~ ppid' | awk -F ' ' '{print $2}'`
+        else
+            pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk -v ppid=$ppid '$2 !~ ppid' | awk -F ' ' '{print $2}'`
+        fi
     else
         pids=`ps -U $me -ux  | grep python | awk '$0 !~ /test_launcher/' | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk -v ppid=$ppid '$2 !~ ppid' | awk -F ' ' '{print $2}'`
     fi

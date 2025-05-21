@@ -237,6 +237,7 @@ class Popen:
 
 class ProcessTemplate:
     """This class provides a template for a Dragon process."""
+
     PIPE = MSG_PIPE
     STDOUT = MSG_STDOUT
     DEVNULL = MSG_DEVNULL
@@ -315,6 +316,9 @@ class ProcessTemplate:
             self.args = args
             self.target = self._find_target(target, cwd)
             self.argdata = None
+
+        if cwd is None or cwd == ".":
+            cwd = os.getcwd()
 
         self.cwd = cwd
         self.env = env
@@ -773,7 +777,9 @@ def _dragon_native_python_process_main():
         target(*args, **kwargs)  # call the user-provided function
         ecode = 0
     except Exception as ex:
-        print(f"*** Exception Occurred in User-Provided Code ***\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+        print(
+            f"*** Exception Occurred in User-Provided Code ***\n{traceback.format_exc()}", file=sys.stderr, flush=True
+        )
         ecode = 1
     except SystemExit as e:  # catch sys.exit
         if e.code is None:
@@ -783,7 +789,11 @@ def _dragon_native_python_process_main():
         else:
             ecode = 1
         if ecode != 0:
-            print(f"*** System Exit({ecode}) in User-Provided Code ***\n{traceback.format_exc()}", file=sys.stderr, flush=True)
+            print(
+                f"*** System Exit({ecode}) in User-Provided Code ***\n{traceback.format_exc()}",
+                file=sys.stderr,
+                flush=True,
+            )
     finally:
         threading._shutdown()
         try:

@@ -10,8 +10,6 @@ install dragonhpc and other packages within that environment.
 
 .. code-block:: console
 
-    python3 -m venv _env
-    . _env/bin/activate
     pip3 install dragonhpc
 
 After doing the `pip3` install of the package, you have completed the
@@ -53,7 +51,7 @@ Some example high-speed transport agent configuration commands are:
     # For OFI communication, provide a library path that contains a libfabric.so:
     dragon-config -a "ofi-runtime-lib=/opt/cray/libfabric/1.22.0/lib64"
 
-As mentioned, if `dragon-config`` is not run to tell Dragon where the appropriate libraries exist, Dragon will
+As mentioned, if `dragon-config` is not run to tell Dragon where the appropriate libraries exist, Dragon will
 fall back to using the TCP transport agent. You'll know this because a message similar to the following will print:
 
 .. code-block:: console
