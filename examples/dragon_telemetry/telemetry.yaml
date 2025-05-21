@@ -1,0 +1,13 @@
+# Configure Telemetry env variables here
+# Aggregator
+aggregator_port: 4242
+# TSDB Server - must be different from aggregator_port
+tsdb_server_port: 4243
+# Collector
+collector_rate: 0.5
+default_tmdb_dir: "/tmp"
+delete_tmdb: 1
+default_tmdb_window: 300
+# SSH Tunnel
+# remote_tunnel_node: <node_name> 
+# remote_tunnel_port: <port>
