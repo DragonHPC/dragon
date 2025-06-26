@@ -1,0 +1,51 @@
+#!/bin/bash
+me=`whoami`
+
+# Clean up hugepages.
+# Setting the argument to 1 prevents ddict pools from being cleaned up
+dragon-hugepages-cleanup $1
+
+if [ -n "${_DRAGON_HSTA_TESTING_MODE:+1}" ]; then
+    echo "Avoiding hsta test process"
+    pids=`ps -U $me -ux  | grep dragon | awk '$0 !~ /grep/' | awk '$0 !~ /bash/'| awk '$0 !~ /test_hsta.py/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+else
+    pids=`ps -U $me -ux  | grep dragon | awk '$0 !~ /grep/' | awk '$0 !~ /bash/'| awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+fi
+echo "Here are Dragon PIDS to kill on" $(hostname): $pids
+echo $pids | xargs -r kill -9
+
+if [ -n "${_DRAGON_HSTA_TESTING_MODE:+1}" ]; then
+    echo "Avoiding hsta test process"
+    pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /test_hsta.py/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+else
+    pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+fi
+echo "Here are the Python PIDS to kill on" $(hostname): $pids
+echo $pids | xargs -r kill -9
+
+if [[ -c /dev/nvidiactl && $# -eq 1 ]]; then
+    pids=`ps -U $me -ux  | grep nvidia-cuda-mps | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+    echo "Here are the MPS PIDS to kill on" $(hostname): $pids
+    echo $pids | xargs -r kill -9
+    nvidia-cuda-mps-control -d > /dev/null 2>&1
+fi
+
+echo "Cleaning up /tmp of sqlite3 dbs on" $(hostname)
+find /tmp -maxdepth 1 -user $me -name "*.db" -exec rm -f {} \;
+
+echo "Cleaning up /tmp of Gunicorn log on" $(hostname)
+find /tmp -maxdepth 1 -user $me -name "*_gunicorn.log" -exec rm -f {} \;
+
+pids=`ps -U $me -ux  | grep 'gunicorn' | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
+echo "Here are the Gunicorn PIDS to kill on" $(hostname): $pids
+echo $pids | xargs -r kill -9
+
+echo "Cleaning up /dev/shm of any leftover pools on" $(hostname)
+if [[ $1 -eq 1 ]]; then
+    echo "Avoiding DDict pools named *dict_pool* in backend /dev/shm"
+    find /dev/shm -user $me ! -name "*dict_pool*" -exec rm -f {} \;
+else
+    echo "Cleaning up all pools in backend /dev/shm"
+    find /dev/shm -user $me -exec rm -f {} \;
+fi
+
