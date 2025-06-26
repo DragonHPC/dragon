@@ -1,0 +1,8 @@
+__pycache__
+*.log
+*.o
+*.dat
+dump_file
+native/c_ddict
+native/cpp_ddict
+multi-node/zarr_data

@@ -30,3 +30,4 @@ torch>=2.0.0
 wheel>=0.45.1
 kubernetes>=32.0.0
 zarr==2.18.3
+paramiko>=3.5.1

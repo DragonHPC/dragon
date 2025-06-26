@@ -1,0 +1,86 @@
+@startuml
+participant drun
+participant drbe as drbe1
+participant userapp as u1
+participant drbe as drbe2
+participant userapp as u2
+
+activate drun
+drun -> drbe1: ssh launch drbe
+activate drbe1
+
+note over drun, drbe1: Establish connection
+drbe1 -> drun: SYN
+drun -> drbe1: SYNACK
+drbe1 -> drun: ACK
+
+note over drun, drbe1: Establish tree
+drun -> drbe1: InitBackend(subtree, fanout)
+
+drbe1 -> drbe2: ssh launch drbe
+activate drbe2
+
+note over drbe1, drbe2: Establish connection
+drbe2 -> drbe1: SYN
+drbe1 -> drbe2: SYNACK
+drbe2 -> drbe1: ACK
+
+note over drbe1, drbe2: Establish tree
+drbe1 -> drbe2: InitBackend(subtree, fanout)
+
+note over drbe1, drbe2: Notify Backend Up
+drbe2 -> drbe1: BackendUp
+
+note over drun, drbe1: Notify Backend Up
+drbe1 -> drun: BackendUp
+
+loop as many times
+    note over drun, drbe1: Run userapp
+    drun -> drbe1: RunUserApp(commmand)
+
+    drbe1 -> u1: Popen
+    activate u1
+
+    drbe1 -> drbe2: RunUserApp(commmand)
+
+    drbe2 -> u2: Popen
+    activate u2
+
+    ...
+    u1 -> drbe1: STDOUT "Bob"
+    drbe1 -> drun: FwdStdOutput "Bob", fd=1
+
+    u2 -> drbe2: STDOUT "Fred"
+    drbe2 -> drbe1: FwdStdOutput "Fred", fd=1
+    drbe1 -> drun: FwdStdOutput "Fred", fd=1
+
+    u2 -> drbe2: STDERR "Wilma"
+    drbe2 -> drbe1: FwdStdOutput "Wilma", fd=2
+    drbe1 -> drun: FwdStdOutput "Wilma", fd=2
+
+    u1 -> drbe1: STDERR "Lucy"
+    drbe1 -> drun: FwdStdOutput "Lucy", fd=2
+    ...
+
+    u1 -> drbe1: UserAppExit
+    deactivate u1
+
+    u2 -> drbe2: UserAppExit
+    deactivate u2
+
+    drbe2 -> drbe1: UserAppExitSummary
+    drbe1 -> drun: UserAppExitSummary
+end
+
+note over drun, drbe1: Destroy Tree
+drun -> drbe1: DestroyTree
+drbe1 -> drbe2: DestroyTree
+
+drbe2 -> drbe1: TreeDestroyed
+deactivate drbe2
+
+drbe1 -> drun: TreeDestroyed
+deactivate drbe1
+
+deactivate drun
+@enduml
