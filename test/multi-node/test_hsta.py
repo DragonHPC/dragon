@@ -3,10 +3,12 @@ import subprocess
 import unittest
 import os
 import time
+import re
+import ast
 
 DRAGON_HSTA_TEST_EXAMPLE = ["dragon", "../../examples/multiprocessing/p2p_lat.py", "--dragon"]
 # DRAGON_HSTA_TEST_EXAMPLE = ["dragon", "-l", "DEBUG", "../../examples/multiprocessing/p2p_lat.py", "--dragon"]
-
+DRAGON_HSTA_REBOOT_TEST_EXAMPLE = ["dragon", "--resilient", "--nodes=2", "p2p_lat_test.py"]
 
 class BaseTestHSTA(unittest.TestCase):
 
@@ -123,6 +125,50 @@ class TestHSTA(BaseTestHSTA):
     def test_9_abnormal_termination(self):
         self.abnormal_termination(9, 60)
 
+class TestHSTAReboot(unittest.TestCase):
+    
+    def test_hsta_runtime_reboot(self):
+
+        os.environ["_DRAGON_HSTA_TESTING_MODE"] = str(9)
+        time_limit = 60
+
+        print(f'HSTA Test Mode: {os.environ.get("_DRAGON_HSTA_TESTING_MODE")}', flush=True)
+
+        process = subprocess.Popen(
+            DRAGON_HSTA_REBOOT_TEST_EXAMPLE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        
+        try:
+            start_time = time.time()
+            stdout, stderr = process.communicate(timeout=time_limit)
+            result = []
+            
+            # Result before restart and after restart is between delimiters in stdout
+            result = re.findall(r"UNITTEST_DATA_START(.*?)UNITTEST_DATA_END", stdout.decode('utf-8'), re.DOTALL)
+            result = [ast.literal_eval(i) for i in result]
+            
+        except subprocess.TimeoutExpired:
+            self.assertTrue(False, msg="Communication timed out. This likely means that it was hung.")
+        diff_time = time.time() - start_time
+        returncode = process.returncode
+
+        self.assertFalse(result[0]["is_restart"])
+        self.assertTrue(result[1]["is_restart"])
+        self.assertNotEqual(set(result[0]["node_hostnames"]), set(result[1]["node_hostnames"]))
+        self.assertTrue(returncode == 0)
+        self.assertTrue(diff_time < time_limit)
+
+
+    def tearDown(self):
+        time.sleep(1) 
+        for f in glob.glob("core*"):
+            try:
+                print("Found core file, removing it", flush=True)
+                os.remove(f)
+            except FileNotFoundError:
+                print(f"Error trying to remove generated core file. This may need to be removed manually.")
 
 if __name__ == "__main__":
     unittest.main()

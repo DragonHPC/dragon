@@ -62,10 +62,11 @@ class SHCreateProcessLocalChannelMsg: public DragonMsg {
     public:
     static const MessageType TC = SH_CREATE_PROCESS_LOCAL_CHANNEL;
 
-    SHCreateProcessLocalChannelMsg(uint64_t tag, uint64_t puid, uint64_t blockSize, uint64_t capacity, const char* respFLI);
+    SHCreateProcessLocalChannelMsg(uint64_t tag, uint64_t puid, uint64_t muid, uint64_t blockSize, uint64_t capacity, const char* respFLI);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     const char* respFLI();
     const uint64_t puid();
+    const uint64_t muid();
     const uint64_t blockSize();
     const uint64_t capacity();
 
@@ -74,6 +75,7 @@ class SHCreateProcessLocalChannelMsg: public DragonMsg {
 
     private:
     uint64_t mPUID;
+    uint64_t mMUID;
     uint64_t mBlockSize;
     uint64_t mCapacity;
     std::string mFLI;
@@ -491,12 +493,14 @@ class DDRandomManagerResponseMsg: public DragonResponseMsg {
     public:
     static const MessageType TC = DD_RANDOM_MANAGER_RESPONSE;
 
-    DDRandomManagerResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, const char* manager_fli);
+    DDRandomManagerResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, const char* manager_fli, uint64_t managerID);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     const char* managerFLI();
+    uint64_t managerID();
 
     private:
     std::string mManagerFLI;
+    uint64_t mManagerID;
 };
 
 class DDPutMsg: public DragonMsg {
@@ -530,10 +534,13 @@ class DDGetMsg: public DragonMsg {
     public:
     static const MessageType TC = DD_GET;
 
-    DDGetMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID);
+    DDGetMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     uint64_t clientID();
     uint64_t chkptID();
+    const unsigned char* key();
+    size_t keyLen();
+
 
     protected:
     virtual void builder(MessageDef::Builder& msg);
@@ -541,24 +548,32 @@ class DDGetMsg: public DragonMsg {
     private:
     uint64_t mClientID;
     uint64_t mChkptID;
+    const unsigned char* mKey;
+    const size_t mKeyLen;
 };
 
 class DDGetResponseMsg: public DragonResponseMsg {
     public:
     static const MessageType TC = DD_GET_RESPONSE;
 
-    DDGetResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo);
+    DDGetResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, bool freeMem);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    bool freeMem();
+
+    private:
+    bool mFreeMem;
 };
 
 class DDPopMsg: public DragonMsg {
     public:
     static const MessageType TC = DD_POP;
 
-    DDPopMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID);
+    DDPopMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     uint64_t clientID();
     uint64_t chkptID();
+    const unsigned char* key();
+    size_t keyLen();
 
     protected:
     virtual void builder(MessageDef::Builder& msg);
@@ -566,24 +581,33 @@ class DDPopMsg: public DragonMsg {
     private:
     uint64_t mClientID;
     uint64_t mChkptID;
+    const unsigned char* mKey;
+    const size_t mKeyLen;
 };
 
 class DDPopResponseMsg: public DragonResponseMsg {
     public:
     static const MessageType TC = DD_POP_RESPONSE;
 
-    DDPopResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo);
+    DDPopResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, bool freeMem);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    bool freeMem();
+
+    private:
+    uint64_t mFreeMem;
+
 };
 
 class DDContainsMsg: public DragonMsg {
     public:
     static const MessageType TC = DD_CONTAINS;
 
-    DDContainsMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID);
+    DDContainsMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     uint64_t clientID();
     uint64_t chkptID();
+    const unsigned char* key();
+    size_t keyLen();
 
     protected:
     virtual void builder(MessageDef::Builder& msg);
@@ -591,6 +615,8 @@ class DDContainsMsg: public DragonMsg {
     private:
     uint64_t mClientID;
     uint64_t mChkptID;
+    const unsigned char* mKey;
+    const size_t mKeyLen;
 };
 
 class DDContainsResponseMsg: public DragonResponseMsg {
@@ -629,9 +655,6 @@ class DDLengthResponseMsg: public DragonResponseMsg {
     DDLengthResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t length);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     uint64_t length();
-
-    protected:
-    virtual void builder(MessageDef::Builder& msg);
 
     private:
     uint64_t mLength;
@@ -933,9 +956,6 @@ class DDIteratorResponseMsg: public DragonResponseMsg {
     DDIteratorResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t iterID);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     uint64_t iterID();
-
-    protected:
-    virtual void builder(MessageDef::Builder& msg);
 
     private:
     uint64_t mIterID;

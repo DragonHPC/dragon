@@ -93,6 +93,7 @@ typedef struct dragonDDictReq_st {
     dragonFLIRecvHandleDescr_t recvh; // DDict channel response handle
     size_t num_writes; // Number of nodes in buffered_allocs;
     bool recvh_closed;
+    bool free_mem;
 } dragonDDictReq_t;
 
 #ifdef __cplusplus

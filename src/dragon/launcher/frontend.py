@@ -574,9 +574,9 @@ lower performing TCP transport agent for backend network communication.
         """Helper function to launch `dragon-cleanup` at end of teardown to clean up all procs and mem"""
         print("Detected an abnormal exit. Will attempt to clean up Dragon resources...", flush=True)
         if self.resilient:
-            subprocess.run(args=["dragon-cleanup", "1"])
+            subprocess.run(args=["dragon-cleanup", "--only-be", "--resilient"])
         else:
-            subprocess.run(args=["dragon-cleanup", "0"])
+            subprocess.run(args=["dragon-cleanup", "--only-be"])
 
         # Make sure we don't manage to call this more than once
         self._bumpy_exit.clear()

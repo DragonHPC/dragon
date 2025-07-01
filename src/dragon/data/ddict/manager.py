@@ -22,7 +22,7 @@ import pickle
 import threading
 from queue import SimpleQueue
 
-from ...utils import b64decode, b64encode, set_local_kv, host_id, B64
+from ...utils import b64decode, b64encode, set_local_kv, host_id, B64, hash as dragon_hash
 from ... import managed_memory as dmem
 from ...globalservices import channel
 from ...globalservices import pool
@@ -124,6 +124,20 @@ def map_from_ids(aDict, pool, reattach):
     return ret_val
 
 
+class BytesKey:
+    def __init__(self, key_bytes):
+        self._key_bytes = key_bytes
+
+    def __hash__(self):
+        return dragon_hash(self._key_bytes)
+
+    def __eq__(self, other):
+        if not isinstance(other, dmem.MemoryAlloc):
+            return False
+
+        return self._key_bytes == other.get_memview()
+
+
 class Checkpoint:
     """
     Key_allocs maps keys to their memory allocation within the dictionary's pool.
@@ -196,7 +210,9 @@ class Checkpoint:
                 allocs[val_mem.id] = val_mem
 
     def redirect(self, indirect: dict):
-        # redirect all map/set (map, key_allocs, deleted, persist)
+        # redirect all maps and sets (map, key_allocs, deleted, persist)
+        # to point at new allocations in the pool after a restore of
+        # the checkpoint from a persisted source or a copy on another node.
         new_map = dict()
         for key, values in self.map.items():
             val_list = []
@@ -625,24 +641,25 @@ class BPutBatchOp(BatchPutOp):
 
 class GetOp(DictOp):
 
-    def __init__(self, manager: object, client_id: int, chkpt_id: int, tag: int, client_key_mem: object):
+    def __init__(self, manager: object, client_id: int, chkpt_id: int, tag: int, client_key: BytesKey):
         super().__init__(manager, client_id, chkpt_id, tag)
-        self.client_key_mem = client_key_mem
+        self.client_key = client_key
 
     def perform(self) -> bool:
         """
         Returns True when it was performed and false otherwise.
         """
         try:
-            chkpt = self.manager._working_set.get(self.client_key_mem, self.chkpt_id)
+            chkpt = self.manager._working_set.get(self.client_key, self.chkpt_id)
 
             if chkpt is None:
                 # We are waiting for keys or for some other reason
                 # cannot perform this yet.
                 return False
-            ec, key_mem = chkpt._contains_and_free_msg_key(self.client_key_mem)
+            ec, key_mem = chkpt._contains(self.client_key)
 
-            resp_msg = dmsg.DDGetResponse(self.manager._tag_inc(), ref=self.tag, err=ec)
+            free_mem = not self.manager._read_only
+            resp_msg = dmsg.DDGetResponse(self.manager._tag_inc(), ref=self.tag, err=ec, freeMem=free_mem)
 
             self.manager._send_dmsg_and_value(
                 chkpt=chkpt,
@@ -650,6 +667,7 @@ class GetOp(DictOp):
                 connection=self.manager._client_connections_map[self.client_id],
                 key_mem=key_mem,
                 transfer_ownership=False,
+                no_copy_read_only=self.manager._read_only,
             )
             self.manager._working_set.update_writer_checkpoint(self.client_id, self.chkpt_id)
 
@@ -714,23 +732,23 @@ class GetOp(DictOp):
 
 class PopOp(DictOp):
 
-    def __init__(self, manager: object, client_id: int, chkpt_id: int, tag: int, client_key_mem: object):
+    def __init__(self, manager: object, client_id: int, chkpt_id: int, tag: int, client_key: BytesKey):
         super().__init__(manager, client_id, chkpt_id, tag)
-        self.client_key_mem = client_key_mem
+        self.client_key = client_key
 
     def perform(self) -> bool:
         """
         Returns True when it was performed and false otherwise.
         """
         try:
-            chkpt = self.manager._working_set.get(self.client_key_mem, self.chkpt_id)
+            chkpt = self.manager._working_set.get(self.client_key, self.chkpt_id)
 
             if chkpt is None:
                 # We are waiting for keys or for some other reason
                 # cannot perform this yet.
                 return False
 
-            ec, key_mem = chkpt._contains(self.client_key_mem)
+            ec, key_mem = chkpt._contains(self.client_key)
 
             transfer_ownership = True
 
@@ -748,22 +766,20 @@ class PopOp(DictOp):
                     if chkpt.id < self.chkpt_id:
                         # if the key was found in an earlier checkpoint, it cannot be removed.
                         current_chkpt.deleted.add(key_mem)
-                        current_chkpt.key_allocs[key_mem] = key_mem
                         transfer_ownership = False
 
                 # Otherwise it was found in the current checkpoint and we should transfer ownership
                 # when we send it.
 
-            # Now free the client message memory for the key since we are done.
-            self.manager.check_for_key_existence_before_free(self.client_key_mem)
-
-            resp_msg = dmsg.DDPopResponse(self.manager._tag_inc(), ref=self.tag, err=ec)
+            free_mem = transfer_ownership
+            resp_msg = dmsg.DDPopResponse(self.manager._tag_inc(), ref=self.tag, err=ec, freeMem=free_mem)
             self.manager._send_dmsg_and_value(
                 chkpt=chkpt,
                 resp_msg=resp_msg,
                 connection=self.manager._client_connections_map[self.client_id],
                 key_mem=key_mem,
                 transfer_ownership=transfer_ownership,
+                no_copy_read_only=False,
             )
 
             return True
@@ -812,9 +828,9 @@ class PopOp(DictOp):
 
 class ContainsOp(DictOp):
 
-    def __init__(self, manager: object, client_id: int, chkpt_id: int, tag: int, client_key_mem: object):
+    def __init__(self, manager: object, client_id: int, chkpt_id: int, tag: int, client_key: BytesKey):
         super().__init__(manager, client_id, chkpt_id, tag)
-        self.client_key_mem = client_key_mem
+        self.client_key = client_key
 
     def perform(self) -> bool:
         """
@@ -825,18 +841,17 @@ class ContainsOp(DictOp):
         # we look into all checkpoints in current working set
         newest_chkpt_id_chkpt = self.manager._working_set.newest_chkpt_id
         if self.chkpt_id > newest_chkpt_id_chkpt:
-            chkpt = self.manager._working_set.get(self.client_key_mem, newest_chkpt_id_chkpt)
+            chkpt = self.manager._working_set.get(self.client_key, newest_chkpt_id_chkpt)
         else:
-            chkpt = self.manager._working_set.get(self.client_key_mem, self.chkpt_id)
+            chkpt = self.manager._working_set.get(self.client_key, self.chkpt_id)
 
         if chkpt is None:
             # We don't wait in contains operation
             ec = DragonError.KEY_NOT_FOUND
             log.info("Key Not Found because checkpoint is None.")
-            self.manager.check_for_key_existence_before_free(self.client_key_mem)
 
         else:
-            ec, key_mem = chkpt._contains_and_free_msg_key(self.client_key_mem)
+            ec, key_mem = chkpt._contains(self.client_key)
             # a future checkpoint shouldn't return a nonpersistent key in newest checkpoint
             if self.chkpt_id > newest_chkpt_id_chkpt and key_mem not in chkpt.persist and self.manager._wait_for_keys:
                 log.info(
@@ -921,7 +936,13 @@ class ValuesOp(DictOp):
 
         t = threading.Thread(
             target=self.manager._send_dmsg_and_values,
-            args=(resp_msg, connection, values, True),
+            args=(
+                resp_msg,
+                connection,
+                values,
+                True,
+                True,
+            ),  # TBD: The last True should be replaced with the read_only attribute in manager.
         )
         t.start()
         self.manager._threads.append(t)
@@ -1141,9 +1162,11 @@ class WorkingSet:
         t.start()
         self._manager._threads.append(t)
 
-    def _retire_checkpoint(self, parent: Checkpoint, child: Checkpoint):
+    def _retire_checkpoint(self, checkpoints: dict[int, Checkpoint], id_to_retire: int):
         # This method is invoked only under non read-only mode. In read-only mode
         # there's no point to write the same persisted chkpt to disk again.
+        parent = checkpoints[id_to_retire]
+        child = checkpoints[id_to_retire + 1]
 
         def retire_thread_func(chkpt):
             self._manager._persister.dump(chkpt)
@@ -1174,7 +1197,7 @@ class WorkingSet:
 
         child.deleted.clear()
 
-        del self._chkpts[parent.id]
+        del checkpoints[parent.id]
 
     def _items(self, chkpt_id) -> Checkpoint:
 
@@ -1227,10 +1250,17 @@ class WorkingSet:
 
     def advance(self) -> bool:
         # advance and return True if we could advance and False otherwise.
+        # We add a new checkpoint here first in case the working set size
+        # is 1. We'll put this dictionary in place at end if we really can advance.
+        checkpoints = dict(self._chkpts)
+        checkpoints[self._next_id] = Checkpoint(
+            id=self._next_id, move_to_pool=self._move_to_pool, manager=self._manager
+        )
+
         if len(self._chkpts) == self._working_set_size:
             id_to_retire = self._next_id - self._working_set_size
-            parent = self._chkpts[id_to_retire]
-            child = self._chkpts[id_to_retire + 1]
+            parent = checkpoints[id_to_retire]
+            child = checkpoints[id_to_retire + 1]
             with parent.lock and child.lock:
                 # We need to retire a Checkpoint
                 if self._wait_for_keys:
@@ -1249,11 +1279,10 @@ class WorkingSet:
                         # from parent will be less error-prone.
                         return False
 
-                self._retire_checkpoint(parent, child)
 
-        self._chkpts[self._next_id] = Checkpoint(
-            id=self._next_id, move_to_pool=self._move_to_pool, manager=self._manager
-        )
+                self._retire_checkpoint(checkpoints, id_to_retire)
+
+        self._chkpts = checkpoints
         self._next_id += 1
         return True
 
@@ -1469,6 +1498,7 @@ class Manager:
             self._persist_path,
             self._persist_count,
             self._persister,
+            self._main_streams_per_manager,
         ) = args
         self._puid = parameters.this_process.my_puid
         self._trace = trace
@@ -1661,7 +1691,25 @@ class Manager:
             # receiving of messages a bit more resistant to the manager pool
             # filling up.
             self._fli_main_channel = Channel.make_process_local()
-            self._main_connector = fli.FLInterface(main_ch=self._fli_main_channel, pool=self._pool)
+            self._main_fli_streams = []
+            if self._main_streams_per_manager > 0:
+                self._fli_mgr_channel = Channel.make_process_local()
+                for i in range(self._main_streams_per_manager):
+                    # The stream channels, when created in the manager pool, will cause sends to them
+                    # to be deposited directly into the pool. When the manager receives from a client
+                    # channel, it can specify the destination, but a client sending will not automatically
+                    # deposit into the pool unless the stream channel it is sending to is allocated from
+                    # that pool. Stream channels don't need to be very deep. A depth of 10 should be enough.
+                    self._main_fli_streams.append(Channel.make_process_local(capacity=10, pool=self._pool))
+            else:
+                self._fli_mgr_channel = None
+
+            self._main_connector = fli.FLInterface(
+                main_ch=self._fli_main_channel,
+                manager_ch=self._fli_mgr_channel,
+                stream_channels=self._main_fli_streams,
+                pool=self._pool,
+            )
             self._serialized_main_connector = b64encode(self._main_connector.serialize())
             self._client_connections_map = {}
             self._buffered_client_connections_map = {}
@@ -1768,6 +1816,9 @@ class Manager:
                 strm = self._streams.get()
                 strm.destroy_process_local()
             self._fli_main_channel.destroy_process_local()
+            self._fli_mgr_channel.destroy_process_local()
+            for ch in self._main_fli_streams:
+                ch.destroy_process_local()
 
         except Exception as ex:
             tb = traceback.format_exc()
@@ -1874,8 +1925,10 @@ class Manager:
         done = False
         with buffered_connector.recvh(timeout=self._timeout) as recvh:
             while not done:
-                resp_ser_msg, hint = recvh.recv_bytes(timeout=self._timeout)
-                msg = dmsg.parse(resp_ser_msg)
+                resp_mem, hint = recvh.recv_mem(timeout=self._timeout)
+                resp_memview = resp_mem.get_memview()
+                msg = dmsg.parse(resp_memview)
+                resp_mem.free()
                 if msg.ref not in expected_ref_set:
                     log.info(
                         "Tossing lost/timed out response message in manager %s with PUID %s: %s",
@@ -1900,12 +1953,13 @@ class Manager:
             msg_list.append(resp_msg)
         return msg_list
 
-    def _send_msg(self, msg, connection):
+    def _send_msg(self, msg, connection, buffered=False):
         try:
-            strm = None
-            if not connection.is_buffered:
+            if connection.is_buffered or buffered:
+                strm = None
+            else:
                 strm = self._get_strm_channel()
-            with connection.sendh(timeout=self._timeout, stream_channel=strm) as sendh:
+            with connection.sendh(timeout=self._timeout, stream_channel=strm, turbo_mode=True) as sendh:
                 sendh.send_bytes(msg.serialize(), timeout=self._timeout)
             if strm is not None:
                 self._release_strm_channel(strm)
@@ -1915,36 +1969,56 @@ class Manager:
             raise RuntimeError(f"There was an exception in the manager _send_msg: {ex} \n Traceback: {tb}")
 
     def _send_dmsg_and_value(
-        self, chkpt: Checkpoint, resp_msg, connection, key_mem: dmem.MemoryAlloc, transfer_ownership=False
+        self,
+        chkpt: Checkpoint,
+        resp_msg,
+        connection,
+        key_mem: dmem.MemoryAlloc,
+        transfer_ownership=False,
+        no_copy_read_only=False,
     ) -> None:
-        with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout) as sendh:
+        with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=True) as sendh:
             sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
-            with chkpt.lock:
-                if resp_msg.err == DragonError.SUCCESS:
-                    val_list = chkpt.map[key_mem]
-                    if transfer_ownership:
-                        chkpt.map[key_mem] = []
-                    for val in val_list:
-                        sendh.send_mem(
-                            val, transfer_ownership=transfer_ownership, arg=VALUE_HINT, timeout=self._timeout
-                        )
-                    if transfer_ownership:
-                        del chkpt.map[key_mem]
-                        if key_mem not in chkpt.persist:
-                            del chkpt.key_allocs[key_mem]
-                            self.check_for_key_existence_before_free(key_mem)
-                        else:
-                            chkpt.deleted.add(key_mem)
-                            chkpt.persist.remove(key_mem)
+            if chkpt is not None:
+                with chkpt.lock:
+                    if resp_msg.err == DragonError.SUCCESS:
+                        val_list = chkpt.map[key_mem]
+                        if transfer_ownership:
+                            chkpt.map[key_mem] = []
+                        log.debug(f"{transfer_ownership=}, {no_copy_read_only=}")
+                        for val in val_list:
+                            sendh.send_mem(
+                                val,
+                                transfer_ownership=transfer_ownership,
+                                no_copy_read_only=no_copy_read_only,
+                                arg=VALUE_HINT,
+                                timeout=self._timeout,
+                            )
+                        if transfer_ownership:
+                            del chkpt.map[key_mem]
+                            if key_mem not in chkpt.persist:
+                                del chkpt.key_allocs[key_mem]
+                                self.check_for_key_existence_before_free(key_mem)
+                            else:
+                                chkpt.deleted.add(key_mem)
+                                chkpt.persist.remove(key_mem)
 
-    def _send_dmsg_and_values(self, resp_msg, connection, values: list, detach: bool = False) -> None:
+    def _send_dmsg_and_values(
+        self, resp_msg, connection, values: list, detach: bool = False, no_copy_read_only=False
+    ) -> None:
         try:
-            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout) as sendh:
+            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=True) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if resp_msg.err == DragonError.SUCCESS:
                     for val_list in values:
                         for val in val_list:
-                            sendh.send_mem(val, transfer_ownership=False, arg=VALUE_HINT, timeout=self._timeout)
+                            sendh.send_mem(
+                                val,
+                                transfer_ownership=False,
+                                no_copy_read_only=no_copy_read_only,
+                                arg=VALUE_HINT,
+                                timeout=self._timeout,
+                            )
         except EOFError:
             # The receiver ended transmission early so just ignore it.
             pass
@@ -1956,7 +2030,7 @@ class Manager:
     ) -> None:
         try:
             with connection.sendh(
-                use_main_as_stream_channel=True, allow_strm_term=allow_strm_term, timeout=self._timeout
+                use_main_as_stream_channel=True, allow_strm_term=allow_strm_term, timeout=self._timeout, turbo_mode=True
             ) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if resp_msg.err == DragonError.SUCCESS:
@@ -1970,7 +2044,7 @@ class Manager:
 
     def _send_dmsg_and_items(self, resp_msg, connection, items: dict, detach: bool = False) -> None:
         try:
-            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout) as sendh:
+            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=True) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if resp_msg.err == DragonError.SUCCESS:
                     for key in items:
@@ -1989,10 +2063,10 @@ class Manager:
         right_child = 2 * self._manager_id + 2
 
         if left_child < len(self._managers):
-            self._send_msg(msg, self._manager_flis[left_child])
+            self._send_msg(msg, self._manager_flis[left_child], buffered=True)
 
         if right_child < len(self._managers):
-            self._send_msg(msg, self._manager_flis[right_child])
+            self._send_msg(msg, self._manager_flis[right_child], buffered=True)
 
     def _register_with_orchestrator(self, serialized_return_orc: str, err_str="", err_code=DragonError.SUCCESS):
         if err_code == DragonError.SUCCESS:
@@ -2060,7 +2134,8 @@ class Manager:
             return
 
         try:
-            self.check_for_key_existence_before_free(client_key_mem)
+            if client_key_mem is not None:
+                self.check_for_key_existence_before_free(client_key_mem)
         except:
             pass
 
@@ -2095,9 +2170,12 @@ class Manager:
             while self._serving:
                 with self._main_connector.recvh(destination_pool=self._pool) as recvh:
                     try:
-                        ser_msg, _ = recvh.recv_bytes()
-                        msg = dmsg.parse(ser_msg)
+                        mem, hint = recvh.recv_mem(timeout=self._timeout)
+                        mem_view = mem.get_memview()
+                        msg = dmsg.parse(mem_view)
+                        mem.free()
                         self._traceit("About to process: %s", msg)
+
                         if type(msg) in self._DTBL:
                             self._DTBL[type(msg)][0](self, msg=msg, recvh=recvh)
                             self._traceit("Finished processing: %s", msg)
@@ -2204,7 +2282,6 @@ class Manager:
                 managerNodes=self._serialized_manager_nodes,
                 name=self._name,
                 timeout=self._timeout,
-                readOnly=self._read_only,
             )
             self._send_msg(resp_msg, self._buffered_client_connections_map[client_id])
 
@@ -2266,6 +2343,7 @@ class Manager:
 
     @dutil.route(dmsg.DDBatchPut, _DTBL)
     def batch_put(self, msg: dmsg.DDBatchPut, recvh):
+
         recvh.no_close_on_exit()  # do not close the receive handle immediately while exiting context manager
         t = threading.Thread(
             target=self._batch_put,
@@ -2278,6 +2356,23 @@ class Manager:
         self._threads.append(t)
 
     def _batch_put(self, msg: dmsg.DDBatchPut, recvh):
+
+        if self._read_only:
+            self._recover_mem(None, [], recvh)
+            recvh.close()
+            errInfo = "Could not process batch put in a frozen dictionary."
+            log.debug(errInfo)
+            resp_msg = dmsg.DDBatchPutResponse(
+                self._tag_inc(),
+                ref=msg.tag,
+                err=DragonError.INVALID_OPERATION,
+                errInfo=errInfo,
+                numPuts=0,
+                managerID=self._manager_id,
+            )
+            self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
+            return
+
         try:
             if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
                 raise DDictManagerFull(
@@ -2480,6 +2575,25 @@ class Manager:
         abnormal_exited = False
         resp_msg = None
         self._num_bput[msg.clientID] = 0
+
+        if self._read_only:
+            self._recover_mem(None, [], recvh)
+            recvh.close()
+            errInfo = "Could not process put in a frozen dictionary."
+            log.debug(errInfo)
+            resp_msg = dmsg.DDBPutResponse(
+                self._tag_inc(),
+                ref=msg.tag,
+                err=DragonError.INVALID_OPERATION,
+                errInfo="",
+                numPuts=0,
+                managerID=self._manager_id,
+            )
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+            return
+
         try:
             if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
                 raise DDictManagerFull(
@@ -2497,12 +2611,13 @@ class Manager:
                 # bcast to the first manager in both left and right halves
                 if len(left) != 0:
                     left_manager_id = left[0]
+                    log.debug(f"{left_manager_id=}, {self._managers[left_manager_id]=}")
                     msg_left = dmsg.DDBPut(msg.tag, msg.clientID, msg.chkptID, msg.respFLI, left, msg.batch)
                     left_manager_connection = fli.FLInterface.attach(b64decode(self._managers[left_manager_id]))
                     left_manager_strm = self._get_strm_channel()
                     self._traceit("The local channel cuid is %s for left child manager", left_manager_strm.cuid)
                     left_manager_sendh = left_manager_connection.sendh(
-                        stream_channel=left_manager_strm, timeout=self._timeout
+                        stream_channel=left_manager_strm, timeout=self._timeout, turbo_mode=True
                     )
                     # keep record of the resources claimed for later cleanup
                     manager_connections[left_manager_id] = left_manager_connection
@@ -2518,7 +2633,7 @@ class Manager:
                     right_manager_strm = self._get_strm_channel()
                     self._traceit("The local channel cuid is %s for right child manager", right_manager_strm.cuid)
                     right_manager_sendh = right_manager_connection.sendh(
-                        stream_channel=right_manager_strm, timeout=self._timeout
+                        stream_channel=right_manager_strm, timeout=self._timeout, turbo_mode=True
                     )
                     # keep record of the resources claimed for later cleanup
                     manager_connections[right_manager_id] = right_manager_connection
@@ -2744,6 +2859,24 @@ class Manager:
         client_key_mem = None
         val_list = []
 
+        if self._read_only:
+            self._recover_mem(None, [], recvh)
+            recvh.close()
+            errInfo = "Could not process put in a frozen dictionary."
+            log.debug(errInfo)
+            resp_msg = dmsg.DDBPutResponse(
+                self._tag_inc(),
+                ref=msg.tag,
+                err=DragonError.INVALID_OPERATION,
+                errInfo="",
+                numPuts=0,
+                managerID=self._manager_id,
+            )
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+            return
+
         try:
             try:
                 if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
@@ -2784,7 +2917,7 @@ class Manager:
                         left_msg = dmsg.DDBPut(msg.tag, msg.clientID, msg.chkptID, msg.respFLI, left, msg.batch)
                         connection = fli.FLInterface.attach(b64decode(self._managers[left[0]]))
                         strm = self._get_strm_channel()
-                        with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
+                        with connection.sendh(stream_channel=strm, timeout=self._timeout, turbo_mode=True) as sendh:
                             sendh.send_bytes(left_msg.serialize(), timeout=self._timeout)
                             sendh.send_mem(
                                 client_key_mem, transfer_ownership=False, arg=KEY_HINT, timeout=self._timeout
@@ -2798,7 +2931,7 @@ class Manager:
                         right_msg = dmsg.DDBPut(msg.tag, msg.clientID, msg.chkptID, msg.respFLI, right, msg.batch)
                         connection = fli.FLInterface.attach(b64decode(self._managers[right[0]]))
                         strm = self._get_strm_channel()
-                        with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
+                        with connection.sendh(stream_channel=strm, timeout=self._timeout, turbo_mode=True) as sendh:
                             sendh.send_bytes(right_msg.serialize(), timeout=self._timeout)
                             sendh.send_mem(
                                 client_key_mem, transfer_ownership=False, arg=KEY_HINT, timeout=self._timeout
@@ -2895,6 +3028,17 @@ class Manager:
 
     @dutil.route(dmsg.DDPut, _DTBL)
     def put(self, msg: dmsg.DDPut, recvh):
+        if self._read_only:
+            self._recover_mem(None, [], recvh)
+            recvh.close()
+            errInfo = "Could not process put in a frozen dictionary."
+            log.debug(errInfo)
+            resp_msg = dmsg.DDPutResponse(
+                self._tag_inc(), ref=msg.tag, err=DragonError.INVALID_OPERATION, errInfo=errInfo
+            )
+            self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
+            return
+
         client_key_mem = None
         val_list = []
 
@@ -2986,18 +3130,11 @@ class Manager:
     @dutil.route(dmsg.DDGet, _DTBL)
     def get(self, msg: dmsg.DDGet, recvh):
         try:
-            client_key_mem, hint = recvh.recv_mem(timeout=self._timeout)
-            assert hint == KEY_HINT
-
             recvh.close()
 
         except Exception as ex:
             tb = traceback.format_exc()
             errInfo = f"There was an unexpected exception in get in manager {self._manager_id} with PUID {self._puid}, {msg.clientID=}: {ex} \n{tb}"
-            try:
-                self._recover_mem(client_key_mem, [], recvh)
-            except:
-                log.debug(f"There is an exception while recovering memory")
             resp_msg = dmsg.DDGetResponse(
                 self._tag_inc(),
                 ref=msg.tag,
@@ -3014,26 +3151,33 @@ class Manager:
                 f"There was an unexpected exception in get in manager {self._manager_id} with PUID {self._puid=}, {msg.clientID=}"
             )
 
-        get_op = GetOp(self, msg.clientID, msg.chkptID, msg.tag, client_key_mem)
+        key = BytesKey(msg.key)
+        get_op = GetOp(self, msg.clientID, msg.chkptID, msg.tag, key)
 
         if not get_op.perform():
             self._defer(get_op)
 
     @dutil.route(dmsg.DDPop, _DTBL)
     def pop(self, msg: dmsg.DDPop, recvh):
-        try:
-            key_mem, hint = recvh.recv_mem(timeout=self._timeout)
-            assert hint == KEY_HINT
+        if self._read_only:
+            self._recover_mem(None, [], recvh)
+            recvh.close()
+            errInfo = "Could not process pop in a frozen dictionary."
+            log.debug(errInfo)
+            resp_msg = dmsg.DDPopResponse(
+                self._tag_inc(), ref=msg.tag, err=DragonError.INVALID_OPERATION, errInfo=errInfo
+            )
+            self._send_dmsg_and_value(
+                chkpt=None, resp_msg=resp_msg, connection=self._client_connections_map[msg.clientID], key_mem=None
+            )
+            return
 
+        try:
             recvh.close()
 
         except Exception as ex:
             tb = traceback.format_exc()
             errInfo = f"There was an unexpected exception in pop in manager {self._manager_id} with PUID {self._puid=}, {msg.clientID=}: {ex}\n{tb}"
-            try:
-                self._recover_mem(key_mem, [], recvh)
-            except:
-                log.debug(f"There is an exception while recovering memory")
             resp_msg = dmsg.DDPopResponse(
                 self._tag_inc(),
                 ref=msg.tag,
@@ -3041,16 +3185,14 @@ class Manager:
                 errInfo=errInfo,
             )
             self._send_dmsg_and_value(
-                chkpt=msg.chkptID,
-                resp_msg=resp_msg,
-                connection=self._client_connections_map[msg.clientID],
-                key_mem=None,
+                chkpt=None, resp_msg=resp_msg, connection=self._client_connections_map[msg.clientID], key_mem=None
             )
             raise RuntimeError(
                 f"There was an unexpected exception in pop in manager {self._manager_id} with PUID {self._puid}"
             )
 
-        pop_op = PopOp(self, msg.clientID, msg.chkptID, msg.tag, key_mem)
+        key = BytesKey(msg.key)
+        pop_op = PopOp(self, msg.clientID, msg.chkptID, msg.tag, key)
 
         if not pop_op.perform():
             self._defer(pop_op)
@@ -3058,12 +3200,10 @@ class Manager:
     @dutil.route(dmsg.DDContains, _DTBL)
     def contains(self, msg: dmsg.DDContains, recvh):
         try:
-            key_mem, hint = recvh.recv_mem(timeout=self._timeout)
-            assert hint == KEY_HINT
-
             recvh.close()
 
-            contains_op = ContainsOp(self, msg.clientID, msg.chkptID, msg.tag, key_mem)
+            key = BytesKey(msg.key)
+            contains_op = ContainsOp(self, msg.clientID, msg.chkptID, msg.tag, key)
 
             contains_op.perform()
 
@@ -3071,7 +3211,6 @@ class Manager:
             log.info("Manager %s with PUID=%s could not process get request. %s", self._manager_id, self._puid, ex)
             log.info("The requested contains operation could not be completed because the manager pool is too full")
             # recover from the error by freeing memory and cleaning recvh.
-            self._recover_mem(key_mem, [], recvh)
             resp_msg = dmsg.DDContainsResponse(
                 self._tag_inc(),
                 ref=msg.tag,
@@ -3085,7 +3224,6 @@ class Manager:
             errInfo = f"The requested contains operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}"
             log.info(errInfo)
             # recover from the error by freeing memory and cleaning recvh.
-            self._recover_mem(key_mem, [], recvh)
             resp_msg = dmsg.DDContainsResponse(
                 self._tag_inc(),
                 ref=msg.tag,
@@ -3142,6 +3280,18 @@ class Manager:
 
     @dutil.route(dmsg.DDClear, _DTBL)
     def clear(self, msg: dmsg.DDClear, recvh):
+        if self._read_only:
+            self._recover_mem(None, [], recvh)
+            errInfo = "Could not process clear in a frozen dictionary."
+            log.debug(errInfo)
+            resp_msg = dmsg.DDClearResponse(
+                self._tag_inc(), ref=msg.tag, err=DragonError.INVALID_OPERATION, errInfo=errInfo
+            )
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+            return
+
         try:
             recvh.close()
 
@@ -3241,7 +3391,7 @@ class Manager:
         recvh.close()
 
         with self._client_connections_map[msg.clientID].sendh(
-            use_main_as_stream_channel=True, timeout=self._timeout
+            use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=True
         ) as sendh:
             try:
                 key = next(self.iterators[msg.iterID])
@@ -3371,6 +3521,19 @@ class Manager:
 
     @dutil.route(dmsg.DDManagerSync, _DTBL)
     def manager_sync(self, msg: dmsg.DDManagerSync, recvh):
+
+        if self._read_only:
+            self._recover_mem(None, [], recvh)
+            errInfo = "Could not process manager sync in a frozen dictionary."
+            log.debug(errInfo)
+            resp_msg = dmsg.DDManagerSyncResponse(
+                self._tag_inc(), ref=msg.tag, err=DragonError.INVALID_OPERATION, errInfo=errInfo
+            )
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+            return
+
         # Send message to the empty manager to sync up the state.
         try:
             # close recvh as early as possible to prevent deadlock and improved performance.
@@ -3387,7 +3550,7 @@ class Manager:
             allocs = self._working_set.build_allocs()
             connection = fli.FLInterface.attach(b64decode(msg.emptyManagerFLI))
             strm = self._get_strm_channel()
-            with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
+            with connection.sendh(stream_channel=strm, timeout=self._timeout, turbo_mode=True) as sendh:
                 sendh.send_bytes(mgr_set_state_req.serialize(), timeout=self._timeout)
                 for id, mem in allocs.items():
                     sendh.send_bytes(cloudpickle.dumps(id), timeout=self._timeout)
@@ -3421,6 +3584,19 @@ class Manager:
 
     @dutil.route(dmsg.DDManagerSetState, _DTBL)
     def manager_set_state(self, msg: dmsg.DDManagerSetState, recvh):
+
+        if self._read_only:
+            self._recover_mem(None, [], recvh)
+            errInfo = "Could not process manager set state in a frozen dictionary."
+            log.debug(errInfo)
+            resp_msg = dmsg.DDManagerSetStateResponse(
+                self._tag_inc(), ref=msg.tag, err=DragonError.INVALID_OPERATION, errInfo=errInfo
+            )
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+            return
+
         try:
             # Reconstruct state of the manager
             try:
@@ -3537,6 +3713,14 @@ class Manager:
         try:
             recvh.close()
 
+            if not self._read_only:
+                err = DragonError.INVALID_OPERATION
+                errInfo = (
+                    "Failed to advance checkpoint. Advancing checkpoint in non read-only dictionary is not allowed."
+                )
+                log.debug(errInfo)
+                return
+
             # broadcast message to left and right managers
             self._send_dmsg_to_children(msg)
 
@@ -3620,6 +3804,69 @@ class Manager:
         finally:
             recvh.close()
             resp_msg = dmsg.DDPersistResponse(self._tag_inc(), ref=msg.tag, err=err, errInfo=errInfo)
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+
+    @dutil.route(dmsg.DDGetFreeze, _DTBL)
+    def get_freeze(self, msg: dmsg.DDGetFreeze, recvh):
+
+        try:
+            recvh.close()
+
+            err = DragonError.SUCCESS
+            errInfo = ""
+        except Exception as ex:
+            err = DragonError.FAILURE
+            errInfo = f"Failed to get freeze status from manager {self._manager_id} with PUID {self._puid}."
+        finally:
+            resp_msg = dmsg.DDGetFreezeResponse(
+                self._tag_inc(), ref=msg.tag, err=err, errInfo=errInfo, freeze=self._read_only
+            )
+            self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
+
+    @dutil.route(dmsg.DDFreeze, _DTBL)
+    def freeze(self, msg: dmsg.DDFreeze, recvh):
+
+        try:
+            recvh.close()
+
+            self._read_only = True
+
+            # broadcast message to left and right managers
+            self._send_dmsg_to_children(msg)
+
+            err = DragonError.SUCCESS
+            errInfo = ""
+
+        except Exception as ex:
+            err = DragonError.FAILURE
+            errInfo = f"Failed to freeze ddict on manager {self._manager_id} with PUID {self._puid}."
+        finally:
+            resp_msg = dmsg.DDFreezeResponse(self._tag_inc(), ref=msg.tag, err=err, errInfo=errInfo)
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
+
+    @dutil.route(dmsg.DDUnFreeze, _DTBL)
+    def unfreeze(self, msg: dmsg.DDUnFreeze, recvh):
+
+        try:
+            recvh.close()
+
+            self._read_only = False
+
+            # broadcast message to left and right managers
+            self._send_dmsg_to_children(msg)
+
+            err = DragonError.SUCCESS
+            errInfo = ""
+
+        except Exception as ex:
+            err = DragonError.SUCCESS
+            errInfo = f"Failed to unfreeze ddict on manager {self._manager_id} with PUID {self._puid}."
+        finally:
+            resp_msg = dmsg.DDUnFreezeResponse(self._tag_inc(), ref=msg.tag, err=err, errInfo=errInfo)
             connection = fli.FLInterface.attach(b64decode(msg.respFLI))
             self._send_msg(resp_msg, connection)
             connection.detach()

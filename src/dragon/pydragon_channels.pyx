@@ -1055,7 +1055,7 @@ cdef class Channel:
 
 
     @classmethod
-    def make_process_local(cls, block_size=None, capacity=None, timeout=None):
+    def make_process_local(cls, MemoryPool pool=None, block_size=None, capacity=None, timeout=None):
         """
         Create a process local channel which is a channel that exists for the
         sole purpose of use by the current process. The channel is unique
@@ -1069,6 +1069,16 @@ cdef class Channel:
         requests or need to have a place where responses to requests of
         other processes can be sent. Most likely calls to this function
         will exist inside of some other API.
+
+        :param pool: The pool from which to allocate the channel. If None is
+            specified, the default pool will be used on the node.
+
+        :param block_size: The size of the channel blocks to be used in the channel. This
+            is a control on how much space is reserved for each slot in the channel.
+
+        :param capacity: The number of blocks to be allocated in the channel. Once the
+            capacity is reached on send operations, further send operations will block
+            given a non-zero timeout.
 
         :param timeout: Default is None which means to block without timeout until the
             channel is made. This should not timeout and should be processed quickly. If a
@@ -1089,6 +1099,7 @@ cdef class Channel:
             dragonChannelSerial_t ser
             uint64_t blockSize
             uint64_t numBlocks
+            uint64_t muid
 
         if timeout is None:
             time_ptr = NULL
@@ -1101,6 +1112,11 @@ cdef class Channel:
             val_timeout.tv_nsec = int((timeout - val_timeout.tv_sec)*1000000000)
         else:
             raise ValueError('make_process_local timeout must be a float or int')
+
+        if pool is None:
+            pool = MemoryPool.attach_default()
+
+        muid = pool.muid
 
         if block_size is None:
             blockSize = 0 # default will be used
@@ -1117,7 +1133,7 @@ cdef class Channel:
             numBlocks = capacity
 
         with nogil:
-            derr = dragon_create_process_local_channel(&ch, blockSize, numBlocks, time_ptr)
+            derr = dragon_create_process_local_channel(&ch, muid, blockSize, numBlocks, time_ptr)
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Could not create process local channel", derr)
 

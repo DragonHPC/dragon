@@ -24,7 +24,7 @@ BIN_FILES = test_ch test_bch perf_fch test_send test_poll test_peek_pop test_cha
 
 default: build
 
-build: test_ch test_bch perf_fch test_send test_poll test_channelsets test_wrong test_gateways test_gateway_messages test_fli test_capnp
+build: test_ch test_bch perf_fch test_send test_poll test_channelsets test_wrong test_gateways test_gateway_messages test_fli test_capnp test_peek_pop
 
 test_ch: test_ch.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_ch $< $(LIBS) -ldl

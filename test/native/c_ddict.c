@@ -175,7 +175,7 @@ dragonError_t _get_read_bytes(dragonDDictDescr_t * ddict, char key[], char ** va
     }
 
     if (err != DRAGON_EOT)
-        err_fail(err, "Exited recveive loop before EOT");
+        err_fail(err, "Exited receive loop before EOT");
 
     err = dragon_ddict_finalize_request(&req);
     if (err != DRAGON_SUCCESS)
@@ -231,7 +231,7 @@ dragonError_t _get_read_bytes_multiple_key_writes(dragonDDictDescr_t * ddict, ch
     }
 
     if (err != DRAGON_EOT)
-        err_fail(err, "Exited recveive loop before EOT");
+        err_fail(err, "Exited receive loop before EOT");
 
     err = dragon_ddict_finalize_request(&req);
     if (err != DRAGON_SUCCESS)
@@ -260,6 +260,11 @@ dragonError_t _get_read_mem(dragonDDictDescr_t * ddict, char key[], char ** vals
         err_fail(err, "Could not perform get op");
     }
 
+    bool free_mem = false;
+    err = dragon_ddict_free_required(&req, &free_mem);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not determine if the memory needs to be freed.");
+
     size_t i = 0;
     while (err == DRAGON_SUCCESS) {
 
@@ -269,7 +274,7 @@ dragonError_t _get_read_mem(dragonDDictDescr_t * ddict, char key[], char ** vals
             err_fail(err, "Could not receive value");
 
         // compare value
-        if (i > num_vals)
+        if (i > num_vals && err != DRAGON_EOT)
             misc_fail("Received more values than expected");
 
         if (err == DRAGON_SUCCESS) {
@@ -290,13 +295,14 @@ dragonError_t _get_read_mem(dragonDDictDescr_t * ddict, char key[], char ** vals
                 misc_fail("Expected value did not match received value");
         }
 
-        dragon_memory_free(&mem);
+        if (free_mem)
+            dragon_memory_free(&mem);
 
         i += 1;
     }
 
     if (err != DRAGON_EOT)
-        err_fail(err, "Exited recveive loop before EOT");
+        err_fail(err, "Exited receive loop before EOT");
 
     err = dragon_ddict_finalize_request(&req);
     if (err != DRAGON_SUCCESS)
@@ -350,7 +356,7 @@ dragonError_t _get_receive_bytes_into(dragonDDictDescr_t * ddict, char key[], ch
     }
 
     if (err != DRAGON_EOT)
-        err_fail(err, "Exited recveive loop before EOT");
+        err_fail(err, "Exited receive loop before EOT");
 
     err = dragon_ddict_finalize_request(&req);
     if (err != DRAGON_SUCCESS)
@@ -432,7 +438,7 @@ dragonError_t _pop(dragonDDictDescr_t * ddict, char key[], char ** vals, size_t 
     }
 
     if (err != DRAGON_EOT)
-        err_fail(err, "Exited recveive loop before EOT");
+        err_fail(err, "Exited receive loop before EOT");
 
     err = dragon_ddict_finalize_request(&req);
     if (err != DRAGON_SUCCESS)
@@ -893,6 +899,11 @@ dragonError_t test_get_read_mem(const char* ddict_ser) {
         err_fail(err, "Could not perform put op");
 
     // Get op
+    err = _get_read_mem(&ddict, key, vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Caught err in get request");
+
+    // Get op second times
     err = _get_read_mem(&ddict, key, vals, num_vals);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Caught err in get request");
@@ -1980,7 +1991,7 @@ dragonError_t test_custom_manager_pop(const char * ddict_ser) {
     // Client 1 delete a key on manager 0 -> should return key not found.
     err = _pop(&ddict_m1, key, vals, num_vals);
     if (err != DRAGON_KEY_NOT_FOUND)
-        err_fail(err, "Could not get expected result, expected DRAGON_KEY_NOT_FOUND");
+        err_fail(err, "Could not get expected result from manager 1, expected DRAGON_KEY_NOT_FOUND");
 
     // Delete (pop) op
     err = _pop(&ddict_m0, key, vals, num_vals);
@@ -1990,7 +2001,7 @@ dragonError_t test_custom_manager_pop(const char * ddict_ser) {
     // Client 0 delete a key on manager 1 -> should return key not found.
     err = _pop(&ddict_m0, key1, vals, num_vals);
     if (err != DRAGON_KEY_NOT_FOUND)
-        err_fail(err, "Could not get expected result, expected DRAGON_KEY_NOT_FOUND");
+        err_fail(err, "ddictm0 Could not get expected result from manager 0, expected DRAGON_KEY_NOT_FOUND");
 
     // Delete (pop) op
     err = _pop(&ddict_m1, key1, vals, num_vals);

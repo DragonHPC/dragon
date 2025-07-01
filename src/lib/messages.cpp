@@ -113,8 +113,8 @@ DragonResponseMsg::builder(MessageDef::Builder& msg)
 /********************************************************************************************************/
 /* local services create process local channel */
 
-SHCreateProcessLocalChannelMsg::SHCreateProcessLocalChannelMsg(uint64_t tag, uint64_t puid, uint64_t blockSize, uint64_t capacity, const char* respFLI):
-    DragonMsg(SHCreateProcessLocalChannelMsg::TC, tag), mPUID(puid), mBlockSize(blockSize), mCapacity(capacity), mFLI(respFLI) {}
+SHCreateProcessLocalChannelMsg::SHCreateProcessLocalChannelMsg(uint64_t tag, uint64_t puid, uint64_t muid, uint64_t blockSize, uint64_t capacity, const char* respFLI):
+    DragonMsg(SHCreateProcessLocalChannelMsg::TC, tag), mPUID(puid), mMUID(muid), mBlockSize(blockSize), mCapacity(capacity), mFLI(respFLI) {}
 
 void
 SHCreateProcessLocalChannelMsg::builder(MessageDef::Builder& msg)
@@ -122,6 +122,7 @@ SHCreateProcessLocalChannelMsg::builder(MessageDef::Builder& msg)
     DragonMsg::builder(msg);
     SHCreateProcessLocalChannelDef::Builder builder = msg.initShCreateProcessLocalChannel();
     builder.setPuid(mPUID);
+    builder.setMuid(mMUID);
     builder.setBlockSize(mBlockSize);
     builder.setCapacity(mCapacity);
     builder.setRespFLI(mFLI);
@@ -137,6 +138,7 @@ SHCreateProcessLocalChannelMsg::deserialize(MessageDef::Reader& reader, DragonMs
         (*msg) = new SHCreateProcessLocalChannelMsg(
             reader.getTag(),
             shCPLCReader.getPuid(),
+            shCPLCReader.getMuid(),
             shCPLCReader.getBlockSize(),
             shCPLCReader.getCapacity(),
             shCPLCReader.getRespFLI().cStr());
@@ -158,6 +160,12 @@ const uint64_t
 SHCreateProcessLocalChannelMsg::puid()
 {
     return mPUID;
+}
+
+const uint64_t
+SHCreateProcessLocalChannelMsg::muid()
+{
+    return mMUID;
 }
 
 const uint64_t
@@ -1291,8 +1299,8 @@ DDPutResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
 /********************************************************************************************************/
 /* ddict get message */
 
-DDGetMsg::DDGetMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID=0) :
-    DragonMsg(DDGetMsg::TC, tag), mClientID(clientID), mChkptID(chkptID) {}
+DDGetMsg::DDGetMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen) :
+    DragonMsg(DDGetMsg::TC, tag), mClientID(clientID), mChkptID(chkptID), mKey(key), mKeyLen(keyLen) {}
 
 void
 DDGetMsg::builder(MessageDef::Builder& msg)
@@ -1301,6 +1309,7 @@ DDGetMsg::builder(MessageDef::Builder& msg)
     DDGetDef::Builder builder = msg.initDdGet();
     builder.setClientID(mClientID);
     builder.setChkptID(mChkptID);
+    builder.setKey(kj::arrayPtr(mKey, mKeyLen));
 }
 
 dragonError_t
@@ -1312,7 +1321,10 @@ DDGetMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
         (*msg) = new DDGetMsg (
             reader.getTag(),
             getReader.getClientID(),
-            getReader.getChkptID());
+            getReader.getChkptID(),
+            getReader.getKey().begin(),
+            getReader.getKey().size());
+
     } catch (...) {
         err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDGet message.");
     }
@@ -1332,11 +1344,23 @@ DDGetMsg::chkptID()
     return mChkptID;
 }
 
+const unsigned char*
+DDGetMsg::key()
+{
+    return mKey;
+}
+
+size_t
+DDGetMsg::keyLen()
+{
+    return mKeyLen;
+}
+
 /********************************************************************************************************/
 /* ddict get response message */
 
-DDGetResponseMsg::DDGetResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo):
-    DragonResponseMsg(DDGetResponseMsg::TC, tag, ref, err, errInfo) {}
+DDGetResponseMsg::DDGetResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, bool freeMem):
+    DragonResponseMsg(DDGetResponseMsg::TC, tag, ref, err, errInfo), mFreeMem(freeMem) {}
 
 
 dragonError_t
@@ -1344,12 +1368,14 @@ DDGetResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
 {
     try {
         ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+        DDGetResponseDef::Reader getResponseReader = reader.getDdGetResponse();
 
         (*msg) = new DDGetResponseMsg (
             reader.getTag(),
             rReader.getRef(),
             (dragonError_t)rReader.getErr(),
-            rReader.getErrInfo().cStr());
+            rReader.getErrInfo().cStr(),
+            getResponseReader.getFreeMem());
 
     } catch (...) {
         err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDGetResponse message.");
@@ -1358,11 +1384,17 @@ DDGetResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
     no_err_return(DRAGON_SUCCESS);
 }
 
+bool
+DDGetResponseMsg::freeMem()
+{
+    return mFreeMem;
+}
+
 /********************************************************************************************************/
 /* ddict pop message */
 
-DDPopMsg::DDPopMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID=0) :
-    DragonMsg(DDPopMsg::TC, tag), mClientID(clientID), mChkptID(chkptID) {}
+DDPopMsg::DDPopMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen) :
+    DragonMsg(DDPopMsg::TC, tag), mClientID(clientID), mChkptID(chkptID), mKey(key), mKeyLen(keyLen) {}
 
 void
 DDPopMsg::builder(MessageDef::Builder& msg)
@@ -1371,6 +1403,7 @@ DDPopMsg::builder(MessageDef::Builder& msg)
     DDPopDef::Builder builder = msg.initDdPop();
     builder.setClientID(mClientID);
     builder.setChkptID(mChkptID);
+    builder.setKey(kj::arrayPtr(mKey, mKeyLen));
 }
 
 dragonError_t
@@ -1382,7 +1415,9 @@ DDPopMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
         (*msg) = new DDPopMsg (
             reader.getTag(),
             popReader.getClientID(),
-            popReader.getChkptID());
+            popReader.getChkptID(),
+            popReader.getKey().begin(),
+            popReader.getKey().size());
     } catch (...) {
         err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDPop message.");
     }
@@ -1402,24 +1437,37 @@ DDPopMsg::chkptID()
     return mChkptID;
 }
 
+const unsigned char*
+DDPopMsg::key()
+{
+    return mKey;
+}
+
+size_t
+DDPopMsg::keyLen()
+{
+    return mKeyLen;
+}
+
 /********************************************************************************************************/
 /* ddict pop response message */
 
-DDPopResponseMsg::DDPopResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo):
-    DragonResponseMsg(DDPopResponseMsg::TC, tag, ref, err, errInfo) {}
-
+DDPopResponseMsg::DDPopResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, bool freeMem):
+    DragonResponseMsg(DDPopResponseMsg::TC, tag, ref, err, errInfo), mFreeMem(freeMem) {}
 
 dragonError_t
 DDPopResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
 {
     try {
         ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+        DDPopResponseDef::Reader popResponseReader = reader.getDdPopResponse();
 
         (*msg) = new DDPopResponseMsg (
             reader.getTag(),
             rReader.getRef(),
             (dragonError_t)rReader.getErr(),
-            rReader.getErrInfo().cStr());
+            rReader.getErrInfo().cStr(),
+            popResponseReader.getFreeMem());
 
     } catch (...) {
         err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDPopResponse message.");
@@ -1428,11 +1476,17 @@ DDPopResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
     no_err_return(DRAGON_SUCCESS);
 }
 
+bool
+DDPopResponseMsg::freeMem()
+{
+    return mFreeMem;
+}
+
 /********************************************************************************************************/
 /* ddict contains message */
 
-DDContainsMsg::DDContainsMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID=0) :
-    DragonMsg(DDContainsMsg::TC, tag), mClientID(clientID), mChkptID(chkptID) {}
+DDContainsMsg::DDContainsMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen) :
+    DragonMsg(DDContainsMsg::TC, tag), mClientID(clientID), mChkptID(chkptID), mKey(key), mKeyLen(keyLen) {}
 
 void
 DDContainsMsg::builder(MessageDef::Builder& msg)
@@ -1441,6 +1495,7 @@ DDContainsMsg::builder(MessageDef::Builder& msg)
     DDContainsDef::Builder builder = msg.initDdContains();
     builder.setClientID(mClientID);
     builder.setChkptID(mChkptID);
+    builder.setKey(kj::arrayPtr(mKey, mKeyLen));
 }
 
 dragonError_t
@@ -1452,7 +1507,9 @@ DDContainsMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
         (*msg) = new DDContainsMsg (
             reader.getTag(),
             containsReader.getClientID(),
-            containsReader.getChkptID());
+            containsReader.getChkptID(),
+            containsReader.getKey().begin(),
+            containsReader.getKey().size());
     } catch (...) {
         err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDContains message.");
     }
@@ -1470,6 +1527,18 @@ uint64_t
 DDContainsMsg::chkptID()
 {
     return mChkptID;
+}
+
+const unsigned char*
+DDContainsMsg::key()
+{
+    return mKey;
+}
+
+size_t
+DDContainsMsg::keyLen()
+{
+    return mKeyLen;
 }
 
 /********************************************************************************************************/
@@ -1562,14 +1631,6 @@ DDLengthMsg::broadcast()
 
 DDLengthResponseMsg::DDLengthResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t length):
     DragonResponseMsg(DDLengthResponseMsg::TC, tag, ref, err, errInfo), mLength(length) {}
-
-void
-DDLengthResponseMsg::builder(MessageDef::Builder& msg)
-{
-    DragonMsg::builder(msg);
-    DDLengthResponseDef::Builder builder = msg.initDdLengthResponse();
-    builder.setLength(mLength);
-}
 
 dragonError_t
 DDLengthResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
@@ -2429,14 +2490,6 @@ DDIteratorMsg::clientID()
 DDIteratorResponseMsg::DDIteratorResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t iterID):
     DragonResponseMsg(DDIteratorResponseMsg::TC, tag, ref, err, errInfo), mIterID(iterID) {}
 
-void
-DDIteratorResponseMsg::builder(MessageDef::Builder& msg)
-{
-    DragonMsg::builder(msg);
-    DDIteratorResponseDef::Builder builder = msg.initDdIteratorResponse();
-    builder.setIterID(mIterID);
-}
-
 dragonError_t
 DDIteratorResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
 {
@@ -2651,8 +2704,8 @@ DDRandomManagerMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
 /********************************************************************************************************/
 /* ddict connect to random manager response */
 
-DDRandomManagerResponseMsg::DDRandomManagerResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, const char* manager_fli):
-    DragonResponseMsg(DDRandomManagerResponseMsg::TC, tag, ref, err, errInfo), mManagerFLI(manager_fli) {}
+DDRandomManagerResponseMsg::DDRandomManagerResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, const char* manager_fli, uint64_t manager_id):
+    DragonResponseMsg(DDRandomManagerResponseMsg::TC, tag, ref, err, errInfo), mManagerFLI(manager_fli), mManagerID(manager_id) {}
 
 dragonError_t
 DDRandomManagerResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
@@ -2666,7 +2719,8 @@ DDRandomManagerResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** 
             rReader.getRef(),
             (dragonError_t)rReader.getErr(),
             rReader.getErrInfo().cStr(),
-            randomManagerResponseReader.getManager().cStr()
+            randomManagerResponseReader.getManager().cStr(),
+            randomManagerResponseReader.getManagerID()
         );
 
     } catch (...) {
@@ -2680,6 +2734,12 @@ const char*
 DDRandomManagerResponseMsg::managerFLI()
 {
     return mManagerFLI.c_str();
+}
+
+uint64_t
+DDRandomManagerResponseMsg::managerID()
+{
+    return mManagerID;
 }
 
 /********************************************************************************************************/
@@ -2982,7 +3042,7 @@ dragon_sh_send_receive(DragonMsg* req_msg, DragonResponseMsg** resp_msg, Message
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not lock the sh_return channel");
 
-    err = dragon_fli_open_send_handle(&shep_fli, &sendh, NULL, NULL, false, timeout);
+    err = dragon_fli_open_send_handle(&shep_fli, &sendh, NULL, NULL, false, true, timeout);
     if (err != DRAGON_SUCCESS) {
         dragon_unlock(&sh_return_lock);
         append_err_return(err, "Could not open send handle.");
@@ -3069,6 +3129,9 @@ dragon_sh_send_receive(DragonMsg* req_msg, DragonResponseMsg** resp_msg, Message
  * @param ch A pointer to a channel descriptor object/structure. This will
  * be initialized after successful completion of this call.
  *
+ * @param muid The muid of the pool in which to allocate the channel. A value
+ * of 0 will result in using the default pool on the node.
+ *
  * @param block_size The desired block size for messages in the channel. Passing
  * in anything less than the default block size will result in using the
  * minimum block size.
@@ -3083,7 +3146,7 @@ dragon_sh_send_receive(DragonMsg* req_msg, DragonResponseMsg** resp_msg, Message
  **/
 
 dragonError_t
-dragon_create_process_local_channel(dragonChannelDescr_t* ch, uint64_t block_size, uint64_t capacity, const timespec_t* timeout)
+dragon_create_process_local_channel(dragonChannelDescr_t* ch, uint64_t muid, uint64_t block_size, uint64_t capacity, const timespec_t* timeout)
 {
     dragonError_t err;
     char* ser_fli;
@@ -3094,6 +3157,7 @@ dragon_create_process_local_channel(dragonChannelDescr_t* ch, uint64_t block_siz
     DragonResponseMsg* resp_msg;
     SHCreateProcessLocalChannelResponseMsg* resp;
     dragonChannelSerial_t ch_ser;
+    dragonMemoryPoolDescr_t pool;
 
     if (ch == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The ch argument cannot be NULL.");
@@ -3124,7 +3188,18 @@ dragon_create_process_local_channel(dragonChannelDescr_t* ch, uint64_t block_siz
 
     const long puid = strtol(puid_str, &end, 10);
 
-    SHCreateProcessLocalChannelMsg msg(inc_sh_tag(), puid, block_size, capacity, ser_fli);
+    if (muid == 0) {
+        // attach to default
+        err = dragon_memory_pool_attach_default(&pool);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not attach to default pool.");
+
+        dragon_memory_pool_muid(&pool, &muid);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get pool muid.");
+    }
+
+    SHCreateProcessLocalChannelMsg msg(inc_sh_tag(), puid, muid, block_size, capacity, ser_fli);
 
     err = dragon_sh_send_receive(&msg, &resp_msg, SHCreateProcessLocalChannelResponseMsg::TC, &return_fli, timeout);
     if (err != DRAGON_SUCCESS)

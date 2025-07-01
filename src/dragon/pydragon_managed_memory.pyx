@@ -136,16 +136,19 @@ cdef class MemoryAlloc:
 
         return hash_val
 
-    def __eq__(self, MemoryAlloc other):
+    def __eq__(self, other):
         cdef:
             dragonError_t derr
             bool result
+            MemoryAlloc other_mem
 
-        # not sure this is needed, but doesn't hurt.
+        # Try it the other way around first.
         if (type(other) is not MemoryAlloc):
-                raise DragonMemoryError(DRAGON_INVALID_OPERATION, "Cannot compare MemoryAlloc with value of different type.")
+            return other.__eq__(self)
 
-        derr = dragon_memory_equal(&self._mem_descr, &other._mem_descr, &result)
+        other_mem = <MemoryAlloc>other
+
+        derr = dragon_memory_equal(&self._mem_descr, &other_mem._mem_descr, &result)
         if derr != DRAGON_SUCCESS:
             raise DragonMemoryError(derr, "Could not compare memory allocations")
 

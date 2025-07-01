@@ -25,10 +25,246 @@ The multi-node use case scales with the total number of CPUs reported by the all
 multiprocessing's stock capabilities.
 Base multiprocessing does not support multi-node workloads.
 
-In alphabetical order, these are the following joblib use cases and their usefulness:
+Parallel Memmap Example and Benchmark
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. literalinclude:: ../../examples/multiprocessing/joblib/parallel_memmap.py
+.. Code for parallel memmap
 
+The timing for the base multiprocessing runtime is:
+
+.. list-table:: Base Multiprocessing Timings for Parallel Memory Map
+   :widths: 25 25
+   :header-rows: 1
+
+   * - Process step
+     - Time in seconds
+   * - First elapsed time computing average of slices
+     - 0.98
+   * - Second elapsed time computing average of slices
+     - 3.93
+   * - Third elapsed time computing average of slices
+     - 6.82
+
+The timing for the single-node Dragon runtime
+
+.. list-table:: Single-node Dragon Timings for Parallel Memory Map
+   :widths: 25 25
+   :header-rows: 1
+
+   * - Process step
+     - Time in seconds
+   * - First elapsed time computing average of slices
+     - 0.98
+   * - Second elapsed time computing average of slices
+     - 2.20
+   * - Third elapsed time computing average of slices
+     - 1.87
+
+The timing for the multi-node Dragon runtime
+
+.. list-table:: Multi-node Dragon Timings for Parallel Memory Map
+   :widths: 25 25
+   :header-rows: 1
+
+   * - Process step
+     - Time in seconds
+   * - First elapsed time computing average of slices
+     - 0.98
+   * - Second elapsed time computing average of slices
+     - 2.20
+   * - Third elapsed time computing average of slices
+     - 2.68
+
+
+Delayed Comparison Example and Benchmark
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. literalinclude:: ../../examples/multiprocessing/joblib/delayed_comparison.py
+.. Code for delayed comparison
+
+The timing for the base multiprocessing runtime is:
+
+.. list-table:: Base Multiprocessing Timings for Delayed Comparison
+   :widths: 25 25
+   :header-rows: 1
+
+   * - Type of parallel run
+     - Time in seconds
+   * - Without delayed
+     - 10.75817883014679
+   * - With delayed
+     - 0.010308943688869476
+
+The timing for the single-node Dragon runtime is:
+
+.. list-table:: Dragon Timings for Delayed Comparison
+   :widths: 25 25
+   :header-rows: 1
+
+   * - Type of parallel run
+     - Time in seconds
+   * - Without delayed
+     - 10.675060355992173
+   * - With delayed
+     - 0.0031840159936109558
+
+The timing for the multi-node Dragon runtime is:
+
+.. list-table:: Multi-node Dragon Timings for Delayed Comparison
+   :widths: 25 25
+   :header-rows: 1
+
+   * - Type of parallel run
+     - Time in seconds
+   * - Without delayed
+     - 10.547747920732945
+   * - With delayed
+     - 0.0032101319957291707
+
+Compressor Comparison Example and Benchmark
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. literalinclude:: ../../examples/multiprocessing/joblib/compressor_comparison.py
+.. Code for compressor comparision
+
+The timing for the base multiprocessing runtime is:
+
+.. list-table:: Base Multiprocessing Timings for Compressor Comparison
+   :widths: 25 25
+   :header-rows: 1
+
+   * - n_jobs
+     - Statistics
+   * - Raw dump duration
+     - 1.458s
+   * - Raw dump file size
+     - 167.218MB
+   * - Raw load duration
+     - 0.061s
+   * - LZMA dump duration
+     - 1.640s
+   * - LZMA file size
+     - 2.118MB
+   * - LZMA load duration
+     - 0.349s
+   * - LZ4 file size
+     - 2.118MB
+   * - LZMA load duration
+     - 0.331s
+
+The timing for the single-node Dragon runtime is:
+
+.. list-table:: Dragon Timings for Compressor Comparison
+   :widths: 25 25
+   :header-rows: 1
+
+   * - n_jobs
+     - Statistics
+   * - Raw dump duration
+     - 0.194s
+   * - Raw dump file size
+     - 167.218MB
+   * - Raw load duration
+     - 0.046s
+   * - LZMA dump duration
+     - 1.649s
+   * - LZMA file size
+     - 2.118MB
+   * - LZMA load duration
+     - 0.259s
+   * - LZ4 file size
+     - 2.118MB
+   * - LZMA load duration
+     - 0.257s
+
+The timing for the multi-node Dragon runtime is:
+
+.. list-table:: Multi-node Dragon Timings for Compressor Comparison
+   :widths: 25 25
+   :header-rows: 1
+
+   * - n_jobs
+     - Statistics
+   * - Raw dump duration
+     - 0.191s
+   * - Raw dump file size
+     - 167.218MB
+   * - Raw load duration
+     - 0.046s
+   * - LZMA dump duration
+     - 1.682s
+   * - LZMA file size
+     - 2.118MB
+   * - LZMA load duration
+     - 0.254s
+   * - LZ4 file size
+     - 2.118MB
+   * - LZMA load duration
+     - 0.254s
+
+Memory Basic Usage Example and Benchmark
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.. literalinclude:: ../../examples/multiprocessing/joblib/memory_basic_usage.py
+.. Code for memory basic usage
+
+The timing for the base multiprocessing runtime is:
+
+.. list-table:: Base Multiprocessing Timings for Memory Basic Usage
+   :widths: 25 25
+   :header-rows: 1
+
+   * - Type of parallel run
+     - Time in seconds
+   * - First transformation
+     - 5.01
+   * - Second transformation
+     - 5.08
+   * - Third transformation
+     - 0.01
+   * - Fourth transformation
+     - 5.09
+   * - Fifth transformation
+     - 0.01
+
+The timing for the single-node Dragon runtime is:
+
+.. list-table:: Single-node Dragon Runtimes for Memory Basic Usage
+   :widths: 25 25
+   :header-rows: 1
+
+   * - Type of parallel run
+     - Time in seconds
+   * - First transformation
+     - 5.00
+   * - Second transformation
+     - 5.02
+   * - Third transformation
+     - 0.01
+   * - Fourth transformation
+     - 5.02
+   * - Fifth transformation
+     - 0.01
+
+The timing for the multi-node Dragon runtime is:
+
+.. list-table:: Multi-node Dragon Runtimes for Memory Basic Usage
+   :widths: 25 25
+   :header-rows: 1
+
+   * - Type of parallel run
+     - Time in seconds
+   * - First transformation
+     - 5.00
+   * - Second transformation
+     - 5.02
+   * - Third transformation
+     - 0.01
+   * - Fourth transformation
+     - 5.02
+   * - Fifth transformation
+     - 0.01
+
+Bench Auto Batching Example and Benchmark 
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 .. literalinclude:: ../../examples/multiprocessing/joblib/bench_auto_batching.py
-
 .. Code for autobatching
 
 The timing for the base multiprocessing runtime is:
@@ -135,83 +371,83 @@ The timing for the single-node Dragon runtime is:
    * - 2
      - high variance, no trend
      - 5000
-     - 4.445
+     - 2.1
    * - 2
      - low variance, no trend
      - 5000
-     - 5.667
+     - 2.0
    * - 2
      - cyclic trends
      - 300
-     - 8.669
+     - 4.7
    * - 2
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 7.27
+     - 4.3
    * - 4
      - high variance, no trend
      - 5000
-     - 4.318
+     - 2.1
    * - 4
      - low variance, no trend
      - 5000
-     - 3.883
+     - 2.0
    * - 4
      - cyclic trends
      - 300
-     - 4.993
+     - 4.7
    * - 4
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 5.367
+     - 4.3
    * - 8
      - high variance, no trend
      - 5000
-     - 4.660
+     - 0.9
    * - 8
      - low variance, no trend
      - 5000
-     - 3.926
+     - 0.9
    * - 8
      - cyclic trends
      - 300
-     - 4.740
+     - 1.4
    * - 8
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 4.65
+     - 1.2
    * - 16
      - high variance, no trend
      - 5000
-     - 5.451
+     - 1.2
    * - 16
      - low variance, no trend
      - 5000
-     - 5.358
+     - 0.9
    * - 16
      - cyclic trends
      - 300
-     - 4.446
+     - 1.0
    * - 16
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 4.361
+     - 0.9
    * - 32
      - high variance, no trend
      - 5000
-     - 10.295
+     - 1.1
    * - 32
      - low variance, no trend
      - 5000
-     - 18.751
+     - 1.1
    * - 32
      - cyclic trends
      - 300
-     - 6.577
+     - 0.9
    * - 32
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 5.998
+     - 0.9
 
 The timing for the multi-node Dragon runtime is:
 
@@ -226,509 +462,80 @@ The timing for the multi-node Dragon runtime is:
    * - 2
      - high variance, no trend
      - 5000
-     - 6.007959
+     - 2.6
    * - 2
      - low variance, no trend
      - 5000
-     - 8.862581
+     - 2.6
    * - 2
      - cyclic trends
      - 300
-     - 8.567808
+     - 2.6
    * - 2
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 8.607972
+     - 2.6
    * - 4
      - high variance, no trend
      - 5000
-     - 6.007959
+     - 2.6
    * - 4
      - low variance, no trend
      - 5000
-     - 8.862581
+     - 2.6
    * - 4
      - cyclic trends
      - 300
-     - 8.567808
+     - 2.6
    * - 4
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 8.607972
+     - 2.6
    * - 8
      - high variance, no trend
      - 5000
-     - 7.252201
+     - 2.5
    * - 8
      - low variance, no trend
      - 5000
-     - 6.686624
+     - 2.6
    * - 8
      - cyclic trends
      - 300
-     - 6.242919
+     - 2.6
    * - 8
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 6.843477
+     - 2.6
    * - 16
      - high variance, no trend
      - 5000
-     - 7.252201
+     - 2.5
    * - 16
      - low variance, no trend
      - 5000
-     - 6.686624
+     - 2.5
    * - 16
      - cyclic trends
      - 300
-     - 6.242919
+     - 2.5
    * - 16
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 6.843477
+     - 2.5
    * - 32
      - high variance, no trend
      - 5000
-     - 7.252201
+     - 2.5
    * - 32
      - low variance, no trend
      - 5000
-     - 6.686624
+     - 2.5
    * - 32
      - cyclic trends
      - 300
-     - 6.242919
+     - 2.5
    * - 32
      - shuffling of the previous benchmark: same mean and variance
      - 300
-     - 6.843477
-
-.. literalinclude:: ../../examples/multiprocessing/joblib/compressor_comparison.py
-
-.. Code for compressor comparision
-
-The timing for the base multiprocessing runtime is:
-
-.. list-table:: Base Multiprocessing Timings for Compressor Comparison
-   :widths: 25 25
-   :header-rows: 1
-
-   * - n_jobs
-     - Statistics
-   * - Raw dump duration
-     - 1.458s
-   * - Raw dump file size
-     - 167.218MB
-   * - Raw load duration
-     - 0.061s
-   * - Zlib dump duration
-     - 0.624s
-   * - Zlib file size
-     - 3.943MB
-   * - Zlib load duration
-     - 0.210s
-   * - LZMA dump duration
-     - 1.640s
-   * - LZMA file size
-     - 2.118MB
-   * - LZMA load duration
-     - 0.349s
-   * - LZ4 file size
-     - 2.118MB
-   * - LZMA load duration
-     - 0.331s
-
-The timing for the single-node Dragon runtime is:
-
-.. list-table:: Dragon Timings for Compressor Comparison
-   :widths: 25 25
-   :header-rows: 1
-
-   * - n_jobs
-     - Statistics
-   * - Raw dump duration
-     - 1.454s
-   * - Raw dump file size
-     - 167.218MB
-   * - Raw load duration
-     - 0.062s
-   * - Zlib dump duration
-     - 0.640s
-   * - Zlib file size
-     - 3.943MB
-   * - Zlib load duration
-     - 0.218s
-   * - LZMA dump duration
-     - 1.639s
-   * - LZMA file size
-     - 2.118MB
-   * - LZMA load duration
-     - 0.348s
-   * - LZ4 file size
-     - 2.118MB
-   * - LZMA load duration
-     - 0.334s
-
-The timing for the multi-node Dragon runtime is:
-
-.. list-table:: Multi-node Dragon Timings for Compressor Comparison
-   :widths: 25 25
-   :header-rows: 1
-
-   * - n_jobs
-     - Statistics
-   * - Raw dump duration
-     - 1.577s
-   * - Raw dump file size
-     - 167.218MB
-   * - Raw load duration
-     - 1.483s
-   * - Zlib dump duration
-     - 0.883s
-   * - Zlib file size
-     - 3.943MB
-   * - Zlib load duration
-     - 0.275s
-   * - LZMA dump duration
-     - 2.098s
-   * - LZMA file size
-     - 2.118MB
-   * - LZMA load duration
-     - 0.420s
-   * - LZ4 file size
-     - 2.118MB
-   * - LZMA load duration
-     - 0.414s
-
-.. literalinclude:: ../../examples/multiprocessing/joblib/delayed_comparison.py
-
-.. Code for delayed comparison
-
-The timing for the base multiprocessing runtime is:
-
-.. list-table:: Base Multiprocessing Timings for Delayed Comparison
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Type of parallel run
-     - Time in seconds
-   * - Without delayed
-     - 10.75817883014679
-   * - With delayed
-     - 0.010308943688869476
-
-The timing for the single-node Dragon runtime is:
-
-.. list-table:: Dragon Timings for Delayed Comparison
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Type of parallel run
-     - Time in seconds
-   * - Without delayed
-     - 10.73451592773199
-   * - With delayed
-     - 0.010201960802078247
-
-The timing for the multi-node Dragon runtime is:
-
-.. list-table:: Multi-node Dragon Timings for Delayed Comparison
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Type of parallel run
-     - Time in seconds
-   * - Without delayed
-     - 10.547747920732945
-   * - With delayed
-     - 0.015844576992094517
-
-.. literalinclude:: ../../examples/multiprocessing/joblib/memory_basic_usage.py
-
-.. Code for memory basic usage
-
-The timing for the base multiprocessing runtime is:
-
-.. list-table:: Base Multiprocessing Timings for Memory Basic Usage
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Type of parallel run
-     - Time in seconds
-   * - First transformation
-     - 5.01
-   * - Second transformation
-     - 5.08
-   * - Third transformation
-     - 0.01
-   * - Fourth transformation
-     - 5.09
-   * - Fifth transformation
-     - 0.01
-
-The timing for the single-node Dragon runtime is:
-
-.. list-table:: Single-node Dragon Runtimes for Memory Basic Usage
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Type of parallel run
-     - Time in seconds
-   * - First transformation
-     - 5.01
-   * - Second transformation
-     - 5.06
-   * - Third transformation
-     - 0.01
-   * - Fourth transformation
-     - 5.07
-   * - Fifth transformation
-     - 0.01
-
-The timing for the multi-node Dragon runtime is:
-
-.. list-table:: Multi-node Dragon Runtimes for Memory Basic Usage
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Type of parallel run
-     - Time in seconds
-   * - First transformation
-     - 5.00
-   * - Second transformation
-     - 5.06
-   * - Third transformation
-     - 0.02
-   * - Fourth transformation
-     - 5.12
-   * - Fifth transformation
-     - 0.02
-
-.. literalinclude:: ../../examples/multiprocessing/joblib/nested_parallel_memory.py
-
-.. Code for nested parallel memory
-
-The timing for the base multiprocessing runtime is:
-
-.. list-table:: Base Multiprocessing Timings for Nested Parallel Memory
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Process step
-     - Time in seconds
-   * - First sequential processing
-     - 8.01
-   * - First round - caching the data
-     - 4.09
-   * - Second round - reloading the cache
-     - 0.05
-   * - Reusing intermediate checkpoints
-     - 0.04
-   * - Second sequential processing
-     - 8.01
-   * - First round - caching the data
-     - 4.12
-   * - Second round - reloading the cache
-     - 0.05
-   * - Reusing intermediate checkpoints
-     - 0.04
-
-The timing for the single-node Dragon runtime is:
-
-.. list-table:: Single-node Dragon Timings for Nested Parallel Memory
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Process step
-     - Time in seconds
-   * - First sequential processing
-     - 8.01
-   * - First round - caching the data
-     - 6.96
-   * - Second round - reloading the cache
-     - 3.18
-   * - Reusing intermediate checkpoints
-     - 3.18
-   * - Second sequential processing
-     - 8.01
-   * - First round - caching the data
-     - 7.17
-   * - Second round - reloading the cache
-     - 3.16
-   * - Reusing intermediate checkpoints
-     - 2.66
-
-The timing for the multi-node Dragon runtime is:
-
-.. list-table:: Multi-node Dragon Timings for Nested Parallel Memory
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Process step
-     - Time in seconds
-   * - First sequential processing
-     - 8.01
-   * - First round - caching the data
-     - 6.96
-   * - Second round - reloading the cache
-     - 3.18
-   * - Reusing intermediate checkpoints
-     - 3.18
-   * - Second sequential processing
-     - 8.01
-   * - First round - caching the data
-     - 7.17
-   * - Second round - reloading the cache
-     - 3.16
-   * - Reusing intermediate checkpoints
-     - 2.66
-
-.. literalinclude:: ../../examples/multiprocessing/joblib/parallel_memmap.py
-
-.. Code for parallel memmap
-
-The timing for the base multiprocessing runtime is:
-
-.. list-table:: Base Multiprocessing Timings for Parallel Memory Map
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Process step
-     - Time in seconds
-   * - First elapsed time computing average of slices
-     - 0.98
-   * - Second elapsed time computing average of slices
-     - 3.93
-   * - Third elapsed time computing average of slices
-     - 6.82
-
-The timing for the single-node Dragon runtime
-
-.. list-table:: Single-node Dragon Timings for Parallel Memory Map
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Process step
-     - Time in seconds
-   * - First elapsed time computing average of slices
-     - 0.99
-   * - Second elapsed time computing average of slices
-     - 4.15
-   * - Third elapsed time computing average of slices
-     - 5.28
-
-The timing for the multi-node Dragon runtime
-
-.. list-table:: Multi-node Dragon Timings for Parallel Memory Map
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Process step
-     - Time in seconds
-   * - First elapsed time computing average of slices
-     - 0.97
-   * - Second elapsed time computing average of slices
-     - 4.89
-   * - Third elapsed time computing average of slices
-     - 6.87
-
-
-.. literalinclude:: ../../examples/multiprocessing/joblib/parallel_random_state.py
-
-
-
-The timing for the base multiprocessing runtime is:
-
-.. list-table:: Base Multiprocessing Timings for Parallel Random State
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Process step
-     - Time in seconds
-   * - First iteratation (generation of stochastic vector)
-     - 0.02696242928504944
-   * - Second iteratation (replacement of stochastic vector)
-     - 0.0243108868598938
-   * - Third iteratation (replacement of second iteration stochastic vector)
-     - 0.031805530190467834
-
-The timing for the single-node Dragon runtime is:
-
-.. list-table:: Single-Node Dragon Timings for Parallel Random State
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Process step
-     - Time in seconds
-   * - First iteratation (generation of stochastic vector)
-     - 2.8984111174941063
-   * - Second iteratation (replacement of stochastic vector)
-     - 3.1529479399323463
-   * - Third iteratation (replacement of second iteration stochastic vector)
-     - 3.170066222548485
-
-The timing for the multi-node Dragon runtime is:
-
-.. list-table:: Multi-node Dragon Timings for Parallel Random State
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Process step
-     - Time in seconds
-   * - First iteratation (generation of stochastic vector)
-     - 3.2446429850533605
-   * - Second iteratation (replacement of stochastic vector)
-     -  3.3172717401757836
-   * - Third iteratation (replacement of second iteration stochastic vector)
-     - 3.0256078988313675
-
-
-.. literalinclude:: ../../examples/multiprocessing/joblib/serialization_and_wrappers.py
-
-.. Code for serialization and wrappers
-
-The timing for the base multiprocessing runtime is:
-
-.. list-table:: Base Multiprocessing Timings for Serialization and Wrappers
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Serialization Type
-     - Time in seconds
-   * - With loky backend and cloudpickle serialization
-     - 0.085
-   * - With multiprocessing backend and pickle serialization
-     - 0.093
-   * - With pickle serialization
-     - 0.080
-
-The timing for the single-node Dragon runtime is:
-
-.. list-table:: Single-node Dragon Timings for Serialization and Wrappers
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Serialization Type
-     - Time in seconds
-   * - With loky backend and cloudpickle serialization
-     - 3.147
-   * - With multiprocessing backend and pickle serialization
-     - 3.127
-   * - With pickle serialization
-     - 2.653
-
-The timing for the multi-node Dragon runtime is:
-
-.. list-table:: Multi-node Dragon Timings for Serialization and Wrappers
-   :widths: 25 25
-   :header-rows: 1
-
-   * - Serialization Type
-     - Time in seconds
-   * - With loky backend and cloudpickle serialization
-     - 3.343
-   * - With multiprocessing backend and pickle serialization
-     - 2.976
-   * - With pickle serialization
-     - 3.581
+     - 2.6

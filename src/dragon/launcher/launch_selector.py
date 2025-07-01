@@ -41,9 +41,6 @@ Please specify only '--single-node-override' or '--multi-node-override'"""
     if multi_arg:
         return True
 
-    # If no override specific, do automatic detection
-    multi_mode = False
-
     # Try to determine if we're on a supported multinode system
     if wlm != "":
         # only one of these will be true

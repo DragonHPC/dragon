@@ -50,21 +50,6 @@ if __name__ == "__main__":
 
     start = time.monotonic()
     with open(pickle_file, "wb") as f:
-        dump(data, f, compress="zlib")
-    zlib_dump_duration = time.monotonic() - start
-    print("Zlib dump duration: %0.3fs" % zlib_dump_duration)
-
-    zlib_file_size = os.stat(pickle_file).st_size / 1e6
-    print("Zlib file size: %0.3fMB" % zlib_file_size)
-
-    start = time.monotonic()
-    with open(pickle_file, "rb") as f:
-        load(f)
-    zlib_load_duration = time.monotonic() - start
-    print("Zlib load duration: %0.3fs" % zlib_load_duration)
-
-    start = time.monotonic()
-    with open(pickle_file, "wb") as f:
         dump(data, f, compress=("lzma", 3))
     lzma_dump_duration = time.monotonic() - start
     print("LZMA dump duration: %0.3fs" % lzma_dump_duration)

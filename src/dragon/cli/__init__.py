@@ -28,10 +28,14 @@ PROCNAME_NETWORK_CONFIG_LAUNCH_HELPER = "dragon-network-config-launch-helper"
 PROCNAME_NETWORK_CONFIG_SHUTDOWN_HELPER = "dragon-network-config-shutdown-helper"
 PROCNAME_NETWORK_IFADDRS = "dragon-network-ifaddrs"
 PROCNAME_HSTA_CONFIG = "dragon-config"
+PROCNAME_GLOBAL_CLEANUP_DEPRECATED = "dragon-cleanup-deprecated"
 PROCNAME_GLOBAL_CLEANUP = "dragon-cleanup"
 PROCNAME_LOCAL_CLEANUP = "dragon-node-cleanup"
 PROCNAME_HPAGES_CLEANUP = "dragon-hugepages-cleanup"
 PROCNAME_JUPYTER = "dragon-jupyter"
+PROCNAME_DRUN = "drun"
+PROCNAME_DRBE = "drbe"
+PROCNAME_DHOSTS = "dhosts"
 
 # TODO Refactor frontend entry point. See ../__main__.py and
 # TODO ../launcher/launch_selector.py.
@@ -59,9 +63,12 @@ entry_points = {
         f"{PROCNAME_NETWORK_IFADDRS} = dragon.transport.ifaddrs:main",
         f"{PROCNAME_HSTA_CONFIG} = dragon.infrastructure.config:hsta_config",
         f"{PROCNAME_HPAGES_CLEANUP} = dragon.infrastructure.config:hugepages_cleanup",
-        f"{PROCNAME_GLOBAL_CLEANUP} = dragon.launcher.util:exec_dragon_cleanup",
+        f"{PROCNAME_GLOBAL_CLEANUP_DEPRECATED} = dragon.launcher.util:exec_dragon_cleanup",
+        f"{PROCNAME_GLOBAL_CLEANUP} = tools.dragon_cleanup:drun",
         f"{PROCNAME_JUPYTER} = dragon.jupyter.server:start_server",
-
+        f"{PROCNAME_DRUN} = tools.dragon_run.drun:main",
+        f"{PROCNAME_DRBE} = tools.dragon_run.drbe:main",
+        f"{PROCNAME_DHOSTS} = tools.dragon_run.dhosts:main",
     ]
 }
 

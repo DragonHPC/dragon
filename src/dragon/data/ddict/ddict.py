@@ -983,6 +983,7 @@ class DDict:
         persist_count: int = 0,
         persist_path: str = "",
         persister_class: CheckpointPersister = NULLCheckpointPersister,
+        streams_per_manager=5,
     ) -> None:
         """
         Construct a Distributed Dictionary to be shared amongst distributed processes running
@@ -999,6 +1000,11 @@ class DDict:
              per policy. Each policy could be used to start more than
              one manager per node, in a potentially heterogeneous way.
              Defaults to 1.
+
+        :param streams_per_manager: A tuning parameter that when non-zero will
+             reduce the time needed for a manager to receive requests from clients.
+             If there are many clients connecting, then some clients will use their
+             own stream channels when connecting.
 
         :param n_nodes: The number of nodes that will have managers
              deployed on them. This must be set to None if a list of policies is
@@ -1018,8 +1024,8 @@ class DDict:
 
         :param wait_for_keys: Setting this to
              true means that each manager will keep track of a set of
-             keys at each checkpoint level and clients advancing to a
-             new checkpoint level will block until the set of keys at
+             keys at each checkpoint and clients advancing to a
+             new checkpoint will block until the set of keys at
              the oldest, retiring working set checkpoint are all
              written. By specifying this all clients will remain in
              sync with each other relative to the size of the working
@@ -1029,15 +1035,18 @@ class DDict:
              will not be affected by setting this argument to true.
              Specifying wait_for_keys also means that readers will block while
              waiting for a non-persistent key to be written until the
-             key is found or a timeout occurs.
+             key is found or a timeout occurs. Setting this to true
+             requires a working set size of at least 2.
 
         :param wait_for_writers: Setting this
-             to true means that each manager will wait for a set of
-             clients to have all advanced their checkpoint id beyond
+             to true means that each manager will wait for the set of
+             clients which have previously written keys to a checkpoint
+             in a manager to have all advanced their checkpoint id beyond
              the oldest checkpointing id before retiring a checkpoint
              from the working set. Setting this to true will cause
              clients that are advancing rapidly to block while others
-             catch up. Defaults to False.
+             catch up. Defaults to False. Setting this to true
+             requires a working set size of at least 2.
 
         :param policy: A policy
              can be supplied for starting the managers. Please read about policies in the
@@ -1131,6 +1140,16 @@ class DDict:
                     "When restoring from a checkpoint in Dragon Distributed Dict you must provide the name to restore the dictionary."
                 )
 
+            if working_set_size < 1:
+                raise ValueError(
+                    "The working set size of a DDict cannot be less than 1."
+                )
+
+            if working_set_size == 1 and (wait_for_keys or wait_for_writers):
+                raise ValueError(
+                    "The working set size must be greater than one when specifying wait_for_keys or wait_for_writers."
+                )
+
             if persist_freq < 0:
                 raise ValueError("Persist frequency should be non-negative.")
 
@@ -1197,6 +1216,7 @@ class DDict:
                 persist_path,
                 persist_count,
                 persister_class,
+                streams_per_manager,
             )
 
             self._managers_per_node = managers_per_node
@@ -1338,7 +1358,7 @@ class DDict:
 
     def _create(self, pickled_args):
         msg = dmsg.DDCreate(self._tag_inc(), respFLI=self._serialized_buffered_return_connector, args=pickled_args)
-        resp_msg = self._send_receive([(msg, None)], connection=self._orc_connector)
+        resp_msg = self._send_receive([(msg, None)], connection=self._orc_connector, buffered=True)
 
         if resp_msg.err == DragonError.FAILURE:
             raise DDictUnableToCreateDDict(resp_msg.err, resp_msg.errInfo)
@@ -1398,7 +1418,7 @@ class DDict:
             except:
                 pass
             msg = dmsg.DDRandomManager(self._tag_inc(), respFLI=self._serialized_buffered_return_connector)
-            resp_msg = self._send_receive([(msg, None)], connection=self._orc_connector)
+            resp_msg = self._send_receive([(msg, None)], connection=self._orc_connector, buffered=True)
             if resp_msg.err != DragonError.SUCCESS:
                 raise DDictError(resp_msg.err, f"Client failed to get manager from orchestrator. {resp_msg.errInfo}")
             self._main_manager_connection = fli.FLInterface.attach(b64decode(resp_msg.manager))
@@ -1409,7 +1429,7 @@ class DDict:
             respFLI=self._serialized_return_connector,
             bufferedRespFLI=self._serialized_buffered_return_connector,
         )  # register client to the manager (same node)
-        resp_msg = self._send_receive([(msg, None)], connection=self._main_manager_connection)
+        resp_msg = self._send_receive([(msg, None)], connection=self._main_manager_connection, buffered=True)
         if resp_msg.err != DragonError.SUCCESS:
             raise DDictError(resp_msg.err, f"Client failed to connect to main manager.{resp_msg.errInfo}")
         # -1 indicates to use the default timeout since the default
@@ -1418,7 +1438,6 @@ class DDict:
             self._timeout = resp_msg.timeout
         self._client_id = resp_msg.clientID
         self._num_managers = resp_msg.numManagers
-        self._read_only = resp_msg.readOnly
         for serialized_node in resp_msg.managerNodes:
             self._manager_nodes.append(cloudpickle.loads(b64decode(serialized_node)))
         # local managers is a list of local managers' ID
@@ -1433,7 +1452,7 @@ class DDict:
 
     def _connect_to_manager(self, manager_id):
         msg = dmsg.DDConnectToManager(self._tag_inc(), clientID=self._client_id, managerID=manager_id)
-        resp_msg = self._send_receive([(msg, None)], connection=self._main_manager_connection)
+        resp_msg = self._send_receive([(msg, None)], connection=self._main_manager_connection, buffered=True)
         if resp_msg.err != DragonError.SUCCESS:
             raise DDictError(resp_msg.err, resp_msg.errInfo)
 
@@ -1447,7 +1466,7 @@ class DDict:
                 respFLI=self._serialized_return_connector,
                 bufferedRespFLI=self._serialized_buffered_return_connector,
             )
-            resp_msg = self._send_receive([(msg, None)], connection=self._managers[manager_id])
+            resp_msg = self._send_receive([(msg, None)], connection=self._managers[manager_id], buffered=True)
             if resp_msg.err != DragonError.SUCCESS:
                 raise DDictError(resp_msg.err, resp_msg.errInfo)
         except Exception as ex:
@@ -1510,22 +1529,22 @@ class DDict:
         self._tag += 1
         return tag
 
-    def _send(self, msglist, connection):
+    def _send(self, msglist, connection, buffered=False):
         self._traceit("Opening send handle.")
 
-        if connection.is_buffered:
+        if connection.is_buffered or buffered:
             strm = None
         else:
             strm = self._main_stream_channel
 
-        with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
+        with connection.sendh(stream_channel=strm, use_main_buffered=buffered, timeout=self._timeout) as sendh:
             for msg, arg in msglist:
                 self._traceit("Sending msg: %s", msg)
                 if arg is None:
-                    sendh.send_bytes(msg.serialize(), timeout=self._timeout)
+                    sendh.send_bytes(msg.serialize(), buffer=buffered, timeout=self._timeout)
                 else:
                     # It is a pickled value so don't call serialize.
-                    sendh.send_bytes(msg, arg=arg, timeout=self._timeout)
+                    sendh.send_bytes(msg, arg=arg, buffer=buffered, timeout=self._timeout)
 
     def _recv_resp(self, resp_set, buffered_connector):
         self._traceit("About to open receive handle on fli to receive response.")
@@ -1561,8 +1580,8 @@ class DDict:
 
         return msglist
 
-    def _bput_recv_responses_and_check(self, resp_set, num_responses, expected_num_puts=1, connector=None):
-        msglist = []
+    def _recv_responses_and_check_err(self, resp_set, num_responses, connector=None):
+        resp_msgs = []
         if connector is None:
             connector = self._buffered_return_connector
         for _ in range(num_responses):
@@ -1577,6 +1596,8 @@ class DDict:
 
             else:
                 resp_msg = self._recv_resp(resp_set, connector)
+
+            resp_msgs.append(resp_msg)
 
             if resp_msg.err == DragonError.MEMORY_POOL_FULL:
                 log.debug(f"resp err is MEMORY_POOL_FULL, raising exception")
@@ -1593,13 +1614,9 @@ class DDict:
             elif resp_msg.err != DragonError.SUCCESS:
                 raise DDictError(resp_msg.err, resp_msg.errInfo)
 
-            elif resp_msg.numPuts != expected_num_puts:
-                raise DDictError(
-                    DragonError.FAILURE,
-                    f"Failed to store all keys in manager {resp_msg.managerID} in the distributed dictionary. Expected number of keys to be written: {self._num_bputs}, number of successful writes: {resp_msg.numPuts}",
-                )
+        return resp_msgs
 
-    def _recv_dmsg_and_val(self, req_msg, key):
+    def _recv_dmsg_and_val(self, req_msg, key, manager_not_local=False):
         self._traceit("About to open receive handle on fli to receive response and value.")
         with self._return_connector.recvh(use_main_as_stream_channel=True, timeout=self._timeout) as recvh:
             ref = -1
@@ -1617,13 +1634,19 @@ class DDict:
                 raise DDictError(resp_msg.err, resp_msg.errInfo)
             else:
                 try:
+                    free_mem = resp_msg.freeMem or manager_not_local
+                    log.debug(f"{free_mem=}")
                     if self._value_pickler is None:
                         value = cloudpickle.load(
-                            file=PickleReadAdapter(recvh=recvh, hint=VALUE_HINT, timeout=self._timeout)
+                            file=PickleReadAdapter(
+                                recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout
+                            )
                         )
                     else:
                         value = self._value_pickler.load(
-                            file=PickleReadAdapter(recvh=recvh, hint=VALUE_HINT, timeout=self._timeout)
+                            file=PickleReadAdapter(
+                                recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout
+                            )
                         )
                 except Exception as e:
                     tb = traceback.format_exc()
@@ -1638,11 +1661,11 @@ class DDict:
     def __missing__(self, key, *, err=DragonError.SUCCESS):
         raise DDictKeyError(err, "The key was not found", key)
 
-    def _send_receive(self, msglist, connection):
+    def _send_receive(self, msglist, connection, buffered=False):
         try:
             msg = msglist[0][0]
             tag = msg.tag
-            self._send(msglist, connection)
+            self._send(msglist, connection, buffered=buffered)
             resp_msg = self._recv_resp(set([msg.tag]), self._buffered_return_connector)
             return resp_msg
 
@@ -1766,7 +1789,7 @@ class DDict:
                 respFLI=self._serialized_buffered_return_connector,
                 allowRestart=allow_restart,
             )
-            resp_msg = self._send_receive([(msg, None)], connection=self._orc_connector)
+            resp_msg = self._send_receive([(msg, None)], connection=self._orc_connector, buffered=True)
         except Exception as ex:
             tb = traceback.format_exc()
             try:
@@ -1860,7 +1883,7 @@ class DDict:
                     msg = dmsg.DDDeregisterClient(
                         self._tag_inc(), clientID=self._client_id, respFLI=self._serialized_buffered_return_connector
                     )
-                    resp_msg = self._send_receive([(msg, None)], connection=self._managers[manager_id])
+                    resp_msg = self._send_receive([(msg, None)], connection=self._managers[manager_id], buffered=True)
                     if resp_msg.err != DragonError.SUCCESS:
                         log.debug("Error on response to deregister client %s", self._client_id)
 
@@ -1905,7 +1928,7 @@ class DDict:
             tags.add(current_tag)
             msg = dmsg.DDGetManagers(current_tag, respFLI=new_client._serialized_buffered_return_connector)
             connection = fli.FLInterface.attach(b64decode(ser_ddict))
-            new_client._send([(msg, None)], connection)
+            new_client._send([(msg, None)], connection, buffered=True)
             connection.detach()
 
         # receive responses from all orchestrators
@@ -1950,7 +1973,7 @@ class DDict:
                         current_tag, emptyManagerFLI=empty_fli, respFLI=new_client._serialized_buffered_return_connector
                     )
                     connection = fli.FLInterface.attach(b64decode(full_fli))
-                    new_client._send([(msg, None)], connection)
+                    new_client._send([(msg, None)], connection, buffered=True)
                     connection.detach()
 
                 # Receive sync responses from all full managers
@@ -1970,7 +1993,7 @@ class DDict:
                 current_tag, respFLI=new_client._serialized_buffered_return_connector, managerIDs=managerIDs
             )
             connection = fli.FLInterface.attach(b64decode(ser_ddict))
-            new_client._send([(msg, None)], connection)
+            new_client._send([(msg, None)], connection, buffered=True)
             connection.detach()
 
         # receive responses from all orchestrators
@@ -2005,7 +2028,7 @@ class DDict:
             msg = dmsg.DDGetMetaData(current_tag, respFLI=self._serialized_buffered_return_connector)
             connection = fli.FLInterface.attach(b64decode(ser_ddict))
             ddict_connections.append(connection)
-            self._send([(msg, None)], connection)
+            self._send([(msg, None)], connection, buffered=True)
 
         # receive responses from all orchestrator and check that the meta data match
         resp_num = len(clone_list)
@@ -2026,7 +2049,7 @@ class DDict:
             msg = dmsg.DDMarkDrainedManagers(
                 current_tag, respFLI=self._serialized_buffered_return_connector, managerIDs=managerIDs
             )
-            self._send([(msg, None)], ddict_connection)
+            self._send([(msg, None)], ddict_connection, buffered=True)
             ddict_connection.detach()
 
         msglist = self._recv_responses(tags, len(ddict_connections))
@@ -2079,8 +2102,6 @@ class DDict:
         :param value: the value of the pair. It also must be serializable.
         :raises Exception: Various exceptions can be raised including TimeoutError.
         """
-        if self._read_only:
-            raise DDictError(DragonError.INVALID_OPERATION, "Could not perform put with read-only mode.")
         if self._batch_put_started:
             if self._batch_persist:
                 raise DDictError(
@@ -2100,12 +2121,13 @@ class DDict:
         :returns: The value associated with the key.
         :raises Exception: Various exceptions can be raised including TimeoutError and KeyError.
         """
-        msg = dmsg.DDGet(self._tag_inc(), self._client_id, chkptID=self._chkpt_id)
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
+        msg = dmsg.DDGet(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, key=pickled_key)
         self._check_manager_connection(manager_id)
-        self._send([(msg, None), (pickled_key, KEY_HINT)], self._managers[manager_id])
+        self._send([(msg, None)], self._managers[manager_id], buffered=True)
+        manager_not_local = manager_id not in self._local_managers
+        value = self._recv_dmsg_and_val(msg, key, manager_not_local)
 
-        value = self._recv_dmsg_and_val(msg, key)
         return value
 
     def __contains__(self, key: object) -> bool:
@@ -2116,10 +2138,11 @@ class DDict:
         :returns bool: True or False depending on if the key is there or not.
         :raises: Various exceptions can be raised including TimeoutError.
         """
-        msg = dmsg.DDContains(self._tag_inc(), self._client_id, chkptID=self._chkpt_id)
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
+        tag = self._tag_inc()
+        msg = dmsg.DDContains(tag, self._client_id, chkptID=self._chkpt_id, key=pickled_key)
         self._check_manager_connection(manager_id)
-        resp_msg = self._send_receive([(msg, None), (pickled_key, KEY_HINT)], connection=self._managers[manager_id])
+        resp_msg = self._send_receive([(msg, None)], self._managers[manager_id], buffered=True)
 
         if resp_msg.err == DragonError.SUCCESS:
             return True
@@ -2159,7 +2182,7 @@ class DDict:
             respFLI=self._serialized_buffered_return_connector,
             broadcast=broadcast,
         )
-        self._send([(msg, None)], self._managers[selected_manager])
+        self._send([(msg, None)], self._managers[selected_manager], buffered=True)
         msglist = self._recv_responses(set([tag]), resp_num)
         length = 0
         for resp_msg in msglist:
@@ -2186,7 +2209,7 @@ class DDict:
         msg = dmsg.DDMarkDrainedManagers(
             self._tag_inc(), respFLI=self._serialized_buffered_return_connector, managerIDs=[manager_id]
         )
-        resp_msg = self._send_receive([(msg, None)], connection=self._orc_connector)
+        resp_msg = self._send_receive([(msg, None)], connection=self._orc_connector, buffered=True)
         if resp_msg.err != DragonError.SUCCESS:
             raise DDictError(resp_msg.err, f"Failed to mark manager {manager_id} as drained! {resp_msg.errInfo}")
 
@@ -2201,8 +2224,6 @@ class DDict:
         :param key: A serializable object that will be stored as the key in the DDict.
         :param value: A serializable object that will be stored as the value.
         """
-        if self._read_only:
-            raise DDictError(DragonError.INVALID_OPERATION, "Could not perform batch pput with read-only mode.")
         if self._batch_put_started:
             if not self._batch_persist:
                 raise DDictError(
@@ -2223,9 +2244,6 @@ class DDict:
         :param key: A serializable object that will be stored as the key in the DDict.
         :param value: A serializable object that will be stored as the value.
         """
-        if self._read_only:
-            raise DDictError(DragonError.INVALID_OPERATION, "Could not perform bput with read-only mode.")
-
         _, pickled_key = self._choose_manager_pickle_key(key)
 
         if self._batch_put_started:
@@ -2319,7 +2337,13 @@ class DDict:
             )
             self._send_dmsg_and_key_value(managers[0], msg, pickled_key, key, value)
             resp_num = self._num_managers
-            self._bput_recv_responses_and_check(set([tag]), resp_num, 1)
+            resp_msgs = self._recv_responses_and_check_err(set([tag]), resp_num)
+            for resp_msg in resp_msgs:
+                if resp_msg.numPuts != 1:
+                    raise DDictError(
+                        DragonError.FAILURE,
+                        f"Failed to store all keys in manager {resp_msg.managerID} in the distributed dictionary. Expected number of keys to be written: {self._num_bputs}, number of successful writes: {resp_msg.numPuts}",
+                    )
 
     def _end_bput_with_batch(self):
         self._bput_root_manager_sendh.close()
@@ -2327,7 +2351,13 @@ class DDict:
 
         # receive response
         resp_num = self._num_managers
-        self._bput_recv_responses_and_check(set([self._bput_tag]), resp_num, self._num_bputs, self._bput_respFLI)
+        resp_msgs = self._recv_responses_and_check_err(set([self._bput_tag]), resp_num, self._bput_respFLI)
+        for resp_msg in resp_msgs:
+            if resp_msg.numPuts != self._num_bputs:
+                raise DDictError(
+                    DragonError.FAILURE,
+                    f"Failed to store all keys in manager {resp_msg.managerID} in the distributed dictionary. Expected number of keys to be written: {self._num_bputs}, number of successful writes: {resp_msg.numPuts}",
+                )
 
         # cleanup
         self._bput_tag = None
@@ -2356,16 +2386,21 @@ class DDict:
         :returns: The value associated with the key.
         :raises Exception: Various exceptions can be raised including TimeoutError and KeyError.
         """
-        msg = dmsg.DDGet(self._tag_inc(), self._client_id, chkptID=self._chkpt_id)
         _, pickled_key = self._choose_manager_pickle_key(key)
+        msg = dmsg.DDGet(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, key=pickled_key)
         if self._chosen_manager is not None:
             self._check_manager_connection(self._chosen_manager)
             manager = self._managers[self._chosen_manager]
+            local_manager = self._chosen_manager in self._local_managers
         else:
             manager = self._main_manager_connection
-        self._send([(msg, None), (pickled_key, KEY_HINT)], manager)
+            local_manager = self._has_local_manager
 
-        value = self._recv_dmsg_and_val(msg, key)
+        self._send([(msg, None)], manager, buffered=True)
+
+        manager_not_local = not local_manager  # TBD: OR DDGetResponse has free_mem in it (from manager)
+
+        value = self._recv_dmsg_and_val(msg, key, manager_not_local)
         return value
 
     def _keys(self, managers: set[int]) -> Iterator[DDict]:
@@ -2387,7 +2422,7 @@ class DDict:
 
             for manager_id in managers:
                 msg = dmsg.DDKeys(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, respFLI=serializedRespFLI)
-                self._send([(msg, None)], self._managers[manager_id])
+                self._send([(msg, None)], self._managers[manager_id], buffered=True)
                 self._traceit("About to open recv handle to retrieve keys from %s", manager_id)
                 with respFLI.recvh(use_main_as_stream_channel=True, timeout=self._timeout) as recvh:
                     # Any data that is left in stream channel by an early break in the iterator is
@@ -2443,7 +2478,7 @@ class DDict:
 
             for manager_id in managers:
                 msg = dmsg.DDValues(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, respFLI=serializedRespFLI)
-                self._send([(msg, None)], self._managers[manager_id])
+                self._send([(msg, None)], self._managers[manager_id], buffered=True)
                 self._traceit("About to open recv handle to retrieve values from %s", manager_id)
                 with respFLI.recvh(use_main_as_stream_channel=True, timeout=self._timeout) as recvh:
                     resp_ser_msg, _ = recvh.recv_bytes(timeout=self._timeout)
@@ -2506,7 +2541,7 @@ class DDict:
 
             for manager_id in managers:
                 msg = dmsg.DDItems(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, respFLI=serializedRespFLI)
-                self._send([(msg, None)], self._managers[manager_id])
+                self._send([(msg, None)], self._managers[manager_id], buffered=True)
                 self._traceit("About to open recv handle to retrieve items from %s", manager_id)
                 with respFLI.recvh(use_main_as_stream_channel=True, timeout=self._timeout) as recvh:
                     resp_ser_msg, _ = recvh.recv_bytes(timeout=self._timeout)
@@ -2577,7 +2612,7 @@ class DDict:
         tag = self._tag_inc()
         msg = dmsg.DDPersistedChkptAvail(tag, chkptID=chkptID, respFLI=self._serialized_buffered_return_connector)
         self._check_manager_connection(0)
-        self._send([(msg, None)], self._managers[0])
+        self._send([(msg, None)], self._managers[0], buffered=True)
 
         msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
         for resp_msg in msglist:
@@ -2593,7 +2628,7 @@ class DDict:
         tag = self._tag_inc()
         msg = dmsg.DDChkptAvail(tag, chkptID=chkptID, respFLI=self._serialized_buffered_return_connector)
         self._check_manager_connection(0)
-        self._send([(msg, None)], self._managers[0])
+        self._send([(msg, None)], self._managers[0], buffered=True)
 
         msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
         for resp_msg in msglist:
@@ -2613,7 +2648,7 @@ class DDict:
             msg = dmsg.DDLength(
                 tag, clientID=self._client_id, respFLI=self._serialized_buffered_return_connector, broadcast=False
             )
-            self._send([(msg, None)], self._managers[i])
+            self._send([(msg, None)], self._managers[i], buffered=True)
         resp_num = len(self._local_managers)
         msglist = self._recv_responses(tags, resp_num)
         length = 0
@@ -2674,14 +2709,14 @@ class DDict:
 
         :returns: The associated value if key is popped and the default value otherwise.
         """
-        if self._read_only:
-            raise DDictError(DragonError.INVALID_OPERATION, "Could not perform pop with read-only mode.")
-        msg = dmsg.DDPop(self._tag_inc(), self._client_id, chkptID=self._chkpt_id)
+
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
+        msg = dmsg.DDPop(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, key=pickled_key)
         self._check_manager_connection(manager_id)
-        self._send([(msg, None), (pickled_key, KEY_HINT)], self._managers[manager_id])
+        self._send([(msg, None)], self._managers[manager_id], buffered=True)
         try:
-            return self._recv_dmsg_and_val(msg, key)
+            manager_not_local = manager_id not in self._local_managers
+            return self._recv_dmsg_and_val(msg, key, manager_not_local)
         except KeyError as ex:
             if default is None:
                 raise ex
@@ -2692,9 +2727,6 @@ class DDict:
         """
         Empty the distributed dictionary of all keys and values.
         """
-        if self._read_only:
-            raise DDictError(DragonError.INVALID_OPERATION, "Could not perform batch put with read-only mode.")
-
         self._traceit("clearing dictionary for checkpoint %s", self._chkpt_id)
         tag = self._tag_inc()
 
@@ -2711,13 +2743,8 @@ class DDict:
         msg = dmsg.DDClear(
             tag, self._client_id, self._chkpt_id, self._serialized_buffered_return_connector, broadcast=broadcast
         )
-        self._send([(msg, None)], self._managers[selected_manager])
-        msglist = self._recv_responses(set([tag]), resp_num)
-        for resp_msg in msglist:
-            if resp_msg.err == DragonError.DDICT_CHECKPOINT_RETIRED:
-                raise DDictCheckpointSync(resp_msg.err, resp_msg.errInfo)
-            if resp_msg.err != DragonError.SUCCESS:
-                raise DDictError(resp_msg.err, resp_msg.errInfo)
+        self._send([(msg, None)], self._managers[selected_manager], buffered=True)
+        self._recv_responses_and_check_err(set([tag]), resp_num)
 
     def get_name(self):
         return self._name
@@ -2726,8 +2753,6 @@ class DDict:
         """
         Calling other APIs except for put before the batch put ends could leads to a hang or exception.
         """
-        if self._read_only:
-            raise DDictError(DragonError.INVALID_OPERATION, "Could not perform batch put with read-only mode.")
         self._batch_put_started = True
         self._batch_persist = persist
 
@@ -2909,7 +2934,7 @@ class DDict:
 
         self._check_manager_connection(selected_manager)
         msg = dmsg.DDManagerStats(tag, respFLI=self._serialized_buffered_return_connector, broadcast=broadcast)
-        self._send([(msg, None)], self._managers[selected_manager])
+        self._send([(msg, None)], self._managers[selected_manager], buffered=True)
         msglist = self._recv_responses(set([tag]), resp_num)
         data = {}
         for resp_msg in msglist:
@@ -2928,8 +2953,6 @@ class DDict:
         operations will block until the checkpoint becomes available. But, calling this
         operation itself does not block.
         """
-        if self._read_only:
-            raise DDictError(DragonError.INVALID_OPERATION, "Could not proceed checkpoint with read-only mode.")
 
         if self._batch_put_started:
             raise DDictError(DragonError.INVALID_OPERATION, "Could not proceed checkpoint during batch put.")
@@ -2944,8 +2967,6 @@ class DDict:
         raising a DDictCheckpointSync exception.
 
         """
-        if self._read_only:
-            raise DDictError(DragonError.INVALID_OPERATION, "Could not rollback checkpoint with read-only mode.")
 
         if self._batch_put_started:
             raise DDictError(DragonError.INVALID_OPERATION, "Could not rollback checkpoint during batch put.")
@@ -2981,7 +3002,7 @@ class DDict:
         chkpt_id = 0
         self._check_manager_connection(selected_manager)
         msg = dmsg.DDManagerNewestChkptID(tag, respFLI=self._serialized_buffered_return_connector, broadcast=broadcast)
-        self._send([(msg, None)], self._managers[selected_manager])
+        self._send([(msg, None)], self._managers[selected_manager], buffered=True)
         msglist = self._recv_responses(set([tag]), resp_num)
         for resp_msg in msglist:
             if resp_msg.err != DragonError.SUCCESS:
@@ -2996,16 +3017,11 @@ class DDict:
         """
         # read_only is only allowed when restore_from is specified
         # advance is only allowed when read_only is true
-        if not self._read_only:
-            raise DDictError(
-                DragonError.INVALID_OPERATION, "Advancing persistent checkpoint is only allowed when read_only is True."
-            )
-
         tag = self._tag_inc()
         # connect to manager 0
         self._check_manager_connection(0)
         msg = dmsg.DDAdvance(tag, clientID=self._client_id, respFLI=self._serialized_buffered_return_connector)
-        self._send([(msg, None)], self._managers[0])
+        self._send([(msg, None)], self._managers[0], buffered=True)
 
         msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
         min_newest_chkpt_id = sys.maxsize
@@ -3027,7 +3043,7 @@ class DDict:
         tag = self._tag_inc()
         msg = dmsg.DDPersist(tag, chkptID=self._chkpt_id, respFLI=self._serialized_buffered_return_connector)
         self._check_manager_connection(0)
-        self._send([(msg, None)], self._managers[0])
+        self._send([(msg, None)], self._managers[0], buffered=True)
 
         msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
         for resp_msg in msglist:
@@ -3055,7 +3071,7 @@ class DDict:
             tag, chkptID=chkpt, clientID=self._client_id, respFLI=self._serialized_buffered_return_connector
         )
         self._check_manager_connection(0)
-        self._send([(msg, None)], self._managers[0])
+        self._send([(msg, None)], self._managers[0], buffered=True)
 
         msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
         for resp_msg in msglist:
@@ -3075,7 +3091,7 @@ class DDict:
         tag = self._tag_inc()
         msg = dmsg.DDPersistChkpts(tag, clientID=self._client_id, respFLI=self._serialized_buffered_return_connector)
         self._check_manager_connection(0)
-        self._send([(msg, None)], self._managers[0])
+        self._send([(msg, None)], self._managers[0], buffered=True)
         msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
 
         # initialize available chkpts with the chkpt IDs from the first responses
@@ -3187,6 +3203,35 @@ class DDict:
         cm = FilterContextManager(filter_proc, filter_queue)
 
         return cm
+
+    @property
+    def is_frozen(self) -> bool:
+        tag = self._tag_inc()
+        msg = dmsg.DDGetFreeze(tag, self._client_id)
+        resp_msg = self._send_receive([(msg, None)], self._main_manager_connection)
+        if resp_msg.err != DragonError.SUCCESS:
+            raise DDictError(resp_msg.err, resp_msg.errInfo)
+        return resp_msg.freeze
+
+    def freeze(self) -> None:
+        tag = self._tag_inc()
+        msg = dmsg.DDFreeze(tag, self._serialized_buffered_return_connector)
+        self._check_manager_connection(0)
+        self._send([(msg, None)], self._managers[0])
+        resp_msgs = self._recv_responses(set([tag]), self._num_managers)
+        for resp in resp_msgs:
+            if resp.err != DragonError.SUCCESS:
+                raise DDictError(resp.err, resp.errInfo)
+
+    def unfreeze(self) -> None:
+        tag = self._tag_inc()
+        msg = dmsg.DDUnFreeze(tag, self._serialized_buffered_return_connector)
+        self._check_manager_connection(0)
+        self._send([(msg, None)], self._managers[0])
+        resps = self._recv_responses(set([tag]), self._num_managers)
+        for resp in resps:
+            if resp.err != DragonError.SUCCESS:
+                raise DDictError("Failed to unfreeze DDict.")
 
     @property
     def checkpoint_id(self) -> int:

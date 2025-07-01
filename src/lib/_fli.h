@@ -10,8 +10,12 @@
 #define FLI_HAS_MAIN_CHANNEL 1
 #define FLI_HAS_MANAGER_CHANNEL 2
 #define FLI_USING_BUFFERED_PROTOCOL 4
-#define FLI_EOT 0xFFFFFFFFFFFFFFFF
-#define FLI_TERMINATOR 0xFFFFFFFFFFFFFFFE
+
+#define FLI_EOT                      0xFFFFFFFFFFFFFFFF
+#define FLI_TERMINATOR               0xFFFFFFFFFFFFFFFE
+#define FLI_INTERNAL_STRM_CHANNEL    0xFFFFFFFFFFFFFFFD
+#define FLI_EXTERNAL_STRM_CHANNEL    0xFFFFFFFFFFFFFFFC
+#define FLI_RESERVED_HINTS           0xFFFFFFFFFFFFFF00 // Reserved hints this and above.
 
 #ifdef __cplusplus
 extern "C" {
@@ -65,10 +69,12 @@ typedef struct dragonFLISendHandle_st {
     dragonFLISendBufAlloc_t* buffered_allocations;
     dragonChannelDescr_t terminate_stream_channel;
     uint64_t buffered_arg;
+    uint64_t strm_type;
     size_t total_bytes;
     bool has_term_channel;
     bool has_dest_pool;
-    bool user_supplied;
+    bool buffered_send;
+    bool turbo_mode;
     bool close_required;
     pthread_t tid; /* used to keep track of send or receive file descriptors */
     int pipe[2];
@@ -97,11 +103,14 @@ typedef struct dragonFLIRecvHandle_st {
     bool recv_called;
     bool has_term_channel;
     bool has_dest_pool;
-    bool user_supplied;
     bool stream_received;
     bool EOT_received;
+    bool buffered_receive;
+    bool strm_opened;
+    bool free_mem;
     size_t num_bytes_received;
     size_t buffered_bytes;
+    uint64_t strm_type;
     dragonFLIRecvBufAlloc_t* buffered_data;
     dragonFLIRecvBufAlloc_t* tail;
     pthread_t tid; /* used to keep track of send or receive file descriptors */

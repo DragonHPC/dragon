@@ -64,7 +64,7 @@ def remove_suffix(string_w_suffix, suffix):
         return string_w_suffix
 
 
-def hugepages_cleanup():
+def hugepages_cleanup(careful_restart_cleanup=0, dry_run=False):
     """Entry point for CLI to clean up hugepages"""
 
     # import needs to be done inside this big so that calls to `dragon-config`
@@ -74,25 +74,32 @@ def hugepages_cleanup():
 
     hugepage_fs_mount = get_hugepage_mount()
 
-    try:
-        careful_restart_cleanup = int(sys.argv[1])
-    except IndexError:
-        careful_restart_cleanup = 0
+    if not careful_restart_cleanup:
+        try:
+            careful_restart_cleanup = int(sys.argv[1])
+        except (KeyError, IndexError, ValueError):
+            careful_restart_cleanup = 0
 
     if hugepage_fs_mount is not None:
-        print(f"cleaning up hugepage files in {hugepage_fs_mount}")
+        print(f"cleaning up hugepage files in {hugepage_fs_mount}", flush=True)
         for file_name in os.listdir(hugepage_fs_mount):
             file_path = os.path.join(hugepage_fs_mount, file_name)
             if careful_restart_cleanup == 1:
                 if "dict_pool" in file_name:
-                    print(f"leaving {file_name}")
+                    print(f"leaving {file_name}", flush=True)
                     continue
+
+            if dry_run:
+                print(f"DRY_RUN: deleting {file_path}", flush=True)
+                continue
+
             try:
+                print(f"deleting {file_path}", flush=True)
                 os.unlink(file_path)
             except Exception:
                 print(f"failed to delete {file_path} while cleaning up hugepage files", flush=True)
     else:
-        print("no hugepage files to clean up")
+        print("no hugepage files to clean up", flush=True)
 
 
 def print_compile_and_link_lines():

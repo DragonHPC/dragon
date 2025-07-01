@@ -2,9 +2,10 @@
 
 struct SHCreateProcessLocalChannelDef {
     puid @0: UInt64;
-    blockSize @1: UInt64;
-    capacity @2: UInt64;
-    respFLI @3: Text;
+    muid @1: UInt64;
+    blockSize @2: UInt64;
+    capacity @3: UInt64;
+    respFLI @4: Text;
 }
 
 struct SHCreateProcessLocalChannelResponseDef {
@@ -90,6 +91,7 @@ struct DDRandomManagerDef {
 
 struct DDRandomManagerResponseDef {
     manager @0: Text;
+    managerID @1: UInt64;
 }
 
 struct DDRegisterClientDef {
@@ -104,7 +106,6 @@ struct DDRegisterClientResponseDef {
     managerNodes @3: List(Text);
     name @4: Text;
     timeout @5: UInt64;
-    readOnly @6: Bool;
 }
 
 struct DDConnectToManagerDef {
@@ -142,16 +143,27 @@ struct DDPutDef {
 struct DDGetDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
+    key @2: Data;
+}
+
+struct DDGetResponseDef {
+    freeMem @0: Bool;
 }
 
 struct DDPopDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
+    key @2: Data;
+}
+
+struct DDPopResponseDef {
+    freeMem @0: Bool;
 }
 
 struct DDContainsDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
+    key @2: Data;
 }
 
 struct DDLengthDef {
@@ -355,6 +367,22 @@ struct DDPersistDef {
     respFLI @1: Text;
 }
 
+struct DDFreezeDef {
+    respFLI @0: Text;
+}
+
+struct DDUnFreezeDef {
+    respFLI @0: Text;
+}
+
+struct DDGetFreezeDef {
+    clientID @0: UInt64;
+}
+
+struct DDGetFreezeResponseDef {
+    freeze @0: Bool;
+}
+
 struct NoMessageSpecificData {
     none @0: Void;
 }
@@ -444,5 +472,11 @@ struct MessageDef {
         ddChkptAvail @72: DDChkptAvailDef;
         ddChkptAvailResponse @73: DDChkptAvailResponseDef;
         ddPersist @74: DDPersistDef;
+        ddFreeze @75: DDFreezeDef;
+        ddUnFreeze @76: DDUnFreezeDef;
+        ddGetFreeze @77: DDGetFreezeDef;
+        ddGetFreezeResponse @78: DDGetFreezeResponseDef;
+        ddGetResponse @79: DDGetResponseDef;
+        ddPopResponse @80: DDPopResponseDef;
     }
 }

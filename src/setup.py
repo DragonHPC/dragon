@@ -194,5 +194,6 @@ setup(
         "requests>=2.32.2",
         "psutil>=5.9.0",
         "pycapnp>=2.0.0",
+        "paramiko>=3.5.1",
     ],
 )

@@ -568,6 +568,7 @@ dragon_channel_message_attr_init(dragonMessageAttr_t * attr)
     attr->hints = 0UL;
     dragon_zero_uuid(attr->sendhid);
     attr->send_transfer_ownership = false;
+    attr->no_copy_read_only = false;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -838,9 +839,17 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
 
     /* We allow dest_mem_descr to specify transfer of ownership. If it is passed that way, then
        set it in the message attributes and reset the destination memory descriptor. */
-    if (dest_mem_descr == DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP) {
+    if (dest_mem_descr == DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP ||
+        dest_mem_descr == DRAGON_CHANNEL_SEND_NO_COPY_READ_ONLY) {
+
         dragonMessage_t* modifiable_msg = (dragonMessage_t*) send_msg;
-        modifiable_msg->_attr.send_transfer_ownership = true;
+
+        if (dest_mem_descr == DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP)
+            modifiable_msg->_attr.send_transfer_ownership = true;
+
+        if (dest_mem_descr == DRAGON_CHANNEL_SEND_NO_COPY_READ_ONLY)
+            modifiable_msg->_attr.no_copy_read_only = true;
+
         dest_mem_descr = NULL;
     }
 
@@ -1571,6 +1580,12 @@ dragon_channel_gatewaymessage_transport_check_send_cmplt(dragonGatewayMessage_t 
 
     if (deadline == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "deadline cannot be NULL.");
+
+    if (gmsg->_header.client_cmplt == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "client_cmplt pointer is NULL.");
+
+    if (gmsg->_header.client_pid == NULL || gmsg->_header.client_puid == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "client pid and puid info are NULL.");
 
     /* When the gmsg->_header.client_cmplt is set, the client has detached from the gateway message and we
        can safely destroy the message */

@@ -1313,7 +1313,7 @@ _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessag
                 append_err_return(err, "Could not free message memory descriptor after copying into destination.");
         }
 
-    } else if (msg_send->_attr.send_transfer_ownership) {
+    } else if (msg_send->_attr.send_transfer_ownership || msg_send->_attr.no_copy_read_only) {
         is_serialized_descr = DRAGON_CHANNEL_MSGBLK_IS_SERDESCR;
 
         err = _put_serialized_desc_in_msg_blk(msg_send->_mem_descr, mblk, channel, &msg_bytes);
@@ -3300,6 +3300,40 @@ dragon_chsend_get_attr(const dragonChannelSendh_t* ch_sh, dragonChannelSendAttr_
 }
 
 /**
+ * @brief Set the attributes of a send handle.
+ *
+ * Copy the attributes into a send handle from a send attributes structure.
+ * The handle does not need to be closed in order to set the attributes. However,
+ * the sendhid attribute will not be changed from its original value.
+ *
+ * @param ch_sh A pointer to the channel send handle.
+ *
+ * @param attr A pointer to the channel send handle attributes structure to
+ * copy from.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_chsend_set_attr(dragonChannelSendh_t* ch_sh, const dragonChannelSendAttr_t* attr)
+{
+    dragonUUID sendhid;
+
+    if (ch_sh == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Channel send handle cannot be NULL.");
+
+    if (attr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Send handle attributes to copy into cannot be NULL.");
+
+    dragon_copy_uuid(sendhid, ch_sh->_attrs.sendhid);
+
+    ch_sh->_attrs = *attr;
+
+    dragon_copy_uuid(ch_sh->_attrs.sendhid, sendhid);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
  * @brief Open a channel send handle
  *
  * Open a send handle on a channel. Once opened, the send handle can be used for
@@ -3624,12 +3658,17 @@ dragon_chsend_send_msg(const dragonChannelSendh_t* ch_sh, const dragonMessage_t*
        set it in the message attributes and reset the destination memory descriptor. We set
        the attribute in a copy of the attributes and copy of the message so the original attributes
        and message are not modified since they may be re-used. */
-    if (dest_mem_descr == DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP) {
+    if (dest_mem_descr == DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP ||
+        dest_mem_descr == DRAGON_CHANNEL_SEND_NO_COPY_READ_ONLY) {
+
         err = dragon_channel_message_getattr(msg_send, &dup_attr);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not duplicate message attributes.");
 
-        dup_attr.send_transfer_ownership = true;
+        if (dest_mem_descr == DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP)
+            dup_attr.send_transfer_ownership = true;
+        if (dest_mem_descr == DRAGON_CHANNEL_SEND_NO_COPY_READ_ONLY)
+            dup_attr.no_copy_read_only = true;
 
         err = dragon_channel_message_init(&dup_msg, msg_send->_mem_descr, &dup_attr);
         if (err != DRAGON_SUCCESS)

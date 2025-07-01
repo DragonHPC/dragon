@@ -1,0 +1,150 @@
+@startuml DragonRun
+
+abstract class RemoteExecutor {
+  get_child_tree() : list
+  main_thread_msg_proc()
+  __
+  connect()
+  disconnect()
+  __
+  __enter__()
+  __exit__(...)
+  __ message handlers __
+  handleRunUserApp()
+  handleFwdOutut()
+  handleUserAppExit()
+  handleDestroyTree()
+  handleTreeDestroyed()
+  __ abstract message handlers __
+  {abstract} _handleFwdOutput()
+  {abstract} _handleUserAppExit()
+  __ data __
+  list hosts
+  int fanout
+  int num_children
+  Queue msg_q
+  Event shutdown_event
+  Thread recv_msg_thread
+  Dict<Future, (int, BackendConnector)> futures
+}
+
+class DRun {
+  FERemoteExecutor remote_executor
+}
+
+class DRBE {
+  Queue recv_msg_q
+  Queue send_msg_q
+  Event shutdown_event
+  __
+  Thread send_msg_thread
+  Thread recv_msg_thread
+  __
+  BERemoteExecutor remote_executor
+  Thread local_executor_thread
+}
+
+abstract class RemoteHost {
+  {abstract} connect()
+  {abstract} execute_command(command)
+  {abstract} disconnect()
+  __
+  {abstract} send_message(msg)
+  {abstract} recv_message()
+  __
+  __enter__()
+  __exit__(...)
+}
+
+class SSHHost {
+  connect()
+  execute_command(command)
+  disconnect()
+  __
+  send_message(msg)
+  recv_message()
+  __ data __
+  str hostname
+  SSHClient ssh_client
+  fileh stdin
+  fileh stdout
+  fileh stderr
+}
+
+class TestHost {
+  connect()
+  execute_command(command)
+  disconnect()
+  __
+  send_message(msg)
+  recv_message()
+}
+
+class LocalExecutor {
+  handle_stdout()
+  handle_stderr()
+}
+
+class FERemoteExecutor {
+  runUserApp(command, env, cwd)
+  __ message handler overrides __
+  _handleFwdOutput()
+  _handleUserAppExit()
+}
+
+class BERemoteExecutor {
+  forwardMessage(InfraMsg)
+  __ message handler overrides __
+  _handleFwdOutput()
+  _handleUserAppExit()
+  __ data __
+  Queue drbe_q
+}
+
+class BackendConnector {
+  connect()
+  disconnect()
+  run()
+  __
+  host_recv_proc()
+  __
+  __enter__()
+  __exit__(...)
+  __ msg handlers __
+  handleFwdOutput()
+  handleRunUserApp()
+  handleUserAppExit()
+  handleDestroyTree()
+  handleTreeDestroyed()
+  __ data __
+  RemoteHost host
+  str hostname
+  list child_tree
+  int fanout
+  Queue msg_q
+  Queue remote_executor_q
+  Thread host_recv_thread
+  Event shutdown_event
+}
+
+note right of BackendConnector::host_recv_proc()
+  Thread loop calling host.recv_message()
+end note
+
+note right of BERemoteExecutor::drbe_send_q
+  Forwards messages to DRBE to be
+  sent to our parent process.
+end note
+
+RemoteHost <|-up- SSHHost
+RemoteHost <|-up- TestHost
+RemoteExecutor <|-- FERemoteExecutor
+RemoteExecutor <|-- BERemoteExecutor
+RemoteExecutor "1" *-up- "many" BackendConnector
+BackendConnector -up- RemoteHost
+DRun -up- FERemoteExecutor
+DRBE "1" -- "1" LocalExecutor
+DRBE "0" *-up- "1" BERemoteExecutor
+RemoteHost .. DRBE
+
+@enduml

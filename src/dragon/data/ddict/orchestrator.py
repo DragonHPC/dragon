@@ -285,6 +285,7 @@ class Orchestrator:
             self._persist_path,
             self._persist_count,
             self._persister,
+            self._streams_per_manager,
         ) = args
 
         # the dictionary is restarted with previous manager pool
@@ -342,6 +343,7 @@ class Orchestrator:
                 self._persist_path,
                 self._persist_count,
                 self._persister,
+                self._streams_per_manager,
             )
         self._pickle_new = "/tmp/ddict_orc_" + self._name
 
@@ -516,9 +518,10 @@ class Orchestrator:
 
     @dutil.route(dmsg.DDRandomManager, _DTBL)
     def get_random_manager(self, msg: dmsg.DDRandomManager) -> None:
-        managerFLI = self._serialized_manager_flis[self._get_next_main_manager_id()]
+        manager_id = self._get_next_main_manager_id()
+        managerFLI = self._serialized_manager_flis[manager_id]
         resp_msg = dmsg.DDRandomManagerResponse(
-            self._tag_inc(), ref=msg.tag, err=DragonError.SUCCESS, manager=managerFLI
+            self._tag_inc(), ref=msg.tag, err=DragonError.SUCCESS, manager=managerFLI, managerID=manager_id
         )
         connection = fli.FLInterface.attach(b64decode(msg.respFLI))
         self._send_msg(resp_msg, connection)

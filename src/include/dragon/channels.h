@@ -151,6 +151,12 @@ typedef enum dragonChannelFlags_st {
 static dragonMemoryDescr_t* const DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP = (dragonMemoryDescr_t*)1;
 
 /**
+ * @brief Constant to be used for no-copy send operations where the receiver is assumed to only access the data
+ in a read-only fashion.
+*/
+static dragonMemoryDescr_t* const DRAGON_CHANNEL_SEND_NO_COPY_READ_ONLY = (dragonMemoryDescr_t*)2;
+
+/**
  * @brief Constant to be used for no timeout.
  *
  * For send_msg and get_msg this would mean to wait with no
@@ -322,7 +328,7 @@ typedef struct dragonChannelSendh_st {
 /**
  * @brief An Opaque Channel Receive Handle
  *
- * An receive handle must be declared, initialized, and opened prior to receiving data.
+ * A receive handle must be declared, initialized, and opened prior to receiving data.
  *
 */
 typedef struct dragonChannelRecvh_st {
@@ -345,6 +351,7 @@ typedef struct dragonMessageAttr_st {
     dragonULInt clientid; /*!< An identifier of the process that sent this message */
     dragonUUID sendhid;   /*!< An identifier of the send handle for the sending process used for ordering */
     bool send_transfer_ownership; /*!< Used to indicate cleanup by receiver. This can also be specified by providing dest_mem as DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP. */
+    bool no_copy_read_only; /*!< Used to indicate the message should not be copied on send, but without transfer of ownership. Receiver must comply! */
 } dragonMessageAttr_t;
 
 /**
@@ -530,6 +537,9 @@ dragonError_t
 dragon_chsend_get_attr(const dragonChannelSendh_t* ch_sh, dragonChannelSendAttr_t* attr);
 
 dragonError_t
+dragon_chsend_set_attr(dragonChannelSendh_t* ch_sh, const dragonChannelSendAttr_t* attr);
+
+dragonError_t
 dragon_channel_recvh(const dragonChannelDescr_t* ch, dragonChannelRecvh_t* ch_rh,
                      const dragonChannelRecvAttr_t* attr);
 
@@ -713,7 +723,7 @@ void
 dragon_gatewaymessage_silence_timeouts();
 
 dragonError_t
-dragon_create_process_local_channel(dragonChannelDescr_t* ch, uint64_t block_size, uint64_t capacity, const timespec_t* timeout);
+dragon_create_process_local_channel(dragonChannelDescr_t* ch, uint64_t muid, uint64_t block_size, uint64_t capacity, const timespec_t* timeout);
 
 dragonError_t
 dragon_destroy_process_local_channel(dragonChannelDescr_t* ch, const timespec_t* timeout);

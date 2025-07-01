@@ -2,6 +2,7 @@
 #include <sstream>
 #include <string>
 #include <set>
+#include <algorithm>
 #include <dragon/ddict.h>
 #include "_ddict.hpp"
 #include "_utils.h"
@@ -43,7 +44,7 @@ static dragonError_t _send(dragonFLIDescr_t * sendto_fli, dragonChannelDescr_t* 
     if (send_msg == nullptr)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid send message.");
 
-    err = dragon_fli_open_send_handle(sendto_fli, &sendh, strm_ch, nullptr, false, timeout);
+    err = dragon_fli_open_send_handle(sendto_fli, &sendh, strm_ch, nullptr, false, true, timeout);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not open send handle.");
 
@@ -202,11 +203,45 @@ static dragonError_t _send_receive(dragonFLIDescr_t* sendto_fli, dragonChannelDe
     no_err_return(DRAGON_SUCCESS);
 }
 
+static dragonError_t _send_msg(DragonMsg * send_msg, dragonDDictReq_t * req, bool buffered=false) {
+    dragonError_t err;
+    dragonFLISendHandleDescr_t sendh;
+    dragonChannelDescr_t * strm;
+
+    if (buffered) {
+        strm = STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND;
+    } else {
+        strm = &req->ddict->strm_ch;
+    }
+
+    err = dragon_fli_open_send_handle(&req->manager_fli, &sendh, strm, nullptr, false, true, req->ddict->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not open send handle.");
+
+    req->sendh = sendh;
+
+    err = send_msg->send(&sendh, req->ddict->timeout);
+    if (err != DRAGON_SUCCESS) {
+        // We ignore the return code because there was an error on send.
+        dragonError_t close_fli_err = dragon_fli_close_send_handle(&sendh, req->ddict->timeout);
+        if (close_fli_err != DRAGON_SUCCESS) {
+            append_err_return(close_fli_err, "Could not send message and close send handle.");
+        }
+        append_err_return(err, "Could not send message.");
+    }
+
+    err = dragon_fli_close_send_handle(&req->sendh, req->ddict->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_noreturn("Could not close send handle.");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
 static dragonError_t _send_msg_key_no_close_sendh(DragonMsg * send_msg, dragonDDictReq_t * req) {
     dragonError_t err;
     dragonFLISendHandleDescr_t sendh;
 
-    err = dragon_fli_open_send_handle(&req->manager_fli, &sendh, &req->ddict->strm_ch, nullptr, false, req->ddict->timeout);
+    err = dragon_fli_open_send_handle(&req->manager_fli, &sendh, &req->ddict->strm_ch, nullptr, false, true, req->ddict->timeout);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not open send handle.");
 
@@ -389,7 +424,7 @@ static dragonError_t _connect_to_manager(dragonDDict_t * dd, uint64_t manager_id
     dragonFLISerial_t fli_ser;
 
     connectToManagerMsg = new DDConnectToManagerMsg(_tag_inc(dd), dd->clientID, manager_id);
-    err = _send_receive(&dd->main_manager_fli, &dd->strm_ch, connectToManagerMsg, &dd->bufferedRespFLI, &resp_msg, dd->timeout);
+    err = _send_receive(&dd->main_manager_fli, STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, connectToManagerMsg, &dd->bufferedRespFLI, &resp_msg, dd->timeout);
     if (err != DRAGON_SUCCESS)  {
         append_err_noreturn("Could not send the connect to manager message and receive response.");
         goto send_receive_fail;
@@ -436,7 +471,7 @@ static dragonError_t _register_client_ID_to_manager(dragonDDict_t * dd, uint64_t
     DDRegisterClientIDResponseMsg * registerClientIDResponseMsg = nullptr;
 
     registerClientIDMsg = new DDRegisterClientIDMsg(_tag_inc(dd), dd->clientID, dd->respFLIStr.c_str(), dd->bufferedRespFLIStr.c_str());
-    err = _send_receive(&dd->manager_table[manager_id], &dd->strm_ch, registerClientIDMsg, &dd->bufferedRespFLI, &resp_msg, dd->timeout);
+    err = _send_receive(&dd->manager_table[manager_id], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, registerClientIDMsg, &dd->bufferedRespFLI, &resp_msg, dd->timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not send the register client ID message and receive response.");
         goto send_receive_fail;
@@ -632,7 +667,7 @@ static dragonError_t _register_client_to_main_manager(dragonDDict_t * ddict) {
     DDRegisterClientResponseMsg * registerClientResponseMsg = nullptr;
 
     registerClientMsg = new DDRegisterClientMsg(_tag_inc(ddict), ddict->respFLIStr.c_str(), ddict->bufferedRespFLIStr.c_str());
-    err = _send_receive(&ddict->main_manager_fli, &ddict->strm_ch, registerClientMsg, &ddict->bufferedRespFLI, &resp_msg, ddict->timeout);
+    err = _send_receive(&ddict->main_manager_fli, STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, registerClientMsg, &ddict->bufferedRespFLI, &resp_msg, ddict->timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not send the register client message and receive response.");
         goto register_client_msg_send_receive_fail;
@@ -835,7 +870,7 @@ dragonError_t _dragon_ddict_keys_vec(dragonDDict_t * dd, std::vector<uint64_t>& 
         msg_tag = _tag_inc(dd);
         keysMsg = new DDKeysMsg(msg_tag, dd->clientID, dd->chkpt_id, dd->respFLIStr.c_str());
         uint64_t manager_id = managers[i];
-        err = _send(&dd->manager_table[manager_id], &dd->strm_ch, keysMsg, dd->timeout);
+        err = _send(&dd->manager_table[manager_id], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, keysMsg, dd->timeout);
         if (err != DRAGON_SUCCESS) {
             append_err_noreturn("Could not send the keys message to manager.");
             goto send_fail;
@@ -1109,14 +1144,14 @@ dragonError_t dragon_ddict_attach(const char * dd_ser, dragonDDictDescr_t * dd, 
        to the client. */
 
     // Create stream channel. We need it to send request to orchestrator later to ask for a random manager.
-    err = dragon_create_process_local_channel(&ddict->strm_ch, 0, 0, ddict->timeout);
+    err = dragon_create_process_local_channel(&ddict->strm_ch, 0, 0, 0, ddict->timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not create stream channel.");
         goto input_argument_fail;
     }
 
     // Create response channel.
-    err = dragon_create_process_local_channel(&resp_ch, 0, 0, ddict->timeout);
+    err = dragon_create_process_local_channel(&resp_ch, 0, 0, 0, ddict->timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not create response channel.");
         goto input_argument_fail;
@@ -1142,7 +1177,7 @@ dragonError_t dragon_ddict_attach(const char * dd_ser, dragonDDictDescr_t * dd, 
     }
 
     // Create buffered response channel
-    err = dragon_create_process_local_channel(&buffered_resp_ch, 0, 0, ddict->timeout);
+    err = dragon_create_process_local_channel(&buffered_resp_ch, 0, 0, 0, ddict->timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not create buffered response channel.");
         goto input_argument_fail;
@@ -1226,7 +1261,7 @@ dragonError_t dragon_ddict_detach(dragonDDictDescr_t * dd_descr) {
 
     for (manager_it=dd->manager_table.begin() ; manager_it!=dd->manager_table.end() ; manager_it++) {
         deregisterClientMsg = new DDDeregisterClientMsg(_tag_inc(dd), dd->clientID, dd->bufferedRespFLIStr.c_str());
-        err = _send_receive(&manager_it->second, &dd->strm_ch, deregisterClientMsg, &dd->bufferedRespFLI, &resp_msg, dd->timeout);
+        err = _send_receive(&manager_it->second, STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, deregisterClientMsg, &dd->bufferedRespFLI, &resp_msg, dd->timeout);
         if (err != DRAGON_SUCCESS)  {
             append_err_noreturn("Could not send the deregister client message and receive response.");
             goto send_receive_fail;
@@ -1325,6 +1360,7 @@ dragonError_t dragon_ddict_create_request(const dragonDDictDescr_t * descr, cons
     req->op_type = DRAGON_DDICT_NO_OP;
     req->num_writes = 0;
     req->recvh_closed = true;
+    req->free_mem = true;
 
     err = _add_umap_ddict_req_entry(req_descr, req);
     if (err != DRAGON_SUCCESS)
@@ -1410,6 +1446,23 @@ dragonError_t dragon_ddict_finalize_request(const dragonDDictRequestDescr_t * re
         free(req);
     }
     dragon_umap_delitem(dg_ddict_reqs, req_descr->_idx); // Remove request from umap
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_free_required(const dragonDDictRequestDescr_t * req_descr, bool * free_mem) {
+    dragonDDictReq_t * req = nullptr;
+    dragonError_t err;
+
+    if (req_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid request descriptor.");
+
+    err = _ddict_req_from_descr(req_descr, &req);
+    if (err != DRAGON_SUCCESS) {
+        append_err_return(err, "Failed to find request object.");
+    }
+
+    *free_mem = req->free_mem;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -1573,9 +1626,8 @@ dragonError_t dragon_ddict_contains(const dragonDDictRequestDescr_t * req_descr)
     DDContainsMsg * containsMsg = nullptr;
     DDContainsResponseMsg * containsResponseMsg = nullptr;
     DragonResponseMsg * resp_msg = nullptr;
-    dragonFLIRecvHandleDescr_t recvh;
     dragonError_t resp_err;
-    dragonError_t close_recvh_err;
+    std::set<uint64_t> msg_tags;
 
     if (req_descr == nullptr)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid request descriptor.");
@@ -1607,32 +1659,20 @@ dragonError_t dragon_ddict_contains(const dragonDDictRequestDescr_t * req_descr)
         }
         req->manager_fli = req->ddict->manager_table[req->manager_id];
 
-        containsMsg = new DDContainsMsg(_tag_inc(req->ddict), req->ddict->clientID, req->ddict->chkpt_id);
-        err = _send_msg_key_no_close_sendh(containsMsg, req);
+        req->msg_tag = _tag_inc(req->ddict);
+        msg_tags.insert(req->msg_tag);
+        containsMsg = new DDContainsMsg(req->msg_tag, req->ddict->clientID, req->ddict->chkpt_id, req->key_data, req->buffer_size);
+
+        err = _send_msg(containsMsg, req, true);
         if (err != DRAGON_SUCCESS) {
             append_err_noreturn("Could not send the contains message and key.");
             goto choose_manager_build_key_fail;
         }
 
-        err = dragon_fli_close_send_handle(&req->sendh, req->ddict->timeout);
-        if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("Could not close send handle.");
-            goto choose_manager_build_key_fail;
-        }
+        err = _recv_resp(&req->ddict->bufferedRespFLI, &resp_msg, msg_tags, req->ddict->timeout);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get contains response.");
 
-        resp_err = _recv_dmsg_no_close_recvh(&recvh, &req->ddict->bufferedRespFLI, &resp_msg, containsMsg->tag(), true, req->ddict->timeout);
-        if (resp_err != DRAGON_SUCCESS && resp_err != DRAGON_KEY_NOT_FOUND && resp_err != DRAGON_DDICT_CHECKPOINT_RETIRED) {
-            err = resp_err;
-            append_err_noreturn("Could not receive contains response message.");
-            goto send_receive_fail;
-        }
-        req->recvh_closed = false;
-
-        err = dragon_fli_close_recv_handle(&recvh, req->ddict->timeout);
-        if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("Could not close receive handle");
-            goto close_recvh_fail;
-        }
         req->recvh_closed = true;
 
         if (resp_msg->tc() != DDContainsResponseMsg::TC) {
@@ -1657,14 +1697,6 @@ dragonError_t dragon_ddict_contains(const dragonDDictRequestDescr_t * req_descr)
 
     no_err_return(resp_err);
 
-    send_receive_fail:
-        close_recvh_err = dragon_fli_close_recv_handle(&recvh, req->ddict->timeout);
-        if (close_recvh_err != DRAGON_SUCCESS) {
-            err = close_recvh_err;
-            append_err_noreturn("Could not close receive handle");
-        } else {
-            req->recvh_closed = true;
-        }
     close_recvh_fail:
         if (resp_msg != nullptr)
             delete resp_msg;
@@ -1684,6 +1716,7 @@ dragonError_t dragon_ddict_get(const dragonDDictRequestDescr_t* req_descr) {
     DDGetResponseMsg * getResponseMsg = nullptr;
     DragonResponseMsg * resp_msg = nullptr;
     dragonFLIRecvHandleDescr_t recvh;
+    bool is_local_manager = false;
 
     if (req_descr == nullptr)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid request descriptor.");
@@ -1715,16 +1748,11 @@ dragonError_t dragon_ddict_get(const dragonDDictRequestDescr_t* req_descr) {
         req->manager_fli = req->ddict->manager_table[req->manager_id];
 
         req->msg_tag = _tag_inc(req->ddict);
-        getMsg = new DDGetMsg(req->msg_tag, req->ddict->clientID, req->ddict->chkpt_id);
-        err = _send_msg_key_no_close_sendh(getMsg, req);
+        getMsg = new DDGetMsg(req->msg_tag, req->ddict->clientID, req->ddict->chkpt_id, req->key_data, req->buffer_size);
+
+        err = _send_msg(getMsg, req, true);
         if (err != DRAGON_SUCCESS) {
             append_err_noreturn("Could not send the get message and key.");
-            goto choose_manager_build_key_fail;
-        }
-
-        err = dragon_fli_close_send_handle(&req->sendh, req->ddict->timeout);
-        if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("Could not close send handle.");
             goto choose_manager_build_key_fail;
         }
 
@@ -1759,7 +1787,20 @@ dragonError_t dragon_ddict_get(const dragonDDictRequestDescr_t* req_descr) {
                 append_err_noreturn(getResponseMsg->errInfo());
                 goto close_recvh_fail;
             }
+
         }
+
+        auto it = std::find(req->ddict->local_managers.begin(), req->ddict->local_managers.end(), req->manager_id);
+        is_local_manager = (it != req->ddict->local_managers.end());
+        req->free_mem = getResponseMsg->freeMem() || !is_local_manager;
+        if (!req->free_mem) {
+            err = dragon_fli_reset_free_flag(&req->recvh);
+            if (err != DRAGON_SUCCESS) {
+                append_err_noreturn("Could not reset free memory flag in receive handle.");
+                goto close_recvh_fail;
+            }
+        }
+
     } else {
         err_return(DRAGON_INVALID_OPERATION, "No data present in request.");
     }
@@ -1862,7 +1903,7 @@ dragonError_t dragon_ddict_length(const dragonDDictDescr_t * dd_descr, uint64_t*
     lenMsg = new DDLengthMsg(msg_tag, dd->clientID, dd->bufferedRespFLIStr.c_str(), dd->chkpt_id, broadcast);
 
     // send length request to the selected manager
-    err = _send(&dd->manager_table[selected_manager], &dd->strm_ch, lenMsg, dd->timeout);
+    err = _send(&dd->manager_table[selected_manager], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, lenMsg, dd->timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not send the length message to root manager.");
         goto send_receive_fail;
@@ -1963,7 +2004,7 @@ dragonError_t dragon_ddict_clear(const dragonDDictDescr_t * dd_descr) {
     clearMsg = new DDClearMsg(msg_tag, dd->clientID, dd->bufferedRespFLIStr.c_str(), dd->chkpt_id, broadcast);
 
     // send clear request to the selected manager
-    err = _send(&dd->manager_table[selected_manager], &dd->strm_ch, clearMsg, dd->timeout);
+    err = _send(&dd->manager_table[selected_manager], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, clearMsg, dd->timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not send the clear message to root manager.");
         goto send_receive_fail;
@@ -2035,6 +2076,7 @@ dragonError_t dragon_ddict_pop(const dragonDDictRequestDescr_t * req_descr) {
     DDPopResponseMsg * popResponseMsg = nullptr;
     DragonResponseMsg * resp_msg = nullptr;
     dragonFLIRecvHandleDescr_t recvh;
+    bool is_local_manager = false;
 
     if (req_descr == nullptr)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid request descriptor.");
@@ -2067,16 +2109,11 @@ dragonError_t dragon_ddict_pop(const dragonDDictRequestDescr_t * req_descr) {
         req->manager_fli = req->ddict->manager_table[req->manager_id];
 
         req->msg_tag = _tag_inc(req->ddict);
-        popMsg = new DDPopMsg(req->msg_tag, req->ddict->clientID, req->ddict->chkpt_id);
-        err = _send_msg_key_no_close_sendh(popMsg, req);
+        popMsg = new DDPopMsg(req->msg_tag, req->ddict->clientID, req->ddict->chkpt_id, req->key_data, req->buffer_size);
+
+        err = _send_msg(popMsg, req, true);
         if (err != DRAGON_SUCCESS) {
             append_err_noreturn("Could not send the pop message and key.");
-            goto choose_manager_build_key_fail;
-        }
-
-        err = dragon_fli_close_send_handle(&req->sendh, req->ddict->timeout);
-        if (err != DRAGON_SUCCESS) {
-            append_err_noreturn("Could not close send handle.");
             goto choose_manager_build_key_fail;
         }
 
@@ -2114,6 +2151,18 @@ dragonError_t dragon_ddict_pop(const dragonDDictRequestDescr_t * req_descr) {
                 goto close_recvh_fail;
             }
         }
+
+        auto it = std::find(req->ddict->local_managers.begin(), req->ddict->local_managers.end(), req->manager_id);
+        is_local_manager = (it != req->ddict->local_managers.end());
+        req->free_mem = popResponseMsg->freeMem() || !is_local_manager;
+        if (!req->free_mem) {
+            err = dragon_fli_reset_free_flag(&req->recvh);
+            if (err != DRAGON_SUCCESS) {
+                append_err_noreturn("Could not reset free memory flag in receive handle.");
+                goto close_recvh_fail;
+            }
+        }
+
     } else {
         err_return(DRAGON_INVALID_OPERATION, "No data present in request.");
     }
@@ -2268,7 +2317,7 @@ dragonError_t dragon_ddict_sync_to_newest_checkpoint(const dragonDDictDescr_t * 
     managerNewestChkptIDMsg = new DDManagerNewestChkptIDMsg(msg_tag, dd->bufferedRespFLIStr.c_str(), broadcast);
 
     // send request to the selected manager
-    err = _send(&dd->manager_table[selected_manager], &dd->strm_ch, managerNewestChkptIDMsg, dd->timeout);
+    err = _send(&dd->manager_table[selected_manager], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, managerNewestChkptIDMsg, dd->timeout);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not send the sync to newest checkpoint message to root manager.");
         goto send_receive_fail;
@@ -2693,7 +2742,7 @@ dragonError_t dragon_ddict_synchronize(const char ** serialized_ddicts, const si
                     goto send_manager_sync_fail;
                 }
 
-                err = _send(&connection, &dd->strm_ch, managerSyncMsg, dd->timeout);
+                err = _send(&connection, STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, managerSyncMsg, dd->timeout);
                 if (err != DRAGON_SUCCESS){
                     append_err_noreturn("Could not send the manager synchronization message to the full manager.");
                     goto send_manager_sync_fail;

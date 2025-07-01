@@ -217,7 +217,7 @@ class Store(DDict, ZStore):
     @classmethod
     def _find_gkeys(cls, sep, path, zg):
         thekeys = set()
-        for k in zg.keys():
+        for k in zg.store.keys():
             lk = k.split(sep)
 
             # try to parallelize on the second index

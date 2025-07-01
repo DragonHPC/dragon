@@ -144,6 +144,21 @@ dragonError_t
 dragon_ddict_create_request(const dragonDDictDescr_t* obj, const dragonDDictRequestDescr_t* req);
 
 /**
+ * @brief Return the value free memory variable from the request.
+ *
+ * In some cases, we don't want to free the memory after receiving as other processes are still
+ * using it. This API provides a guide to user if the memory should be cleaned up or not.
+ *
+ * @param req is an initialized request object.
+ *
+ * @param free_mem is a boolean flag that determines if the memory should be released.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_ddict_free_required(const dragonDDictRequestDescr_t* req, bool * free_mem);
+
+/**
  * @brief This finalizes a request by completing any operation that was still
  * pending for this request. When a request object is required it will be
  * indicated in the API.

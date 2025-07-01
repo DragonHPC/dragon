@@ -689,12 +689,21 @@ class Process(ProcessTemplate):
 
     @property
     def node(self) -> int:
-        """Return the unique host id of the node the process is running on.
+        """Return a number for the host node the process is running on assigned by Local Services.
 
-        :return: huid of host node.
+        :return: nonnegative integer with values in [0, #nodes-1]
         :rtype: int
         """
         return self._descr.node
+
+    @property
+    def h_uid(self) -> int:
+        """Return the unique host id of the node the process is running on.
+
+        :return: h_uid of host node.
+        :rtype: int
+        """
+        return self._descr.h_uid
 
     @property
     def returncode(self) -> int:

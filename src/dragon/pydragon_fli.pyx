@@ -24,12 +24,6 @@ cdef enum:
     C_TRUE = 1
     C_FALSE = 0
 
-cdef struct msg_blocks:
-    uint8_t * _current_block
-    msg_blocks * _next
-
-ctypedef msg_blocks msg_blocks_t
-
 cdef timespec_t* _computed_timeout(timeout, timespec_t* time_ptr):
 
     if timeout is None:
@@ -97,7 +91,7 @@ cdef class FLISendH:
         bool _is_open
         object _default_timeout
 
-    def __init__(self, FLInterface adapter, Channel stream_channel=None, MemoryPool destination_pool=None, timeout=None, bool allow_strm_term=False, use_main_as_stream_channel=False):
+    def __init__(self, FLInterface adapter, *, Channel stream_channel=None, MemoryPool destination_pool=None, timeout=None, bool allow_strm_term=False, use_main_as_stream_channel=False, use_main_buffered=False, bool turbo_mode=False):
         """
         When creating a send handle an application may provide a stream
         channel to be used. If specifying that the main channel is to be
@@ -122,6 +116,22 @@ cdef class FLISendH:
             restricted circumstances but must only be used when there is
             exactly one sender and one receiver on the FLI.
 
+        :param use_main_buffered: Default is False. If True, then all sends on this
+            send handle must/will be buffered into one actual send operation. This
+            is useful on an FLI that is not created as a buffered FLI (i.e. it allows
+            streaming on stream channels), but where a process may need/want to send
+            buffered data as a single message that will be deconstructed at the other
+            end. The receiving side does not need to do anything different to receive
+            this buffered data other than it should use recv_bytes to receive it. Calling
+            recv_mem would only work for one read on the receive side and is currently
+            not allowed since calling it after the first receive would not work.
+
+        :param turbo_mode: Default is False. This tells the FLI to return immediately
+            on sends with transfer of ownership. This means the sender might not be
+            informed of a send failure. Receivers should have timeouts on receives to
+            be guaranteed they will timeout should a failure occur. The sender
+            should likely not care when turbo mode is being used.
+
         :param destination_pool: Default is None. This is used to indicate that messages
             that are located elsewhere should end up in this pool. This can also be a
             remote pool on a different node so long as the channel being sent to also
@@ -141,6 +151,7 @@ cdef class FLISendH:
             provided here also becomes the default timeout when used in the context
             manager framework.
 
+
         :return: An FLI send handle.
         """
         cdef:
@@ -159,11 +170,14 @@ cdef class FLISendH:
         if use_main_as_stream_channel:
             c_strm_ch = STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION
 
+        if use_main_buffered:
+            c_strm_ch = STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND
+
         if destination_pool is not None:
             dest_pool = &destination_pool._pool_hdl
 
         with nogil:
-            derr = dragon_fli_open_send_handle(&self._adapter, &self._sendh, c_strm_ch, dest_pool, allow_strm_term, time_ptr)
+            derr = dragon_fli_open_send_handle(&self._adapter, &self._sendh, c_strm_ch, dest_pool, allow_strm_term, turbo_mode, time_ptr)
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Timed out while opening send handle.")
@@ -252,7 +266,7 @@ cdef class FLISendH:
             raise DragonFLIError(derr, "Failed to send message over stream channel.")
 
 
-    def send_mem(self, MemoryAlloc mem, uint64_t arg=0, transfer_ownership=True, timeout=None):
+    def send_mem(self, MemoryAlloc mem, uint64_t arg=0, transfer_ownership=True, no_copy_read_only=False, timeout=None):
         """
         Send a memory allocation with a hint (provided in arg).
         When True (the default) transfer_ownership will transfer ownership
@@ -267,18 +281,19 @@ cdef class FLISendH:
             dragonError_t derr
             timespec_t timer
             timespec_t* time_ptr
-            bool _transfer
-
+            bool transfer
+            bool nocopy
 
         if self._is_open == False:
             raise RuntimeError("Handle not open, cannot send data.")
 
         time_ptr = _computed_timeout(timeout, &timer)
         arg_val = arg
-        _transfer = transfer_ownership
+        transfer = transfer_ownership
+        nocopy = no_copy_read_only
 
         with nogil:
-            derr = dragon_fli_send_mem(&self._sendh, &mem._mem_descr, arg, _transfer, time_ptr)
+            derr = dragon_fli_send_mem(&self._sendh, &mem._mem_descr, arg, transfer, nocopy, time_ptr)
 
         if derr == DRAGON_EOT:
             raise FLIEOT(derr, "Receiver Ended Streaming")
@@ -497,7 +512,7 @@ cdef class FLIRecvH:
         except:
             pass
 
-    def recv_bytes_into(self, unsigned char[::1] bytes_buffer=None, timeout=None):
+    def recv_bytes_into(self, unsigned char[::1] bytes_buffer=None, free_mem=True, timeout=None):
         """
         Receive bytes into the bytes_buffer with timeout given in seconds. If timeout
         is None (the default) then wait forever for data. The receive handle must be
@@ -517,11 +532,22 @@ cdef class FLIRecvH:
 
         max_bytes = len(bytes_buffer)
 
+        if not free_mem:
+            derr = dragon_fli_reset_free_flag(&self._recvh)
+            if derr != DRAGON_SUCCESS:
+                raise DragonFLIError(derr, "Error resetting free memory flag in FLI receive handle")
+
+        # A max_bytes value of 0 means "get everything"
         # This gets a memoryview slice of the buffer
         cdef unsigned char [:] c_data = bytes_buffer
         # To pass in as a pointer, get the address of the 0th index &c_data[0]
         with nogil:
             derr = dragon_fli_recv_bytes_into(&self._recvh, max_bytes, &num_bytes, &c_data[0], &arg, time_ptr)
+
+        if not free_mem:
+            derr = dragon_fli_set_free_flag(&self._recvh)
+            if derr != DRAGON_SUCCESS:
+                raise DragonFLIError(derr, "Error setting free memory flag in FLI receive handle")
 
         if derr == DRAGON_DYNHEAP_REQUESTED_SIZE_TOO_LARGE or derr == DRAGON_MEMORY_POOL_FULL:
             raise DragonFLIOutOfMemoryError(derr, "Could not receive message because out of memory in Dragon Memory Pool. Message was discarded.")
@@ -538,7 +564,7 @@ cdef class FLIRecvH:
         # Landing pad should be populated, just return arg
         return arg
 
-    def recv_bytes(self, size=-1, timeout=None):
+    def recv_bytes(self, size=-1, free_mem=True, timeout=None):
         """
         Receive at most size bytes from the stream with the given timeout, which
         is given in seconds. If timeout is None, wait forever. If size is -1
@@ -561,9 +587,19 @@ cdef class FLIRecvH:
         if size > 0:
             max_bytes = size
 
+        if not free_mem:
+            derr = dragon_fli_reset_free_flag(&self._recvh)
+            if derr != DRAGON_SUCCESS:
+                raise DragonFLIError(derr, "Error resetting free memory flag in FLI receive handle")
+
         # A max_bytes value of 0 means "get everything"
         with nogil:
             derr = dragon_fli_recv_bytes(&self._recvh, max_bytes, &num_bytes, &c_data, &arg, time_ptr)
+
+        if not free_mem:
+            derr = dragon_fli_set_free_flag(&self._recvh)
+            if derr != DRAGON_SUCCESS:
+                raise DragonFLIError(derr, "Error setting free memory flag in FLI receive handle")
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while receiving bytes.")
@@ -938,30 +974,30 @@ cdef class PickleReadAdapter:
 
     cdef:
         FLIRecvH _recvh
-        msg_blocks_t * _free_list
+        dragonMemoryDescr_t _mem
+        size_t _mem_size
+        uint8_t* _mem_ptr
+        size_t _offset
         object _timeout
         object _hint
+        bool _free_mem
+        bool _have_mem
 
-    def __init__(self, FLIRecvH recvh, timeout=None, hint=None):
+    def __init__(self, FLIRecvH recvh, timeout=None, hint=None, free_mem=True):
         self._recvh = recvh
         self._timeout = timeout
         self._hint = hint
-        self._free_list = NULL
+        self._free_mem = free_mem
+        self._have_mem = False
+        self._mem_size = 0
+        self._offset = 0
 
     def __dealloc__(self):
-        cdef:
-            msg_blocks_t * next_node = NULL
-            msg_blocks_t * current_node = NULL
 
-        current_node = self._free_list
-
-        while current_node != NULL:
-            next_node = current_node._next
-            free(current_node._current_block)
-            free(current_node)
-            current_node = next_node
-
-        self._free_list = NULL
+        if self._have_mem:
+            if self._free_mem:
+                dragon_memory_free(&self._mem)
+            self._have_mem = False
 
     def read(self, size=0):
         cdef:
@@ -969,10 +1005,8 @@ cdef class PickleReadAdapter:
             timespec_t timer
             timespec_t* time_ptr
             uint64_t arg
-            size_t sz = size
-            size_t received_bytes = 0
-            msg_blocks_t * new_node = NULL
-            uint8_t * current_block
+            size_t start = 0
+            size_t end = 0
 
         if self._recvh._is_open == False:
             raise RuntimeError("Handle is not open, cannot receive")
@@ -980,35 +1014,56 @@ cdef class PickleReadAdapter:
         if size < 0:
             raise ValueError("Size cannot be less than zero")
 
-        time_ptr = _computed_timeout(self._timeout, &timer)
+        if self._offset >= self._mem_size:
+            if self._have_mem:
+                if self._free_mem:
+                    dragon_memory_free(&self._mem)
+                self._have_mem = False
 
-        # A sz value of 0 means "get everything"
-        with nogil:
-            derr = dragon_fli_recv_bytes(&self._recvh._recvh, sz, &received_bytes, <uint8_t **> &current_block, &arg, time_ptr)
+            time_ptr = _computed_timeout(self._timeout, &timer)
 
-        new_node = <msg_blocks_t *>malloc(sizeof(msg_blocks_t))
+            with nogil:
+                derr = dragon_fli_recv_mem(&self._recvh._recvh, &self._mem, &arg, time_ptr)
 
-        if new_node == NULL:
-            raise DragonFLIError(DragonError.INTERNAL_MALLOC_FAIL, "Failed to allocate free list node")
+            if derr == DRAGON_TIMEOUT:
+                raise DragonFLITimeoutError(derr, "Time out while receiving bytes.")
 
-        if derr == DRAGON_TIMEOUT:
-            raise DragonFLITimeoutError(derr, "Time out while receiving bytes.")
+            if derr == DRAGON_EOT:
+                raise FLIEOT(derr, "End of Transmission")
 
-        if derr == DRAGON_EOT:
-            raise FLIEOT(derr, "End of Transmission")
+            if derr != DRAGON_SUCCESS:
+                raise DragonFLIError(derr, "Error receiving FLI data.")
 
-        if derr != DRAGON_SUCCESS:
-            raise DragonFLIError(derr, "Error receiving FLI data")
+            self._have_mem = True
 
-        # We must keep track of these blocks of data to free when read adapter is destroyed.
-        new_node._next = self._free_list
-        new_node._current_block = current_block
-        self._free_list = new_node
+            if self._hint is not None and self._hint != arg:
+                raise AssertionError(f"Expected hint {self._hint} but got {arg} from FLI")
 
-        if self._hint is not None and self._hint != arg:
-            raise AssertionError(f"Expect hint {self._hint} but get {arg} from FLI")
+            derr = dragon_memory_get_size(&self._mem, &self._mem_size)
+            if derr != DRAGON_SUCCESS:
+                raise DragonFLIError(derr, "Error getting the data size.")
 
-        return current_block[:received_bytes]
+            self._offset = 0
+
+            derr = dragon_memory_get_pointer(&self._mem, <void**> &self._mem_ptr)
+            if derr != DRAGON_SUCCESS:
+                raise DragonFLIError(derr, "Error getting the data pointer.")
+
+        if size == 0:
+            # A size of 0 means get everything.
+            size = self._mem_size - self._offset
+
+        start = self._offset
+
+        # If start+size exceeds the memory left, then readjust size to be what's left.
+        # We can return fewer bytes than was asked for.
+        if start + size > self._mem_size:
+            size = self._mem_size - start
+
+        # Next time this will be where offset starts at
+        self._offset = self._offset + size
+
+        return self._mem_ptr[start:start+size]
 
     def readline(self):
         return self.read()

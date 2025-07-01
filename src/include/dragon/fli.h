@@ -29,6 +29,19 @@ extern "C" {
 
 static dragonChannelDescr_t* const STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION = (dragonChannelDescr_t*)0x0000000000001111;
 
+ /**
+  * @brief Constant to be used when opening a send handle as the
+  * stream channel argument when wishing to send one message. Several sends may be done in the
+  * fli, but they will all be buffered (ignoring any buffer arguments on sends). The buffered
+  * data will be sent when the send handle is closed. The fli receiver code automatically handles any
+  * buffered data that was sent on the main channel and the client receiver code will have no
+  * idea that the data was sent this way. The client opens a receive handle as normal and
+  * receives the data.
+  */
+
+static dragonChannelDescr_t* const STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND = (dragonChannelDescr_t*)0x0000000000001112;
+
+
 
 /** @} */ // end of fli_consts group.
 
@@ -41,12 +54,12 @@ static dragonChannelDescr_t* const STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION = (
 /**
  * @brief The attributes structure of an fli adapter.
  *
- * This structure contains members that can tune file-like interface (fli)
+ * This structure contains members that can tune the file-like interface (fli)
  * adapter.
  **/
 
 typedef struct dragonFLIAttr_st {
-    dragonULInt _placeholder;
+    int _placeholder;
 } dragonFLIAttr_t;
 
 /**
@@ -413,6 +426,12 @@ dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
  * the rest of the stream will be sent by the sender and discarded automatically
  * the FLI code when the receiver closes the receive handle.
  *
+ * @param turbo_mode This may be set as an attribute on the FLI too. If set
+ * on the FLI, this argument is ignored. Otherwise, true indicates that
+ * data sent with transfer of ownership will be sent and sends will return
+ * immediately. This means that the sender may not know of a failure in sending
+ * and a receiver should likely have a timeout on receiving should something go wrong.
+ *
  * Note: Stream termination is unavailable if the FLI is a buffered FLI.
  *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
@@ -424,7 +443,8 @@ dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
 **/
 dragonError_t
 dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandleDescr_t* send_handle,
-                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, bool allow_strm_term, const timespec_t* timeout);
+                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, bool allow_strm_term, bool turbo_mode,
+                            const timespec_t* timeout);
 
 /**
  * @brief Close a Send Handle
@@ -506,6 +526,32 @@ dragon_fli_open_recv_handle(const dragonFLIDescr_t* adapter, dragonFLIRecvHandle
 dragonError_t
 dragon_fli_close_recv_handle(dragonFLIRecvHandleDescr_t* recv_handle, const timespec_t* timeout);
 
+/**
+ * @brief Set the free memory flag.
+ *
+ * Set a flag in receive handle to indicate that the dragon managed memory that is received on
+ * this receive handle should be freed. This is the default behavior.
+ *
+ * @param recv_handle is an open receive handle.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_fli_set_free_flag(dragonFLIRecvHandleDescr_t* recv_handle);
+
+/**
+ * @brief Reset the free memory flag.
+ *
+ * Reset a flag in receive handle to indicate that the dragon managed memory that is received on
+ * this receive handle should be freed. Resetting it means that the memory will not be freed as
+ * it is received.
+ *
+ * @param recv_handle is an open receive handle.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_fli_reset_free_flag(dragonFLIRecvHandleDescr_t* recv_handle);
 
 /**
  * @brief Check that a Stream is completely received
@@ -694,6 +740,16 @@ dragon_fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, size_t num_bytes,
  * be transferred to the receiver. Passing false means the ownership remains
  * with the sender. This also implies a copy is made on sending.
  *
+ * @param no_copy_read_only is true when the original memory allocation should
+ * be sent, but will not be cleaned up by anything receiving it due to the
+ * read-only nature of the memory being sent. The receiver must be aware of this
+ * read-only nature. It will not be notified of this attribute by the sender.
+ *
+ * @param no_copy_read_only is true when the original memory allocation should
+ * be sent, but will not be cleaned up by anything receiving it due to the
+ * read-only nature of the memory being sent. The receiver must be aware of this
+ * read-only nature. It will not be notified of this attribute by the sender.
+ *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and
  * return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that indicates
@@ -704,7 +760,7 @@ dragon_fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, size_t num_bytes,
 
 dragonError_t
 dragon_fli_send_mem(dragonFLISendHandleDescr_t* send_handle, dragonMemoryDescr_t* mem,
-                    uint64_t arg, bool transfer_ownership, const timespec_t* timeout);
+                    uint64_t arg, bool transfer_ownership, bool no_copy_read_only, const timespec_t* timeout);
 /**
  * @brief Receive data from the FLI adapter.
  *

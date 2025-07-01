@@ -318,7 +318,7 @@ int main() {
     err = dragon_fli_create(&fli, channel_ptrs[0], channel_ptrs[1], &pool, NUM_CHANNELS-2, &channel_ptrs[2], false, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     err = dragon_fli_close_send_handle(&sendh, NULL);
@@ -357,7 +357,7 @@ int main() {
     if (fork()==0)
         return proc_receiver(&ser, &pool, NULL, 0);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     int index = 0;
@@ -367,6 +367,40 @@ int main() {
         size_t num_bytes = MIN(chunk_size, len-index);
 
         err = dragon_fli_send_bytes(&sendh, num_bytes, (uint8_t*)&text[index], 0, false, NULL);
+        check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+        index+=num_bytes;
+        chunk_size+=1;
+    }
+
+    err = dragon_fli_close_send_handle(&sendh, NULL);
+    check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+
+    wait(&status);
+    check(status, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+
+    err = dragon_fli_destroy(&fli);
+    check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+
+    /* Now try sending buffered data on an FLI that has stream channels. This is possible for buffered sends. */
+    err = dragon_fli_create(&fli, channel_ptrs[0], channel_ptrs[1], &pool, NUM_CHANNELS-2, &channel_ptrs[2], false, NULL);
+    check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+
+    err = dragon_fli_serialize(&fli, &ser);
+    check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+
+    if (fork()==0)
+        return proc_receiver(&ser, &pool, NULL, 0);
+
+    err = dragon_fli_open_send_handle(&fli, &sendh, STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, NULL, false, true, NULL);
+    check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+
+    index = 0;
+    len = strlen(text) + 1;
+
+    while (index < len) {
+        size_t num_bytes = MIN(chunk_size, len-index);
+
+        err = dragon_fli_send_bytes(&sendh, num_bytes, (uint8_t*)&text[index], 0, true, NULL);
         check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
         index+=num_bytes;
         chunk_size+=1;
@@ -395,7 +429,7 @@ int main() {
     if (fork()==0)
         return proc_receiver(&ser, &pool, NULL, 0);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     index = 0;
@@ -428,7 +462,7 @@ int main() {
     if (fork()==0)
         return proc_receiver(&ser, &pool, STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION, 0);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION, NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     err = dragon_fli_send_bytes(&sendh, strlen(text)+1, (uint8_t*)text, 0, false, NULL);
@@ -454,10 +488,10 @@ int main() {
         return proc_receiver(&ser, &pool, NULL, 0);
 
     /* This should be an error. You must provide a sender stream channel in this case. */
-    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, true, NULL);
     check(err, DRAGON_INVALID_ARGUMENT, &tests_passed, &tests_attempted);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, channel_ptrs[1], NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, channel_ptrs[1], NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     index = 0;
@@ -495,7 +529,7 @@ int main() {
     err = dragon_fli_open_recv_handle(&fli, &recvh, NULL, NULL, NULL);
     check(err, DRAGON_INVALID_ARGUMENT, &tests_passed, &tests_attempted);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     index = 0;
@@ -530,7 +564,7 @@ int main() {
     if (fork()==0)
         return proc_receiver(&ser, &pool, NULL, 1);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, channel_ptrs[1], NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, channel_ptrs[1], NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     index = 0;
@@ -566,7 +600,7 @@ int main() {
     if (fork()==0)
         return proc_receiver(&ser, &pool, channel_ptrs[1], 1);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     index = 0;
@@ -602,7 +636,7 @@ int main() {
     if (fork()==0)
         return proc_receiver_inc_chunk(&ser, &pool, channel_ptrs[1], 1);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     index = 0;
@@ -638,7 +672,7 @@ int main() {
     if (fork()==0)
         return proc_receiver_provide_buf(&ser, &pool, channel_ptrs[1]);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     index = 0;
@@ -673,7 +707,7 @@ int main() {
     if (fork()==0)
         return proc_receiver_fd(&ser, &pool);
 
-    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, NULL);
+    err = dragon_fli_open_send_handle(&fli, &sendh, NULL, NULL, false, true, NULL);
     check(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     err = dragon_fli_create_writable_fd(&sendh, &fd, true, 0, 0, NULL);

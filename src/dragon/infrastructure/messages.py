@@ -414,6 +414,12 @@ class MessageTypes(enum.Enum):
     DD_PERSIST_CHKPTS_RESPONSE = enum.auto()  #:
     DD_CHKPT_AVAIL = enum.auto()  #:
     DD_CHKPT_AVAIL_RESPONSE = enum.auto()  #:
+    DD_GET_FREEZE = enum.auto()  #:
+    DD_GET_FREEZE_RESPONSE = enum.auto()  #:
+    DD_FREEZE = enum.auto()  #:
+    DD_FREEZE_RESPONSE = enum.auto()  #:
+    DD_UN_FREEZE = enum.auto()  #:
+    DD_UN_FREEZE_RESPONSE = enum.auto()  #:
     DD_PERSIST = enum.auto()  #:
     DD_PERSIST_RESPONSE = enum.auto()  #:
     PG_REGISTER_CLIENT = enum.auto()  #:
@@ -729,9 +735,10 @@ class SHCreateProcessLocalChannel(CapNProtoMsg):
 
     _tc = MessageTypes.SH_CREATE_PROCESS_LOCAL_CHANNEL
 
-    def __init__(self, tag, puid, blockSize, capacity, respFLI):
+    def __init__(self, tag, puid, muid, blockSize, capacity, respFLI):
         super().__init__(tag)
         self._puid = puid
+        self._muid = muid
         self._blockSize = blockSize
         self._capacity = capacity
         self._respFLI = respFLI
@@ -739,6 +746,7 @@ class SHCreateProcessLocalChannel(CapNProtoMsg):
     def get_sdict(self):
         rv = super().get_sdict()
         rv["puid"] = self._puid
+        rv["muid"] = self._muid
         rv["blockSize"] = self._blockSize
         rv["capacity"] = self._capacity
         rv["respFLI"] = self._respFLI
@@ -748,6 +756,7 @@ class SHCreateProcessLocalChannel(CapNProtoMsg):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.puid = self._puid
+        client_msg.muid = self._muid
         client_msg.blockSize = self._blockSize
         client_msg.capacity = self._capacity
         client_msg.respFLI = self._respFLI
@@ -760,6 +769,10 @@ class SHCreateProcessLocalChannel(CapNProtoMsg):
     @property
     def puid(self):
         return self._puid
+
+    @property
+    def muid(self):
+        return self._muid
 
     @property
     def blockSize(self):
@@ -1330,24 +1343,31 @@ class DDRandomManagerResponse(CapNProtoResponseMsg):
 
     _tc = MessageTypes.DD_RANDOM_MANAGER_RESPONSE
 
-    def __init__(self, tag, ref, err, manager, errInfo=""):
+    def __init__(self, tag, ref, err, manager, managerID, errInfo=""):
         super().__init__(tag, ref, err, errInfo)
         self._manager = manager
+        self._managerID = managerID
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["manager"] = self._manager
+        rv["managerID"] = self._managerID
         return rv
 
     def builder(self):
         cap_msg = super().builder()
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.manager = self._manager
+        client_msg.managerID = self._managerID
         return cap_msg
 
     @property
     def manager(self):
         return self._manager
+
+    @property
+    def managerID(self):
+        return self._managerID
 
 
 class DDRegisterClient(CapNProtoMsg):
@@ -1385,9 +1405,7 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
 
     _tc = MessageTypes.DD_REGISTER_CLIENT_RESPONSE
 
-    def __init__(
-        self, tag, ref, err, clientID, numManagers, managerID, managerNodes, name, timeout, readOnly=False, errInfo=""
-    ):
+    def __init__(self, tag, ref, err, clientID, numManagers, managerID, managerNodes, name, timeout, errInfo=""):
         super().__init__(tag, ref, err, errInfo)
         self._clientID = clientID
         self._num_managers = numManagers
@@ -1398,7 +1416,6 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
         if timeout is None:
             timeout = NO_TIMEOUT_VALUE
         self._timeout = timeout
-        self._readOnly = readOnly
 
     def get_sdict(self):
         rv = super().get_sdict()
@@ -1411,7 +1428,6 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
             rv["timeout"] = None
         else:
             rv["timeout"] = self._timeout
-        rv["readOnly"] = self._readOnly
         return rv
 
     def builder(self):
@@ -1425,7 +1441,6 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
             msg_mgr_nodes[i] = self._managerNodes[i]
         client_msg.name = self._name
         client_msg.timeout = self._timeout
-        client_msg.readOnly = self._readOnly
         return cap_msg
 
     @property
@@ -1451,10 +1466,6 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
     @property
     def timeout(self):
         return self._timeout
-
-    @property
-    def readOnly(self):
-        return self._readOnly
 
 
 class DDConnectToManager(CapNProtoMsg):
@@ -1793,15 +1804,17 @@ class DDGet(CapNProtoMsg):
 
     _tc = MessageTypes.DD_GET
 
-    def __init__(self, tag, clientID, chkptID=0):
+    def __init__(self, tag, clientID, chkptID, key):
         super().__init__(tag)
         self._clientID = clientID
         self._chkptID = chkptID
+        self._key = key
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["clientID"] = self._clientID
-        rv["chkptID"] = self.chkptID
+        rv["chkptID"] = self._chkptID
+        rv["key"] = self._key
         return rv
 
     def builder(self):
@@ -1809,6 +1822,7 @@ class DDGet(CapNProtoMsg):
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
         client_msg.chkptID = self._chkptID
+        client_msg.key = self._key
         return cap_msg
 
     @property
@@ -1818,29 +1832,51 @@ class DDGet(CapNProtoMsg):
     @property
     def chkptID(self):
         return self._chkptID
+
+    @property
+    def key(self):
+        return self._key
 
 
 class DDGetResponse(CapNProtoResponseMsg):
 
     _tc = MessageTypes.DD_GET_RESPONSE
 
-    def __init__(self, tag, ref, err, errInfo=""):
+    def __init__(self, tag, ref, err, errInfo="", freeMem=False):
         super().__init__(tag, ref, err, errInfo)
+        self._freeMem = freeMem
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["freeMem"] = self._freeMem
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.freeMem = self._freeMem
+        return cap_msg
+
+    @property
+    def freeMem(self):
+        return self._freeMem
 
 
 class DDPop(CapNProtoMsg):
 
     _tc = MessageTypes.DD_POP
 
-    def __init__(self, tag, clientID, chkptID=0):
+    def __init__(self, tag, clientID, chkptID, key):
         super().__init__(tag)
         self._clientID = clientID
         self._chkptID = chkptID
+        self._key = key
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["clientID"] = self._clientID
         rv["chkptID"] = self._chkptID
+        rv["key"] = self._key
         return rv
 
     def builder(self):
@@ -1848,6 +1884,7 @@ class DDPop(CapNProtoMsg):
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
         client_msg.chkptID = self._chkptID
+        client_msg.key = self._key
         return cap_msg
 
     @property
@@ -1857,29 +1894,51 @@ class DDPop(CapNProtoMsg):
     @property
     def chkptID(self):
         return self._chkptID
+
+    @property
+    def key(self):
+        return self._key
 
 
 class DDPopResponse(CapNProtoResponseMsg):
 
     _tc = MessageTypes.DD_POP_RESPONSE
 
-    def __init__(self, tag, ref, err, errInfo=""):
+    def __init__(self, tag, ref, err, errInfo="", freeMem=False):
         super().__init__(tag, ref, err, errInfo)
+        self._freeMem = freeMem
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["freeMem"] = self._freeMem
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.freeMem = self._freeMem
+        return cap_msg
+
+    @property
+    def freeMem(self):
+        return self._freeMem
 
 
 class DDContains(CapNProtoMsg):
 
     _tc = MessageTypes.DD_CONTAINS
 
-    def __init__(self, tag, clientID, chkptID=0):
+    def __init__(self, tag, clientID, chkptID, key):
         super().__init__(tag)
         self._clientID = clientID
         self._chkptID = chkptID
+        self._key = key
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["clientID"] = self._clientID
         rv["chkptID"] = self._chkptID
+        rv["key"] = self._key
         return rv
 
     def builder(self):
@@ -1887,6 +1946,7 @@ class DDContains(CapNProtoMsg):
         client_msg = cap_msg.init(self.capnp_name)
         client_msg.clientID = self._clientID
         client_msg.chkptID = self._chkptID
+        client_msg.key = self._key
         return cap_msg
 
     @property
@@ -1896,6 +1956,10 @@ class DDContains(CapNProtoMsg):
     @property
     def chkptID(self):
         return self._chkptID
+
+    @property
+    def key(self):
+        return self._key
 
 
 class DDContainsResponse(CapNProtoResponseMsg):
@@ -3219,6 +3283,118 @@ class DDPersist(CapNProtoMsg):
 class DDPersistResponse(CapNProtoResponseMsg):
 
     _tc = MessageTypes.DD_PERSIST_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=""):
+        super().__init__(tag, ref, err, errInfo)
+
+
+class DDFreeze(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_FREEZE
+
+    def __init__(self, tag, respFLI):
+        super().__init__(tag)
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["respFLI"] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class DDFreezeResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_FREEZE_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=""):
+        super().__init__(tag, ref, err, errInfo)
+
+
+class DDGetFreeze(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_GET_FREEZE
+
+    def __init__(self, tag, clientID):
+        super().__init__(tag)
+        self._clientID = clientID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["clientID"] = self._clientID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.clientID = self._clientID
+        return cap_msg
+
+    @property
+    def clientID(self):
+        return self._clientID
+
+
+class DDGetFreezeResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_GET_FREEZE_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo, freeze):
+        super().__init__(tag, ref, err, errInfo)
+        self._freeze = freeze
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["freeze"] = self._freeze
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.freeze = self._freeze
+        return cap_msg
+
+    @property
+    def freeze(self):
+        return self._freeze
+
+
+class DDUnFreeze(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_UN_FREEZE
+
+    def __init__(self, tag, respFLI):
+        super().__init__(tag)
+        self._respFLI = respFLI
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["respFLI"] = self._respFLI
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.respFLI = self._respFLI
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+
+class DDUnFreezeResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_UN_FREEZE_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
         super().__init__(tag, ref, err, errInfo)

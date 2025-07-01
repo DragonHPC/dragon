@@ -54,7 +54,7 @@ class Node:
         """The unique global identifier of this node.
 
         :return: the h_uid
-        :rtype: in
+        :rtype: int
         """
 
         return self._descr.h_uid
