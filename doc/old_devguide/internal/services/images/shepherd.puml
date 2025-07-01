@@ -1,0 +1,52 @@
+@startuml
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+skinparam linetype polyline
+
+package "Shepherd" {
+
+    [Process Manager] as PM
+    [Server] as S
+
+    package "Async IO"  as AIO {
+
+        [Receive Tasks] as RT
+        [Process Tasks] as PT
+        together {
+            [Stdout Tasks] as SOT
+            [Stderr Tasks] as SET
+            [Stdin Tasks] as SIT
+        }
+    }
+
+    interface "AsyncIO Interface" as asyncio_api
+    interface "Process Manager API" as pman_api
+    
+}
+
+interface "Shepherd Message API" as  shepherd_messages
+
+interface  "User Program Stdout" as user_program_stdout
+interface  "User Program Stdin" as user_program_stdin
+interface  "User Program Sterr" as user_program_stderr
+
+interface  "POSIX MQ " as posix_message_queue
+
+interface "Global Services Messages" as global_services_channel
+interface "Channel API" as channel_api
+
+RT <-- shepherd_messages
+SOT <-u- user_program_stdout
+SET <-u- user_program_stderr
+SIT -u-> user_program_stdin
+AIO <--> asyncio_api
+
+PM --> asyncio_api
+PM <-- pman_api
+S --> pman_api
+
+channel_api -u-> shepherd_messages
+
+@enduml
