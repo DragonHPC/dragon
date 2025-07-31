@@ -70,3 +70,6 @@ test/native/cpp_ddict
 test/utils/test_blocks
 src/dragon/bin
 src/include/python3*
+src/dragon/.dragon-config.mk
+test/multi-node/c_ddict
+test/multi-node/cpp_ddict
