@@ -13,44 +13,72 @@ LINKER_HELP = (
 )
 COMPILER_HELP = """For execution during compilation, print the compiler option for building applications built against Dragon C/C++ API"""
 
-DRAGON_CONFIG_ADD_HELP = """Add a colon-separated list of key-value pairs (key=value) to configure
+DRAGON_CONFIG_ADD_HELP = """Define a number of paths (key=value) to configure
 include and library paths for Dragon, or to make the TCP runtime the always-on
-default for backend communication (set to True). Possible keys: tcp-runtime,
-ofi-[build,runtime]-lib, ofi-include, ucx-[build,runtime]-lib, ucx-include,
-mpi-[build,runtime]-lib, mpi-include, cuda-include, hip-include, ze-include.
+default for backend communication (set to True).
 
 Examples
 --------
 UCX backend:
-dragon-config -a 'ucx-include=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/include/'
-dragon-config -a 'ucx-build-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib'
-dragon-config -a 'ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib'
+dragon-config add --ucx-include=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/include
+dragon-config add --ucx-build-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib
+dragon-config add --ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib
 
 Set TCP transport as always-on default backend:
-dragon-config -a 'tcp-runtime=True'
+dragon-config add --tcp-runtime=True
+
+Set PMIx header files location to enable PMIx support for MPI applications. Specifically looking for
+path <pmix include>/src/include/pmix_globals.h
+dragon-config add --pmix-include=/usr/include:/usr/include/pmix
+
 """
 
 SERIALIZE_HELP = """Serialize all key-value pairs currently in the configuration file into a single,
 colon-separated string that can be passed to the --add command.
 """
 
-DRAGON_CONFIG_ADD_MPIEXEC_HELP = """Add mpiexec override commands for Dragon's PBS+PALS launcher. This is used to add overrides for the mpiexec commands used to launch the network config tool, the backend processes, and the cleanup processes. The commands need to launch one process per node, line buffer the output, and tag the output with the process rank with some unique identifying information (global rank, hostname, etc). The commands should be passed as a single string. The following special strings are necessary and will be automatically filled in at the time of use by Dragon:
-Network config tool: {nnodes} = number of nodes
-Backend: {nnodes} = number of nodes, {nodelist} = comma separated list of nodes
+DRAGON_NETWORK_MPIEXEC_HELP = """Add mpiexec override commands for Dragon's PBS+PALS launcher. This is used to add overrides
+for the mpiexec commands used to launch the network config tool and thedeprecated cleanup processes.
+The command needs to launch one process per node, line buffer the output, and tag the output with
+the process rank with some unique identifying information (global rank, hostname, etc). The commands
+should be passed as a single string. The following special strings are necessary and will be
+automatically filled in at the time of use by Dragon:
+
+{nnodes} = number of nodes
 
 Examples
 --------
-Set launcher mpiexec override for OpenMPI 5.0.6:
-dragon-config -ame 'launcher-mpiexec-override-netconfig=mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output'
-dragon-config -ame 'launcher-mpiexec-override-be=mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output --host {nodelist}'
+Set launcher mpiexec network config override for Cray-PALS:
+$ dragon-config add --netconfig-mpiexec-override='mpiexec --np {nnodes} -ppn 1 -l --line-buffer'
 
+Set launcher mpiexec network config override for OpenMPI 5.0.6:
+$ dragon-config add --netconfig-mpiexec-override='mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output'
 
-Set launcher mpiexec override for Cray-PALS:
-dragon-config -ame 'launcher-mpiexec-override-netconfig=mpiexec --np {nnodes} -ppn 1 -l --line-buffer'
-dragon-config -ame 'launcher-mpiexec-override-be=mpiexec --np {nnodes} --ppn 1 --cpu-bind none --hosts {nodelist} --line-buffer'
 These commands are used by default when the dragon launcher detects PBS+PALS.
 
-To avoid checks with the automatic wlm detection and utilize the overriden mpiexec commands, run dragon with the workload manager specified as '--wlm=pbs+pals'.
+To avoid checks with the automatic wlm detection and utilize the overriden mpiexec commands, run dragon with the
+workload manager specified as '--wlm=pbs+pals'.
+"""
+
+DRAGON_BACKEND_MPIEXEC_HELP = """Add mpiexec override commands for Dragon's PBS+PALS launcher. This is used to add overrides
+for the mpiexec commands used to launch the backend processes. The command should be passed as a
+single string. The following special strings are necessary and will be automatically dilled in at
+the time of use by Dragon:
+
+{nodes} = number of nodes, {nodelist} = comma separated list of nodes
+
+Examples
+--------
+Set launcher mpiexec override for Cray-PALS:
+$ dragon-config add --backend-mpiexec-override='mpiexec --np {nnodes} --ppn 1 --cpu-bind none --hosts {nodelist} --line-buffer'
+
+Set launcher mpiexec network config override for OpenMPI 5.0.6:
+$ dragon-config add --backend-mpiexec-override='mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output --host {nodelist}'
+
+These commands are used by default when the dragon launcher detects PBS+PALS.
+
+To avoid checks with the automatic wlm detection and utilize the overriden mpiexec commands, run dragon
+with the workload manager specified as '--wlm=pbs+pals'.
 """
 
 GET_KV_HELP = """Get value for given key that can be passed to the --add or --add-mpiexec command.
@@ -186,11 +214,90 @@ def hsta_config():
     and libraries to be used in compiled applications""",
     )
 
-    parser.add_argument("-a", "--add", help=DRAGON_CONFIG_ADD_HELP)
-    parser.add_argument("-ame", "--add-mpiexec", help=DRAGON_CONFIG_ADD_MPIEXEC_HELP)
     parser.add_argument("-c", "--clean", help="Clean out all config information.", action="store_true")
     parser.add_argument("-s", "--serialize", help=SERIALIZE_HELP, action="store_true")
     parser.add_argument("-g", "--get", help=GET_KV_HELP)
+
+    subparser = parser.add_subparsers(
+        title="Add paths subparser",
+        help="Add paths for configuration, compilation, and execution of Dragon",
+        dest="add",
+    )
+    add_subparser = subparser.add_parser("add", help=DRAGON_CONFIG_ADD_HELP, formatter_class=RawTextHelpFormatter)
+
+    # Define all the keys for add entries:
+    add_keys = {
+        "ofi_include",
+        "ucx_include",
+        "pmix_include",
+        "mpi_include",
+        "cuda_include",
+        "hip_include",
+        "ze_include",
+        "ofi_build_lib",
+        "ucx_build_lib",
+        "ofi_runtime_lib",
+        "ucx_runtime_lib",
+        "tcp_runtime",
+        "netconfig_mpiexec_override",
+        "backend_mpiexec_override",
+    }
+
+    def list_str(values):
+        # Split at any colons to allow multiple paths
+        return values.split(":")
+
+    # Include options
+    add_subparser.add_argument(
+        "--ofi-include", type=list_str, help="Include path for OFI headers to be used when building dragon"
+    )
+    add_subparser.add_argument(
+        "--ucx-include", type=list_str, help="Include path for UCX headers to be used when building dragon"
+    )
+    add_subparser.add_argument(
+        "--pmix-include", type=list_str, help="Include path for PMIx headers to be used when building dragon"
+    )
+    add_subparser.add_argument(
+        "--mpi-include", type=list_str, help="Include path for MPI headers to be used when building dragon"
+    )
+    add_subparser.add_argument(
+        "--cuda-include", type=list_str, help="Include path for CUDA headers to be used when building dragon"
+    )
+    add_subparser.add_argument(
+        "--hip-include", type=list_str, help="Include path for HIP headers to be used when building dragon"
+    )
+    add_subparser.add_argument(
+        "--ze-include", type=list_str, help="Include path for Ze headers to be used when building dragon"
+    )
+
+    # Build lib options
+    add_subparser.add_argument(
+        "--ofi-build-lib",
+        type=list_str,
+        help="Path to OFI libraries (eg: libfabric.so) to be used when building dragon",
+    )
+    add_subparser.add_argument(
+        "--ucx-build-lib", type=list_str, help="Path to UCX libraries (eg: libucp.so) to be used when building dragon"
+    )
+
+    # Runtime lib options
+    add_subparser.add_argument(
+        "--ofi-runtime-lib",
+        type=list_str,
+        help="Path to OFI libraries (eg: libfabric.so) to be used during app exeuction",
+    )
+    add_subparser.add_argument(
+        "--ucx-runtime-lib", type=list_str, help="Path to UCX libraries (eg: libucp.so) to be used during app execution"
+    )
+
+    add_subparser.add_argument("--netconfig-mpiexec-override", type=str, help=DRAGON_NETWORK_MPIEXEC_HELP)
+    add_subparser.add_argument("--backend-mpiexec-override", type=str, help=DRAGON_BACKEND_MPIEXEC_HELP)
+
+    add_subparser.add_argument(
+        "--tcp-runtime",
+        action="store_true",
+        help="If only using TCP for backend communication, set in order to turn off warning message during initialization of runtime",
+    )
 
     compile_group = parser.add_mutually_exclusive_group()
     compile_group.add_argument("-l", "--linker-options", action="store_true", help=LINKER_HELP)
@@ -216,12 +323,19 @@ def hsta_config():
     try:
         from ..infrastructure.facts import DRAGON_BASE_DIR, DRAGON_CONFIG_DIR
 
+        # Try to use these if defined
         base_dir = DRAGON_BASE_DIR
         config_dir = DRAGON_CONFIG_DIR
+
+    # If we end up here, we don't have dragon installed yet but need to defined
+    # these paths so we CAN build and install dragon
     except ImportError:
+        # This is the path used just about solely by the DST pipeline.
+        # The other cases, we're able to work out where we're installed
         try:
-            base_dir = Path(os.environ["DRAGON_BASE_DIR"])
-            config_dir = base_dir / "dragon" / ".hsta-config"
+            root_dir = Path(os.environ["DRAGON_BASE_DIR"])
+            base_dir = root_dir / "dragon"
+            config_dir = base_dir / ".hsta-config"
         except KeyError:
             base_dir = ""
             config_dir = ""
@@ -237,7 +351,6 @@ def hsta_config():
         makefile_filename = ""
 
     # handle serialize command before updating anything
-
     if args.serialize:
         if config_filename == "":
             print("failed to serialize environment: unable to find environment file", flush=True)
@@ -259,8 +372,6 @@ def hsta_config():
         else:
             print("no environment configuration available", flush=True)
 
-    # handle 'clean' command (do this first, so clean+set acts as a reset)
-
     if args.get:
         if config_filename == "":
             print("", flush=True)
@@ -278,7 +389,6 @@ def hsta_config():
             print("", flush=True)
 
     # handle 'clean' command (do this first, so clean+set acts as a reset)
-
     if args.clean:
         if config_filename == "" or makefile_filename == "":
             print("failed to clean environment: unable to find environment file(s)", flush=True)
@@ -290,8 +400,12 @@ def hsta_config():
         except Exception:
             pass
 
-    # handle 'add' command
-    if args.add is not None:
+    # handle the slew of 'add' commands
+    # Convert the args Namespace into a dict and see if any of the keys in it are not None or from the tcp-runtime bool vals
+    args_dict = vars(args)
+    defined_adds = [k for k, v in args_dict.items() if v not in [None, False, True] and k in add_keys]
+
+    if len(defined_adds) != 0:
         if base_dir == "":
             print("failed to update environment: DRAGON_BASE_DIR not set, try hack/setup", flush=True)
             sys.exit()
@@ -299,123 +413,135 @@ def hsta_config():
         if config_filename == "" or makefile_filename == "":
             print("failed to update environment: unable to find environment file(s)", flush=True)
 
+        # Put together the json struct we'll use through the runtime while executing
         if os.path.isfile(config_filename):
             with open(config_filename) as config_file:
                 config_dict = json.load(config_file)
         else:
             config_dict = {}
 
-        user_input = args.add.split(":")
-        new_env = dict(kv.split("=", 1) for kv in user_input)
+        new_env = {k: args_dict[k] for k in defined_adds}
         config_dict.update(new_env)
 
         with open(config_filename, "w") as config_file:
             json.dump(config_dict, config_file)
 
+        # Put together the makefile defines so we build dragon as requested
         with open(makefile_filename, "w") as make_file:
-            for key in config_dict:
-                path = Path(config_dict[key])
-                if "build-lib" in key:
-                    libname, backend_libname = _get_libname(key)
-                    if "ofi" in key:
-                        make_file.write("CONFIG_OFI_LIBS := \n")
-                    elif "ucx" in key:
-                        make_file.write("CONFIG_UCX_LIBS := \n")
+            for key, paths in config_dict.items():
+                # Sometimes, we've found we get to this point and somehow don't have the paths as a list and iterate
+                # through chars. So make sure we have a proper list
+                if not isinstance(paths, list):
+                    paths = [paths]
+                for dpath in paths:
+                    path = Path(dpath)
+                    if "build_lib" in key:
+                        libname, backend_libname = _get_libname(key)
+                        if "ofi" in key:
+                            make_file.write("CONFIG_OFI_LIBS := \n")
+                        elif "ucx" in key:
+                            make_file.write("CONFIG_UCX_LIBS := \n")
 
-                    # sanity check
-                    lib = path / f"lib{libname}.so"
-                    if not os.path.isfile(lib):
-                        print(f"{lib} does not exist, make sure file paths have been set correctly", flush=True)
-
-                    make_file.write(f"CONFIG_BACKEND_LIBS := $(CONFIG_BACKEND_LIBS) -L. -l{backend_libname}\n")
-                    make_file.write(f"CONFIG_BACKEND_LIB_DEPS := $(CONFIG_BACKEND_LIB_DEPS) lib{backend_libname}.so\n")
-
-                if "runtime-lib" in key:
-                    libname, backend_libname = _get_libname(key)
-                    path = Path(config_dict[key])
-
-                    # sanity check
-                    lib = path / f"lib{libname}.so"
-                    if not os.path.isfile(lib):
-                        print(f"{lib} does not exist, make sure file paths have been set correctly", flush=True)
-
-                if "include" in key:
-                    path = Path(config_dict[key])
-                    make_file.write(f"CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n")
-
-                    if "cuda" in key:
                         # sanity check
-                        header = path / "cuda_runtime_api.h"
-                        if not os.path.isfile(header):
-                            print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
+                        lib = path / f"lib{libname}.so"
+                        if not os.path.isfile(lib):
+                            print(f"{lib} does not exist, make sure file paths have been set correctly", flush=True)
 
-                        make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/cuda.cpp\n")
-                        make_file.write(f"CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_CUDA_INCLUDE\n")
+                        make_file.write(f"CONFIG_BACKEND_LIBS := $(CONFIG_BACKEND_LIBS) -L. -l{backend_libname}\n")
+                        make_file.write(
+                            f"CONFIG_BACKEND_LIB_DEPS := $(CONFIG_BACKEND_LIB_DEPS) lib{backend_libname}.so\n"
+                        )
 
-                    if "hip" in key:
+                    if "runtime_lib" in key:
+                        libname, backend_libname = _get_libname(key)
+
                         # sanity check
-                        header = path / "hip" / "hip_runtime_api.h"
-                        if not os.path.isfile(header):
-                            print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
+                        lib = path / f"lib{libname}.so"
+                        if not os.path.isfile(lib):
+                            print(f"{lib} does not exist, make sure file paths have been set correctly", flush=True)
 
-                        make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/hip.cpp\n")
-                        make_file.write(f"CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_HIP_INCLUDE\n")
+                    if "include" in key:
+                        make_file.write(f"CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n")
 
-                    if "ze" in key:
-                        # sanity check
-                        header = path / "ze_api.h"
-                        if not os.path.isfile(header):
-                            print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
+                        if "cuda" in key:
+                            # sanity check
+                            header = path / "cuda_runtime_api.h"
+                            if not os.path.isfile(header):
+                                print(
+                                    f"{header} does not exist, make sure file paths have been set correctly", flush=True
+                                )
 
-                        make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/ze.cpp\n")
-                        make_file.write(f"CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_ZE_INCLUDE\n")
+                            make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/cuda.cpp\n")
+                            make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_CUDA_INCLUDE\n")
 
-                    if "ofi" in key:
-                        # sanity check
-                        header = path / "rdma" / "fabric.h"
-                        if not os.path.isfile(header):
-                            print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
+                        if "hip" in key:
+                            # sanity check
+                            header = path / "hip" / "hip_runtime_api.h"
+                            if not os.path.isfile(header):
+                                print(
+                                    f"{header} does not exist, make sure file paths have been set correctly", flush=True
+                                )
 
-                        make_file.write(f"CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_OFI_INCLUDE\n")
+                            make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/hip.cpp\n")
+                            make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_HIP_INCLUDE\n")
 
-                    if "ucx" in key:
-                        # sanity check
-                        header = path / "ucp" / "api" / "ucp.h"
-                        if not os.path.isfile(header):
-                            print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
+                        if "ze" in key:
+                            # sanity check
+                            header = path / "ze_api.h"
+                            if not os.path.isfile(header):
+                                print(
+                                    f"{header} does not exist, make sure file paths have been set correctly", flush=True
+                                )
 
-                        make_file.write(f"CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_UCX_INCLUDE\n")
+                            make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/ze.cpp\n")
+                            make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_ZE_INCLUDE\n")
 
-                    if "mpi" in key:
-                        # sanity check
-                        header = path / "mpi.h"
-                        if not os.path.isfile(header):
-                            print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
+                        if "ofi" in key:
+                            # sanity check
+                            header = path / "rdma" / "fabric.h"
+                            if not os.path.isfile(header):
+                                print(
+                                    f"{header} does not exist, make sure file paths have been set correctly", flush=True
+                                )
 
-                        make_file.write(f"CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_MPI_INCLUDE\n")
+                            make_file.write(f"CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_OFI_INCLUDE\n")
 
-    # handle 'add-mpiexec' command
-    # a separate add command is needed for mpiexec because they often use colons and commas in the list so there is no obvious way to deliniate between what is the command and what is the key=value pair in the add command above.
-    if args.add_mpiexec is not None:
-        if base_dir == "":
-            print("failed to update environment: DRAGON_BASE_DIR not set, try hack/setup", flush=True)
-            sys.exit()
+                        if "ucx" in key:
+                            # sanity check
+                            header = path / "ucp" / "api" / "ucp.h"
+                            if not os.path.isfile(header):
+                                print(
+                                    f"{header} does not exist, make sure file paths have been set correctly", flush=True
+                                )
 
-        if config_filename == "" or makefile_filename == "":
-            print("failed to update environment: unable to find environment file(s)", flush=True)
+                            make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_UCX_INCLUDE\n")
 
-        if os.path.isfile(config_filename):
-            with open(config_filename) as config_file:
-                config_dict = json.load(config_file)
-        else:
-            config_dict = {}
+                        if "mpi" in key:
+                            # sanity check
+                            header = path / "mpi.h"
+                            if not os.path.isfile(header):
+                                print(
+                                    f"{header} does not exist, make sure file paths have been set correctly", flush=True
+                                )
 
-        kv = args.add_mpiexec.split("=", 1)
-        new_env = {kv[0]: kv[1]}
-        config_dict.update(new_env)
+                            make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_MPI_INCLUDE\n")
 
-        with open(config_filename, "w") as config_file:
-            json.dump(config_dict, config_file)
+                        if "pmix" in key:
+                            # sanity check
+                            global_header = path / "src/include/pmix_globals.h"
+                            common_header = path / "pmix_common.h"
+                            event_header = path / "event.h"
+                            if (
+                                not os.path.isfile(global_header)
+                                and not os.path.isfile(common_header)
+                                and not os.path.isfile(event_header)
+                            ):
+                                print(
+                                    f"{global_header}, {common_header}, nor {event_header} exist, make sure file paths have been set correctly",
+                                    flush=True,
+                                )
+
+                            make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_PMIX_INCLUDE\n")
 
 
 def dragon_config():

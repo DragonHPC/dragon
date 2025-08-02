@@ -4,10 +4,11 @@
 #include <string>
 #include<unistd.h>
 
-#include <serializable.hpp>
+#include <dragon/serializable.hpp>
 #include <dragon/dictionary.hpp>
 #include <dragon/return_codes.h>
 
+using namespace dragon;
 
 static timespec_t TIMEOUT = {0,5000000000}; // Timeouts will be 5 second by default
 
@@ -42,7 +43,7 @@ void read_write_erase_metadata(char * ddict_descr, int num_procs) {
     // get all keys from manager 0
     auto keys = dd_manager0.keys();
     for(int i=0 ; i<keys.size() ; i++) {
-        std::string val = keys[i]->getVal();
+        std::string val = keys[i].getVal();
         cout<<val<<endl;
     }
     dd_manager0.erase(key);
@@ -109,7 +110,7 @@ int main(int argc, char* argv[]) {
         }
         cout<<"result: "<<4*avg<<endl;
     } catch (const DragonError& ex) {
-        fprintf(stderr, "in parent proc, ec: %s, err_str: %s\n",dragon_get_rc_string(ex.get_rc()), ex.get_err_str());
+        fprintf(stderr, "in parent proc, ec: %s, err_str: %s\n",dragon_get_rc_string(ex.rc()), ex.err_str());
         fflush(stderr);
         return DRAGON_FAILURE;
     } catch (...) {

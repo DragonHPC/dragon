@@ -239,16 +239,21 @@ class DragonCleanup:
             print(f"Cleaning up pools in {DragonCleanup.DEV_SHM_DIR}.", flush=True)
 
         for dev_shm_file in [item for item in dev_shm_dir.iterdir() if item.is_file()]:
-            if dev_shm_file.owner() == DragonCleanup.MY_USERNAME:
-                if self.is_be and self.resilient and dev_shm_file.match(DragonCleanup.DDICT_DEV_SHM_POOLS):
-                    continue
+            try:
+                if dev_shm_file.owner() == DragonCleanup.MY_USERNAME:
+                    if self.is_be and self.resilient and dev_shm_file.match(DragonCleanup.DDICT_DEV_SHM_POOLS):
+                        continue
 
-                if self.dry_run:
-                    print(f"DRY_RUN: Removing {dev_shm_file} on {DragonCleanup.MY_HOSTNAME}", flush=True)
-                    continue
+                    if self.dry_run:
+                        print(f"DRY_RUN: Removing {dev_shm_file} on {DragonCleanup.MY_HOSTNAME}", flush=True)
+                        continue
 
-                print(f"Removing {dev_shm_file} on {DragonCleanup.MY_HOSTNAME}", flush=True)
-                dev_shm_file.unlink()
+                    print(f"Removing {dev_shm_file} on {DragonCleanup.MY_HOSTNAME}", flush=True)
+                    dev_shm_file.unlink(missing_ok=True)
+            except KeyError:
+                # A KeyError can be thrown when the file is owned by
+                # a user that is not listed in the /etc/passwd file.
+                pass
 
     def cleanup_tmp(self):
         tmp_dir = Path(DragonCleanup.TMP_DIR)
@@ -261,19 +266,24 @@ class DragonCleanup:
         )
 
         for tmp_file in [item for item in tmp_dir.iterdir() if item.is_file()]:
-            if tmp_file.owner() == DragonCleanup.MY_USERNAME and any(
-                [
-                    tmp_file.match(DragonCleanup.DATABASE_FILES),
-                    tmp_file.match(DragonCleanup.GUNICORN_LOG_FILES),
-                    tmp_file.match(DragonCleanup.DDICT_ORCHESTRATOR_FILES) and not self.resilient,
-                ]
-            ):
-                if self.dry_run:
-                    print(f"DRY_RUN: Removing {tmp_file} on {DragonCleanup.MY_HOSTNAME}", flush=True)
-                    continue
+            try:
+                if tmp_file.owner() == DragonCleanup.MY_USERNAME and any(
+                    [
+                        tmp_file.match(DragonCleanup.DATABASE_FILES),
+                        tmp_file.match(DragonCleanup.GUNICORN_LOG_FILES),
+                        tmp_file.match(DragonCleanup.DDICT_ORCHESTRATOR_FILES) and not self.resilient,
+                    ]
+                ):
+                    if self.dry_run:
+                        print(f"DRY_RUN: Removing {tmp_file} on {DragonCleanup.MY_HOSTNAME}", flush=True)
+                        continue
 
-                print(f"Removing {tmp_file} on {DragonCleanup.MY_HOSTNAME}", flush=True)
-                tmp_file.unlink()
+                    print(f"Removing {tmp_file} on {DragonCleanup.MY_HOSTNAME}", flush=True)
+                    tmp_file.unlink(missing_ok=True)
+            except KeyError:
+                # A KeyError can be thrown when the file is owned by
+                # a user that is not listed in the /etc/passwd file.
+                pass
 
     def cleanup(self):
 
@@ -351,16 +361,19 @@ def get_drun_parser(parser: argparse.ArgumentParser):
 
 
 def get_drun_args(args_input=None):
+    from tools.dragon_run.src.common_args import add_common_args
+
     parser = argparse.ArgumentParser(
         prog="dragon-cleanup",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         description="Run dragon backend node cleanup",
     )
 
+    add_common_args(parser)
     parser = get_drun_parser(parser)
     args = parser.parse_args(args_input)
 
-    return {key: value for key, value in vars(args).items() if value is not None}
+    return {key: value for key, value in vars(args).items()}
 
 
 def drun():
@@ -373,16 +386,20 @@ def drun():
     )
 
     args = get_drun_args()
-
     user_command = [__file__]
-    command_args = sys.argv[1:]
-    with contextlib.suppress(ValueError):
-        command_args.remove("--only-be")
-    user_command.extend(command_args)
+    if "resilient" in args and args["resilient"]:
+        user_command.append("--resilient")
+    if "dry_run" in args and args["dry_run"]:
+        user_command.append("--dry-run")
+    user_command.extend(["--timeout", str(args["timeout"])])
 
     try:
         drun.run_wrapper(
             user_command=user_command,
+            host_list=args["host_list"] ,
+            force_single_node=args["force_single_node"],
+            force_multi_node=args["force_multi_node"],
+            force_wlm=args["force_wlm"],
             env=dict(os.environ),
             exec_on_fe=not args.get("only_be"),
         )

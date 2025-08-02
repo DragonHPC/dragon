@@ -10,6 +10,7 @@ from model import Net, make_features, infer, train
 from dragon.native.process import Process, ProcessTemplate, Popen
 from dragon.native.process_group import ProcessGroup
 from dragon.infrastructure.connection import Connection
+from dragon.infrastructure.facts import PMIBackend
 from dragon.native.machine import System
 
 
@@ -46,9 +47,7 @@ def parse_results(stdout_conn: Connection) -> tuple:
     return x, y
 
 
-def generate_data(
-    num_ranks: int, samples_per_rank: int, sample_range: list, number_of_times_trained: int
-) -> tuple:
+def generate_data(num_ranks: int, samples_per_rank: int, sample_range: list, number_of_times_trained: int) -> tuple:
     """Launches mpi application that generates (x, sin(x)) pairs uniformly sampled from [sample_range[0], sample_range[1]).
 
     :param num_ranks: number of ranks to use to generate data
@@ -67,15 +66,14 @@ def generate_data(
     args = [str(samples_per_rank), str(sample_range[0]), str(sample_range[1]), str(number_of_times_trained)]
     run_dir = os.getcwd()
 
-    grp = ProcessGroup(restart=False, pmi_enabled=True)
+    grp = ProcessGroup(restart=False, pmi=PMIBackend.CRAY)
 
     # Pipe the stdout output from the head process to a Dragon connection
     grp.add_process(nproc=1, template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.PIPE))
 
     # All other ranks should have their output go to DEVNULL
     grp.add_process(
-        nproc=num_ranks - 1,
-        template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.DEVNULL),
+        nproc=num_ranks - 1, template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.DEVNULL)
     )
     # start the process group
     grp.init()
@@ -109,15 +107,14 @@ def compute_cheap_approx(num_ranks: int, x: float) -> float:
     args = [str(x)]
     run_dir = os.getcwd()
 
-    grp = ProcessGroup(restart=False, pmi_enabled=True)
+    grp = ProcessGroup(restart=False, pmi=PMIBackend.CRAY)
 
     # Pipe the stdout output from the head process to a Dragon connection
     grp.add_process(nproc=1, template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.PIPE))
 
     # All other ranks should have their output go to DEVNULL
     grp.add_process(
-        nproc=num_ranks - 1,
-        template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.DEVNULL),
+        nproc=num_ranks - 1, template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=Popen.DEVNULL)
     )
     # start the process group
     grp.init()
@@ -163,7 +160,6 @@ def infer_and_compare(model: torch.nn, x: float) -> tuple:
 
 
 def main():
-
     ranks_per_node = 8
     data_interval = [-math.pi, math.pi]
     samples_per_rank = 32
@@ -184,7 +180,6 @@ def main():
     generate_new_x = True
 
     while successes < 5:
-
         if generate_new_x:
             # uniformly sample from [-pi, pi)
             x = torch.rand(1) * (2 * math.pi) - math.pi

@@ -7,15 +7,13 @@
 #include "umap.h"
 #include <dragon/fli.h>
 #include <dragon/ddict.h>
+#include <dragon/managed_memory.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 #define DRAGON_DDICT_UMAP_SEED 1776
-
-#define KEY_HINT 1
-#define VALUE_HINT 2
 
 // Struct to handle buffering keys before sending
 typedef struct dragonDDictBufAlloc_st {
@@ -35,8 +33,7 @@ typedef enum dragonDDictReqType_st {
     DRAGON_DDICT_CONTAINS_REQ,
     DRAGON_DDICT_POP_REQ,
     DRAGON_DDICT_LENGTH_REQ,
-    DRAGON_DDICT_CONNECT_MANAGER_REQ,
-    DRAGON_DDICT_FINALIZED
+    DRAGON_DDICT_CONNECT_MANAGER_REQ
 } dragonDDictReqType_t;
 
 class dragonDDict_t {
@@ -55,6 +52,7 @@ class dragonDDict_t {
     timespec_t * timeout;
     timespec_t timeout_val;
 
+    dragonMemoryPoolDescr_t pool; // Default pool for memory allocations (for keys)
     dragonChannelDescr_t strm_ch; // Stream channel for send and receive handle. (stream_channel)
     dragonFLIDescr_t respFLI; // This handles non-buffered, streaming responses to requests
     std::string respFLIStr; // Needed for messaging between client and managers/orch.
@@ -81,19 +79,21 @@ class dragonDDict_t {
 typedef struct dragonDDictReq_st {
     dragonDDict_t* ddict;
     dragonULInt dd_uid;
-    size_t buffer_size;
-    dragonDDictBufAlloc_t * buffered_allocs; // Linked list buffer for key
-    uint8_t * key_data; // Hold onto key data (may be useful later, free on finalize)
+    dragonMemoryDescr_t key_mem; // Key data that was buffered
     dragonULInt key_hash; // Hold onto key hash
+    unsigned char* key_data;
+    size_t key_size;
     dragonDDictReqType_t op_type; // What operation type for error checking
     dragonFLIDescr_t manager_fli; // Manager this request is tied to
     uint64_t manager_id;
     uint64_t msg_tag;
     dragonFLISendHandleDescr_t sendh; // Manager handle to send messages and data to
     dragonFLIRecvHandleDescr_t recvh; // DDict channel response handle
+    dragonFLISendHandleDescr_t key_sendh; // temp send handle used for buffering the key
     size_t num_writes; // Number of nodes in buffered_allocs;
     bool recvh_closed;
     bool free_mem;
+    bool free_key_mem;
 } dragonDDictReq_t;
 
 #ifdef __cplusplus

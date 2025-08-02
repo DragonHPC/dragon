@@ -17,14 +17,13 @@ from dragon.utils import host_id
 def hello(sleep_time):
     my_host_id = host_id()
     my_node = node.query(my_host_id)
-    print(f'Hello from {my_node.name}', flush=True)
-    print(f'Sleeping for {sleep_time} secs', flush=True)
+    print(f"Hello from {my_node.name}", flush=True)
+    print(f"Sleeping for {sleep_time} secs", flush=True)
     time.sleep(sleep_time)
-    print(f'Goodbye from {my_node.name}', flush=True)
+    print(f"Goodbye from {my_node.name}", flush=True)
 
 
 def get_python_process_parameters(target, args, kwargs) -> tuple:
-
     new_target = sys.executable
     new_args = [
         "-c",
@@ -39,35 +38,31 @@ def create_process_msg(wait_time):
 
     # Pipe the stdout output from the head process to a Dragon connection
     process_create_msg = process.get_create_message_with_argdata(
-        exe=target,
-        run_dir=os.getcwd(),
-        args=args,
-        argdata=argdata,
-        pmi_required=False,
-        env=None,
+        exe=target, run_dir=os.getcwd(), args=args, argdata=argdata, env=None
     )
 
     return process_create_msg.serialize()
 
+
 def main() -> None:
     num_processes = node.query_total_cpus() // 2
-    print(f'Starting {num_processes} processes', flush=True)
+    print(f"Starting {num_processes} processes", flush=True)
 
     # Establish the list and number of process ranks that should be started
     items = [
         (num_processes // 2, create_process_msg(wait_time=10)),
-        (num_processes // 2, create_process_msg(wait_time=60*5)),
+        (num_processes // 2, create_process_msg(wait_time=60 * 5)),
     ]
 
     # Ask Dragon to create the process group
     grp = group.create(items=items, policy=policy_eval.Policy(), soft=False)
 
-    print('Sleeping for 30 seconds before killing the group', flush=True)
+    print("Sleeping for 30 seconds before killing the group", flush=True)
     time.sleep(30)
 
-    print('Killing group', flush=True)
+    print("Killing group", flush=True)
     grp = group.kill(grp.g_uid, signal.SIGKILL)
-    
+
     group_puids = []
     for resources in grp.sets:
         group_puids.extend(

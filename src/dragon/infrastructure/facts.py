@@ -73,6 +73,7 @@ env_vars = frozenset(
         "BASEPOOL",
         "OVERLAY_FANOUT",
         "NET_CONF_CACHE",
+        "NET_CONF_CACHE_TIMEOUT",
         OOM_WARNING_PCT_VAR,
         OOM_WARNING_BYTES_VAR,
         OOM_CRITICAL_PCT_VAR,
@@ -701,6 +702,49 @@ TRANSPORT_AGENT_ALIASES = {
 
 DEFAULT_TRANSPORT_AGENT = shlex.split(str(TransportAgentOptions.HSTA))
 
+
+# Inheriting from str first makes this trivially serializable when used in a dataclass object
+@enum.unique
+class PMIBackend(str, enum.Enum):
+    """Supported backends for launching MPI applications with ProcessGroup"""
+
+    CRAY = "cray"
+    PMIX = "pmix"
+
+    @staticmethod
+    def from_str(s):
+        try:
+            return PMIBackend(s)
+        except KeyError:
+            raise ValueError()
+
+
+@enum.unique
+class TransportAgentOptions(enum.Enum):
+    """Enumerated list of supported transport agents"""
+
+    HSTA = "hsta"
+    TCP = "tcp"
+    DRAGON_CONFIG = "configured"
+
+    def __str__(self):
+        return self.value
+
+    @staticmethod
+    def from_str(s):
+        """Obtain enum value from TransportAgentOptions string
+
+        :param s: string representation of enumerated TransportAgentOptions
+        :type s: str
+        :return: name of an available transport agent
+        :rtype: TransportAgentOptions
+        """
+        try:
+            return TransportAgentOptions(s)
+        except KeyError:
+            raise ValueError()
+
+
 # Prefer to use high-speed network interfaces. Be cautious about matching any
 # interface (e.g., r'^.*$') as it may expose the transport agent on an
 # unintended network (e.g., the internet).
@@ -758,6 +802,7 @@ OOB_PORT = get_port(DEFAULT_OOB_PORT, DEFAULT_PORT_RANGE)
 DRAGON_POLICY_CONTEXT_ENV = "DRAGON_POLICY_CONTEXT_ENV"
 
 DEFAULT_NET_CONF_CACHE = os.path.join(os.getcwd(), ".dragon-net-conf")
+DEFAULT_NET_CONF_CACHE_TIMEOUT = 60 * 60
 
 # Default dragon config directory and file
 DRAGON_CONFIG_DIR = Path(DRAGON_BASE_DIR) / ".hsta-config"

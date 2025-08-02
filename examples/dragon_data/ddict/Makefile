@@ -28,16 +28,13 @@ BIN_FILES = ddict_pi_sim_train ddict_pi_sim_aggregate
 
 default: build
 
-build: serializable ddict_pi_sim_train ddict_pi_sim_aggregate
-
-serializable: serializable.cpp
-	g++ -c $(INCLUDE) $< -o serializable.o
+build: ddict_pi_sim_train ddict_pi_sim_aggregate
 
 ddict_pi_sim_train: ddict_pi_sim_train.cpp
-	g++ $(INCLUDE) -std=c++14 serializable.o -o ddict_pi_sim_train $< $(LIBS) -ldragon -ldl
+	g++ $(INCLUDE) -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++14 -o ddict_pi_sim_train $< $(LIBS) -ldragon -ldl
 
 ddict_pi_sim_aggregate: ddict_pi_sim_aggregate.cpp
-	g++ $(INCLUDE) -std=c++14 serializable.o -o ddict_pi_sim_aggregate $< $(LIBS) -ldragon -ldl
+	g++ $(INCLUDE) -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++14 -o ddict_pi_sim_aggregate $< $(LIBS) -ldragon -ldl
 
 clean:
 	rm -rf *.o $(BIN_FILES) core __pycache__

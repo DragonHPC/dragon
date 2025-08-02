@@ -138,18 +138,9 @@ class SingleProcMsgChannels(unittest.TestCase):
         return self.tag_cnt
 
     def _start_a_process(
-        self,
-        exe_name,
-        the_args,
-        the_name,
-        the_tag,
-        the_puid,
-        the_rcuid,
-        pmi_required=False,
-        pmi_info=None,
-        head_proc=False,
+        self, exe_name, the_args, the_name, the_tag, the_puid, the_rcuid, pmi=None, pmi_info=None, head_proc=False
     ):
-        if pmi_required:
+        if pmi is not None:
             self.assertIsNotNone(pmi_info)
 
         create_msg = dmsg.GSProcessCreate(
@@ -160,7 +151,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             args=the_args,
             env={},
             user_name=the_name,
-            pmi_required=pmi_required,
+            pmi=pmi,
             _pmi_info=pmi_info,
             head_proc=head_proc,
         )
@@ -171,7 +162,7 @@ class SingleProcMsgChannels(unittest.TestCase):
         self.assertEqual(shep_msg.exe, create_msg.exe)
         self.assertEqual(shep_msg.args, create_msg.args)
 
-        if pmi_required:
+        if pmi is not None:
             self.assertIsNotNone(shep_msg.pmi_info)
             self.assertEqual(shep_msg.pmi_info.lrank, pmi_info.lrank)
             self.assertEqual(shep_msg.pmi_info.ppn, pmi_info.ppn)
@@ -248,10 +239,7 @@ class SingleProcMsgChannels(unittest.TestCase):
         self.assertEqual(shep_msg.args, create_msg.args)
 
         shep_reply_msg = dmsg.SHProcessCreateResponse(
-            tag=self._tag_inc(),
-            ref=shep_msg.tag,
-            err=dmsg.SHProcessCreateResponse.Errors.FAIL,
-            err_info="whoa",
+            tag=self._tag_inc(), ref=shep_msg.tag, err=dmsg.SHProcessCreateResponse.Errors.FAIL, err_info="whoa"
         )
 
         self.gs_input_wh.send(shep_reply_msg.serialize())
@@ -270,10 +258,7 @@ class SingleProcMsgChannels(unittest.TestCase):
 
         dummy_sdesc = B64.bytes_to_str("xxxTESTDUMMYxxx".encode())
         shep_response = dmsg.SHPoolCreateResponse(
-            tag=self._tag_inc(),
-            ref=shep_msg.tag,
-            err=dmsg.SHPoolCreateResponse.Errors.SUCCESS,
-            desc=dummy_sdesc,
+            tag=self._tag_inc(), ref=shep_msg.tag, err=dmsg.SHPoolCreateResponse.Errors.SUCCESS, desc=dummy_sdesc
         )
         self.gs_input_wh.send(shep_response.serialize())
 
@@ -311,10 +296,7 @@ class SingleProcMsgChannels(unittest.TestCase):
 
         dummy_sdesc = B64.bytes_to_str("xxxTESTDUMMYxxx".encode())
         shep_response = dmsg.SHChannelCreateResponse(
-            tag=self._tag_inc(),
-            ref=shep_msg.tag,
-            err=dmsg.SHChannelCreateResponse.Errors.SUCCESS,
-            desc=dummy_sdesc,
+            tag=self._tag_inc(), ref=shep_msg.tag, err=dmsg.SHChannelCreateResponse.Errors.SUCCESS, desc=dummy_sdesc
         )
         self.gs_input_wh.send(shep_response.serialize())
 
@@ -372,16 +354,10 @@ class SingleProcMsgChannels(unittest.TestCase):
         self._bringup_head_and_dut()
 
         query_msg = dmsg.GSProcessQuery(
-            tag=self._tag_inc(),
-            p_uid=dfacts.LAUNCHER_PUID,
-            t_p_uid=self.head_uid,
-            r_c_uid=dfacts.BASE_BE_CUID,
+            tag=self._tag_inc(), p_uid=dfacts.LAUNCHER_PUID, t_p_uid=self.head_uid, r_c_uid=dfacts.BASE_BE_CUID
         )
         query_msg_byname = dmsg.GSProcessQuery(
-            tag=self._tag_inc(),
-            user_name=self.head_name,
-            p_uid=dfacts.LAUNCHER_PUID,
-            r_c_uid=dfacts.BASE_BE_CUID,
+            tag=self._tag_inc(), user_name=self.head_name, p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID
         )
         query_msg_unknown = dmsg.GSProcessQuery(
             tag=self._tag_inc(), user_name="absent", p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID
@@ -445,7 +421,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             the_tag=self._tag_inc(),
             the_puid=dfacts.LAUNCHER_PUID,
             the_rcuid=dfacts.BASE_BE_CUID,
-            pmi_required=True,
+            pmi=dfacts.PMIBackend.CRAY,
             pmi_info=dmsg.PMIProcessInfo(lrank=0, ppn=1, nid=1, pid_base=1),
             head_proc=True,
         )

@@ -146,11 +146,13 @@ will be stored in a file contained in a hidden .dragon directory in the current
 working directory from which the application was launched. This feature currently
 requires the use of a parallel file system such as Lustre or NFS."""
 
+
 def strtobool(value: str) -> bool:
     value = value.lower()
     if value in ("y", "yes", "on", "1", "true", "t"):
         return True
     return False
+
 
 class SplitArgsAtComma(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -206,7 +208,6 @@ def parse_hosts(hostlist, hostfile):
         raise
 
     return hostlist
-
 
 
 def get_parser():

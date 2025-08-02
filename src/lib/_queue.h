@@ -3,6 +3,7 @@
 
 #include <dragon/managed_memory.h>
 #include <dragon/channels.h>
+#include <dragon/fli.h>
 
 #define DRAGON_QUEUE_UMAP_SEED 12
 

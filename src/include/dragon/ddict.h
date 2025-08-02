@@ -5,6 +5,7 @@
 #define HAVE_DRAGON_DDICT_H
 
 #include <dragon/channels.h>
+#include <dragon/fli.h>
 #include <dragon/global_types.h>
 #include <dragon/managed_memory.h>
 #include <dragon/return_codes.h>
@@ -141,7 +142,79 @@ dragon_ddict_detach(dragonDDictDescr_t* obj);
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
  */
 dragonError_t
-dragon_ddict_create_request(const dragonDDictDescr_t* obj, const dragonDDictRequestDescr_t* req);
+dragon_ddict_create_request(const dragonDDictDescr_t* obj, dragonDDictRequestDescr_t* req);
+
+
+/**
+ * @brief Return the DDict request send handle.
+ *
+ * Use of this means that you are reaching inside a request object and obtaining
+ * the send handle for object serialization. This function is low-level and not of
+ * use unless you are writing a DDict client like the C++ client. This provides
+ * access to a send handle where a DDict value should be sent.
+ *
+ * @param req_descr is a valid DDict request descriptor.
+ *
+ * @param sendh is a pointer to a send handle. This send handle will only
+ * be valid while the request is in process and error free. Once there is an error or
+ * the request is complete, the send handle should not be referenced.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t dragon_ddict_request_value_sendh(const dragonDDictRequestDescr_t* req_descr, dragonFLISendHandleDescr_t* sendh);
+
+
+/**
+ * @brief Return the DDict request key send handle.
+ *
+ * Use of this means that you are reaching inside a request object and obtaining
+ * the key send handle for key object serialization. This function is low-level and not of
+ * use unless you are writing a DDict client like the C++ client. This provides
+ * access to a send handle where a DDict key should be sent.
+ *
+ * @param req_descr is a valid DDict request descriptor.
+ *
+ * @param sendh is a pointer to a send handle. This send handle will only
+ * be valid while the request is in process and error free. Once there is an error or
+ * the request is complete, the send handle should not be referenced.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t dragon_ddict_request_key_sendh(const dragonDDictRequestDescr_t* req_descr, dragonFLISendHandleDescr_t* sendh);
+
+
+/**
+ * @brief Return the DDict request receive handle.
+ *
+ * Use of this means that you are reaching inside a request object and obtaining
+ * the receive handle for object deserialization. This function is low-level and not of
+ * use unless you are writing a DDict client like the C++ client.
+ *
+ * @param req_descr is a valid DDict request descriptor.
+ *
+ * @param recvh is a pointer to a receive handle. This recv handle will only
+ * be valid while the request is in process and error free. Once there is an error or
+ * the request is complete, the pointer should not be referenced.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t dragon_ddict_request_recvh(const dragonDDictRequestDescr_t* req_descr, dragonFLIRecvHandleDescr_t* recvh);
+
+
+/**
+ * @brief Return the value free memory variable from the request.
+ *
+ * In some cases, we don't want to free the memory after receiving as other processes are still
+ * using it. This API provides a guide to user if the memory should be cleaned up or not.
+ *
+ * @param req is an initialized request object.
+ *
+ * @param free_mem is a boolean flag that determines if the memory should be released.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_ddict_free_required(const dragonDDictRequestDescr_t* req, bool * free_mem);
 
 /**
  * @brief Return the value free memory variable from the request.
@@ -293,6 +366,26 @@ dragon_ddict_write_bytes(const dragonDDictRequestDescr_t* req, size_t num_bytes,
  *  Distributed Dictionary Operations
  *  @{
  */
+
+ /**
+ * @brief Find which manager the written key would be sent to.
+ *
+ * The key is not sent, but the manager id is returned that would
+ * house this key and an associated value. To call this method you must
+ * create a request, write a key, and then call this method. After calling
+ * this function you may do a ddict operation or you may finalize the request.
+ *
+ * @param req is a valid created request object. It must have already had a key
+ * written to it via the dragon_ddict_write_bytes call.
+ *
+ * @param manager_id is a pointer to a variable that will hold the identifier of the
+ * manager to which this key would be sent should it be sent. The key is not
+ * sent.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ **/
+dragonError_t
+dragon_ddict_which_manager(const dragonDDictRequestDescr_t * req_descr, uint64_t* manager_id);
 
 /**
  * @brief Calling this tells the ddict client to take the key already written via
@@ -597,6 +690,8 @@ dragon_ddict_local_managers(const dragonDDictDescr_t * dd_descr, uint64_t ** loc
 
 /** @} */ // end of ddict_ops group.
 
+#define KEY_HINT 1
+#define VALUE_HINT 2
 
 #ifdef __cplusplus
 }

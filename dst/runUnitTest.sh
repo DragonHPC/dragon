@@ -14,6 +14,8 @@ cat /etc/os-release
 # Setup a release environment
 source ~/.bashrc
 conda activate _env
+conda remove -y libstdcxx
+conda remove -y libstdcxx-ng
 python3 --version
 which python3
 
@@ -44,8 +46,12 @@ version=$(python -c 'from importlib.metadata import version; print(version("drag
 ROOTDIR="$(realpath release/dragon-${version})"
 
 # Install the config files into our site-packages:
-dragon-config -a "ofi-include=$PWD/ofi/include/:ofi-build-lib=/usr/lib64/:ofi-runtime-lib=/usr/lib64/"
-dragon-config -a "ucx-include=$PWD/ucx/include:ucx-build-lib=$PWD/ucx/lib:ucx-runtime-lib=$PWD/ucx/lib"
+dragon-config add --ofi-include=$PWD/ofi/include/ \
+                  --ofi-build-lib=/usr/lib64/ \
+                  --ofi-runtime-lib=/usr/lib64/
+dragon-config add --ucx-include=$PWD/ucx/include \
+                  --ucx-build-lib=$PWD/ucx/lib \
+                  --ucx-runtime-lib=$PWD/ucx/lib
 
 # Re-run unit tests to verify wheel
 make -C test test

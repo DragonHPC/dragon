@@ -7,7 +7,6 @@ HEADERS = dragon/bcast.h \
           dragon/global_types.h \
           dragon/managed_memory.h \
           dragon/pmod.h \
-          dragon/queue.h \
           dragon/queue.hpp \
           dragon/return_codes.h \
           dragon/return_codes_map.h \

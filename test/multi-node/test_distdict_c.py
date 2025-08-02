@@ -12,18 +12,6 @@ import multiprocessing as mp
 ENV = dict(os.environ)
 ENV["LD_LIBRARY_PATH"] = str(DRAGON_LIB_DIR) + ":" + str(ENV.get("LD_LIBRARY_PATH", ""))
 
-
-class intKeyPickler:
-
-    def __init__(self, num_bytes=4):
-        self._num_bytes = num_bytes
-
-    def dumps(self, val: int) -> bytearray:
-        return val.to_bytes(self._num_bytes, byteorder=sys.byteorder)
-
-    def loads(self, val: bytearray) -> int:
-        return int.from_bytes(val, byteorder=sys.byteorder)
-
 class TestDDictC(unittest.TestCase):
     def test_attach_detach(self):
         my_alloc = System()

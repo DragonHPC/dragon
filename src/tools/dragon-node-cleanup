@@ -30,9 +30,6 @@ if [[ -c /dev/nvidiactl && $# -eq 1 ]]; then
     nvidia-cuda-mps-control -d > /dev/null 2>&1
 fi
 
-echo "Cleaning up /tmp of sqlite3 dbs on" $(hostname)
-find /tmp -maxdepth 1 -user $me -name "*.db" -exec rm -f {} \;
-
 echo "Cleaning up /tmp of Gunicorn log on" $(hostname)
 find /tmp -maxdepth 1 -user $me -name "*_gunicorn.log" -exec rm -f {} \;
 
@@ -47,5 +44,17 @@ if [[ $1 -eq 1 ]]; then
 else
     echo "Cleaning up all pools in backend /dev/shm"
     find /dev/shm -user $me -exec rm -f {} \;
+fi
+
+echo "Cleaning up /tmp of any leftover ddict pools on" $(hostname)
+if [[ $1 -eq 1 ]]; then
+    echo "Avoiding DDict pools named *ddict_orc* in backend /tmp on " $(hostname)
+    find /tmp -user $me ! -name "*ddict_orc*" -exec rm -f {} \;
+    echo "Avoiding sqlite3 dbs in /tmp on " $(hostname)
+else
+    echo "Cleaning up all pools named *ddict_orc* in backend /tmp"
+    find /tmp -maxdepth 1 -user $me -name "*ddict_orc*" -exec rm -f {} \;
+    echo "Cleaning up /tmp of sqlite3 dbs on" $(hostname)
+    find /tmp -maxdepth 1 -user $me -name "*.db" -exec rm -f {} \;
 fi
 

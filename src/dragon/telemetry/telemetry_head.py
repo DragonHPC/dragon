@@ -2,26 +2,22 @@ import dragon
 from dragon.native.process_group import ProcessGroup
 from dragon.native.process import ProcessTemplate, Process
 from dragon.native.queue import Queue
-from dragon.globalservices.node import get_list, query
+from dragon.native.machine import System, Node
 from dragon.infrastructure.policy import Policy
 from dragon.infrastructure.parameters import this_process
 import os
 import sys
-import time
 from flask import Flask
+import requests
 import multiprocessing as mp
 import gunicorn
 import gunicorn.app.base
 import dragon.telemetry.aggregator_app as aggregator_app
 from dragon.telemetry.dragon_server import DragonServer
 import logging
-import cloudpickle
 import socket
 from dragon.dlogging.util import setup_BE_logging, DragonLoggingServices as dls
-from dragon.utils import set_local_kv, B64
-from dragon.channels import Channel
-from dragon.infrastructure.connection import Pipe, Connection, ConnectionOptions
-import queue
+from dragon.utils import set_local_kv
 from dragon.telemetry.analysis import AnalysisServer, LS_TAS_KEY
 import yaml
 import subprocess
@@ -53,9 +49,9 @@ class AggregatorApplication(gunicorn.app.base.BaseApplication):
         """
 
         self.options = options or {}
-        app.config["queue_dict"] = self.options["queue_dict"]
-        app.config["return_queue"] = self.options["return_queue"]
-        app.config["result_dict"] = self.options["result_dict"]
+        # Iterate through any custom options
+        for k in self.options["custom_options"].keys():
+            app.config[k] = self.options["custom_options"][k]
 
         self.application = app
         if options.get("remote_tunnel_node") is None:
@@ -138,15 +134,20 @@ def aggregator_server(queue_dict: dict, return_queue: object, telemetry_cfg: obj
     agg_port = telemetry_cfg.get("aggregator_port", 4242)
     remote_tunnel_node = telemetry_cfg.get("remote_tunnel_node", None)
     remote_tunnel_port = telemetry_cfg.get("remote_tunnel_port", agg_port)
+    auth_key = telemetry_cfg.get("auth_key", None)
     options = {
         "bind": "%s:%s" % ("0.0.0.0", str(agg_port)),  # Port binding for aggregator
         "workers": 1,
         # "errorlog": "/tmp/aggregator_gunicorn.log",
-        "queue_dict": queue_dict,
-        "return_queue": return_queue,
-        "result_dict": result_dict,
         # 'threads': 2,
-        # "loglevel": "critical",
+        "loglevel": "critical",
+        # Add custom config options here.
+        "custom_options": {
+            "queue_dict": queue_dict,
+            "return_queue": return_queue,
+            "result_dict": result_dict,
+            "auth_key": auth_key,
+        },
         "remote_tunnel_node": remote_tunnel_node,
         "remote_tunnel_port": remote_tunnel_port,
         "on_exit": on_exit,
@@ -195,9 +196,15 @@ def start_telemetry():
     setup_logging()
     mp.set_start_method("dragon")
     queue_dict = {}
-    node_list = get_list()
-    node_list = [query(h_uid).host_name for h_uid in node_list]
-    node_list.sort()
+    alloc = System()
+    nodes = [Node(id) for id in alloc.nodes]
+    node_list = []
+    primary_node_hostname = None
+    for node in nodes:
+        node_list.append(node.hostname)
+        if node.is_primary:
+            primary_node_hostname = node.hostname
+
     shutdown_event = mp.Event()
     queue_discovery = Queue()
     as_discovery = Queue()
@@ -214,7 +221,7 @@ def start_telemetry():
     args = (queue_discovery, as_discovery, return_queue_dict, shutdown_event, telemetry_cfg)
     cwd = os.getcwd()
 
-    grp = ProcessGroup(restart=False, pmi_enabled=False)
+    grp = ProcessGroup(restart=False, pmi=None)
     for hostname in node_list:
         local_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=hostname)
         grp.add_process(nproc=1, template=ProcessTemplate(target=start_server, args=args, cwd=cwd, policy=local_policy))
@@ -229,7 +236,7 @@ def start_telemetry():
     aggregator_proc = Process(
         target=aggregator_server,
         args=[queue_dict, return_queue_aggregator, telemetry_cfg],
-        policy=Policy(placement=Policy.Placement.HOST_NAME, host_name=node_list[0]),
+        policy=Policy(placement=Policy.Placement.HOST_NAME, host_name=primary_node_hostname),
     )
     aggregator_proc.start()
 

@@ -3,6 +3,7 @@ import dragon
 
 from dragon.native.process import Process, ProcessTemplate, Popen
 from dragon.native.process_group import ProcessGroup
+from dragon.infrastructure.facts import PMIBackend
 
 import logging
 
@@ -110,7 +111,7 @@ class DragonMPIExecutor(ParslExecutor, RepresentationMixin):
 
         exe, run_dir, policy, num_ranks, mpi_args = func(*args)
         target_exe = os.path.join(run_dir, exe)
-        grp = ProcessGroup(restart=False, pmi_enabled=True, policy=policy)
+        grp = ProcessGroup(restart=False, pmi=PMIBackend.CRAY, policy=policy)
         # Pipe stdin and stdout from the head process to Dragon connections
         grp.add_process(
             nproc=1,

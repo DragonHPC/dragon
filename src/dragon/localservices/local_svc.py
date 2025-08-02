@@ -182,7 +182,6 @@ def mk_inf_resources(node_index):
 
 
 def get_shepherd_msg_queue(stdin=None, stdout=None):
-
     if stdin is None:
         bin_stdin = os.fdopen(sys.stdin.fileno(), "rb", buffering=0)
         shep_stdin_msg = dutil.NewlineStreamWrapper(bin_stdin, write_intent=False)
@@ -202,14 +201,13 @@ def single(
     make_infrastructure_resources: bool = True,
     gs_input=None,
     la_input=None,
-    shep_input=None,
+    ls_input=None,
     gs_args=None,
     gs_env=None,
     ls_stdin=None,
     ls_stdout=None,
     ta_input=None,
 ):
-
     log = logging.getLogger("local_svc single node main")
     log.info("starting on pid=%s" % os.getpid())
 
@@ -229,8 +227,8 @@ def single(
         net_conf_key = msg.net_conf_key
 
         if make_infrastructure_resources:
-            assert not any((gs_input, la_input, shep_input, ta_input))
-            start_pools, start_channels, shep_input, la_input, ta_input_descr, ta_input, gs_input = mk_inf_resources(
+            assert not any((gs_input, la_input, ls_input, ta_input))
+            start_pools, start_channels, ls_input, la_input, ta_input_descr, ta_input, gs_input = mk_inf_resources(
                 node_index
             )
 
@@ -247,7 +245,7 @@ def single(
         shep_stdout_msg.send(be_ping.serialize())
         log.info("wrote SHPingBE")
 
-        msg = dmsg.parse(shep_input.recv())
+        msg = dmsg.parse(ls_input.recv())
         assert isinstance(msg, dmsg.BEPingSH), "startup expectation on shep input"
         log.info("got BEPingSH")
 
@@ -261,7 +259,7 @@ def single(
         la_input.send(ch_up_msg.serialize())
         log.info("sent SHChannelsUp")
         gs_proc = maybe_start_gs(gs_args, gs_env, hostname="localhost", be_in=la_input)
-        msg = dmsg.parse(shep_input.recv())
+        msg = dmsg.parse(ls_input.recv())
         assert isinstance(msg, dmsg.GSPingSH), "startup expectation shep input"
         log.info("got GSPingSH")
     except (OSError, EOFError, json.JSONDecodeError, AssertionError, RuntimeError) as rte:
@@ -278,7 +276,7 @@ def single(
         server.gs_proc = gs_proc
 
     try:
-        server.run(shep_in=shep_input, gs_in=gs_input, be_in=la_input, is_primary=True)
+        server.run(ls_in=ls_input, gs_in=gs_input, be_in=la_input, is_primary=True)
     except Exception:
         log.fatal("There was an exception and LS is going to clean up.")
         server.cleanup()
@@ -432,13 +430,7 @@ def multinode(
         # Start TA (telling it its node ID by appending to args) and send LAChannelsInfo
         log.info("standing up ta")
         try:
-            ta = start_transport_agent(
-                node_index,
-                B64(ta_input_descr),
-                logger_sdesc,
-                args=ta_args,
-                env=ta_env,
-            )
+            ta = start_transport_agent(node_index, B64(ta_input_descr), logger_sdesc, args=ta_args, env=ta_env)
             # Cast the Popen instance returned by start_transport_agent() to
             # PopenProps mainly for consistency, though it doesn't appear to
             # matter since the TA process isn't used elsewhere.
@@ -465,8 +457,17 @@ def multinode(
         # Send LAChannelsInfo to TA
         ta_input.send(la_channels_info.serialize())
 
-        # Confirmation TA is up
-        ta_ping = dmsg.parse(ls_input.recv())
+        # Confirmation TA is up. Use 10 seconds since this only requires node-local work,
+        # ie: no communication is occurring unless something changes in the future.
+        # If TA isn't up in 10 seconds, assume things have gone awry, check stderr
+        # and log any error messages to the user
+        if ls_input.poll(timeout=10):
+            ta_ping = dmsg.parse(ls_input.recv())
+        else:
+            _, ta_stderr = ta.communicate()
+            error_str = f"Unable to bring up Dragon transport agent: {ta_stderr.decode()}"
+            la_input.send(dmsg.AbnormalTermination(tag=get_new_tag(), err_info=error_str).serialize())
+            raise RuntimeError(error_str)
         assert isinstance(ta_ping, dmsg.TAPingSH), "ls did not receive ping from TA)"
         log.info("ls received TAPingSH - m7")
         ch_list = []
@@ -515,7 +516,18 @@ def multinode(
             log.info("ls attached to gs channel")
             gs_in_wh = dconn.Connection(outbound_initializer=gs_in_ch, policy=dparms.POLICY_INFRASTRUCTURE)
 
-            gs_ping_ls = dmsg.parse(ls_input.recv())
+            # Do a timeout on this recv. Just a few seconds if primary. Longer if we're getting remote comms from GS
+            # If it fails, check that it didn't fall over on instantiation
+            gs_timeout = 60
+            if is_primary:
+                gs_timeout = 10
+            if ls_input.poll(timeout=gs_timeout):
+                gs_ping_ls = dmsg.parse(ls_input.recv())
+            else:
+                _, gs_stderr = gs.communicate()
+                error_str = f"Unable to bring up Dragon global services: {gs_stderr.decode()}"
+                la_input.send(dmsg.AbnormalTermination(tag=get_new_tag(), err_info=error_str).serialize())
+                raise RuntimeError(error_str)
             assert isinstance(gs_ping_ls, dmsg.GSPingSH), "ls expected GSPingSH"
             log.info("ls received GSPingSH from gs - m10")
 
@@ -541,7 +553,7 @@ def multinode(
 
     try:
         server.run(
-            shep_in=ls_input,
+            ls_in=ls_input,
             gs_in=gs_in_wh,
             be_in=la_input,
             is_primary=is_primary,

@@ -10,7 +10,9 @@ import time
 
 import dragon
 from ..channels import Channel, ChannelBarrierReady, ChannelBarrierBroken, EventType
+from ..utils import b64decode, b64encode
 from ..infrastructure.facts import default_pool_muid_from_index
+from ..utils import getlasterrstr
 from ..infrastructure.parameters import this_process
 from ..infrastructure.channel_desc import ChannelOptions
 from ..localservices.options import ChannelOptions as ShepherdChannelOptions
@@ -116,7 +118,8 @@ class Barrier:
                 # up their messages from the first wait() (WithProcessesTestBarrier.test_thousand)
                 beg = time.monotonic()
                 if not self._channel.poll(event_mask=EventType.POLLBARRIER, timeout=timeout):
-                    raise ChannelBarrierBroken(f"Channel poll on POLLBARRIER_WAIT return -1.")
+                    tb = getlasterrstr()
+                    raise ChannelBarrierBroken(f"Channel poll on POLLBARRIER_WAIT returned False.\n{tb}")
 
             # When the last party polls, the channel barrier ready exception is generated.
             except ChannelBarrierReady:
@@ -192,8 +195,8 @@ class Barrier:
         return self._wait(timeout=timeout)
 
     def reset(self) -> None:
-        """Barrier is set to empty state. Any threads waiting receive
-        BrokenBarrierException.
+        """Barrier is set to empty state. Any waiters receive
+        BrokenBarrierError.
         :rtype: None
         """
         LOGGER.debug(f"Barrier {self!r} Reset")
@@ -204,7 +207,7 @@ class Barrier:
             raise BrokenBarrierError(f"The reset failed with the error of {repr(ex)}.")
 
     def abort(self) -> None:
-        """The barrier is broken. Any threads that are in wait state will
+        """The barrier is broken. Any waiters that are in wait state will
         receive BrokenBarrierError.
         :rtype: None
         """
@@ -240,3 +243,20 @@ class Barrier:
     @property
     def broken(self):
         return self._channel.broken_barrier
+
+    def serialize(self):
+        """
+        Return a serialized, base64 encoded, string that may be used by C++
+        code to attach to this barrier. Any process attaching to this barrier
+        does not participate in the ref counting of the barrier. In other
+        words, the lifetime of the barrier is managed by the Python process
+        that creates it or other Python processes that have handles to it.
+        C++ code that wishes to use it can, but the Python process must live/
+        wait to exit until the C++ code is done with it.
+
+        :return: A serialized, base64 encoded string that can be used
+        to attach to the barrier by the C++ Barrier implementation.
+        :rtype: str
+        """
+
+        return b64encode(self._channel.serialize())

@@ -1,2 +1,8 @@
 from .telemetry import *
-from .analysis import AnalysisClient
+from .analysis import (
+    AnalysisClient,
+    Detector,
+    CollectorGroup,
+    CollectorDetectorGroup,
+    SlowGPUDetector,
+)

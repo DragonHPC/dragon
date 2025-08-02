@@ -10,6 +10,7 @@ import os
 
 from .lock import Lock
 from ..channels import Channel, ChannelRecvTimeout, ChannelEmpty, ChannelRecvH, ChannelSendH, EventType, PollResult
+from ..utils import b64decode, b64encode
 from ..dtypes import WHEN_DEPOSITED
 from ..globalservices.channel import get_refcnt, release_refcnt, create
 from ..infrastructure.channel_desc import ChannelOptions
@@ -116,4 +117,19 @@ class Semaphore:
         self._channel.poll(event_mask=EventType.SEMAPHORE_PEEK, poll_result=result)
         return result.value
 
+    def serialize(self):
+        """
+        Return a serialized, base64 encoded, string that may be used by C++
+        code to attach to this semaphore. Any process attaching to this semaphore
+        does not participate in the ref counting of the semaphore. In other
+        words, the lifetime of the semaphore is managed by the Python process
+        that creates it or other Python processes that have handles to it.
+        C++ code that wishes to use it can, but the Python process must live/
+        wait to exit until the C++ code is done with it.
 
+        :return: A serialized, base64 encoded string that can be used
+        to attach to the semaphore by the C++ Semaphore implementation.
+        :rtype: str
+        """
+
+        return b64encode(self._channel_sdesc)

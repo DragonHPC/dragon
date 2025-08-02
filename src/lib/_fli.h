@@ -10,6 +10,7 @@
 #define FLI_HAS_MAIN_CHANNEL 1
 #define FLI_HAS_MANAGER_CHANNEL 2
 #define FLI_USING_BUFFERED_PROTOCOL 4
+#define FLI_HAS_TASK_SEM 8
 
 #define FLI_EOT                      0xFFFFFFFFFFFFFFFF
 #define FLI_TERMINATOR               0xFFFFFFFFFFFFFFFE
@@ -25,11 +26,14 @@ extern "C" {
 typedef struct dragonFLI_st {
     dragonChannelDescr_t main_ch;
     dragonChannelDescr_t mgr_ch;
+    dragonChannelDescr_t task_sem;
+    dragonChannelSendh_t main_sendh;
     dragonMemoryPoolDescr_t pool;
     dragonULInt num_strm_chs;
     dragonFLIAttr_t attrs;
     bool has_main_ch; /* true if main_ch is initialized and used. */
     bool has_mgr_ch; /* true if mgr_ch is initialized and used. */
+    bool has_task_sem; /* true if there is a semaphore channel. */
     bool use_buffered_protocol; /* true if not using stream channels */
     bool was_attached; /* true if attach is used */
 } dragonFLI_t;
@@ -75,6 +79,7 @@ typedef struct dragonFLISendHandle_st {
     bool has_dest_pool;
     bool buffered_send;
     bool turbo_mode;
+    bool flush;
     bool close_required;
     pthread_t tid; /* used to keep track of send or receive file descriptors */
     int pipe[2];

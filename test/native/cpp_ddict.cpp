@@ -5,126 +5,9 @@
 #include <dragon/dictionary.hpp>
 #include <dragon/return_codes.h>
 
+using namespace dragon;
+
 static timespec_t TIMEOUT = {0,500000000}; // Timeouts will be 0.5 second by default
-
-class SerializableInt : public DDictSerializable {
-    public:
-    SerializableInt();
-    SerializableInt(int x);
-    virtual void serialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout);
-    virtual void deserialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout);
-    static SerializableInt* create(size_t num_bytes, uint8_t* data);
-    int getVal() const;
-    private:
-    int val=0;
-};
-
-SerializableInt::SerializableInt(): val(0) {}
-SerializableInt::SerializableInt(int x): val(x) {}
-
-SerializableInt* SerializableInt::create(size_t num_bytes, uint8_t* data) {
-    auto val = new SerializableInt((int)*data);
-    free(data);
-    return val;
-}
-
-void SerializableInt::serialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout) {
-    dragonError_t err;
-    err = dragon_ddict_write_bytes(req, sizeof(int), (uint8_t*)&val);
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not write bytes to ddict.");
-}
-
-void SerializableInt::deserialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout) {
-    dragonError_t err = DRAGON_SUCCESS;
-    size_t actual_size;
-    uint8_t * received_val = nullptr;
-    size_t num_val_expected = 1;
-
-    err = dragon_ddict_read_bytes(req, sizeof(int), &actual_size, &received_val);
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not read bytes from ddict.");
-
-    if (actual_size != sizeof(int))
-        throw DragonError(DRAGON_INVALID_ARGUMENT, "The size of the integer was not correct.");
-
-    val = (int)*received_val;
-    free(received_val);
-
-    err = dragon_ddict_read_bytes(req, sizeof(int), &actual_size, &received_val);
-
-    if (err != DRAGON_EOT) {
-        fprintf(stderr, "Did not received expected EOT, ec: %s\ntraceback: %s\n", dragon_get_rc_string(err), dragon_getlasterrstr());
-        fflush(stderr);
-    }
-}
-
-int SerializableInt::getVal() const {return val;}
-
-// serializable 2D double vector
-class SerializableDoubleVector : public DDictSerializable {
-    public:
-    SerializableDoubleVector();
-    SerializableDoubleVector(std::vector<std::vector<double>>& vec);
-    virtual void serialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout);
-    virtual void deserialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout);
-    std::vector<std::vector<double>>& getVal() const;
-
-    private:
-    std::vector<std::vector<double>> v = {{}};
-    std::vector<std::vector<double>>& val = v;
-};
-
-SerializableDoubleVector::SerializableDoubleVector(): v({{}}){}
-SerializableDoubleVector::SerializableDoubleVector(std::vector<std::vector<double>>& x): val(x) {}
-
-void SerializableDoubleVector::serialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout) {
-    dragonError_t err;
-    for (auto& row: val) {
-        for (auto& x: row) {
-            uint8_t* ptr = reinterpret_cast<uint8_t*>(&x);
-            err = dragon_ddict_write_bytes(req, sizeof(double), ptr);
-            if (err != DRAGON_SUCCESS)
-                throw DragonError(err, "Could not write bytes to ddict.");
-        }
-    }
-}
-
-void SerializableDoubleVector::deserialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout) {
-    dragonError_t err = DRAGON_SUCCESS;
-    size_t actual_size;
-    uint8_t * received_val = nullptr;
-    int row = 2;
-    int col = 3;
-    std::vector<std::vector<double>> val_deserialize;
-
-    for (int i=0 ; i<row ; i++) {
-        std::vector<double> tmp_vec;
-        for(int j=0 ; j<col ; j++) {
-            err = dragon_ddict_read_bytes(req, sizeof(double), &actual_size, &received_val);
-            if (err != DRAGON_SUCCESS)
-                throw DragonError(err, "Could not read bytes from ddict.");
-
-            if (actual_size != sizeof(double))
-                throw DragonError(DRAGON_INVALID_ARGUMENT, "The size of double was not correct.");
-
-            double element = *reinterpret_cast<double*>(received_val);
-            tmp_vec.push_back(element);
-            free(received_val);
-        }
-        val_deserialize.push_back(tmp_vec);
-    }
-    val = val_deserialize;
-
-    err = dragon_ddict_read_bytes(req, sizeof(double), &actual_size, &received_val);
-
-    if (err != DRAGON_EOT) {
-        fprintf(stderr, "Did not received expected EOT, ec: %s\ntraceback: %s\n", dragon_get_rc_string(err), dragon_getlasterrstr());
-        fflush(stderr);
-    }
-}
-
-std::vector<std::vector<double>>& SerializableDoubleVector::getVal() const {return val;}
 
 dragonError_t test_serialize(const char * ddict_ser) {
     DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
@@ -154,10 +37,12 @@ dragonError_t test_clear(const char * ddict_ser) {
 }
 
 dragonError_t test_put_and_get(const char * ddict_ser) {
+    uint64_t manager_id;
     SerializableInt x(6); // key
     SerializableInt y(42); // value
     // <type of key, type of value>
     DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    manager_id = dd.which_manager(x); // call this to test it.
     dd[x] = y;
     SerializableInt z = dd[x];
     assert (z.getVal() == 42);
@@ -220,7 +105,7 @@ dragonError_t test_erase_non_existing_key(const char * ddict_ser) {
         dd.erase(x); // delete a non-existing key, expect an exception here!
         return DRAGON_FAILURE;
     } catch (const DragonError& e) {
-        std::string ec_str = dragon_get_rc_string(e.get_rc());
+        std::string ec_str = dragon_get_rc_string(e.rc());
         assert(ec_str.compare("DRAGON_KEY_NOT_FOUND") == 0);
     }
 
@@ -246,7 +131,7 @@ dragonError_t test_keys(const char * ddict_ser) {
     bool got7 = false;
 
     for (int i=0; i<dd_keys.size() ; i++) {
-        int val = dd_keys[i]->getVal();
+        int val = dd_keys[i].getVal();
 
         got6 = got6 || (val == 6);
         got7 = got7 || (val == 7);
@@ -355,8 +240,8 @@ dragonError_t test_local_keys(const char * ddict_ser) {
     bool found_key1 = false;
     bool found_key0 = false;
     for (auto key: local_keys) {
-        found_key1 |= key1.getVal() == key->getVal();
-        found_key0 |= key0.getVal() == key->getVal();
+        found_key1 |= key1.getVal() == key.getVal();
+        found_key0 |= key0.getVal() == key.getVal();
     }
     assert(found_key1 && found_key0);
     return DRAGON_SUCCESS;
@@ -374,21 +259,21 @@ dragonError_t test_clone(const char * ddict_ser, std::vector<std::string>& ser_d
 }
 
 dragonError_t test_write_np_arr(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableDoubleVector> dd(ddict_ser, &TIMEOUT);
+    DDict<SerializableInt, SerializableDouble2DVector> dd(ddict_ser, &TIMEOUT);
     SerializableInt key(32);
     std::vector<std::vector<double>> vec = {{1.5, 2.5, 3.5}, {4.5, 5.5, 6.5}};
-    SerializableDoubleVector ser_vec(vec);
+    SerializableDouble2DVector ser_vec(vec);
     dd[key] = ser_vec;
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_read_np_arr(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableDoubleVector> dd(ddict_ser, &TIMEOUT);
+    DDict<SerializableInt, SerializableDouble2DVector> dd(ddict_ser, &TIMEOUT);
     SerializableInt key_from_py(2048);
 
-    // The dimension of the array is baked into the deserialize function of the class SerializableDoubleVector in this example.
+    // The dimension of the array is baked into the deserialize function of the class SerializableDouble2DVector in this example.
     // While deserializing the data, user is expected to understand the dimension to reform the array.
-    SerializableDoubleVector ser_vals_from_py = dd[key_from_py];
+    SerializableDouble2DVector ser_vals_from_py = dd[key_from_py];
     auto vals_from_py = ser_vals_from_py.getVal();
 
     std::vector<std::vector<double>> expected_vals_from_py = {{0.12, 0.31, 3.4}, {4.579, 5.98, 6.54}};

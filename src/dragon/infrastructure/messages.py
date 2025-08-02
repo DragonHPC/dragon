@@ -136,6 +136,7 @@ import subprocess
 import traceback
 from typing import Dict, List, Optional, Union
 from dataclasses import dataclass, asdict
+import logging
 
 import ctypes
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
@@ -281,6 +282,8 @@ class MessageTypes(enum.Enum):
     SH_GET_KV_RESPONSE = enum.auto()  #:
     SH_EXEC_MEM_REQUEST = enum.auto()  #:
     SH_EXEC_MEM_RESPONSE = enum.auto()  #:
+    LS_DESTROY_PMIX = enum.auto()  #:
+    LS_DESTROY_PMIX_RESPONSE = enum.auto()  #:
     GS_UNEXPECTED = enum.auto()  #:
     LA_SERVER_MODE = enum.auto()  #:
     LA_SERVER_MODE_EXIT = enum.auto()  #:
@@ -334,6 +337,8 @@ class MessageTypes(enum.Enum):
     GS_GROUP_CREATE_ADD_TO_RESPONSE = enum.auto()  #:
     GS_GROUP_DESTROY_REMOVE_FROM = enum.auto()  #:
     GS_GROUP_DESTROY_REMOVE_FROM_RESPONSE = enum.auto()  #:
+    GS_GROUP_DESTROY_PMIX = enum.auto()  #:
+    GS_GROUP_DESTROY_PMIX_RESPONSE = enum.auto()  #:
     GS_REBOOT_RUNTIME = enum.auto()  #:
     GS_REBOOT_RUNTIME_RESPONSE = enum.auto()  #:
     REBOOT_RUNTIME = enum.auto()  #:
@@ -435,6 +440,7 @@ class MessageTypes(enum.Enum):
     PG_PUIDS = enum.auto()  #:
     PG_STOP = enum.auto()  #:
     PG_CLOSE = enum.auto()  #:
+    PMIX_FENCE_MSG = enum.auto()  #:
 
 
 @enum.unique
@@ -453,7 +459,6 @@ NO_TIMEOUT_VALUE = 15768000000
 
 
 class AbnormalTerminationError(Exception):
-
     def __init__(self, msg=""):
         self._msg = msg
 
@@ -470,12 +475,14 @@ class PMIGroupInfo:
     Required information to enable the launching of pmi based applications.
     """
 
+    backend: dfacts.PMIBackend
     job_id: int
     nnodes: int
     nranks: int
     nidlist: list[int]
     hostlist: list[str]
     control_port: int
+    pmix_desc: str
 
     @classmethod
     def fromdict(cls, d):
@@ -539,7 +546,6 @@ class InfraMsg(object):
             self._err = err
 
     def get_sdict(self):
-
         rv = {"_tc": self._tc.value, "tag": self.tag}
 
         if self.err is not None:
@@ -732,7 +738,6 @@ class CapNProtoResponseMsg(CapNProtoMsg):
 
 
 class SHCreateProcessLocalChannel(CapNProtoMsg):
-
     _tc = MessageTypes.SH_CREATE_PROCESS_LOCAL_CHANNEL
 
     def __init__(self, tag, puid, muid, blockSize, capacity, respFLI):
@@ -784,7 +789,6 @@ class SHCreateProcessLocalChannel(CapNProtoMsg):
 
 
 class SHCreateProcessLocalChannelResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_CREATE_PROCESS_LOCAL_CHANNEL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", serChannel=""):
@@ -808,7 +812,6 @@ class SHCreateProcessLocalChannelResponse(CapNProtoResponseMsg):
 
 
 class SHDestroyProcessLocalChannel(CapNProtoMsg):
-
     _tc = MessageTypes.SH_DESTROY_PROCESS_LOCAL_CHANNEL
 
     def __init__(self, tag, puid, cuid, respFLI):
@@ -846,7 +849,6 @@ class SHDestroyProcessLocalChannel(CapNProtoMsg):
 
 
 class SHDestroyProcessLocalChannelResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_DESTROY_PROCESS_LOCAL_CHANNEL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -854,7 +856,6 @@ class SHDestroyProcessLocalChannelResponse(CapNProtoResponseMsg):
 
 
 class SHCreateProcessLocalPool(CapNProtoMsg):
-
     _tc = MessageTypes.SH_CREATE_PROCESS_LOCAL_POOL
 
     def __init__(self, tag, puid, size, minBlockSize, preAllocs, name, respFLI):
@@ -916,7 +917,6 @@ class SHCreateProcessLocalPool(CapNProtoMsg):
 
 
 class SHCreateProcessLocalPoolResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_CREATE_PROCESS_LOCAL_POOL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", serPool=""):
@@ -940,7 +940,6 @@ class SHCreateProcessLocalPoolResponse(CapNProtoResponseMsg):
 
 
 class SHRegisterProcessLocalPool(CapNProtoMsg):
-
     _tc = MessageTypes.SH_REGISTER_PROCESS_LOCAL_POOL
 
     def __init__(self, tag, puid, serPool, respFLI):
@@ -978,7 +977,6 @@ class SHRegisterProcessLocalPool(CapNProtoMsg):
 
 
 class SHRegisterProcessLocalPoolResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_REGISTER_PROCESS_LOCAL_POOL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -986,7 +984,6 @@ class SHRegisterProcessLocalPoolResponse(CapNProtoResponseMsg):
 
 
 class SHDeregisterProcessLocalPool(CapNProtoMsg):
-
     _tc = MessageTypes.SH_DEREGISTER_PROCESS_LOCAL_POOL
 
     def __init__(self, tag, puid, serPool, respFLI):
@@ -1024,7 +1021,6 @@ class SHDeregisterProcessLocalPool(CapNProtoMsg):
 
 
 class SHDeregisterProcessLocalPoolResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_DEREGISTER_PROCESS_LOCAL_POOL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1069,7 +1065,6 @@ class SHPushKVL(CapNProtoMsg):
 
 
 class SHPushKVLResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_PUSH_KVL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1114,7 +1109,6 @@ class SHPopKVL(CapNProtoMsg):
 
 
 class SHPopKVLResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_POP_KVL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1152,7 +1146,6 @@ class SHGetKVL(CapNProtoMsg):
 
 
 class SHGetKVLResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_GET_KVL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", values=[]):
@@ -1215,7 +1208,6 @@ class SHSetKV(CapNProtoMsg):
 
 
 class SHSetKVResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_SET_KV_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1253,7 +1245,6 @@ class SHGetKV(CapNProtoMsg):
 
 
 class SHGetKVResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.SH_GET_KV_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", value=None):
@@ -1277,7 +1268,6 @@ class SHGetKVResponse(CapNProtoResponseMsg):
 
 
 class DDCreate(CapNProtoMsg):
-
     _tc = MessageTypes.DD_CREATE
 
     def __init__(self, tag, respFLI, args):
@@ -1308,7 +1298,6 @@ class DDCreate(CapNProtoMsg):
 
 
 class DDCreateResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_CREATE_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1316,7 +1305,6 @@ class DDCreateResponse(CapNProtoResponseMsg):
 
 
 class DDRandomManager(CapNProtoMsg):
-
     _tc = MessageTypes.DD_RANDOM_MANAGER
 
     def __init__(self, tag, respFLI):
@@ -1340,7 +1328,6 @@ class DDRandomManager(CapNProtoMsg):
 
 
 class DDRandomManagerResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_RANDOM_MANAGER_RESPONSE
 
     def __init__(self, tag, ref, err, manager, managerID, errInfo=""):
@@ -1371,7 +1358,6 @@ class DDRandomManagerResponse(CapNProtoResponseMsg):
 
 
 class DDRegisterClient(CapNProtoMsg):
-
     _tc = MessageTypes.DD_REGISTER_CLIENT
 
     def __init__(self, tag, respFLI, bufferedRespFLI):
@@ -1402,7 +1388,6 @@ class DDRegisterClient(CapNProtoMsg):
 
 
 class DDRegisterClientResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_REGISTER_CLIENT_RESPONSE
 
     def __init__(self, tag, ref, err, clientID, numManagers, managerID, managerNodes, name, timeout, errInfo=""):
@@ -1469,7 +1454,6 @@ class DDRegisterClientResponse(CapNProtoResponseMsg):
 
 
 class DDConnectToManager(CapNProtoMsg):
-
     _tc = MessageTypes.DD_CONNECT_TO_MANAGER
 
     def __init__(self, tag, clientID, managerID):
@@ -1500,7 +1484,6 @@ class DDConnectToManager(CapNProtoMsg):
 
 
 class DDConnectToManagerResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_CONNECT_TO_MANAGER_RESPONSE
 
     def __init__(self, tag, ref, err, manager, errInfo=""):
@@ -1524,7 +1507,6 @@ class DDConnectToManagerResponse(CapNProtoResponseMsg):
 
 
 class DDDestroy(CapNProtoMsg):
-
     _tc = MessageTypes.DD_DESTROY
 
     def __init__(self, tag, clientID, respFLI, allowRestart):
@@ -1562,7 +1544,6 @@ class DDDestroy(CapNProtoMsg):
 
 
 class DDDestroyResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_DESTROY_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1570,7 +1551,6 @@ class DDDestroyResponse(CapNProtoResponseMsg):
 
 
 class DDRegisterManager(CapNProtoMsg):
-
     _tc = MessageTypes.DD_REGISTER_MANAGER
 
     def __init__(self, tag, managerID, mainFLI, respFLI, hostID, poolSdesc, err, errInfo):
@@ -1636,7 +1616,6 @@ class DDRegisterManager(CapNProtoMsg):
 
 
 class DDRegisterManagerResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_REGISTER_MANAGER_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, managers, managerNodes):
@@ -1670,7 +1649,6 @@ class DDRegisterManagerResponse(CapNProtoResponseMsg):
 
 
 class DDRegisterClientID(CapNProtoMsg):
-
     _tc = MessageTypes.DD_REGISTER_CLIENT_ID
 
     def __init__(self, tag, clientID, respFLI, bufferedRespFLI):
@@ -1708,7 +1686,6 @@ class DDRegisterClientID(CapNProtoMsg):
 
 
 class DDRegisterClientIDResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_REGISTER_CLIENT_ID_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1716,7 +1693,6 @@ class DDRegisterClientIDResponse(CapNProtoResponseMsg):
 
 
 class DDDestroyManager(CapNProtoMsg):
-
     _tc = MessageTypes.DD_DESTROY_MANAGER
 
     def __init__(self, tag, respFLI, allowRestart):
@@ -1747,7 +1723,6 @@ class DDDestroyManager(CapNProtoMsg):
 
 
 class DDDestroyManagerResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_DESTROY_MANAGER_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1755,7 +1730,6 @@ class DDDestroyManagerResponse(CapNProtoResponseMsg):
 
 
 class DDPut(CapNProtoMsg):
-
     _tc = MessageTypes.DD_PUT
 
     def __init__(self, tag, clientID, chkptID=0, persist=True):
@@ -1793,7 +1767,6 @@ class DDPut(CapNProtoMsg):
 
 
 class DDPutResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_PUT_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1801,7 +1774,6 @@ class DDPutResponse(CapNProtoResponseMsg):
 
 
 class DDGet(CapNProtoMsg):
-
     _tc = MessageTypes.DD_GET
 
     def __init__(self, tag, clientID, chkptID, key):
@@ -1839,7 +1811,6 @@ class DDGet(CapNProtoMsg):
 
 
 class DDGetResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_GET_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", freeMem=False):
@@ -1863,7 +1834,6 @@ class DDGetResponse(CapNProtoResponseMsg):
 
 
 class DDPop(CapNProtoMsg):
-
     _tc = MessageTypes.DD_POP
 
     def __init__(self, tag, clientID, chkptID, key):
@@ -1901,7 +1871,6 @@ class DDPop(CapNProtoMsg):
 
 
 class DDPopResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_POP_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", freeMem=False):
@@ -1925,7 +1894,6 @@ class DDPopResponse(CapNProtoResponseMsg):
 
 
 class DDContains(CapNProtoMsg):
-
     _tc = MessageTypes.DD_CONTAINS
 
     def __init__(self, tag, clientID, chkptID, key):
@@ -1963,7 +1931,6 @@ class DDContains(CapNProtoMsg):
 
 
 class DDContainsResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_CONTAINS_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -1971,7 +1938,6 @@ class DDContainsResponse(CapNProtoResponseMsg):
 
 
 class DDLength(CapNProtoMsg):
-
     _tc = MessageTypes.DD_LENGTH
 
     def __init__(self, tag, clientID, respFLI, chkptID=0, broadcast=True):
@@ -2016,7 +1982,6 @@ class DDLength(CapNProtoMsg):
 
 
 class DDLengthResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_LENGTH_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", length=0):
@@ -2040,7 +2005,6 @@ class DDLengthResponse(CapNProtoResponseMsg):
 
 
 class DDClear(CapNProtoMsg):
-
     _tc = MessageTypes.DD_CLEAR
 
     def __init__(self, tag, clientID, chkptID, respFLI, broadcast=True):
@@ -2085,7 +2049,6 @@ class DDClear(CapNProtoMsg):
 
 
 class DDClearResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_CLEAR_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -2093,7 +2056,6 @@ class DDClearResponse(CapNProtoResponseMsg):
 
 
 class DDManagerStats(CapNProtoMsg):
-
     _tc = MessageTypes.DD_MANAGER_STATS
 
     def __init__(self, tag, respFLI, broadcast=True):
@@ -2124,7 +2086,6 @@ class DDManagerStats(CapNProtoMsg):
 
 
 class DDManagerStatsResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_MANAGER_STATS_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", data=""):
@@ -2148,7 +2109,6 @@ class DDManagerStatsResponse(CapNProtoResponseMsg):
 
 
 class DDManagerNewestChkptID(CapNProtoMsg):
-
     _tc = MessageTypes.DD_MANAGER_NEWEST_CHKPT_ID
 
     def __init__(self, tag, respFLI, broadcast=True):
@@ -2179,7 +2139,6 @@ class DDManagerNewestChkptID(CapNProtoMsg):
 
 
 class DDManagerNewestChkptIDResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_MANAGER_NEWEST_CHKPT_ID_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", managerID=0, chkptID=0):
@@ -2210,7 +2169,6 @@ class DDManagerNewestChkptIDResponse(CapNProtoResponseMsg):
 
 
 class DDIterator(CapNProtoMsg):
-
     _tc = MessageTypes.DD_ITERATOR
 
     def __init__(self, tag, clientID, chkptID=0):
@@ -2241,7 +2199,6 @@ class DDIterator(CapNProtoMsg):
 
 
 class DDIteratorResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_ITERATOR_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo="", iterID=0):
@@ -2265,7 +2222,6 @@ class DDIteratorResponse(CapNProtoResponseMsg):
 
 
 class DDIteratorNext(CapNProtoMsg):
-
     _tc = MessageTypes.DD_ITERATOR_NEXT
 
     def __init__(self, tag, clientID, iterID):
@@ -2296,7 +2252,6 @@ class DDIteratorNext(CapNProtoMsg):
 
 
 class DDIteratorNextResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_ITERATOR_NEXT_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -2304,7 +2259,6 @@ class DDIteratorNextResponse(CapNProtoResponseMsg):
 
 
 class DDKeys(CapNProtoMsg):
-
     _tc = MessageTypes.DD_KEYS
 
     def __init__(self, tag, clientID, chkptID, respFLI):
@@ -2342,7 +2296,6 @@ class DDKeys(CapNProtoMsg):
 
 
 class DDKeysResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_KEYS_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -2350,7 +2303,6 @@ class DDKeysResponse(CapNProtoResponseMsg):
 
 
 class DDValues(CapNProtoMsg):
-
     _tc = MessageTypes.DD_VALUES
 
     def __init__(self, tag, clientID, chkptID, respFLI):
@@ -2388,7 +2340,6 @@ class DDValues(CapNProtoMsg):
 
 
 class DDValuesResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_VALUES_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -2396,7 +2347,6 @@ class DDValuesResponse(CapNProtoResponseMsg):
 
 
 class DDItems(CapNProtoMsg):
-
     _tc = MessageTypes.DD_ITEMS
 
     def __init__(self, tag, clientID, chkptID, respFLI):
@@ -2434,7 +2384,6 @@ class DDItems(CapNProtoMsg):
 
 
 class DDItemsResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_ITEMS_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -2442,7 +2391,6 @@ class DDItemsResponse(CapNProtoResponseMsg):
 
 
 class DDEmptyManagers(CapNProtoMsg):
-
     _tc = MessageTypes.DD_EMPTY_MANAGERS
 
     def __init__(self, tag, respFLI):
@@ -2466,7 +2414,6 @@ class DDEmptyManagers(CapNProtoMsg):
 
 
 class DDEmptyManagersResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_EMPTY_MANAGERS_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, managers):
@@ -2492,7 +2439,6 @@ class DDEmptyManagersResponse(CapNProtoResponseMsg):
 
 
 class DDBatchPut(CapNProtoMsg):
-
     _tc = MessageTypes.DD_BATCH_PUT
 
     def __init__(self, tag, clientID, chkptID=0, persist=True):
@@ -2530,7 +2476,6 @@ class DDBatchPut(CapNProtoMsg):
 
 
 class DDBatchPutResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_BATCH_PUT_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, numPuts, managerID):
@@ -2561,7 +2506,6 @@ class DDBatchPutResponse(CapNProtoResponseMsg):
 
 
 class DDGetManagers(CapNProtoMsg):
-
     _tc = MessageTypes.DD_GET_MANAGERS
 
     def __init__(self, tag, respFLI):
@@ -2585,7 +2529,6 @@ class DDGetManagers(CapNProtoMsg):
 
 
 class DDGetManagersResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_GET_MANAGERS_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, emptyManagers, managers):
@@ -2622,7 +2565,6 @@ class DDGetManagersResponse(CapNProtoResponseMsg):
 
 
 class DDManagerSync(CapNProtoMsg):
-
     _tc = MessageTypes.DD_MANAGER_SYNC
 
     def __init__(self, tag, emptyManagerFLI, respFLI):
@@ -2653,7 +2595,6 @@ class DDManagerSync(CapNProtoMsg):
 
 
 class DDManagerSyncResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_MANAGER_SYNC_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -2661,7 +2602,6 @@ class DDManagerSyncResponse(CapNProtoResponseMsg):
 
 
 class DDManagerSetState(CapNProtoMsg):
-
     _tc = MessageTypes.DD_MANAGER_SET_STATE
 
     def __init__(self, tag, state, respFLI):
@@ -2692,7 +2632,6 @@ class DDManagerSetState(CapNProtoMsg):
 
 
 class DDManagerSetStateResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_MANAGER_SET_STATE_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -2700,7 +2639,6 @@ class DDManagerSetStateResponse(CapNProtoResponseMsg):
 
 
 class DDMarkDrainedManagers(CapNProtoMsg):
-
     _tc = MessageTypes.DD_MARK_DRAINED_MANAGERS
 
     def __init__(self, tag, respFLI, managerIDs):
@@ -2733,7 +2671,6 @@ class DDMarkDrainedManagers(CapNProtoMsg):
 
 
 class DDMarkDrainedManagersResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_MARK_DRAINED_MANAGERS_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -2741,7 +2678,6 @@ class DDMarkDrainedManagersResponse(CapNProtoResponseMsg):
 
 
 class DDUnmarkDrainedManagers(CapNProtoMsg):
-
     _tc = MessageTypes.DD_UNMARK_DRAINED_MANAGERS
 
     def __init__(self, tag, respFLI, managerIDs):
@@ -2774,7 +2710,6 @@ class DDUnmarkDrainedManagers(CapNProtoMsg):
 
 
 class DDUnmarkDrainedManagersResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_UNMARK_DRAINED_MANAGERS_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -2782,7 +2717,6 @@ class DDUnmarkDrainedManagersResponse(CapNProtoResponseMsg):
 
 
 class DDGetMetaData(CapNProtoMsg):
-
     _tc = MessageTypes.DD_GET_META_DATA
 
     def __init__(self, tag, respFLI):
@@ -2806,7 +2740,6 @@ class DDGetMetaData(CapNProtoMsg):
 
 
 class DDGetMetaDataResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_GET_META_DATA_RESPONSE
 
     def __init__(self, tag, ref, err, serializedDdict, numManagers, errInfo=""):
@@ -2837,7 +2770,6 @@ class DDGetMetaDataResponse(CapNProtoResponseMsg):
 
 
 class DDManagerNodes(CapNProtoMsg):
-
     _tc = MessageTypes.DD_MANAGER_NODES
 
     def __init__(self, tag, respFLI):
@@ -2861,7 +2793,6 @@ class DDManagerNodes(CapNProtoMsg):
 
 
 class DDManagerNodesResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_MANAGER_NODES_RESPONSE
 
     def __init__(self, tag, ref, err, huids, errInfo=""):
@@ -2885,7 +2816,6 @@ class DDManagerNodesResponse(CapNProtoResponseMsg):
 
 
 class DDBPut(CapNProtoMsg):
-
     _tc = MessageTypes.DD_B_PUT
 
     def __init__(self, tag, clientID, chkptID, respFLI, managers, batch=False):
@@ -2937,7 +2867,6 @@ class DDBPut(CapNProtoMsg):
 
 
 class DDBPutResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_B_PUT_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, numPuts, managerID):
@@ -2968,7 +2897,6 @@ class DDBPutResponse(CapNProtoResponseMsg):
 
 
 class DDPersistedChkptAvail(CapNProtoMsg):
-
     _tc = MessageTypes.DD_PERSISTED_CHKPT_AVAIL
 
     def __init__(self, tag, chkptID, respFLI):
@@ -2999,7 +2927,6 @@ class DDPersistedChkptAvail(CapNProtoMsg):
 
 
 class DDPersistedChkptAvailResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_PERSISTED_CHKPT_AVAIL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, available, managerID):
@@ -3030,7 +2957,6 @@ class DDPersistedChkptAvailResponse(CapNProtoResponseMsg):
 
 
 class DDRestore(CapNProtoMsg):
-
     _tc = MessageTypes.DD_RESTORE
 
     def __init__(self, tag, chkptID, clientID, respFLI):
@@ -3068,7 +2994,6 @@ class DDRestore(CapNProtoMsg):
 
 
 class DDRestoreResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_RESTORE_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -3076,7 +3001,6 @@ class DDRestoreResponse(CapNProtoResponseMsg):
 
 
 class DDAdvance(CapNProtoMsg):
-
     _tc = MessageTypes.DD_ADVANCE
 
     def __init__(self, tag, clientID, respFLI):
@@ -3107,7 +3031,6 @@ class DDAdvance(CapNProtoMsg):
 
 
 class DDAdvanceResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_ADVANCE_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, chkptID):
@@ -3131,7 +3054,6 @@ class DDAdvanceResponse(CapNProtoResponseMsg):
 
 
 class DDPersistChkpts(CapNProtoMsg):
-
     _tc = MessageTypes.DD_PERSIST_CHKPTS
 
     def __init__(self, tag, clientID, respFLI):
@@ -3162,7 +3084,6 @@ class DDPersistChkpts(CapNProtoMsg):
 
 
 class DDPersistChkptsResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_PERSIST_CHKPTS_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, chkptIDs):
@@ -3188,7 +3109,6 @@ class DDPersistChkptsResponse(CapNProtoResponseMsg):
 
 
 class DDChkptAvail(CapNProtoMsg):
-
     _tc = MessageTypes.DD_CHKPT_AVAIL
 
     def __init__(self, tag, chkptID, respFLI):
@@ -3219,7 +3139,6 @@ class DDChkptAvail(CapNProtoMsg):
 
 
 class DDChkptAvailResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_CHKPT_AVAIL_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, available, managerID):
@@ -3250,7 +3169,6 @@ class DDChkptAvailResponse(CapNProtoResponseMsg):
 
 
 class DDPersist(CapNProtoMsg):
-
     _tc = MessageTypes.DD_PERSIST
 
     def __init__(self, tag, chkptID, respFLI):
@@ -3281,7 +3199,6 @@ class DDPersist(CapNProtoMsg):
 
 
 class DDPersistResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_PERSIST_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -3289,7 +3206,6 @@ class DDPersistResponse(CapNProtoResponseMsg):
 
 
 class DDFreeze(CapNProtoMsg):
-
     _tc = MessageTypes.DD_FREEZE
 
     def __init__(self, tag, respFLI):
@@ -3313,7 +3229,6 @@ class DDFreeze(CapNProtoMsg):
 
 
 class DDFreezeResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_FREEZE_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -3321,7 +3236,6 @@ class DDFreezeResponse(CapNProtoResponseMsg):
 
 
 class DDGetFreeze(CapNProtoMsg):
-
     _tc = MessageTypes.DD_GET_FREEZE
 
     def __init__(self, tag, clientID):
@@ -3345,7 +3259,6 @@ class DDGetFreeze(CapNProtoMsg):
 
 
 class DDGetFreezeResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_GET_FREEZE_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo, freeze):
@@ -3369,7 +3282,6 @@ class DDGetFreezeResponse(CapNProtoResponseMsg):
 
 
 class DDUnFreeze(CapNProtoMsg):
-
     _tc = MessageTypes.DD_UN_FREEZE
 
     def __init__(self, tag, respFLI):
@@ -3393,7 +3305,6 @@ class DDUnFreeze(CapNProtoMsg):
 
 
 class DDUnFreezeResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_UN_FREEZE_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -3401,7 +3312,6 @@ class DDUnFreezeResponse(CapNProtoResponseMsg):
 
 
 class DDDeregisterClient(CapNProtoMsg):
-
     _tc = MessageTypes.DD_DEREGISTER_CLIENT
 
     def __init__(self, tag, clientID, respFLI):
@@ -3432,7 +3342,6 @@ class DDDeregisterClient(CapNProtoMsg):
 
 
 class DDDeregisterClientResponse(CapNProtoResponseMsg):
-
     _tc = MessageTypes.DD_DEREGISTER_CLIENT_RESPONSE
 
     def __init__(self, tag, ref, err, errInfo=""):
@@ -3483,7 +3392,7 @@ class GSProcessCreate(InfraMsg):
         user=None,
         umask=-1,
         pipesize=None,
-        pmi_required=False,
+        pmi=None,
         _pmi_info=None,
         layout=None,
         policy=None,
@@ -3492,7 +3401,6 @@ class GSProcessCreate(InfraMsg):
         head_proc=False,
         _tc=None,
     ):
-
         # Coerce args to a list of strings
         args = list(to_str_iter(args))
 
@@ -3523,7 +3431,7 @@ class GSProcessCreate(InfraMsg):
         self.restart = restart
         self.resilient = resilient
 
-        self.pmi_required = pmi_required
+        self.pmi = pmi
 
         if _pmi_info is None:
             self._pmi_info = None
@@ -3558,7 +3466,6 @@ class GSProcessCreate(InfraMsg):
 
     @options.setter
     def options(self, value):
-
         if isinstance(value, process_desc.ProcessOptions):
             self._options = value
         else:
@@ -3583,7 +3490,7 @@ class GSProcessCreate(InfraMsg):
         rv["umask"] = self.umask
         rv["pipesize"] = self.pipesize
         rv["head_proc"] = self.head_proc
-        rv["pmi_required"] = self.pmi_required
+        rv["pmi"] = self.pmi
         rv["_pmi_info"] = None if self._pmi_info is None else asdict(self._pmi_info)
         rv["layout"] = None if self.layout is None else asdict(self.layout)
         rv["policy"] = None if self.policy is None else asdict(self.policy)
@@ -3939,7 +3846,6 @@ class GSProcessJoinList(InfraMsg):
         return_on_bad_exit=False,
         _tc=None,
     ):
-
         super().__init__(tag)
         self.p_uid = int(p_uid)
         self.r_c_uid = int(r_c_uid)
@@ -4034,7 +3940,6 @@ class GSPoolCreate(InfraMsg):
 
     @options.setter
     def options(self, value):
-
         if isinstance(value, pool_desc.PoolOptions):
             self._options = value
         else:
@@ -4301,7 +4206,7 @@ class GSGroupCreate(InfraMsg):
 
     _tc = MessageTypes.GS_GROUP_CREATE
 
-    def __init__(self, tag, p_uid, r_c_uid, items=None, policy=None, user_name="", _tc=None):
+    def __init__(self, tag, p_uid, r_c_uid, items=None, policy=None, user_name="", pmix_desc=None, _tc=None):
         super().__init__(tag)
 
         if items is None:
@@ -4311,6 +4216,7 @@ class GSGroupCreate(InfraMsg):
         self.r_c_uid = int(r_c_uid)
         self.items = list(items)
         self.user_name = user_name
+        self.pmix_desc = pmix_desc
 
         if policy is None:
             self.policy = None
@@ -4332,6 +4238,7 @@ class GSGroupCreate(InfraMsg):
         if self.policy:
             rv["policy"] = self.policy.get_sdict()
         rv["user_name"] = self.user_name
+        rv["pmix_desc"] = self.pmix_desc
 
         return rv
 
@@ -5713,7 +5620,6 @@ class GSNodeQuery(InfraMsg):
     _tc = MessageTypes.GS_NODE_QUERY
 
     def __init__(self, tag, p_uid: int, r_c_uid: int, name: str = "", h_uid=None, _tc=None):
-
         super().__init__(tag)
         self.p_uid = int(p_uid)
         self.r_c_uid = int(r_c_uid)
@@ -5791,7 +5697,6 @@ class GSNodeQueryAll(InfraMsg):
     _tc = MessageTypes.GS_NODE_QUERY_ALL
 
     def __init__(self, tag, p_uid: int, r_c_uid: int, _tc=None):
-
         super().__init__(tag)
         self.p_uid = int(p_uid)
         self.r_c_uid = int(r_c_uid)
@@ -6293,7 +6198,6 @@ class SHProcessCreate(InfraMsg):
 
     @options.setter
     def options(self, value):
-
         if isinstance(value, dso.ProcessOptions):
             self._options = value
         else:
@@ -6435,7 +6339,6 @@ class SHProcessKillResponse(InfraMsg):
 
 
 class SHMultiProcessKill(InfraMsg):
-
     _td = MessageTypes.SH_MULTI_PROCESS_KILL
 
     def __init__(self, tag, r_c_uid, procs: List[Union[Dict, SHProcessKill]], _tc=None):
@@ -6459,7 +6362,6 @@ class SHMultiProcessKill(InfraMsg):
 
 
 class SHMultiProcessKillResponse(InfraMsg):
-
     _tc = MessageTypes.SH_MULTI_PROCESS_KILL_RESPONSE
 
     @enum.unique
@@ -6536,7 +6438,6 @@ class SHProcessExit(InfraMsg):
 
 
 class SHMultiProcessCreate(InfraMsg):
-
     _tc = MessageTypes.SH_MULTI_PROCESS_CREATE
 
     def __init__(
@@ -6545,10 +6446,13 @@ class SHMultiProcessCreate(InfraMsg):
         r_c_uid,
         procs: List[Union[Dict, SHProcessCreate]],
         pmi_group_info: Optional[PMIGroupInfo] = None,
+        pmix_ddict_desc: str = None,
+        guid: int = None,
         _tc=None,
     ):
         super().__init__(tag)
         self.r_c_uid = int(r_c_uid)
+        self.guid = guid
 
         if pmi_group_info is None:
             self.pmi_group_info = None
@@ -6566,18 +6470,21 @@ class SHMultiProcessCreate(InfraMsg):
             elif isinstance(proc, dict):
                 self.procs.append(SHProcessCreate.from_sdict(proc))
             else:
-                raise ValueError(f"proc is not a supported type %s", type(proc))
+                raise ValueError("proc is not a supported type %s", type(proc))
+
+        self.pmix_ddict_desc = pmix_ddict_desc
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["r_c_uid"] = self.r_c_uid
         rv["pmi_group_info"] = None if self.pmi_group_info is None else asdict(self.pmi_group_info)
         rv["procs"] = [proc.get_sdict() for proc in self.procs]
+        rv["pmix_ddict_desc"] = self.pmix_ddict_desc
+        rv["guid"] = self.guid
         return rv
 
 
 class SHMultiProcessCreateResponse(InfraMsg):
-
     _tc = MessageTypes.SH_MULTI_PROCESS_CREATE_RESPONSE
 
     @enum.unique
@@ -7889,7 +7796,6 @@ class FENodeIdxBE(InfraMsg):
         send_desc: Optional[Union[B64, str]] = None,
         _tc=None,
     ):
-
         super().__init__(tag)
         self.node_index = int(node_index)
         self.forward = forward
@@ -8229,7 +8135,6 @@ class PGClientResponse(InfraMsg):
 
 
 class PGSetProperties(InfraMsg):
-
     _tc = MessageTypes.PG_SET_PROPERTIES
 
     def __init__(self, tag, p_uid, props, _tc=None):
@@ -8245,7 +8150,6 @@ class PGSetProperties(InfraMsg):
 
 
 class PGStopRestart(InfraMsg):
-
     _tc = MessageTypes.PG_STOP_RESTART
 
     def __init__(self, tag, p_uid, _tc=None):
@@ -8259,7 +8163,6 @@ class PGStopRestart(InfraMsg):
 
 
 class PGAddProcessTemplates(InfraMsg):
-
     _tc = MessageTypes.PG_ADD_PROCESS_TEMPLATES
 
     def __init__(self, tag, p_uid, templates, _tc=None):
@@ -8275,7 +8178,6 @@ class PGAddProcessTemplates(InfraMsg):
 
 
 class PGStart(InfraMsg):
-
     _tc = MessageTypes.PG_START
 
     def __init__(self, tag, p_uid, _tc=None):
@@ -8289,7 +8191,6 @@ class PGStart(InfraMsg):
 
 
 class PGJoin(InfraMsg):
-
     _tc = MessageTypes.PG_JOIN
 
     def __init__(self, tag, p_uid, timeout, _tc=None):
@@ -8305,7 +8206,6 @@ class PGJoin(InfraMsg):
 
 
 class PGSignal(InfraMsg):
-
     _tc = MessageTypes.PG_SIGNAL
 
     def __init__(self, tag, p_uid, sig, hide_stderr, _tc=None):
@@ -8323,7 +8223,6 @@ class PGSignal(InfraMsg):
 
 
 class PGState(InfraMsg):
-
     _tc = MessageTypes.PG_STATE
 
     def __init__(self, tag, p_uid, _tc=None):
@@ -8337,7 +8236,6 @@ class PGState(InfraMsg):
 
 
 class PGStop(InfraMsg):
-
     _tc = MessageTypes.PG_STOP
 
     def __init__(self, tag, p_uid, patience, _tc=None):
@@ -8353,7 +8251,6 @@ class PGStop(InfraMsg):
 
 
 class PGPuids(InfraMsg):
-
     _tc = MessageTypes.PG_PUIDS
 
     def __init__(self, tag, p_uid, active=True, inactive=False, _tc=None):
@@ -8371,7 +8268,6 @@ class PGPuids(InfraMsg):
 
 
 class PGClose(InfraMsg):
-
     _tc = MessageTypes.PG_CLOSE
 
     def __init__(self, tag, p_uid, patience, _tc=None):
@@ -8380,16 +8276,113 @@ class PGClose(InfraMsg):
         self.patience = patience
 
     def get_sdict(self):
-
         rv = super().get_sdict()
         rv["p_uid"] = self.p_uid
         rv["patience"] = self.patience
         return rv
 
 
+class PMIxFenceMsg(CapNProtoMsg):
+    _tc = MessageTypes.PMIX_FENCE_MSG
+
+    def __init__(self, tag, ndata, data):
+        super().__init__(tag)
+        self.ndata = ndata
+        self.data = data
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["ndata"] = self.ndata
+        rv["data"] = self.data
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.ndata = self.ndata
+        client_msg.data = self.data
+        return cap_msg
+
+
+class GSGroupDestroyPMIx(InfraMsg):
+    _tc = MessageTypes.GS_GROUP_DESTROY_PMIX
+
+    def __init__(self, tag, r_c_uid, guid=None, user_name="", _tc=None):
+        super().__init__(tag)
+        self.r_c_uid = int(r_c_uid)
+        self.guid = guid
+        self.user_name = user_name
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["r_c_uid"] = self.r_c_uid
+        rv["guid"] = self.guid
+        rv["user_name"] = self.user_name
+        return rv
+
+
+class GSGroupDestroyPMIxResponse(InfraMsg):
+    _tc = MessageTypes.GS_GROUP_DESTROY_PMIX_RESPONSE
+
+    @enum.unique
+    class Errors(enum.Enum):
+        SUCCESS = 0  #:
+        FAIL = 1  #:
+
+    def __init__(self, tag, ref, err, guid=None, user_name="", err_info="", _tc=None):
+        super().__init__(tag, ref, err)
+        self.guid = guid
+        self.user_name = user_name
+        self.err_info = err_info
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["guid"] = self.guid
+        rv["user_name"] = self.user_name
+        rv["err_info"] = self.err_info
+        return rv
+
+
+class LSDestroyPMIx(InfraMsg):
+    _tc = MessageTypes.LS_DESTROY_PMIX
+
+    def __init__(self, tag, r_c_uid, guid, _tc=None):
+        super().__init__(tag)
+        self.r_c_uid = int(r_c_uid)
+        self.guid = guid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["r_c_uid"] = self.r_c_uid
+        rv["guid"] = self.guid
+        return rv
+
+
+class LSDestroyPMIxResponse(InfraMsg):
+    _tc = MessageTypes.LS_DESTROY_PMIX_RESPONSE
+
+    class Errors(enum.Enum):
+        SUCCESS = 0  #:
+        FAIL = 1  #: PMIx resources assigned to group not found or already destroyed
+
+    def __init__(self, tag, ref, err, guid=None, user_name="", err_info="", _tc=None):
+        super().__init__(tag, ref, err)
+        self.guid = guid
+        self.user_name = user_name
+        self.err_info = err_info
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["guid"] = self.guid
+        rv["user_name"] = self.user_name
+        rv["err_info"] = self.err_info
+        return rv
+
+
 PREDETERMINED_CAPS = {
     "GS": "GS",
     "SH": "SH",
+    "LS": "LS",  # For future references to Local Services' abbreviation rathern than SH
     "TA": "TA",
     "BE": "BE",
     "FE": "FE",
@@ -8405,6 +8398,7 @@ PREDETERMINED_CAPS = {
     "KVL": "KVL",
     "KV": "KV",
     "PG": "PG",
+    "PMIX": "PMIx",
 }
 
 MSG_TYPES_WITHOUT_CLASSES = {MessageTypes.DRAGON_MSG}
@@ -8416,7 +8410,6 @@ def type_filter(the_msg_types):
 
 
 def camel_case_msg_name(msg_id):
-
     lst = msg_id.split(".")[1].split("_")
     cased = []
 

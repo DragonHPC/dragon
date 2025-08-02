@@ -28,6 +28,7 @@ class TestDragonTelemetryAggregatorApp(unittest.TestCase):
         app.config["queue_dict"] = queue_dict
         app.config["return_queue"] = mp.Queue()
         app.config["result_dict"] = {}
+        app.config["auth_key"] = None
 
     def test_get_aggregators(self):
         response = self.client.get("/api/aggregators")

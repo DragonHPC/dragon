@@ -810,12 +810,12 @@ Dictionary Clone
 _________________________________________
 
 As mentioned in cross-dictionary synchronization, in the resiliency training,
-having multiple parallel dicitonary with the same data set allows a dictionary
+having multiple parallel dictionary with the same data set allows a dictionary
 that loses data to recover data by synchronizing with another parallel
 dictionary. To achieve this, users might need to load the same data multiple
 times in order to write it to each parallel dictionary. However, loading data
 from disk is an expensive operation and should be minimized to improve
-performance. The dicitonary API `clone` addresses this challenge by cloning a
+performance. The dictionary API `clone` addresses this challenge by cloning a
 distributed dictionary to another in memory, thus avoiding redundant disk
 operations.
 
@@ -837,6 +837,133 @@ When performing a dictionary copy, a new dictionary is created, and the serializ
 descriptor of both the new and the original dictionary is passed as the argument
 `clone_list` to the dictionary clone operation. Once the clone is complete, the entire
 dictionary copy operation is finished.
+
+Checkpoint Persistence
+_________________________________________
+
+In AI resiliency training, persisting training states  to storage means that AI
+training  can restore from a checkpoint after a restart or failure. The Dragon
+Distributed Dictionary support this be allowing users to save and load training
+checkpoints to/from disk. Users can specify the frequency of persisted checkpoints
+and the path to store them in the system.
+
+The POSIX Persister - Persist Checkpoints to Disk
+------------------------------------
+
+There are a few arguments required during initialization. These parameters configure
+the way checkpoints are persisted and stored.
+
+There are two types of persisters, *NULLCheckpointPersister* and
+*PosixCheckpointPersister*. User can select persisters by specifying the argument
+`persist_class` during the initialization. The default persister is the
+*NULLCheckpointPersister*. If the *NULLCheckpointPersister* is provided, no checkpoints
+are persisted. Loading, saving and advancing checkpoint are not supported in
+*NULLCheckpointPersister*. The other persister, *PosixCheckpointPersister*, persists
+and loads checkpoints by writing and reading persisted checkpoint files to and from
+POSIX file system. This capability ensures the training can be resumed from the last
+saved checkpoint in the case of unexpected interruption or failure.
+
+The path to the directory where persisted checkpoint files are saved can be specified
+using the `persist_path` argument. The default value is an empty string, which refers
+to the current working directory.
+
+The `persist_count` argument defines the maximum number of checkpoint files that can
+be stored in the specified `persist_path` at any time. The default value is 0, which
+disables the checkpoint peristence because no files will be saved. If `persist_count`
+is set to -1, there's no limit on the number of persisted checkpoint files. In this
+case, all checkpoints are saved, and users are responsible for managing and cleaning
+up checkpoint files as needed to avoid cluttering up the disk. In the current design,
+when the number of persisted checkpoints reaches the limit specified by `persist_count`
+, the oldest checkpoint file will be deleted automatically before a new one is saved.
+This guarantees that the number of persisted checkpoints in the directory remains
+within the `persist_count`.
+
+The frequency to persist checkpoints is specified in the argument `persist_freq`. Its
+default value is 0. If `persist_freq` is set to 0, no retiring checkpoints will be
+saved to the disk. Having a persist frequency allows the programmer to use checkpointing
+as frequently as the application dictates, while not saving every checkpoint to disk.
+
+Each checkpoint file is named in a format that includes dictionary's name, followed by
+the manager ID and checkpoint ID. Before bringing down a dictionary, it is recommended
+to retrieve its name using the `get_name` API. The name must be provided when creating
+a new instance of the dictionary from a previously saved checkpoint. DDict managers will
+use this name to find the corresponding persisted checkpoint on the provided path.
+
+By using *PosixCheckpointPersister*, checkpoints are persisted to disk when they are
+ready to be retired and persist frequency is met. Users wishing to explicitly persist
+a checkpoint at a point in time can call the `persist` method to immediately persist a
+checkpoint outside of the automatic checkpoint persistence framework.
+
+When persisting a checkpoint, the checkpoint information is written in a byte format,
+following a specific structure and order. It begins with the checkpoint's metadata.
+This section starts with the length of the pickled checkpoint, followed by the pickled
+checkpoint object. Immediately after the metadata, each memory allocation within the
+checkpoint is written sequentially. For each allocation, it starts with a memory ID,
+followed by the length of the memory content and the content in the memory.
+
+The POSIX Persister - Load Checkpoints from Disk
+------------------------------------
+
+To restore a dictionary from previously persisted checkpoints, several arguments must
+be specified during initialization of the dictionary: the `name` of the dictionary,
+the `persist_path` indicating the directory where the checkpoint files are stored.
+These values must match those used by the original dictionary that saved the checkpoints.
+
+There are two modes to bring up a dictionary and restore from persisted checkpoint,
+read-only and non-read-only mode.
+
+In AI resiliency training or simulation, it might be necessary to restore from a
+specific stage for analysis or verification purposes, without modifying any existing
+persisted checkpoints. In such scenario, the read-only dictionary is a better choice
+as it restores checkpoints while preventing any changes to the dictionary. Therefore,
+the persisted checkpoints remain intact and won't be overwritten accidentally.
+
+In the other scenario where you want to restore from a specific stage and continue
+working by updating checkpoints, using a non-read-only dictionary is a better choice.
+However, in non-read-only mode, managers remove any persisted checkpoint files that
+are newer than the checkpoint being restored. Therefore, users may want to restore
+from the *latest* persisted checkpoint and move backward only if necessary, to avoid
+losing newer persisted checkpoints.
+
+There are a few useful APIs when restoring checkpoints. `advance` is supported in
+read-only mode. It sets the internal checkpoint ID of the persister to the next available
+persisted checkpoint and also loads the checkpoint from disk. `restore` loads the
+checkpoint from disk. There is an argument `chkpt` for `restore` that
+specifies the checkpoint to restore. The other API `persisted_ids` returns a list of
+available persisted checkpoints in ascending order.
+
+The DAOS Checkpoint Persister
+------------------------------------
+
+The DAOS checkpoint persister is a persister class that uses an underlying DAOS installation
+in which to persist checkpoints.
+When using the DAOS persister, a DAOS container is created with the name corresponding to the
+Dragon Distributed Dictionary. Inside the container, a special DAOS dictionary named
+"metadata" keeps track of the available persisted checkpoints for each manager. In addition
+to the metadata dictionary, there will be multiple other DAOS dictionaries within the
+container. A new DAOS dictionary is created whenever a manager persists a checkpoint. Each
+DAOS dictionary, except for the "metadata" dictionary, is named using the manager ID
+followed by the retiring checkpoint ID.
+
+To use the DAOS persister, users must first create a DAOS pool through the DAOS CLI (command-line
+interface). Dragon Distributed Dictionary then creates containers and DAOS dictionaries
+inside the pool.
+
+Similar to the PosixCheckpointPersister, using the DAOS checkpoint persister requires specifying
+several arguments when initializing a Dragon Distributed dictionary. The `persist_class`
+argument should be set to DAOSCheckpointPersister, and the `persist_path` argument should
+be assigned the name of the DAOS pool from which DAOS containers and DAOS dictionaries will be
+created. In addition to these, when restoring from a checkpoint, users must provide the name
+of the Dragon Distributed dictionary with the `name` argument.
+
+When using a DAOS persister without spcifying a checkpoint to restore from while initializing
+a Dragon Distributed Dictionary, the existing DAOS container with the same name as the current
+Dragon dictionary, if presented, is deleted. The cleanup is necessary to prevent the DAOS persister
+from overwriting any existing DAOS dictionary when retiring a checkpoint. The entire DAOS
+container is removed because deleting or clearing a single DAOS dictionary is not supported.
+
+The rest of the APIs for restoring, advancing, and querying available persisted checkpoints
+are used in the same way as described in the POSIX checkpoint persister section.
 
 Custom Pickler for Data Interaction Between C++/Python Clients
 ______________________________________________________________
@@ -914,7 +1041,7 @@ pickler is provided, the default pickler is used.
             return ret_arr
 
     class intKeyPickler:
-        def __init__(self, num_bytes=4):
+        def __init__(self, num_bytes=ctypes.sizeof(ctypes.c_int)):
             self._num_bytes = num_bytes
 
         def dumps(self, val: int) -> bytearray:
@@ -926,7 +1053,7 @@ pickler is provided, the default pickler is used.
     # To enable reading and writing the same key between C++/Python client, this should be
     # number of bytes for a C++ integer for the customized int key pickler, typically 4,
     # depending on system and compiler.
-    INT_NUM_BYTES = 4
+    INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)
     with ddict.pickler(key_pickler=intKeyPickler(INT_NUM_BYTES), value_pickler=numPy2dValuePickler((2, 3), np.double)) as type_dd:
         # read and write 2D NumPy using customized key and value picklers
         key = 2048

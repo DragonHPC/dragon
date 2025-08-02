@@ -60,6 +60,7 @@ def check_pct(x):
     if isinstance(x, int) or isinstance(x, float):
         return x >= 0 and x <= 100
 
+
 def check_mode(mode):
     return mode in {dfacts.CRAYHPE_MULTI_MODE, dfacts.SINGLE_MODE, dfacts.TEST_MODE}
 
@@ -150,6 +151,7 @@ def check_base64(strdata):
 
     return decoded_ok
 
+
 typecast = lambda ty: lambda val: ty() if val == "" else ty(val)
 
 # This needs to be written up in docs once available. This
@@ -200,6 +202,7 @@ typecast = lambda ty: lambda val: ty() if val == "" else ty(val)
 # result in no warnings being printed to stderr. The default is to print
 # warnings. If critical OOM is detected, the entire run-time will be taken down
 # with a critical OOM message but without further warnings.
+
 
 class LaunchParameters:
     """Launch Parameters for Dragon processes.
@@ -285,7 +288,6 @@ class LaunchParameters:
 
         typecast = lambda ty: lambda val: ty() if val == "" else ty(val)
 
-
         PARMS = [
             TypedParm(name=dfacts.MODE, cast=typecast(str), check=check_mode, default=dfacts.TEST_MODE),
             TypedParm(name=dfacts.INDEX, cast=typecast(int), check=nonnegative, default=0),
@@ -358,10 +360,36 @@ class LaunchParameters:
             TypedParm(
                 name=dfacts.NET_CONF_CACHE, cast=typecast(str), check=nocheck, default=dfacts.DEFAULT_NET_CONF_CACHE
             ),
-            TypedParm(name=dfacts.OOM_WARNING_PCT_VAR, cast=typecast(float), check=check_pct, default=dfacts.OOM_DEFAULT_WARN_PCT),
-            TypedParm(name=dfacts.OOM_CRITICAL_PCT_VAR, cast=typecast(float), check=check_pct, default=dfacts.OOM_DEFAULT_CRITICAL_PCT),
-            TypedParm(name=dfacts.OOM_WARNING_BYTES_VAR, cast=typecast(int), check=nonnegative, default=dfacts.OOM_DEFAULT_WARN_BYTES),
-            TypedParm(name=dfacts.OOM_CRITICAL_BYTES_VAR, cast=typecast(int), check=nonnegative, default=dfacts.OOM_DEFAULT_CRITICAL_BYTES),
+            TypedParm(
+                name=dfacts.NET_CONF_CACHE_TIMEOUT,
+                cast=typecast(int),
+                check=nonnegative,
+                default=dfacts.DEFAULT_NET_CONF_CACHE_TIMEOUT,
+            ),
+            TypedParm(
+                name=dfacts.OOM_WARNING_PCT_VAR,
+                cast=typecast(float),
+                check=check_pct,
+                default=dfacts.OOM_DEFAULT_WARN_PCT,
+            ),
+            TypedParm(
+                name=dfacts.OOM_CRITICAL_PCT_VAR,
+                cast=typecast(float),
+                check=check_pct,
+                default=dfacts.OOM_DEFAULT_CRITICAL_PCT,
+            ),
+            TypedParm(
+                name=dfacts.OOM_WARNING_BYTES_VAR,
+                cast=typecast(int),
+                check=nonnegative,
+                default=dfacts.OOM_DEFAULT_WARN_BYTES,
+            ),
+            TypedParm(
+                name=dfacts.OOM_CRITICAL_BYTES_VAR,
+                cast=typecast(int),
+                check=nonnegative,
+                default=dfacts.OOM_DEFAULT_CRITICAL_BYTES,
+            ),
             TypedParm(name=dfacts.QUIET_VAR, cast=typecast(str), check=nocheck, default="False"),
         ]
 

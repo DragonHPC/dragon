@@ -28,3 +28,11 @@ C Reference
     :maxdepth: 3
 
     C/ddict.rst
+
+C++ Reference
+===============
+
+.. toctree::
+    :maxdepth: 3
+
+    CPP/dictionary.rst

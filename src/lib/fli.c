@@ -152,7 +152,7 @@ static dragonError_t _validate_attr(const dragonFLIAttr_t* attr) {
 }
 
 static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t* mem, uint64_t arg,
-                        bool transfer_ownership, bool no_copy_read_only, bool turbo_mode,
+                        bool transfer_ownership, bool no_copy_read_only, bool turbo_mode, bool flush,
                         dragonMemoryPoolDescr_t* dest_pool, timespec_t* deadline) {
 
     dragonError_t err;
@@ -162,7 +162,8 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
     dragonMessageAttr_t msg_attrs;
     dragonMemoryDescr_t* dest = NULL;
     dragonChannelSendAttr_t send_attrs;
-    dragonChannelSendReturnWhen_t orig_return_mode;
+    // This is reset below when needed, but inited here to avoid compiler warning.
+    dragonChannelSendReturnWhen_t orig_return_mode = DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY;
     size_t num_bytes;
 
     if (sendh == NULL)
@@ -170,6 +171,14 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
 
     if (mem == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "You must provide a memory descriptor.");
+
+    err = dragon_memory_get_size(mem, &num_bytes);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get memory size.");
+
+    /* No bytes to send, so return. */
+    if (num_bytes == 0)
+        no_err_return(DRAGON_SUCCESS);
 
     if (deadline != NULL) {
         timeout = &remaining_time;
@@ -201,6 +210,21 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
             append_err_return(err, "Could not set send handle attributes.");
     }
 
+    if (flush) {
+        /* We wait until it is deposited. We don't need to keep the original
+           return mode here because the stream/send handle is being closed and
+           flush is only set to true on the final send on the send handle. */
+        err = dragon_chsend_get_attr(sendh, &send_attrs);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get send handle attributes.");
+
+        send_attrs.return_mode = DRAGON_CHANNEL_SEND_RETURN_WHEN_DEPOSITED;
+
+        err = dragon_chsend_set_attr(sendh, &send_attrs);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not set send handle attributes.");
+    }
+
     if (dest_pool != NULL) {
         /* This won't block. A zero-byte allocation can be used to direct channels lib
         to put the message into the given pool. */
@@ -216,10 +240,6 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
     err = dragon_channel_message_init(&msg, mem, &msg_attrs);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not initialize serialized stream channel message.");
-
-    err = dragon_memory_get_size(mem, &num_bytes);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not get memory size for stream channel.");
 
     err = dragon_chsend_send_msg(sendh, &msg, dest, timeout);
     if (err != DRAGON_SUCCESS)
@@ -257,7 +277,7 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
 }
 
 static dragonError_t _send_bytes(dragonChannelSendh_t* chan_sendh, dragonMemoryPoolDescr_t* pool, uint8_t* bytes,
-                        size_t num_bytes, uint64_t arg, bool turbo_mode, dragonMemoryPoolDescr_t* dest_pool, timespec_t* deadline) {
+                        size_t num_bytes, uint64_t arg, bool turbo_mode, bool flush, dragonMemoryPoolDescr_t* dest_pool, timespec_t* deadline) {
     dragonError_t err;
     dragonMemoryDescr_t mem_descr;
     void* mem_ptr;
@@ -289,41 +309,25 @@ static dragonError_t _send_bytes(dragonChannelSendh_t* chan_sendh, dragonMemoryP
         memcpy(mem_ptr, bytes, num_bytes);
     }
 
-    err = _send_mem(chan_sendh, &mem_descr, arg, true, false, turbo_mode, dest_pool, deadline);
+    err = _send_mem(chan_sendh, &mem_descr, arg, true, false, turbo_mode, flush, dest_pool, deadline);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Error when calling internal _send_mem.");
 
     no_err_return(DRAGON_SUCCESS);
 }
 
-static dragonError_t _send_buffered_bytes(dragonFLISendHandle_t* sendh, timespec_t* deadline) {
+static dragonError_t _get_buffered_bytes(dragonFLISendHandle_t* sendh, dragonMemoryDescr_t* mem_descr, uint64_t* arg, timespec_t* deadline) {
     dragonError_t err;
-    dragonMemoryPoolDescr_t* dest_pool = NULL;
-    dragonMemoryDescr_t mem_descr;
     void* mem_ptr = NULL;
     void* dest_ptr = NULL;
     dragonFLISendBufAlloc_t* node = NULL;
     dragonFLISendBufAlloc_t* prev = NULL;
 
-    timespec_t* timeout = NULL;
-    timespec_t remaining_time;
-
     dragonFLISendBufAlloc_t* buffered_allocations = sendh->buffered_allocations;
     size_t total_bytes = sendh->total_bytes;
-    uint64_t buffered_arg = sendh->buffered_arg;
 
-    if (total_bytes == 0)
-        /* nothing to send, so just return */
-        no_err_return(DRAGON_SUCCESS);
-
-    /* These fields are re-inited here because if there is a timeout on the send
-       operation, they need to be inited for the next send operation. */
-    sendh->buffered_allocations = NULL;
-    sendh->total_bytes = 0;
-    sendh->buffered_arg = 0;
-
-    if (sendh->has_dest_pool)
-        dest_pool = &sendh->dest_pool;
+    timespec_t* timeout = NULL;
+    timespec_t remaining_time;
 
     if (deadline != NULL) {
         timeout = &remaining_time;
@@ -332,11 +336,23 @@ static dragonError_t _send_buffered_bytes(dragonFLISendHandle_t* sendh, timespec
             append_err_return(err, "Send buffered bytes timed out before sending.");
     }
 
-    err = dragon_memory_alloc_blocking(&mem_descr, &sendh->adapter->pool, total_bytes, timeout);
+    err = dragon_memory_alloc_blocking(mem_descr, &sendh->adapter->pool, total_bytes, timeout);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get shared memory for message data.");
 
-    err = dragon_memory_get_pointer(&mem_descr, &mem_ptr);
+    /* Init these two fields so they are set on the next call. */
+    sendh->buffered_allocations = NULL;
+    sendh->total_bytes = 0;
+
+    if (total_bytes == 0) {
+        // There is no data, so return the zero-byte memory allocation.
+        no_err_return(DRAGON_SUCCESS);
+    }
+
+    // Return the buffered arg value.
+    *arg = sendh->buffered_arg;
+
+    err = dragon_memory_get_pointer(mem_descr, &mem_ptr);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get pointer for shared memory.");
 
@@ -361,13 +377,29 @@ static dragonError_t _send_buffered_bytes(dragonFLISendHandle_t* sendh, timespec
     if (dest_ptr != mem_ptr)
         err_return(DRAGON_INVALID_OPERATION, "There was an error while unbuffering data in send operation.");
 
-    err = _send_mem(&sendh->chan_sendh, &mem_descr, buffered_arg, true, false, sendh->turbo_mode, dest_pool, deadline);
+    no_err_return(DRAGON_SUCCESS);
+}
+
+static dragonError_t _send_buffered_bytes(dragonFLISendHandle_t* sendh, bool flush, timespec_t* deadline) {
+    dragonError_t err;
+    dragonMemoryPoolDescr_t* dest_pool = NULL;
+    dragonMemoryDescr_t mem_descr;
+    uint64_t buffered_arg;
+
+
+    if (sendh->has_dest_pool)
+        dest_pool = &sendh->dest_pool;
+
+    err = _get_buffered_bytes(sendh, &mem_descr, &buffered_arg, deadline);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send buffered bytes.");
+
+    err = _send_mem(&sendh->chan_sendh, &mem_descr, buffered_arg, true, false, sendh->turbo_mode, flush, dest_pool, deadline);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Error when calling internal _send_mem.");
 
     no_err_return(DRAGON_SUCCESS);
 }
-
 
 static dragonError_t _buffer_bytes(dragonFLISendHandle_t* sendh, uint8_t* bytes, size_t num_bytes, uint64_t arg, const bool buffer) {
         void* data_ptr;
@@ -403,6 +435,36 @@ static dragonError_t _buffer_bytes(dragonFLISendHandle_t* sendh, uint8_t* bytes,
 
         no_err_return(DRAGON_SUCCESS);
 }
+
+
+static dragonError_t _free_buffered_mem(dragonFLIRecvHandle_t* recvh) {
+    dragonError_t err;
+    dragonFLIRecvBufAlloc_t* node = NULL;
+    dragonFLIRecvBufAlloc_t* prev = NULL;
+
+    if (recvh->buffered_data == NULL)
+        no_err_return(DRAGON_SUCCESS);
+
+    prev = recvh->buffered_data;
+    node = prev->next;
+
+    while (node != NULL) {
+        prev = node;
+        err = dragon_memory_free(&node->mem);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not free buffered managed memory.");
+        node = node->next;
+        free(prev);
+    }
+
+    /* Free the dummy node */
+    free(recvh->buffered_data);
+
+    recvh->buffered_data = NULL;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
 
 static dragonError_t _recv_mem(dragonChannelRecvh_t* recvh, dragonMemoryDescr_t* mem, uint64_t* arg, dragonMemoryPoolDescr_t* dest_pool, timespec_t* deadline) {
     dragonError_t err;
@@ -576,6 +638,7 @@ static dragonError_t _unbuffer_mem(dragonFLIRecvHandle_t* recvh, dragonMemoryDes
     err = dragon_memory_descr_clone(mem, &node->mem, node->offset, &num_bytes);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Unable to clone mem descriptor while buffering data.");
+
     *arg = node->arg;
     free(node);
 
@@ -613,6 +676,12 @@ static dragonError_t _recv_bytes_buffered(dragonFLIRecvHandle_t* recvh, size_t r
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not receive bytes in helper routine.");
 
+        if (recvh->adapter->use_buffered_protocol) {
+            /* We have finished reading all the data in the case of a buffered
+               FLI. So we want to signal we are done. */
+            recvh->stream_received = true;
+        }
+
         no_err_return(DRAGON_SUCCESS);
     }
 
@@ -642,8 +711,9 @@ static dragonError_t _recv_bytes_buffered(dragonFLIRecvHandle_t* recvh, size_t r
     if ((recvh->buffered_bytes < requested_size) || (requested_size == 0))
         alloc_sz = recvh->buffered_bytes;
 
-    /* Now check if there is any data left to return. */
-    if (alloc_sz == 0 && recvh->EOT_received) {
+    /* Now check if there is any data left to return. If it is a buffered
+       FLI, then there will be no more data. Otherwise we wait for EOT. */
+    if (alloc_sz == 0 && (recvh->adapter->use_buffered_protocol || recvh->EOT_received)) {
         *arg = FLI_EOT;
         no_err_return(DRAGON_SUCCESS);
     }
@@ -696,6 +766,12 @@ static dragonError_t _recv_bytes_buffered(dragonFLIRecvHandle_t* recvh, size_t r
         }
     }
 
+    if (recvh->adapter->use_buffered_protocol && recvh->buffered_bytes == 0) {
+        /* We have finished reading all the data in the case of a buffered
+           FLI. So we want to signal we are done. */
+        recvh->stream_received = true;
+    }
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -719,7 +795,7 @@ static dragonError_t _get_term_channel(dragonFLIRecvHandleDescr_t* recv_handle, 
         append_err_return(err, "Could not resolve receive handle to internal fli receive handle object");
 
     if (hint == FLI_TERMINATOR) {
-        /* There is a stream channel, so attach to the channel. */
+        /* There is a termination channel, so attach to the channel. */
         err = dragon_memory_get_size(&mem, &ser_term.len);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not get memory size for terminator channel.");
@@ -790,10 +866,11 @@ static dragonError_t _recv_bytes_common(dragonFLIRecvHandleDescr_t* recv_handle,
     dragonFLIRecvHandle_t* recvh_obj;
     timespec_t* deadline = NULL;
     timespec_t end_time;
+    uint64_t argVal;
 
-
+    /* In this case the user doesn't care about the hint/arg. */
     if (arg == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "You must provide a pointer to a variable for the received arg metadata.");
+        arg = &argVal;
 
     if (timeout != NULL) {
         deadline = &end_time;
@@ -806,7 +883,7 @@ static dragonError_t _recv_bytes_common(dragonFLIRecvHandleDescr_t* recv_handle,
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not resolve receive handle to internal fli receive handle object");
 
-    if (recvh_obj->stream_received)
+    if (recvh_obj->stream_received && recvh_obj->buffered_bytes == 0)
         /* data has been read already so we return our end of stream error code. */
         err_return(DRAGON_EOT, "End of Stream. You must close and re-open receive handle.");
 
@@ -869,7 +946,7 @@ static dragonError_t _send_stream_channel(const dragonChannelDescr_t* strm_ch, u
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not serialize stream channel.");
 
-    err = _send_bytes(&sendh, pool, ser.data, ser.len, type, false, NULL, deadline);
+    err = _send_bytes(&sendh, pool, ser.data, ser.len, type, false, false, NULL, deadline);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not send stream channel.");
 
@@ -1151,7 +1228,7 @@ dragonError_t _fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, size_t nu
         /* Buffered bytes are sent immediately when buffering was not requested.
            When the connection is a buffered connection, this allows a fast path
            with minimal copying when calling send_bytes exactly once. */
-        err = _send_buffered_bytes(sendh_obj, deadline);
+        err = _send_buffered_bytes(sendh_obj, false, deadline);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not send data.");
     }
@@ -1168,11 +1245,25 @@ dragonError_t dragon_fli_attr_init(dragonFLIAttr_t* attr) {
     return DRAGON_SUCCESS;
 }
 
-
 dragonError_t dragon_fli_create(dragonFLIDescr_t* adapter, dragonChannelDescr_t* main_ch,
                   dragonChannelDescr_t* mgr_ch, dragonMemoryPoolDescr_t* pool,
                   const dragonULInt num_strm_chs, dragonChannelDescr_t** strm_channels,
                   const bool use_buffered_protocol, dragonFLIAttr_t* attrs) {
+    dragonError_t err;
+
+    err = dragon_fli_task_create(adapter, main_ch, mgr_ch, NULL, pool, num_strm_chs, strm_channels, use_buffered_protocol, attrs);
+
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not create dragon FLI");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_fli_task_create(dragonFLIDescr_t* adapter, dragonChannelDescr_t* main_ch,
+                  dragonChannelDescr_t* mgr_ch, dragonChannelDescr_t* task_sem, dragonMemoryPoolDescr_t* pool,
+                  const dragonULInt num_strm_chs, dragonChannelDescr_t** strm_channels,
+                  const bool use_buffered_protocol, dragonFLIAttr_t* attrs) {
+
     dragonError_t err;
     dragonFLIAttr_t def_attr;
     uint64_t msg_count;
@@ -1180,6 +1271,9 @@ dragonError_t dragon_fli_create(dragonFLIDescr_t* adapter, dragonChannelDescr_t*
 
     if (adapter == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
+
+    if (main_ch == NULL && mgr_ch == NULL && num_strm_chs == 0)
+        err_return(DRAGON_INVALID_ARGUMENT, "The main channel and the manager channel cannot both be null when the number of stream channels is 0.");
 
     if (use_buffered_protocol) {
         if (mgr_ch != NULL)
@@ -1236,6 +1330,18 @@ dragonError_t dragon_fli_create(dragonFLIDescr_t* adapter, dragonChannelDescr_t*
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Cannot clone main channel descriptor.");
 
+        /* We create a channel send handle here because it may be used to send
+           and if so, we need to guarantee order of sends (in some cases - buffered
+           for instance) and the way to guarantee order is to hold a send handle
+           open. Not a big resource if it is not used. */
+        err = dragon_channel_sendh(&obj->main_ch, &obj->main_sendh, NULL);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not create send handle on main channel.");
+
+        err = dragon_chsend_open(&obj->main_sendh);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not open send handle on main channel.");
+
         if (!use_buffered_protocol) {
             /* If we are using buffered protocol, then it does not need to be empty during creation. */
             err = dragon_channel_message_count(&obj->main_ch, &msg_count);
@@ -1265,6 +1371,17 @@ dragonError_t dragon_fli_create(dragonFLIDescr_t* adapter, dragonChannelDescr_t*
         obj->has_mgr_ch = true;
     } else
         obj->has_mgr_ch = false;
+
+    if (task_sem != NULL) {
+            /* It must be a semaphore channel. We don't check it here because it may be a remote
+               channel. We will detect it is not though when we try to use it if it is not. */
+            err = dragon_channel_descr_clone(&obj->task_sem, task_sem);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Cannot clone the task semaphore channel descriptor.");
+
+            obj->has_task_sem = true;
+        } else
+            obj->has_task_sem = false;
 
     obj->num_strm_chs = num_strm_chs;
 
@@ -1300,6 +1417,10 @@ dragonError_t dragon_fli_destroy(dragonFLIDescr_t* adapter) {
     }
 
     if (obj->has_main_ch) {
+        err = dragon_chsend_close(&obj->main_sendh);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not close main channel send handle");
+
         err = _empty_the_channel(&obj->main_ch, NULL, 0, true);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not empty the main channel.");
@@ -1316,6 +1437,12 @@ dragonError_t dragon_fli_destroy(dragonFLIDescr_t* adapter) {
             err = dragon_channel_detach(&obj->mgr_ch);
             if (err != DRAGON_SUCCESS)
                 append_err_return(err, "Cannot detach from manager channel of adapter.");
+        }
+
+        if (obj->has_task_sem) {
+            err = dragon_channel_detach(&obj->task_sem);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Cannot detach from the task semaphore channel of adapter.");
         }
     }
 
@@ -1337,6 +1464,7 @@ dragonError_t dragon_fli_serialize(const dragonFLIDescr_t* adapter, dragonFLISer
     uint8_t adapter_type = 0;
     dragonChannelSerial_t main_ch_ser;
     dragonChannelSerial_t mgr_ch_ser;
+    dragonChannelSerial_t task_sem_ser;
     void* ptr;
 
     if (adapter == NULL)
@@ -1368,6 +1496,15 @@ dragonError_t dragon_fli_serialize(const dragonFLIDescr_t* adapter, dragonFLISer
             append_err_return(err, "Could not serialize manager channel of fli adapter.");
 
         serial->len+=mgr_ch_ser.len + sizeof(mgr_ch_ser.len);
+    }
+
+    if (obj->has_task_sem) {
+        adapter_type+=FLI_HAS_TASK_SEM;
+        err = dragon_channel_serialize(&obj->task_sem, &task_sem_ser);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not serialize the task semaphore of fli adapter.");
+
+        serial->len+=task_sem_ser.len + sizeof(task_sem_ser.len);
     }
 
     if (obj->use_buffered_protocol)
@@ -1402,6 +1539,16 @@ dragonError_t dragon_fli_serialize(const dragonFLIDescr_t* adapter, dragonFLISer
         err = dragon_channel_serial_free(&mgr_ch_ser);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not free serialized descriptor for manager channel");
+    }
+
+    if (obj->has_task_sem) {
+        memcpy(ptr, &task_sem_ser.len, sizeof(task_sem_ser.len));
+        ptr+=sizeof(task_sem_ser.len);
+        memcpy(ptr, task_sem_ser.data, task_sem_ser.len);
+        ptr+=task_sem_ser.len;
+        err = dragon_channel_serial_free(&task_sem_ser);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not free serialized descriptor for the task semaphore channel");
     }
 
     no_err_return(DRAGON_SUCCESS);
@@ -1484,6 +1631,7 @@ dragonError_t dragon_fli_attach(const dragonFLISerial_t* serial, const dragonMem
     obj->use_buffered_protocol = (adapter_type & FLI_USING_BUFFERED_PROTOCOL) != 0;
     obj->has_main_ch = (adapter_type & FLI_HAS_MAIN_CHANNEL) != 0;
     obj->has_mgr_ch = (adapter_type & FLI_HAS_MANAGER_CHANNEL) != 0;
+    obj->has_task_sem = (adapter_type & FLI_HAS_TASK_SEM) != 0;
 
     if (obj->has_main_ch) {
         memcpy(&ch_ser.len, ptr, sizeof(ch_ser.len));
@@ -1493,6 +1641,18 @@ dragonError_t dragon_fli_attach(const dragonFLISerial_t* serial, const dragonMem
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Cannot attach to main channel of adapter.");
         ptr+=ch_ser.len;
+
+        /* We create a channel send handle here because it may be used to send
+           and if so, we need to guarantee order of sends (in some cases - buffered
+           for instance) and the way to guarantee order is to hold a send handle
+           open. Not a big resource if it is not used. */
+        err = dragon_channel_sendh(&obj->main_ch, &obj->main_sendh, NULL);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not create send handle on main channel.");
+
+        err = dragon_chsend_open(&obj->main_sendh);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not open send handle on main channel.");
     }
 
     if (obj->has_mgr_ch) {
@@ -1502,6 +1662,16 @@ dragonError_t dragon_fli_attach(const dragonFLISerial_t* serial, const dragonMem
         err = dragon_channel_attach(&ch_ser, &obj->mgr_ch);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Cannot attach to manager channel of adapter.");
+        ptr+=ch_ser.len;
+    }
+
+    if (obj->has_task_sem) {
+        memcpy(&ch_ser.len, ptr, sizeof(ch_ser.len));
+        ptr+=sizeof(ch_ser.len);
+        ch_ser.data = ptr;
+        err = dragon_channel_attach(&ch_ser, &obj->task_sem);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Cannot attach to task semaphore channel of adapter.");
         ptr+=ch_ser.len;
     }
 
@@ -1526,6 +1696,10 @@ dragonError_t dragon_fli_detach(dragonFLIDescr_t* adapter) {
 
     if (obj->was_attached) {
         if (obj->has_main_ch) {
+            err = dragon_chsend_close(&obj->main_sendh);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not close main channel send handle");
+
             err = dragon_channel_detach(&obj->main_ch);
             if (err != DRAGON_SUCCESS)
                 append_err_return(err, "Cannot detach from main channel of adapter.");
@@ -1535,6 +1709,12 @@ dragonError_t dragon_fli_detach(dragonFLIDescr_t* adapter) {
             err = dragon_channel_detach(&obj->mgr_ch);
             if (err != DRAGON_SUCCESS)
                 append_err_return(err, "Cannot detach from manager channel of adapter.");
+        }
+
+        if (obj->has_task_sem) {
+            err = dragon_channel_detach(&obj->task_sem);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Cannot detach from task semaphore channel of adapter.");
         }
     }
 
@@ -1595,16 +1775,108 @@ dragonError_t dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_b
 }
 
 
-dragonError_t dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandleDescr_t* send_handle,
-                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, bool allow_strm_term, bool turbo_mode,
-                            const timespec_t* timeout) {
+dragonError_t dragon_fli_new_task(const dragonFLIDescr_t* adapter, const timespec_t* timeout) {
     dragonError_t err;
+    dragonFLI_t* obj;
+
+    if (adapter == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
+
+    err = _fli_from_descr(adapter, &obj);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not resolve adapter to internal fli object");
+
+    if (!obj->has_task_sem)
+        err_return(DRAGON_SEMAPHORE_NOT_FOUND, "You cannot call new_task on an FLI that has no task semaphore.");
+
+    err = dragon_channel_poll(&obj->task_sem, DRAGON_DEFAULT_WAIT_MODE, DRAGON_SEMAPHORE_V, timeout, NULL);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not execute the semaphore V operation on the task semaphore.");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+
+dragonError_t dragon_fli_task_done(const dragonFLIDescr_t* adapter, const timespec_t* timeout) {
+    dragonError_t err;
+    dragonFLI_t* obj;
+
+    if (adapter == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
+
+    err = _fli_from_descr(adapter, &obj);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not resolve adapter to internal fli object");
+
+    if (!obj->has_task_sem)
+        err_return(DRAGON_INVALID_ARGUMENT, "You cannot call task_done on an FLI that has no task semaphore.");
+
+    err = dragon_channel_poll(&obj->task_sem, DRAGON_DEFAULT_WAIT_MODE, DRAGON_SEMAPHORE_P, timeout, NULL);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not execute the semaphore P operation on the task semaphore.");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+
+dragonError_t dragon_fli_join(const dragonFLIDescr_t* adapter, const timespec_t* timeout) {
+    dragonError_t err;
+    dragonFLI_t* obj;
+
+    if (adapter == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
+
+    err = _fli_from_descr(adapter, &obj);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not resolve adapter to internal fli object");
+
+    if (!obj->has_task_sem)
+        err_return(DRAGON_INVALID_ARGUMENT, "You cannot call join on an FLI that has no task semaphore.");
+
+    err = dragon_channel_poll(&obj->task_sem, DRAGON_DEFAULT_WAIT_MODE, DRAGON_SEMAPHORE_Z, timeout, NULL);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not execute the semaphore Z operation on the task semaphore.");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+dragon_fli_send_attr_init(dragonFLISendAttr_t* attrs) {
+    if (attrs == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The attributes structure pointer cannot be NULL");
+
+    attrs->dest_pool = NULL;
+    attrs->allow_strm_term = false;
+    attrs->turbo_mode = false;
+    attrs->flush = false;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandleDescr_t* send_handle, dragonChannelDescr_t* strm_ch,
+                                  dragonFLISendAttr_t* attrs, const timespec_t* timeout) {
+
+    dragonError_t err;
+    dragonFLISendAttr_t attrs_val;
     dragonFLI_t* obj;
     dragonFLISendHandle_t* sendh_obj;
     timespec_t* deadline = NULL;
     timespec_t end_time;
     dragonChannelSerial_t ser_term;
     bool buffered_send = false;
+
+    if (attrs == NULL) {
+        attrs = &attrs_val;
+        err = dragon_fli_send_attr_init(attrs);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to init the send handle attrs.");
+    }
+
+    dragonMemoryPoolDescr_t* dest_pool = attrs->dest_pool;
+    bool allow_strm_term = attrs->allow_strm_term;
+    bool turbo_mode = attrs->turbo_mode;
+    bool flush = attrs->flush;
 
     if (adapter == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
@@ -1653,18 +1925,13 @@ dragonError_t dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, drago
     sendh_obj->total_bytes = 0;
     sendh_obj->tid = 0;
     sendh_obj->strm_type = FLI_EXTERNAL_STRM_CHANNEL;
+    sendh_obj->flush = flush;
 
     if (sendh_obj->buffered_send) {
-        /* The main channel send handle will be opened only when a buffered message is written,
-           which occurs when this send handle is closed.*/
-        err = dragon_channel_sendh(&obj->main_ch, &sendh_obj->chan_sendh, NULL);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not create send handle on main channel.");
-
-        err = dragon_chsend_open(&sendh_obj->chan_sendh);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not open send handle on main channel.");
-
+        /* The main channel send handle was opened when the fli was created. This is necessary
+           to maintain ordering of anything sent on the FLI, especially when it is a buffered FLI.
+           So, we just copy in the opened send handle here so we can use it in fli methods. */
+        sendh_obj->chan_sendh = obj->main_sendh;
     } else {
         if (strm_ch == STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION) {
             if (!obj->has_main_ch)
@@ -1770,10 +2037,8 @@ dragonError_t dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, drago
             append_err_return(err, "failed to free the serialized termination channel.");
     }
 
-
     no_err_return(DRAGON_SUCCESS);
 }
-
 
 dragonError_t dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_handle, const timespec_t* timeout) {
     dragonError_t err;
@@ -1781,6 +2046,7 @@ dragonError_t dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_hand
     timespec_t* deadline = NULL;
     timespec_t end_time;
     uint8_t dummy = 0;
+    bool buffer = false;
 
     if (send_handle == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli send handle descriptor");
@@ -1800,17 +2066,28 @@ dragonError_t dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_hand
         err_return(DRAGON_INVALID_OPERATION, "You must close the created file descriptor and call dragon_finalize_writable_fd first.");
 
     if (sendh_obj->buffered_allocations != NULL) {
-        /* buffered bytes remain to send on close of send handle. */
-        err = _send_buffered_bytes(sendh_obj, deadline);
+        /* buffered bytes remain to send on close of send handle. If
+           buffering was requested, then this is the last/only send to the buffered
+           channel so it will be flushed all the way through to recipient.
+        */
+        buffer = sendh_obj->flush && sendh_obj->buffered_send;
+        err = _send_buffered_bytes(sendh_obj, buffer, deadline);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not send buffered data.");
     }
 
     if (!sendh_obj->buffered_send) {
         /* sending the EOT indicator for the stream. */
-        err = _send_bytes(&sendh_obj->chan_sendh, &sendh_obj->adapter->pool, &dummy, 1, FLI_EOT, sendh_obj->turbo_mode, NULL, deadline);
+        err = _send_bytes(&sendh_obj->chan_sendh, &sendh_obj->adapter->pool, &dummy, 1, FLI_EOT, sendh_obj->turbo_mode, sendh_obj->flush, NULL, deadline);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not send the end of stream indicator down the stream channel.");
+
+        /* Buffered FLIs have an open send handle that stays open for lifetime of the FLI
+           so ordering will be maintained on all sends on the FLI. So we only close here if it is
+           not a buffered FLI. */
+        err = dragon_chsend_close(&sendh_obj->chan_sendh);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not close send handle on channel");
     }
 
     if (sendh_obj->has_term_channel) {
@@ -1820,10 +2097,6 @@ dragonError_t dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_hand
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not destroy the termination channel.");
     }
-
-    err = dragon_chsend_close(&sendh_obj->chan_sendh);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not close send handle on channel");
 
     /* remove the item from the umap */
     err = dragon_umap_delitem(dg_fli_send_handles, send_handle->_idx);
@@ -1838,13 +2111,32 @@ dragonError_t dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_hand
     no_err_return(DRAGON_SUCCESS);
 }
 
+dragonError_t
+dragon_fli_recv_attr_init(dragonFLIRecvAttr_t* attrs) {
+    if (attrs == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The attributes structure pointer cannot be NULL");
+
+    attrs->dest_pool = NULL;
+    no_err_return(DRAGON_SUCCESS);
+}
+
 dragonError_t dragon_fli_open_recv_handle(const dragonFLIDescr_t* adapter, dragonFLIRecvHandleDescr_t* recv_handle,
-                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, const timespec_t* timeout) {
+                            dragonChannelDescr_t* strm_ch, dragonFLIRecvAttr_t* attrs, const timespec_t* timeout) {
     dragonError_t err;
     dragonFLI_t* obj;
     dragonFLIRecvHandle_t* recvh_obj;
     timespec_t* deadline = NULL;
     timespec_t end_time;
+    dragonFLIRecvAttr_t attrs_val;
+
+    if (attrs == NULL) {
+        attrs = &attrs_val;
+        err = dragon_fli_recv_attr_init(attrs);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not initialize receive attributes.");
+    }
+
+    dragonMemoryPoolDescr_t* dest_pool = attrs->dest_pool;
 
     if (adapter == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
@@ -2005,7 +2297,7 @@ dragonError_t dragon_fli_close_recv_handle(dragonFLIRecvHandleDescr_t* recv_hand
 
     /* If the stream has not been completely received, we must tell the sender to stop sending and
        clean out the stream channel during the close of the receive handle. */
-    if (!recvh_obj->stream_received) {
+    if (!recvh_obj->stream_received && !recvh_obj->adapter->use_buffered_protocol) {
         if (recvh_obj->has_term_channel) {
             /* Send a message to terminate the stream. The sender, if it is still streaming data,
             will look on every send to see if the stream has been terminated. However, depending
@@ -2038,11 +2330,10 @@ dragonError_t dragon_fli_close_recv_handle(dragonFLIRecvHandleDescr_t* recv_hand
             append_err_return(err, "Could not return stream channel to manager channel in receive handle close of FLI adapter.");
     }
 
-    /* free the dummy entry */
-    if (recvh_obj->buffered_data != NULL) {
-        free(recvh_obj->buffered_data);
-        recvh_obj->buffered_data = NULL;
-    }
+    /* free any unused buffered data and the dummy node. */
+    err = _free_buffered_mem(recvh_obj);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to free unused buffered memory on receive handle close.");
 
     /* remove the item from the umap */
     err = dragon_umap_delitem(dg_fli_recv_handles, recv_handle->_idx);
@@ -2268,6 +2559,9 @@ dragonError_t dragon_fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, siz
                 uint8_t* bytes, uint64_t arg, const bool buffer, const timespec_t* timeout) {
     dragonError_t err;
 
+    if (send_handle == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli send handle descriptor");
+
     if (arg >= FLI_RESERVED_HINTS)
         err_return(DRAGON_INVALID_ARGUMENT, "Cannot specify an arg value greater than or equal to 0xFFFFFFFFFFFFFF00. These values are reserved for internal use.");
 
@@ -2277,7 +2571,6 @@ dragonError_t dragon_fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, siz
 
     no_err_return(DRAGON_SUCCESS);
 }
-
 
 dragonError_t dragon_fli_send_mem(dragonFLISendHandleDescr_t* send_handle, dragonMemoryDescr_t* mem,
                     uint64_t arg, bool transfer_ownership, bool no_copy_read_only, const timespec_t* timeout) {
@@ -2308,8 +2601,11 @@ dragonError_t dragon_fli_send_mem(dragonFLISendHandleDescr_t* send_handle, drago
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not resolve send handle to internal fli send handle object");
 
+    if (sendh_obj->buffered_send)
+        err_return(DRAGON_INVALID_ARGUMENT, "You cannot use dragon_fli_send_mem on a buffered fli adapter or send handle. Use dragon_fli_send_bytes instead.");
+
     /* First send any buffered bytes that have not been sent. If there are none, it will just return. */
-    err = _send_buffered_bytes(sendh_obj, deadline);
+    err = _send_buffered_bytes(sendh_obj, false, deadline);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to send buffered bytes before sending memory.");
 
@@ -2326,15 +2622,12 @@ dragonError_t dragon_fli_send_mem(dragonFLISendHandleDescr_t* send_handle, drago
             err_return(DRAGON_EOT, "Sending of the stream has been canceled by the receiver.");
     }
 
-    if (sendh_obj->buffered_send)
-        err_return(DRAGON_INVALID_ARGUMENT, "You cannot use dragon_fli_send_mem on a buffered fli adapter or send handle. Use dragon_fli_send_bytes instead.");
-
     if (sendh_obj->has_dest_pool)
         dest_pool = &sendh_obj->dest_pool;
 
     /* sending mem on stream channel */
 
-    err = _send_mem(&sendh_obj->chan_sendh, mem, arg, transfer_ownership, no_copy_read_only, sendh_obj->turbo_mode, dest_pool, deadline);
+    err = _send_mem(&sendh_obj->chan_sendh, mem, arg, transfer_ownership, no_copy_read_only, sendh_obj->turbo_mode, false, dest_pool, deadline);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not send the managed memory down the stream channel.");
 
@@ -2342,9 +2635,43 @@ dragonError_t dragon_fli_send_mem(dragonFLISendHandleDescr_t* send_handle, drago
 }
 
 
+dragonError_t dragon_fli_get_buffered_bytes(dragonFLISendHandleDescr_t* send_handle, dragonMemoryDescr_t* mem_descr, uint64_t* arg, const timespec_t* timeout) {
+    dragonError_t err;
+    dragonFLISendHandle_t* sendh_obj;
+    timespec_t* deadline = NULL;
+    timespec_t end_time;
+    uint64_t arg_val;
+
+    if (send_handle == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli send handle descriptor");
+
+    if (mem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid memory descriptor descriptor");
+
+    err = _fli_sendh_from_descr(send_handle, &sendh_obj);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not resolve send handle to internal fli send handle object");
+
+    if (timeout != NULL) {
+        deadline = &end_time;
+        err = dragon_timespec_deadline(timeout, deadline);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not compute timeout deadline.");
+    }
+
+    err = _get_buffered_bytes(sendh_obj, mem_descr, &arg_val, deadline);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the buffered bytes.");
+
+    if (arg != NULL)
+        *arg = arg_val;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+
 dragonError_t dragon_fli_recv_bytes_into(dragonFLIRecvHandleDescr_t* recv_handle, size_t requested_size,
-                      size_t* received_size, uint8_t* bytes, uint64_t* arg,
-                      const timespec_t* timeout) {
+                      size_t* received_size, uint8_t* bytes, uint64_t* arg, const timespec_t* timeout) {
     dragonError_t err;
     uint8_t* buffer_ptr = bytes;
 
@@ -2360,8 +2687,7 @@ dragonError_t dragon_fli_recv_bytes_into(dragonFLIRecvHandleDescr_t* recv_handle
 
 
 dragonError_t dragon_fli_recv_bytes(dragonFLIRecvHandleDescr_t* recv_handle, size_t requested_size,
-                      size_t* received_size, uint8_t** bytes, uint64_t* arg,
-                      const timespec_t* timeout) {
+                      size_t* received_size, uint8_t** bytes, uint64_t* arg, const timespec_t* timeout) {
     dragonError_t err;
 
     if (bytes == NULL)
@@ -2387,6 +2713,7 @@ dragonError_t dragon_fli_recv_mem(dragonFLIRecvHandleDescr_t* recv_handle, drago
     timespec_t* deadline = NULL;
     timespec_t end_time;
     size_t received_size;
+    uint64_t arg_val;
 
     if (recv_handle == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid FLI receive handle descriptor");
@@ -2395,7 +2722,7 @@ dragonError_t dragon_fli_recv_mem(dragonFLIRecvHandleDescr_t* recv_handle, drago
         err_return(DRAGON_INVALID_ARGUMENT, "You must provide a pointer to a memory descriptor.");
 
     if (arg == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "You must provide a pointer to a variable for the received arg metadata.");
+        arg = &arg_val;
 
     if (timeout != NULL) {
         deadline = &end_time;
@@ -2456,6 +2783,73 @@ dragonError_t dragon_fli_recv_mem(dragonFLIRecvHandleDescr_t* recv_handle, drago
     if (recvh_obj->buffered_receive)
         /* When buffered, mark stream as received after first read. */
         recvh_obj->stream_received = true;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_fli_poll(const dragonFLIDescr_t* adapter, const timespec_t* timeout) {
+    dragonError_t err;
+    dragonFLI_t* obj;
+    dragonULInt num_msgs = 0;
+
+    if (adapter == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
+
+    err = _fli_from_descr(adapter, &obj);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not resolve adapter to internal fli object");
+
+    err = dragon_channel_poll(&obj->main_ch, DRAGON_DEFAULT_WAIT_MODE, DRAGON_CHANNEL_POLLSIZE, timeout, &num_msgs);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not retrieve the number of messages in the channel.");
+
+    if (num_msgs == 0)
+        err_return(DRAGON_EMPTY, "There were no messages in the channel.");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_fli_full(const dragonFLIDescr_t* adapter) {
+    dragonError_t err;
+    dragonFLI_t* obj;
+    timespec_t timeout = {0, 0};
+
+    if (adapter == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
+
+    err = _fli_from_descr(adapter, &obj);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not resolve adapter to internal fli object");
+
+    err = dragon_channel_poll(&obj->main_ch, DRAGON_DEFAULT_WAIT_MODE, DRAGON_CHANNEL_POLLFULL, &timeout, NULL);
+
+    if (err == DRAGON_TIMEOUT)
+        no_err_return(DRAGON_NOT_FULL);
+
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Unexpected error occured.");
+
+    no_err_return(DRAGON_SUCCESS);
+
+}
+
+dragonError_t dragon_fli_num_msgs(const dragonFLIDescr_t* adapter, size_t* num_msgs, const timespec_t* timeout) {
+    dragonError_t err;
+    dragonFLI_t* obj;
+    dragonULInt dnum_msgs = 0;
+
+    if (adapter == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
+
+    err = _fli_from_descr(adapter, &obj);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not resolve adapter to internal fli object");
+
+    err = dragon_channel_poll(&obj->main_ch, DRAGON_DEFAULT_WAIT_MODE, DRAGON_CHANNEL_POLLSIZE, timeout, &dnum_msgs);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not retrieve the number of messages in the channel.");
+
+    *num_msgs = dnum_msgs;
 
     no_err_return(DRAGON_SUCCESS);
 }

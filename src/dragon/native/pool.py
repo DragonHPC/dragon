@@ -15,7 +15,7 @@ import dragon
 
 from .queue import Queue
 from .process import ProcessTemplate
-from .process_group import ProcessGroup, DragonProcessGroupError
+from .process_group import ProcessGroup, DragonProcessGroupError, PGExecutionState
 from .event import Event
 from .process import current as current_process
 from .machine import System
@@ -366,7 +366,7 @@ class Pool:
         if self._pg_closed:
             raise ValueError("Checking running of a closed pool")
         status = self._pg._state
-        if not (status == "Running"):
+        if not (status == PGExecutionState.RUNNING):
             raise ValueError(f"Pool not running. ProcessGroup State = {status}")
 
     def terminate(self, patience: float = 60) -> None:

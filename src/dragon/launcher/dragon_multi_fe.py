@@ -66,11 +66,15 @@ def main(args_map=None):
             if last_avail_nodes is None:
                 last_avail_nodes_list = [idx for idx, node in net_conf.items()]
                 last_avail_nodes = len(last_avail_nodes_list)
-            avail_nodes_list = [
-                idx
-                for idx, node in net_conf.items()
-                if node.state in [NodeDescriptor.State.ACTIVE, NodeDescriptor.State.IDLE] and idx != "f"
-            ]
+
+            avail_nodes_list = []
+            # downed nodes is here solely for being reported to the user
+            down_nodes_list = []
+            for idx, node in net_conf.items():
+                if node.state in [NodeDescriptor.State.ACTIVE, NodeDescriptor.State.IDLE] and idx != "f":
+                    avail_nodes_list.append(idx)
+                if node.state in [NodeDescriptor.State.DOWN] and idx != "f":
+                    down_nodes_list.append(node.host_name)
             avail_nodes = len(avail_nodes_list)
 
             # Make sure we didn't exit for reasons other than a downed node
@@ -96,6 +100,13 @@ def main(args_map=None):
                     flush=True,
                 )
                 return LAUNCHER_FAIL_EXIT
+
+            # Logic and additional prints to make it more clear to the user what is happening with the runtime.
+            print(f"Dragon runtime is recoverable.", flush=True)
+            if down_nodes_list:
+                print(f"Nodes set to down state: {down_nodes_list}", flush=True)
+            else:
+                print("No nodes set to down state. Restarting with same set of nodes.", flush=True)
 
             # Make sure the user app has some semblance of understanding this is a resiliency restart
             restart = True

@@ -1034,9 +1034,9 @@ static dragonError_t
 _release_barrier_waiters(dragonChannel_t* channel, dragonULInt* num_waiters)
 {
     dragonError_t err;
-    int broken_val = -1;
-    int k;
-    int* val_ptr = &k;
+    dragonULInt broken_val = 0xFFFFFFFFFFFFFFFF;
+    dragonULInt k;
+    dragonULInt* val_ptr = &k;
     dragonPriorityHeapLongUint_t mblk;
     dragonPriorityHeapLongUint_t pri;
     dragonMessageAttr_t mattr;
@@ -1063,13 +1063,13 @@ _release_barrier_waiters(dragonChannel_t* channel, dragonULInt* num_waiters)
         /* decrement the number of available message blocks */
         *(channel->header.available_blocks) -= 1;
 
-        err = _fast_copy(sizeof(int), val_ptr, channel->msg_blks_ptrs[mblk]);
+        err = _fast_copy(sizeof(dragonULInt), val_ptr, channel->msg_blks_ptrs[mblk]);
         if (err != DRAGON_SUCCESS)
             err_return(err, "Copy of message value into channel failed.");
 
         /* add entry for the message block */
         dragonPriorityHeapLongUint_t ot_item[DRAGON_CHANNEL_OT_PHEAP_NVALS];
-        err = _pack_ot_item(ot_item, mblk, sizeof(int), DRAGON_CHANNEL_MSGBLK_IS_NOT_SERDESCR, sendhid,
+        err = _pack_ot_item(ot_item, mblk, sizeof(dragonULInt), DRAGON_CHANNEL_MSGBLK_IS_NOT_SERDESCR, sendhid,
                             mattr.clientid, mattr.hints);
         if (err != DRAGON_SUCCESS)
             err_return(err, "Packing of ot item failed.");
@@ -4282,6 +4282,7 @@ dragon_chrecv_pop_msg(const dragonChannelRecvh_t* ch_rh)
  * in those cases. In all other cases, if result is not NULL the event_mask is
  * returned as the value. Here are return values for other poll operations.
  * DRAGON_CHANNEL_POLLSIZE: number of messages in channel.
+ * DRAGON_CHANNEL_POLLCAPACITY: number of message blocks in the channel.
  * DRAGON_CHANNEL_POLLBARRIER_ISBROKEN: boolean indicating broken barrier.
  * DRAGON_CHANNEL_POLLBARRIER_WAITERS: number of barrier waiters.
  * DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS: blocked barrier waiters.
@@ -4310,7 +4311,7 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
     if (result == NULL &&
         ((event_mask == DRAGON_CHANNEL_POLLSIZE) || (event_mask == DRAGON_CHANNEL_POLLBARRIER_ISBROKEN) ||
          (event_mask == DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS) || (event_mask == DRAGON_CHANNEL_POLLBARRIER_WAITERS) ||
-         (event_mask == DRAGON_SEMAPHORE_PEEK))) {
+         (event_mask == DRAGON_SEMAPHORE_PEEK) || event_mask == DRAGON_CHANNEL_POLLCAPACITY)) {
         err_return(DRAGON_INVALID_ARGUMENT,
                    "If polling for size, barrier_isbroken, blocked_receivers, barrier_waiters, or semaphore_peek you must provide a non-null result argument.");
     }
@@ -4361,6 +4362,12 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
 
         if (event_mask == DRAGON_CHANNEL_POLLSIZE) {
             *result = *(channel->header.available_msgs);
+            _release_channel_locks(channel);
+            no_err_return(DRAGON_SUCCESS);
+        }
+
+        if (event_mask == DRAGON_CHANNEL_POLLCAPACITY) {
+            *result = *(channel->header.capacity);
             _release_channel_locks(channel);
             no_err_return(DRAGON_SUCCESS);
         }
@@ -4580,7 +4587,7 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
             no_err_return(DRAGON_SUCCESS);
         }
 
-        if (event_mask == DRAGON_SEMAPHORE_VZ) {
+        if (event_mask == DRAGON_SEMAPHORE_Z) {
             dragonULInt* sem_ptr = (dragonULInt*)channel->msg_blks_ptrs[0];
 
             if (*sem_ptr > 0UL) {
@@ -4715,8 +4722,11 @@ dragon_channel_poll(const dragonChannelDescr_t* ch, dragonWaitMode_t wait_mode, 
         if (result != NULL)
             *result = captured_event_result;
 
-        if (err != DRAGON_SUCCESS)
-            err_return(err, "non-zero return code on remote poll operation.");
+        if (err != DRAGON_SUCCESS) {
+            char err_str[200];
+            snprintf(err_str, 199, "rc=%s on remote poll operation.", dragon_get_rc_string(err));
+            append_err_return(err, err_str);
+        }
     }
 
     no_err_return(DRAGON_SUCCESS);
@@ -4772,6 +4782,34 @@ dragon_channel_barrier_waiters(const dragonChannelDescr_t* ch, uint64_t* count)
 
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get number of barrier waiters via the poll on the channel.");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Return the capacity of a channel
+ *
+ * This function returns the capacity of a channel as it was set when created. This only
+ * refers to the number of simultaneous messages that may reside in a channel at any one
+ * time without regard to message size. If more messages are attempted to be sent than this
+ * number, then some attempts will block waiting for available slots as specified by the
+ * blocking behavior of sends.
+ *
+ * @param ch a pointer to a channel descriptor
+ * @param count a pointer to an integer that will hold the result.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_capacity(const dragonChannelDescr_t* ch, uint64_t* size)
+{
+    dragonError_t err;
+
+    /* timeout is ignored on this poll operation. */
+    err = dragon_channel_poll(ch, DRAGON_IDLE_WAIT, DRAGON_CHANNEL_POLLCAPACITY, NULL, size);
+
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the channel capacity via the poll on the channel.");
 
     no_err_return(DRAGON_SUCCESS);
 }

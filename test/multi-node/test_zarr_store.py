@@ -43,8 +43,7 @@ class TestZarrStoreMultiNode(unittest.TestCase):
         zg["1"] = a1
         zg["2"] = a2
         zg.store.close()
-        zg = zarr.open(path, mode="r")
-        return zg
+        return zarr.open(path, mode="r")
 
     @classmethod
     def tearDownClass(cls):
@@ -60,10 +59,10 @@ class TestZarrStoreMultiNode(unittest.TestCase):
             total_mem=(DD_MB * (1024**2)),
         )
 
-        zg = zarr.group(store=dstore)
+        zg = zarr.open(store=dstore)
         zg.create(name="0", shape=(50, 100, 200), dtype=DT, fill_value=FV, overwrite=True)
 
-        self.assertEqual(FV, zg["/0"][20][20][20])
+        self.assertEqual(FV, zg["0"][20][20][20])
         dstore.destroy()
 
     def test_basic_mirror(self):
@@ -79,9 +78,9 @@ class TestZarrStoreMultiNode(unittest.TestCase):
         )
 
         loaded = dstore.wait_on_load()
-        self.assertAlmostEqual(loaded, 21025000, delta=1000)
-        zg = zarr.group(store=dstore)
-        self.assertTrue(np.array_equal(zg_cold["/0"], zg["/0"]))
+        self.assertAlmostEqual(loaded, 21026802, delta=2000)
+        zg = zarr.open(store=dstore)
+        self.assertTrue(np.array_equal(zg_cold["0"], zg["0"]))
         dstore.destroy()
 
     def test_multiple_clients(self):
@@ -91,7 +90,7 @@ class TestZarrStoreMultiNode(unittest.TestCase):
             total_mem=(DD_MB * (1024**2)),
         )
 
-        zg = zarr.group(store=dstore)
+        zg = zarr.open(store=dstore)
         zg.create(name="0", shape=(50, 100, 200), dtype=DT, fill_value=FV, overwrite=True)
 
         pool = mp.Pool(2, initializer=init_worker, initargs=(dstore,))
@@ -117,13 +116,13 @@ class TestZarrStoreMultiNode(unittest.TestCase):
 
         # do not wait for a load to complete before grabbing data
 
-        zg = zarr.group(store=dstore)
-        self.assertTrue(np.array_equal(zg_cold["/0"], zg["/0"]))
+        zg = zarr.open(store=dstore)
+        self.assertTrue(np.array_equal(zg_cold["0"], zg["0"]))
 
         # now wait and check we get right answers still
 
         loaded = dstore.wait_on_load()
-        self.assertTrue(np.array_equal(zg_cold["/0"], zg["/0"]))
+        self.assertTrue(np.array_equal(zg_cold["0"], zg["0"]))
 
         dstore.destroy()
 

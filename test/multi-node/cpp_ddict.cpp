@@ -6,63 +6,9 @@
 #include <dragon/return_codes.h>
 #include "../_ctest_utils.h"
 
+using namespace dragon;
+
 static timespec_t TIMEOUT = {0,500000000}; // Timeouts will be 0.5 second by default
-
-class SerializableInt : public DDictSerializable {
-    public:
-    SerializableInt();
-    SerializableInt(int x);
-    virtual void serialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout);
-    virtual void deserialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout);
-    static SerializableInt* create(size_t num_bytes, uint8_t* data);
-    int getVal() const;
-    private:
-    int val=0;
-};
-
-SerializableInt::SerializableInt(): val(0) {}
-SerializableInt::SerializableInt(int x): val(x) {}
-
-SerializableInt* SerializableInt::create(size_t num_bytes, uint8_t* data) {
-    auto val = new SerializableInt((int)*data);
-    free(data);
-    return val;
-}
-
-void SerializableInt::serialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout) {
-    dragonError_t err;
-    err = dragon_ddict_write_bytes(req, sizeof(int), (uint8_t*)&val);
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, dragon_getlasterrstr());
-}
-
-void SerializableInt::deserialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout) {
-    dragonError_t err = DRAGON_SUCCESS;
-    size_t actual_size;
-    uint8_t * received_val = nullptr;
-    size_t num_val_expected = 1;
-
-
-    err = dragon_ddict_read_bytes(req, sizeof(int), &actual_size, &received_val);
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, dragon_getlasterrstr());
-
-    if (actual_size != sizeof(int))
-        throw DragonError(DRAGON_INVALID_ARGUMENT, "The size of the integer was not correct.");
-
-    val = (int)*received_val;
-
-    free(received_val);
-
-    err = dragon_ddict_read_bytes(req, sizeof(int), &actual_size, &received_val);
-
-    if (err != DRAGON_EOT) {
-        fprintf(stderr, "Did not received expected EOT, ec: %s\ntraceback: %s\n", dragon_get_rc_string(err), dragon_getlasterrstr());
-        fflush(stderr);
-    }
-}
-
-int SerializableInt::getVal() const {return val;}
 
 dragonError_t test_local_keys(const char * ddict_ser, const size_t num_managers) {
     DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
@@ -102,11 +48,11 @@ dragonError_t test_local_keys(const char * ddict_ser, const size_t num_managers)
     bool found_key1 = false;
     bool found_key0 = false;
     for (auto key: local_keys) {
-        if (key->getVal() != x0.getVal() && key->getVal() != x1.getVal()) {
+        if (key.getVal() != x0.getVal() && key.getVal() != x1.getVal()) {
             err_fail(DRAGON_FAILURE, "Received unexpected local key.");
         }
-        found_key1 |= x1.getVal() == key->getVal();
-        found_key0 |= x0.getVal() == key->getVal();
+        found_key1 |= x1.getVal() == key.getVal();
+        found_key0 |= x0.getVal() == key.getVal();
     }
     assert(found_key1 && found_key0);
     return DRAGON_SUCCESS;

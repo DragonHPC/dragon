@@ -63,6 +63,77 @@ typedef struct dragonFLIAttr_st {
 } dragonFLIAttr_t;
 
 /**
+ * @brief The send handle attributes of an fli send handle.
+ *
+ * This structure contains members that can tune the send handle of a file-like
+ * interface (fli) adapter.
+ **/
+ typedef struct dragonFLISendAttr_st {
+    dragonMemoryPoolDescr_t* dest_pool;
+
+    /*!<  dest_pool is a pool descriptor that can be used to indicate which pool
+     will be used as the destination for sending data through a channel. This
+     pool descriptor can be either a local or remote channel but must exist
+     on the node where the data is sent. The default, NULL, will select the
+     default pool on the destination node. */
+
+    bool allow_strm_term;
+
+    /*!< If true, then when the receiver closes the receive handle
+     the sender will be notified via a DRAGON_EOT return code. The FLI will
+     return this on any subsequent send operations once the receiver has
+     canceled the stream. After stream cancelation, the sender should close
+     the send handle since no more data will be sent. For short streams, one
+     or two sent messages, this should be set to false. For longer streams
+     of multiple message sends this should be set to true if there is some
+     situation where the receiver may wish to terminate the stream
+     prematurely. The sender controls this though, not the receiver. If the
+     receiver closes a receive handle prematurely on a non-terminating
+     stream, the rest of the stream will be sent by the sender and discarded
+     automatically the FLI code when the receiver closes the receive handle.
+     The default is false. Note: Stream termination is unavailable if the
+     FLI is a buffered FLI. */
+
+    bool turbo_mode;
+
+    /*!< This may be set as an attribute on the FLI too. If set
+     on the FLI, this argument is ignored. Otherwise, true indicates that data
+     sent with transfer of ownership will be sent and sends will return
+     immediately. This means that the sender may not know of a failure in
+     sending and a receiver should likely have a timeout on receiving should
+     something go wrong. The default is false. */
+
+    bool flush;
+
+    /*!< Flushing will insure a write into a send handle has been deposited
+     even off-node when the send handle is closed. This will guarantee that the
+     stream channel or buffered channel will contain the written data before
+     the send handle close completes. Normally, this value can be false and
+     perform faster if it is. On-node all data will be deposited, but when
+     writing to off-node streams/channels, using flush will guarantee that
+     it is deposited off-node as well before the send handle close
+     completes. The default is false. */
+
+} dragonFLISendAttr_t;
+
+/**
+ * @brief The receive handle attributes of an fli receive handle.
+ *
+ * This structure contains members that can tune the receive handle of a
+ * file-like interface (fli) adapter.
+ **/
+typedef struct dragonFLIRecvAttr_st {
+    dragonMemoryPoolDescr_t* dest_pool;
+
+    /*!< dest_pool is a pool descriptor that is used to copy the received
+     message into when messages are received from the fli. While useful when
+     using recv_mem, other receiving methods will use the pool as a
+     transient space while receiving data and copy into process local
+     storage before freeing the underlying pool data. */
+
+} dragonFLIRecvAttr_t;
+
+/**
  * @brief An opaque fli descriptor
  *
  * When a file like interface adapter is created, an fli descriptor is
@@ -137,6 +208,68 @@ typedef struct dragonFLIRecvHandleDescr_st {
  */
 dragonError_t
 dragon_fli_attr_init(dragonFLIAttr_t* attr);
+
+/**
+ * @brief Create an FLI adapter.
+ *
+ * Please see dragon_fli_create for documentation on creating an FLI. Calling
+ * this task_create version adds an additional semaphore to the FLI that can be
+ * used to track tasks that are sent into the FLI and handle the tracking of
+ * when they are finished. In addition, this makes the created FLI joinable which
+ * means that processes can block until all tasks of the FLI, added to the semaphore
+ * count by calling task_create, have been completed by calling task_done.
+ *
+ * @param adapter is a descriptor and opaque handle to the FLI adapter and is
+ * initialized by this call.
+ *
+ * @param main_ch is a channel descriptor for the main channel of this FLI
+ * adapter. It is used internally in the adapter. After the life of the
+ * adapter it is up to user code to clean up this channel.
+ *
+ * @param mgr_ch is a channel used internally by the FLI adapter and not to be
+ * touched by user code during the life of the adapter. After the life of the
+ * adapter it is up to user code to clean up this channel. Supplying a NULL
+ * mgr_ch argument indicates this is either a buffered FLI adapter and must be
+ * accompanied by a value of 0 for the num_fli_chs argument or a stream channel
+ * will be supplied on all send operations.
+ *
+ * @param sem_ch is a channel used internally by the FLI adapter and not to be
+ * touched by user code during the life of the adapter. It is used, and must
+ * be created as, a semaphore. The channel attributes are used to specify that
+ * the channel is a semaphore channel when it is created. Call attr_init first
+ * for the channel, then set the semaphore attribute and create this channel
+ * before calling this FLI create function.
+ *
+ * @param pool is a pool to use for internal allocations necessary for the
+ * operation of the pool. If pool is NULL, then the pool of the
+ * main_ch channel will be used for required adapter allocations. If the main
+ * channel is not local, the default local pool will be used.
+ *
+ * @param num_strm_chs is the number of supplied stream channels that are provided
+ * on the creation of the FLI adapter. Each stream channel may be re-used and
+ * is used for one stream of messages that result from an open, multiple sends, and a
+ * close operation.
+ *
+ * @param strm_channels is an array of channel descriptors, num_strm_chs of them, that
+ * are being supplied on the adapter creation. See the longer discussion in the description
+ * of the adapter create above. The application is responsible for the clean up of these
+ * channels at the end of their life.
+ *
+* @param use_buffered_protocol if true then only a main channel should be provided and no
+ * manager channel or stream channels are required. In this case all sent data is
+ * buffered into one message for all file write operations (all writes on an open send
+ * handle). The receiving side receives one message per conversation.
+ *
+ * @param attr is a pointer to the attributes structure that was previously
+ * inited. If the attr arg is NULL the default attributes will be used.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t dragon_fli_task_create(dragonFLIDescr_t* adapter, dragonChannelDescr_t* main_ch,
+    dragonChannelDescr_t* mgr_ch, dragonChannelDescr_t* task_sem, dragonMemoryPoolDescr_t* pool,
+    const dragonULInt num_strm_chs, dragonChannelDescr_t** strm_channels,
+    const bool use_buffered_protocol, dragonFLIAttr_t* attrs);
+
 
 /**
  * @brief Create an FLI adapter.
@@ -376,6 +509,44 @@ dragon_fli_get_available_streams(dragonFLIDescr_t* adapter, uint64_t* num_stream
 dragonError_t
 dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
 
+/**
+ * @brief Indicate a new task if being tracked on the FLI.
+ *
+ * Increments the number of tasks on a task FLI. This should only
+ * be called after a successful send operation on the FLI, either bytes or
+ * memory. The number of tasks in incremented by 1.
+ *
+ * @param adapter is a descriptor and opaque handle to the FLI adapter.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t dragon_fli_new_task(const dragonFLIDescr_t* adapter, const timespec_t* timeout);
+
+
+/**
+ * @brief Indicate a task is done on a task FLI.
+ *
+ * Decrements the number of tasks completed on a task FLI. This must only
+ * be called after a successful new_task operation on the FLI. It indicates the
+ * task has now completed.
+ *
+ * @param adapter is a descriptor and opaque handle to the FLI adapter.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t dragon_fli_task_done(const dragonFLIDescr_t* adapter, const timespec_t* timeout);
+
+
+/**
+ * @brief Block until the number of tasks has reached zero.
+ *
+ * Blocks when the number of tasks is not zero.
+ *
+ * @param adapter is a descriptor and opaque handle to the FLI adapter.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t dragon_fli_join(const dragonFLIDescr_t* adapter, const timespec_t* timeout);
 
 /** @} */ // end of fli_lifecycle group.
 
@@ -383,6 +554,18 @@ dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
  *  FLI Send/Receive Handle Management
  *  @{
  */
+
+/**
+ * @brief Initialize a send handle attributes structure.
+ *
+ * Call this before setting individual attributes within the structure to customize
+ * the send handle. See the dragonFLISendAttr_t definition for possible customizable
+ * values.
+ *
+ */
+
+ dragonError_t
+ dragon_fli_send_attr_init(dragonFLISendAttr_t* attrs);
 
 /**
  * @brief Open a Send Handle
@@ -401,57 +584,49 @@ dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_buffered);
  * receiving process. A stream channel can only be specified for a receiver or
  * a sender, but not both.
  *
- * As a special case, when there is a known single receiver and single sending
+ * As a special case, when there is a known single receiver and single sender
  * using this FLI adapter, the special constant
- * STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION may be used for this stream channel
- * argument. In that case, the same constant must be used for the stream channel
- * when opening the receive handle. No manager channel should exist in this case.
- * As the constant indicates, the main channel will be used as the stream channel
- * in this special case.
+ * STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION may be used for this stream
+ * channel argument. In that case, the same constant must be used for the
+ * stream channel when opening the receive handle. No manager channel should
+ * exist in this case. As the constant indicates, the main channel will be
+ * used as the stream channel in this special case.
  *
- * @param dest_pool is a pool descriptor that can be used to indicate which pool
- * will be used as the destination for sending data through a channel. This
- * pool descriptor can be either a local or remote channel but must exist on
- * the node where the
+ * A second special case is also possible. When an FLI has been created to allow
+ * streams (i.e. it has a main channel, a manager channel, or both that
+ * normally are used to manage stream channels), you can specify that the
+ * stream channel be STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND. In this case,
+ * the normal streaming behavior is overridden for this send handle and
+ * instead data that is written to the send handle is buffered and sent in one
+ * send once the send handle is closed. This can be advantageous in
+ * eliminating the overhead of getting a stream channel and sending through it
+ * for smaller, single messages. In this case the receiver does not need to do
+ * anything special to receive the message. The FLI manages this internally
+ * without the receiver doing anything special.
  *
- * @param allow_strm_term If true, then when the receiver closes the receive handle
- * the sender will be notified via a DRAGON_EOT return code. The FLI will return
- * this on any subsequent send operations once the receiver has canceled the stream.
- * After stream cancelation, the sender should close the send handle since no more
- * data will be sent. For short streams, one or two sent messages, this should
- * be set to false. For longer streams of multiple message sends this should be
- * set to true if there is some situation where the receiver may wish to terminate
- * the stream prematurely. The sender controls this though, not the receiver. If
- * the receiver closes a receive handle prematurely on a non-terminating stream,
- * the rest of the stream will be sent by the sender and discarded automatically
- * the FLI code when the receiver closes the receive handle.
- *
- * @param turbo_mode This may be set as an attribute on the FLI too. If set
- * on the FLI, this argument is ignored. Otherwise, true indicates that
- * data sent with transfer of ownership will be sent and sends will return
- * immediately. This means that the sender may not know of a failure in sending
- * and a receiver should likely have a timeout on receiving should something go wrong.
- *
- * Note: Stream termination is unavailable if the FLI is a buffered FLI.
+ * @param attrs Several attributes of the send handle are customizable through
+ * the send handle attributes. See the dragonFLISendAttr_t structure for the
+ * possible customizations.
  *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
- * with no timeout. If not NULL, then wait for the specified amount of time and
- * return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that indicates
- * that a try-once attempt is to be made.
+ * with no timeout. If not NULL, then wait for the specified amount of time
+ * and return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that
+ * indicates that a try-once attempt is to be made.
  *
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
 **/
+
 dragonError_t
 dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandleDescr_t* send_handle,
-                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, bool allow_strm_term, bool turbo_mode,
-                            const timespec_t* timeout);
+    dragonChannelDescr_t* strm_ch, dragonFLISendAttr_t* attrs, const timespec_t* timeout);
 
 /**
  * @brief Close a Send Handle
  *
- * All send operations between an open and a close operation are guaranteed to be received
- * in order by a receiving process. A send handle should be closed once the sender has
- * completed sending data. Any buffered data is sent upon closing the send handle.
+ * All send operations between an open and a close operation are guaranteed to be
+ * received in order by a receiving process. A send handle should be closed
+ * once the sender has completed sending data. Any buffered data is sent upon
+ * closing the send handle.
  *
  * @param send_handle is the open send handle to be closed.
  *
@@ -460,8 +635,19 @@ dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandle
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
 **/
 dragonError_t
-dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_handle,
-                             const timespec_t* timeout);
+dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_handle, const timespec_t* timeout);
+
+/**
+ * @brief Initialize a receive handle attributes structure.
+ *
+ * Call this before setting individual attributes within the structure to
+ * customize the receive handle. See the dragonFLIRecvAttr_t definition for
+ * possible customizable values.
+ *
+ */
+
+dragonError_t
+dragon_fli_recv_attr_init(dragonFLIRecvAttr_t* attrs);
 
 /**
  * @brief Open a Receive Handle
@@ -474,39 +660,38 @@ dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_handle,
  *
  * @param adapter is a created or attached FLI descriptor.
  *
- * @param recv_handle is a receive handle that will be initialized by this call and
- * is to be used on subsequent recv operations until this stream is closed.
+ * @param recv_handle is a receive handle that will be initialized by this call
+ * and is to be used on subsequent recv operations until this stream is
+ * closed.
  *
  * @param strm_ch is a stream channel to be used as a direct connection to a
  * receiving process. A stream channel can only be specified for a receiver or
- * a sender, but not both. When using the buffered protocol it is not valid
- * to use a stream channel. When not providing a stream channel, NULL should be
+ * a sender, but not both. When using the buffered protocol it is not valid to
+ * use a stream channel. When not providing a stream channel, NULL should be
  * specified.
  *
  * As a special case, when there is a known single receiver and single sending
  * using this FLI adapter, the special constant
- * STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION may be used for this stream channel
- * argument. In that case, the same constant must be used for the stream channel
- * when opening the send handle. No manager channel should exist in this case.
- * As the constant indicates, the main channel will be used as the stream channel
- * in this special case.
+ * STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION may be used for this stream
+ * channel argument. In that case, the same constant must be used for the
+ * stream channel when opening the send handle. No manager channel should
+ * exist in this case. As the constant indicates, the main channel will be
+ * used as the stream channel in this special case.
  *
- * @param dest_pool is a pool descriptor pointer that is used to copy the
- * received message into when messages are received from the stream channel.
- * While useful when using recv_mem, other receiving methods will use the pool
- * as a transient space while receiving data and copy into process local
- * storage while freeing the underlying pool data.
+ * @param attrs Several attributes of the receive handle are customizable through
+ * the receive handle attributes. See the dragonFLIRecvAttr_t structure for
+ * the possible customizations.
  *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
- * with no timeout. If not NULL, then wait for the specified amount of time and
- * return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that indicates
- * that a try-once attempt is to be made.
+ * with no timeout. If not NULL, then wait for the specified amount of time
+ * and return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that
+ * indicates that a try-once attempt is to be made.
  *
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
 **/
 dragonError_t
 dragon_fli_open_recv_handle(const dragonFLIDescr_t* adapter, dragonFLIRecvHandleDescr_t* recv_handle,
-                            dragonChannelDescr_t* strm_ch, dragonMemoryPoolDescr_t* dest_pool, const timespec_t* timeout);
+    dragonChannelDescr_t* strm_ch, dragonFLIRecvAttr_t* attrs, const timespec_t* timeout);
 
 /**
  * @brief Close a Recv Handle
@@ -721,6 +906,36 @@ dragonError_t
 dragon_fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, size_t num_bytes,
                 uint8_t* bytes, uint64_t arg, const bool buffer, const timespec_t* timeout);
 
+
+/**
+ * @brief Get the bytes buffered for sending
+ *
+ * If data was buffered before sending, then calling this will return the bytes
+ * that were buffered for sending in a memory descriptor AND remove them from the
+ * buffered bytes of the FLI send handle. To send them, the user should subsequently
+ * call dragon_fli_send_mem.
+ *
+ * @param send_handle is an open send handle.
+ *
+ * @param mem_descr is a pointer to space for a memory descriptor that will be initialized
+ * by this call. If there are no bytes buffered to send, then calling this function will
+ * return a zero-byte allocation in the memory descriptor.
+ *
+ * @param arg is a pointer to space to hold the buffered arg value. NULL can be provided
+ * if the user does not need the arg value associated with the buffered data.
+ *
+ * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
+ * with no timeout. If not NULL, then wait for the specified amount of time and
+ * return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that indicates
+ * that a try-once attempt is to be made.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ **/
+dragonError_t
+dragon_fli_get_buffered_bytes(dragonFLISendHandleDescr_t* send_handle,
+    dragonMemoryDescr_t* mem_descr, uint64_t* arg, const timespec_t* timeout);
+
+
 /**
  * @brief Send shared memory through the FLI adapter.
  *
@@ -783,7 +998,7 @@ dragon_fli_send_mem(dragonFLISendHandleDescr_t* send_handle, dragonMemoryDescr_t
  * The space pointed to by bytes after this call must be freed.
  *
  * @param arg is a pointer to meta-data assigned in a 64-bit unsigned integer by
- * the sender when the data was sent.
+ * the sender when the data was sent. If NULL is provided, the arg is not returned.
  *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and
@@ -822,7 +1037,7 @@ dragon_fli_recv_bytes(dragonFLIRecvHandleDescr_t* recv_handle, size_t requested_
  * received_size bytes upon successful completion of this call.
  *
  * @param arg is a pointer to meta-data assigned in a 64-bit unsigned integer by
- * the sender when the data was sent.
+ * the sender when the data was sent. If NULL is provided, the arg is not returned.
  *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and
@@ -852,7 +1067,7 @@ dragon_fli_recv_bytes_into(dragonFLIRecvHandleDescr_t* recv_handle, size_t reque
  * completion) with the shared memory where the message is located.
  *
  * @param arg is a pointer to meta-data assigned in a 64-bit unsigned integer by
- * the sender when the data was sent.
+ * the sender when the data was sent. If NULL is provided, the arg is not returned.
  *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and
@@ -864,6 +1079,51 @@ dragon_fli_recv_bytes_into(dragonFLIRecvHandleDescr_t* recv_handle, size_t reque
 dragonError_t
 dragon_fli_recv_mem(dragonFLIRecvHandleDescr_t* recv_handle, dragonMemoryDescr_t* mem,
                 uint64_t* arg, const timespec_t* timeout);
+
+/**
+ * @brief Poll the main channel from the FLI adapter.
+ *
+ * @param adapter is a descriptor and opaque handle to the FLI adapter.
+ *
+ * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
+ * with no timeout. If not NULL, then wait for the specified amount of time and
+ * return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that indicates
+ * that a try-once attempt is to be made.
+ *
+ * @return DRAGON_SUCCESS if there was at least one message in the main channel.
+ * DRAGON_EMPTY if there was no messages.
+ */
+
+dragonError_t
+dragon_fli_poll(const dragonFLIDescr_t* adapter, const timespec_t* timeout);
+
+/**
+ * @brief Check if the main channel is full from the FLI adapter.
+ *
+ * @param adapter is a descriptor and opaque handle to the FLI adapter.
+ *
+ * @return DRAGON_SUCCESS if the main channel is full, otherwise return DRAGON_NOT_FULL.
+ */
+dragonError_t
+dragon_fli_full(const dragonFLIDescr_t* adapter);
+
+/**
+ * @brief Get the number of messages in the main channel from the FLI adapter.
+ *
+ * @param adapter is a descriptor and opaque handle to the FLI adapter.
+ *
+ * @param num_msgs is a pointer that holds the value of number of messages in the
+ * main channel.
+ *
+ * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
+ * with no timeout. If not NULL, then wait for the specified amount of time and
+ * return DRAGON_TIMEOUT if not sucessful. If 0,0 is provided, then that indicates
+ * that a try-once attempt is to be made.
+ *
+ * @return DRAGON_SUCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_fli_num_msgs(const dragonFLIDescr_t* adapter, size_t* num_msgs, const timespec_t* timeout);
 
 /** @} */ // end of fli_sendrecv group.
 

@@ -8,6 +8,7 @@ from dragon.native.pool import Pool
 from dragon.native.queue import Queue
 from dragon.native.process import ProcessTemplate
 from dragon.native.process_group import ProcessGroup
+from dragon.infrastructure.facts import PMIBackend
 
 import mpi4py
 
@@ -71,7 +72,7 @@ def do_mpi_test(num_iters: int, items_per_worker: int, imbalance_factor: int, q:
 
 def mpi_based_pool_test(num_iters: int, items_per_worker: int, imbalance_factor: int) -> float:
     q = Queue()
-    pg = ProcessGroup(restart=False, pmi_enabled=True)
+    pg = ProcessGroup(restart=False, pmi=PMIBackend.CRAY)
     template = ProcessTemplate(target=do_mpi_test, args=(num_iters, items_per_worker, imbalance_factor, q))
 
     nproc = 1 + num_workers
@@ -109,18 +110,8 @@ def dragon_pool_test(num_iters: int, items_per_worker: int, imbalance_factor: in
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Dragon Pool vs MPI Benchmark")
-    parser.add_argument(
-        "--num_iters",
-        type=int,
-        default=1,
-        help="number of iterations",
-    )
-    parser.add_argument(
-        "--items_per_worker",
-        type=int,
-        default=4,
-        help="number of work items per worker per iteration",
-    )
+    parser.add_argument("--num_iters", type=int, default=1, help="number of iterations")
+    parser.add_argument("--items_per_worker", type=int, default=4, help="number of work items per worker per iteration")
     parser.add_argument(
         "--imbalance_factor",
         type=int,

@@ -22,6 +22,8 @@ Infrastructure Information
     machine
 
 
+.. _NativeProcess:
+
 Process Management
 ------------------
 
@@ -84,3 +86,18 @@ Process Pools
     AsyncResult
     MapResult
     Pool
+
+.. _DragonNativeC++:
+
+C++ Reference
+================
+
+All C functions used in the C++ implementations are also accessible when using
+C++. The C++ API provides higher-level abstractions using class definitions
+that allow for the same level of cross-language compatability with greater ease
+of use.
+
+.. toctree::
+    :maxdepth: 1
+
+    C++/index.rst

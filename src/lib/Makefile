@@ -1,16 +1,24 @@
-ifneq ("$(wildcard $(DRAGON_BASE_DIR)/.dragon-config.mk)","")
-    include $(DRAGON_BASE_DIR)/.dragon-config.mk
+ifneq ("$(wildcard $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk)","")
+    include $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk
 endif
+
 
 ifeq ($(VIRTUAL_ENV),)
 	VIRTUAL_ENV = $(CONDA_PREFIX)
+endif
+
+# Check if the PMIx headers exist by default, just in case the user didn't define them but we can find them in
+# a default location
+DEFAULT_PMIX_INCLUDE=/usr/include/pmix
+ifneq ("$(wildcard $(DEFAULT_PMIX_INCLUDE)/src/include/pmix_globals.h)","")
+    CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_PMIX_INCLUDE
 endif
 
 CC = gcc
 #CFLAGS = -O0 -g -fPIC -Wall
 CFLAGS = -O3 -fomit-frame-pointer -fPIC -Wall
 CXX = g++
-CPPFLAGS = -I ../include -DDRAGON_DEBUG $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
+CPPFLAGS = -I ../include -I $(DEFAULT_PMIX_INCLUDE) -DDRAGON_DEBUG $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
 CXXFLAGS = $(CFLAGS) $(CPPFLAGS) -std=c++14
 
 LIBRARIES := libdragon.so libpmod.so $(wildcard libdfabric_*.so)
@@ -31,8 +39,6 @@ libdragon_OBJECTS := $(addsuffix .o,$(libdragon_CAPNP_SOURCES)) $(addsuffix .o,$
 all: message_defs.capnp.o ../include/dragon/message_tcs.h ../include/dragon/return_codes_map.h $(LIBRARIES)
 
 
-$(libdragon_OBJECTS): $(libdragon_HEADERS)
-
 message_defs.capnp.o:
 	capnp compile -oc++ message_defs.capnp
 	cp message_defs.capnp.h ../include/dragon
@@ -41,7 +47,6 @@ message_defs.capnp.o:
 ../include/dragon/message_tcs.h: ../dragon/infrastructure/messages.py
 	python3 message_tcs_to_enum.py
 
-.PHONY: ../include/dragon/return_codes_map.h
 ../include/dragon/return_codes_map.h: ../include/%:
 	$(MAKE) -C ../include $*
 
@@ -51,21 +56,20 @@ message_defs.capnp.o:
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-libdragon.so: $(libdragon_OBJECTS)
-libdragon.so: LDLIBS += -lstdc++ -lrt
+$(libdragon_OBJECTS): $(libdragon_SOURCES) $(libdragon_HEADERS)
 
-libdragon.so: %.so:
-	$(CC) -L . -L ${VIRTUAL_ENV}/lib -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS)
+LDLIBS += -lstdc++ -lrt -ldl
+
+libdragon.so: $(libdragon_OBJECTS)
+	$(CC) -L . -L ${VIRTUAL_ENV}/lib -L ${VIRTUAL_ENV}/lib64 -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS)
 
 libpmod.so: libdragon.so
 	ln -sf libdragon.so libpmod.so
 
-.PHONY: $(filter-out libpmod.so, $(filter-out libdragon.so,$(LIBRARIES)))
 $(filter-out libpmod.so,$(filter-out libdragon.so,$(LIBRARIES))): lib%.so: ../dragon/transport/hsta/dfabric_lib/lib%.so
 	$(MAKE) -C $(<D) $(<F)
 	$(INSTALL) -m 755 -D $< $@
 
-.PHONY: $(addprefix ../dragon/launcher/src/lib/,$(filter-out libpmod.so, $(filter-out libdragon.so,$(LIBRARIES))))
 ../dragon/launcher/src/lib%.so:
 	$(MAKE) -C $(@D) $(@F)
 

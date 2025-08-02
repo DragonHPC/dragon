@@ -16,6 +16,8 @@ cc --version
 # Create virtual env
 source ~/.bashrc
 conda activate _dev
+conda remove -y libstdcxx
+conda remove -y libstdcxx-ng
 python3 --version
 which python3
 
@@ -29,9 +31,14 @@ python3 -m pip install --timeout=240 -r src/requirements.txt
 python3 -m pip install --upgrade setuptools
 
 # Configure HSTA for libfabric
-python3 -m dragon.cli dragon-config -a "ofi-include=$PWD/ofi/include/:ofi-build-lib=/usr/lib64/:ofi-runtime-lib=/usr/lib64/"
-python3 -m dragon.cli dragon-config -a "ucx-include=$PWD/ucx/include:ucx-build-lib=$PWD/ucx/lib:ucx-runtime-lib=$PWD/ucx/lib"
-cat ${DRAGON_BASE_DIR}/.dragon-config.mk
+python3 -m dragon.cli dragon-config add --ofi-include=$PWD/ofi/include/ \
+                                        --ofi-build-lib=/usr/lib64/ \
+                                        --ofi-runtime-lib=/usr/lib64/ \
+                                        --ucx-include=$PWD/ucx/include \
+                                        --ucx-build-lib=$PWD/ucx/lib \
+                                        --ucx-runtime-lib=$PWD/ucx/lib \
+                                        --pmix-include=/usr/include,/usr/include/pmi
+cat ${DRAGON_BASE_DIR}/dragon/.dragon-config.mk
 
 # Build (dev mode)
 make -C src build

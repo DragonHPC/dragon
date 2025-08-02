@@ -83,9 +83,11 @@ import enum
 import cloudpickle
 import time
 from dataclasses import dataclass, asdict, field
-from typing import List, Tuple
+from typing import List, Tuple, Union, Optional
 from abc import ABC, abstractmethod
 from functools import wraps
+import os
+from enum import Enum
 
 from ..globalservices.process import (
     query as process_query,
@@ -99,6 +101,7 @@ from ..globalservices.process import (
 from ..globalservices.group import (
     GroupError,
     create as group_create,
+    cleanup_pmix_resources,
     kill as group_kill,
     create_add_to as group_create_add_to,
 )
@@ -114,11 +117,18 @@ from ..infrastructure.process_desc import ProcessDescriptor
 from ..infrastructure import util as dutil
 from ..infrastructure.policy import Policy
 from ..infrastructure.parameters import this_process
+from ..infrastructure.facts import PMIBackend
 from ..infrastructure import messages as dmsg
+from ..native.machine import System
 from ..rc import DragonError
 
+import os
+import sys
+from ..native.machine import System, Node
+
 from .queue import Queue
-from .process import Process, ProcessTemplate
+from .process import Process, ProcessTemplate, Popen
+
 
 _DEFAULT_STOP_PATIENCE = 5.0  # seconds between successive signals to the group
 _LOG = None
@@ -128,6 +138,46 @@ def get_logs(name):
     global _LOG
     log = _LOG.getChild(name)
     return log.debug, log.info
+
+
+class PGExecutionState(Enum):
+    IDLE = "Idle"
+    RUNNING = "Running"
+    MAINTAIN = "Maintain"
+    ERROR = "Error"
+    STOP = "Stop"
+
+    def __str__(self) -> str:
+        return self.value
+
+    @classmethod
+    def get_state(cls, value: Union[str, "PGExecutionState"]) -> "PGExecutionState":
+        """Convert a string or PGExecutionState instance into a PGExecutionState enum."""
+        if value is None:
+            return None
+        if isinstance(value, cls):
+            return value
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            for state in cls:
+                if state.value.lower() == normalized:
+                    return state
+            raise ValueError(f"Unknown PGExecutionState string: {value!r}")
+        raise TypeError("PGExecutionState.get_state() requires a str or PGExecutionState")
+
+    @classmethod
+    def set_state(cls, state: Union["PGExecutionState", str]) -> str:
+        """Convert a state (either enum or string) into its string value."""
+        if state is None:
+            return None
+        return cls.get_state(state).value
+
+    def __getstate__(self):
+        return self.value
+
+    def __setstate__(self, state):
+        self._value = state
+        self._name_ = self.__class__(state).name
 
 
 class DragonProcessGroupError(DragonLoggingError):
@@ -164,6 +214,62 @@ class DragonProcessGroupJoinError(DragonProcessGroupError):
 
 class DragonProcessGroupSignalError(DragonProcessGroupError):
     pass
+
+
+@dataclass
+class RankInfo:
+    """Utility class for accessing process rank metadata from environment variables."""
+
+    def __init__(self):
+        self._my_local_rank = None
+        self._my_rank = None
+        self._my_node_rank = None
+        self._my_local_world_size = None
+        self._my_world_size = None
+        self._master_addr = None
+        self._master_port = None
+
+    @property
+    def master_addr(self):
+        if self._master_addr is None:
+            self._master_addr = os.environ["MASTER_ADDR"]
+        return self._master_addr
+
+    @property
+    def master_port(self):
+        if self._master_port is None:
+            self._master_port = os.environ["MASTER_PORT"]
+        return self._master_port
+
+    @property
+    def my_local_rank(self):
+        if self._my_local_rank is None:
+            self._my_local_rank = int(os.environ["DRAGON_PG_LOCAL_RANK"])
+        return self._my_local_rank
+
+    @property
+    def my_rank(self):
+        if self._my_rank is None:
+            self._my_rank = int(os.environ["DRAGON_PG_RANK"])
+        return self._my_rank
+
+    @property
+    def my_node_rank(self):
+        if self._my_node_rank is None:
+            self._my_node_rank = int(os.environ["DRAGON_PG_GROUP_RANK"])
+        return self._my_node_rank
+
+    @property
+    def my_local_world_size(self):
+        if self._my_local_world_size is None:
+            self._my_local_world_size = int(os.environ["DRAGON_PG_LOCAL_WORLD_SIZE"])
+        return self._my_local_world_size
+
+    @property
+    def my_world_size(self):
+        if self._my_world_size is None:
+            self._my_world_size = int(os.environ["DRAGON_PG_WORLD_SIZE"])
+        return self._my_world_size
 
 
 @enum.unique
@@ -247,8 +353,8 @@ class PGProperties:
     :type restart: bool
     :param ignore_error_on_exit: determines if ProcessGroup will raise an exception if a worker is not successfullt executed, defaults to False
     :type ignore_error_on_exit: bool
-    :param pmi_enabled: have ProcessGroup define an MPI environment via PMI. Only cray-pmi is support. Defaults to False
-    :type pmi_enabled: bool
+    :param pmi: PMI backend to use for launching MPI applications, defaults to None
+    :type pmi: str, Options given in dragon.facts.PMIBackend
     :param walltime: Time to allow ProcessGroup to execute after `start` is called, defaults to None
     :type walltime: float
     :param policy: Use policy objects to define how worker processes should be placed, default to None
@@ -261,7 +367,7 @@ class PGProperties:
 
     restart: bool = False
     ignore_error_on_exit: bool = False
-    pmi_enabled: bool = False
+    pmi: PMIBackend = None
     walltime: float = None
     policy: Policy = None
     critical: bool = False
@@ -271,12 +377,16 @@ class PGProperties:
     def from_dict(self, the_dict) -> None:
         self.restart = the_dict["restart"]
         self.ignore_error_on_exit = the_dict["ignore_error_on_exit"]
-        self.pmi_enabled = the_dict["pmi_enabled"]
+        self.pmi = the_dict["pmi"]
         self.walltime = the_dict["walltime"]
         try:
             self.policy = Policy.from_sdict(the_dict["policy"])
         except Exception:
             self.policy = None
+        try:
+            self.pmi = PMIBackend.from_str(the_dict["pmi"])
+        except Exception:
+            self.pmi = None
         self.critical = the_dict["critical"]
         self.name = the_dict["name"]
 
@@ -306,6 +416,8 @@ class PGState:
     :type pending_replies: queue.Queue
     :param exq: queue created by client that the Manager drops worker exceptions into
     :type exq: Queue
+    :param pmix_ddict: Serialized descriptor of ddict used for PMIx KVS
+    :type pmix_ddict: str
     """
 
     state: BaseState
@@ -318,6 +430,7 @@ class PGState:
     walltime_event: threading.Event = None
     pending_replies: queue.Queue = None
     exq: Queue = None
+    pmix_ddict: str = None
 
 
 @dataclass(frozen=True)
@@ -491,7 +604,7 @@ def _generate_process_create_messages(templates: List[ProcessTemplate], props: P
                 t.args,
                 t.env,
                 t.argdata,
-                pmi_required=props.pmi_enabled,
+                pmi=props.pmi,
                 stdin=t.stdin,
                 stdout=t.stdout,
                 stderr=t.stderr,
@@ -504,7 +617,7 @@ def _generate_process_create_messages(templates: List[ProcessTemplate], props: P
                 t.cwd,
                 t.args,
                 t.env,
-                pmi_required=props.pmi_enabled,
+                pmi=props.pmi,
                 stdin=t.stdin,
                 stdout=t.stdout,
                 stderr=t.stderr,
@@ -632,7 +745,6 @@ class Idle(BaseState):
             desired_state = PGState(state=Start(), p_templates=pstate.p_templates, exq=signal_msg.payload["exq"])
             msg = PGSignalMessage(signal=PGSignals.READY_TO_START, desired_state=desired_state)
         elif (signal_msg.signal == PGSignals.STOP or signal_msg.signal == PGSignals.CLOSE) and pstate.g_uid is not None:
-            fdebug("Requesting a Join state")
             desired_state = PGState(
                 state=Join(),
                 g_uid=pstate.g_uid,
@@ -643,6 +755,7 @@ class Idle(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
+                pmix_ddict=pstate.pmix_ddict,
             )
 
             closeit = signal_msg.close
@@ -683,11 +796,41 @@ class Start(BaseState):
         for i, (replicas, create_template) in enumerate(pstate.p_templates):
             expanded_templates.extend(replicas * [create_template])
 
+        # Create a ddict for PMIx servers if PMIx backend was requested.
+        pmix_ddser = None
+        pmix_dd = None
         try:
+            fdebug("Checking whether we need to make a PMIx ddict. Props: %s", props)
+            if PMIBackend.from_str(props.pmi) == PMIBackend.PMIX:
+                from ..data.ddict import DDict
+
+                fdebug("Creating PMIx DDict for %s procs", len(expanded_templates))
+                n_nodes = self._derive_nnodes_for_pmix_ddict(len(expanded_templates))
+                fdebug("Will run PMIx DDict on %s nodes", n_nodes)
+                pmix_dd = DDict(
+                    managers_per_node=1,
+                    n_nodes=n_nodes,
+                    total_mem=n_nodes * 128 * 1024 * 1024,
+                    wait_for_keys=True,
+                    working_set_size=2,
+                )
+                pmix_ddser = pmix_dd.serialize()
+                fdebug("Successfully created PMIx DDict")
+        # In case props.pmi is None
+        except ValueError as e:
+            fdebug("Value error with PMIx DDict creation: %s", e)
+            pass
+        except Exception as e:
+            fdebug("Other exception: %s", e)
+            raise
+        try:
+            fdebug("Sending group create request with pmix ddict: %s", pmix_ddser)
             group_descr = group_create(
                 [(replicas, messages[i].serialize()) for i, (replicas, _) in enumerate(pstate.p_templates)],
                 props.policy,
+                pmix_ddict=pmix_dd,
             )
+
         except Exception:
             raise DragonProcessGroupStartError(DragonError.FAILURE, "Failed to create GS group")
 
@@ -703,12 +846,28 @@ class Start(BaseState):
             walltime_event=threading.Event(),
             pending_replies=queue.Queue(),
             exq=pstate.exq,
+            pmix_ddict=pmix_ddser,
         )
 
         with cur_procs.lock:
             cur_procs.init_active_processes([descr.uid for lst in group_descr.sets for descr in lst])
 
-        return PGSignalMessage(signal=PGSignals.START_JOIN_THREAD, desired_state=desired_state)
+        return PGSignalMessage(
+            signal=PGSignals.START_JOIN_THREAD, desired_state=desired_state, payload={"pmix_ddict": pmix_dd}
+        )
+
+    def _derive_nnodes_for_pmix_ddict(self, nprocs):
+        """Determine number of nodes to host the PMIx dictionary on"""
+
+        # Get the number of nodes in our runtime
+        n_nodes = len(System().nodes)
+
+        # If the number of procs >= nnodes, place one manager on each node
+        if n_nodes <= nprocs:
+            return n_nodes
+        # If it's less, just use nprocs
+        else:
+            return nprocs
 
 
 class MakeJoiner(BaseState):
@@ -741,6 +900,7 @@ class MakeJoiner(BaseState):
             walltime_event=pstate.walltime_event,
             pending_replies=pstate.pending_replies,
             exq=pstate.exq,
+            pmix_ddict=pstate.pmix_ddict,
         )
 
         return PGSignalMessage(signal=PGSignals.READY_TO_RUN, desired_state=desired_state)
@@ -856,6 +1016,7 @@ class Running(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
+                pmix_ddict=pstate.pmix_ddict,
             )
             return PGSignalMessage(
                 signal=signal_msg.signal,
@@ -887,6 +1048,7 @@ class Running(BaseState):
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
                 exq=pstate.exq,
+                pmix_ddict=pstate.pmix_ddict,
             )
 
             if pstate.joiner_thread.is_alive():
@@ -945,6 +1107,7 @@ class Running(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
+                pmix_ddict=pstate.pmix_ddict,
             )
 
             return PGSignalMessage(
@@ -972,6 +1135,7 @@ class Running(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
+                pmix_ddict=pstate.pmix_ddict,
             )
 
             if pstate.walltime_event.is_set():
@@ -1049,6 +1213,7 @@ class Running(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
+                pmix_ddict=pstate.pmix_ddict,
             )
 
             return PGSignalMessage(
@@ -1119,6 +1284,18 @@ class Join(BaseState):
                         put_back.append((requester, timeout, deadline, tag))
             else:
                 fdebug("Client join completed: %s, %s, %s, %s", requester, timeout, deadline, tag)
+                if pstate.pmix_ddict is not None:
+                    from ..data.ddict import DDict
+
+                    dd = DDict.attach(pstate.pmix_ddict)
+                    # First tell GS to get LS to destroy PMIx resources it may have create
+                    fdebug("Asking global services to cleanup PMIx resources")
+                    cleanup_pmix_resources(pstate.g_uid)
+
+                    # Destroy the dictionary now
+                    fdebug("Destng PMIx ddict")
+                    dd.destroy()
+
                 payload.append((requester, PGSignalMessage(signal=PGSignals.SUCCESS, tag=tag)))
 
         for item in put_back:
@@ -1137,6 +1314,7 @@ class Join(BaseState):
             joiner_thread=pstate.joiner_thread,
             walltime_event=pstate.walltime_event,
             pending_replies=pstate.pending_replies,
+            pmix_ddict=pstate.pmix_ddict,
         )
 
         return PGSignalMessage(
@@ -1364,10 +1542,8 @@ class Manager:
             try:
                 client_msg = self._state_inq.get(timeout=self._QPATIENCE)
             except queue.Empty:
-                if (
-                    type(self._the_state.state).__name__ == "Running"
-                    or type(self._the_state.state).__name__ == "Maintain"
-                ):
+                state_enum = PGExecutionState.get_state(type(self._the_state.state).__name__)
+                if state_enum in {PGExecutionState.RUNNING, PGExecutionState.MAINTAIN}:
                     fdebug("Faking JOIN_POKE client message for join progressing")
                     client_msg = PGSignalMessage(PGSignals.JOIN_POKE, p_uid=self._puid)
                 else:
@@ -1440,7 +1616,8 @@ class Manager:
                 fdebug("Invalid message from %s with signal %s", client_msg.p_uid, client_msg.signal)
 
             # if our steady state says we're done, set the event
-            if desired_state_msg.close or type(self._the_state.state).__name__ == "Error":
+            state_enum = PGExecutionState.get_state(type(self._the_state.state).__name__)
+            if desired_state_msg.close or state_enum == PGExecutionState.ERROR:
                 fdebug("Last state message indicates we should close")
                 self._stop_serving.set()
 
@@ -1690,7 +1867,7 @@ class Manager:
         fdebug, finfo = get_logs("state")
         fdebug("Processing status query from p_uid=%s", p_uid)
 
-        concrete_states = {"Idle", "Running", "Error"}
+        concrete_states = {str(PGExecutionState.IDLE), str(PGExecutionState.RUNNING), str(PGExecutionState.ERROR)}
 
         op = Query()
 
@@ -1754,6 +1931,13 @@ def _run_manager(inq: Queue, exq: Queue, name: str):
     mgr.run()
 
 
+@dataclass(frozen=True)
+class TrainingGroupConfig:
+    nprocs: int
+    ppn: int
+    port: int
+
+
 class ProcessGroup:
     """Object providing API to manage group of Dragon Processes via Dragon Global Services
 
@@ -1787,7 +1971,7 @@ class ProcessGroup:
         self,
         restart: bool = False,
         ignore_error_on_exit: bool = False,
-        pmi_enabled: bool = False,
+        pmi: str = None,
         walltime: float = None,
         policy: Policy = None,
         critical: bool = False,
@@ -1800,8 +1984,8 @@ class ProcessGroup:
         :type restart: bool, optional
         :param ignore_error_on_exit: If True, ignore worker processe errors as they exit, defaults to False
         :type ignore_error_on_exit: bool, optional
-        :param pmi_enabled: Instruct the runtime to setup the environment so that the binary can use MPI for inter-process communication, defaults to False
-        :type pmi_enabled: bool, optional
+        :param pmi: PMI backend to use for launching MPI applications, defaults to None
+        :type pmi: str, Options given in dragon.infrastructure.facts.PMIBackend
         :param walltime: Time in seconds until the processes in the group get killed after they start, defaults to None
         :type walltime: float, optional
         :param policy: determines the placement of the processes, defaults to None
@@ -1812,11 +1996,19 @@ class ProcessGroup:
         :type name: str, optional
         """
 
+        # If PMI was requested, check that it's a supported version
+        if pmi is not None:
+            try:
+                _ = PMIBackend.from_str(pmi)
+            except ValueError as e:
+                raise RuntimeError("Unsupported PMI backend requested") from e
+
         # TODO: nhill - I don't think a thread lock is necessary on the PGProperties for the client. If it is, I'll
         # need to add a __setstate__ and __getstate__ to ensure it remains picklable.
-        self._props = PGProperties(restart, ignore_error_on_exit, pmi_enabled, walltime, policy, critical, name)
+        self._props = PGProperties(restart, ignore_error_on_exit, pmi, walltime, policy, critical, name)
         self._local_templates = []
         self._registered = False
+        self._rank_info = RankInfo()
 
     def _start_manager(self, inq: Queue, exq: Queue, name: str = "", policy: Policy = None):
         proc = Process(target=_run_manager, args=(inq, exq, name), policy=None)
@@ -1919,7 +2111,11 @@ class ProcessGroup:
             raise RuntimeError(f"Failed to parse manager response:\n{ex}")
 
         if msg.error != PGSignals.SUCCESS:
-            raise DragonProcessGroupError(msg.error, f"{ex_str}:\n{msg.ex}\n{msg.payload}")
+            try:
+                tb = msg.payload["traceback"]
+            except KeyError:
+                tb = None
+            raise DragonProcessGroupError(msg.error, f"{ex_str}:\n{msg.ex}\n{msg.payload}\n{tb}")
 
         return msg
 
@@ -2297,4 +2493,150 @@ class ProcessGroup:
 
         msg = dmsg.PGState(self._tag_inc(), this_process.my_puid)
         reply = self._send_msg(msg, "Failed to query state of the process group")
-        return reply.payload["current_state"]
+        return PGExecutionState.get_state(reply.payload["current_state"])
+
+    def make_ai_training_env(
+        self,
+        rank: int,
+        local_rank: int,
+        node_rank: int,
+        master_addr: str,
+        master_port: str,
+        world_size: int,
+        local_world_size: int,
+    ) -> dict:
+        env = dict(os.environ).copy()
+        env["MASTER_ADDR"] = master_addr
+        env["MASTER_PORT"] = master_port
+        env["DRAGON_PG_RANK"] = str(rank)
+        env["DRAGON_PG_LOCAL_RANK"] = str(local_rank)
+        env["DRAGON_PG_WORLD_SIZE"] = str(world_size)
+        env["DRAGON_PG_LOCAL_WORLD_SIZE"] = str(local_world_size)
+        env["DRAGON_PG_GROUP_RANK"] = str(node_rank)
+
+        return env
+
+    @classmethod
+    def configure_training_group(
+        cls,
+        *,
+        training_fn,
+        training_args: tuple = None,
+        training_kwargs: dict = None,
+        ppn: int = None,
+        nprocs: int = None,
+        hide_stderr: bool = False,
+        port: int = 29500,
+        policies: list = None,
+    ) -> "ProcessGroup":
+        """
+        Configure and return a ProcessGroup suitable for distributed training jobs. This helper sets up environment variables and process templates necessary for a training job (like PyTorch DDP) over multiple nodes using NCCL or similar backends.
+        Users can specify the group in two ways by either specifying processes per node, total processes or by providing a list of policies.
+
+        :param training_fn: The target function to run on each distributed process.
+        :type training_fn: callable
+        :param training_args: Positional arguments to pass to training_fn, defaults to None
+        :type training_args: tuple, optional
+        :param training_kwargs: Keyword arguments to pass to training_fn, defaults to None
+        :type training_kwargs: dict, optional
+        :param ppn: Number of processes to run per node. Required if policies is not provided, defaults to None
+        :type ppn: int, optional
+        :param nprocs: Total number of processes. Required if policies is not provided. Ignored if policies is a list, defaults to None
+        :type nprocs: int, optional
+        :param hide_stderr: If True, suppress standard error from the launched processes, defaults to False
+        :type hide_stderr: bool, optional
+        :param port: Master port for NCCL backend communication, defaults to 29500
+        :type port: int, optional
+        :param policies: List of Policy objects or a single Policy.
+        :type policies: list or Policy, optional
+        :return: A configured and initialized process group for distributed training
+        :rtype: ProcessGroup
+
+        """
+
+        if not ((ppn and nprocs) or policies):
+            raise ValueError("Must provide both ppn and nprocs, or a list of policies.")
+
+        if isinstance(policies, list):
+            if not policies:
+                raise ValueError("Policies list cannot be empty.")
+            nprocs = len(policies)
+
+        try:
+            my_alloc = System()
+            node_list = my_alloc.nodes
+        except Exception as e:
+            print(f"Exception while querying system: {e}", flush=True)
+            raise
+
+        nnodes = len(node_list)
+
+        if policies is None:
+            if ppn <= 0 or nprocs <= 0:
+                raise ValueError("Both ppn and nprocs must be > 0.")
+
+            if nnodes == 0:
+                raise RuntimeError("No nodes found in allocation.")
+
+            if ppn * nnodes < nprocs:
+                raise RuntimeError(f"Cannot allocate {nprocs} processes on {nnodes} nodes with only {ppn} ppn.")
+
+            policy_list = [
+                Policy(placement=Policy.Placement.HOST_NAME, host_name=Node(node).hostname)
+                for node in node_list
+                for _ in range(ppn)
+            ][:nprocs]
+
+        elif isinstance(policies, Policy):
+            if nprocs <= 0:
+                raise ValueError("nprocs must be > 0 when using a single Policy.")
+            policy_list = [policies] * nprocs
+        elif isinstance(policies, list):
+            if len(policies) != nprocs:
+                nprocs = len(policies)
+            policy_list = policies
+        else:
+            raise TypeError("policies must be None, a single Policy, or a list of Policy objects.")
+
+        pg = ProcessGroup(restart=False, pmi=None)
+        pg._nccl_config = TrainingGroupConfig(nprocs=nprocs, ppn=ppn, port=port)
+        master_node = policy_list[0].host_name
+        master_port = str(port)
+        stderr = Popen.DEVNULL if hide_stderr else None
+
+        try:
+            for rank in range(nprocs):
+                node_rank = rank // ppn
+                local_rank = rank % ppn
+                policy = policy_list[rank]
+
+                env = pg.make_ai_training_env(
+                    rank=rank,
+                    local_rank=local_rank,
+                    node_rank=node_rank,
+                    master_addr=master_node,
+                    master_port=master_port,
+                    world_size=nprocs,
+                    local_world_size=ppn,
+                )
+
+                template = ProcessTemplate(
+                    target=training_fn,
+                    args=training_args,
+                    kwargs=training_kwargs,
+                    env=env,
+                    policy=policy,
+                    stderr=stderr,
+                )
+
+                pg.add_process(nproc=1, template=template)
+
+        except Exception as e:
+            print(f"Exception during ProcessTemplate setup: {e}", flush=True)
+            raise
+
+        return pg
+
+    @property
+    def nccl_config(self):
+        return getattr(self, "_nccl_config", None)

@@ -59,7 +59,6 @@ class ProcessContext:
         return self._descriptor
 
     def _mk_sh_proc_create(self, the_tag, which_node):
-
         the_env = self.request.env
         for k, v in self.process_parms.env().items():
             the_env[k] = v
@@ -155,7 +154,6 @@ class ProcessContext:
             stderr_msg = self.stderr_context.shchannelcreate_msg
         else:
             stderr_msg = None
-
         return dmsg.SHProcessCreate(
             tag=the_tag,
             p_uid=dfacts.GS_PUID,
@@ -272,7 +270,6 @@ class ProcessContext:
         return True, outbound_tag, context
 
     def send_start(self, send_msg):
-
         outbound_tag = self.server.tag_inc()
         shep_req = self._mk_sh_proc_create(outbound_tag, self._descriptor.node)
 
@@ -622,7 +619,6 @@ class ProcessContext:
             )
             kill_succeeded = False
         elif shpkr.Errors.SUCCESS == msg.err:
-
             rm = gspkr(tag=self.server.tag_inc(), ref=self.destroy_request.tag, err=gspkr.Errors.SUCCESS)
 
             kill_succeeded = True

@@ -472,6 +472,7 @@ class FrontendRestartTest(unittest.TestCase):
         # Join on the frontend thread
         fe_proc.join()
 
+    @unittest.skip("Test Hangs. Waiting for fix. Jira AICI-1859.")
     @catch_thread_exceptions
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")

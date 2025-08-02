@@ -105,7 +105,9 @@ class DragonServer:
         cursor = connection.cursor()
 
         # Create metrics table
-        sql_create_metrics = "CREATE TABLE IF NOT EXISTS datapoints (metric text, timestamp text, value real, tags json)"
+        sql_create_metrics = (
+            "CREATE TABLE IF NOT EXISTS datapoints (metric text, timestamp text, value real, tags json)"
+        )
         cursor.execute(sql_create_metrics)
         connection.commit()
         sql_create_flags = "CREATE TABLE IF NOT EXISTS flags (id INTEGER PRIMARY KEY CHECK (id = 1), is_shutdown BLOB)"
@@ -201,6 +203,7 @@ class DragonServer:
         Returns:
             dict: Result with time series data
         """
+
         def create_dps_tags(tsdb: list) -> dict:
             """Transform rows retrieved from database/table
 
@@ -216,9 +219,8 @@ class DragonServer:
                 try:
                     result[str(row[4])][row[1]] = row[2]
                 except KeyError:
-                    result[str(row[4])] = {row[1]: row[2]} 
+                    result[str(row[4])] = {row[1]: row[2]}
             return result
-        
 
         hostname = os.uname().nodename
         result = []
@@ -226,7 +228,7 @@ class DragonServer:
 
         # Grafana sends request in milliseconds. But expects response in seconds :)
         # New Info: (Milliseconds can be changed in dashboard settings!)
-        start_time = int(request_body["start"])/1000
+        start_time = int(request_body["start"]) / 1000
         end_time = request_body.get("end", int(time.time()))
 
         metric_list = self.get_metrics_from_db(cursor)
@@ -251,7 +253,6 @@ class DragonServer:
                     sql_query = "SELECT dps.metric, dps.timestamp, dps.value, json_each.key as tag_key, json_each.value as tag_value FROM datapoints as dps, json_each(dps.tags) WHERE dps.metric = ? AND tag_key = ? AND CAST(timestamp as INTEGER) >= ? AND CAST(timestamp as INTEGER) <= ? ORDER BY tag_value"
                     tsdb = cursor.execute(sql_query, [q["metric"], tagk, start_time, end_time]).fetchall()
 
-                
                 tsdb = create_dps_tags(tsdb)
 
                 for tsdb_tag, tsdb_dps in tsdb.items():
@@ -263,8 +264,8 @@ class DragonServer:
                         res["query"] = q
                         res["query"]["index"] = queries.index(q)
                     res["metric"] = q["metric"]
-                    res["tags"] =  {"host": hostname}
-                    res["aggregateTags"]= []
+                    res["tags"] = {"host": hostname}
+                    res["aggregateTags"] = []
                     res["dps"] = tsdb_dps
                     if tagk != None:
                         res["tags"].update({tagk: tsdb_tag})

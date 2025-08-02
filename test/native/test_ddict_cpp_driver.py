@@ -13,6 +13,7 @@ import pathlib
 import numpy as np
 import sys
 import math
+import ctypes
 
 test_dir = pathlib.Path(__file__).resolve().parent
 os.system(f"cd {test_dir}; make --silent")
@@ -30,6 +31,16 @@ class numPy2dValuePickler:
 
     def dump(self, nparr, file) -> None:
 
+        # write the dimension of the array
+        num_bytes = ctypes.sizeof(ctypes.c_size_t)
+        nrow = nparr.shape[0]
+        ncol = nparr.shape[1]
+        bytes_nrow = nrow.to_bytes(num_bytes, byteorder=sys.byteorder)
+        bytes_ncol = ncol.to_bytes(num_bytes, byteorder=sys.byteorder)
+        file.write(bytes_nrow)
+        file.write(bytes_ncol)
+
+        # write array
         mv = memoryview(nparr)
         bobj = mv.tobytes()
         # print(f"Dumping {bobj=}", file=sys.stderr, flush=True)
@@ -44,6 +55,12 @@ class numPy2dValuePickler:
     def load(self, file):
 
         obj = None
+
+        # read the dimension of the array
+        num_bytes = ctypes.sizeof(ctypes.c_size_t)
+        nrow = file.read(num_bytes)
+        ncol = file.read(num_bytes)
+
         try:
             while True:
                 data = file.read(self._chunk_size)
@@ -63,7 +80,7 @@ class numPy2dValuePickler:
 
 class intKeyPickler:
 
-    def __init__(self, num_bytes=4):
+    def __init__(self, num_bytes=ctypes.sizeof(ctypes.c_int)):
         self._num_bytes = num_bytes
 
     def dumps(self, val: int) -> bytearray:
@@ -268,7 +285,7 @@ class TestDDictCPP(unittest.TestCase):
     def test_local_keys(self):
         exe = "cpp_ddict"
         ddict = DDict(2, 1, 3000000)
-        INT_NUM_BYTES = 4
+        INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)
         with ddict.pickler(intKeyPickler(INT_NUM_BYTES), None) as type_dd:
             type_dd[1] = 2
             type_dd[0] = 1
@@ -294,7 +311,11 @@ class TestDDictCPP(unittest.TestCase):
         ddict3._mark_as_drained(1)
 
         ser_ddict = ddict1.serialize()
-        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_synchronize", 3, ddict1.serialize(), ddict2.serialize(), ddict3.serialize()], env=ENV)
+        proc = Popen(
+            executable=str(test_dir / exe),
+            args=[ser_ddict, "test_synchronize", 3, ddict1.serialize(), ddict2.serialize(), ddict3.serialize()],
+            env=ENV,
+        )
 
         proc.wait()
         self.assertEqual(proc.returncode, 0, "C client exited with non-zero exit code")
@@ -322,7 +343,11 @@ class TestDDictCPP(unittest.TestCase):
         d_clone_1["test_key_1"] = "test_val_1"
 
         ser_ddict = d.serialize()
-        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_clone", 2, d_clone.serialize(), d_clone_1.serialize()], env=ENV)
+        proc = Popen(
+            executable=str(test_dir / exe),
+            args=[ser_ddict, "test_clone", 2, d_clone.serialize(), d_clone_1.serialize()],
+            env=ENV,
+        )
 
         proc.wait()
         self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
@@ -351,7 +376,7 @@ class TestDDictCPP(unittest.TestCase):
         ddict = DDict(2, 1, 3000000)
         ser_ddict = ddict.serialize()
 
-        INT_NUM_BYTES = 4  # number of bytes for a C++ integer, typically 4, depending on system and compiler
+        INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)  # number of bytes for a C++ integer, typically 4, depending on system and compiler
 
         # Write the numpy array through C++ client API
         proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_write_np_arr"], env=ENV)
@@ -377,7 +402,7 @@ class TestDDictCPP(unittest.TestCase):
         ddict = DDict(2, 1, 3000000)
         ser_ddict = ddict.serialize()
 
-        INT_NUM_BYTES = 4  # number of bytes for a C++ integer, typically 4, depending on system and compiler
+        INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)  # number of bytes for a C++ integer, typically 4, depending on system and compiler
 
         # Write numpy through python ddict client API and read from C++ client
         with ddict.pickler(intKeyPickler(INT_NUM_BYTES), numPy2dValuePickler((2, 3), np.double)) as type_dd:
@@ -399,7 +424,7 @@ class TestDDictCPP(unittest.TestCase):
         ddict = DDict(2, 1, 3000000)
         ser_ddict = ddict.serialize()
 
-        INT_NUM_BYTES = 4  # number of bytes for a C++ integer, typically 4, depending on system and compiler
+        INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)  # number of bytes for a C++ integer, typically 4, depending on system and compiler
 
         # Write the array through C++ client API
         proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_keys_read_from_py"], env=ENV)
@@ -413,7 +438,6 @@ class TestDDictCPP(unittest.TestCase):
             keys = type_dd.keys()
             received_keys = set(keys)
             self.assertEqual(expected_keys, received_keys)
-            print(f"Keys written by C++ and Python client: {keys}", flush=True)
 
         ddict.destroy()
 

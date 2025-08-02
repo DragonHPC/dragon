@@ -17,11 +17,25 @@ my_install='yum -y'
 ${my_install} install \
   libfabric \
   libfabric-devel \
+  libevent-devel \
+  hwloc \
+  hwloc-devel \
   wget
 
 # We need NVIDIA bits for our UCX support:
 wget https://arti.hpc.amslabs.hpecorp.net/artifactory/dragon-misc-master-local/hpcx-v2.18.1-gcc-mlnx_ofed-suse15.3-cuda12-x86_64.tbz
 mkdir mlnx && tar -xvf hpcx*.tbz -C mlnx && mv mlnx/hpcx*/ucx . && rm -rf mlnx hpcx*.tbz
+
+# We need a newer pmix than is provided via centos/rhel repositories
+wget https://github.com/openpmix/openpmix/releases/download/v5.0.8/pmix-5.0.8.tar.gz
+mkdir pmix && \
+  tar xvf pmix-5.0.8.tar.gz -C pmix && \
+  mv pmix/pmix-*/* pmix/ && \
+  cd pmix &&  \
+  ./configure --prefix=/usr && \
+  make -j6 && \
+  make install && \
+  cd ..
 
 # We also need newer Libfabric header files:
 wget https://github.com/ofiwg/libfabric/releases/download/v1.17.1/libfabric-1.17.1.tar.bz2

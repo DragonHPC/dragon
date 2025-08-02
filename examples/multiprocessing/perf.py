@@ -5,6 +5,7 @@ import multiprocessing as mp
 import dragon.perf as dperf
 
 if __name__ == "__main__":
+    mp.set_start_method('dragon')
     num_procs = 8
     with dperf.Session(num_procs) as session:
         kernel = session.new_kernel('small msg all-to-all')

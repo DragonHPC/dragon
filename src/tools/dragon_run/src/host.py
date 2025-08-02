@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 
 class RemoteHost(ABC):
     def __init__(self, hostname, rank):
-        self.hostname : str = hostname
-        self.rank : int = rank
+        self.hostname: str = hostname
+        self.rank: int = rank
 
     def __enter__(self):
         self.connect()
@@ -50,13 +50,16 @@ class RemoteHost(ABC):
 
 class SSHHost(RemoteHost):
 
-    SSH_ENV_VARNAMES = ("PYTHONPATH", "PATH",)
+    SSH_ENV_VARNAMES = (
+        "PYTHONPATH",
+        "PATH",
+    )
 
     def __init__(self, hostname, rank):
         super().__init__(hostname, rank)
-        self.stdin : Optional[paramiko.ChannelFile] = None
-        self.stdout : Optional[paramiko.ChannelFile] = None
-        self.stderr : Optional[paramiko.ChannelFile] = None
+        self.stdin: Optional[paramiko.ChannelFile] = None
+        self.stdout: Optional[paramiko.ChannelFile] = None
+        self.stderr: Optional[paramiko.ChannelFile] = None
 
     def connect(self):
         # TODO: Allow user to specify private keyfile
@@ -94,17 +97,17 @@ class SSHHost(RemoteHost):
             environment = {key: os.environ.get(key, "") for key in self.SSH_ENV_VARNAMES}
             environment["DRAGON_RUN_RANK"] = str(self.rank)
 
-            # cd <dir> ; key1=val1 key2=val2 command
+            # cd <dir> ; bash -c "key1=val1 key2=val2 command"
             remote_command_list = [f"cd {os.getcwd()};"]
-            remote_command_list.extend([f"{key}={quote(val)}" for key, val in environment.items()])
-            remote_command_list.append(command)
+            remote_command_list.append(
+                "bash -c "
+                + quote(f"{' '.join([f'{key}={quote(val)}' for key, val in environment.items()])} " + command)
+            )
 
             remote_command_str = " ".join(remote_command_list)
             logger.debug("run remote_command_str=%s", remote_command_str)
 
-            self.stdin, self.stdout, self.stderr = self.ssh_client.exec_command(
-                remote_command_str
-            )
+            self.stdin, self.stdout, self.stderr = self.ssh_client.exec_command(remote_command_str)
         except Exception as ex:
             logger.error("run Unhandled exception: %s", ex)
             raise ex
@@ -115,9 +118,9 @@ class SSHHost(RemoteHost):
     def send_message(self, msg):
         try:
             logger.debug("ssh_host=%s send_message=%s", self.hostname, msg)
-            self.stdin.write(msg.uncompressed_serialize()) # type: ignore
-            self.stdin.write(b"\n") # type: ignore
-            self.stdin.flush() # type: ignore
+            self.stdin.write(msg.uncompressed_serialize())  # type: ignore
+            self.stdin.write(b"\n")  # type: ignore
+            self.stdin.flush()  # type: ignore
         except Exception as ex:
             logger.debug("Unhandled exception in send_message: %s", ex)
             raise
@@ -132,21 +135,21 @@ class SSHHost(RemoteHost):
         line = ""
 
         try:
-            line = self.stdout.readline().strip() # type: ignore
+            line = self.stdout.readline().strip()  # type: ignore
             if line:
                 logger.debug('ssh_host=%s recv_message line="%s"', self.hostname, line)
                 msg = messages.parse(line, restrict=restrict)
                 # logger.debug("ssh_host=%s recv_message parsed=%s", self.hostname, msg)
 
-            if self.stdout.channel.closed: # type: ignore
-                err_info = self.stderr.readline().strip() # type: ignore
-                exit_status = self.stdin.channel.recv_exit_status() # type: ignore
-                logger.debug('ssh_host=%s recv_message - channel closed - exit_status=%d', self.hostname, exit_status)
+            if self.stdout.channel.closed:  # type: ignore
+                err_info = self.stderr.readline().strip()  # type: ignore
+                exit_status = self.stdin.channel.recv_exit_status()  # type: ignore
+                logger.debug("ssh_host=%s recv_message - channel closed - exit_status=%d", self.hostname, exit_status)
                 if exit_status != 0:
                     if err_info:
                         logger.debug('ssh_host=%s recv_message err_info="%s"', self.hostname, err_info)
                         raise RemoteProcessError(
-                            self.stdin.channel.recv_exit_status(), # type: ignore
+                            self.stdin.channel.recv_exit_status(),  # type: ignore
                             err_info,
                         )
         except RemoteProcessError:

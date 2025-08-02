@@ -1,4 +1,5 @@
 """A class that implements a Zarr store based on the DDict that can also be a cache for a file-based store."""
+
 import os
 import sys
 import zarr
@@ -120,7 +121,7 @@ class Store(DDict, ZStore):
         Return a list of the keys in the store. If the store is acting as a cache of an existing store,
         this will be cached once loading is complete to speed up access.
         """
-        if self._zkeys is None:
+        if not self.is_frozen:
             if self._loadp is not None and self._loadp.is_alive:
                 # when loading is still going, we need to return the keys from the base store
                 if self._src_zg is not None:
@@ -128,11 +129,15 @@ class Store(DDict, ZStore):
                 else:
                     return super().keys()
             else:
+                return super().keys()
+        else:
+            if self._zkeys is None:
                 self._zkeys = super().keys()
-        return self._zkeys
+            return self._zkeys
 
-    def __iter__(self):
-        return iter(self.keys())
+    def unfreeze(self):
+        self._zkeys = None
+        return super().unfreeze()
 
     def __contains__(self, key: object) -> bool:
         if self._zkeys is None:
@@ -198,21 +203,27 @@ class Store(DDict, ZStore):
 
     @classmethod
     def _load_key(cls, key):
+        # we may really have just a key and not a top-level path
         try:
-            b = zarr.copy_store(
-                Process.stash["cold_zg"].store,
-                Process.stash["warm_zg"].store,
-                source_path=key,
-                dest_path=key,
-                if_exists="replace",
-            )
+            v = Process.stash["cold_zg"].store[key]
+            Process.stash["warm_zg"].store[key] = v
+            return (1, 0, sys.getsizeof(v))
+        except KeyError:
             try:
-                Process.stash["pq"].put(b[2])
-            except:
-                pass
-            return b
-        except Exception as e:
-            return (key, e, None)
+                b = zarr.copy_store(
+                    Process.stash["cold_zg"].store,
+                    Process.stash["warm_zg"].store,
+                    source_path=key,
+                    dest_path=key,
+                    if_exists="replace",
+                )
+                try:
+                    Process.stash["pq"].put(b[2])
+                except:
+                    pass
+                return b
+            except Exception as e:
+                return (key, e, None)
 
     @classmethod
     def _find_gkeys(cls, sep, path, zg):

@@ -13,6 +13,7 @@ LOG = logging.getLogger(__name__)
 
 ENFORCED_DB_PERMISSIONS = 0o750
 
+
 def tsdb(start_event: multiprocessing.Event, shutdown_event: multiprocessing.Event, telemetry_cfg: object):
     """Initialize SQLite Database for the specific node (if one does not exist).
     Ex: pinoak0033 database would be named ts_pinoak0033.db
@@ -31,7 +32,9 @@ def tsdb(start_event: multiprocessing.Event, shutdown_event: multiprocessing.Eve
     filename = os.path.join(tmdb_directory, "ts_" + user + "_" + os.uname().nodename + ".db")
     connection = sqlite3.connect(filename)
     c = connection.cursor()
-    sql_create_metrics = "CREATE TABLE IF NOT EXISTS datapoints (metric varchar(50), timestamp varchar(30), value real, tags json)"
+    sql_create_metrics = (
+        "CREATE TABLE IF NOT EXISTS datapoints (metric varchar(50), timestamp varchar(30), value real, tags json)"
+    )
     c.execute(sql_create_metrics)
     connection.commit()
     sql_create_flags = "CREATE TABLE IF NOT EXISTS flags (id INTEGER PRIMARY KEY CHECK (id = 1), is_shutdown BLOB)"
@@ -77,6 +80,8 @@ def tsdb(start_event: multiprocessing.Event, shutdown_event: multiprocessing.Eve
         """
         if environ["RAW_URI"] == "/api/telemetry_shutdown":
             LOG.debug(f"TSDBServer on {os.uname().nodename} sending sys.exit(4)")
+            c.close()
+            connection.close()
             sys.exit(4)
         return
 

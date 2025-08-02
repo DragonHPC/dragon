@@ -52,6 +52,7 @@ _capture_shutting_down = False
 def start_capturing_child_mp_output():
     os.environ[DRAGON_CAPTURE_MP_CHILD_OUTPUT] = "True"
 
+
 def cleanup():
     global _capture_shutting_down
 
@@ -62,11 +63,11 @@ def cleanup():
     except:
         pass
 
+
 def mk_capture_threads():
     global _capture_stdout_conn, _capture_stderr_conn, _capture_shutting_down
 
     def forward(strm_conn: dconn.Connection, strm_dest: StreamDestination):
-
         file_dest = sys.stdout if strm_dest == StreamDestination.STDOUT else sys.stderr
 
         try:
@@ -80,7 +81,6 @@ def mk_capture_threads():
             pass
         except Exception as ex:
             log.debug(f"While forwarding output to {strm_dest} an unexpected error occurred:{repr(ex)}")
-
 
     stdout_monitor = threading.Thread(
         name="stdout monitor", target=forward, args=(_capture_stdout_conn, StreamDestination.STDOUT)
@@ -161,6 +161,7 @@ def _capture_child_output_setup():
             policy=dparm.POLICY_INFRASTRUCTURE,
         )
 
+
 PIPE = dmsg.PIPE
 STDOUT = dmsg.STDOUT
 DEVNULL = dmsg.DEVNULL
@@ -171,7 +172,6 @@ class ProcessError(Exception):
 
 
 def _create_stdio_connections(the_desc):
-
     if the_desc.stdin_sdesc is not None:
         # If a stdin serialized descriptor was requested, then a channel
         # has been created and the initial refcnt was 2. This keeps it from
@@ -240,7 +240,7 @@ def get_create_message(
     user=None,
     umask=-1,
     pipesize=-1,
-    pmi_required=False,
+    pmi: dfacts.PMIBackend = None,
     policy=None,
 ):
     """Return a GSProcessCreate object.
@@ -258,7 +258,8 @@ def get_create_message(
     :param user: Not used
     :param umask: Not used
     :param pipesize: Set the channel capacity. Default = -1.
-    :param pmi_required: This process is part of a Dragon managed MPI/PMI application group.
+    :param pmi: This process is part of a Dragon managed MPI/PMI application group and needs the specified PMI backend, defaults to None
+    :type pmi: dfacts.PMIBackend, optional
     :param policy: If a policy other than the global default is to be used for this process.
     :return: GSProcessCreate message object
     """
@@ -297,7 +298,7 @@ def get_create_message(
         user=user,
         umask=umask,
         pipesize=pipesize,
-        pmi_required=pmi_required,
+        pmi=pmi,
         policy=policy,
     )
 
@@ -317,7 +318,7 @@ def get_create_message_with_argdata(
     user=None,
     umask=-1,
     pipesize=-1,
-    pmi_required=False,
+    pmi: dfacts.PMIBackend = None,
     policy=None,
 ):
     """Return a GSProcessCreate object with starting args.
@@ -340,7 +341,8 @@ def get_create_message_with_argdata(
     :param user: Not used
     :param umask: Not used
     :param pipesize: Set the channel capacity. Default = -1.
-    :param pmi_required: This process is part of a Dragon managed MPI/PMI application group.
+    :param pmi: This process is part of a Dragon managed MPI/PMI application group and needs the specified PMI backend, defaults to None
+    :type pmi: dfacts.PMIBackend, optional
     :return: GSProcessCreate message object
     """
 
@@ -390,7 +392,7 @@ def get_create_message_with_argdata(
             user=user,
             umask=umask,
             pipesize=pipesize,
-            pmi_required=pmi_required,
+            pmi=pmi,
             policy=policy,
         )
 
@@ -417,7 +419,7 @@ def get_create_message_with_argdata(
             user=user,
             umask=umask,
             pipesize=pipesize,
-            pmi_required=pmi_required,
+            pmi=pmi,
             policy=policy,
         )
     else:
@@ -441,7 +443,7 @@ def create(
     user=None,
     umask=-1,
     pipesize=-1,
-    pmi_required=False,
+    pmi: dfacts.PMIBackend = None,
     policy=None,
 ):
     """Asks Global Services to create a new process.
@@ -460,7 +462,8 @@ def create(
     :param user: Not used
     :param umask: Not used
     :param pipesize: Set the channel capacity. Default = -1.
-    :param pmi_required: This process is part of a Dragon managed MPI/PMI application group.
+    :param pmi: This process is part of a Dragon managed MPI/PMI application group and needs the specified PMI backend, defaults to None
+    :type pmi: dfacts.PMIBackend, optional
     :param policy: If a policy other than the global default is to be used for this process.
     :return: ProcessDescriptor object
     """
@@ -527,7 +530,7 @@ def create(
         user=user,
         umask=umask,
         pipesize=pipesize,
-        pmi_required=pmi_required,
+        pmi=pmi,
         policy=policy,
     )
 
@@ -566,7 +569,7 @@ def create_with_argdata(
     user_name="",
     options=None,
     soft=False,
-    pmi_required=False,
+    pmi: dfacts.PMIBackend = None,
     stdin=None,
     stdout=None,
     stderr=None,
@@ -586,7 +589,8 @@ def create_with_argdata(
     :param user_name: Requested user specified reference name
     :param options: ProcessOptions object, what options to apply to creation
     :param soft: If process already exists with given name, do not create and return descriptor instead.
-    :param pmi_required: This process is part of a Dragon managed MPI/PMI application group.
+    :param pmi: This process is part of a Dragon managed MPI/PMI application group and needs the specified PMI backend, defaults to None
+    :type pmi: dfacts.PMIBackend, optional
     :param stdin: If `stdin=PIPE`, a Dragon Connection will be returned to enable sending data to the stdin of the child process.
     :param stdout: Capture stdout from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stdout. Using DEVNULL will cause the stdout data to be thrown away.
     :param stder: Capture stderr from the child process. If using PIPE, a Dragon Connection object will be returned which can be used to read from stderr. Using DEVNULL will cause the stdout data to be thrown away. Using STDOUT will cause the stderr data to be combined with the stdout data.
@@ -611,7 +615,7 @@ def create_with_argdata(
             user_name=user_name,
             options=options,
             soft=soft,
-            pmi_required=pmi_required,
+            pmi=pmi,
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
@@ -632,7 +636,7 @@ def create_with_argdata(
             user_name=user_name,
             options=options,
             soft=soft,
-            pmi_required=pmi_required,
+            pmi=pmi,
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
@@ -661,7 +665,7 @@ def create_with_argdata(
             user_name=user_name,
             options=options,
             soft=soft,
-            pmi_required=pmi_required,
+            pmi=pmi,
             stdin=stdin,
             stdout=stdout,
             stderr=stderr,
@@ -718,17 +722,11 @@ def query(identifier):
     """
     if isinstance(identifier, str):
         req_msg = dmsg.GSProcessQuery(
-            tag=das.next_tag(),
-            p_uid=this_process.my_puid,
-            r_c_uid=das.get_gs_ret_cuid(),
-            user_name=identifier,
+            tag=das.next_tag(), p_uid=this_process.my_puid, r_c_uid=das.get_gs_ret_cuid(), user_name=identifier
         )
     else:
         req_msg = dmsg.GSProcessQuery(
-            tag=das.next_tag(),
-            p_uid=this_process.my_puid,
-            r_c_uid=das.get_gs_ret_cuid(),
-            t_p_uid=int(identifier),
+            tag=das.next_tag(), p_uid=this_process.my_puid, r_c_uid=das.get_gs_ret_cuid(), t_p_uid=int(identifier)
         )
 
     reply_msg = das.gs_request(req_msg)
@@ -767,11 +765,7 @@ def runtime_reboot(*, puids: List[int] = None, huids: List[int] = None, hostname
             log.debug(f"hostname {hostname} is associated with node {n_desc.h_uid}")
             huids_to_restart.add(n_desc.h_uid)
 
-    req_msg = dmsg.GSRebootRuntime(
-        tag=das.next_tag(),
-        h_uid=list(huids_to_restart),
-        r_c_uid=das.get_gs_ret_cuid(),
-    )
+    req_msg = dmsg.GSRebootRuntime(tag=das.next_tag(), h_uid=list(huids_to_restart), r_c_uid=das.get_gs_ret_cuid())
     reply_msg = das.gs_request(req_msg)
     assert isinstance(reply_msg, dmsg.GSRebootRuntimeResponse)
 
@@ -917,10 +911,7 @@ def get_multi_join_failure_puids(statuses: Dict[str, List[int]]) -> Tuple[List[T
 
 
 def multi_join(
-    identifiers: List[int or str],
-    timeout: bool = None,
-    join_all: bool = False,
-    return_on_bad_exit: bool = False,
+    identifiers: List[int or str], timeout: bool = None, join_all: bool = False, return_on_bad_exit: bool = False
 ) -> Tuple[List[Tuple[int, int]], Dict]:
     """Asks Global Services to join a list of specified managed processes.
 
@@ -980,10 +971,7 @@ def multi_join(
         if join_all:  # 'all' option
             # we want all the processes finished, otherwise return None
             if len(success_list) == len(identifiers):
-                return (
-                    success_list,
-                    reply_msg.puid_status,
-                )  # also return the dict with the status of all processes
+                return (success_list, reply_msg.puid_status)  # also return the dict with the status of all processes
                 # in the list for future use outside the
                 # Connection.wait() context
             else:  # there is at least one process exited and at least one errored/timed out

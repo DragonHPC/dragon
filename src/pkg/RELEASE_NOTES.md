@@ -1,3 +1,65 @@
+# Dragon 0.12 Release Summary
+
+In Dragon 0.12, we introduce PMIx support for launching MPI applications, port our native
+Queue implementation to C for a measured 20% performance improvement, add a read-only mode ('freeze')
+to our distributed dictionary for faster reads, and offer a new `dragon-cleanup` executable
+based on a new runtime launching mechanism we intend to ultimately subsume the responsibilities
+of the Dragon launcher frontend. 
+
+### New Features
+ - Added support for native queue and passing Send/Receive handles via a new attribute
+ - Implemented checkpoint persistence improvements
+ - Introduced new queue support in C/C++
+ - Added exception handling in dragon-cleanup
+ - Added native queue tests
+ - Added PMIx server to support general MPI library apps
+ - Added CPP queue interface and tests
+ - Added authentication to telemetry
+ - Added classmethod to process group for generally configuring distributing training
+ - Added buffered send in the fli
+ - Added batch stats to telemetry
+ - Added slow GPU detection support
+ - Added ddict checkpoint persistence for DAOS
+ - Added MPI vs Dragon pool benchmark
+ - Added freeze ddict support for fast ddict reads
+ - Added tests for HSTA during a runtime restart
+ - Added ddict checkpoint persistence
+ - Added script to update open source
+     
+### Improvements
+ - Made PMIx optional during developer build
+ - Moved mpiexec override to dragon-config and added subparser
+ - Improved working directory updates for child processes
+ - Updated Jupyter docs and addressed typos
+ - Improved string states as an enumerated class in ProcessGroup
+ - Improved telemetry cleanup
+ - Added torch import to ai/__init__.py to support documentation generation
+     
+### Fixes
+ - Fixed zarr unit test failure
+ - Fixed several issues with mixed up mp contexts in tests
+ - Fixed Serializable Design for DDict keys
+ - Fixed DDict example code and an mpbridge Queue fix
+ - Fixed glibc mismatch in DST Pipeline
+ - Fixed DDict compile error
+ - Fixed barrier try again issue for HSTA
+ - Fixed FE Launcher for dragon-cleanup to check for DRAGON_MATCH_MP env var
+ - Fixed DDict regression issue via new turbo mode
+ - Fixed temporary drun dragon-cleanup issues
+ - Fixed working set size of one correctly in DDict
+ - Updated transport default regex for network address detection
+ - Fixed documentation for JobLib benchmarks
+ - Fixed DataLoader to work with zarrdataset and newer PyTorch releases
+ - Fixed ddict duplicate file creation error
+ - Fixed SSH launch to respect --hostfile option
+ - Fixed timeout value for low resources in DST
+ - Fixed mpbridge context passing
+ - Fixed issue where ctx was being passed to base RLock erroneously
+     
+### Removals
+ - Removed setting of DRAGON_NETWORK_CONFIG env var from backend launch
+     
+
 # Dragon 0.12rc1 Release Summary
 Dragon 0.12rc1 coincides with our open source release of code.
 

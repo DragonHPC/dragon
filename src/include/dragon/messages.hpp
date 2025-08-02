@@ -5,58 +5,15 @@
 #include <dragon/message_tcs.hpp>
 #include <dragon/message_defs.capnp.h>
 #include <dragon/return_codes.h>
+#include <dragon/messages_api.h>
 #include <string>
 #include <vector>
+#include <unordered_map>
 
-//namespace DragonInfra {
-class DragonError {
-    public:
-    DragonError(const dragonError_t err, const char* err_str);
-    ~DragonError();
-    dragonError_t get_rc() const;
-    const char* get_err_str() const;
-    const char* get_tb() const;
+typedef dragonError_t (*deserializeFun)(MessageDef::Reader& reader, DragonMsg** msg);
 
-    private:
-    dragonError_t mErr;
-    std::string mErrStr;
-    std::string mTraceback;
-};
+namespace dragon {
 
-std::ostream& operator<<(std::ostream& os, const DragonError& obj);
-
-class DragonMsg {
-    public:
-    DragonMsg(MessageType tc, uint64_t tag);
-    virtual ~DragonMsg();
-    dragonError_t send(dragonFLISendHandleDescr_t* sendh, const timespec_t* timeout);
-    MessageType tc();
-    uint64_t tag();
-
-    protected:
-    virtual void builder(MessageDef::Builder& msg);
-
-    private:
-    MessageType mTC;
-    uint64_t mTag;
-};
-
-class DragonResponseMsg: public DragonMsg {
-    public:
-    DragonResponseMsg(MessageType tc, uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo);
-    virtual ~DragonResponseMsg();
-    uint64_t ref();
-    dragonError_t err();
-    const char* errInfo();
-
-    protected:
-    virtual void builder(MessageDef::Builder& msg);
-
-    private:
-    uint64_t mRef;
-    dragonError_t mErr;
-    std::string mErrInfo;
-};
 
 class SHCreateProcessLocalChannelMsg: public DragonMsg {
     public:
@@ -986,12 +943,93 @@ class DDIteratorNextResponseMsg: public DragonResponseMsg {
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
 };
 
-dragonError_t
-recv_fli_msg(dragonFLIRecvHandleDescr_t* recvh, DragonMsg** msg, const timespec_t* timeout);
+class PMIxFenceMsg: public DragonMsg {
+    public:
+    static const MessageType TC = PMIX_FENCE_MSG;
 
-const char*
-dragon_msg_tc_name(uint64_t tc);
+    PMIxFenceMsg(uint64_t tag, size_t ndata, const char* data);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    size_t ndata();
+    const char* data();
 
-//}
+    protected:
+    virtual void builder(MessageDef::Builder& msg);
+
+    private:
+    size_t mNdata;
+    std::string mData;
+};
+
+static unordered_map<MessageType, deserializeFun> deserializeFunctions
+{
+    {SH_CREATE_PROCESS_LOCAL_CHANNEL, &SHCreateProcessLocalChannelMsg::deserialize},
+    {SH_CREATE_PROCESS_LOCAL_CHANNEL_RESPONSE, &SHCreateProcessLocalChannelResponseMsg::deserialize},
+    {SH_DESTROY_PROCESS_LOCAL_CHANNEL, &SHDestroyProcessLocalChannelMsg::deserialize},
+    {SH_DESTROY_PROCESS_LOCAL_CHANNEL_RESPONSE, &SHDestroyProcessLocalChannelResponseMsg::deserialize},
+    {SH_CREATE_PROCESS_LOCAL_POOL, &SHCreateProcessLocalPoolMsg::deserialize},
+    {SH_CREATE_PROCESS_LOCAL_POOL_RESPONSE, &SHCreateProcessLocalPoolResponseMsg::deserialize},
+    {SH_REGISTER_PROCESS_LOCAL_POOL, &SHRegisterProcessLocalPoolMsg::deserialize},
+    {SH_REGISTER_PROCESS_LOCAL_POOL_RESPONSE, &SHRegisterProcessLocalPoolResponseMsg::deserialize},
+    {SH_DEREGISTER_PROCESS_LOCAL_POOL, &SHDeregisterProcessLocalPoolMsg::deserialize},
+    {SH_DEREGISTER_PROCESS_LOCAL_POOL_RESPONSE, &SHDeregisterProcessLocalPoolResponseMsg::deserialize},
+    {SH_SET_KV, &SHSetKVMsg::deserialize},
+    {SH_SET_KV_RESPONSE, &SHSetKVResponseMsg::deserialize},
+    {SH_GET_KV, &SHGetKVMsg::deserialize},
+    {SH_GET_KV_RESPONSE, &SHGetKVResponseMsg::deserialize},
+    {DD_REGISTER_CLIENT, &DDRegisterClientMsg::deserialize},
+    {DD_REGISTER_CLIENT_RESPONSE, &DDRegisterClientResponseMsg::deserialize},
+    {DD_DEREGISTER_CLIENT, &DDDeregisterClientMsg::deserialize},
+    {DD_DEREGISTER_CLIENT_RESPONSE, &DDDeregisterClientResponseMsg::deserialize},
+    {DD_DESTROY, &DDDestroyMsg::deserialize},
+    {DD_DESTROY_RESPONSE, &DDDestroyResponseMsg::deserialize},
+    {DD_DESTROY_MANAGER, &DDDestroyManagerMsg::deserialize},
+    {DD_DESTROY_MANAGER_RESPONSE, &DDDestroyManagerResponseMsg::deserialize},
+    {DD_REGISTER_MANAGER, &DDRegisterManagerMsg::deserialize},
+    {DD_REGISTER_MANAGER_RESPONSE, &DDRegisterManagerResponseMsg::deserialize},
+    {DD_REGISTER_CLIENT_ID, &DDRegisterClientIDMsg::deserialize},
+    {DD_REGISTER_CLIENT_ID_RESPONSE, &DDRegisterClientIDResponseMsg::deserialize},
+    {DD_PUT, &DDPutMsg::deserialize},
+    {DD_PUT_RESPONSE, &DDPutResponseMsg::deserialize},
+    {DD_GET, &DDGetMsg::deserialize},
+    {DD_GET_RESPONSE, &DDGetResponseMsg::deserialize},
+    {DD_POP, &DDPopMsg::deserialize},
+    {DD_POP_RESPONSE, &DDPopResponseMsg::deserialize},
+    {DD_CONTAINS, &DDContainsMsg::deserialize},
+    {DD_CONTAINS_RESPONSE, &DDContainsResponseMsg::deserialize},
+    {DD_KEYS, &DDKeysMsg::deserialize},
+    {DD_KEYS_RESPONSE, &DDKeysResponseMsg::deserialize},
+    {DD_LENGTH, &DDLengthMsg::deserialize},
+    {DD_LENGTH_RESPONSE, &DDLengthResponseMsg::deserialize},
+    {DD_CLEAR, &DDClearMsg::deserialize},
+    {DD_CLEAR_RESPONSE, &DDClearResponseMsg::deserialize},
+    {DD_ITERATOR, &DDIteratorMsg::deserialize},
+    {DD_ITERATOR_RESPONSE, &DDIteratorResponseMsg::deserialize},
+    {DD_ITERATOR_NEXT, &DDIteratorNextMsg::deserialize},
+    {DD_ITERATOR_NEXT_RESPONSE, &DDIteratorNextResponseMsg::deserialize},
+    {DD_CONNECT_TO_MANAGER, &DDConnectToManagerMsg::deserialize},
+    {DD_CONNECT_TO_MANAGER_RESPONSE, &DDConnectToManagerResponseMsg::deserialize},
+    {DD_RANDOM_MANAGER, &DDRandomManagerMsg::deserialize},
+    {DD_RANDOM_MANAGER_RESPONSE, &DDRandomManagerResponseMsg::deserialize},
+    {DD_MANAGER_NEWEST_CHKPT_ID, &DDManagerNewestChkptIDMsg::deserialize},
+    {DD_MANAGER_NEWEST_CHKPT_ID_RESPONSE, &DDManagerNewestChkptIDResponseMsg::deserialize},
+    {DD_EMPTY_MANAGERS, &DDEmptyManagersMsg::deserialize},
+    {DD_EMPTY_MANAGERS_RESPONSE, &DDEmptyManagersResponseMsg::deserialize},
+    {DD_MANAGER_NODES, &DDManagerNodesMsg::deserialize},
+    {DD_MANAGER_NODES_RESPONSE, &DDManagerNodesResponseMsg::deserialize},
+    {DD_GET_MANAGERS, &DDGetManagersMsg::deserialize},
+    {DD_GET_MANAGERS_RESPONSE, &DDGetManagersResponseMsg::deserialize},
+    {DD_MANAGER_SYNC, &DDManagerSyncMsg::deserialize},
+    {DD_MANAGER_SYNC_RESPONSE, &DDManagerSyncResponseMsg::deserialize},
+    {DD_UNMARK_DRAINED_MANAGERS, &DDUnmarkDrainedManagersMsg::deserialize},
+    {DD_UNMARK_DRAINED_MANAGERS_RESPONSE, &DDUnmarkDrainedManagersResponseMsg::deserialize},
+    {DD_MARK_DRAINED_MANAGERS, &DDMarkDrainedManagersMsg::deserialize},
+    {DD_MARK_DRAINED_MANAGERS_RESPONSE, &DDMarkDrainedManagersResponseMsg::deserialize},
+    {DD_GET_META_DATA, &DDGetMetaDataMsg::deserialize},
+    {DD_GET_META_DATA_RESPONSE, &DDGetMetaDataResponseMsg::deserialize},
+    {PMIX_FENCE_MSG, &PMIxFenceMsg::deserialize},
+};
+
+} // end dragon namespace
+
 
 #endif

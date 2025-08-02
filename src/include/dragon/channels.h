@@ -98,37 +98,41 @@ typedef enum dragonChannelEvent_st {
              with no cleanup. The message contents are not freed, so resetting a channel does not change the
              reference counts of any messages or memory that might have been in the channel at the time of this call. */
 
-    DRAGON_CHANNEL_POLLBARRIER_WAIT = 8,
+    DRAGON_CHANNEL_POLLCAPACITY = 8,
+        /*!< Return the capacity of the channel, the number of simultaneous messages the channel can hold, for
+             both on-node and off-node channels. */
+
+    DRAGON_CHANNEL_POLLBARRIER_WAIT = 9,
         /*!< When channel is used as a barrier, wait on barrier with this. Using the channel barrier support is further
              discussed in the channels description. */
 
-    DRAGON_CHANNEL_POLLBARRIER_ABORT = 9,
+    DRAGON_CHANNEL_POLLBARRIER_ABORT = 10,
         /*!< When channel is a barrier, abort the barrier wait and notify current waiters. */
 
-    DRAGON_CHANNEL_POLLBARRIER_RELEASE = 10,
+    DRAGON_CHANNEL_POLLBARRIER_RELEASE = 11,
         /*!< When channel is a barrier, release all waiters from the barrier. */
 
-    DRAGON_CHANNEL_POLLBARRIER_ISBROKEN = 11,
+    DRAGON_CHANNEL_POLLBARRIER_ISBROKEN = 12,
         /*!< Check whether the barrier channel is broken or not. Broken is a state it can get into. */
 
-    DRAGON_CHANNEL_POLLBARRIER_WAITERS = 12,
+    DRAGON_CHANNEL_POLLBARRIER_WAITERS = 13,
         /*!< Return the number of waiters on the barrier channel. */
 
-    DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS = 13,
+    DRAGON_CHANNEL_POLLBLOCKED_RECEIVERS = 14,
         /*!< Return the number of blocked receivers on a channel. */
 
-    DRAGON_SEMAPHORE_P = 14,
+    DRAGON_SEMAPHORE_P = 15,
         /*!< A Semaphore P operation on a channel of capacity==1. It decrements the semaphore's value or
              waits if the value is 0 for the specified timeout. If a zero timeout is supplied, then it
              returns the appropriate return code when the value in the channel is 0. */
 
-    DRAGON_SEMAPHORE_V = 15,
+    DRAGON_SEMAPHORE_V = 16,
         /*!< A Semaphore V operation on a channel of capacity==1. It increments the semaphore's value. */
 
-    DRAGON_SEMAPHORE_VZ = 16,
+    DRAGON_SEMAPHORE_Z = 17,
         /*!< A Semaphore wait that unblocks when the count of the semaphore drops to 0. */
 
-    DRAGON_SEMAPHORE_PEEK = 17
+    DRAGON_SEMAPHORE_PEEK = 18
         /*!< Peek at the value of the semaphore. Useful in debugging. */
 
 
@@ -573,6 +577,9 @@ dragon_channel_message_count(const dragonChannelDescr_t* ch, uint64_t* count);
 
 dragonError_t
 dragon_channel_barrier_waiters(const dragonChannelDescr_t* ch, uint64_t* count);
+
+dragonError_t
+dragon_channel_capacity(const dragonChannelDescr_t* ch, uint64_t* size);
 
 dragonError_t
 dragon_channel_blocked_receivers(const dragonChannelDescr_t* ch, uint64_t* count);

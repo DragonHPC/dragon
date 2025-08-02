@@ -107,6 +107,10 @@ class GlobalContext(object):
             dict()
         )  # is applied only when destroy has been called, key = g_uid, value = list of items corresponding to the multiplicity of each list item in GroupDescriptor.sets
 
+        self.group_destroy_pmix_count = (
+            dict()
+        )  # Used to track destruction of PMIx resources tied to a given group, key = guid
+
         self.pending = dict()  # key = tag, value = continuation on response
         self.pending_group_destroy = (
             dict()
@@ -132,6 +136,7 @@ class GlobalContext(object):
         self.bela_input = None
         self.test_connections = None
         self.head_puid = set()
+        self.pmix_dd = None
         self._tag = 0
         self._next_puid = dfacts.FIRST_PUID
         self._next_cuid = dfacts.FIRST_CUID
@@ -543,7 +548,6 @@ class GlobalContext(object):
 
         while self._state != self.RunState.SHUTTING_DOWN:
             if self._state == self.RunState.HAS_HEAD:
-
                 # In cases where we are sending a large amount of
                 # messages, such as with the GSGroupCreate handler,
                 # we can fill the GS Input Queue with responses and
@@ -893,7 +897,6 @@ class GlobalContext(object):
             return success_num, nonzero_exit
 
         def continue_to_wait(join_all, success_num, pending_puid, return_on_bad_exit, nonzero_exit):
-
             # Always send a message if we are told to return on bad exit and have a non-zero exit code
             if return_on_bad_exit and nonzero_exit:
                 return False
@@ -1326,13 +1329,13 @@ class GlobalContext(object):
         log.debug(f"response to {msg!s}: {rm!s}")
 
     @dutil.route(dmsg.GSNodeQuery, DTBL)
-    def handle_node_query(self, msg):
+    def handle_node_query_all(self, msg):
         log = self._node_logger
         log.debug(f"handling {msg}")
 
         reply_channel = self.get_reply_handle(msg)
 
-        ## Get descriptor
+        # Get descriptor
         target_uid, found, errmsg = self.resolve_huid(msg.name, msg.h_uid)
 
         sdesc = self.node_table[target_uid].descriptor.sdesc
@@ -1412,6 +1415,25 @@ class GlobalContext(object):
         # here the constructor has to control its
         # own pending completions
         GroupContext.destroy(self, msg, reply_channel)
+
+    @dutil.route(dmsg.GSGroupDestroyPMIx, DTBL)
+    def handle_group_pmix_destroy(self, msg):
+        log = self._group_logger
+        log.debug(f"handling {msg!s}")
+        reply_channel = self.get_reply_handle(msg)
+
+        # here the constructor has to control its
+        # own pending completions
+        GroupContext.destroy_pmix_resources(self, msg, reply_channel)
+
+    @dutil.route(dmsg.LSDestroyPMIxResponse, DTBL)
+    def handle_group_pmix_destroy_resp(self, msg):
+        log = self._group_logger
+        log.debug(f"handling {msg!s}")
+
+        # here the constructor has to control its
+        # own pending completions
+        GroupContext.complete_destroy_pmix_resources(self, msg)
 
     @dutil.route(dmsg.GSGroupAddTo, DTBL)
     def handle_group_add_to(self, msg):
@@ -1587,12 +1609,12 @@ def single_thread(gs_stdout):
 # server entry:
 # python3 -c "import dragon.globalservices.server as dgs; dgs.multi()"
 def multi():
+    _, fname = dlog.setup_BE_logging(service=dls.GS)
 
     set_procname(dfacts.PROCNAME_GS)
     dch.register_gateways_from_env()
 
     # Set up logging
-    _, fname = dlog.setup_BE_logging(service=dls.GS)
     log = logging.getLogger(dls.GS).getChild("server.multi")
     log.info("Starting GS in multi mode")
     log.debug("getting logger sdesc")

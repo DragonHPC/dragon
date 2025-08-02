@@ -43,8 +43,6 @@ _set_thread_local_mode_ddict(bool set_thread_local);
 void
 _set_thread_local_mode_fli(bool set_thread_local);
 
-void
-_set_thread_local_mode_queues(bool set_thread_local);
 
 #ifdef __cplusplus
 }

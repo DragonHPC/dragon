@@ -3,6 +3,7 @@ multiple distributed systems. `ProcessTemplate` can hold a blueprint for a proce
 that can be used to generate many similar processes.
 """
 
+import gc
 import os
 import sys
 import logging
@@ -22,7 +23,7 @@ from ..globalservices.process import (
 )
 
 from ..infrastructure.parameters import this_process
-from ..infrastructure.facts import ARG_IMMEDIATE_LIMIT
+from ..infrastructure.facts import ARG_IMMEDIATE_LIMIT, PMIBackend
 from ..infrastructure.process_desc import ProcessOptions
 from ..infrastructure.messages import PIPE as MSG_PIPE, STDOUT as MSG_STDOUT, DEVNULL as MSG_DEVNULL
 from ..infrastructure.policy import Policy
@@ -53,6 +54,7 @@ class Popen:
         proc_name=None,
         umask=-1,
         pipesize=-1,
+        policy=None,
     ):
         """
         Emulate the subprocess.Popen interface using Dragon infrastructure.
@@ -97,6 +99,8 @@ class Popen:
         :type umask: int, optional
         :param pipesize: _description_, defaults to -1
         :type pipesize: int, optional
+        :param policy:determines the placement and resources of the process, defaults to None
+        :type policy: dragon.infrastructure.policy.Policy, optional
         :raises ex: _description_
         """
 
@@ -118,6 +122,7 @@ class Popen:
         self._pid = None
         self._theproc = None
         self._returncode = None
+        self._policy = policy
 
         if cwd is None or cwd == ".":
             cwd = os.getcwd()
@@ -146,6 +151,7 @@ class Popen:
             umask=umask,
             pipesize=pipesize,
             user_name=proc_name,
+            policy=self._policy,
         )
 
         self._stdin = self._theproc.stdin_conn
@@ -346,7 +352,6 @@ class ProcessTemplate:
         return self.get_sdict()
 
     def get_sdict(self):
-
         argdata = None
         if self.argdata is not None:
             argdata = b64encode(self.argdata)
@@ -375,7 +380,6 @@ class ProcessTemplate:
 
     @classmethod
     def from_sdict(cls, sdict):
-
         argdata = None
         if sdict["argdata"] is not None:
             argdata = b64decode(sdict["argdata"])
@@ -402,7 +406,6 @@ class ProcessTemplate:
 
     @staticmethod
     def _find_target(target, cwd) -> str:
-
         new_target = target
 
         if not os.path.isfile(target):
@@ -419,7 +422,6 @@ class ProcessTemplate:
         return new_target
 
     def _get_python_process_parameters(self, target, args, kwargs) -> tuple:
-
         new_target = sys.executable
         new_args = [
             "-c",
@@ -465,7 +467,7 @@ class Process(ProcessTemplate):
         cwd: str = ".",
         env: dict = None,
         ident: str or int = None,
-        _pmi_enabled: bool = False,
+        _pmi: PMIBackend = None,
         stdin: int = None,
         stdout: int = None,
         stderr: int = None,
@@ -518,7 +520,7 @@ class Process(ProcessTemplate):
 
         self.started = False
         self.ident = ident
-        self._pmi_enabled = _pmi_enabled
+        self._pmi = _pmi
 
         # strip the name/uid from the parameters, as ProcessTemplate cannot have it by definition.
         if ident:
@@ -534,7 +536,7 @@ class Process(ProcessTemplate):
         return super().__init__(target, args, kwargs, cwd, env, stdin, stdout, stderr, policy, options)
 
     @classmethod
-    def from_template(cls, template: ProcessTemplate, ident: str = None, _pmi_enabled: bool = False) -> object:
+    def from_template(cls, template: ProcessTemplate, ident: str = None, _pmi: PMIBackend = None) -> object:
         """A classmethod that creates a new process object from a template.
 
         :param template: the template to base the process on
@@ -568,7 +570,7 @@ class Process(ProcessTemplate):
             template.cwd,
             template.env,
             ident=ident,
-            _pmi_enabled=_pmi_enabled,
+            _pmi=_pmi,
             stdin=template.stdin,
             stdout=template.stdout,
             stderr=template.stderr,
@@ -589,7 +591,6 @@ class Process(ProcessTemplate):
             self.policy = Policy.global_policy()
 
         if self.is_python:
-
             # Python functions must be able to talk with the infrastructure
             options = self.options
             if options is None:
@@ -611,7 +612,6 @@ class Process(ProcessTemplate):
                 policy=self.policy,
             )
         else:  # binary
-
             self._descr = process_create(
                 exe=self.target,
                 run_dir=self.cwd,
@@ -783,8 +783,16 @@ def _dragon_native_python_process_main():
         if threading._HAVE_THREAD_NATIVE_ID:
             threading.main_thread()._set_native_id()
 
-        target(*args, **kwargs)  # call the user-provided function
-        ecode = 0
+        try:
+            target(*args, **kwargs)  # call the user-provided function
+            ecode = 0
+        except:
+            raise
+        finally:
+            del args  # this insures that reference counts in Dragon
+            del kwargs  # objects are decremented so resources in Dragon
+            gc.collect()  # are freed. Might be overkill, but doesn't hurt.
+
     except Exception as ex:
         print(
             f"*** Exception Occurred in User-Provided Code ***\n{traceback.format_exc()}", file=sys.stderr, flush=True

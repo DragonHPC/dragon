@@ -306,18 +306,21 @@ def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF, port
     parser.add_argument("--network-prefix", required=True, type=str, help="Network prefix to look for.")
     parser.add_argument("--port", required=True, type=valid_port_int, help="Port to connect to.")
 
-    parser.set_defaults(
-        port=DEFAULT_OVERLAY_NETWORK_PORT,
-        network_prefix=DEFAULT_TRANSPORT_NETIF,
-    )
+    parser.set_defaults(port=DEFAULT_OVERLAY_NETWORK_PORT, network_prefix=DEFAULT_TRANSPORT_NETIF)
 
     args = parser.parse_args()
+
+    # Remove any previously cached information
+    NodeDescriptor.remove_cached_local_network_conf()
 
     # Generate my node descriptor
     try:
         node_info = NodeDescriptor.get_local_node_network_conf(args.network_prefix, args.port)
     except RuntimeError:
         raise RuntimeError("Unable to acquire backend network configuration")
+
+    # Cache the data locally
+    NodeDescriptor.set_cached_local_network_conf(node_info)
 
     # Dump to stdout
     print(json.dumps(node_info.get_sdict()), flush=True)
@@ -405,7 +408,7 @@ def main():
           -p PORT, --port PORT  Infrastructure listening port (default: 6565)
           --network-prefix NETWORK_PREFIX
                                 NETWORK_PREFIX specifies the network prefix the dragon runtime will use to determine which IP addresses it should use to build
-                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth)\\d+$' is used -- the prefix for known HPE-Cray XC
+                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth)\\w+$' is used -- the prefix for known HPE-Cray XC
                                 and EX high speed networks. If uncertain which networks are available, the following will return them in pretty formatting: `dragon-
                                 network-ifaddrs --ip --no-loopback --up --running | jq`. Prepending with `srun` may be necessary to get networks available on
                                 backend compute nodes

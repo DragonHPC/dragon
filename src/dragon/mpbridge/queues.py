@@ -65,14 +65,12 @@ def restrict_public_api(public_api: list) -> callable:
 
     return ancestor_method_remover
 
-
 class FakeConnectionHandle:
     """A placeholder connection handle for a queue that has been reset"""
 
     # would like to use types.SimpleNamespace, but this is unhashable.
 
     pass
-
 
 class PatchedDragonNativeQueue(NativeQueue):
     """The Dragon native queue including patches for Python Multiprocessing
@@ -95,7 +93,7 @@ class PatchedDragonNativeQueue(NativeQueue):
         :rtype: int
         """
 
-        return self._size()
+        return NativeQueue.size(self)
 
     def put(self, obj, block=True, timeout=None) -> None:
         """Puts the serialization of an object onto the queue.
@@ -107,7 +105,7 @@ class PatchedDragonNativeQueue(NativeQueue):
         :return: None
         """
         try:
-            self._put(obj, block=block, timeout=timeout)
+            NativeQueue.put(self, obj, block=block, timeout=timeout)
         except AttributeError as e:  # WithProcessesTestQueue.test_queue_feeder_on_queue_feeder_error
             # and WithProcessesTestQueue.test_queue_feeder_donot_stop_onexc
             self._on_queue_feeder_error(AttributeError(e), obj)
@@ -119,9 +117,9 @@ class PatchedDragonNativeQueue(NativeQueue):
         This version includes a patch for the multiprocessing unit tests.
         """
 
-        self._close()
+        NativeQueue.close(self)
 
-        # TestSimpleQueue.test_closed
+        # TestSimpleQueue.test_closed - here for mp unit test compatability
         self._writer.closed = True
         self._reader.closed = True
 
@@ -138,7 +136,8 @@ class PatchedDragonNativeQueue(NativeQueue):
         pass
 
     def _reset(self):
-        """Add a fake connection object below the queue for Multiprocessing"""
+        """Add a fake connection object below the queue for Multiprocessing
+           unit test compatability. """
 
         self._writer = FakeConnectionHandle()
         self._writer.close = lambda: None
@@ -266,12 +265,6 @@ def Queue(maxsize=0, *, ctx=None, use_base_impl=True):
         if ctx is not None:
             assert DragonPopen.method == ctx._name
 
-        # NOTE: when maxsize=0, local_opts.capacity is set to 100 (default)
-        # whereas in the mp documentation, maxsize equal to zero means
-        # infinite queue size
-        if maxsize <= 0:
-            maxsize = 100
-
         return DragonQueue(maxsize, ctx=ctx)
 
 
@@ -282,9 +275,6 @@ def JoinableQueue(maxsize=0, *, ctx=None, use_base_impl=True):
 
         if ctx is not None:
             assert DragonPopen.method == ctx._name
-
-        if maxsize <= 0:
-            maxsize = 100
 
         return DragonJoinableQueue(maxsize, ctx=ctx)
 

@@ -6,9 +6,9 @@ import sys
 
 import dragon
 
-from dragon.native.process import current
 from dragon.native.queue import Queue
 from dragon.native.barrier import Barrier, BrokenBarrierError
+import dragon.infrastructure.parameters as dparm
 
 from dragon.globalservices.process import (
     join,
@@ -81,8 +81,8 @@ def barrier_wait_and_put(args):
 
 
 def my_action():
-    puid = current()
-    with open("puid_file.txt", "a") as f:
+    puid = dparm.this_process.my_puid
+    with open("puid_file.txt", "w") as f:
         f.writelines(str(puid))
 
 

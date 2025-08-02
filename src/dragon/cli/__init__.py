@@ -64,11 +64,11 @@ entry_points = {
         f"{PROCNAME_HSTA_CONFIG} = dragon.infrastructure.config:hsta_config",
         f"{PROCNAME_HPAGES_CLEANUP} = dragon.infrastructure.config:hugepages_cleanup",
         f"{PROCNAME_GLOBAL_CLEANUP_DEPRECATED} = dragon.launcher.util:exec_dragon_cleanup",
-        f"{PROCNAME_GLOBAL_CLEANUP} = tools.dragon_cleanup:drun",
+        f"{PROCNAME_GLOBAL_CLEANUP} = dragon.tools.dragon_cleanup:drun",
         f"{PROCNAME_JUPYTER} = dragon.jupyter.server:start_server",
-        f"{PROCNAME_DRUN} = tools.dragon_run.drun:main",
-        f"{PROCNAME_DRBE} = tools.dragon_run.drbe:main",
-        f"{PROCNAME_DHOSTS} = tools.dragon_run.dhosts:main",
+        f"{PROCNAME_DRUN} = dragon.tools.dragon_run.drun:main",
+        f"{PROCNAME_DRBE} = dragon.tools.dragon_run.drbe:main",
+        f"{PROCNAME_DHOSTS} = dragon.tools.dragon_run.dhosts:main",
     ]
 }
 

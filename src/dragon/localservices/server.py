@@ -1,5 +1,4 @@
 import os
-import sys
 import traceback
 import time
 import logging
@@ -26,6 +25,12 @@ from ..infrastructure import parameters as parms
 from ..infrastructure import connection as dconn
 from ..infrastructure import parameters as dp
 
+## This is defined only if the build used PMIx.
+## If it didn't passing shouldn't cause issue
+try:
+    from ..dpmix import DragonPMIxServer
+except ImportError:
+    DragonPMIxServer = None
 
 from ..dlogging import util as dlog
 from ..dlogging.util import DragonLoggingServices as dls
@@ -96,6 +101,43 @@ class PopenProps(subprocess.Popen):
         # XXX be configured to set their own affinity as appropriate.
 
 
+class PMIxGroupResources:
+    def __init__(self, ls_ch, ret_ch, buffered_resp_ch):
+        self.ls_ch = ls_ch
+        self.ret_ch = ret_ch
+        self.buffered_resp_ch = buffered_resp_ch
+        self._server = None
+
+    @property
+    def server(self):
+        return self._server
+
+    @server.setter
+    def server(self, server: DragonPMIxServer):
+        self._server = server
+
+    def destroy(self):
+        try:
+            self.ls_ch.destroy()
+        except Exception:
+            pass
+
+        try:
+            self.ret_ch.destroy()
+        except Exception:
+            pass
+
+        try:
+            self.buffered_resp_ch.destroy()
+        except Exception:
+            pass
+
+        try:
+            self._server.finalize()
+        except Exception as e:
+            raise RuntimeError("Unable to shutdown PMIx server: %s", e)
+
+
 class TerminationException(Exception):
     pass
 
@@ -127,7 +169,8 @@ class InputConnector:
             return False
         except:
             self._log.info(
-                "The input could not be forwarded from cuid=%s to process pid=%s" % (self._conn.inbound_chan.cuid, self._proc.pid)
+                "The input could not be forwarded from cuid=%s to process pid=%s"
+                % (self._conn.inbound_chan.cuid, self._proc.pid)
             )
 
         return False
@@ -384,14 +427,11 @@ class OutputConnector:
 def mk_response_pairs(resp_cl, ref):
     err_cl = resp_cl.Errors
 
-    def success_resp(desc=None, **kwargs):
-        if desc is not None:
-            return resp_cl(tag=get_new_tag(), ref=ref, err=err_cl.SUCCESS, desc=desc, **kwargs)
-        else:
-            return resp_cl(tag=get_new_tag(), ref=ref, err=err_cl.SUCCESS, **kwargs)
+    def success_resp(**kwargs):
+        return resp_cl(tag=get_new_tag(), ref=ref, err=err_cl.SUCCESS, **kwargs)
 
-    def fail_resp(msg):
-        return resp_cl(tag=get_new_tag(), ref=ref, err=err_cl.FAIL, err_info=msg)
+    def fail_resp(msg, **kwargs):
+        return resp_cl(tag=get_new_tag(), ref=ref, err=err_cl.FAIL, err_info=msg, **kwargs)
 
     return success_resp, fail_resp
 
@@ -425,7 +465,9 @@ class AvailableLocalCUIDS:
 
     def __init__(self, node_index):
         if node_index >= dfacts.MAX_NODES:  # 0 <= node_index < MAX_NODES
-            raise RuntimeError("A Local Services nodes has node_index=%s which is greater than max allowed." % node_index)
+            raise RuntimeError(
+                "A Local Services nodes has node_index=%s which is greater than max allowed." % node_index
+            )
 
         self._node_index = node_index
         self._active = set()
@@ -476,7 +518,9 @@ class AvailableLocalMUIDS:
 
     def __init__(self, node_index):
         if node_index >= dfacts.MAX_NODES:  # 0 <= node_index < MAX_NODES
-            raise RuntimeError("A Local Services nodes has node_index=%s which is greater than max allowed." % node_index)
+            raise RuntimeError(
+                "A Local Services nodes has node_index=%s which is greater than max allowed." % node_index
+            )
 
         self._node_index = node_index
         self._initial_muid = dfacts.local_pool_first_muid(node_index)
@@ -555,6 +599,7 @@ class LocalServer:
         self.local_cuids = AvailableLocalCUIDS(self.node_index)
         self.local_muids = AvailableLocalMUIDS(self.node_index)
         self.local_channels = dict()
+        self.group_resources = dict()
         self.def_muid = dfacts.default_pool_muid_from_index(self.node_index)
 
         if channels is None:
@@ -603,7 +648,9 @@ class LocalServer:
         log = logging.getLogger("LS.local_pool")
         muid = self.local_muids.next
         name = "%s%s" % (msg.name, os.getpid())
-        log.debug("Creating local memory pool with muid=%s for process with msg.puid=%s and name=%s" % (muid, msg.puid, name))
+        log.debug(
+            "Creating local memory pool with muid=%s for process with msg.puid=%s and name=%s" % (muid, msg.puid, name)
+        )
         pool = dmm.MemoryPool(msg.size, name, muid, pre_alloc_blocks=msg.preAllocs, min_block_size=msg.minBlockSize)
         self.pools[muid] = pool
         return pool
@@ -743,11 +790,11 @@ class LocalServer:
         except Exception as ex:
             log.exception("Abnormal termination exception: %s" % ex)
 
-    def run(self, shep_in, gs_in, be_in, is_primary, ta_in=None, gw_channels=None):
+    def run(self, ls_in, gs_in, be_in, is_primary, ta_in=None, gw_channels=None):
         """Local services main function.
 
-        :param shep_in: ls channel
-        :type shep_in: Connection object
+        :param ls_in: ls channel
+        :type ls_in: Connection object
         :param gs_in: global services channel
         :type gs_in: Connection object
         :param be_in: launcher be channel
@@ -768,6 +815,7 @@ class LocalServer:
         self.ta_in = ta_in
         self.be_in = be_in
         self.gs_in = gs_in
+        self.ls_in = ls_in
         self.is_primary = is_primary
 
         th = threading.Thread
@@ -791,7 +839,7 @@ class LocalServer:
             self._abnormal_termination("ls run starting threads exception: %s" % ex)
 
         try:
-            self.main_loop(shep_in)
+            self.main_loop(ls_in)
         except Exception as ex:
             tb = traceback.format_exc()
             self._abnormal_termination("ls main loop exception: %s\n%s" % (ex, tb))
@@ -918,7 +966,7 @@ class LocalServer:
         else:
             self.pools[msg.m_uid] = mpool
             encoded_desc = B64.bytes_to_str(mpool.serialize())
-            resp_msg = success(encoded_desc)
+            resp_msg = success(desc=encoded_desc)
 
         return resp_msg
 
@@ -968,7 +1016,7 @@ class LocalServer:
                     capacity=msg.options.capacity,
                     semaphore=msg.options.semaphore,
                     bounded_semaphore=msg.options.bounded_semaphore,
-                    initial_sem_value=msg.options.initial_sem_value
+                    initial_sem_value=msg.options.initial_sem_value,
                 )
             except dch.ChannelError as cex:
                 error = "%r failed: %s" % (msg, cex)
@@ -979,7 +1027,7 @@ class LocalServer:
         else:
             self.channels[msg.c_uid] = ch
             encoded_desc = B64.bytes_to_str(ch.serialize())
-            resp_msg = success(encoded_desc)
+            resp_msg = success(desc=encoded_desc)
             log.info("Received and Created a channel via SHChannelCreate")
 
         return resp_msg
@@ -989,12 +1037,13 @@ class LocalServer:
         log = logging.getLogger("LS.create local channel")
         log.info("Received an SHCreateProcessLocalChannel")
 
-        if not msg.puid in self.puid2pid:
+        # TODO: Add tracking of LS created local channels so we can destroy them as they become free
+        if not msg.puid in self.puid2pid and msg.puid != 1:
             resp_msg = dmsg.SHCreateProcessLocalChannelResponse(
                 tag=get_new_tag(),
                 ref=msg.tag,
                 err=DragonError.INVALID_ARGUMENT,
-                errInfo="Cannot create channel for non-existent local process on node.",
+                errInfo=f"Cannot create channel for non-existent local process on node. PUID {msg.puid}",
             )
             send_fli_response(resp_msg, msg.respFLI)
             return
@@ -1174,21 +1223,74 @@ class LocalServer:
     def create_group(self, msg: dmsg.SHMultiProcessCreate) -> None:
         log = logging.getLogger("LS.create_group")
         success, fail = mk_response_pairs(dmsg.SHMultiProcessCreateResponse, msg.tag)
+        failed = False
+        err_info = ""
+        # Stand up the PMIx Server if PMIx backend has been requested
+        try:
+            base_rank = None
+            log.debug("PMI group info multi proc create: %s", msg.pmi_group_info)
+            if msg.pmi_group_info.backend == dfacts.PMIBackend.PMIX:
+                node_id = msg.procs[0].pmi_info.nid
+                ppn = len([nid for nid in msg.pmi_group_info.nidlist if nid == node_id])
+                base_rank = len([nid for nid in msg.pmi_group_info.nidlist if nid < node_id])
+
+                log.debug("Create PMIx rsources for guid %s", msg.guid)
+                self.group_resources[msg.guid] = PMIxGroupResources(
+                    self.make_local_channel(), self.make_local_channel(), self.make_local_channel()
+                )
+
+                # Figure out if there's a local manager for the server:
+                local_mgr_desc = None
+                try:
+                    log.debug("looking for PMIx ddict serialized descriptor %s", msg.pmi_group_info.pmix_desc)
+                    local_mgr_desc = self.kvs[msg.pmi_group_info.pmix_desc]
+                except KeyError:
+                    log.debug("PMIx DDict: No local manager found for this server")
+
+                log.debug("Starting PMIx server")
+                if DragonPMIxServer is None:
+                    failed = True
+                    err_info = "A PMIx backend has been requested for an MPI process group, but this Dragon library was not built with PMIx support"
+                    raise AttributeError(err_info)
+                else:
+                    self.group_resources[msg.guid].server = DragonPMIxServer(
+                        msg.pmi_group_info.pmix_desc,
+                        local_mgr_desc,
+                        self.group_resources[msg.guid].ls_ch.serialize(),
+                        self.group_resources[msg.guid].ret_ch.serialize(),
+                        self.group_resources[msg.guid].buffered_resp_ch.serialize(),
+                        msg.pmi_group_info.nranks,
+                        node_id,
+                        ppn,
+                        msg.pmi_group_info.hostlist,
+                    )
+                    log.info("Initialized local PMIx server")
+        # In case PMI stuff isn't happening
+        except AttributeError as e:
+            log.debug("Error starting PMIx server: %s", e)
+            pass
 
         responses = []
-        failed = False
         for process_create_msg in msg.procs:
-            response = self.create_process(process_create_msg, msg.pmi_group_info)
+            response = self.create_process(
+                msg=process_create_msg, pmi_group_info=msg.pmi_group_info, base_rank=base_rank, guid=msg.guid
+            )
             responses.append(response)
             if response.err == dmsg.SHProcessCreateResponse.Errors.FAIL:
                 failed = True
 
         # always return success
-        resp_msg = success(responses=responses, failed=failed)
+        resp_msg = success(responses=responses, failed=failed, err_info=err_info)
         return resp_msg
 
     @dutil.route(dmsg.SHProcessCreate, _DTBL)
-    def create_process(self, msg: dmsg.SHProcessCreate, pmi_group_info: Optional[dmsg.PMIGroupInfo] = None) -> None:
+    def create_process(
+        self,
+        msg: dmsg.SHProcessCreate,
+        pmi_group_info: Optional[dmsg.PMIGroupInfo] = None,
+        base_rank: int = None,
+        guid: int = None,
+    ) -> None:
         log = logging.getLogger("LS.create process")
         success, fail = mk_response_pairs(dmsg.SHProcessCreateResponse, msg.tag)
 
@@ -1219,6 +1321,10 @@ class LocalServer:
 
         the_env = dict(os.environ)
         the_env.update(req_env)
+
+        nenv = len(the_env)
+        for idx, (k, v) in enumerate(the_env.items()):
+            log.debug("Env %s/%s -> %s: %s", idx, nenv, k, v)
 
         # Add in the local services return serialized channel descriptor.
         shep_return_ch = self.make_local_channel()
@@ -1307,30 +1413,59 @@ class LocalServer:
                 log.debug("pmi_group_info=%s", str(pmi_group_info))
                 log.debug("pmi_process_info=%s", str(msg.pmi_info))
                 log.info("p_uid %s looking up pmod launch cuid" % msg.t_p_uid)
-                pmod_launch_cuid = dfacts.pmod_launch_cuid_from_jobinfo(
-                    dutils.host_id(), pmi_group_info.job_id, msg.pmi_info.lrank
-                )
 
-                log.info("p_uid %s Creating pmod launch channel using pmod_launch_cuid=%s" % (msg.t_p_uid, pmod_launch_cuid))
                 node_index = parms.this_process.index
                 inf_muid = dfacts.infrastructure_pool_muid_from_index(node_index)
-                pmod_launch_ch = dch.Channel(self.pools[inf_muid], pmod_launch_cuid)
-                the_env["DRAGON_PMOD_CHILD_CHANNEL"] = str(dutils.B64(pmod_launch_ch.serialize()))
-
                 log.info("p_uid %s Setting required PMI environment variables" % msg.t_p_uid)
                 # For PBS, we need to tell PMI to not use a FD to get PALS info:
-                try:
-                    del the_env["PMI_CONTROL_FD"]
-                except KeyError:
-                    pass
 
-                the_env["PMI_CONTROL_PORT"] = str(pmi_group_info.control_port)
                 the_env["MPICH_OFI_CXI_PID_BASE"] = str(msg.pmi_info.pid_base)
-                the_env["DL_PLUGIN_RESILIENCY"] = "1"
-                the_env["LD_PRELOAD"] = str(dfacts.DRAGON_LIB_SO)
                 the_env["LD_LIBRARY_PATH"] = str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("LD_LIBRARY_PATH", ""))
-                the_env["_DRAGON_PALS_ENABLED"] = "1"
                 the_env["FI_CXI_RX_MATCH_MODE"] = "hybrid"
+
+                if pmi_group_info.backend == dfacts.PMIBackend.CRAY:
+                    log.info("Establishing parameters for cray-pmi launch of MPI app")
+                    pmod_launch_cuid = dfacts.pmod_launch_cuid_from_jobinfo(
+                        dutils.host_id(), pmi_group_info.job_id, msg.pmi_info.lrank
+                    )
+                    log.info(
+                        "p_uid %s Creating pmod launch channel using pmod_launch_cuid=%s"
+                        % (msg.t_p_uid, pmod_launch_cuid)
+                    )
+
+                    log.info(
+                        "p_uid %s Creating pmod launch channel using pmod_launch_cuid=%s"
+                        % (msg.t_p_uid, pmod_launch_cuid)
+                    )
+
+                    pmod_launch_ch = dch.Channel(self.pools[inf_muid], pmod_launch_cuid)
+                    the_env["DRAGON_PMOD_CHILD_CHANNEL"] = str(dutils.B64(pmod_launch_ch.serialize()))
+                    the_env["_DRAGON_PALS_ENABLED"] = "1"
+                    the_env["DL_PLUGIN_RESILIENCY"] = "1"
+                    the_env["LD_PRELOAD"] = str(dfacts.DRAGON_LIB_SO)
+                    the_env["PMI_CONTROL_PORT"] = str(pmi_group_info.control_port)
+                    try:
+                        del the_env["PMI_CONTROL_FD"]
+                    except KeyError:
+                        pass
+
+                elif pmi_group_info.backend == dfacts.PMIBackend.PMIX:
+                    log.info(f"Establishing parameters for PMIx launch of MPI app. Initial env length: {len(the_env)}")
+                    try:
+                        the_env = self.group_resources[guid].server.get_client_env(
+                            the_env, base_rank + msg.pmi_info.lrank
+                        )
+                    except AttributeError:
+                        resp_msg = fail("A PMIx backend was requested, but no PMIx server was found.")
+                        return resp_msg
+
+                    # We don't have support for GPUs in our PMIx server yet. For ANL MPICH, we need to manually
+                    # disable GPU support during MPI_init:
+                    the_env["MPIR_CVAR_ENABLE_GPU"] = "0"
+
+                    nenv = len(the_env)
+                    for idx, (k, v) in enumerate(the_env.items()):
+                        log.debug("Env %s/%s -> %s: %s", idx, nenv, k, v)
 
             stdin_connector = InputConnector(stdin_conn)
 
@@ -1394,17 +1529,18 @@ class LocalServer:
                 log.info("Now created process with args %s and pid=%s" % (real_args, the_proc.pid))
 
             if msg.pmi_info:
-                log.info("p_uid %s sending mpi data for %s" % (msg.t_p_uid, msg.pmi_info.lrank))
-                pmod.PMOD(
-                    msg.pmi_info.ppn,
-                    msg.pmi_info.nid,
-                    pmi_group_info.nnodes,
-                    pmi_group_info.nranks,
-                    pmi_group_info.nidlist,
-                    pmi_group_info.hostlist,
-                    pmi_group_info.job_id,
-                ).send_mpi_data(msg.pmi_info.lrank, pmod_launch_ch)
-                log.info("p_uid %s DONE: sending mpi data for %s" % (msg.t_p_uid, msg.pmi_info.lrank))
+                if pmi_group_info.backend == dfacts.PMIBackend.CRAY:
+                    log.info("p_uid %s sending cray-pmi mpi data for %s" % (msg.t_p_uid, msg.pmi_info.lrank))
+                    pmod.PMOD(
+                        msg.pmi_info.ppn,
+                        msg.pmi_info.nid,
+                        pmi_group_info.nnodes,
+                        pmi_group_info.nranks,
+                        pmi_group_info.nidlist,
+                        pmi_group_info.hostlist,
+                        pmi_group_info.job_id,
+                    ).send_mpi_data(msg.pmi_info.lrank, pmod_launch_ch)
+                    log.info("p_uid %s DONE: sending mpi data for %s" % (msg.t_p_uid, msg.pmi_info.lrank))
 
             log.info("p_uid %s created as %s" % (msg.t_p_uid, the_proc.pid))
             self.new_procs.put(the_proc)
@@ -1464,7 +1600,7 @@ class LocalServer:
                     proc = self.apt[self.puid2pid[msg.t_p_uid]]
                     if proc.props.stderr_connector is not None:
                         proc.props.stderr_connector.end_stderr_forwarding()
-                except:
+                except Exception:
                     pass
 
         try:
@@ -1547,9 +1683,9 @@ class LocalServer:
         send_fli_response(resp_msg, msg.respFLI)
 
     @dutil.route(dmsg.SHGetKV, _DTBL)
-    def handle_get_kv(self, msg: dmsg.SHSetKV) -> None:
+    def handle_get_kv(self, msg: dmsg.SHGetKV) -> None:
         log = logging.getLogger("LS.get key-value")
-        if not msg.key in self.kvs:
+        if msg.key not in self.kvs:
             resp_msg = dmsg.SHGetKVResponse(tag=get_new_tag(), ref=msg.tag, value="", err=DragonError.NOT_FOUND)
         else:
             val = self.kvs[msg.key]
@@ -1604,6 +1740,27 @@ class LocalServer:
                 log.info("to %s" % msg.filename)
             except (IOError, OSError) as e:
                 log.warning("failed: %s" % e)
+
+    @dutil.route(dmsg.LSDestroyPMIx, _DTBL)
+    def cleanup_pmix_channels(self, msg):
+        log = logging.getLogger("LS.cleanup_pmix_channels")
+
+        success, fail = mk_response_pairs(dmsg.LSDestroyPMIxResponse, msg.tag)
+        log.debug("Cleaning up PMIx resources for guid %s", msg.guid)
+        try:
+            self.group_resources[msg.guid].destroy()
+            del self.group_resources[msg.guid]
+            resp_msg = success(guid=msg.guid)
+            log.debug("Successfully destroying PMIx resources for guid %s", msg.guid)
+        except KeyError:
+            err = f"Found no resources allocated to guid {msg.guid}"
+            log.debug(err)
+            resp_msg = fail(err)
+        except Exception as e:
+            log.debug("Encountered exception while cleaning up PMIx resources for guid %d: %s", msg.guid, e)
+            resp_msg = fail(f"{e}")
+
+        return resp_msg
 
     def cleanup_local_channels_pools(self, proc):
         log = logging.getLogger("LS.local cleanup")
@@ -1767,7 +1924,10 @@ class LocalServer:
         except:
             critical_pct = 98
 
-        log.info("critical_bytes_env=%s critical_pct_env=%s critical_pct=%s" % (critical_bytes_env, critical_pct_env, critical_pct))
+        log.info(
+            "critical_bytes_env=%s critical_pct_env=%s critical_pct=%s"
+            % (critical_bytes_env, critical_pct_env, critical_pct)
+        )
 
         try:
             suppress_warnings = lparms.warnings_off != "False"
@@ -1779,7 +1939,10 @@ class LocalServer:
                 mem_utilization = psutil.virtual_memory().percent
                 mem_bytes = psutil.virtual_memory().available
                 if mem_utilization >= critical_pct:
-                    critical_msg = "OOM CRITICAL: Free memory on node %s with hostname %s is less than %s% with %s bytes available. Runtime is coming down.\n" % (parms.this_process.index, self.hostname, int(100-mem_utilization)+1, mem_bytes)
+                    critical_msg = (
+                        "OOM CRITICAL: Free memory on node %s with hostname %s is less than %s%% with %s bytes available. Runtime is coming down.\n"
+                        % (parms.this_process.index, self.hostname, int(100 - mem_utilization) + 1, mem_bytes)
+                    )
                     self.be_in.send(
                         dmsg.SHFwdOutput(
                             tag=get_new_tag(),
@@ -1793,7 +1956,10 @@ class LocalServer:
                     )
                     self._abnormal_termination(critical_msg)
                 elif mem_utilization >= warn_pct:
-                    warning_msg = "\nOOM WARNING: Free memory on node %s with hostname %s is less than %s% with %s bytes still available.\n" % (parms.this_process.index, self.hostname, int(100-mem_utilization)+1, mem_bytes)
+                    warning_msg = (
+                        "\nOOM WARNING: Free memory on node %s with hostname %s is less than %s%% with %s bytes still available.\n"
+                        % (parms.this_process.index, self.hostname, int(100 - mem_utilization) + 1, mem_bytes)
+                    )
                     log.info(warning_msg)
                     if not suppress_warnings:
                         self.be_in.send(

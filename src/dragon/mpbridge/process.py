@@ -1,5 +1,6 @@
 """Dragon's replacement classes for Multiprocessing Process."""
 
+import gc
 import io
 import logging
 import os
@@ -112,6 +113,22 @@ class DragonProcess(multiprocessing.process.BaseProcess):
     @staticmethod
     def _Popen(process_obj):
         return DragonPopen(process_obj)
+
+    def run(self):
+        '''
+        Method to be run in sub-process; can be overridden in sub-class
+        '''
+        try:
+            if self._target:
+                self._target(*self._args, **self._kwargs)
+        except:
+            raise
+        finally:
+            del self._args    # This is done so references are removed
+            del self._kwargs  # allowing Dragon to free resources.
+            self._args = ()   # set it in case it is referenced after
+            self._kwargs = {} # the run function returns.
+            gc.collect()
 
     @property
     def ident(self) -> int:

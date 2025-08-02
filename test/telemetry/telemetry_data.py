@@ -1,22 +1,15 @@
-AGGREGATOR_FUNCTIONS =  ["min", "sum", "max", "avg", "dev"]
+AGGREGATOR_FUNCTIONS = ["min", "sum", "max", "avg", "dev"]
 
 # sample query that works with the SAMPLE_DATA
 BASE_GRAFANA_QUERY = {
     "start": 1722010526,
     "queries": [
         {
-            "metric": "load_average", 
-            "aggregator": "sum", 
-            "downsample": "100ms-avg", 
-            "tags": {}, 
-            "filters": [
-                {
-                    "type": "iliteral_or", 
-                    "tagk": "host", 
-                    "filter": "*", 
-                    "groupBy": False
-                }
-            ]
+            "metric": "load_average",
+            "aggregator": "sum",
+            "downsample": "100ms-avg",
+            "tags": {},
+            "filters": [{"type": "iliteral_or", "tagk": "host", "filter": "*", "groupBy": False}],
         }
     ],
     "msResolution": False,
@@ -148,47 +141,21 @@ BASE_DRAGON_SERVER_SUGGEST_RESPONSE = {
     "req_id": "",
     "request": [],
     "host": "pinoak0011",
-    "result": [
-        "load_average", 
-        "used_RAM", 
-        "cpu_percent", 
-        "dragon_telemetry_test_data"
-    ],
+    "result": ["load_average", "used_RAM", "cpu_percent", "dragon_telemetry_test_data"],
 }
 
 # sample data put into DB, please use existing start and end times if you add data
 SAMPLE_DATA = {
-    "load_average": {
-        "1722010526": 0.58, 
-        "1722010527": 0.58, 
-        "1722010528": 0.62
-    },
-    "used_RAM": {
-        "1722010526": 9.3, 
-        "1722010527": 9.3, 
-        "1722010528": 9.3
-    },
-    "cpu_percent": {
-        "1722010526": 0.8, 
-        "1722010527": 1.6, 
-        "1722010528": 0.8
-    },
-    "num_running_processes": {
-        "1722010526": 21, 
-        "1722010527": 20, 
-        "1722010528": 23
-    },
-    "def_pool_utilization": {
-        "1722010526": 0.003910064, 
-        "1722010527": 0.00093, 
-        "1722010528": 0.001234
-    }
+    "load_average": {"1722010526": 0.58, "1722010527": 0.58, "1722010528": 0.62},
+    "used_RAM": {"1722010526": 9.3, "1722010527": 9.3, "1722010528": 9.3},
+    "cpu_percent": {"1722010526": 0.8, "1722010527": 1.6, "1722010528": 0.8},
+    "num_running_processes": {"1722010526": 21, "1722010527": 20, "1722010528": 23},
+    "def_pool_utilization": {"1722010526": 0.003910064, "1722010527": 0.00093, "1722010528": 0.001234},
 }
 
 BASE_CLIENT_QUERY = {
-    "type": "query", 
-    "start_time": 1722010526, 
-    "metrics": [
-        "load_average"
-    ]
+    "type": "query",
+    "start_time": 1722010526,
+    "metrics": ["load_average"],
+    "tags": ["host"],
 }

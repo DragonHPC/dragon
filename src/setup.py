@@ -25,7 +25,7 @@ def make_relative_rpath_args(path):
 
 DragonExtension = partial(
     Extension,
-    include_dirs=[f"{ROOTDIR}/lib", f"{ROOTDIR}/include"],
+    include_dirs=[f"{ROOTDIR}/lib", f"{ROOTDIR}/include", f"{ROOTDIR}/lib/pmix", f"{ROOTDIR}/lib/event"],
     library_dirs=[f"{ROOTDIR}/lib"],
     libraries=["dragon", "rt"],
     extra_link_args=make_relative_rpath_args("lib"),
@@ -44,6 +44,7 @@ extensions = [
     DragonExtension("dragon.pmod", ["dragon/pydragon_pmod.pyx"]),
     DragonExtension("dragon.perf", ["dragon/pydragon_perf.pyx"]),
     DragonExtension("dragon.fli", ["dragon/pydragon_fli.pyx"]),
+    DragonExtension("dragon.dpmix", ["dragon/pydragon_dpmix.pyx"]),
 ]
 
 
@@ -195,5 +196,6 @@ setup(
         "psutil>=5.9.0",
         "pycapnp>=2.0.0",
         "paramiko>=3.5.1",
+        "flask-jwt-extended>=4.7.1",
     ],
 )

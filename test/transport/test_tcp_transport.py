@@ -24,6 +24,7 @@ import asyncio
 from collections import defaultdict
 
 from dragon.mpbridge.queues import DragonQueue
+from dragon.native.queue import Queue as NativeQueue
 import dragon.infrastructure.connection as dconn
 
 SUCCESS = 0
@@ -372,11 +373,15 @@ class SingleNodeTransportBench(unittest.TestCase):
         # This is because we don't call the Dragon start method and
         # dparms.this_process.default_pd that we use in case of a
         # remote channel is not set in Queue.
-        q = DragonQueue(m_uid=self.mpool, _ext_channel=self.user_ch1)
+        # You cannot guarantee delivery (off-node) of a item put into a queue
+        # before calling size (or qsize in the case of a mp.Queue). So we
+        # create a NativeQueue here where flush can be used to guarantee
+        # delivery even off-node.
+        q = NativeQueue(pool=self.mpool, main_channel=self.user_ch1)
 
         y = [1, 2, 3]
-        q.put(y)
-        self.assertEqual(q.qsize(), 1, "We could not get the proper size from a queue on a remote channel.")
+        q.put(y, flush=True)
+        self.assertEqual(q.size(), 1, "We could not get the proper size from a queue on a remote channel.")
         x = q.get()
         self.assertEqual(x, y, "The Queue implementation did not pass a list correctly through it.")
         y = ["a", "b", "c"]
@@ -410,7 +415,7 @@ class SingleNodeTransportBench(unittest.TestCase):
         # This is because we don't call the Dragon start method and
         # dparms.this_process.default_pd that we use in case of a
         # remote channel is not set in Queue.
-        q = DragonQueue(m_uid=self.mpool, _ext_channel=self.user_ch1)
+        q = DragonQueue(pool=self.mpool, main_channel=self.user_ch1)
 
         # This test assumes ordering on queue messages and tests that
         y = [1, 2, 3]

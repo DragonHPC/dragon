@@ -1,5 +1,5 @@
 """A simple recursive merge sort implementation using Python Multiprocessing.
-It starts a process for every sublist until the sublist contains less than 
+It starts a process for every sublist until the sublist contains less than
 CUTOFF elements.
 `__main__` actually executes (MAX_SIZE-MIN_SIZE)/INCREMENT merge sorts of
 increasingly large sublists, measures the time and prints the timing results.
@@ -7,6 +7,7 @@ increasingly large sublists, measures the time and prints the timing results.
 See e.g. Knuth, The Art of Computer Programming, 1998, Vol. 3, section 5.2.4.
 """
 
+import gc
 import random
 import sys
 import time
@@ -18,7 +19,7 @@ import multiprocessing as mp
 # values are chosen so memory usage fits into the default Dragon memory pool of 4GB
 CUTOFF = 20000
 MIN_SIZE = 100000
-MAX_SIZE = 1000000
+MAX_SIZE = 500000
 INCREMENT = MIN_SIZE
 
 
@@ -101,11 +102,18 @@ def parallel_merge_sort(chunk: list, cutoff: int, sorted_chunk_queue: object) ->
         right_proc.start()
 
         result_a = result_queue.get(timeout=None)  # blocking
-        right_b = result_queue.get(timeout=None)
+        result_b = result_queue.get(timeout=None)
 
-        result = merge(result_a, right_b)
+        result = merge(result_a, result_b)
+
+        del result_a
+        del result_b
+        del result_queue
+        gc.collect()
 
         sorted_chunk_queue.put(result)
+        left_proc.join()
+        right_proc.join()
 
 
 def merge_sort(data: list, size: int, cutoff: int) -> int:
@@ -180,8 +188,8 @@ if __name__ == "__main__":
     )
 
     for size in range(MIN_SIZE, MAX_SIZE + 1, INCREMENT):
-
         delta = merge_sort(data, size, CUTOFF)
         proc_count = find_number_of_processes(size, CUTOFF)
         channel_count = proc_count // 2
         print(f"{size:13d}    {delta:14.6f}{proc_count:12}{channel_count:12}")
+

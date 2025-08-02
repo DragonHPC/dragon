@@ -7,6 +7,7 @@ from itertools import chain
 from threading import get_ident
 import logging
 from http import HTTPStatus
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required
 
 from dragon.globalservices.process import runtime_reboot
 
@@ -14,7 +15,34 @@ LOG = logging.getLogger(__name__)
 
 
 app = Flask(__name__)
+app.config['JWT_SECRET_KEY'] = str(os.urandom(12).hex())
+jwt = JWTManager(app)
 
+
+# Call if auth_key is not None
+@jwt_required()
+def jwt_optional():
+    pass
+
+@app.route("/api/token", methods=["POST"])
+def get_jwt_token():
+    """POST /api/token
+        Retrieve JWT Bearer Token.
+        Request:
+        body:
+            auth_key:
+                type: string
+                description: Auth Key value in YAML config
+
+    Returns:
+        Bearer Token
+    """ 
+    telem_key = request.json.get("auth_key", None)
+    if telem_key == app.config["auth_key"]:
+        access_token = create_access_token(identity=telem_key)
+        return Response(json.dumps({"access_token": "Bearer " + access_token}), mimetype="application/json"), HTTPStatus.OK
+    else:
+        return Response(json.dumps({"msg": "Bad auth_key"}), mimetype="application/json"), HTTPStatus.BAD_REQUEST
 
 @app.route("/api/aggregators")
 def get_aggregators() -> list:
@@ -24,19 +52,27 @@ def get_aggregators() -> list:
     Returns:
         list:  of aggregator functions
     """
+    if app.config["auth_key"] is not None:
+        jwt_optional()
+
     # List of possible aggregations
     aggregators_res = ["min", "sum", "max", "avg", "dev"]
 
-    return Response(json.dumps((aggregators_res)), mimetype="application/json")
+    return Response(json.dumps((aggregators_res)), mimetype="application/json"), HTTPStatus.OK
 
 
 @app.route("/api/query", methods=["POST"])
 def post_query() -> object:
+
     """POST /api/query
     Send queries to node queues, and retrieve responses from return queue
     Returns:
         object: datapoints for metrics that have been queried
     """
+
+    if app.config["auth_key"] is not None:
+        jwt_optional()
+    
     query = request.json
     uid = str(int(time.time() * 100)) + "_" + str(get_ident())
     query["req_id"] = uid
@@ -80,6 +116,8 @@ def suggest() -> list:
     Returns:
         list:  metrics containing the entered query string
     """
+    if app.config["auth_key"] is not None:
+        jwt_optional()
 
     uid = str(int(time.time() * 100)) + "_" + str(os.getpid())
     query = {"type": "suggest", "req_id": uid, "return_queue": "aggregator", "request": []}
@@ -110,6 +148,8 @@ def suggest() -> list:
 
 
 @app.route("/api/telemetry_shutdown", methods=["GET"])
+@jwt_required(optional=True)
+# Stays optional because telemetry_shutdown is called through Telemetry finalize
 def set_telemetry_shutdown() -> object:
     """GET /api/shutdown
     Signal shutdown sequence in Aggregator
@@ -152,6 +192,9 @@ def reboot_dragon() -> object:
                     type: List(str)
 
     """
+    if app.config["auth_key"] is not None:
+        jwt_optional()
+
     hostnames = request.form.get("hostnames", "")
     h_uids = request.form.get("h_uids", "")
 

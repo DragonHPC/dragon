@@ -318,6 +318,11 @@ struct DDBPutResponseDef {
     managerID @1: UInt64;
 }
 
+struct PMIxFenceMsgDef {
+    ndata @0: UInt64;
+    data @1: Text;
+}
+
 struct DDPersistedChkptAvailDef {
     chkptID @0: UInt64;
     respFLI @1: Text;
@@ -478,5 +483,6 @@ struct MessageDef {
         ddGetFreezeResponse @78: DDGetFreezeResponseDef;
         ddGetResponse @79: DDGetResponseDef;
         ddPopResponse @80: DDPopResponseDef;
+        pmIxFenceMsg @81: PMIxFenceMsgDef;
     }
 }

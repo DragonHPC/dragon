@@ -5,9 +5,11 @@ or a list of all nodes.
 """
 
 import logging
+import os
 
 from ..globalservices.node import query, query_total_cpus, get_list
 from ..infrastructure.gpu_desc import AccVendor
+from ..infrastructure.policy import Policy
 from ..utils import host_id
 
 LOG = logging.getLogger(__name__)
@@ -128,6 +130,19 @@ class Node:
             return "Unknown Vendor"
 
     @property
+    def gpu_env_str(self) -> str:
+        """Return the environment variable used by GPU Vendor to define GPU affinity
+
+        :return: GPU environment variable string
+        :rtype: str
+        """
+        if self._descr.accelerators is None:
+            return None
+        vendor_env_str = self._descr.accelerators.env_str
+
+        return vendor_env_str
+
+    @property
     def cpus(self) -> list[int]:
         """Return the CPUs available on this node
 
@@ -150,6 +165,7 @@ class Node:
     @property
     def is_primary(self) -> bool:
         """Returns true if this is the primary node for the runtime. The primary node is important in that it is the node with global services.
+
         :return: is the primary node
         :rtype: bool
         """
@@ -176,6 +192,8 @@ class System:
     def __init__(self):
         """A stub of a system abstraction"""
         self._nodes = get_list()
+        self._node_objs = [Node(id) for id in self._nodes]
+        self._primary_node = None
 
     @property
     def nodes(self):
@@ -184,3 +202,49 @@ class System:
     @property
     def nnodes(self) -> int:
         return len(self._nodes)
+
+    @property
+    def primary_node(self) -> Node:
+        if self._primary_node is None:
+            for node in self._node_objs:
+                if node.is_primary:
+                    self._primary_node = node
+                    break
+
+        return self._primary_node
+
+    @property
+    def restarted(self) -> bool:
+        """Helper function to check environment and determine if the runtime was previously restarted
+
+        :return: true if the runtime was restarted
+        :rtype: bool
+        """
+
+        return bool(os.environ.get("DRAGON_RESILIENT_RESTART", False))
+
+    def hostname_policies(self) -> list[Policy]:
+        """Generate a list of policies that use all of the nodes in the allocation specified by hostname
+
+        :return: a list of policies where each policy specifies hostname placement and the hostname, without duplication
+        :rtype: list[Policy]
+        """
+        policy_list = []
+        for node in self._node_objs:
+            policy_list.append(Policy(placement=Policy.Placement.HOST_NAME, host_name=node.hostname))
+        return policy_list
+
+    def gpu_policies(self) -> list[Policy]:
+        """Generate a list of policies that use all of the GPUs in the allocation
+
+        :return: a list of policies where each policy specifies hostname placement, the hostname, and a gpu on the node, without duplication
+        :rtype: list
+        """
+
+        policies = []
+        for node in self._node_objs:
+            for i in range(node.num_gpus):
+                temp_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node.hostname, gpu_affinity=[i])
+                policies.append(temp_policy)
+
+        return policies

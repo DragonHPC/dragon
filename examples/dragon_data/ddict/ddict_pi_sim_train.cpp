@@ -3,10 +3,11 @@
 #include <string>
 #include<unistd.h>
 
-#include <serializable.hpp>
+#include <dragon/serializable.hpp>
 #include <dragon/dictionary.hpp>
 #include <dragon/return_codes.h>
 
+using namespace dragon;
 
 static timespec_t TIMEOUT = {0,5000000000}; // Timeouts will be 5 second by default
 static int NUM_POINTS = 100000;
@@ -73,7 +74,7 @@ void training(char* ddict_descr, int client_id, int num_procs, uint64_t digits, 
         }
         cout<<"PI simulation result = "<<4*avg<< " from client "<<client_id<<endl;
     } catch (const DragonError& ex) {
-        fprintf(stderr, "Client %d, ec: %s, err_str: %s\n", client_id, dragon_get_rc_string(ex.get_rc()), ex.get_err_str());
+        fprintf(stderr, "Client %d, ec: %s, err_str: %s\n", client_id, dragon_get_rc_string(ex.rc()), ex.err_str());
         fflush(stderr);
     } catch (...) {
         fprintf(stderr, "Client %d, caught unexpected err\n", client_id);
@@ -110,7 +111,7 @@ int main(int argc, char* argv[]) {
     try {
         training(ddict_descr, client_id, num_procs, digits, places, trace);
     } catch (const DragonError& ex) {
-        fprintf(stderr, "ec: %s, err_str: %s\n",dragon_get_rc_string(ex.get_rc()), ex.get_err_str());
+        fprintf(stderr, "ec: %s, err_str: %s\n",dragon_get_rc_string(ex.rc()), ex.err_str());
         fflush(stderr);
         return DRAGON_FAILURE;
     } catch (...) {

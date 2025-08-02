@@ -9,6 +9,7 @@ import multiprocessing as mp
 from dragon.globalservices import node
 from dragon.globalservices.process import multi_join
 from dragon.infrastructure.connection import Connection
+from dragon.infrastructure.facts import PMIBackend
 from dragon.native.process import MSG_PIPE, MSG_DEVNULL, Process, ProcessTemplate
 from dragon.native.process_group import ProcessGroup
 
@@ -38,18 +39,14 @@ def producer_proc(producer_id: int, num_ranks: int, result_queue: mp.Queue) -> N
     args = ["--warmup", "10", "-m", "4096"]
     run_dir = os.getcwd()
 
-    grp = ProcessGroup(restart=False, pmi_enabled=True)
+    grp = ProcessGroup(restart=False, pmi=PMIBackend.CRAY)
 
     # Pipe the stdout output from the head process to a Dragon connection
-    grp.add_process(
-        nproc=1,
-        template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=MSG_PIPE)
-    )
+    grp.add_process(nproc=1, template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=MSG_PIPE))
 
     # All other ranks should have their output go to DEVNULL
     grp.add_process(
-        nproc=num_ranks-1,
-        template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=MSG_DEVNULL)
+        nproc=num_ranks - 1, template=ProcessTemplate(target=exe, args=args, cwd=run_dir, stdout=MSG_DEVNULL)
     )
 
     grp.init()
@@ -62,8 +59,7 @@ def producer_proc(producer_id: int, num_ranks: int, result_queue: mp.Queue) -> N
         if child_resource.stdout_conn:
             log.info("Starting parse_results process for puid=%d", child_resource.puid)
             parser_proc = Process(
-                target=parse_results_proc,
-                args=(producer_id, child_resource.stdout_conn, result_queue),
+                target=parse_results_proc, args=(producer_id, child_resource.stdout_conn, result_queue)
             )
             parser_proc.start()
 
@@ -104,14 +100,7 @@ def parse_results_proc(producer_id: int, stdout_conn: Connection, result_queue: 
             line = stdout_conn.recv()
             result = result_matcher.search(line)
             if result:
-                result_queue.put(
-                    {
-                        producer_id: (
-                            result[1],
-                            result[2],
-                        )
-                    }
-                )
+                result_queue.put({producer_id: (result[1], result[2])})
     except EOFError:
         pass
 
@@ -156,21 +145,13 @@ def main() -> None:
     producer_num = 0
 
     num_nodes = len(node.get_list())
-    reserved_cores = (
-        num_nodes * 2
-    )  # Reserve a couple of cores for Dragon infrastructure
+    reserved_cores = num_nodes * 2  # Reserve a couple of cores for Dragon infrastructure
     num_real_cores = mp.cpu_count() // 2
     ranks_per_job = (num_real_cores - reserved_cores) // simultaneous_producers
 
     shutdown_event = mp.Event()
     log.info("Starting consumer process")
-    consumer = Process(
-        target=consumer_proc,
-        args=(
-            result_queue,
-            shutdown_event,
-        ),
-    )
+    consumer = Process(target=consumer_proc, args=(result_queue, shutdown_event))
     consumer.start()
 
     producers = set()
@@ -178,9 +159,7 @@ def main() -> None:
     while current_runs < total_runs:
         while active_producers < min(simultaneous_producers, total_runs - current_runs):
             log.info("Starting a new producer")
-            producer = Process(
-                target=producer_proc, args=(producer_num, ranks_per_job, result_queue)
-            )
+            producer = Process(target=producer_proc, args=(producer_num, ranks_per_job, result_queue))
             producer.start()
             producers.add(producer.puid)
             active_producers += 1

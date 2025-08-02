@@ -170,7 +170,7 @@ compute environment. In the meantime, Dragon will use the TCP transport agent
 for network communication. To eliminate this message and continue to use
 the TCP transport agent, run:
 
-    dragon-config -a 'tcp-runtime=True'
+    dragon-config add --tcp-runtime
 """
                 )
 
@@ -573,10 +573,15 @@ lower performing TCP transport agent for backend network communication.
     def _dragon_cleanup_bumpy_exit(self):
         """Helper function to launch `dragon-cleanup` at end of teardown to clean up all procs and mem"""
         print("Detected an abnormal exit. Will attempt to clean up Dragon resources...", flush=True)
+
+        env = os.environ.copy()
+        if "DRAGON_PATCH_MP" in env:
+            del env["DRAGON_PATCH_MP"]
+
         if self.resilient:
-            subprocess.run(args=["dragon-cleanup", "--only-be", "--resilient"])
+            subprocess.run(args=["dragon-cleanup", "--only-be", "--resilient"], env=env)
         else:
-            subprocess.run(args=["dragon-cleanup", "--only-be"])
+            subprocess.run(args=["dragon-cleanup", "--only-be"], env=env)
 
         # Make sure we don't manage to call this more than once
         self._bumpy_exit.clear()
@@ -720,9 +725,6 @@ lower performing TCP transport agent for backend network communication.
         except Exception:
             raise RuntimeError("Unable to construct backend launcher arg list")
 
-        the_env = dict(os.environ)
-        the_env["DRAGON_NETWORK_CONFIG"] = self.net.compress()
-
         # TODO: The differentiation between the SSH path vs. other paths
         #       is clunky. Ideally, this could be abstracted to make the
         #       if/else disappear
@@ -736,11 +738,7 @@ lower performing TCP transport agent for backend network communication.
                 log.info(f"launch be with {args}")
 
                 wlm_proc = subprocess.Popen(
-                    args,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    env=the_env,
-                    start_new_session=True,
+                    args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, start_new_session=True
                 )
             except Exception:
                 raise RuntimeError("Unable to launch backend using workload manager launch")
@@ -1141,8 +1139,11 @@ Performance may be suboptimal."""
                 f"{os.getuid()}_{os.getpid()}_{fe_host_id}" + dfacts.DEFAULT_POOL_SUFFIX,
                 dfacts.FE_OVERLAY_TRANSPORT_AGENT_MUID,
             )
-            puid, mpool_fname = MemoryPool.serialized_uid_fname(self.fe_mpool.serialize())
+            pool_ser_bytes = self.fe_mpool.serialize()
+            puid, mpool_fname = MemoryPool.serialized_uid_fname(pool_ser_bytes)
             log.debug(f"fe_mpool has uid {puid} and file {mpool_fname}")
+            pool_ser_str = B64.bytes_to_str(pool_ser_bytes)
+            os.environ["DRAGON_DEFAULT_PD"] = pool_ser_str
 
             # Create my receiving channel
             fe_cuid = dfacts.FE_CUID
@@ -1368,10 +1369,7 @@ Performance may be suboptimal."""
         # Send/recv data with my OverlayNet FE server
         send_overlaynet_args = (self.la_fe_stdout,)
         self.send_overlaynet_thread = threading.Thread(
-            name="OverlayNet Sender",
-            target=self._send_msgs_to_overlaynet,
-            args=send_overlaynet_args,
-            daemon=False,
+            name="OverlayNet Sender", target=self._send_msgs_to_overlaynet, args=send_overlaynet_args, daemon=False
         )
         self.send_overlaynet_thread.start()
         log.info("started overlaynet sender thread")
@@ -1380,10 +1378,7 @@ Performance may be suboptimal."""
 
         recv_overlaynet_args = (self.la_fe_stdin,)
         self.recv_overlaynet_thread = threading.Thread(
-            name="OverlayNet Receiver",
-            target=self.recv_msgs_from_overlaynet,
-            args=recv_overlaynet_args,
-            daemon=False,
+            name="OverlayNet Receiver", target=self.recv_msgs_from_overlaynet, args=recv_overlaynet_args, daemon=False
         )
         self.recv_overlaynet_thread.start()
 

@@ -13,6 +13,7 @@ from dragon.globalservices import group
 from dragon.globalservices import process
 from dragon.globalservices import policy_eval
 from dragon.infrastructure import process_desc
+from dragon.infrastructure.facts import PMIBackend
 from dragon.utils import B64
 
 logging.basicConfig(level=logging.INFO)
@@ -42,22 +43,12 @@ def producer_proc(producer_id: int, num_ranks: int, result_queue: mp.Queue) -> N
 
     # Pipe the stdout output from the head process to a Dragon connection
     rank_that_prints_template = process.get_create_message(
-        exe=exe,
-        run_dir=run_dir,
-        args=args,
-        pmi_required=True,
-        env=None,
-        stdout=process.PIPE,
+        exe=exe, run_dir=run_dir, args=args, pmi=PMIBackend.CRAY, env=None, stdout=process.PIPE
     )
 
     # All other ranks should have their output go to DEVNULL
     ranks_that_dont_print_template = process.get_create_message(
-        exe=exe,
-        run_dir=run_dir,
-        args=args,
-        pmi_required=True,
-        env=None,
-        stdout=process.DEVNULL,
+        exe=exe, run_dir=run_dir, args=args, pmi=PMIBackend.CRAY, env=None, stdout=process.DEVNULL
     )
 
     # Establish the list and number of process ranks that should be started
@@ -85,12 +76,9 @@ def producer_proc(producer_id: int, num_ranks: int, result_queue: mp.Queue) -> N
         for resource in resources:
             ranks_per_node[resource.placement] = ranks_per_node[resource.placement] + 1
             if resource.desc.stdout_sdesc:
-                log.info(
-                    "Starting parse_results process for p_uid=%d", resource.desc.p_uid
-                )
+                log.info("Starting parse_results process for p_uid=%d", resource.desc.p_uid)
                 parser_proc = mp.Process(
-                    target=parse_results_proc,
-                    args=(producer_id, resource.desc.stdout_sdesc, result_queue),
+                    target=parse_results_proc, args=(producer_id, resource.desc.stdout_sdesc, result_queue)
                 )
                 parser_proc.start()
 
@@ -132,14 +120,7 @@ def parse_results_proc(producer_id: int, stdout_sdesc: str, result_queue: mp.Que
             line = conn.recv()
             result = result_matcher.search(line)
             if result:
-                result_queue.put(
-                    {
-                        producer_id: (
-                            result[1],
-                            result[2],
-                        )
-                    }
-                )
+                result_queue.put({producer_id: (result[1], result[2])})
     except EOFError:
         pass
 
@@ -184,21 +165,13 @@ def main() -> None:
     producer_num = 0
 
     num_nodes = len(node.get_list())
-    reserved_cores = (
-        num_nodes * 2
-    )  # Reserve a couple of cores for Dragon infrastructure
+    reserved_cores = num_nodes * 2  # Reserve a couple of cores for Dragon infrastructure
     num_real_cores = mp.cpu_count() // 2
     ranks_per_job = (num_real_cores - reserved_cores) // simultaneous_producers
 
     shutdown_event = mp.Event()
     log.info("Starting consumer process")
-    consumer = mp.Process(
-        target=consumer_proc,
-        args=(
-            result_queue,
-            shutdown_event,
-        ),
-    )
+    consumer = mp.Process(target=consumer_proc, args=(result_queue, shutdown_event))
     consumer.start()
 
     producers = set()
@@ -206,9 +179,7 @@ def main() -> None:
     while current_runs < total_runs:
         while active_producers < min(simultaneous_producers, total_runs - current_runs):
             log.info("Starting a new producer")
-            producer = mp.Process(
-                target=producer_proc, args=(producer_num, ranks_per_job, result_queue)
-            )
+            producer = mp.Process(target=producer_proc, args=(producer_num, ranks_per_job, result_queue))
             producer.start()
             producers.add(producer.pid)
             active_producers += 1

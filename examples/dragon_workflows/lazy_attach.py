@@ -1,6 +1,5 @@
 import dragon
 import multiprocessing as mp
-import io
 import os
 import socket
 import sys
@@ -9,38 +8,41 @@ import time
 from dragon.native.process import ProcessTemplate, Popen, Process
 from dragon.native.process_group import ProcessGroup
 import dragon.workflows.runtime as runtime
+from dragon.infrastructure.facts import PMIBackend
 
 
 def cleanup(conn, q, procs, grp):
     conn.close()
-    del(conn)
-    del(q)
+    del conn
+    del q
     for p in procs:
-        del(p)
-    del(grp)
+        del p
+    del grp
 
 
 def howdy(q):
-    q.put(f'howdy from {socket.gethostname()} - local num cores is {os.cpu_count()}, runtime available cores is {mp.cpu_count()}')
+    q.put(
+        f"howdy from {socket.gethostname()} - local num cores is {os.cpu_count()}, runtime available cores is {mp.cpu_count()}"
+    )
 
 
 def signal_exit():
-    path = '/home/users/nradclif/hpc-pe-dragon-dragon/examples/dragon_workflows/client_exit'
-    file = open(path, 'w')
+    path = "/home/users/nradclif/hpc-pe-dragon-dragon/examples/dragon_workflows/client_exit"
+    file = open(path, "w")
 
 
 def main():
-    mp.set_start_method('dragon')
-    username = os.environ['USER']
+    mp.set_start_method("dragon")
+    username = os.environ["USER"]
     if len(sys.argv) > 1:
         system = sys.argv[1]
     else:
-        system = 'hotlum-login'
+        system = "hotlum-login"
 
-    runtime_sdesc = runtime.lookup(system, 'my-runtime', 30)
+    runtime_sdesc = runtime.lookup(system, "my-runtime", 30)
     proxy = runtime.attach(runtime_sdesc)
 
-    print('\n')
+    print("\n")
 
     # test process and queue
 
@@ -56,25 +58,24 @@ def main():
     for p in procs:
         p.start()
         msg = q.get()
-        print(f'Message from remote runtime: {msg}', flush=True)
+        print(f"Message from remote runtime: {msg}", flush=True)
 
     for p in procs:
         p.join()
 
     # launch the mpi job
 
-    grp = ProcessGroup(restart=False, pmi_enabled=True)
+    grp = ProcessGroup(restart=False, pmi=PMIBackend.CRAY)
 
     # TODO: it seems like the client tries to verify that mpi_hello exists locally
     num_ranks = 4
-    exe = './mpi_hello'
+    exe = "./mpi_hello"
     grp.add_process(
-        nproc=1,
-        template=ProcessTemplate(target=exe, args=[], env=proxy.get_env(), cwd=os.getcwd(), stdout=Popen.PIPE)
+        nproc=1, template=ProcessTemplate(target=exe, args=[], env=proxy.get_env(), cwd=os.getcwd(), stdout=Popen.PIPE)
     )
     grp.add_process(
         nproc=num_ranks - 1,
-        template=ProcessTemplate(target=exe, args=[], env=proxy.get_env(), cwd=os.getcwd(), stdout=Popen.DEVNULL)
+        template=ProcessTemplate(target=exe, args=[], env=proxy.get_env(), cwd=os.getcwd(), stdout=Popen.DEVNULL),
     )
     grp.init()
     grp.start()
@@ -88,7 +89,7 @@ def main():
     conn = child_resources[0].stdout_conn
     try:
         while True:
-            print(f'{conn.recv()}', flush=True)
+            print(f"{conn.recv()}", flush=True)
     except EOFError:
         pass
 

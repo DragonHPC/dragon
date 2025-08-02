@@ -429,7 +429,11 @@ class TestDDictC(unittest.TestCase):
         ddict3._mark_as_drained(1)
 
         ser_ddict = ddict1.serialize()
-        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_synchronize", 3, ddict1.serialize(), ddict2.serialize(), ddict3.serialize()], env=ENV)
+        proc = Popen(
+            executable=str(test_dir / exe),
+            args=[ser_ddict, "test_synchronize", 3, ddict1.serialize(), ddict2.serialize(), ddict3.serialize()],
+            env=ENV,
+        )
 
         proc.wait()
         self.assertEqual(proc.returncode, 0, "C client exited with non-zero exit code")
@@ -457,7 +461,11 @@ class TestDDictC(unittest.TestCase):
         d_clone_1["test_key_1"] = "test_val_1"
 
         ser_ddict = d.serialize()
-        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_clone", 2, d_clone.serialize(), d_clone_1.serialize()], env=ENV)
+        proc = Popen(
+            executable=str(test_dir / exe),
+            args=[ser_ddict, "test_clone", 2, d_clone.serialize(), d_clone_1.serialize()],
+            env=ENV,
+        )
 
         proc.wait()
         self.assertEqual(proc.returncode, 0, "C client exited with non-zero exit code")
@@ -477,6 +485,7 @@ class TestDDictC(unittest.TestCase):
         d.destroy()
         d_clone.destroy()
         d_clone_1.destroy()
+
 
 if __name__ == "__main__":
     mp.set_start_method("dragon")

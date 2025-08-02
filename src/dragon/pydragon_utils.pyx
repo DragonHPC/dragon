@@ -205,3 +205,11 @@ cpdef get_hugepage_mount():
         return tmp_bytes.decode('utf-8')
     else:
         return None
+
+cpdef getlasterrstr():
+    cdef:
+        char* traceback
+
+    traceback = dragon_getlasterrstr()
+
+    return traceback.decode('utf-8')

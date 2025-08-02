@@ -5,7 +5,7 @@ import os
 import dragon
 import sys
 import multiprocessing as mp
-from dragon.fli import FLInterface, DragonFLIError, FLIEOT
+from dragon.fli import FLInterface, DragonFLIError, DragonFLIEOT
 from dragon.managed_memory import MemoryPool, MemoryAlloc
 from dragon.channels import Channel
 from dragon.globalservices import channel

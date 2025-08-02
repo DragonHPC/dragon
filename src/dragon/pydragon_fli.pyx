@@ -3,6 +3,7 @@ This is a lower-level API for efficient data transfer over :py:class:`dragon.cha
 where the data being communicated is not contiguous. The most common use-case is for adapting into Pickle for
 object serialization.
 """
+
 from dragon.dtypes_inc cimport *
 from dragon.channels cimport *
 from dragon.managed_memory cimport *
@@ -14,6 +15,7 @@ from dragon.localservices.options import ChannelOptions
 from dragon.rc import DragonError
 import sys
 import pickle
+import queue
 
 BUF_READ = PyBUF_READ
 BUF_WRITE = PyBUF_WRITE
@@ -68,14 +70,20 @@ class DragonFLIRecvdMsgDestroyedError(DragonFLIError, MemoryError):
 class DragonFLIOutOfMemoryError(DragonFLIError, MemoryError):
     pass
 
-class FLIEOT(DragonFLIError, EOFError):
+class DragonFLIEOT(DragonFLIError, EOFError, queue.Empty):
     """
-    The FLIEOT Exception is used to indicate the end of stream for an
+    The DragonFLIEOT Exception is used to indicate the end of stream for an
     FLI conversation. This Exception inherits from EOFError so applications
     using the FLI may choose to catch EOFError instead.
     """
     pass
 
+class DragonFLIFull(DragonFLIError, queue.Full):
+    """
+    The DragonFLIFull Exception is used to indicate that the queue is
+    full under non-blocking conditions.
+    """
+    pass
 
 cdef class FLISendH:
     """
@@ -91,7 +99,7 @@ cdef class FLISendH:
         bool _is_open
         object _default_timeout
 
-    def __init__(self, FLInterface adapter, *, Channel stream_channel=None, MemoryPool destination_pool=None, timeout=None, bool allow_strm_term=False, use_main_as_stream_channel=False, use_main_buffered=False, bool turbo_mode=False):
+    def __init__(self, FLInterface adapter, *, Channel stream_channel=None, MemoryPool destination_pool=None, timeout=None, bool allow_strm_term=False, use_main_as_stream_channel=False, use_main_buffered=False, bool turbo_mode=False, bool flush=False):
         """
         When creating a send handle an application may provide a stream
         channel to be used. If specifying that the main channel is to be
@@ -132,6 +140,12 @@ cdef class FLISendH:
             be guaranteed they will timeout should a failure occur. The sender
             should likely not care when turbo mode is being used.
 
+        :param flush: Default is False. This tells the FLI to insure that when the send
+            handle is closed any writes to the stream/channel are deposited in the
+            stream/channel. While on-node this will always be the case, off-node
+            return when deposited is necessary and setting this will guarantee that the
+            send handle close will finish when the writes have been deposited.
+
         :param destination_pool: Default is None. This is used to indicate that messages
             that are located elsewhere should end up in this pool. This can also be a
             remote pool on a different node so long as the channel being sent to also
@@ -160,6 +174,7 @@ cdef class FLISendH:
             dragonMemoryPoolDescr_t * dest_pool = NULL
             timespec_t timer
             timespec_t* time_ptr
+            dragonFLISendAttr_t attrs
 
         self._adapter = adapter._adapter
         time_ptr = _computed_timeout(timeout, &timer)
@@ -176,8 +191,17 @@ cdef class FLISendH:
         if destination_pool is not None:
             dest_pool = &destination_pool._pool_hdl
 
+        derr = dragon_fli_send_attr_init(&attrs)
+        if derr != DRAGON_SUCCESS:
+            raise DragonFLIError(derr, "Could not initialize attributes structure");
+
+        attrs.dest_pool = dest_pool
+        attrs.allow_strm_term = allow_strm_term
+        attrs.turbo_mode = turbo_mode
+        attrs.flush = flush
+
         with nogil:
-            derr = dragon_fli_open_send_handle(&self._adapter, &self._sendh, c_strm_ch, dest_pool, allow_strm_term, turbo_mode, time_ptr)
+            derr = dragon_fli_open_send_handle(&self._adapter, &self._sendh, c_strm_ch, &attrs, time_ptr)
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Timed out while opening send handle.")
@@ -216,6 +240,9 @@ cdef class FLISendH:
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Timed out while closing send handle.")
 
+        if derr == DRAGON_CHANNEL_FULL:
+            raise DragonFLIFull(derr, "The FLI is full.")
+
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not close send handle stream.")
 
@@ -251,13 +278,12 @@ cdef class FLISendH:
 
         cdef const unsigned char[:] c_data = data
         data_len = len(data)
-        arg_val = arg
 
         with nogil:
             derr = dragon_fli_send_bytes(&self._sendh, data_len, <uint8_t *>&c_data[0], arg, buffer, time_ptr)
 
         if derr == DRAGON_EOT:
-            raise FLIEOT(derr, "Receiver Ended Streaming")
+            raise DragonFLIEOT(derr, "Receiver Ended Streaming")
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while sending bytes.")
@@ -296,7 +322,7 @@ cdef class FLISendH:
             derr = dragon_fli_send_mem(&self._sendh, &mem._mem_descr, arg, transfer, nocopy, time_ptr)
 
         if derr == DRAGON_EOT:
-            raise FLIEOT(derr, "Receiver Ended Streaming")
+            raise DragonFLIEOT(derr, "Receiver Ended Streaming")
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while sending memory.")
@@ -411,6 +437,7 @@ cdef class FLIRecvH:
             dragonMemoryPoolDescr_t * dest_pool = NULL
             timespec_t timer
             timespec_t* time_ptr
+            dragonFLIRecvAttr_t attrs
 
         # This seems short, might flesh out more later
         self._adapter = adapter._adapter
@@ -428,8 +455,14 @@ cdef class FLIRecvH:
         if destination_pool is not None:
             dest_pool = &destination_pool._pool_hdl
 
+        derr = dragon_fli_recv_attr_init(&attrs)
+        if derr != DRAGON_SUCCESS:
+            raise DragonFLIError(derr, "Could not init receive attrs.")
+
+        attrs.dest_pool = dest_pool
+
         with nogil:
-            derr = dragon_fli_open_recv_handle(&self._adapter, &self._recvh, c_strm_ch, dest_pool, time_ptr)
+            derr = dragon_fli_open_recv_handle(&self._adapter, &self._recvh, c_strm_ch, &attrs, time_ptr)
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while opening receive handle.")
@@ -556,7 +589,7 @@ cdef class FLIRecvH:
             raise DragonFLITimeoutError(derr, "Time out while receiving bytes into.")
 
         if derr == DRAGON_EOT:
-            raise FLIEOT(derr, "End of Transmission")
+            raise DragonFLIEOT(derr, "End of Transmission")
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not receive into bytes buffer")
@@ -610,7 +643,7 @@ cdef class FLIRecvH:
         if derr == DRAGON_EOT:
             if num_bytes > 0:
                 free(c_data)
-            raise FLIEOT(derr, "End of Transmission")
+            raise DragonFLIEOT(derr, "End of Transmission")
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Error receiving FLI data")
@@ -652,7 +685,7 @@ cdef class FLIRecvH:
             raise DragonFLITimeoutError(derr, "Time out while receiving memory.")
 
         if derr == DRAGON_EOT:
-            raise FLIEOT(derr, "End of Transmission")
+            raise DragonFLIEOT(derr, "End of Transmission")
 
         if derr == DRAGON_DYNHEAP_REQUESTED_SIZE_TOO_LARGE or derr == DRAGON_MEMORY_POOL_FULL:
             raise DragonFLIOutOfMemoryError(derr, "Could not receive message because out of memory in Dragon Memory Pool. Message was discarded.")
@@ -768,14 +801,15 @@ cdef class FLInterface:
         if self._is_serialized:
             dragon_fli_serial_free(&self._serial)
 
-    def __init__(self, Channel main_ch=None, Channel manager_ch=None, MemoryPool pool=None,
-                        stream_channels=[], bool use_buffered_protocol=False):
+    def __init__(self, *, Channel main_ch=None, Channel manager_ch=None, Channel sem_ch=None,
+                       MemoryPool pool=None, stream_channels=[], bool use_buffered_protocol=False):
 
         cdef:
             dragonError_t derr
             dragonChannelDescr_t ** strm_chs = NULL
             dragonChannelDescr_t * c_main_ch = NULL
             dragonChannelDescr_t * c_mgr_ch = NULL
+            dragonChannelDescr_t * c_sem_ch = NULL
             dragonMemoryPoolDescr_t * c_pool = NULL
             Channel ch # Necessary to cast python objects into cython objects when pulling out stream_channel values
             dragonULInt num_stream_channels
@@ -804,6 +838,9 @@ cdef class FLInterface:
         if manager_ch is not None:
             c_mgr_ch = &manager_ch._channel
 
+        if sem_ch is not None:
+            c_sem_ch = &sem_ch._channel
+
         if pool is not None:
             c_pool = &pool._pool_hdl
 
@@ -814,7 +851,7 @@ cdef class FLInterface:
                 strm_chs[i] = &ch._channel
 
         with nogil:
-            derr = dragon_fli_create(&self._adapter, c_main_ch, c_mgr_ch, c_pool,
+            derr = dragon_fli_task_create(&self._adapter, c_main_ch, c_mgr_ch, c_sem_ch, c_pool,
                                     num_stream_channels, strm_chs, use_buffered_protocol, NULL)
 
         if strm_chs != NULL:
@@ -924,26 +961,74 @@ cdef class FLInterface:
         """
         return self._is_buffered
 
+    def new_task(self, timeout=None):
+        """
+        Add a task to the task based FLI.
+        """
+        cdef:
+            dragonError_t derr
+            timespec_t timer
+            timespec_t* time_ptr
+
+        time_ptr = _computed_timeout(timeout, &timer)
+
+        with nogil:
+            derr = dragon_fli_new_task(&self._adapter, time_ptr)
+
+        if derr != DRAGON_SUCCESS:
+            raise DragonFLIError(derr, "Could not create a new FLI task")
+
+    def task_done(self, timeout=None):
+        """
+        Mark a task as done in the task based FLI.
+        """
+        cdef:
+            dragonError_t derr
+            timespec_t timer
+            timespec_t* time_ptr
+
+        time_ptr = _computed_timeout(timeout, &timer)
+
+        with nogil:
+            derr = dragon_fli_task_done(&self._adapter, time_ptr)
+
+        if derr != DRAGON_SUCCESS:
+            raise DragonFLIError(derr, "Could not mark a task as done on this FLI")
+
+    def join(self, timeout=None):
+        """
+        Join on the FLI when all tasks are completed. Block until they are done or timeout expires.
+        """
+        cdef:
+            dragonError_t derr
+            timespec_t timer
+            timespec_t* time_ptr
+
+        time_ptr = _computed_timeout(timeout, &timer)
+
+        with nogil:
+            derr = dragon_fli_join(&self._adapter, time_ptr)
+
+        if derr != DRAGON_SUCCESS:
+            raise DragonFLIError(derr, "Could not join on a task as done on this FLI.")
+
+
 cdef class PickleWriteAdapter:
 
     cdef:
         FLISendH _sendh
         object _timeout
         object _hint
+        bool _buffer
 
-    def __init__(self, FLISendH sendh, timeout=None, hint=None):
+    def __init__(self, FLISendH sendh, timeout=None, hint=None, buffer=False):
         self._sendh = sendh
         self._timeout = timeout
         self._hint = hint
+        self._buffer = buffer
 
     def write(self, b):
-        cdef:
-            dragonError_t derr
-            timespec_t timer
-            timespec_t* time_ptr
-            size_t length
-            uint64_t arg = 0
-            const unsigned char[:] sbuf
+        arg = 0
 
         # for large Numpy/SciPy objects
         if isinstance(b, pickle.PickleBuffer):
@@ -951,24 +1036,21 @@ cdef class PickleWriteAdapter:
         else:
             sbuf = b
 
+        if isinstance(sbuf, memoryview):
+            sbuf = sbuf.tobytes()
+
+        if isinstance(sbuf, bytearray):
+            sbuf = bytes(sbuf)
+
         length = len(sbuf)
 
         if self._sendh._is_open == False:
             raise RuntimeError("Handle not open, cannot send data.")
 
-        time_ptr = _computed_timeout(self._timeout, &timer)
-
         if self._hint is not None:
             arg = self._hint
 
-        with nogil:
-            derr = dragon_fli_send_bytes(&self._sendh._sendh, length, <uint8_t*>&sbuf[0], arg, False, time_ptr)
-
-        if derr == DRAGON_TIMEOUT:
-            raise DragonFLITimeoutError("Time out while sending bytes.")
-
-        if derr != DRAGON_SUCCESS:
-            raise DragonFLIError(derr, "Failed to send message over stream channel.")
+        self._sendh.send_bytes(sbuf, arg=arg, buffer=self._buffer, timeout=self._timeout)
 
 cdef class PickleReadAdapter:
 
@@ -1029,7 +1111,10 @@ cdef class PickleReadAdapter:
                 raise DragonFLITimeoutError(derr, "Time out while receiving bytes.")
 
             if derr == DRAGON_EOT:
-                raise FLIEOT(derr, "End of Transmission")
+                raise DragonFLIEOT(derr, "End of Transmission")
+
+            if derr == DRAGON_CHANNEL_EMPTY:
+                raise DragonFLIEOT(derr, "FLI Empty")
 
             if derr != DRAGON_SUCCESS:
                 raise DragonFLIError(derr, "Error receiving FLI data.")

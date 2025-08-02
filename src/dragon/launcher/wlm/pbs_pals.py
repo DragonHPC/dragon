@@ -19,7 +19,7 @@ def get_pbs_pals_launch_be_args(args_map, launch_args):
 
         # Get all the runtimes
         try:
-            mpiexec_override = config_dict["launcher-mpiexec-override-be"]
+            mpiexec_override = config_dict["backend_mpiexec_override"]
         except KeyError:
             pass
 
@@ -52,23 +52,16 @@ def get_nodefile_node_count(filename) -> int:
 
 
 class PBSPalsNetworkConfig(BaseNetworkConfig):
-
     MPIEXEC_COMMAND_LINE = "mpiexec --np {nnodes} -ppn 1 -l --line-buffer"
     ENV_PBS_JOB_ID = "PBS_JOBID"
 
     def __init__(self, network_prefix, port, hostlist):
-
         if not os.environ.get("PBS_NODEFILE"):
             msg = """Requesting a PBS network config outside of PBS job allocation.
 Resubmit as part of a 'qsub' execution"""
             raise RuntimeError(msg)
 
-        super().__init__(
-            "pbs+pals",
-            network_prefix,
-            port,
-            get_nodefile_node_count(os.environ.get("PBS_NODEFILE")),
-        )
+        super().__init__("pbs+pals", network_prefix, port, get_nodefile_node_count(os.environ.get("PBS_NODEFILE")))
 
         self.job_id = os.environ.get(self.ENV_PBS_JOB_ID)
         config_file_path = dfacts.CONFIG_FILE_PATH
@@ -80,7 +73,7 @@ Resubmit as part of a 'qsub' execution"""
 
             # Get all the runtimes
             try:
-                mpiexec_override = config_dict["launcher-mpiexec-override-netconfig"]
+                mpiexec_override = config_dict["netconfig_mpiexec_override"]
             except KeyError:
                 pass
 

@@ -22,7 +22,7 @@ def get_fabric_backend():
             config_dict = json.load(config_file)
 
         # Get all the runtimes
-        backends = [(key.split("-")[0], config_dict[key]) for key in config_dict.keys() if "runtime" in key]
+        backends = [(key.split("_")[0], config_dict[key]) for key in config_dict.keys() if "runtime" in key]
 
         # If there's more than 1 runtime, do some selection work
         if len(backends) > 1:
@@ -35,12 +35,18 @@ def get_fabric_backend():
             # otherwise return the first that's not TCP
             else:
                 for backend_name, backend_lib in backends:
+                    # Handle list of paths
+                    if isinstance(backend_lib, list):
+                        backend_lib = ":".join(backend_lib)
                     if "tcp" not in backend_name:
                         return backend_name, backend_lib
 
         # If there's only one, return it
         else:
             name, lib = backends[0]
+            # Handle list of paths
+            if isinstance(lib, list):
+                lib = ":".join(lib)
             return name, lib
 
     return None, None

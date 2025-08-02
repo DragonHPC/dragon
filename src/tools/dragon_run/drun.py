@@ -21,9 +21,13 @@ logging.basicConfig(
 )
 
 
-EXPORT_HELP = "Identify which environment variables from the submission environment are propagated to the launched application."
+EXPORT_HELP = (
+    "Identify which environment variables from the submission environment are propagated to the launched application."
+)
 ENV_HELP = "Environment variables to set in the remote environment. Example: --env DEBUG=True"
-INCLUDE_FE_HELP = "In addition to running the given command on the dragon backend node, also run the command on the dragon frontend."
+INCLUDE_FE_HELP = (
+    "In addition to running the given command on the dragon backend node, also run the command on the dragon frontend."
+)
 USER_CMD_HELP = "The executable, including any command line options, to execute on the remote nodes."
 SINGLE_MODE_HELP = "Override automatic launcher selection to force use of the single node launcher"
 MULTI_MODE_HELP = "Override automatic launcher selection to force use of the multi-node launcher"
@@ -81,10 +85,6 @@ def get_parser():
         type=int,
         help=FANOUT_HELP,
     )
-    group = parser.add_mutually_exclusive_group()
-    group.add_argument("-s", "--single-node-override", action="store_true", help=SINGLE_MODE_HELP)
-    group.add_argument("-m", "--multi-node-override", action="store_true", help=MULTI_MODE_HELP)
-
     # TODO Add command line options for log level
 
     parser.add_argument(
@@ -128,10 +128,10 @@ def main():
             env=env,
             host_list=hosts,
             force_wlm=args.get("wlm"),  # type: ignore
-            force_single_node=args["single_node_override"],
-            force_multi_node=args["multi_node_override"],
+            force_single_node=args["force_single_node"],
+            force_multi_node=args["force_multi_node"],
             exec_on_fe=args["include_fe"],
-            fanout=args["fanout"]
+            fanout=args["fanout"],
         )
     except (DragonRunMissingAllocation, DragonRunNoSupportedWLM, DragonRunSingleNodeUnsupported) as exc:
         print(exc, flush=True)

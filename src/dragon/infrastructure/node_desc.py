@@ -9,9 +9,14 @@ import enum
 import re
 import os
 import sys
+import json
+import tempfile
 from socket import gethostname
 from subprocess import CalledProcessError
 from typing import Optional
+from datetime import datetime
+
+from . import parameters as dparms
 
 from .facts import DEFAULT_TRANSPORT_NETIF, DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_PORT_RANGE
 from ..utils import host_id as get_host_id
@@ -185,6 +190,52 @@ class NodeDescriptor:
         )
 
     @classmethod
+    def get_local_network_conf_cache_file_name(cls):
+        tmp_dir = tempfile.gettempdir()
+        host_id = str(get_host_id())
+
+        dragon_tmp_dir = os.path.join(tmp_dir, ".dragon")
+        os.makedirs(dragon_tmp_dir, exist_ok=True)
+
+        return os.path.join(dragon_tmp_dir, host_id)
+
+    @classmethod
+    def remove_cached_local_network_conf(cls):
+        try:
+            os.remove(cls.get_local_network_conf_cache_file_name())
+        except (FileNotFoundError, IOError):
+            pass
+
+    @classmethod
+    def get_cached_local_network_conf(cls):
+        try:
+            with open(cls.get_local_network_conf_cache_file_name(), "r") as inf:
+                json_str = inf.read()
+                json_data = json.loads(json_str)
+
+                cache_key = next(iter(json_data))
+                cache_time = datetime.fromisoformat(cache_key)
+
+                now = datetime.now()
+                time_diff = now - cache_time
+                if time_diff.total_seconds() < dparms.this_process.net_conf_cache_timeout:
+                    return True, cls.from_sdict(json_data[cache_key])
+
+                return True, None
+        except (FileNotFoundError, IOError):
+            return False, None
+
+    @classmethod
+    def set_cached_local_network_conf(cls, node_info):
+        try:
+            with open(cls.get_local_network_conf_cache_file_name(), "w") as outf:
+                now = datetime.now()
+                json_str = json.dumps({now.isoformat(): node_info.sdesc})
+                outf.write(json_str)
+        except IOError:
+            pass
+
+    @classmethod
     def get_local_node_network_conf(
         cls,
         network_prefix: str = DEFAULT_TRANSPORT_NETIF,
@@ -230,7 +281,7 @@ class NodeDescriptor:
         ifaddr_filter.clear()
         ifaddr_filter.name_re(re.compile(re_prefix))
         all_ifs = list(filter(ifaddr_filter, ifaddrs))
-        non_eth_ifs = [ifa for ifa in all_ifs if not ifa["name"].startswith('eth')]
+        non_eth_ifs = [ifa for ifa in all_ifs if not ifa["name"].startswith("eth")]
 
         # We check for high-speed interfaces, other than eth, here and if we have them
         # then eliminate the eth interfaces since they would be slower. However, if no

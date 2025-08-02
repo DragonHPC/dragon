@@ -393,6 +393,7 @@ dragonError_t _contains(dragonDDictDescr_t * ddict, char key[]) {
 dragonError_t _pop(dragonDDictDescr_t * ddict, char key[], char ** vals, size_t num_vals) {
     dragonError_t err;
     dragonDDictRequestDescr_t req;
+    uint64_t manager_id;
 
     err = dragon_ddict_create_request(ddict, &req);
     if (err != DRAGON_SUCCESS)
@@ -401,6 +402,17 @@ dragonError_t _pop(dragonDDictDescr_t * ddict, char key[], char ** vals, size_t 
     err = dragon_ddict_write_bytes(&req, strlen(key), (uint8_t*)key);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not write the key.");
+
+    // Calling this does not affect the operation in any way. You can still do
+    // a ddict operation, which we do when we pop.
+    err = dragon_ddict_which_manager(&req, &manager_id);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not call which manager.");
+
+    // We should be able to call this multiple times, so this tests that.
+    err = dragon_ddict_which_manager(&req, &manager_id);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not call which manager.");
 
     err = dragon_ddict_pop(&req);
     if (err == DRAGON_KEY_NOT_FOUND || err == DRAGON_DDICT_CHECKPOINT_RETIRED) {

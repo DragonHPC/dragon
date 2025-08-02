@@ -3,7 +3,7 @@
 import unittest
 import os
 import multiprocessing as mp
-from dragon.fli import FLInterface, DragonFLIError, FLIEOT
+from dragon.fli import FLInterface, DragonFLIError, DragonFLIEOT
 from dragon.managed_memory import MemoryPool, MemoryAlloc
 from dragon.channels import Channel
 from dragon.localservices.options import ChannelOptions
@@ -158,7 +158,7 @@ class FLISendRecvTest(unittest.TestCase):
             self.assertEqual(b, x.get_memview().tobytes())
             self.assertEqual(x.pool.muid, 2)
 
-            with self.assertRaises(FLIEOT):
+            with self.assertRaises(DragonFLIEOT):
                 (x, _) = recvh.recv_bytes()  # We should get back an EOT here
 
     @unittest.skip("AICI-1537")
@@ -172,7 +172,7 @@ class FLISendRecvTest(unittest.TestCase):
             self.assertEqual(b, x.get_memview().tobytes())
             self.assertEqual(x.pool.muid, 2)
 
-            with self.assertRaises(FLIEOT):
+            with self.assertRaises(DragonFLIEOT):
                 (x, _) = recvh.recv_bytes()  # We should get back an EOT here
 
     @unittest.skip("Hangs indefinitely on close")
@@ -190,7 +190,7 @@ class FLISendRecvTest(unittest.TestCase):
             (x, _) = recvh.recv_bytes()  # recv_bytes returns a tuple, first the bytes then the message attribute
             self.assertEqual(b, x)
 
-            with self.assertRaises(FLIEOT):
+            with self.assertRaises(DragonFLIEOT):
                 (x, _) = recvh.recv_bytes()  # We should get back an EOT here
 
     def test_send_recv_mem(self):
@@ -208,7 +208,7 @@ class FLISendRecvTest(unittest.TestCase):
         mview2 = recv_mem.get_memview()
         self.assertEqual(b"Hello", mview2[0:5])
 
-        with self.assertRaises(FLIEOT):
+        with self.assertRaises(DragonFLIEOT):
             _ = recvh.recv_mem()
             recvh.close()
 
@@ -226,7 +226,7 @@ class FLISendRecvTest(unittest.TestCase):
         mview = x.get_memview()
         self.assertEqual(b"Hello", bytes(mview[0:5]))
 
-        with self.assertRaises(FLIEOT):
+        with self.assertRaises(DragonFLIEOT):
             _ - recvh.recv_mem()
             recvh.close()
 
@@ -242,7 +242,7 @@ class FLISendRecvTest(unittest.TestCase):
         (x, _) = recvh.recv_bytes()
         self.assertEqual(b"Hello World", x)
 
-        with self.assertRaises(FLIEOT):
+        with self.assertRaises(DragonFLIEOT):
             _ = recvh.recv_bytes()
             recvh.close()
 

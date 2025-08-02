@@ -1,8 +1,11 @@
 __pycache__
 *.log
 *.o
-*.dat
+*.ddict
 dump_file
 native/c_ddict
 native/cpp_ddict
+native/cpp_queue
+native/cpp_semaphore
+native/cpp_barrier
 multi-node/zarr_data

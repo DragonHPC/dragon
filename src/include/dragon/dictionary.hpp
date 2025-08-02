@@ -10,102 +10,124 @@
 #include <dragon/global_types.h>
 #include <dragon/utils.h>
 #include <dragon/messages.hpp>
+#include <dragon/exceptions.hpp>
+#include <dragon/serializable.hpp>
 
-/************************************************************************************************
- * @brief An abstract base class for deriving key and value classes for a Dragon
- * Distributed Dictionary.
- *
- * Classes derived from this DDictSerializable are
- * passed to the DDict template to be used by the DDict for serializing and
- * deserializing keys and values.
- * */
-class DDictSerializable {
-    public:
-    /* This method should be overridden in the implementing derived class. It should
-       write the bytes of the serialized object to the request descriptor req. */
-    virtual void serialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout) = 0;
-
-    /* This method should be overridden in the implementing derived class. It may
-       throw a DragonError exception when a byte stream is not deserializable.
-       The deserialize method should return once it has read the serialized object's bytes. */
-    virtual void deserialize(dragonDDictRequestDescr_t* req, const timespec_t* timeout) = 0;
-
-    /* This function should be defined at least for keys within the ddict. The
-       create function is passed bytes which should then be used in a newly
-       constructed object which is returned by create. The data passed to the
-       create function is owned by the create function call and it should be
-       freed when no longer needed. This is a static function that
-       creates a new instance of the object and deserializes the data passed to
-       it. The create function is a factory for new DDictSerializable objects. */
-    // static DDictSerializable create(size_t num_bytes, uint8_t* data) {}
-
-};
-
-/* used internally in the C++ client. */
-dragonError_t dragon_ddict_keys_vec(const dragonDDictDescr_t * dd_descr, std::vector<dragonDDictKey_t*>& keys);
-
-dragonError_t dragon_ddict_local_keys_vec(const dragonDDictDescr_t * dd_descr, std::vector<dragonDDictKey_t*>& keys);
-
+/* used internally in the C++ client. Not for external use. */
+typedef dragonError_t (*key_collector)(void* user_arg, dragonFLIRecvHandleDescr_t* recvh, uint64_t* arg, const timespec_t* timeout);
+dragonError_t dragon_ddict_keys_vec(const dragonDDictDescr_t * dd_descr, key_collector function, void* key_collector_arg);
+dragonError_t dragon_ddict_local_keys_vec(const dragonDDictDescr_t * dd_descr, key_collector function, void* key_collector_arg);
 dragonError_t dragon_ddict_empty_managers_vec(const dragonDDictDescr_t * dd_descr, std::vector<uint64_t>& ids);
-
 dragonError_t dragon_ddict_local_managers_vec(const dragonDDictDescr_t * dd_descr, std::vector<uint64_t>& ids);
 
-// class DDictKeyIterator {
-//     public:
-//     DDictKeyIterator(DDict& dict);
-//     operator=
-//     operator!=
-//     operator++
-//     // DDict<SerializableInt>::iterator it;
-//     // for (it = dd.begin(); it != dd.end(); it++)
-// };
+namespace dragon {
 
-// Add a hash function here for keys. Then make a function template that given
-// just the key and value classes supplies nullptr as the third argument.
-template  <class DDictSerializableKey, class DDictSerializableValue>
+/**
+ * @class DDict
+ * @brief A Dragon Distributed Dictionary Client
+ *
+ * This class provides the functionality to attach to and interact
+ * with a DDict. The DDict should be created from Python code. After it
+ * is serialized, the serialized descriptor can then be passed to a C++
+ * program/code via some means (e.g. a command-line argument). Then
+ * it can be attached to from this C++ client. To fully interact with
+ * a DDict from C++, Serializable keys and values must be defined. See
+ * the Serializable abtract class for details on implementing one or more
+ * of those classes.
+ */
+template  <class SerializableKey, class SerializableValue>
 class DDict {
-    class KVPair
+    /**
+     * @class KeyRef
+     * @brief Internal class for References to Keys within a DDict.
+     *
+     * This internal only class provides references to keys and a means
+     * of looking up a value based on its key and a means of storing a
+     * new value associated with a key.
+     */
+    class KeyRef
     {
         public:
-        KVPair(DDict& dict, DDictSerializableKey& key) : mDict(dict), mKey(key) {}
+        /**
+         * @brief Construct a KeyRef from a Serializable Key and an
+         * asociated DDict.
+         */
+        KeyRef(DDict& dict, SerializableKey& key) : mDict(dict), mKey(key) {}
 
-        void operator= (DDictSerializableValue& value) {
+        /**
+         * @brief Store a new value for the given key reference.
+         *
+         * This stores a new value for the given key reference.
+         *
+         * @param value is the new Serializable value to be stored in the
+         * DDict.
+         */
+        void operator= (SerializableValue& value) {
             dragonDDictRequestDescr_t req;
             dragonError_t err;
+            dragonFLISendHandleDescr_t value_sendh;
+            dragonFLISendHandleDescr_t key_sendh;
 
             err = dragon_ddict_create_request(&mDict.mCDict, &req);
             if (err != DRAGON_SUCCESS)
                 throw DragonError(err, "Could not create DDict put request.");
 
-            mKey.serialize(&req, mDict.mTimeout);
+            err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+            if (err != DRAGON_SUCCESS)
+                throw DragonError(err, "Could not access the request key send handle.");
+
+            mKey.serialize(&key_sendh, KEY_HINT, true, mDict.mTimeout);
 
             err = dragon_ddict_put(&req);
             if (err != DRAGON_SUCCESS)
                 throw DragonError(err, "Could not send DDict put message.");
 
-            value.serialize(&req, mDict.mTimeout);
+            err = dragon_ddict_request_value_sendh(&req, &value_sendh);
+            if (err != DRAGON_SUCCESS)
+                throw DragonError(err, "Could not access the request send handle.");
+
+            value.serialize(&value_sendh, VALUE_HINT, false, mDict.mTimeout);
 
             err = dragon_ddict_finalize_request(&req);
             if (err != DRAGON_SUCCESS)
                 throw DragonError(err, "Could not finalize DDict put request.");
         }
 
-        operator DDictSerializableValue () const {
+        /**
+         * @brief Returns the SerializableValue associated with a KeyRef.
+         *
+         * When a lookup occurs and the C++ code wants to cast it
+         * (i.e. lookup the key in the DDict) this code takes care of the
+         * lookup and returning the associated Serializable value.
+         */
+        operator SerializableValue () const {
             dragonDDictRequestDescr_t req;
             dragonError_t err;
-            DDictSerializableValue value;
+            dragonFLISendHandleDescr_t key_sendh;
+            dragonFLIRecvHandleDescr_t recvh;
+            uint64_t hint;
 
             err = dragon_ddict_create_request(&mDict.mCDict, &req);
             if (err != DRAGON_SUCCESS)
                 throw DragonError(err, "Could not create DDict get request.");
 
-            mKey.serialize(&req, mDict.mTimeout);
+            err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+            if (err != DRAGON_SUCCESS)
+                throw DragonError(err, "Could not access the request send handle.");
+
+            mKey.serialize(&key_sendh, KEY_HINT, true, mDict.mTimeout);
 
             err = dragon_ddict_get(&req);
             if (err != DRAGON_SUCCESS)
                 throw DragonError(err, "Could not send DDict get message.");
 
-            value.deserialize(&req, mDict.mTimeout);
+            err = dragon_ddict_request_recvh(&req, &recvh);
+            if (err != DRAGON_SUCCESS)
+                throw DragonError(err, "Could not access the request send handle.");
+
+            SerializableValue value = SerializableValue::deserialize(&recvh, &hint, mDict.mTimeout);
+            if (hint != VALUE_HINT)
+                throw DragonError(DRAGON_INVALID_OPERATION, "The value hint when deserializing was not correct.");
 
             err = dragon_ddict_finalize_request(&req);
             if (err != DRAGON_SUCCESS)
@@ -116,17 +138,39 @@ class DDict {
 
         private:
         DDict& mDict;
-        DDictSerializableKey& mKey;
+        SerializableKey& mKey;
     };
 
     public:
+    /**
+     * @brief A Constructor for DDict
+     *
+     * This constructor takes a C DDict descriptor as an argument and
+     * constructs a C++ DDict over the C descriptor. Not likely used,
+     * it is provided since it is a way of moving to C++ from C. Using
+     * this constructor will imply that operations on the DDict will
+     * not timeout.
+     *
+     * @param cDict A C DDict descriptor.
+     */
     DDict(dragonDDictDescr_t* cDict) {
         if (cDict == nullptr)
             throw DragonError(DRAGON_INVALID_ARGUMENT, "The cDict argument cannot be null and must point to an attached C ddict descriptor.");
         mCDict = *cDict;
         mDetachOnDestroy = false;
+        mTimeout = nullptr;
     }
 
+    /**
+     * @brief A Constructor for DDict with a timeout
+     *
+     * This constructor takes a C DDict descriptor as an argument and
+     * constructs a C++ DDict over the C descriptor. Not likely used,
+     * it is provided since it is a way of moving to C++ from C.
+     *
+     * @param cDict A C DDict descriptor.
+     * @param timeout A default timeout to be applied to operations.
+     */
     DDict(dragonDDictDescr_t* cDict, const timespec_t* timeout) {
         if (cDict == nullptr)
             throw DragonError(DRAGON_INVALID_ARGUMENT, "The cDict argument cannot be null and must point to an attached C ddict descriptor.");
@@ -145,6 +189,18 @@ class DDict {
         free(serialize_ddict);
     }
 
+    /**
+     * @brief Attach to a serialized DDict.
+     *
+     * This constructor will attach to a DDict using its
+     * serialized descriptor as passed to it from Python or another
+     * C++ client. A serialized DDict is a valid string variable
+     * and can be passed as a string to other instances that want
+     * to access the DDict and store values to it from C++.
+     *
+     * @param serialized_dict is a base64 encoded serialized descriptor.
+     * @param timeout is a timeout to apply to all operations on the DDict.
+     */
     DDict(const char* serialized_dict, const timespec_t* timeout) {
         dragonError_t err;
         mTimeout = nullptr;
@@ -168,7 +224,13 @@ class DDict {
         mDetachOnDestroy = true;
     }
 
-    // Destructor detaches client from ddict
+    /**
+     * @brief The DDict Destructor
+     *
+     * The destructor is applied automatically when the object is declared
+     * on the stack and gets called when delete is called on a heap allocated
+     * DDict.
+     */
     ~DDict() {
         dragonError_t err;
 
@@ -187,9 +249,29 @@ class DDict {
 
     // }
 
+    /**
+     * @brief Return a serialized handle to the DDict.
+     *
+     * Return a Base64 encoded string that can be shared with other
+     * clients that want to attach to the same dictionary.
+     *
+     * @returns A DDict serialized handle that can be handed off to other
+     * clients.
+     */
     const char* serialize() {
         return mSerialized.c_str();
     }
+
+    /**
+     * @brief Get the number of key/value pairs in the DDict.
+     *
+     * This method cannot be counted on to return an exact number
+     * of key/value pairs. Due to the the nature of a parallel
+     * distributed dictionary the value may have changed by the
+     * time this method returns to the user.
+     *
+     * @returns The number of key/value pairs at a moment in time.
+     */
 
     uint64_t size() {
         uint64_t len = 0;
@@ -200,6 +282,14 @@ class DDict {
         return len;
     }
 
+    /**
+     * @brief Clear the DDict
+     *
+     * Removes all key/value pairs as it is executed from
+     * all managers of the DDict. This does not mean that other
+     * clients couldn't immediately start adding in key/value
+     * pairs again.
+     */
     void clear() {
         dragonError_t err;
         err = dragon_ddict_clear(&mCDict);
@@ -207,93 +297,227 @@ class DDict {
             throw DragonError(err, "Could not clear DDict.");
     }
 
-    KVPair operator[] (DDictSerializableKey& key) {
-        return DDict::KVPair(*this, key);
+    /**
+     * @brief Get a KeyRef
+     *
+     * This method constructs a key reference which can then
+     * be used in either a lookup of a value in the DDict or
+     * or used to set a key/value pair in the DDict.
+     */
+    KeyRef operator[] (SerializableKey& key) {
+        return DDict::KeyRef(*this, key);
     }
 
-    void pput(DDictSerializableKey& key, DDictSerializableValue& value) {
+    /**
+     * @brief Put a persistent key/value pair to the DDict
+     *
+     * Persistent key/value pairs persist across checkpoints.
+     * These pairs remain in the DDict until explicitly deleted.
+     */
+
+    void pput(SerializableKey& key, SerializableValue& value) {
         dragonDDictRequestDescr_t req;
+        dragonFLISendHandleDescr_t value_sendh;
+        dragonFLISendHandleDescr_t key_sendh;
         dragonError_t err;
 
         err = dragon_ddict_create_request(&mCDict, &req);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could not create DDict persistent put request.");
 
-        key.serialize(&req, mTimeout);
+        err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request key send handle.");
+
+        key.serialize(&key_sendh, KEY_HINT, true, mTimeout);
 
         err = dragon_ddict_pput(&req);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could not send DDict persistent put message.");
 
-        value.serialize(&req, mTimeout);
+        err = dragon_ddict_request_value_sendh(&req, &value_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        value.serialize(&value_sendh, VALUE_HINT, false, mTimeout);
 
         err = dragon_ddict_finalize_request(&req);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could not finalize DDict persistent put message.");
     }
 
-    bool contains(DDictSerializableKey& key) {
+    /**
+     * @brief Check that the DDict contains the key.
+     *
+     * Returns true if the key is in the DDict. They key provided must be
+     * serializable and the binary equivalent of a key in the DDict.
+     *
+     * @returns A bool to indicate membership.
+     */
+    bool contains(SerializableKey& key) {
         dragonDDictRequestDescr_t req;
+        dragonFLISendHandleDescr_t key_sendh;
         dragonError_t err;
+        bool result;
 
         err = dragon_ddict_create_request(&mCDict, &req);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could not create DDict contains request.");
 
-        key.serialize(&req, mTimeout);
+        err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        key.serialize(&key_sendh, KEY_HINT, true, mTimeout);
 
         err = dragon_ddict_contains(&req);
         if (err != DRAGON_SUCCESS && err != DRAGON_KEY_NOT_FOUND)
             throw DragonError(err, "Could not issue DDict contains.");
-        return err == DRAGON_SUCCESS? true : false;
+
+        result = err == DRAGON_SUCCESS? true : false;
+
+        err = dragon_ddict_finalize_request(&req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not finalize the DDict Request.");
+
+        return result;
     }
 
-    DDictSerializableValue erase(DDictSerializableKey& key) {
+    /**
+     * @brief Return which manager will hold this key should it be stored in the DDict.
+     *
+     * This does not check to see if the key is already in the DDict. It will tell you
+     * which manager will be used to store this key. The manager_id will be
+     * 0 <= manager_id < num_managers for the DDict.
+     *
+     * @param key A serializable key for the DDict
+     * @returns the manager_id to be used for this key
+     */
+    uint64_t which_manager(SerializableKey& key) {
         dragonDDictRequestDescr_t req;
+        dragonFLISendHandleDescr_t key_sendh;
         dragonError_t err;
-        DDictSerializableValue value;
+        uint64_t manager_id;
+
+        err = dragon_ddict_create_request(&mCDict, &req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not create DDict contains request.");
+
+        err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        key.serialize(&key_sendh, KEY_HINT, true, mTimeout);
+
+        err = dragon_ddict_which_manager(&req, &manager_id);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not get which manager.");
+
+        err = dragon_ddict_finalize_request(&req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not finalize the DDict Request.");
+
+        return manager_id;
+    }
+
+    /**
+     * @brief Remove a key from the DDict
+     *
+     * Delete a key/value pair from the DDict. If the key does not exist a
+     * DragonError is raised.
+     *
+     * @param A DDict Key
+     * @throws DragonError if the key does not exist.
+     */
+    SerializableValue erase(SerializableKey& key) {
+        dragonDDictRequestDescr_t req;
+        dragonFLISendHandleDescr_t key_sendh;
+        dragonFLIRecvHandleDescr_t recvh;
+        dragonError_t err;
+        uint64_t hint;
 
         err = dragon_ddict_create_request(&mCDict, &req);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could not create DDict erase request.");
 
-        key.serialize(&req, mTimeout);
+        err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        key.serialize(&key_sendh, KEY_HINT, true, mTimeout);
 
         err = dragon_ddict_pop(&req);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could not issue DDict pop.");
 
-        value.deserialize(&req, mTimeout);
+        err = dragon_ddict_request_recvh(&req, &recvh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        SerializableValue value = SerializableValue::deserialize(&recvh, &hint, mTimeout);
+        if (hint != VALUE_HINT)
+            throw DragonError(DRAGON_INVALID_OPERATION, "The value hint when deserializing was not correct.");
 
         err = dragon_ddict_finalize_request(&req);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could not finalize DDict pop request.");
+
         return value;
     }
 
-    std::vector<DDictSerializableKey*> keys() {
+    static dragonError_t client_key_collector(void* user_arg, dragonFLIRecvHandleDescr_t* recvh, uint64_t* arg, const timespec_t* timeout) {
+        std::vector<SerializableKey>* key_vec = (std::vector<SerializableKey>*)user_arg;
+        key_vec->push_back(SerializableKey::deserialize(recvh, arg, timeout));
+        if (*arg != KEY_HINT)
+            throw DragonError(DRAGON_FAILURE, "Received unexpected arg value.");
+
+        return DRAGON_SUCCESS;
+    }
+
+    /**
+     * @brief Return the keys of the DDict
+     *
+     * This returns a vector of keys of the DDict. The RVO
+     * (Return Value Optimization) that C++ provides you can
+     * assign this result to a stack allocated vector and it
+     * will be initialized in place. Note that you get all the keys
+     * of the DDict at once.
+     *
+     * @returns A vector of all DDict keys
+     */
+    std::vector<SerializableKey> keys() {
         dragonError_t err;
         size_t idx;
-        std::vector<dragonDDictKey_t*> key_vec;
-        std::vector<DDictSerializableKey*> ret_val;
+        std::vector<SerializableKey> ret_val;
 
-        err = dragon_ddict_keys_vec(&mCDict, key_vec);
+        err = dragon_ddict_keys_vec(&mCDict, DDict::client_key_collector, &ret_val);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could get DDict keys vector.");
-
-        for (idx=0; idx<key_vec.size(); idx++) {
-            ret_val.push_back(DDictSerializableKey::create(key_vec[idx]->num_bytes, key_vec[idx]->data));
-        }
 
         return ret_val;
     }
 
+    /**
+     * @brief Increment the client checkpoint id
+     *
+     * This is a local only operation that increments the client's checkpoint id.
+     * Subsequent operations will work with the next checkpoint in any manager's
+     * working set.
+     */
     void checkpoint() {
         dragonError_t err;
         err = dragon_ddict_checkpoint(&mCDict);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could not do DDict checkpoint.");
     }
+
+    /**
+     * @brief Decrement the client checkpoint id
+     *
+     * This is a local only operation that decrements the client's checkpoint id.
+     * Subsequent operations will work with the previous checkpoint in any manager's
+     * working set.
+     */
 
     void rollback() {
         dragonError_t err;
@@ -302,6 +526,12 @@ class DDict {
             throw DragonError(err, "Could not do DDict rollback.");
     }
 
+    /**
+     * @brief Go to the latest checkpoint
+     *
+     * This will query all managers to find the latest checkpoint id and
+     * then set this client's checkpoint id to it.
+     */
     void sync_to_newest_checkpoint() {
         dragonError_t err;
         err = dragon_ddict_sync_to_newest_checkpoint(&mCDict);
@@ -309,6 +539,13 @@ class DDict {
             throw DragonError(err, "Could not sync to newest DDict checkpoint.");
     }
 
+    /**
+     * @brief Retrieve the checkpoint id of this client
+     *
+     * Returns the client's checkpoint id.
+     *
+     * @returns The client's current checkpoint id.
+     */
     uint64_t checkpoint_id() {
         dragonError_t err;
         uint64_t chkpt_id = 0;
@@ -318,6 +555,16 @@ class DDict {
         return chkpt_id;
     }
 
+    /**
+     * @brief Set the client's checkpoint id
+     *
+     * This allows the checkpoint id of the client to be set to a particular value.
+     * The chosen checkpoint id if older than the working set will be rejected on
+     * DDict operations. If newer than any checkpoint in the working set, the
+     * result will be to advance the working set in affected managers.
+     *
+     * @returns The checkpoint id that was set.
+     */
     uint64_t set_checkpoint_id(uint64_t chkpt_id) {
         dragonError_t err;
         err = dragon_ddict_set_checkpoint_id(&mCDict, chkpt_id);
@@ -326,6 +573,14 @@ class DDict {
         return chkpt_id;
     }
 
+    /**
+     * @brief Get a manager id for a local manager
+     *
+     * Returns the manager id of a local manager. if none exist, a DragonError
+     * will be thrown. If more than one exists, one will be chosen at random.
+     *
+     * @returns 0 <= manager_id < number of managers.
+     */
     uint64_t local_manager() {
         dragonError_t err;
         uint64_t manager_id = 0;
@@ -335,6 +590,16 @@ class DDict {
         return manager_id;
     }
 
+    /**
+     * @brief Return a manager id
+     *
+     * Calling this will always return a manager id that can be used in
+     * certain operations. It will be a local manager if one exists. If
+     * the node has no local managers, then it will be a random manager
+     * from a different node.
+     *
+     * @returns 0 <= manager_id < number of managers.
+     */
     uint64_t main_manager() {
         dragonError_t err;
         uint64_t manager_id = 0;
@@ -344,6 +609,17 @@ class DDict {
         return manager_id;
     }
 
+    /**
+     * @brief Get a manager directed copy of the DDict
+     *
+     * Calling this will return a new DDict reference that
+     * targets only the given manager. All put and get operations will be
+     * directed at this manager only. All other operations that interact
+     * with the DDict will also only query or modify the given manager.
+     *
+     * @param manager_id The manager id of the chosen manager.
+     * @returns A new DDict reference that targets only the chosen manager.
+     */
     DDict manager(uint64_t manager_id) {
         dragonError_t err;
         dragonDDictDescr_t newCDict;
@@ -353,6 +629,14 @@ class DDict {
         return DDict(&newCDict, mTimeout);
     }
 
+    /**
+     * @brief Get the empty managers of the DDict
+     *
+     * Calling this returns a vector of all empty manager
+     * ids in this DDict.
+     *
+     * @returns A vector of integer manager ids.
+     */
     std::vector<uint64_t> empty_managers() {
         dragonError_t err;
         std::vector<uint64_t> ids;
@@ -364,6 +648,14 @@ class DDict {
         return ids;
     }
 
+    /**
+     * @brief Get the local managers of the DDict
+     *
+     * Calling this returns a vector of all local manager
+     * ids in this DDict.
+     *
+     * @returns A vector of integer manager ids.
+     */
     std::vector<uint64_t> local_managers() {
         dragonError_t err;
         std::vector<uint64_t> ids;
@@ -375,23 +667,40 @@ class DDict {
         return ids;
     }
 
-    std::vector<DDictSerializableKey*> local_keys() {
+    /**
+     * @brief Return a vector of all keys stored on this node
+     *
+     * Calling this queries only local managers to find the keys
+     * that are stored on this node. Using this can help optimize code
+     * around minimizing data movement across the network.
+     *
+     * @returns A vector of all local keys.
+     */
+    std::vector<SerializableKey> local_keys() {
         dragonError_t err;
         size_t idx;
-        std::vector<dragonDDictKey_t*> key_vec;
-        std::vector<DDictSerializableKey*> ret_val;
+        std::vector<SerializableKey> ret_val;
 
-        err = dragon_ddict_local_keys_vec(&mCDict, key_vec);
+        err = dragon_ddict_local_keys_vec(&mCDict, DDict::client_key_collector, &ret_val);
         if (err != DRAGON_SUCCESS)
             throw DragonError(err, "Could not get the DDict local keys.");
-
-        for (idx=0; idx<key_vec.size(); idx++) {
-            ret_val.push_back(DDictSerializableKey::create(key_vec[idx]->num_bytes, key_vec[idx]->data));
-        }
 
         return ret_val;
     }
 
+    /**
+     * @brief Duplicate one or more DDicts
+     *
+     * Calling this assumes that all DDicts in the vector are exact duplicates of
+     * each other. Some managers within the set of duplicates may be empty due
+     * to a previous error and a restart. If this occurs, then this synchronize
+     * method will use non-empty managers to re-populate the empty managers in
+     * these parallel dictionaries.
+     *
+     * @param serialized_ddicts A list of the serialized descriptors of the
+     * parallel dictionaries. Each parallel dictionary must have the same number
+     * of managers and same data across all of them.
+     */
     static void synchronize(std::vector<std::string>& serialized_ddicts) {
 
         dragonError_t err;
@@ -414,6 +723,18 @@ class DDict {
         delete[] ser_ddicts_arr;
     }
 
+    /**
+     * @brief Copy the current DDict to one or more existing DDicts.
+     *
+     * This clones the current DDict to each of the serialized
+     * descriptors that is passed to it. It will not create
+     * new DDicts. It will clone the contents of this DDict to the
+     * DDicts passed in this vector.
+     *
+     * @param serialized_ddicts A vector of DDicts that will get cloned into
+     * from this one.
+     *
+     */
     void clone(std::vector<std::string>& serialized_ddicts) {
         dragonError_t err;
 
@@ -459,4 +780,5 @@ class DDict {
 
 };
 
+}
 #endif

@@ -53,8 +53,7 @@ Please specify only '--single-node-override' or '--multi-node-override'"""
         is_pbs = wlm_cls_dict[WLM.PBS_PALS].check_for_wlm_support()
         is_slurm = wlm_cls_dict[WLM.SLURM].check_for_wlm_support()
         is_ssh = False
-        is_k8s = (os.getenv("KUBERNETES_SERVICE_HOST") and os.getenv("KUBERNETES_SERVICE_PORT")) != None
-
+        is_k8s = (os.getenv("KUBERNETES_SERVICE_HOST", None) and os.getenv("KUBERNETES_SERVICE_PORT", None)) is not None
     if is_ssh + is_pbs + is_slurm + is_k8s >= 2:
         # adding the booleans here is a quick check that two or more are not True.
         raise RuntimeError(
@@ -125,7 +124,7 @@ def main():
                                 `--hostfile` or `--hostlist` is a required argument for WLM SSH and is only used for SSH
           --network-prefix NETWORK_PREFIX
                                 NETWORK_PREFIX specifies the network prefix the dragon runtime will use to determine which IP addresses it should use to build
-                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth)\\d+$' is used -- the prefix for known
+                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth)\\w+$' is used -- the prefix for known
                                 HPE-Cray XC and EX high speed networks as well as the common eth interface. If uncertain which networks are available, the
                                 following will return them in pretty formatting: `dragon-network-ifaddrs --ip --no-loopback --up --running | jq`. Prepending
                                 with `srun` may be necessary to get networks available on backend compute nodes. The eth prefix is only used as a last resort

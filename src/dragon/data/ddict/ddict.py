@@ -42,6 +42,13 @@ from abc import ABC, abstractmethod
 from pathlib import Path
 from posixpath import basename
 
+try:
+    import pydaos
+
+    DAOS_EXISTS = True
+except:
+    DAOS_EXISTS = False
+
 from ...utils import b64decode, b64encode, hash as dragon_hash, get_local_kv, host_id
 from ...infrastructure.parameters import this_process
 from ...infrastructure import messages as dmsg
@@ -50,8 +57,6 @@ from ...channels import Channel
 from ...native.process import Popen
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 from ...dlogging.logger import DragonLoggingError
-from ...native.machine import Node
-from dragon.native.process_group import ProcessGroup
 from dragon.infrastructure.policy import Policy
 from dragon.native.process import ProcessTemplate
 from dragon.globalservices.node import query_all
@@ -308,11 +313,7 @@ def filter_manager(dd, pickled_src_code, pickled_src_args, out_queue, manager_id
         src_code(*args)
     except Exception as ex:
         tb = traceback.format_exc()
-        print(
-            "There was an exception in filter_manager: %s\n Traceback: %s" % (ex, tb),
-            flush=True,
-            file=sys.stderr,
-        )
+        print("There was an exception in filter_manager: %s\n Traceback: %s" % (ex, tb), flush=True, file=sys.stderr)
         raise ex
     finally:
         out_queue.close()
@@ -321,6 +322,8 @@ def filter_manager(dd, pickled_src_code, pickled_src_args, out_queue, manager_id
 def filter_aggregator(
     dd: DDict, managers_hosts, branching_factor, pickled_src_code, pickled_src_args, pickled_comparator, out_queue
 ):
+    from dragon.native.process_group import ProcessGroup
+
     try:
         comparator = cloudpickle.loads(pickled_comparator)
         # managers_hosts is a list of tuples (manager_id, hostname)
@@ -341,7 +344,6 @@ def filter_aggregator(
         shutdown_events = []
 
         if len(managers_hosts) > branching_factor:
-
             num_divisions = len(managers_hosts) // branching_factor
 
             if num_divisions == 1:
@@ -364,10 +366,7 @@ def filter_aggregator(
                 filter_queues.append(filter_queue)
 
                 node_name = managers_subset[0][1]
-                local_policy = Policy(
-                    placement=Policy.Placement.HOST_NAME,
-                    host_name=node_name,
-                )
+                local_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node_name)
                 grp.add_process(
                     nproc=1,
                     template=ProcessTemplate(
@@ -385,17 +384,13 @@ def filter_aggregator(
                     ),
                 )
         else:
-
             grp = ProcessGroup(restart=False)
 
             for manager_id, node_name in managers_hosts:
                 filter_queue = SentinelQueue()
                 filter_queues.append(filter_queue)
 
-                local_policy = Policy(
-                    placement=Policy.Placement.HOST_NAME,
-                    host_name=node_name,
-                )
+                local_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node_name)
                 grp.add_process(
                     nproc=1,
                     template=ProcessTemplate(
@@ -458,11 +453,7 @@ def filter_aggregator(
 
     except Exception as ex:
         tb = traceback.format_exc()
-        print(
-            "There was an exception in filter_aggregator: %s\n Traceback: %s" % (ex, tb),
-            flush=True,
-            file=sys.stderr,
-        )
+        print("There was an exception in filter_aggregator: %s\n Traceback: %s" % (ex, tb), flush=True, file=sys.stderr)
         raise ex
 
 
@@ -502,7 +493,6 @@ class FilterContextManager:
 
 
 class PickleFDReadAdapter:
-
     def __init__(self, file, sz):
         self._file = file
         self._sz = sz
@@ -539,7 +529,6 @@ class CheckpointPersister(ABC):
 
 
 class NULLCheckpointPersister(CheckpointPersister):
-
     def __init__(
         self,
         ddict_name: str,
@@ -562,7 +551,7 @@ class NULLCheckpointPersister(CheckpointPersister):
     def advance(self):
         raise NotImplementedError("The advance method is not implemented in NULL checkpoint persister.")
 
-    def position(self):
+    def position(self, chkpt: int):
         raise NotImplementedError("The position method is not implemented in NULL checkpoint persister.")
 
     def checkpoints(self):
@@ -570,7 +559,6 @@ class NULLCheckpointPersister(CheckpointPersister):
 
 
 class PosixCheckpointPersister(CheckpointPersister):
-
     def __init__(
         self,
         ddict_name: str,
@@ -590,15 +578,15 @@ class PosixCheckpointPersister(CheckpointPersister):
         self._manager = manager
         self._num_persists = 0
         # Lock is required in PosixPersister for the dump method. The dump method tracks files in
-        # persist path and updates the variable self._num_persists and self._avail_persist_checkpoints
+        # persist path and updates the variable self._num_persists and self._available_persisted_checkpoints
         # as needed, which could lead to race condition when multiple threads dumping chkpts at the same time.
         self._lock = threading.Lock()
 
         # Get a list of available persisted checkpoints by checking the file names in the persist path.
-        self._avail_persist_checkpoints = []
+        self._available_persisted_checkpoints = []
         self._path = Path(self._persist_path)
         self._FNAME_PREFIX = f"{self._ddict_name}_{self._manager_id}_"
-        self._FNAME_SUFFIX = ".dat"
+        self._FNAME_SUFFIX = ".ddict"
         dat_files = list(self._path.glob(f"{self._FNAME_PREFIX}*{self._FNAME_SUFFIX}"))
         # Remove prefix and suffix of files to get available persisted checkpoint IDs.
         for f in dat_files:
@@ -606,13 +594,24 @@ class PosixCheckpointPersister(CheckpointPersister):
             chkpt_id = strf[len(self._FNAME_PREFIX) :][: -len(self._FNAME_SUFFIX)]
             try:
                 # Append valid persisted checkpoint ID to the list.
-                self._avail_persist_checkpoints.append(int(chkpt_id))
+                self._available_persisted_checkpoints.append(int(chkpt_id))
             except Exception as ex:
                 self._log(f"Caught exception while reading available persisted checkpoint IDs by parsing file names.")
 
-        self._avail_persist_checkpoints.sort()
-        self._num_persists = len(self._avail_persist_checkpoints)
+        self._available_persisted_checkpoints.sort()
+        self._num_persists = len(self._available_persisted_checkpoints)
         self._current_chkpt_id = 0
+
+    def _cleanup_later_chkpts(self):
+        self._log(f"Cleaning up persisted checkpoint files later than checkpoint {self._current_chkpt_id}.")
+        while (
+            len(self._available_persisted_checkpoints) != 0
+            and self._available_persisted_checkpoints[-1] > self._current_chkpt_id
+        ):
+            remove_chkpt_id = self._available_persisted_checkpoints.pop()
+            file_name = self._path / f"{self._FNAME_PREFIX}{remove_chkpt_id}{self._FNAME_SUFFIX}"
+            os.remove(file_name)
+        self._log("Cleanup completed.")
 
     def dump(self, chkpt, force: bool = False):
         """
@@ -627,23 +626,22 @@ class PosixCheckpointPersister(CheckpointPersister):
         # TODO: any other mechanism to cleanup the files when disk is full?
         with self._lock:
             if self._persist_count != -1:
-
                 # If the number of persisted checkpoints reach the max number of persist count allowed, remove
                 # the oldest persisted checkpoints
                 while self._num_persists >= self._persist_count:
-                    oldest_persist_chkpt_id = self._avail_persist_checkpoints[0]
+                    oldest_persist_chkpt_id = self._available_persisted_checkpoints[0]
                     oldest_persist_chkpt_file_name = (
                         self._path / f"{self._FNAME_PREFIX}{oldest_persist_chkpt_id}{self._FNAME_SUFFIX}"
                     )
                     os.remove(oldest_persist_chkpt_file_name)
                     self._log(f"PosixPersister removed {oldest_persist_chkpt_file_name}.")
-                    self._avail_persist_checkpoints.pop(0)
+                    self._available_persisted_checkpoints.pop(0)
                     self._num_persists -= 1
 
             # Append chkptID to the list and start writing the chkpt to disk.
-            if chkpt.id not in self._avail_persist_checkpoints:
-                self._avail_persist_checkpoints.append(chkpt.id)
-                self._avail_persist_checkpoints.sort()
+            if chkpt.id not in self._available_persisted_checkpoints:
+                self._available_persisted_checkpoints.append(chkpt.id)
+                self._available_persisted_checkpoints.sort()
                 new_id_added = True
             file_name = self._path / f"{self._FNAME_PREFIX}{chkpt.id}{self._FNAME_SUFFIX}"
             self._log(f"About to dump checkpoint {chkpt.id} to {file_name}.")
@@ -669,17 +667,18 @@ class PosixCheckpointPersister(CheckpointPersister):
                         mem_len_bytes = len(mem_bytes_content).to_bytes(8, byteorder=sys.byteorder)
                         file.write(mem_len_bytes)
                         file.write(mem_bytes_content)
-                self._log("PosixPersister dump completed!")
-                self._num_persists += 1
+                self._log(f"PosixPersister dump chkpt {chkpt.id} completed!")
+                if new_id_added:
+                    self._num_persists += 1
                 chkpt.retire()
             except Exception as ex:
-                # Restore self._avail_persist_checkpoints since the persistence failed.
+                # Restore self._available_persisted_checkpoints since the persistence failed.
                 if new_id_added:
-                    self._avail_persist_checkpoints.remove(chkpt.id)
-                    self._avail_persist_checkpoints.sort()
+                    self._available_persisted_checkpoints.remove(chkpt.id)
+                    self._available_persisted_checkpoints.sort()
                 raise
 
-    def load(self, pool: dmem.MemoryPool):
+    def load(self, pool: dmem.MemoryPool, cleanup: bool = False):
         """
         Load persisted checkpoint from disk and return the checkpoint.
         """
@@ -723,11 +722,15 @@ class PosixCheckpointPersister(CheckpointPersister):
                     except EOFError:
                         done = True
 
-            self._log("PosixPersister load completed!")
+            self._log(f"PosixPersister load checkpoint {chkpt.id} completed!")
             chkpt.redirect(indirect)
             chkpt.set_manager(self._manager)
             chkpt.set_pool_mover(self._manager._move_to_pool)
-            self._log("Checkpoint redirection completed!")
+            self._log(f"Checkpoint {chkpt.id} redirection completed!")
+
+            if cleanup:
+                self._cleanup_later_chkpts()
+
             return chkpt
         except Exception as ex:
             tb = traceback.format_exc()
@@ -746,7 +749,7 @@ class PosixCheckpointPersister(CheckpointPersister):
         Used internally to set the checkpoint ID to an available persistsed checkpoint.
         """
         # Check if chkpt_id is available
-        if chkpt_id not in self._avail_persist_checkpoints:
+        if chkpt_id not in self._available_persisted_checkpoints:
             raise DDictPersistCheckpointError(DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE, "")
         self._current_chkpt_id = chkpt_id
 
@@ -754,7 +757,187 @@ class PosixCheckpointPersister(CheckpointPersister):
         """
         Return an iterator of all valid persisted checkpoint IDs in ascending order.
         """
-        return self._avail_persist_checkpoints
+        return self._available_persisted_checkpoints
+
+    @property
+    def current_chkpt(self):
+        return self._current_chkpt_id
+
+
+class DAOSCheckpointPersister(CheckpointPersister):
+    def __init__(
+        self,
+        ddict_name: str,
+        persist_path: str,
+        manager_id: int,
+        log,
+        manager,
+        persist_freq: int = 0,
+        persist_count: int = 0,
+    ):
+        self._manager_id = manager_id
+        self._persist_freq = persist_freq
+        self._persist_count = persist_count
+        self._log = log
+        self._manager = manager
+        self._num_persists = 0
+        self._lock = threading.Lock()
+
+        self._POOL_NAME = persist_path
+        self._CONTAINER_NAME = ddict_name
+        self._available_persisted_checkpoints = []
+        # connect or create a container with name ddict_name
+        if self._manager._restore_from is None:
+            self._dcont = pydaos.DCont(self._POOL_NAME, self._CONTAINER_NAME)
+            self._log(f"Connected to DAOS container {self._CONTAINER_NAME} with pool {self._POOL_NAME}")
+
+            metadata_daos_dd = self._dcont.get("metadata")
+            self._log("Found and cleared the existing metadata DAOS dictionary.")
+
+            metadata_daos_dd[str(self._manager_id)] = ""
+        else:
+            # Container exists, connect to the container.
+            self._dcont = pydaos.DCont(self._POOL_NAME, self._CONTAINER_NAME)
+            self._log(f"Connected to DAOS container {self._CONTAINER_NAME} with pool {self._POOL_NAME}")
+            # read the metadata of the manager (a list of available persisted chkpts)
+            metadata_daos_dd = self._dcont.get("metadata")
+            avail_chkpt_ids = metadata_daos_dd[str(self._manager_id)]
+            if avail_chkpt_ids != None:
+                avail_chkpt_ids = str(avail_chkpt_ids, encoding="utf-8")
+                avail_chkpt_ids = avail_chkpt_ids.split(",")
+                for chkpt_id in avail_chkpt_ids:
+                    self._available_persisted_checkpoints.append(int(chkpt_id))
+            self._available_persisted_checkpoints.sort()
+
+        self._num_persists = len(self._available_persisted_checkpoints)
+        self._current_chkpt_id = 0
+
+    def dump(self, chkpt, force: bool = False):
+        """
+        Dump retiring checkpoint to disk and retire the checkpoint.
+        """
+        # The retiring chkpt will be written into the DAOS dictionary with name <manager_id>_<chkpt_id> in
+        # in the container named <ddict_name>
+
+        new_id_added = False
+
+        # If persist frequency or persist count is 0, no checkpoint is persisted.
+        if not force and (self._persist_freq == 0 or self._persist_count == 0 or chkpt.id % self._persist_freq != 0):
+            return
+
+        with self._lock:
+            # Cannot destroy DAOS dictionary as there's no such API supports. -> Users need to delete the whole
+            # container.
+
+            # Write chkpt in to the DAOS dictionary named <manager ID>_<chkpt ID> in container <ddict_name>
+
+            # Append chkptID to the list and start writing the chkpt to disk.
+            if chkpt.id not in self._available_persisted_checkpoints:
+                self._available_persisted_checkpoints.append(chkpt.id)
+                self._available_persisted_checkpoints.sort()
+                new_id_added = True
+
+            daos_dict_name = f"{self._manager_id}_{chkpt.id}"
+            self._log(f"About to create or connect to DAOS dictionary {daos_dict_name}")
+
+            try:
+                daos_chkpt_dict = self._dcont.dict(daos_dict_name, {})
+                self._log("New DAOS dictionary created!")
+            except pydaos.PyDError as ex:
+                # The dictionary already exists in the container, connect to the dictionary and clear it.
+                daos_chkpt_dict = self._dcont.get(daos_dict_name)
+                # daos_chkpt_dict.clear() # Clear operation is not supported by DAOS dictionary.
+                for key in daos_chkpt_dict:
+                    del daos_chkpt_dict[key]
+                self._log("Found and cleared the existing DAOS dictionary.")
+
+            self._log(f"About to dump checkpoint {chkpt.id} to DAOS dictionary {daos_dict_name}.")
+            try:
+                ser_chkpt = cloudpickle.dumps(chkpt)
+                allocs_map = dict()
+                chkpt.build_allocs_str_key_bytes_val(allocs_map)
+
+                allocs_map["serialized_chkpt"] = ser_chkpt
+                daos_chkpt_dict.bput(allocs_map)
+                self._log(f"DAOSPersister dump chkpt {chkpt.id} completed!")
+                self._num_persists += 1
+
+                # update the metadata DAOS ddict
+                avail_chkpt_ids_str = [str(i) for i in self._available_persisted_checkpoints]
+                avail_chkpt_ids_str = ",".join(avail_chkpt_ids_str)
+                metadata_daos_dd = self._dcont.get("metadata")
+                metadata_daos_dd[str(self._manager_id)] = avail_chkpt_ids_str
+
+                chkpt.retire()
+                self._log(f"DAOSPersister retired chkpt {chkpt.id}!")
+
+            except Exception as ex:
+                tb = traceback.format_exc()
+                # Restore self._available_persisted_checkpoints since the persistence failed.
+                if new_id_added:
+                    self._available_persisted_checkpoints.remove(chkpt.id)
+                    self._available_persisted_checkpoints.sort()
+                self._log(f"Caught exception while dumping retiring chkpt using DAOS checkpoint persister: {ex}\n{tb}")
+                raise
+
+    def load(self, pool: dmem.MemoryPool, cleanup: bool = False):
+        """
+        Load persisted checkpoint from disk and return the checkpoint.
+        """
+        daos_dict_name = f"{self._manager_id}_{self._current_chkpt_id}"
+        indirect = {}
+        chkpt = None
+        self._log(f"About to load checkpoint {self._current_chkpt_id} from DAOS dictionary {daos_dict_name}.")
+
+        try:
+            # connect to the dictionary
+            daos_chkpt_dict = self._dcont.get(daos_dict_name)
+
+            # read the serialized chkpt
+            ser_chkpt = daos_chkpt_dict["serialized_chkpt"]
+            chkpt = cloudpickle.loads(ser_chkpt)
+            daos_chkpt_dict.pop("serialized_chkpt")
+
+            for id in daos_chkpt_dict:
+                val = daos_chkpt_dict[id]
+                mem = pool.alloc(size=len(val))
+                mem_view = mem.get_memview()
+                mem_view[:] = val
+                indirect[int(id)] = mem
+
+            self._log(f"DAOSPersister load checkpoint {chkpt.id} completed!")
+            chkpt.redirect(indirect)
+            chkpt.set_manager(self._manager)
+            chkpt.set_pool_mover(self._manager._move_to_pool)
+            self._log(f"Checkpoint {chkpt.id} redirection completed!")
+
+            return chkpt
+        except Exception as ex:
+            tb = traceback.format_exc()
+            log.debug("There is an exception while loading persisted checkpoint from disk: %s\n %s", ex, tb)
+            raise
+
+    def advance(self):
+        """
+        Used internally to advance the persisted checkpoint ID to the next available one.
+        """
+        next_chkpt_id = self._current_chkpt_id + self._persist_freq
+        self.position(next_chkpt_id)
+
+    def position(self, chkpt_id: int):
+        """
+        Used internally to set the checkpoint ID to an available persistsed checkpoint.
+        """
+        # Check if chkpt_id is available
+        if chkpt_id not in self._available_persisted_checkpoints:
+            raise DDictPersistCheckpointError(DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE, "")
+        self._current_chkpt_id = chkpt_id
+
+    def checkpoints(self) -> list[int]:
+        """
+        Return an iterator of all valid persisted checkpoint IDs in ascending order.
+        """
+        return self._available_persisted_checkpoints
 
     @property
     def current_chkpt(self):
@@ -973,6 +1156,7 @@ class DDict:
         wait_for_writers: bool = False,
         policy: policy.Policy or list[policy.Policy] = None,
         managers_per_policy: int = 1,
+        orc_policy: policy.Policy = None,
         persist_freq: int = 0,
         name: str = "",
         timeout: float = DDICT_DEFAULT_TIMEOUT,
@@ -1062,6 +1246,14 @@ class DDict:
              is divided up evenly amongst the managers. This is the Defaults to
              1.
 
+        :param orc_policy: A policy can be supplied for starting the
+             orchestrator. The placement of the orchestrator is most impactful
+             when re-constituting a distributed dictionary that has previously
+             been destroyed with `allow_restart=True`. In this case, placing
+             the orchestrator on the same node as the previous orchestrator
+             allows the dictionary to be re-created. The policy defaults to
+             None which applies a Round-Robin policy.
+
         :param persist_freq: This is the
              frequency that a checkpoint will be persisted to disk.
              This is independent of the working set size and can be
@@ -1101,10 +1293,8 @@ class DDict:
 
         # This block turns on client log for the initial client that creates the dictionary
         try:
-
             # Arguments checks for persisted checkpoints
             if read_only:
-
                 if len(name) == 0:
                     raise AttributeError(
                         "When creating a read-only Dragon Distributed Dict you must provide the name to restore the dictionary."
@@ -1130,20 +1320,23 @@ class DDict:
                         "When creating a read-only Dragon Distributed Dict, specifying a non-zero persist count is invalid."
                     )
 
-            if persister_class == NULLCheckpointPersister and persist_freq != 0:
+            if restore_from is not None:
+                if len(name) == 0:
+                    raise AttributeError(
+                        "When restoring from a checkpoint in Dragon Distributed Dict you must provide the name to restore the dictionary."
+                    )
+                if persister_class != NULLCheckpointPersister:
+                    raise AttributeError(
+                        "When restoring from a checkpoint in Dragon Distributed Dict, providing a persister class is invalid."
+                    )
+
+            elif persister_class == NULLCheckpointPersister and persist_freq != 0:
                 raise AttributeError(
                     "When using NULLCheckpointPersister, specifying a non-zero persist_freq is invalid."
                 )
 
-            if restore_from is not None and len(name) == 0:
-                raise AttributeError(
-                    "When restoring from a checkpoint in Dragon Distributed Dict you must provide the name to restore the dictionary."
-                )
-
             if working_set_size < 1:
-                raise ValueError(
-                    "The working set size of a DDict cannot be less than 1."
-                )
+                raise ValueError("The working set size of a DDict cannot be less than 1.")
 
             if working_set_size == 1 and (wait_for_keys or wait_for_writers):
                 raise ValueError(
@@ -1188,6 +1381,7 @@ class DDict:
                 n_nodes = len(policy)
                 managers_per_node = managers_per_policy
 
+            self._orc_policy = orc_policy
             # Start the Orchestrator and capture its serialized descriptor so we can connect to it.
             self._orc_proc = Popen(
                 executable=sys.executable,
@@ -1196,6 +1390,7 @@ class DDict:
                     f"import dragon.data.ddict.orchestrator as orc; orc.start({managers_per_node}, {n_nodes}, {total_mem}, {trace})",
                 ],
                 stdout=Popen.PIPE,
+                policy=self._orc_policy,
             )
 
             # Read the serialized FLI of the orchestrator.
@@ -1315,11 +1510,16 @@ class DDict:
             self._register_client_to_main_manager(timeout)
         except DDictUnableToCreateDDict as ex:
             tb = traceback.format_exc()
-            raise DDictUnableToCreateDDict(DragonError.FAILURE, "Failed to create dictionary.")
+            raise DDictUnableToCreateDDict(
+                DragonError.FAILURE, "Failed to create dictionary: %s\n Traceback: %s\n"%(ex, tb)
+            )
+        except DDictError as ex:
+            tb = traceback.format_exc()
+            raise
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug("There is an exception __setstate__ of ddict: %s\n Traceback: %s\n", ex, tb)
+                log.debug("There is an exception __setstate__ of ddict: %s\n Traceback: %s\n"%(ex, tb))
             except:
                 pass
             raise RuntimeError(f"There is an exception __setstate__ of ddict.")
@@ -2083,6 +2283,8 @@ class DDict:
 
         return mgr_dd
 
+
+
     def pickler(self, key_pickler=None, value_pickler=None) -> DDict:
         pickler_dd = copy.copy(self)
         pickler_dd._key_pickler = key_pickler
@@ -2091,6 +2293,19 @@ class DDict:
         pickler_dd._creator = False
 
         return pickler_dd
+
+    def which_manager(self, key: object) -> int:
+        """
+        Return the manager id of the manager to which this key would be sent on a
+        put/store operation. This can be useful when wanting to minimize the movement
+        of data.
+
+        :param key: A key that might be stored at some future time. It must be serializable.
+        :returns: The manager id of the manager where this key would be stored.
+        """
+        manager_id, _ = self._choose_manager_pickle_key(key)
+        return manager_id
+
 
     def __setitem__(self, key: object, value: object) -> None:
         """
@@ -2258,7 +2473,6 @@ class DDict:
                 # handle for it. A response channel is created to receive bput response during cleanup of
                 # the batch.
                 if self._bput_root_manager_sendh is None:
-
                     # This is the first call to bput in current batch, need to select a random root manager.
                     # For bput without batch put, a random root manager is selected every time.
                     managers = [i for i in range(self._num_managers)]
@@ -2283,12 +2497,7 @@ class DDict:
                     serializedRespFLI = b64encode(self._bput_respFLI.serialize())
                     self._bput_tag = self._tag_inc()
                     msg = dmsg.DDBPut(
-                        self._bput_tag,
-                        self._client_id,
-                        self._chkpt_id,
-                        serializedRespFLI,
-                        managers,
-                        True,
+                        self._bput_tag, self._client_id, self._chkpt_id, serializedRespFLI, managers, True
                     )
 
                     self._traceit("Sending to manager: %s", msg)
@@ -2328,12 +2537,7 @@ class DDict:
 
             tag = self._tag_inc()
             msg = dmsg.DDBPut(
-                tag,
-                self._client_id,
-                self._chkpt_id,
-                self._serialized_buffered_return_connector,
-                managers,
-                False,
+                tag, self._client_id, self._chkpt_id, self._serialized_buffered_return_connector, managers, False
             )
             self._send_dmsg_and_key_value(managers[0], msg, pickled_key, key, value)
             resp_num = self._num_managers
@@ -2466,7 +2670,6 @@ class DDict:
 
     def _values(self, managers: set[int]) -> Iterator[DDict]:
         try:
-
             iter_strm = Channel.make_process_local()
             self._traceit(f"The local channel cuid is {iter_strm.cuid}")
             respFLI = fli.FLInterface(main_ch=iter_strm)
@@ -2529,7 +2732,6 @@ class DDict:
 
     def _items(self, managers: set[int]) -> Iterator[DDict]:
         try:
-
             iter_strm = Channel.make_process_local()
             self._traceit(f"The local channel cuid is {iter_strm.cuid}")
             respFLI = fli.FLInterface(main_ch=iter_strm)
@@ -2608,25 +2810,14 @@ class DDict:
             except:
                 pass
 
-    def _persisted_chkpt_avail(self, chkptID: int):
-        tag = self._tag_inc()
-        msg = dmsg.DDPersistedChkptAvail(tag, chkptID=chkptID, respFLI=self._serialized_buffered_return_connector)
-        self._check_manager_connection(0)
-        self._send([(msg, None)], self._managers[0], buffered=True)
-
-        msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
-        for resp_msg in msglist:
-            if resp_msg.err != DragonError.SUCCESS:
-                raise DDictError(resp_msg.err, resp_msg.errInfo)
-            elif not resp_msg.available:
-                raise DDictError(
-                    DragonError.INVALID_OPERATION,
-                    f"Unable to access persisted checkpoint {chkptID} from manager {resp_msg.managerID}. The checkpoint is not available",
-                )
-
     def _chkpt_avail(self, chkptID: int):
+        """
+        Check the availability of the checkpoint.
+        """
         tag = self._tag_inc()
-        msg = dmsg.DDChkptAvail(tag, chkptID=chkptID, respFLI=self._serialized_buffered_return_connector)
+        msg = dmsg.DDChkptAvail(
+            tag, chkptID=chkptID, respFLI=self._serialized_buffered_return_connector,
+        )
         self._check_manager_connection(0)
         self._send([(msg, None)], self._managers[0], buffered=True)
 
@@ -2639,6 +2830,46 @@ class DDict:
                     DragonError.INVALID_OPERATION,
                     f"Unable to access persisted checkpoint {chkptID} from manager {resp_msg.managerID}. The checkpoint is not available",
                 )
+
+    def _persisted_chkpt_avail(self, chkptID: int):
+        """
+        Check the availability of the persisted checkpoint.
+        """
+        tag = self._tag_inc()
+        msg = dmsg.DDPersistedChkptAvail(
+            tag, chkptID=chkptID, respFLI=self._serialized_buffered_return_connector,
+        )
+        self._check_manager_connection(0)
+        self._send([(msg, None)], self._managers[0], buffered=True)
+
+        msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
+        for resp_msg in msglist:
+            if resp_msg.err != DragonError.SUCCESS:
+                raise DDictError(resp_msg.err, resp_msg.errInfo)
+            elif not resp_msg.available:
+                raise DDictError(
+                    DragonError.INVALID_OPERATION,
+                    f"Unable to access persisted checkpoint {chkptID} from manager {resp_msg.managerID}. The checkpoint is not available",
+                )
+
+    def _restore(self, chkpt: int):
+        # Checkpoint is available across all managers, proceed to restore it.
+        tag = self._tag_inc()
+        msg = dmsg.DDRestore(
+            tag, chkptID=chkpt, clientID=self._client_id, respFLI=self._serialized_buffered_return_connector
+        )
+        self._check_manager_connection(0)
+        self._send([(msg, None)], self._managers[0], buffered=True)
+
+        msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
+        for resp_msg in msglist:
+            if resp_msg.err == DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE:
+                raise DDictPersistCheckpointError(resp_msg.err, resp_msg.errInfo)
+            elif resp_msg.err != DragonError.SUCCESS:
+                raise DDictError(resp_msg.err, resp_msg.errInfo)
+
+        # After restoring complete, every client should sync to newest checkpoint ID
+        self._chkpt_id = chkpt
 
     def local_len(self) -> int:
         tags = set()
@@ -3033,6 +3264,7 @@ class DDict:
             else:
                 min_newest_chkpt_id = min(min_newest_chkpt_id, resp_msg.chkptID)
         self._chkpt_id = min_newest_chkpt_id
+        self._restore(self._chkpt_id)
 
     def persist(self) -> None:
         """
@@ -3057,32 +3289,11 @@ class DDict:
         Restore a persisted checkpoint.
         """
         if self._batch_put_started:
-            raise DDictError(
-                DragonError.INVALID_OPERATION,
-                "Restoring checkpoint during batch put is invalid.",
-            )
+            raise DDictError(DragonError.INVALID_OPERATION, "Restoring checkpoint during batch put is invalid.")
 
-        # check checkpoint availability across all managers
+        # check persisted checkpoint availability across all managers
         self._persisted_chkpt_avail(chkpt)
-
-        # Checkpoint is available across all managers, proceed to restore it.
-        tag = self._tag_inc()
-        msg = dmsg.DDRestore(
-            tag, chkptID=chkpt, clientID=self._client_id, respFLI=self._serialized_buffered_return_connector
-        )
-        self._check_manager_connection(0)
-        self._send([(msg, None)], self._managers[0], buffered=True)
-
-        msglist = self._recv_responses(set([tag]), num_responses=self._num_managers)
-        for resp_msg in msglist:
-            if resp_msg.err == DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE:
-                raise DDictPersistCheckpointError(resp_msg.err, resp_msg.errInfo)
-            elif resp_msg.err != DragonError.SUCCESS:
-                raise DDictError(resp_msg.err, resp_msg.errInfo)
-
-        self._chkpt_id = chkpt
-
-        # After restoring complete, every client should sync to newest checkpoint ID
+        self._restore(chkpt)
 
     def persisted_ids(self) -> list[int]:
         """

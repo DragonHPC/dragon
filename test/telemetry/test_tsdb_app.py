@@ -25,7 +25,7 @@ def get_dps_of_each_row(filename):
         if row[0] in final.keys():
             final[row[0]].update({row[1]: row[2]})
         else:
-           final[row[0]] = {row[1]: row[2]} 
+            final[row[0]] = {row[1]: row[2]}
     return final
 
 
@@ -36,29 +36,32 @@ class TestDragonTelemetryTSDBApp(unittest.TestCase):
 
         cls.shutdown_event = mp.Event()
         user = os.environ.get("USER", str(os.getuid()))
-        cls.filename = "/tmp/ts_" + user + "_" + os.uname().nodename + ".db"
-        connection = sqlite3.connect(cls.filename)
-        cursor = connection.cursor()
-        sql_create_metrics = "CREATE TABLE IF NOT EXISTS datapoints (metric text, timestamp text, value real, tags json)"
+        cls.filename = "/tmp/ts_" + user + "_" + os.uname().nodename + "_tsdb_app_test" + ".db"
+        cls.connection = sqlite3.connect(cls.filename)
+        cursor = cls.connection.cursor()
+        sql_create_metrics = (
+            "CREATE TABLE IF NOT EXISTS datapoints (metric text, timestamp text, value real, tags json)"
+        )
         cursor.execute(sql_create_metrics)
-        connection.commit()
+        cls.connection.commit()
         sql_create_flags = "CREATE TABLE IF NOT EXISTS flags (id INTEGER PRIMARY KEY CHECK (id = 1), is_shutdown BLOB)"
         cursor.execute(sql_create_flags)
-        connection.commit()
+        cls.connection.commit()
 
         sql_insert = "INSERT INTO datapoints VALUES (?,?,?,?)"
         cls.sample_data = SAMPLE_DATA
         for k, v in cls.sample_data.items():
             for t, d in v.items():
                 cursor.execute(sql_insert, [k, t, d, json.dumps(None)])
-        connection.commit()
+        cls.connection.commit()
 
         # Shutdown event
         sql_insert_flag_event = "INSERT OR REPLACE INTO flags VALUES (1, ?)"
         cursor.execute(sql_insert_flag_event, [dumps(cls.shutdown_event)])
-        connection.commit()
-        connection.close()
+        cls.connection.commit()
+        cls.connection.close()
 
+        app.set_filename(cls.filename)
         cls.context = app.app_context()
         cls.context.push()
         cls.client = app.test_client()
@@ -84,10 +87,11 @@ class TestDragonTelemetryTSDBApp(unittest.TestCase):
             ],
             "timestamp": 1733466126,
         }
-        
+
         response = self.client.post("/api/metrics", json=query)
         post_mock_db = get_dps_of_each_row(self.filename)
 
+        print(f"{(json.loads(response.get_data(as_text=True)))=}", flush=True)
         self.assertEqual(response.status_code, 201)
         self.assertEqual((json.loads(response.get_data(as_text=True)))["success"], len(query["dps"]))
         for k, v in post_mock_db.items():
@@ -161,6 +165,7 @@ class TestDragonTelemetryTSDBApp(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.context.pop()
+        cls.connection.close()
         os.remove(cls.filename)
 
 

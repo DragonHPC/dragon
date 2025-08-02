@@ -869,7 +869,6 @@ dragon_set_thread_local_mode(bool set_thread_local)
     _set_thread_local_mode_bcast(set_thread_local);
     _set_thread_local_mode_ddict(set_thread_local);
     _set_thread_local_mode_fli(set_thread_local);
-    _set_thread_local_mode_queues(set_thread_local);
 
     dg_thread_local_mode = set_thread_local;
 }

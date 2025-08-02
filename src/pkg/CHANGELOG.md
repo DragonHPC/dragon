@@ -1,5 +1,118 @@
 # Changelog
 
+## [0.12] - 2025-07-29
+
+### Changed
+
+Move mpiexec override to dragon-config add subparser #1055 by nicholas-hill was merged Jul 25, 2025
+
+Make PMIx optional during developer build #1052 by nicholas-hill was merged Jul 24, 2025
+
+Add flush to native queue and pass Send/Receive handles via a new attr #1038 by kent-lee was merged Jul 8, 2025
+
+Chkpt persistence improvement #1035 by yian-chen was merged Jul 14, 2025
+
+New Queue Support in C/C++ #1030 by kent-lee was merged Jul 2, 2025
+
+Ddict cleanup #1023 by yian-chen was merged Jun 25, 2025
+
+Expose h_uid of the host node in the Process API #1018 by maria-kalantzi was merged Jun 17, 2025
+
+Make string states an enumerated class in Process Group #1011 by veena-venkata-ghorakavi was merged Jul 10, 2025
+
+Telemetry Cleanup #997 by indira-pimpalkhare was merged May 21, 2025
+
+Ensure child processes update their working directory #991 by maria-kalantzi was merged May 12, 2025
+
+Pin Cython version in build steps #990 by nicholas-hill was closed May 2, 2025
+
+Update Jupyter Docs and address typos #986, 987 by kent-lee on Apr 29, 2025
+
+### Added
+
+Add/improve exception handling in dragon-cleanup #1048 by eric-cozzi was merged Jul 15, 2025
+
+Add native queue tests #1047 by yian-chen was merged Jul 16, 2025
+
+Add PMIx server to support general MPI library apps #1043 by nicholas-hill was merged Jul 22, 2025
+
+CPP queue interface and tests #1040 by yian-chen was merged Jul 18, 2025
+
+Tag v0.12rc3 #1034 by nicholas-hill was merged Jul 1, 2025
+
+Add Authentication to Telemetry #1025 by indira-pimpalkhare was merged Jul 15, 2025
+
+Add classmethod to process group for generally configuring distributing training #1024 by veena-venkata-ghorakavi was merged Jul 2, 2025
+
+buffered send in the fli #1021 by kent-lee was merged Jun 24, 2025
+
+Set Checkpoint ID in DDict clients and change property name #1004 by kent-lee was merged May 19, 2025
+
+Allow users to specify and override default mpiexec launch of runtime #1003 by wahlc was merged May 21, 2025
+
+Add batch stats to telmetry #1001 by nick-radcliffe was merged May 19, 2025
+
+Slow gpu detection support #999 by wahlc was merged Jul 1, 2025
+
+ddict checkpoint persistent for daos #1016 by yian-chen was merged Jun 27, 2025
+
+MPI vs Dragon pool benchmark #1020 by nick-radcliffe was merged Jun 24, 2025
+
+Freeze ddict support for fast ddict reads #1019 by yian-chen was merged Jun 18, 2025
+
+Tests for HSTA during a runtime restart #1015 by indira-pimpalkhare was merged Jun 12, 2025
+
+Add ddict checkpoint persistence #988 by yian-chen was merged May 19, 2025
+
+Added script to update open source #989, #993, #994, #995 by kent-lee was merged May 2, 2025
+
+### Removed
+
+Remove setting of DRAGON_NETWORK_CONFIG env. var from backend launch #1017 by nicholas-hill was merged Jun 27, 2025
+
+### Fixed
+
+Fix zarr unit test failure #1054 by mendygra was merged Jul 24, 2025
+
+Several fixes to tests with mixed up mp contexts #1053 by kent-lee was merged Jul 24, 2025
+
+Fix Serializable Design for DDict keys #1050 by kent-lee was merged Jul 20, 2025
+
+Fix for DDict Example Code and an mpbridge Queue fix #1049 by kent-lee was merged Jul 17, 2025
+
+Fixes the glibc mismatch in DST Pipeline #1046 by kent-lee was merged Jul 11, 2025
+
+Fix DDict compile error #1045 by sanian-gaffar was merged Jul 16, 2025
+
+Barrier Try Again Fix for HSTA #1044 by kent-lee was merged Jul 12, 2025
+
+Add symlink to tools and fix FE Launcher for dragon-cleanup to check for DRAGON_MATCH_MP env var. #1042 by eric-cozzi was merged Jul 15, 2025
+
+Fixed DDict Regression Issue via new turbo mode#1032 by kent-lee was merged Jul 1, 2025
+
+Temporary drun dragon-cleanup fixes #1031 by eric-cozzi was merged Jul 7, 2025
+
+handle working set size of one correctly in DDict #1027 by kent-lee was merged Jun 26, 2025
+
+Update transport default regex for network address detection #1007 by yian-chen was merged May 20, 2025
+
+Fix documentation for JobLib benchmarks utilizing base multiprocessing and DragonHPC #1006 by veena-venkata-ghorakavi was merged May 28, 2025
+
+Fix DataLoader to work with zarrdataset and newer PyTorch releases #1002 by potts was merged May 20, 2025
+
+ddict duplicate file creation error #1000 by yian-chen was merged May 16, 2025
+
+Make SSH launch respect --hostfile option #998 by kent-lee was merged May 16, 2025
+
+Fixed up timeout value for low resources in DST #996 by kent-lee was merged May 7, 2025
+
+Fixing mpbridge context passing #1010 by veena-venkata-ghorakavi was merged Jul 3, 2025 
+
+remove ctx being passed to base RLock erroneously #1008 by mendygra was merged May 21, 2025 
+
+Some patching issues fixed #992 by kent-lee was merged May 2, 2025
+
+
 ## [0.12rc1] - 2025-04-29
 
 - Many small bug fixes.

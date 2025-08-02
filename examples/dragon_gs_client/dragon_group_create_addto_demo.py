@@ -15,17 +15,16 @@ from dragon.utils import host_id
 def hello():
     my_host_id = host_id()
     my_node = node.query(my_host_id)
-    print(f'Hello from {my_node.name}', flush=True)
+    print(f"Hello from {my_node.name}", flush=True)
 
 
 def hello2():
     my_host_id = host_id()
     my_node = node.query(my_host_id)
-    print(f'Hello2 from {my_node.name}', flush=True)
+    print(f"Hello2 from {my_node.name}", flush=True)
 
 
 def get_python_process_parameters(target, args, kwargs) -> tuple:
-
     new_target = sys.executable
     new_args = [
         "-c",
@@ -42,45 +41,31 @@ def main() -> None:
 
     # Pipe the stdout output from the head process to a Dragon connection
     process_create_msg = process.get_create_message_with_argdata(
-        exe=target,
-        run_dir=run_dir,
-        args=args,
-        argdata=argdata,
-        pmi_required=False,
-        env=None,
+        exe=target, run_dir=run_dir, args=args, argdata=argdata, env=None
     )
 
     num_processes = node.query_total_cpus() // 4
-    print(f'Starting {num_processes} processes', flush=True)
+    print(f"Starting {num_processes} processes", flush=True)
 
     # Establish the list and number of process ranks that should be started
-    items = [
-        (num_processes, process_create_msg.serialize()),
-    ]
+    items = [(num_processes, process_create_msg.serialize())]
 
     # Ask Dragon to create the process group
     grp = group.create(items=items, policy=policy_eval.Policy(), soft=False)
 
-    #========
+    # ========
 
     target, args, argdata = get_python_process_parameters(target=hello2, args=None, kwargs=None)
 
     # Pipe the stdout output from the head process to a Dragon connection
     process_create_msg = process.get_create_message_with_argdata(
-        exe=target,
-        run_dir=run_dir,
-        args=args,
-        argdata=argdata,
-        pmi_required=False,
-        env=None,
+        exe=target, run_dir=run_dir, args=args, argdata=argdata, env=None
     )
 
-    print(f'Creating and adding {num_processes} processes', flush=True)
+    print(f"Creating and adding {num_processes} processes", flush=True)
 
     # Establish the list and number of process ranks that should be started
-    items = [
-        (num_processes, process_create_msg.serialize()),
-    ]
+    items = [(num_processes, process_create_msg.serialize())]
 
     # Ask Dragon to create the process group
     grp = group.create_add_to(grp.g_uid, items=items, policy=policy_eval.Policy())

@@ -21,6 +21,16 @@ import random
 import string
 import os
 import sys
+from pathlib import Path
+from posixpath import basename
+import subprocess
+
+try:
+    import pydaos
+
+    DAOS_EXISTS = True
+except:
+    DAOS_EXISTS = False
 
 from ...utils import b64decode, b64encode
 from ...globalservices import channel
@@ -34,6 +44,7 @@ from ...native.process_group import ProcessGroup
 from ...native.machine import Node, System
 from ...infrastructure.policy import Policy
 from .manager import manager_proc
+from .ddict import PosixCheckpointPersister, DAOSCheckpointPersister, NULLCheckpointPersister
 from ... import fli
 from ...rc import DragonError
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
@@ -110,13 +121,15 @@ class Orchestrator:
     def __setstate__(self, fname):
         # read managers' serialized pool descriptors from file
         with open(fname, "r") as f:
-            (self._serialized_manager_pool, self._manager_nodes) = cloudpickle.loads(b64decode(f.read()))
+            (self._serialized_manager_pool, self._manager_nodes, self._loaded_persister) = cloudpickle.loads(
+                b64decode(f.read())
+            )
 
     def __getstate__(self):
         # write the map of managers' serialized memory pool descriptors to the file
         # self._pickle_new = "/tmp/ddict_orc_" + self._name
         with open(self._pickle_new, "w") as f:
-            f.write(b64encode(cloudpickle.dumps((self._serialized_manager_pool, self._manager_nodes))))
+            f.write(b64encode(cloudpickle.dumps((self._serialized_manager_pool, self._manager_nodes, self._persister))))
         return fname
 
     def run(self):
@@ -194,7 +207,7 @@ class Orchestrator:
 
         # remove new pickle file in the end if not allow restart
         try:
-            if not self._allow_restart:
+            if not self._allow_restart and self._persister == NULLCheckpointPersister:
                 os.remove(self._pickle_new)
         except Exception as e:
             log.debug("Caught error while removing new pickle file. %s", e)
@@ -235,6 +248,50 @@ class Orchestrator:
         connection = fli.FLInterface.attach(b64decode(self._create_req_msg_respFLI))
         self._send_msg(resp_msg, connection)
         connection.detach()
+
+    def _prepare(self):
+        """
+        Remove persisted chkpt that is later than the restoring chkpt specified in bringup without read-only.
+        """
+        if self._restore_from is not None:
+            try:
+                with open(self._pickle_new, "r") as f:
+                    (_, _, self._persister) = cloudpickle.loads(b64decode(f.read()))
+            except FileNotFoundError:
+                self._persister = NULLCheckpointPersister
+
+        if not self._read_only and self._restore_from is not None:
+            if self._persister == PosixCheckpointPersister:
+                # Remove any persisted file with chkpt later than restore_from so that the persisted file
+                # won't be overwritten later.
+                FNAME_PREFIX = f"{self._name}_"
+                FNAME_SUFFIX = f".ddict"
+                # filename = {FNAME_PREFIX}{managerID}_{chkptID}{FNAME_SUFFIX}
+                path = Path(self._persist_path)
+                dat_files = list(path.glob(f"{FNAME_PREFIX}*{FNAME_SUFFIX}"))
+                for f in dat_files:
+                    strf = str(basename(f))
+                    # managerID_chkptID = {managerID}_{chkptID}
+                    managerID_chkptID = strf[len(FNAME_PREFIX) :][: -len(FNAME_SUFFIX)]
+                    chkptID = int(managerID_chkptID.split("_")[-1])
+                    if chkptID > self._restore_from:
+                        os.remove(f)
+        if self._restore_from is None and self._persister == DAOSCheckpointPersister:
+            # If not restore, remove the existing containers with name ddict_name
+            log.debug(f"Removing DAOS container {self._name} from pool {self._persist_path}")
+            subprocess.run(
+                f"daos cont destroy {self._persist_path} {self._name}",
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            # TBD: should we catch the exception if the container doesn't exist?
+            log.debug(f"Creating a new DAOS container {self._name} from pool {self._persist_path}")
+            subprocess.run(f"daos cont create {self._persist_path} {self._name} --type PYTHON", shell=True)
+            dcont = pydaos.DCont(self._persist_path, self._name)
+            log.debug(f"DAOS container created. Now creating metadata dictionary.")
+            metadata_daos_dd = dcont.dict("metadata", {})
+            log.debug(f"DAOS metadata dictionary created.")
 
     @dutil.route(dmsg.DDEmptyManagers, _DTBL)
     def empty_managers(self, msg: dmsg.DDEmptyManagers) -> None:
@@ -329,23 +386,27 @@ class Orchestrator:
         if not self._name:  # TODO: name - time and date
             random.seed()
             self._name = "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
-            args = (
-                self._working_set_size,
-                self._wait_for_keys,
-                self._wait_for_writers,
-                self._policy,
-                self._persist_freq,
-                self._name,
-                self._timeout,
-                self._restart,
-                self._read_only,
-                self._restore_from,
-                self._persist_path,
-                self._persist_count,
-                self._persister,
-                self._streams_per_manager,
-            )
         self._pickle_new = "/tmp/ddict_orc_" + self._name
+
+        self._prepare()
+
+        # update args
+        args = (
+            self._working_set_size,
+            self._wait_for_keys,
+            self._wait_for_writers,
+            self._policy,
+            self._persist_freq,
+            self._name,
+            self._timeout,
+            self._restart,
+            self._read_only,
+            self._restore_from,
+            self._persist_path,
+            self._persist_count,
+            self._persister,
+            self._streams_per_manager,
+        )
 
         # create managers
         self._manager_pool = ProcessGroup(restart=False)

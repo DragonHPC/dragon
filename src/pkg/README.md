@@ -16,9 +16,9 @@ Installing Dragon
 Dragon currently requires a minimum python version of 3.10 with support
 for 3.11 and 3.12. Otherwise, just do a `pip install`:
 
-    pip3 install --force-reinstall dragonhpc
+    pip install dragonhpc
 
-After doing the `pip3 install` of the package, you have
+After doing the `pip install` of the package, you have
 completed the prerequisites for running Dragon multiprocessing programs.
 
 Dragon is built with `manylinux2014` support and should function on most Linux
@@ -45,10 +45,10 @@ Example configuration commands appear below:
 
 ```
 # For a UCX backend, provide a library path that contains a libucp.so:
-dragon-config -a  "ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib"
+dragon-config add --ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib
 
 # For an OFI backend, provide a library path that contains a libfabric.so:
-dragon-config -a "ofi-runtime-lib=/opt/cray/libfabric/1.22.0/lib64"
+dragon-config add --ofi-runtime-lib=/opt/cray/libfabric/1.22.0/lib64
 ```
 
 As mentioned, if `dragon-config` is not run as above to tell Dragon where to
@@ -68,7 +68,7 @@ If you get tired of seeing this message and plan to only use TCP communication
 over ethernet, you can use the following `dragon-config` command to silence it:
 
 ```
-dragon-config -a 'tcp-runtime=True'
+dragon-config add --tcp-runtime=True
 ```
 
 For help without referring to this README.md, you can always use `dragon-config --help`
@@ -174,10 +174,10 @@ report. To learn more about how to enable higher levels of debug logging refer t
 `dragon --help`.
 
 Dragon Managed Memory, a low level component of the Dragon runtime, uses shared memory.
-It is possible with this beta release that things go wrong while the runtime
-is coming down and files are left in /dev/shm. Dragon does attempt to clean these up in
-the chance of a bad exit, but it may not succeed. In that case, running `dragon-cleanup`
-on your own will clean up any zombie processes or un-freed memory.
+It is possible that things go wrong while the runtime is coming down and files are 
+left in /dev/shm. Dragon does attempt to clean these up in the chance of a bad exit, 
+but it may not succeed. In that case, running `dragon-cleanup` on your own will clean up 
+any zombie processes or un-freed memory.
 
 It is possible for a user application or workflow to exhaust memory resources in Dragon
 Managed Memory without the runtime detecting it. Many allocation paths in the runtime use
@@ -197,5 +197,4 @@ the runtime will hang during startup. Proper error handling of this case will co
 release.
 
 In the event your experiment goes awry, we provide a helper script, `dragon-cleanup`, to clean
-up any zombie processes and memory. `dragon-cleanup` should be in your PATH once you install
-dragon.
+up any zombie processes and memory.

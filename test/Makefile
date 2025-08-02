@@ -61,8 +61,10 @@ TESTS_PYTHON := test_c_files.py \
                 $(wildcard transport/tcp/test_*.py) \
                 transport/test_lsif.py \
                 test_transport.py \
-                test_integration_shep_gs.py \
-				test_launcher.py
+                test_integration_shep_gs.py
+# test_launcher.py (waiting for fix from Jira AICI-1859)
+
+TESTS_AI := test_distributed_training.py
 
 TESTS_DRAGON := test_mpbridge.py \
                 test_native.py \
@@ -83,7 +85,7 @@ TESTS_CCFUTURES := test_as_completed.py \
 all: test
 
 .PHONY: test
-test: $(TESTS_PYTHON) $(TESTS_DRAGON) $(TESTS_CCFUTURES)
+test: $(TESTS_PYTHON) $(TESTS_DRAGON) $(TESTS_CCFUTURES) $(TESTS_AI)
 
 .PHONY: $(TESTS_PYTHON)
 $(TESTS_PYTHON):
@@ -104,6 +106,10 @@ $(TESTS_CCFUTURES):
 	@echo "Running ccfutures test"
 	cd ccfutures && dragon -s $@ -v -f
 
+.PHONY: $(TESTS_AI)
+$(TESTS_AI):
+	@echo "Running ai test"
+	cd ai && dragon -s $@ -v -f
 
 BUILD_COMPONENTS := $(addprefix build-,$(COMPONENTS))
 

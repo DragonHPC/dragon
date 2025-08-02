@@ -14,6 +14,7 @@ the distributed dictionary.
 """
 
 import os
+import sys
 import logging
 import traceback
 import socket
@@ -33,6 +34,7 @@ from ...infrastructure import messages as dmsg
 from ...infrastructure.channel_desc import ChannelOptions
 from ...localservices.options import ChannelOptions as LSChannelOptions
 from ...channels import Channel
+from ...dtypes import get_rc_string
 from ... import fli
 from ...rc import DragonError
 from .ddict import (
@@ -208,6 +210,17 @@ class Checkpoint:
             # value is a list of memory allocations
             for val_mem in val_mems:
                 allocs[val_mem.id] = val_mem
+
+    def build_allocs_str_key_bytes_val(self, allocs: dict):
+        for key_mem in self.key_allocs.keys():
+            mem_view = key_mem.get_memview()
+            allocs[str(key_mem.id)] = mem_view.tobytes()
+
+        for val_mems in self.map.values():
+            # value is a list of memory allocations
+            for val_mem in val_mems:
+                mem_view = val_mem.get_memview()
+                allocs[str(val_mem.id)] = mem_view.tobytes()
 
     def redirect(self, indirect: dict):
         # redirect all maps and sets (map, key_allocs, deleted, persist)
@@ -1279,7 +1292,6 @@ class WorkingSet:
                         # from parent will be less error-prone.
                         return False
 
-
                 self._retire_checkpoint(checkpoints, id_to_retire)
 
         self._chkpts = checkpoints
@@ -1529,6 +1541,15 @@ class Manager:
         # bput (broadcast put) with batch
         self._num_bput = {}
 
+        err_str = ""
+        err_code = DragonError.SUCCESS
+
+        fname = f"{dls.DD}_{socket.gethostname()}_manager_{str(self._puid)}.log"
+        global log
+        if log == None:
+            setup_BE_logging(service=dls.DD, fname=fname)
+            log = logging.getLogger(str(dls.DD))
+
         # Checkpoint persistence
         self._persister = self._persister(
             self._name,
@@ -1539,15 +1560,6 @@ class Manager:
             self._persist_freq,
             self._persist_count,
         )
-
-        err_str = ""
-        err_code = DragonError.SUCCESS
-
-        fname = f"{dls.DD}_{socket.gethostname()}_manager_{str(self._puid)}.log"
-        global log
-        if log == None:
-            setup_BE_logging(service=dls.DD, fname=fname)
-            log = logging.getLogger(str(dls.DD))
 
         try:
             log.debug("Starting manager on host = %s", socket.gethostname())
@@ -1747,6 +1759,11 @@ class Manager:
         except DDictPersistCheckpointError:
             err_code = DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE
             err_str = f"The persist checkpoint {self._restore_from} is unavailable in manager {self._manager_id}"
+            self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
+            return
+        except NotImplementedError:
+            err_code = DragonError.NOT_IMPLEMENTED
+            err_str = f"Positioning and loading persisted checkpoint are not implemented in {self._persister}"
             self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
             return
         except Exception as ex:
@@ -1953,13 +1970,13 @@ class Manager:
             msg_list.append(resp_msg)
         return msg_list
 
-    def _send_msg(self, msg, connection, buffered=False):
+    def _send_msg(self, msg, connection, buffered=False, turbo_mode=False):
         try:
             if connection.is_buffered or buffered:
                 strm = None
             else:
                 strm = self._get_strm_channel()
-            with connection.sendh(timeout=self._timeout, stream_channel=strm, turbo_mode=True) as sendh:
+            with connection.sendh(timeout=self._timeout, stream_channel=strm, turbo_mode=turbo_mode) as sendh:
                 sendh.send_bytes(msg.serialize(), timeout=self._timeout)
             if strm is not None:
                 self._release_strm_channel(strm)
@@ -1977,7 +1994,13 @@ class Manager:
         transfer_ownership=False,
         no_copy_read_only=False,
     ) -> None:
-        with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=True) as sendh:
+
+        if no_copy_read_only:
+            turbo_mode=False # True seems to have no affect here.
+        else:
+            turbo_mode=False
+
+        with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=turbo_mode) as sendh:
             sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
             if chkpt is not None:
                 with chkpt.lock:
@@ -2006,8 +2029,14 @@ class Manager:
     def _send_dmsg_and_values(
         self, resp_msg, connection, values: list, detach: bool = False, no_copy_read_only=False
     ) -> None:
+
+        if no_copy_read_only:
+            turbo_mode=False # True seems to have no affect here.
+        else:
+            turbo_mode=False
+
         try:
-            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=True) as sendh:
+            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=turbo_mode) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if resp_msg.err == DragonError.SUCCESS:
                     for val_list in values:
@@ -2030,7 +2059,7 @@ class Manager:
     ) -> None:
         try:
             with connection.sendh(
-                use_main_as_stream_channel=True, allow_strm_term=allow_strm_term, timeout=self._timeout, turbo_mode=True
+                use_main_as_stream_channel=True, allow_strm_term=allow_strm_term, timeout=self._timeout
             ) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if resp_msg.err == DragonError.SUCCESS:
@@ -2044,7 +2073,7 @@ class Manager:
 
     def _send_dmsg_and_items(self, resp_msg, connection, items: dict, detach: bool = False) -> None:
         try:
-            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=True) as sendh:
+            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if resp_msg.err == DragonError.SUCCESS:
                     for key in items:
@@ -2100,7 +2129,7 @@ class Manager:
         resp_msg = self._recv_msg(set([msg.tag]))
         if resp_msg.err != DragonError.SUCCESS:
             raise Exception(
-                f"Failed to register manager with orchester. Return code: {resp_msg.err}, {resp_msg.errInfo}"
+                f"Failed to register manager with orchestrator. Return code: {get_rc_string(resp_msg.err)}, {resp_msg.errInfo}"
             )
         self._managers = resp_msg.managers
         log.debug("The number of managers is %s", len(self._managers))
@@ -2555,8 +2584,9 @@ class Manager:
             except Exception as ex:
                 log.debug("Caught an exception while closing the receive handle: %s" % ex)
 
-            self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
             del self._num_batch_puts[msg.clientID]
+            self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
+
 
     def _bput_batch(self, msg: dmsg.DDBPut, recvh):
 
@@ -2617,7 +2647,7 @@ class Manager:
                     left_manager_strm = self._get_strm_channel()
                     self._traceit("The local channel cuid is %s for left child manager", left_manager_strm.cuid)
                     left_manager_sendh = left_manager_connection.sendh(
-                        stream_channel=left_manager_strm, timeout=self._timeout, turbo_mode=True
+                        stream_channel=left_manager_strm, timeout=self._timeout
                     )
                     # keep record of the resources claimed for later cleanup
                     manager_connections[left_manager_id] = left_manager_connection
@@ -2633,7 +2663,7 @@ class Manager:
                     right_manager_strm = self._get_strm_channel()
                     self._traceit("The local channel cuid is %s for right child manager", right_manager_strm.cuid)
                     right_manager_sendh = right_manager_connection.sendh(
-                        stream_channel=right_manager_strm, timeout=self._timeout, turbo_mode=True
+                        stream_channel=right_manager_strm, timeout=self._timeout
                     )
                     # keep record of the resources claimed for later cleanup
                     manager_connections[right_manager_id] = right_manager_connection
@@ -2917,7 +2947,7 @@ class Manager:
                         left_msg = dmsg.DDBPut(msg.tag, msg.clientID, msg.chkptID, msg.respFLI, left, msg.batch)
                         connection = fli.FLInterface.attach(b64decode(self._managers[left[0]]))
                         strm = self._get_strm_channel()
-                        with connection.sendh(stream_channel=strm, timeout=self._timeout, turbo_mode=True) as sendh:
+                        with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
                             sendh.send_bytes(left_msg.serialize(), timeout=self._timeout)
                             sendh.send_mem(
                                 client_key_mem, transfer_ownership=False, arg=KEY_HINT, timeout=self._timeout
@@ -2931,7 +2961,7 @@ class Manager:
                         right_msg = dmsg.DDBPut(msg.tag, msg.clientID, msg.chkptID, msg.respFLI, right, msg.batch)
                         connection = fli.FLInterface.attach(b64decode(self._managers[right[0]]))
                         strm = self._get_strm_channel()
-                        with connection.sendh(stream_channel=strm, timeout=self._timeout, turbo_mode=True) as sendh:
+                        with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
                             sendh.send_bytes(right_msg.serialize(), timeout=self._timeout)
                             sendh.send_mem(
                                 client_key_mem, transfer_ownership=False, arg=KEY_HINT, timeout=self._timeout
@@ -3391,7 +3421,7 @@ class Manager:
         recvh.close()
 
         with self._client_connections_map[msg.clientID].sendh(
-            use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=True
+            use_main_as_stream_channel=True, timeout=self._timeout
         ) as sendh:
             try:
                 key = next(self.iterators[msg.iterID])
@@ -3550,7 +3580,7 @@ class Manager:
             allocs = self._working_set.build_allocs()
             connection = fli.FLInterface.attach(b64decode(msg.emptyManagerFLI))
             strm = self._get_strm_channel()
-            with connection.sendh(stream_channel=strm, timeout=self._timeout, turbo_mode=True) as sendh:
+            with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
                 sendh.send_bytes(mgr_set_state_req.serialize(), timeout=self._timeout)
                 for id, mem in allocs.items():
                     sendh.send_bytes(cloudpickle.dumps(id), timeout=self._timeout)
@@ -3654,26 +3684,6 @@ class Manager:
             self._send_msg(resp_msg, connection)
             connection.detach()
 
-    @dutil.route(dmsg.DDPersistedChkptAvail, _DTBL)
-    def persisted_chkpt_avail(self, msg: dmsg.DDChkptAvail, recvh):
-        recvh.close()
-
-        # broadcast message to left and right managers
-        self._send_dmsg_to_children(msg)
-
-        available = msg.chkptID in self._persister.checkpoints()
-        resp_msg = dmsg.DDPersistedChkptAvailResponse(
-            self._tag_inc(),
-            ref=msg.tag,
-            err=DragonError.SUCCESS,
-            errInfo="",
-            available=available,
-            managerID=self._manager_id,
-        )
-        connection = fli.FLInterface.attach(b64decode(msg.respFLI))
-        self._send_msg(resp_msg, connection)
-        connection.detach()
-
     @dutil.route(dmsg.DDRestore, _DTBL)
     def restore(self, msg: dmsg.DDRestore, recvh):
         try:
@@ -3683,8 +3693,9 @@ class Manager:
             self._send_dmsg_to_children(msg)
 
             self._persister.position(msg.chkptID)
-            checkpoint = self._persister.load(self._pool)
-            checkpoint.set_pool_mover(self._move_to_pool)
+            # cleanup chkpt later than the restoring chkpt if it's read_only
+            cleanup = not self._read_only
+            checkpoint = self._persister.load(self._pool, cleanup=cleanup)
 
             # Add restored checkpoint to working set
             self._working_set.clear_and_add_restored_chkpt(checkpoint)
@@ -3779,6 +3790,26 @@ class Manager:
         self._send_msg(resp_msg, connection)
         connection.detach()
 
+    @dutil.route(dmsg.DDPersistedChkptAvail, _DTBL)
+    def persisted_chkpt_avail(self, msg: dmsg.DDPersistedChkptAvail, recvh):
+        recvh.close()
+
+        # broadcast message to left and right managers
+        self._send_dmsg_to_children(msg)
+
+        available = msg.chkptID in self._persister.checkpoints()
+        resp_msg = dmsg.DDPersistedChkptAvailResponse(
+            self._tag_inc(),
+            ref=msg.tag,
+            err=DragonError.SUCCESS,
+            errInfo="",
+            available=available,
+            managerID=self._manager_id,
+        )
+        connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+        self._send_msg(resp_msg, connection)
+        connection.detach()
+
     @dutil.route(dmsg.DDPersist, _DTBL)
     def persist(self, msg: dmsg.DDPersist, recvh):
         try:
@@ -3791,10 +3822,6 @@ class Manager:
 
             err = DragonError.SUCCESS
             errInfo = ""
-
-        except DDictPersistCheckpointError:
-            err = DragonError.DDICT_PERSIST_CHECKPOINT_UNAVAILABLE
-            errInfo = f"The persist checkpoint is unavailable in manager {self._manager_id} with PUID {self._puid}"
 
         except Exception as ex:
             tb = traceback.format_exc()

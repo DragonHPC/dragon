@@ -24,7 +24,24 @@ def _check_msg_types(items):
             raise GroupError("An invalid message type was provided.")
 
 
-def create(items, policy, user_name="", soft=False):
+def cleanup_pmix_resources(guid: int):
+    """Asks Global Services to get Local Services to clean up resources associated with a PMIx group"""
+
+    req_msg = dmsg.GSGroupDestroyPMIx(tag=das.next_tag(), r_c_uid=das.get_gs_ret_cuid(), guid=guid)
+
+    reply_msg = das.gs_request(req_msg)
+    assert isinstance(reply_msg, dmsg.GSGroupDestroyPMIxResponse)
+    ec = dmsg.GSGroupDestroyPMIxResponse.Errors
+
+    if reply_msg.err is ec.SUCCESS:
+        # if a successful GSGroupKillResponse message was sent or all the
+        # processes were already dead
+        return True
+    else:
+        raise GroupError(f"group pmix destroy {req_msg} failed: {reply_msg.err_info}")
+
+
+def create(items, policy, user_name="", soft=False, pmix_ddict=None):
     """Asks Global Services to create a new group of specified resources.
 
     :param items: list of tuples where each tuple contains a replication factor `n` and the Dragon create message. Dragon create messages do not have to be of the same primary resources, i.e. ChannelCreate and ProcessCreate messages can be mixed to into groups to represent composite resources.
@@ -58,6 +75,13 @@ def create(items, policy, user_name="", soft=False):
         # may also be None, but that's OK.
         policy = thread_policy
 
+    log.debug("pmix ddict: %s", pmix_ddict)
+    pmix_desc = None
+    if pmix_ddict is not None:
+        log.debug("pmix ddict2: %s", pmix_ddict)
+        pmix_desc = pmix_ddict.serialize()
+        log.debug("pmix desc: %s", pmix_desc)
+
     req_msg = dmsg.GSGroupCreate(
         tag=das.next_tag(),
         p_uid=this_process.my_puid,
@@ -65,6 +89,7 @@ def create(items, policy, user_name="", soft=False):
         items=items,
         policy=policy,
         user_name=user_name,
+        pmix_desc=pmix_desc,
     )
 
     reply_msg = das.gs_request(req_msg)

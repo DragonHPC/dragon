@@ -68,7 +68,15 @@ class Telemetry:
     def level(self):
         return self._telemetry_level
 
-    def add_data(self, ts_metric_name: str, ts_data: float, timestamp: int = None, telemetry_level: int = 1, tagk: str = None, tagv: int | str = None) -> None:
+    def add_data(
+        self,
+        ts_metric_name: str,
+        ts_data: float,
+        timestamp: int = None,
+        telemetry_level: int = 1,
+        tagk: str = None,
+        tagv: int | str = None,
+    ) -> None:
         """Adds user defined metric data to node local database that can then be retrieved via Grafana
 
         :param ts_metric_name: Metric name used to store data and retrieve it in Grafana. This should be consistent across nodes. Grafana's retrieval will add the hostname to the metric.
@@ -91,9 +99,9 @@ class Telemetry:
                 timestamp = int(time.time())
             self.formatted_data["timestamp"] = timestamp
             if tagk is None or tagv is None:
-                self.formatted_data["dps"]=[{"metric":data_name, "value": ts_data}]
+                self.formatted_data["dps"] = [{"metric": data_name, "value": ts_data}]
             else:
-                self.formatted_data["dps"]=[{"metric":data_name, "value": ts_data, "tags": {tagk: tagv}}]
+                self.formatted_data["dps"] = [{"metric": data_name, "value": ts_data, "tags": {tagk: tagv}}]
 
             api_resp = requests.post(self.metrics_url, json=self.formatted_data)
 

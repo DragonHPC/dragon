@@ -1,5 +1,5 @@
-ifneq ("$(wildcard $(DRAGON_BASE_DIR)/.dragon-config.mk)","")
-    include $(DRAGON_BASE_DIR)/.dragon-config.mk
+ifneq ("$(wildcard $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk)","")
+    include $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk
 endif
 
 export INSTALL = install
@@ -52,6 +52,10 @@ LIBRARIES := lib/libdragon.so lib/libpmod.so $(wildcard lib/libdfabric_*.so)
 TOOLS := tools/dragon-cleanup \
          tools/dragon-node-cleanup
 
+DRAGON_RUN_TOOLS := tools/dragon_cleanup.py \
+                    tools/dragon_run \
+                    tools/__init__.py
+
 BINARIES := $(addprefix bin/, $(notdir $(TOOLS)))
 
 SYMBOLIC_BIN := $(abspath dragon/bin)
@@ -66,7 +70,7 @@ CY_FILES := dragon/pydragon_rc.pyx \
 all: build
 
 .PHONY: build
-build: $(EXTERNAL) $(CYFILES) $(LIBRARIES) $(BINARIES) install-pythondeps
+build: $(EXTERNAL) $(LIBRARIES) $(CYFILES) $(BINARIES) install-pythondeps
 	# Build cython code
 	$(PYTHON) setup.py build $(SETUP_PY_BUILD_FLAGS)
 	# Build cli entry points
@@ -77,11 +81,12 @@ build: $(EXTERNAL) $(CYFILES) $(LIBRARIES) $(BINARIES) install-pythondeps
 $(EXTERNAL):
 	$(MAKE) -C ../external build-capnproto
 
-.PHONY: $(LIBRARIES)
-$(LIBRARIES): %.so:
-	$(MAKE) -C $(@D) $(@F)
 
-.PHONY: $(BINARIES)
+.PHONY: lib
+lib:
+	$(MAKE) -C lib
+
+lib/libdragon.so: $(EXTERNAL) lib
 
 # Copy tools dir to bin
 bin/$(notdir $(TOOLS)): $(TOOLS) $(SYMBOLIC_BIN)
@@ -90,12 +95,10 @@ bin/$(notdir $(TOOLS)): $(TOOLS) $(SYMBOLIC_BIN)
 # Create a symbolic link into src/dragon/bin of src/bin to keep paths written into
 # code actually exits. Do a -f because mtimes will do weird stuff with make
 # and symbolic links
-.PHONY: $(SYMBOLIC_BIN)
 $(SYMBOLIC_BIN):
 	mkdir -p $(abspath bin)
 	ln -sf $(abspath bin) $@
 
-.PHONY: $(CY_FILES)
 $(CY_FILES):
 	$(MAKE) -C include ../$@
 
@@ -121,6 +124,8 @@ dist: build
 	cp -f lib/message_defs.capnp build/dragon_wheel/dragon/infrastructure/
 	mkdir -p build/dragon_wheel/dragon/lib
 	cp -f lib/libdragon.so lib/libpmod.so build/dragon_wheel/dragon/lib
+	mkdir -p build/dragon_wheel/dragon/tools
+	cp -rf $(DRAGON_RUN_TOOLS) build/dragon_wheel/dragon/tools
 	cp -f lib/libdfabric_*.so build/dragon_wheel/dragon/lib || true
 	mkdir -p build/dragon_wheel/dragon/bin
 	cp -f $(BINARIES) build/dragon_wheel/dragon/bin

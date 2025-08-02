@@ -189,9 +189,10 @@ class Policy:
 
             from dragon.native.process_group import ProcessGroup
             from dragon.native.process import MSG_PIPE, MSG_DEVNULL, Process, ProcessTemplate
+            from dragon.infrastructure.facts import PMIBackend
 
             group_policy = Policy(distribution=Policy.Distribution.BLOCK)
-            grp = ProcessGroup(restart=False, pmi_enabled=True, polic=group_policy)
+            grp = ProcessGroup(restart=False, pmi=PMIBackend.PMIX, polic=group_policy)
 
             template_policy_1 = Policy(gpu_affinity=GPU_AFFINITY_1)
 
@@ -235,8 +236,7 @@ class Policy:
                    gpu_affinity = GPU_AFFINITY_2                  # from teplate_policy_2
                    wait_mode=Policy.WaitMode.IDLE,                # from global_policy. Not currently used.
                    refcounted=True,                               # from global_policy. Not currently used.
-            )
-"""
+            )"""
 
     class Placement(enum.IntEnum):
         """
@@ -345,7 +345,6 @@ class Policy:
         # The following merges the policy stack, returning a policy that
         # reflects the aggregate policy defined by the stack.
         if _policy_local.policy_stack:
-
             # Iterate backwards through the policy stack, merging each
             # sucessive policy into our aggregate return value
             for i in range(-1, -len(_policy_local.policy_stack) - 1, -1):

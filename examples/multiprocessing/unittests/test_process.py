@@ -11,15 +11,15 @@ import gc
 import unittest
 import test.support
 
-try: 
-    from test.support.os_helper import fd_count 
-    from test.support.os_helper import TESTFN 
-    from test.support.os_helper import unlink 
+try:
+    from test.support.os_helper import fd_count
+    from test.support.os_helper import TESTFN
+    from test.support.os_helper import unlink
 except ImportError:
     #location prior to Python 3.10
     from test.support import fd_count
-    from test.support import TESTFN 
-    from test.support import unlink 
+    from test.support import TESTFN
+    from test.support import unlink
 
 
 import threading
@@ -390,7 +390,7 @@ class WithProcessesTestProcess(BaseTestCase, ProcessesMixin, unittest.TestCase):
             self.skipTest("test not appropriate for {}".format(self.TYPE))
 
         sm = multiprocessing.get_start_method()
-        N = 5 if sm == "spawn" else 100
+        N = 5 if sm == "spawn"  or sm == "dragon" else 100
 
         # Try to overwhelm the forkserver loop with events
         procs = [self.Process(target=self._test_sleep, args=(0.01,)) for i in range(N)]
@@ -1041,7 +1041,7 @@ class WithThreadsTestProcess(BaseTestCase, ThreadsMixin, unittest.TestCase):
             self.skipTest("test not appropriate for {}".format(self.TYPE))
 
         sm = multiprocessing.get_start_method()
-        N = 5 if sm == "spawn" else 100
+        N = 5 if sm == "spawn" or sm == "dragon" else 100
 
         # Try to overwhelm the forkserver loop with events
         procs = [self.Process(target=self._test_sleep, args=(0.01,)) for i in range(N)]

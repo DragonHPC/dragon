@@ -9,7 +9,7 @@ from dragon.data.ddict import DDict
 from dragon.native.machine import System
 
 # The number of worker/clients of the distributed dictionary.
-NUM_PROCS = 128
+NUM_PROCS = 32
 
 
 def in_circle(point):

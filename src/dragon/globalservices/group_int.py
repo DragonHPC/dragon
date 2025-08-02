@@ -13,6 +13,7 @@ from ..infrastructure.policy import Policy
 from ..infrastructure import util as dutil
 from ..globalservices import api_setup as das
 from .group import GroupError
+from ..data.ddict import DDict
 
 import os
 import logging
@@ -38,16 +39,19 @@ class PMIJobHelper:
         self.items = items
         self.layout_list = layout_list
 
+        # Store the requested PMI backend
+        self.backend = None
+        for _, res_msg in items:
+            resource_msg = dmsg.parse(res_msg)
+            if resource_msg.pmi is not None:
+                self.backend = resource_msg.pmi
+                break
+
         # calculated values
         self.job_id = self.get_next_pmi_job_id()
         self.nranks = self.get_nranks()
 
-        (
-            self.nid_list,
-            self.host_list,
-            self.ppn_map,
-            self.lrank_list,
-        ) = self.get_nid_and_host_data()
+        (self.nid_list, self.host_list, self.ppn_map, self.lrank_list) = self.get_nid_and_host_data()
         self.pmi_h_uid_list = list(self.ppn_map.keys())
 
         self.pmi_nnodes = len(self.host_list)
@@ -57,11 +61,11 @@ class PMIJobHelper:
         for h_uid, lranks in self.ppn_map.items():
             self.pid_base_map[h_uid] = PMIJobHelper.allocate_pmi_pid_base(h_uid, lranks)
 
-    @classmethod
-    def is_pmi_required(cls, items: list[tuple]):
+    @staticmethod
+    def is_pmi_required(items: list[tuple]):
         for _, res_msg in items:
             resource_msg = dmsg.parse(res_msg)
-            if isinstance(resource_msg, dmsg.GSProcessCreate) and resource_msg.pmi_required:
+            if isinstance(resource_msg, dmsg.GSProcessCreate) and resource_msg.pmi is not None:
                 return True
         return False
 
@@ -131,7 +135,7 @@ class PMIJobHelper:
         total_ranks = 0
         for count, res_msg in self.items:
             resource_msg = dmsg.parse(res_msg)
-            if isinstance(resource_msg, dmsg.GSProcessCreate) and resource_msg.pmi_required:
+            if isinstance(resource_msg, dmsg.GSProcessCreate) and resource_msg.pmi is not None:
                 total_ranks += count
         return total_ranks
 
@@ -147,7 +151,7 @@ class PMIJobHelper:
         lrank_list = []
         for count, res_msg in self.items:
             resource_msg = dmsg.parse(res_msg)
-            if isinstance(resource_msg, dmsg.GSProcessCreate) and resource_msg.pmi_required:
+            if isinstance(resource_msg, dmsg.GSProcessCreate) and resource_msg.pmi is not None:
                 for _ in range(count):
                     h_uid = self.layout_list[layout_index].h_uid
                     lrank = ppn_map.get(h_uid, 0)
@@ -169,7 +173,7 @@ class PMIJobHelper:
         layout_index = 0
         for count, res_msg in self.items:
             resource_msg = dmsg.parse(res_msg)
-            if isinstance(resource_msg, dmsg.GSProcessCreate) and resource_msg.pmi_required:
+            if isinstance(resource_msg, dmsg.GSProcessCreate) and resource_msg.pmi is not None:
                 if rank >= count:
                     rank -= count
                     layout_index += count
@@ -224,6 +228,7 @@ class GroupContext:
         self.request = request
         self.reply_channel = reply_channel
         self.destroy_request = None
+        self.destroy_pmix_request = None
         self.pmi_job_helper = pmi_job_helper
         self.destroy_called = False
         self.destroy_remove_success_ids = None  # used when destroy_remove is called to keep the items to be
@@ -240,9 +245,9 @@ class GroupContext:
         return self._descriptor
 
     def _update_group_member(self, this_guid, member, lst_idx, item_idx, related_to_create=True):
-        self.server.group_table[this_guid].descriptor.sets[lst_idx][item_idx] = (
-            group_desc.GroupDescriptor.GroupMember.from_sdict(member)
-        )
+        self.server.group_table[this_guid].descriptor.sets[lst_idx][
+            item_idx
+        ] = group_desc.GroupDescriptor.GroupMember.from_sdict(member)
         # update the count that measures the number of responses we have received when we're creating the resources
         if related_to_create:
             if self.server.group_resource_count[this_guid][lst_idx] >= 1:
@@ -397,9 +402,9 @@ class GroupContext:
 
         server.group_names[msg.user_name] = this_guid
         server.group_table[this_guid] = group_context
-        server.group_resource_count[this_guid] = (
-            []
-        )  # list of items corresponding to the multiplicity of each list in server.group_resource_list
+        server.group_resource_count[
+            this_guid
+        ] = []  # list of items corresponding to the multiplicity of each list in server.group_resource_list
 
         # Maps a given node (local services instance) to a list of
         # ProcessContexts that are to be created on that instance
@@ -438,10 +443,10 @@ class GroupContext:
 
                     # this is where we're actually starting the creation of the group members
                     if isinstance(resource_msg, dmsg.GSProcessCreate):
-                        if resource_msg.pmi_required:
+                        if resource_msg.pmi is not None:
                             # The PMIJobHelper generates the pmi_info structure
                             # from the layout_map and list of group items.
-                            resource_copy.pmi_required = True
+                            resource_copy.pmi = True
                             resource_copy._pmi_info = next(pmi_job_iter)
                             if int(os.environ.get("PMI_DEBUG", 0)):
                                 LOG.info("%s", resource_copy._pmi_info)
@@ -510,18 +515,25 @@ class GroupContext:
         pmi_group_info: dmsg.PMIGroupInfo = None
         if pmi_job_helper:
             pmi_group_info: dmsg.PMIGroupInfo = dmsg.PMIGroupInfo(
+                backend=pmi_job_helper.backend,
                 job_id=pmi_job_helper.job_id,
                 nnodes=pmi_job_helper.pmi_nnodes,
                 nranks=pmi_job_helper.nranks,
                 nidlist=pmi_job_helper.nid_list,
                 hostlist=pmi_job_helper.host_list,
                 control_port=pmi_job_helper.control_port,
+                pmix_desc=msg.pmix_desc,
             )
+            LOG.debug("PMIGroupInfo: %s", pmi_group_info)
 
         for node, contexts in ls_proccontext_map.items():
             procs = [context.shprocesscreate_msg for context in contexts]
             shep_req = dmsg.SHMultiProcessCreate(
-                tag=server.tag_inc(), r_c_uid=dfacts.GS_INPUT_CUID, pmi_group_info=pmi_group_info, procs=procs
+                tag=server.tag_inc(),
+                r_c_uid=dfacts.GS_INPUT_CUID,
+                pmi_group_info=pmi_group_info,
+                procs=procs,
+                guid=this_guid,
             )
             shep_hdl = server.shep_inputs[node]
             server.pending_sends.put((shep_hdl, shep_req.serialize()))
@@ -1485,7 +1497,6 @@ class GroupContext:
                     server.group_destroy_resource_count[target_uid].append(0)
 
                     for item_idx, item in enumerate(lst):
-
                         # TODO: implement for other types of resources apart from processes
                         # for other types we don't need to call kill first
 
@@ -1529,7 +1540,7 @@ class GroupContext:
                     shep_req = dmsg.SHMultiProcessKill(tag=server.tag_inc(), r_c_uid=dfacts.GS_INPUT_CUID, procs=procs)
                     shep_hdl = server.shep_inputs[node]
                     server.pending_sends.put((shep_hdl, shep_req.serialize()))
-                    LOG.debug(f"request %s to shep %d", shep_req, node)
+                    LOG.debug("request %s to shep %d", shep_req, node)
 
                 # in this case, all the processes were already dead or no pending continuation
                 # was issued and we need to send a response to the client
@@ -1604,3 +1615,80 @@ class GroupContext:
                 del self.server.group_destroy_resource_count[guid]
 
         return
+
+    @staticmethod
+    def destroy_pmix_resources(server, msg, reply_channel):
+        target_uid, found, errmsg = server.resolve_guid(msg.user_name, msg.guid)
+
+        gsgdr = dmsg.GSGroupDestroyPMIxResponse
+
+        LOG.debug("Preparing gs destroy request")
+        if not found:
+            rm = gsgdr(tag=server.tag_inc(), ref=msg.tag, err=gsgdr.Errors.UNKNOWN, err_info=errmsg)
+            reply_channel.send(rm.serialize())
+            LOG.debug(f"unknown group of resources: response to {msg}: {rm}")
+            return False
+        else:
+            groupctx = server.group_table[target_uid]
+            groupdesc = groupctx.descriptor
+            gds = group_desc.GroupDescriptor.State
+
+            # update the group's state to PENDING as long as the destroy is pending
+            groupdesc.state = gds.PENDING
+
+            groupctx.destroy_pmix_request = msg
+            groupctx.reply_channel = reply_channel
+
+            server.group_destroy_resource_count[target_uid] = []
+
+            ls_kill_context_map: Dict[int, List[ProcessContext]] = defaultdict(list)
+
+            for lst in groupdesc.sets:
+                for item in lst:
+                    pctx = server.process_table[item.uid]
+                    pctx.pmix = True
+                    ls_kill_context_map[pctx.node].append(pctx)
+
+            server.group_destroy_pmix_count[msg.guid] = 0
+            for node, pctx in ls_kill_context_map.items():
+                outbound_tag = server.tag_inc()
+                shep_req = dmsg.LSDestroyPMIx(tag=outbound_tag, r_c_uid=dfacts.GS_INPUT_CUID, guid=msg.guid)
+                shep_hdl = server.shep_inputs[node]
+                server.group_destroy_pmix_count[msg.guid] += 1
+                server.pending_sends.put((shep_hdl, shep_req.serialize()))
+                server.pending[outbound_tag] = groupctx.complete_destroy_pmix_resources
+                LOG.debug("request %s to shep %d", shep_req, node)
+            LOG.debug("Submitted LS destruction of PMIx resources")
+            return True
+
+    @staticmethod
+    def complete_destroy_pmix_resources(server, msg):
+        """Finish cleaning up of PMIx resources"""
+
+        LOG.info("destroy_pmix_resources completion")
+
+        target_uid, found, errmsg = server.resolve_guid(msg.user_name, msg.guid)
+
+        # get the resource context corresponding to this response message
+        out_msg = dmsg.GSGroupDestroyPMIxResponse
+
+        if not found:
+            raise GroupError("Pending PMIx destruction referenced a guid that no longer exists in GS ")
+        else:
+            groupctx = server.group_table[target_uid]
+            # Decrement our counter in and see if we're done with this destruction
+            server.group_destroy_pmix_count[msg.guid] -= 1
+
+            # if we have received responses for all the members of this list, send the final response
+            if server.group_destroy_pmix_count[msg.guid] == 0:
+                # now we can send the GSGroupCreateResponse msg back to the client
+                response = out_msg(
+                    tag=server.tag_inc(),
+                    ref=groupctx.destroy_pmix_request.tag,
+                    err=out_msg.Errors.SUCCESS,
+                    guid=msg.guid,
+                )
+                groupctx.reply_channel.send(response.serialize())
+                LOG.debug(f"GSGroupDestroyPMIx response sent, tag {response.tag} ref {response.ref} pending cleared")
+
+            return True

@@ -12,23 +12,13 @@ import queue
 import time
 import logging
 
-from ..channels import (
-    Channel,
-    ChannelEmpty,
-    ChannelFull,
-    ChannelError,
-    Many2ManyReadingChannelFile,
-    Many2ManyWritingChannelFile,
-)
+from ..channels import Channel, ChannelEmpty, ChannelFull
 from ..managed_memory import MemoryPool
-
-from ..globalservices.channel import create, destroy, query, release_refcnt, get_refcnt
-from ..infrastructure.facts import default_pool_muid_from_index
-from ..infrastructure.parameters import this_process, POLICY_USER, Policy
+from ..utils import b64encode
+from ..globalservices.channel import create, destroy, release_refcnt, get_refcnt
+from ..infrastructure.parameters import POLICY_USER, Policy
 from ..infrastructure.channel_desc import ChannelOptions
-import dragon.utils as du
-
-_DEF_MUID = default_pool_muid_from_index(this_process.index)
+import dragon.fli as fli
 
 LOG = logging.getLogger(__name__)
 
@@ -37,12 +27,41 @@ class QueueError(Exception):
     pass
 
 
-class Queue(object):
+def _mk_channel(*, pool=None, block_size=None, capacity=100):
+    if pool is None:
+        pool = MemoryPool.attach_default()
+    the_options = ChannelOptions(ref_count=True)
+    the_options.local_opts.block_size = block_size
+    the_options.local_opts.capacity = capacity
+
+    try:
+        descr = create(m_uid=pool.muid, options=the_options)
+        channel = Channel.attach(descr.sdesc)
+        return channel
+    except Exception as e:
+        raise QueueError(f"Could not create queue main channel.\n{e}")
+
+
+def _mk_sem_channel(*, pool=None, block_size=None):
+    if pool is None:
+        pool = MemoryPool.attach_default()
+    local_opts = {"semaphore": True, "bounded_semaphore": False, "initial_sem_value": 0}
+    the_options = ChannelOptions(ref_count=True, local_opts=local_opts)
+
+    try:
+        descr = create(m_uid=pool.muid, options=the_options)
+        sem_channel = Channel.attach(descr.sdesc)
+        return sem_channel
+    except Exception as e:
+        raise QueueError(f"Could not create queue semaphore channel.\n{e}")
+
+
+class Queue:
     """A Dragon native Queue relying on Dragon Channels.
 
-    The interface resembles Python Multiprocessing.Queues. In particular, the
-    queue can be initialized as joinable, which allows to join on the completion
-    of a items. We have simplified the interface a little and changed a few oddities
+    The interface resembles Python Multiprocessing.Queue. In particular, the
+    queue can be initialized as joinable, which enables joining on the completion
+    of items. We have simplified the interface a little and changed a few oddities
     like renaming `qsize()` into `size()`.
 
     The usual `queue.Empty` and `queue.Full` exceptions from
@@ -56,200 +75,249 @@ class Queue(object):
         self,
         maxsize: int = 100,
         *,
-        m_uid: int = _DEF_MUID,
+        pool: object = None,
         block_size: int = 2**16,  # 64 kbytes
         joinable: bool = False,
+        buffered: bool = True,
         policy: Policy = POLICY_USER,
-        _ext_channel: object = None,
+        num_streams: int = 0,
+        main_channel: object = None,
+        mgr_channel: object = None,
+        sem_channel: object = None,
+        strm_channels: list[object] = None,
+        pickler=cp,
     ):
         """Init method
 
-        :param maxsize: sets the upperbound limit on the number of items that can be placed in the queue, defaults to 100
+        :param maxsize: sets the upperbound limit on the number of items that can be placed in the queue, defaults to 100.
+        While this can be provided, the queue provides blocking calls and if blocking puts are done, more than 100 items
+        may be added at a time which will result in blocking the put caller until room is availabe.
         :type maxsize: int, optional
-        :param m_uid: The m_uid of the memory pool to use, defaults to _DEF_MUID
-        :type m_uid: int, optional
-        :param block_size: Block size for the underlying channel, defaults to 64 kbytes
+        :param pool: The memory pool to use, defaults to the default pool on the node where the queue is created.
+        :type pool: object, optional
+        :param block_size: Block size for the underlying main and manager channels, defaults to 64Kb.
         :type block_size: int, optional
         :param joinable: If this queue should be joinable, defaults to False
         :type joinable: bool, optional
+        :param buffered: This queue is to be a buffered queue where all data is buffered internally so receivers do only one
+        get operation for a complete transmission from a sender.
         :param policy: policy object, defaults to POLICY_USER
         :type policy: object, optional
-        :param _ext_channel: non-local externally managed channel for testing purposes only, defaults to None
-        :type _ext_channel: instance of dragon.channel, optional
+        :param num_streams: The number of stream channels to be created for a managed FLI queue. If greater than zero, then a
+        main and manager channel will be automatically created and managed internally if not provided.
+        :param main_channel: An externally managed channel. Defaults to None in which case it will be automatically created
+        if num_streams is greater than 0. You need a main channel when processes that put values into the queue provide
+        their own stream channel during send handle open or when there are internally managed stream channels.
+        :type channel: instance of dragon.channel, optional
+        :param mgr_channel: An externally managed channel. Defaults to None in which case it will be automatically created if
+        num_streams is greater than 0. You need a manager channel when processes that get values from the queue provide
+        their own stream channel during receive handle open or when there are internally managed stream channels.
+        :type channel: instance of dragon.channel, optional
+        :param sem_channel: An externally managed semaphore channel. If provided, it must have been created as a
+        semaphore channel. This is only needed if creating a task queue. If provided, then joinable must also be
+        True. If joinable is True and not provide, a semaphore channel will be created and managed internally.
+        :type channel: instance of dragon.channel, optional
+        :param strm_channels: A list of stream channel objects to place in the manager channel. If provided then the num_streams
+        value is ignored. If not provided and the number of stream channels is 0 in an unbuffered queue, then a steram channel
+        must be provided when sending or receiving. If stream channels is provided to an unbuffered queue, a main channel and
+        manager channel will be created and managed internally if not provided.
+        :param pickler: A custom pickler may be provided. It must support the dump and load api calls similar
+        to cloudpickle. Cloudpickle is the default if none is provided.
         :raises QueueError: If something goes wrong during creation
         :raises ValueError: If a parameter is wrong
         :raises NotImplementedError: If a joinable queue is used with an external channel
         """
+        self._closed = True
+
+        # NOTE: when maxsize=0 it is reset to 100 (default)
+        # because in the mp documentation, maxsize equal to zero means
+        # infinite queue size. We achieve an effective infinite queue
+        # size because of blocking puts and gets.
+        if maxsize <= 0:
+            maxsize = 100
 
         if not isinstance(policy, Policy):
             raise ValueError("The class of service must be a dragon.infrastructure.parameters.Policy value.")
 
-        self._policy = policy
-        self._closed = False
-        self._ext_channel = False
-        self._buffer_pool = None
-        self._read_adapter = None
-        self._write_adapter = None
-        self._channel = None
-        # Helper variable to know when we need to attach/detach to/from an externally managed channel.
-        # In the case of an externally managed channel, we need to attach to the channel only when the
-        # queue instance is created from unpickling. When the queue instance is created by the user
-        # via the constructor, then we do not need to attach/detach.
-        self._unpickled_instance = False
+        if pool is None:
+            pool = MemoryPool.attach_default()
 
-        # if we are joinable, create channels to hold a counter and a event
+        self._maxsize = maxsize
+        self._pool = pool
+        self._block_size = block_size
         self._joinable = joinable
+        self._buffered = buffered
+        self._policy = policy
+        self._num_streams = num_streams
+        self._main_channel = main_channel
+        self._mgr_channel = mgr_channel
+        self._sem_channel = sem_channel
+        self._main_channel_internally_managed = False
+        self._mgr_channel_internally_managed = False
+        self._sem_channel_internally_managed = False
+        self._num_managed_strm_channels = 0
+        self._strm_channels = [] if strm_channels is None else strm_channels
+        self._pickler = pickler
 
-        self._read_adapter_event = None
-        self._write_adapter_event = None
-        self._read_adapter_count = None
-        self._write_adapter_count = None
+        # Now detect what needs to be managed internally and if there are conflicts in
+        # the combination of provided arguments.
 
-        if _ext_channel is None:  # create the channel internally
+        if buffered:
+            # This is a queue that will use one channel and buffer data that is put to it.
 
-            the_options = ChannelOptions(ref_count=True)
-            the_options.local_opts.block_size = block_size
+            if len(self._strm_channels) > 0:
+                raise ValueError("You cannot specify a buffered queue and also provide a list of stream channels.")
 
-            if maxsize > 0:
-                the_options.local_opts.capacity = int(maxsize)
-            else:
-                LOG.debug(f"Maxsize was {maxsize}. Using default queue capacity of 100.")
-                maxsize = 100
-
-            try:
-                descr = create(m_uid=m_uid, options=the_options)
-                self._channel = Channel.attach(descr.sdesc)
-            except Exception as e:
-                self._closed = True
-                raise QueueError(f"Could not create queue\n{e}")
-
-        else:
-            self._channel = _ext_channel
-            if self._channel.is_local:
+            if num_streams != 0:
                 raise ValueError(
-                    f"Channel {self._channel} is an externally managed channel and is not considered as remote."
+                    "You cannot specify a buffered queue also specify a non-zero number of stream channels."
                 )
-            self._ext_channel = True
-            self._buffer_pool = m_uid  # only in this case, m_uid is a MemoryPool object
 
-        if self._joinable:
+            if mgr_channel is not None:
+                raise ValueError(
+                    "You cannot specify a buffered queue and also a manager channel. A manager channel is not needed when the Queue is buffered."
+                )
 
-            if self._ext_channel:
-                raise NotImplementedError("Joinable queues do not support testing with external channels")
+            if main_channel is None:
+                self._main_channel = _mk_channel(pool=self._pool, block_size=block_size, capacity=maxsize)
+                self._main_channel_internally_managed = True
+        else:
+            # This is not a buffered Queue. So there will be stream channels either provided on the
+            # constructor or when putting and getting values, depending on the configuration.
+            if len(self._strm_channels) > 0 or num_streams > 0:
+                if num_streams == 0:
+                    num_streams = len(self._strm_channels)
 
-            the_options.local_opts.capacity = 1
-            try:
-                cnt_descr = create(m_uid=m_uid, options=the_options)
-                self._cnt_channel = Channel.attach(cnt_descr.sdesc)
-                ev_descr = create(m_uid=m_uid, options=the_options)
-                self._ev_channel = Channel.attach(ev_descr.sdesc)
-            except Exception as e:
-                self._closed = True
-                raise QueueError(f"Could not create queue\n{e}")
+                # Then we must have a manager and a main channel if stream channels are managed by the FLI.
+                if main_channel is None:
+                    self._main_channel = _mk_channel(pool=self._pool, block_size=None, capacity=num_streams)
+                    self._main_channel_internally_managed = True
 
-            self._reset_task_counter()
-            self._reset_event_channel()
+                if mgr_channel is None:
+                    self._mgr_channel = _mk_channel(pool=self._pool, block_size=None, capacity=num_streams)
+                    self._mgr_channel_internally_managed = True
 
-            LOG.debug("Created queue {self!r}")
+                while len(self._strm_channels) < num_streams:
+                    self._strm_channels.append(
+                        _mk_channel(pool=self._pool, block_size=self._block_size, capacity=self._maxsize)
+                    )
+                    self._num_managed_strm_channels += 1
+
+        if joinable:
+            if sem_channel is None:
+                self._sem_channel = _mk_sem_channel(pool=self._pool)
+                self._sem_channel_internally_managed = True
+
+        self._fli = fli.FLInterface(
+            main_ch=self._main_channel,
+            manager_ch=self._mgr_channel,
+            sem_ch=self._sem_channel,
+            pool=self._pool,
+            stream_channels=self._strm_channels,
+            use_buffered_protocol=self._buffered,
+        )
+
+        self._serialized_fli = b64encode(self._fli.serialize())
+
+        LOG.debug("Created queue {self!r}")
+        self._closed = False
 
     def __getstate__(self):
 
         if self._closed:
             raise ValueError(f"Queue {self!r} is closed")
 
-        if self._joinable:
-            cnt_chan_cuid = self._cnt_channel.cuid
-            ev_chan_cuid = self._ev_channel.cuid
-        else:
-            cnt_chan_cuid = None
-            ev_chan_cuid = None
+        pickler = cp.dumps(self._pickler)
 
         return (
-            self._channel.serialize(),
-            self._channel.cuid,
+            self._maxsize,
+            self._pool,
+            self._block_size,
             self._joinable,
+            self._buffered,
             self._policy,
-            self._ext_channel,
-            cnt_chan_cuid,
-            ev_chan_cuid,
+            self._num_streams,
+            self._main_channel,
+            self._mgr_channel,
+            self._sem_channel,
+            self._main_channel_internally_managed,
+            self._mgr_channel_internally_managed,
+            self._sem_channel_internally_managed,
+            self._num_managed_strm_channels,
+            self._strm_channels,
+            self._fli,
+            pickler,
         )
 
     def __setstate__(self, state):
+        self._closed = True
         (
-            ser_ch,
-            q_chan_cuid,
+            self._maxsize,
+            self._pool,
+            self._block_size,
             self._joinable,
+            self._buffered,
             self._policy,
-            self._ext_channel,
-            cnt_chan_cuid,
-            ev_chan_cuid,
+            self._num_streams,
+            self._main_channel,
+            self._mgr_channel,
+            self._sem_channel,
+            self._main_channel_internally_managed,
+            self._mgr_channel_internally_managed,
+            self._sem_channel_internally_managed,
+            self._num_managed_strm_channels,
+            self._strm_channels,
+            self._fli,
+            pickler,
         ) = state
 
-        self._read_adapter = None
-        self._write_adapter = None
-        self._read_adapter_event = None
-        self._write_adapter_event = None
-        self._read_adapter_count = None
-        self._write_adapter_count = None
-        self._buffer_pool = None
-        self._unpickled_instance = False
-        self._channel = None
+        self._pickler = cp.loads(pickler)
+
+        self._serialized_fli = b64encode(self._fli.serialize())
+
+        if not self._pool.is_local:
+            self._pool = MemoryPool.attach_default()
+
+        if self._main_channel_internally_managed:
+            get_refcnt(self._main_channel.cuid)
+
+        if self._mgr_channel_internally_managed:
+            get_refcnt(self._mgr_channel.cuid)
+
+        if self._sem_channel_internally_managed:
+            get_refcnt(self._sem_channel.cuid)
+
+        for i in range(self._num_managed_strm_channels):
+            # the last part of the list is the internally managed streams.
+            get_refcnt(self._strm_channels[-1 - i].cuid)
+
         self._closed = False
-
-        try:
-            if self._ext_channel:
-                self._unpickled_instance = True
-            else:
-                get_refcnt(q_chan_cuid)
-
-            self._channel = Channel.attach(ser_ch)
-
-        except ChannelError as e:
-            self._closed = True
-            raise QueueError(f"Could not deserialize queue\n{e}")
-
-        if self._joinable:  # attach to counter and event channels
-            try:
-                descr = query(cnt_chan_cuid)  # implicitly increases refcount
-                self._cnt_channel = Channel.attach(descr.sdesc)
-
-                descr = query(ev_chan_cuid)
-                self._ev_channel = Channel.attach(descr.sdesc)
-
-            except ChannelError as e:
-                try:
-                    release_refcnt(q_chan_cuid)
-                    self._channel.detach()
-                except:
-                    pass
-                self._closed = True
-                raise QueueError(f"Could not deserialize joinable queue\n{e}")
-
-        # figure out what should be the pool in which we will allocate the messages to send:
-        # if the channel is local, then the pool is the channel pool
-        # else the pool is the default pool of the caller
-        try:
-            if not self._channel.is_local:
-                # if it is an externally managed channel, we have already provided a pool
-                if not self._ext_channel:
-                    self._buffer_pool = MemoryPool.attach(du.B64.str_to_bytes(this_process.default_pd))
-        except Exception as e:
-            try:
-                release_refcnt(q_chan_cuid)
-            except:
-                pass
-            self._closed = True
-            raise QueueError(f"Could not deserialize queue\n{e}")
 
     def __del__(self):
         self._close()
+
+    def _thread_wait(self, timeout, done_ev, ready):
+        if timeout is None:
+            timeout = 1000000
+        start = time.monotonic()
+        delta = min(0.01, timeout)  # TODO: figure out the value for delta
+        timed_out = False
+
+        if not done_ev.is_set():
+            while not timed_out and not done_ev.is_set():
+                done_res = self.poll(delta)
+                if not done_ev.is_set():
+                    if done_res:
+                        ready.append(self)
+                        done_ev.set()
+                timed_out = (time.monotonic() - start) > timeout
+            done_ev.set()  # if not set here, timed out.
 
     def close(self) -> None:
         """Indicate that no more data will be put on this queue by the current process.
         The refcount of the background channel will be released and the channel might be
         removed, if no other processes are holding it.
         """
-
         self._close()
 
     def full(self) -> bool:
@@ -263,7 +331,13 @@ class Queue(object):
         if self._closed:
             raise ValueError(f"Queue {self!r} is closed")
 
-        return self._channel.num_msgs == self._channel.capacity
+        return self._main_channel.num_msgs == self._main_channel.capacity
+
+    def _poll(self, timeout=None):
+        if self._closed:
+            raise ValueError(f"Queue {self!r} is closed")
+
+        return self._main_channel.poll(timeout=timeout)
 
     def empty(self) -> bool:
         """Return True if the queue is empty, False otherwise.
@@ -274,10 +348,7 @@ class Queue(object):
         :rtype: bool
         """
 
-        if self._closed:
-            raise ValueError(f"Queue {self!r} is closed")
-
-        return not self._channel.poll(timeout=0)
+        return not self._poll(0)
 
     def size(self) -> int:
         """Return the approximate size of the queue. This number may not be reliable.
@@ -286,10 +357,12 @@ class Queue(object):
         :return: approximate number of items in the queue
         :rtype: int
         """
+        if self._closed:
+            raise ValueError(f"Queue {self!r} is closed")
 
-        return self._size()
+        return self._main_channel.num_msgs
 
-    def get(self, block: bool = True, timeout: float = None) -> object:
+    def get(self, block: bool = True, timeout: float = None, *, stream_channel=None) -> object:
         """Remove and return an item from the queue.
 
         :param block: Make this call blocking, defaults to True
@@ -301,18 +374,31 @@ class Queue(object):
         :return: The next item in the queue
         :rtype: object
         """
+        if self._closed:
+            raise ValueError(f"Queue {self!r} is closed")
 
-        return self._get(block=block, timeout=timeout)
+        if not block:
+            timeout = 0
 
-    def get_nowait(self) -> object:
+        try:
+            payload = None
+            with self._fli.recvh(stream_channel=stream_channel, timeout=timeout) as recvh:
+                payload = self._pickler.load(file=fli.PickleReadAdapter(recvh=recvh, timeout=timeout))
+
+        except (ChannelEmpty, TimeoutError, EOFError):
+            raise queue.Empty
+
+        return payload
+
+    def get_nowait(self, *, stream_channel=None) -> object:
         """Equivalent to get(False).
 
         :return: The next item in the queue
         :rtype: object
         """
-        return self.get(False)
+        return self.get(False, stream_channel=stream_channel)
 
-    def put(self, obj, block: bool = True, timeout: float = None) -> None:
+    def put(self, obj, block: bool = True, timeout: float = None, *, stream_channel=None, flush=False) -> None:
         """Puts the serialization of an object onto the queue.
         If the queue is joinable, require one more call to task_done(), for
         join() to unblock.
@@ -322,19 +408,37 @@ class Queue(object):
         :param timeout: Timeout, if blocking.  None means infinity, default
         :return: None
         """
+        if self._closed:
+            raise ValueError(f"Queue {self!r} is closed")
 
-        self._put(obj, block=block, timeout=timeout)
+        if not block:
+            timeout = 0
 
-    def put_nowait(self, obj) -> None:
+        try:
+            with self._fli.sendh(stream_channel=stream_channel, timeout=timeout, flush=flush) as sendh:
+                self._pickler.dump(
+                    obj, file=fli.PickleWriteAdapter(sendh=sendh, buffer=self._buffered, timeout=timeout)
+                )
+
+        except (ChannelFull, TimeoutError):
+            raise queue.Full
+
+        if self._joinable:
+            self._fli.new_task(timeout=timeout)
+
+    def put_nowait(self, obj, *, stream_channel=None, flush=False) -> None:
         """Equivalent to put(obj, False).
 
         :param obj: object to serialize and put
         :type obj: object
         :return: None
         """
-        return self.put(obj, False)
+        # here we needed to be explicit about which method was being called because
+        # subclasses redefine put and may have different arguments. So we make sure
+        # we are calling the put in this class here.
+        return Queue.put(self, obj, False, stream_channel=stream_channel, flush=flush)
 
-    def task_done(self) -> None:
+    def task_done(self, timeout: float = None) -> None:
         """Indicate that a formerly enqueued task is complete. Used by queue consumers.
         Only for joinable queues.
 
@@ -348,14 +452,7 @@ class Queue(object):
         if self._closed:
             raise ValueError(f"Queue {self!r} is closed")
 
-        counter = self._decrease_task_counter()
-
-        if counter < 0:
-            self._reset_task_counter()
-            raise QueueError("All tasks are already done")
-
-        if counter == 0:  # release all processes currently joining the queue
-            self._set_event_channel()
+        self._fli.task_done(timeout)
 
     def join(self, *args, timeout: float = None, **kwargs) -> None:
         """Block until all items in the queue have been gotten and processed.
@@ -375,7 +472,7 @@ class Queue(object):
         if self._closed:
             raise ValueError(f"Queue {self!r} is closed")
 
-        self._ev_channel.poll(timeout=timeout)
+        self._fli.join(timeout)
 
     @property
     def closed(self) -> bool:
@@ -389,221 +486,94 @@ class Queue(object):
         :type timeout: float, optional
         :return: None
         """
-        return self._poll(timeout=timeout)
+        return self._main_channel.poll(timeout=timeout)
 
     def destroy(self) -> None:
-        """Remove underlying channel right now."""
+        """Destroy the queue immediately."""
         self._close()
         try:
-            destroy(self._channel.cuid)
+            if self._main_channel_internally_managed:
+                destroy(self._main_channel.cuid)
         except:
             pass
+
+        try:
+            if self._mgr_channel_internally_managed:
+                destroy(self._mgr_channel.cuid)
+        except:
+            pass
+
+        try:
+            if self._sem_channel_internally_managed:
+                destroy(self._sem_channel.cuid)
+        except:
+            pass
+
+        for i in range(self._num_managed_strm_channels):
+            # the last part of the list is the internally managed streams.
+            try:
+                destroy(self._strm_channels[-1 - i])
+            except:
+                pass
+
+    # private method
+    def _close(self):
+        try:
+            if not self._closed:
+                self._closed = True
+
+                try:
+                    if self._main_channel_internally_managed:
+                        release_refcnt(self._main_channel.cuid)
+                except:
+                    pass
+
+                try:
+                    if self._mgr_channel_internally_managed:
+                        release_refcnt(self._mgr_channel.cuid)
+                except:
+                    pass
+
+                try:
+                    if self._sem_channel_internally_managed:
+                        release_refcnt(self._sem_channel.cuid)
+                except:
+                    pass
+
+                for i in range(self._num_managed_strm_channels):
+                    # the last part of the list is the internally managed streams.
+                    try:
+                        release_refcnt(self._strm_channels[-1 - i])
+                    except:
+                        pass
+
+                if self._pool is not None:
+                    try:
+                        self._pool.detach()
+                    except Exception as e:
+                        LOG.debug(f"We couldn't detach from queue's buffer pool. {e=}")
+        except:
+            # An exception here would indicate _closed was not defined. If this is so then we didn't get very far.
+            self._closed = True
 
     def thread_wait(self, timeout: float, done_ev: object, ready: list) -> None:
         """Thread waiter signaling with an ev."""
 
         return self._thread_wait(timeout, done_ev, ready)
 
-    # private methods
+    def serialize(self):
+        """
+        Return a serialized, base64 encoded, string that may be used by C++
+        code to attach to this queue. Any process attaching to this queue
+        does not participate in the ref counting of the queue. In other
+        words, the lifetime of the queue is managed by the Python process
+        that creates it or other Python processes that have handles to it.
+        C++ code that wishes to use it can, but the Python process must live/
+        wait to exit until the C++ code is done with it.
 
-    def _setup_write_adapter(self):
-        self._write_adapter = Many2ManyWritingChannelFile(
-            self._channel,
-            self._buffer_pool,
-            wait_mode=self._policy.wait_mode,
-            return_mode=self._policy.return_when,
-        )
+        :return: A serialized, base64 encoded string that can be used
+        to attach to the queue by the C++ Queue implementation.
+        :rtype: str
+        """
 
-    def _setup_read_adapter(self):
-        self._read_adapter = Many2ManyReadingChannelFile(self._channel, wait_mode=self._policy.wait_mode)
-
-    def _setup_write_adapter_event(self):
-        self._write_adapter_event = Many2ManyWritingChannelFile(
-            self._ev_channel,
-            self._buffer_pool,
-            wait_mode=self._policy.wait_mode,
-            return_mode=self._policy.return_when,
-        )
-
-    def _setup_read_adapter_event(self):
-        self._read_adapter_event = Many2ManyReadingChannelFile(self._ev_channel, wait_mode=self._policy.wait_mode)
-
-    def _setup_write_adapter_count(self):
-        self._write_adapter_count = Many2ManyWritingChannelFile(
-            self._cnt_channel,
-            self._buffer_pool,
-            wait_mode=self._policy.wait_mode,
-            return_mode=self._policy.return_when,
-        )
-
-    def _setup_read_adapter_count(self):
-        self._read_adapter_count = Many2ManyReadingChannelFile(self._cnt_channel, wait_mode=self._policy.wait_mode)
-
-    def _call_read_adapter(self, adapter, block, timeout):
-        try:
-            adapter.open()
-            adapter.set_adapter_timeout(block, timeout)
-            payload = cp.load(adapter)
-        except (ChannelEmpty, TimeoutError):
-            raise queue.Empty
-        except Exception as e:
-            raise QueueError(f"Could not get the object from queue.\n{e}")
-        finally:
-            adapter.close()
-
-        return payload
-
-    def _call_write_adapter(self, obj, adapter, block, timeout):
-        try:
-            adapter.open()
-            adapter.set_adapter_timeout(block, timeout)
-            cp.dump(obj, file=adapter, protocol=5)
-        except (ChannelFull, TimeoutError):
-            raise queue.Full
-        except AttributeError:
-            # needed for:
-            # WithProcessesTestQueue.test_queue_feeder_on_queue_feeder_error
-            # and WithProcessesTestQueue.test_queue_feeder_donot_stop_onexc
-            raise AttributeError
-        except Exception as e:
-            raise QueueError(f"Could not put the object to queue.\n{e}")
-        finally:
-            adapter.close()
-
-    def _get(self, block=True, timeout=None):
-
-        if self._closed:
-            raise ValueError(f"Queue {self!r} is closed")
-
-        try:
-            if self._read_adapter is None:
-                self._setup_read_adapter()
-            payload = self._call_read_adapter(self._read_adapter, block, timeout)
-        except (ChannelEmpty, TimeoutError):
-            raise queue.Empty
-
-        return payload
-
-    def _put(self, obj, block=True, timeout=None):
-
-        if self._closed:
-            raise ValueError(f"Queue {self!r} is closed")
-        try:
-            if self._write_adapter is None:
-                self._setup_write_adapter()
-            self._call_write_adapter(obj, self._write_adapter, block, timeout)
-        except (ChannelFull, TimeoutError):
-            raise queue.Full
-
-        if self._joinable:
-            counter = self._increase_task_counter()
-
-            if counter == 1:
-                self._reset_event_channel()
-
-    def _poll(self, timeout: float = 0):
-        return self._channel.poll(timeout=timeout)
-
-    def _close(self):
-        if not self._closed:
-            self._closed = True
-
-            if not self._ext_channel:
-                try:
-                    release_refcnt(self._channel.cuid)
-                    self._channel.detach()
-                except Exception as e:
-                    pass  # Could not complete release of refcount or detach.
-
-            elif self._ext_channel and self._unpickled_instance:
-                try:
-                    self._channel.detach()  # this should be revisited once refcounting fully works as it should not be necessary then
-                except Exception as e:
-                    pass  # We couldn't detach from externally managed channel.
-            if self._joinable:
-                try:
-                    release_refcnt(self._cnt_channel.cuid)
-                    self._cnt_channel.detach()
-                    release_refcnt(self._ev_channel.cuid)
-                    self._ev_channel.detach()
-                except Exception as e:
-                    pass  # Joinable queue: there was a problem with releasing channel refcount or while detaching from channel
-
-        if self._buffer_pool is not None:
-            try:
-                self._buffer_pool.detach()
-            except Exception as e:
-                LOG.debug(f"We couldn't detach from queue's buffer pool. {e=}")
-
-    def _size(self) -> int:
-        if self._closed:
-            raise ValueError(f"Queue {self!r} is closed")
-
-        return self._channel.num_msgs
-
-    def _thread_wait(self, timeout, done_ev, ready):
-        if timeout is None:
-            timeout = 1000000
-        start = time.monotonic()
-        delta = min(0.01, timeout)  # TODO: figure out the value for delta
-        timed_out = False
-
-        if not done_ev.is_set():
-            while not timed_out and not done_ev.is_set():
-                done_res = self.poll(delta)
-                if not done_ev.is_set():
-                    if done_res:
-                        ready.append(self)
-                        done_ev.set()
-                timed_out = (time.monotonic() - start) > timeout
-            done_ev.set()  # if not set here, timed out.
-
-    def _reset_event_channel(self) -> None:
-        if self._ev_channel.num_msgs > 0:
-            if self._read_adapter_event is None:
-                self._setup_read_adapter_event()
-            _ = self._call_read_adapter(self._read_adapter_event, False, None)
-
-    def _set_event_channel(self) -> None:
-        if self._write_adapter_event is None:
-            self._setup_write_adapter_event()
-        self._call_write_adapter(1, self._write_adapter_event, False, None)
-
-    def _reset_task_counter(self) -> None:
-        if self._cnt_channel.num_msgs > 0:
-            if self._read_adapter_count is None:
-                self._setup_read_adapter_count()
-            counter = self._call_read_adapter(self._read_adapter_count, True, None)
-
-        counter = 0
-
-        if self._write_adapter_count is None:
-            self._setup_write_adapter_count()
-        self._call_write_adapter(counter, self._write_adapter_count, True, None)
-
-    def _increase_task_counter(self) -> int:
-        if self._read_adapter_count is None:
-            self._setup_read_adapter_count()
-        counter = self._call_read_adapter(self._read_adapter_count, True, None)
-
-        counter += 1
-
-        if self._write_adapter_count is None:
-            self._setup_write_adapter_count()
-        # with self._write_adapter_count as adapter:
-        #     adapter.set_adapter_timeout(True, None)
-        #     pickle.dump(counter, file=adapter, protocol=5)
-        self._call_write_adapter(counter, self._write_adapter_count, True, None)
-
-        return counter
-
-    def _decrease_task_counter(self) -> int:
-        if self._read_adapter_count is None:
-            self._setup_read_adapter_count()
-        counter = self._call_read_adapter(self._read_adapter_count, True, None)
-
-        counter -= 1
-        if self._write_adapter_count is None:
-            self._setup_write_adapter_count()
-        self._call_write_adapter(counter, self._write_adapter_count, True, None)
-        return counter
+        return self._serialized_fli
