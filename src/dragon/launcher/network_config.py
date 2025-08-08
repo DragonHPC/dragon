@@ -310,8 +310,10 @@ def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF, port
 
     args = parser.parse_args()
 
+    net_conf_cache_salt = os.environ.get("DRAGON_NET_CONF_CACHE_SALT", None)
+
     # Remove any previously cached information
-    NodeDescriptor.remove_cached_local_network_conf()
+    NodeDescriptor.remove_cached_local_network_conf(salt=net_conf_cache_salt)
 
     # Generate my node descriptor
     try:
@@ -320,7 +322,7 @@ def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF, port
         raise RuntimeError("Unable to acquire backend network configuration")
 
     # Cache the data locally
-    NodeDescriptor.set_cached_local_network_conf(node_info)
+    NodeDescriptor.set_cached_local_network_conf(node_info, salt=net_conf_cache_salt)
 
     # Dump to stdout
     print(json.dumps(node_info.get_sdict()), flush=True)

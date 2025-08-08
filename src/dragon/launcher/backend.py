@@ -587,8 +587,12 @@ class LauncherBackEnd:
         else:
             # Propagate information passed on command-line or discover if needed.
             if not (backend_hostname and backend_ip_addr):
-                log.debug(f"Before calling NodeDescriptor.get_cached_local_network_conf")
-                result, net_conf = NodeDescriptor.get_cached_local_network_conf()
+                log.debug("Before calling get_cached_local_network_conf")
+                log.debug(
+                    "get_local_network_conf_cache_file_name=%s",
+                    NodeDescriptor.get_local_network_conf_cache_file_name(this_process.net_conf_cache_salt),
+                )
+                result, net_conf = NodeDescriptor.get_cached_local_network_conf(this_process.net_conf_cache_salt)
                 log.debug("After calling NodeDescriptor.get_cached_local_network_conf (%s, %s)", result, net_conf)
                 if not result:
                     log.debug("Before calling NodeDescriptor.get_local_node_network_conf()")
@@ -597,7 +601,7 @@ class LauncherBackEnd:
                     )
                 self.host_id = int(net_conf.host_id)
                 log.debug("Before calling NodeDescriptor.remove_cached_local_network_conf()")
-                NodeDescriptor.remove_cached_local_network_conf()
+                NodeDescriptor.remove_cached_local_network_conf(this_process.net_conf_cache_salt)
                 log.debug("After calling NodeDescriptor.remove_cached_local_network_conf()")
             else:
                 self.host_id = get_host_id()

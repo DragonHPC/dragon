@@ -1,8 +1,8 @@
 import enum
 
 from .slurm import WLMSlurm
+from .pbs import WLMPBS
 from .dragonssh import WLMDragonSSH
-from typing import Optional
 from ..exceptions import DragonRunNoSupportedWLM
 
 
@@ -11,6 +11,7 @@ class WLM(enum.Enum):
     """Enumerated list of supported workload manager"""
 
     SLURM = "slurm"
+    PBS = "pbs"
     DRAGON_SSH = "ssh"
 
     def __str__(self):
@@ -37,6 +38,7 @@ class WLM(enum.Enum):
 
 wlm_cls_dict = {
     WLM.SLURM: WLMSlurm,
+    WLM.PBS: WLMPBS,
     WLM.DRAGON_SSH: WLMDragonSSH,
 }
 

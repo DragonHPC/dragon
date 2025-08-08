@@ -1,6 +1,35 @@
 # Changelog
 
-## [0.12] - 2025-07-29
+## [0.12.1] - 2025-08-08
+
+### Changed
+AICI-1784 update gups test to use batched put and get and fix ProcessGroup states #1068 by mendygra was merged Aug 8, 2025
+
+Updated dragonrun sequence diagram #1067 by eric-cozzi was merged Aug 5, 2025
+
+Update mpbridge BaseProcess #1065 by kent-lee was merged Aug 6, 2025
+
+Documentation updates #1063, #1062, #1061 by kent-lee were merged Jul 27-28 2025
+
+Explicitly use 'bash -c' when executing drun backend #1058 by eric-cozzi was merged Jul 28, 2025
+
+### Added
+
+Add PBS WLM support to dragon-run for dragon-cleanup #1072 by eric-cozzi was merged Aug 7, 2025
+
+AICI-1732 cpp support for semaphore barrier #1060 by yian-chen was merged Jul 26, 2025
+
+### Removed
+
+### Fixed
+
+AICI-1875 Fix naming collisions with cached network config #1069 by eric-cozzi was merged Aug 5, 2025
+
+Ignore error if conda is unable to remove libstdcxx pkgs that may or may not be installed by default in build pipeline #1066 by mohammad-hadi was merged Jul 31, 2025
+
+fixed barrier test - puid was not stored correctly #1056 by kent-lee was merged Jul 25, 2025
+
+## [0.12.0] - 2025-07-29
 
 ### Changed
 

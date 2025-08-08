@@ -10,7 +10,7 @@ import socket
 import dragon
 
 
-from dragon.native.process_group import ProcessGroup, PGExecutionState
+from dragon.native.process_group import ProcessGroup, State
 from dragon.native.process import ProcessTemplate, Process
 from dragon.native.queue import Queue
 from dragon.native.machine import cpu_count, System, Node
@@ -129,7 +129,7 @@ class TestProcessGroupMultiNode(unittest.TestCase):
             except Exception:  # maybe it disappeared already
                 pass
 
-            self.assertTrue(pg._state != PGExecutionState.ERROR)
+            self.assertTrue(pg._state != State.ERROR)
 
             time.sleep(testtime // 10)
 
@@ -137,8 +137,8 @@ class TestProcessGroupMultiNode(unittest.TestCase):
 
         pg.stop()
 
-        while not pg._state == PGExecutionState.IDLE:
-            self.assertTrue(pg._state != PGExecutionState.ERROR)
+        while not pg._state == State.IDLE:
+            self.assertTrue(pg._state != State.ERROR)
 
         for puid in puids:
             gs_info = process_query(puid)
@@ -159,8 +159,8 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         pg.start()
         start = time.monotonic()
 
-        while not pg._state == PGExecutionState.IDLE:
-            self.assertFalse(pg._state == PGExecutionState.ERROR)
+        while not pg._state == State.IDLE:
+            self.assertFalse(pg._state == State.ERROR)
 
         stop = time.monotonic()
 

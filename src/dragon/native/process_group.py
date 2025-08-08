@@ -83,7 +83,7 @@ import enum
 import cloudpickle
 import time
 from dataclasses import dataclass, asdict, field
-from typing import List, Tuple, Union, Optional
+from typing import List, Tuple
 from abc import ABC, abstractmethod
 from functools import wraps
 import os
@@ -138,46 +138,6 @@ def get_logs(name):
     global _LOG
     log = _LOG.getChild(name)
     return log.debug, log.info
-
-
-class PGExecutionState(Enum):
-    IDLE = "Idle"
-    RUNNING = "Running"
-    MAINTAIN = "Maintain"
-    ERROR = "Error"
-    STOP = "Stop"
-
-    def __str__(self) -> str:
-        return self.value
-
-    @classmethod
-    def get_state(cls, value: Union[str, "PGExecutionState"]) -> "PGExecutionState":
-        """Convert a string or PGExecutionState instance into a PGExecutionState enum."""
-        if value is None:
-            return None
-        if isinstance(value, cls):
-            return value
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            for state in cls:
-                if state.value.lower() == normalized:
-                    return state
-            raise ValueError(f"Unknown PGExecutionState string: {value!r}")
-        raise TypeError("PGExecutionState.get_state() requires a str or PGExecutionState")
-
-    @classmethod
-    def set_state(cls, state: Union["PGExecutionState", str]) -> str:
-        """Convert a state (either enum or string) into its string value."""
-        if state is None:
-            return None
-        return cls.get_state(state).value
-
-    def __getstate__(self):
-        return self.value
-
-    def __setstate__(self, state):
-        self._value = state
-        self._name_ = self.__class__(state).name
 
 
 class DragonProcessGroupError(DragonLoggingError):
@@ -627,6 +587,10 @@ def _generate_process_create_messages(templates: List[ProcessTemplate], props: P
     return messages
 
 
+class State(Enum):
+    pass
+
+
 class BaseState(ABC):
     """This class declares methods that all concrete State classes should implement."""
 
@@ -640,6 +604,11 @@ class BaseState(ABC):
         """Execute the run function defined by the parent state"""
         pass
 
+    @property
+    @abstractmethod
+    def state(self):
+        """Return the appropriate value from the State enum"""
+
     def __repr__(self):
         return f"{self.__class__.__name__}()"
 
@@ -649,6 +618,10 @@ class BaseState(ABC):
 
 class Error(BaseState):
     """Error state class."""
+
+    @property
+    def state(self):
+        return State.ERROR
 
     def run(
         self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
@@ -666,6 +639,10 @@ class Idle(BaseState):
 
     Raises DragonProcessGroupIdleError in case of error.
     """
+
+    @property
+    def state(self):
+        return State.IDLE
 
     allowed_sigs = [
         PGSignals.READY_TO_START,
@@ -785,6 +762,10 @@ class Start(BaseState):
 
     allowed_sigs = [PGSignals.READY_TO_START]
 
+    @property
+    def state(self):
+        return State.START
+
     def run(
         self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
     ) -> PGSignalMessage:
@@ -878,6 +859,10 @@ class MakeJoiner(BaseState):
     """
 
     allowed_sigs = [PGSignals.START_JOIN_THREAD]
+
+    @property
+    def state(self):
+        return State.MAKE_JOINER
 
     def run(
         self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
@@ -995,6 +980,10 @@ class Running(BaseState):
         PGSignals.CLOSE,
         PGSignals.STOP_MAINTAINING,
     ]
+
+    @property
+    def state(self):
+        return State.RUNNING
 
     def run(
         self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
@@ -1238,6 +1227,10 @@ class Join(BaseState):
 
     allowed_sigs = [PGSignals.JOIN, PGSignals.JOIN_POKE, PGSignals.JOIN_FINAL]
 
+    @property
+    def state(self):
+        return State.JOIN
+
     def run(
         self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
     ) -> PGSignalMessage:
@@ -1337,6 +1330,10 @@ class AddTemplates(BaseState):
 
     allowed_sigs = [PGSignals.ADD_TEMPLATES]
 
+    @property
+    def state(self):
+        return State.ADD_TEMPLATES
+
     def run(
         self, signal_msg: PGSignalMessage, pstate: PGState, cur_procs: PGProcessHistory, props: PGProperties
     ) -> PGSignalMessage:
@@ -1345,6 +1342,16 @@ class AddTemplates(BaseState):
         desired_state = PGState(state=Idle(), p_templates=signal_msg.payload["p_templates"])
 
         return PGSignalMessage(signal=PGSignals.READY_TO_START, desired_state=desired_state)
+
+
+class State(Enum):
+    ERROR = str(Error())
+    IDLE = str(Idle())
+    START = str(Start())
+    MAKE_JOINER = str(MakeJoiner())
+    RUNNING = str(Running())
+    JOIN = str(Join())
+    ADD_TEMPLATES = str(AddTemplates())
 
 
 class Benign(ABC):
@@ -1542,8 +1549,7 @@ class Manager:
             try:
                 client_msg = self._state_inq.get(timeout=self._QPATIENCE)
             except queue.Empty:
-                state_enum = PGExecutionState.get_state(type(self._the_state.state).__name__)
-                if state_enum in {PGExecutionState.RUNNING, PGExecutionState.MAINTAIN}:
+                if self._the_state.state.state == State.RUNNING:
                     fdebug("Faking JOIN_POKE client message for join progressing")
                     client_msg = PGSignalMessage(PGSignals.JOIN_POKE, p_uid=self._puid)
                 else:
@@ -1616,8 +1622,7 @@ class Manager:
                 fdebug("Invalid message from %s with signal %s", client_msg.p_uid, client_msg.signal)
 
             # if our steady state says we're done, set the event
-            state_enum = PGExecutionState.get_state(type(self._the_state.state).__name__)
-            if desired_state_msg.close or state_enum == PGExecutionState.ERROR:
+            if desired_state_msg.close or self._the_state.state.state == State.ERROR:
                 fdebug("Last state message indicates we should close")
                 self._stop_serving.set()
 
@@ -1867,7 +1872,7 @@ class Manager:
         fdebug, finfo = get_logs("state")
         fdebug("Processing status query from p_uid=%s", p_uid)
 
-        concrete_states = {str(PGExecutionState.IDLE), str(PGExecutionState.RUNNING), str(PGExecutionState.ERROR)}
+        concrete_states = {State.IDLE, State.RUNNING, State.ERROR}
 
         op = Query()
 
@@ -1880,7 +1885,7 @@ class Manager:
                 props=self._props,
             )
 
-            if outcome.payload["current_state"] in concrete_states:
+            if State(outcome.payload["current_state"]) in concrete_states:
                 keep_going = False
 
         fdebug("Completed: %s with results %s", op, outcome)
@@ -2493,7 +2498,7 @@ class ProcessGroup:
 
         msg = dmsg.PGState(self._tag_inc(), this_process.my_puid)
         reply = self._send_msg(msg, "Failed to query state of the process group")
-        return PGExecutionState.get_state(reply.payload["current_state"])
+        return State(reply.payload["current_state"])
 
     def make_ai_training_env(
         self,

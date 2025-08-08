@@ -14,8 +14,8 @@ cat /etc/os-release
 # Setup a release environment
 source ~/.bashrc
 conda activate _env
-conda remove -y libstdcxx
-conda remove -y libstdcxx-ng
+conda remove -y libstdcxx || true
+conda remove -y libstdcxx-ng || true
 python3 --version
 which python3
 

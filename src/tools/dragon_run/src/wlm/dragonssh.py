@@ -1,7 +1,5 @@
 import os
 
-from subprocess import check_output
-
 from .base import WLMBase
 from ..facts import ENV_DRAGON_RUN_NODE_FILE
 

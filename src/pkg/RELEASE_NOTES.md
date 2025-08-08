@@ -1,4 +1,29 @@
-# Dragon 0.12 Release Summary
+# Dragon 0.12.1 Release Summary
+
+This release addresses several bugs encountered in 0.12.0 as well as a few new features
+
+### Changes and Updates:
+
+- Updated the gups test to use batched put and get
+- Updated the dragon-run sequence diagram
+- Updated the mpbridge BaseProcess for futureproofing
+- Made documentation updates
+- Explicitly use 'bash -c' when executing the drun backend 
+     
+### New Features:
+
+- Added PBS WLM support to dragon-run for dragon-cleanup
+- Introduced C++ support for semaphore barriers
+     
+### Bug Fixes:
+
+- Fixed naming collisions with cached network config
+- Ignored errors when conda is unable to remove libstdcxx packages during pipeline builds
+- Fixed the barrier unit test by correctly storing the puid
+- Added missing ProcessGroup states to enumerated class
+     
+
+# Dragon 0.12.0 Release Summary
 
 In Dragon 0.12, we introduce PMIx support for launching MPI applications, port our native
 Queue implementation to C for a measured 20% performance improvement, add a read-only mode ('freeze')

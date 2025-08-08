@@ -14,7 +14,6 @@ from dataclasses import dataclass, field
 from . import facts
 from .local_executor import local_executor
 from .remote_executor import RemoteExecutor, FERemoteExecutor, BERemoteExecutor
-from .exceptions import DragonRunBaseException
 from . import messages
 from . import util
 
@@ -53,9 +52,7 @@ class DragonRunFE:
 
         self.remote_executor = None
         if self.children:
-            self.remote_executor = FERemoteExecutor(
-                hostnames=self.children, drun_q=self.msg_q, fanout=self.fanout
-            )
+            self.remote_executor = FERemoteExecutor(hostnames=self.children, drun_q=self.msg_q, fanout=self.fanout)
 
         self.local_executor_thread: Optional[threading.Thread] = None
         self.pending: dict[int, PendingRequest] = dict()  # key = tag, value = Event
@@ -68,14 +65,14 @@ class DragonRunFE:
         self.stop()
 
     def start(self):
-        logger.info("++DragonRunFE.start")
+        logger.debug("++DragonRunFE.start")
         try:
             if self.remote_executor:
                 self.remote_executor.connect()
             self.main_thread = threading.Thread(name="DragonRunFE MainThread", target=self.run)
             self.main_thread.start()
         finally:
-            logger.info("--DragonRunFE.start")
+            logger.debug("--DragonRunFE.start")
 
     def stop(self):
         if self.main_thread:
@@ -96,15 +93,15 @@ class DragonRunFE:
         if exec_on_fe:
             num_ranks += 1
 
-        logger.info("run_user_app - 1")
+        logger.debug("run_user_app - 1")
         if self.remote_executor:
-            logger.info("run_user_app - 2")
+            logger.debug("run_user_app - 2")
             expected_responses += len(self.children)
             msg = messages.RunUserApp(tag=tag, command=command, num_ranks=num_ranks, env=env, cwd=cwd)
-            logger.info("run_user_app msg=%s", msg)
+            logger.debug("run_user_app msg=%s", msg)
             self.remote_executor.handle_msg(msg)
 
-        logger.info("run_user_app - 3")
+        logger.debug("run_user_app - 3")
         if exec_on_fe:
             expected_responses += 1
             self.local_executor_thread = threading.Thread(
@@ -114,13 +111,13 @@ class DragonRunFE:
             )
             self.local_executor_thread.start()
 
-        logger.info("run_user_app - 4")
+        logger.debug("run_user_app - 4")
         pending_req = PendingRequest(
             tag=tag,
             expected_responses=expected_responses,
         )
         self.pending[tag] = pending_req
-        logger.info("run_user_app - 5")
+        logger.debug("run_user_app - 5")
         pending_req.event.wait()
 
     @util.route(messages.AbnormalRuntimeExit, _DTBL)
@@ -160,14 +157,10 @@ class DragonRunFE:
             pass
 
     def run(self):
-        logger.info("++run")
-
+        logger.debug("++run")
         try:
-            if self.remote_executor:
-                self.remote_executor.connect()
-
             while not self.shutdown_event.is_set():
-                logger.info("run -- loop")
+                logger.debug("run -- loop")
                 try:
                     msg = self.msg_q.get(timeout=facts.QUEUE_GET_TIMEOUT)
                     logger.debug("main_thread_msg_proc msg=%s", msg)
@@ -178,9 +171,7 @@ class DragonRunFE:
                 except Empty:
                     pass
         finally:
-            if self.remote_executor:
-                self.remote_executor.disconnect()
-            logger.info("--run")
+            logger.debug("--run")
 
 
 class DragonRunBE:
@@ -321,9 +312,7 @@ class DragonRunBE:
     def handleCreateTree(self, msg: messages.CreateTree):
         if msg.children:
             # TODO: Add exception handling about BERemoteExecutor. RemoteProcessError
-            self.remote_executor = BERemoteExecutor(
-                self.my_rank, msg.children, msg.fanout, self.send_msg_q
-            )
+            self.remote_executor = BERemoteExecutor(self.my_rank, msg.children, msg.fanout, self.send_msg_q)
             self.remote_executor.connect()
 
         return messages.BackendUp(util.next_tag(), self.my_hostname)

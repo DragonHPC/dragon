@@ -22,7 +22,7 @@ from dragon.native.process_group import (
     DragonProcessGroupError,
     DragonProcessGroupException,
     DragonUserCodeError,
-    PGExecutionState,
+    State,
 )
 
 
@@ -220,7 +220,7 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.init()
 
         mgr_puid = pg._mgr_p_uid
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         mgr_puid = pg._mgr_p_uid
         mgr_pdesc = query(mgr_puid)
@@ -241,10 +241,10 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         mgr_pdesc = query(mgr_puid)
         self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.start()
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
         processes = [Process(None, ident=puid) for puid in puids]
@@ -267,10 +267,10 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         mgr_pdesc = query(pg._mgr_p_uid)
         self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.start()
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids.copy()
         processes = [Process(None, ident=puid) for puid in puids]
@@ -301,10 +301,10 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(self.nproc, template)
         pg.init()
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.start()
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
         processes = [Process(None, ident=puid) for puid in puids]
@@ -320,9 +320,9 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         for p in processes:
             self.assertFalse(p.is_alive)
 
-        while not pg._state == PGExecutionState.IDLE:
+        while not pg._state == State.IDLE:
             time.sleep(0.1)  # loop backoff
-            self.assertTrue(pg._state in {PGExecutionState.RUNNING, PGExecutionState.IDLE})
+            self.assertTrue(pg._state in {State.RUNNING, State.IDLE})
 
         # Make sure all the puids have exited with 0 exit codes
         exit_states = pg.inactive_puids
@@ -342,16 +342,16 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(self.nproc, template)
         pg.init()
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.start()
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
         processes = [Process(None, ident=puid) for puid in puids]
         self.assertRaises(TimeoutError, pg.join, 0)
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         for p in processes:
             self.assertTrue(p.is_alive)
@@ -379,18 +379,18 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(3, templ)
         pg.init()
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.start()
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
         processes = [Process(None, ident=puid) for puid in puids]
 
         self.assertRaises(TimeoutError, pg.join, 0)
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         start = time.monotonic()
         self.assertRaises(TimeoutError, pg.join, 0)
@@ -410,7 +410,7 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         self.assertGreaterEqual(elap, 0)
         self.assertLess(elap, TIMEOUT_DELTA_TOL)
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.stop()
         pg.close()
@@ -424,7 +424,7 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         mgr_pdesc = query(mgr_puid)
         self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.stop()
         pg.close()
@@ -447,11 +447,11 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(self.nproc, template)
         pg.init()
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.start()
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
 
@@ -460,9 +460,9 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
 
         pg.terminate()
 
-        while not pg._state == PGExecutionState.IDLE:
+        while not pg._state == State.IDLE:
             time.sleep(0.1)
-            self.assertTrue(pg._state in {PGExecutionState.RUNNING, PGExecutionState.IDLE})
+            self.assertTrue(pg._state in {State.RUNNING, State.IDLE})
 
         exit_states = pg.exit_status
 
@@ -486,16 +486,16 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
 
         pg.init()
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
         pg.start()
 
         puids = pg.puids
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         pg.terminate()
 
-        while not pg._state == PGExecutionState.IDLE:
+        while not pg._state == State.IDLE:
             time.sleep(0.1)
 
         pg.join()
@@ -520,20 +520,20 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(self.nproc, self.template)
         pg.init()
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
         mgr_puid = pg._mgr_p_uid
         mgr_pdesc = query(mgr_puid)
         self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
 
         pg.start()
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
 
         pg.stop()
         # May briefly be in state as we finish the joining
-        self.assertTrue(pg._state in {PGExecutionState.RUNNING, PGExecutionState.IDLE})
+        self.assertTrue(pg._state in {State.RUNNING, State.IDLE})
 
         # Make sure all the puids have exited with SIGKILL exit codes
         exit_states = pg.exit_status
@@ -556,20 +556,20 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(self.nproc, self.template)
         pg.init()
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
         mgr_puid = pg._mgr_p_uid
         mgr_pdesc = query(mgr_puid)
         self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
 
         pg.start()
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
 
         pg.kill()
         pg.join()
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         # Make sure all the puids have exited with SIGKILL exit codes
         exit_states = pg.exit_status
@@ -591,11 +591,11 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(self.nproc, self.template)
         pg.init()
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.start()
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
 
@@ -607,7 +607,7 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
 
         pg.join()
 
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         for puid in puids:
             gs_info = query(puid)
@@ -629,15 +629,15 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(self.nproc, template)
         pg.init()
         pg.start()
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
 
         ev.set()
 
         cnt = 0
-        while not pg._state == PGExecutionState.ERROR:  # maintain should catch failing processes
-            self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        while not pg._state == State.ERROR:  # maintain should catch failing processes
+            self.assertTrue(pg._state == State.RUNNING)
             time.sleep(0.1)
             cnt += 1
             if cnt == 32:  # good enough
@@ -646,12 +646,12 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
             cnt = -1
 
         self.assertTrue(cnt > -1)
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         pg.kill()
 
-        while not pg._state == PGExecutionState.IDLE:
-            self.assertTrue(pg._state != PGExecutionState.ERROR)
+        while not pg._state == State.IDLE:
+            self.assertTrue(pg._state != State.ERROR)
             time.sleep(0.1)
 
         for puid in puids:
@@ -669,19 +669,19 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(self.nproc, template)
         pg.init()
         pg.start()
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
 
         ev.set()
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
         time.sleep(0.1)
 
         pg.kill()
         pg.join()
 
-        while not pg._state == PGExecutionState.IDLE:
+        while not pg._state == State.IDLE:
             time.sleep(0.05)
 
         for puid in puids:
@@ -704,13 +704,13 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
 
         pg.start()
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
 
         ev.set()
 
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         pg.stop()
         pg.join()
@@ -729,7 +729,7 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.init()
 
         pg.start()
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
 
         puids = pg.puids
         puids.reverse()
@@ -742,9 +742,9 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
             except ProcessError:
                 pass
 
-        while not pg._state == PGExecutionState.IDLE:
+        while not pg._state == State.IDLE:
             time.sleep(0.1)
-            self.assertFalse(pg._state == PGExecutionState.ERROR)
+            self.assertFalse(pg._state == State.ERROR)
 
         pg.stop()
         pg.close()
@@ -754,19 +754,19 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.add_process(self.nproc, self.template)
 
         pg.init()
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
         self.assertRaises(DragonProcessGroupError, pg.kill)
 
         pg.start()
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
         self.assertRaises(DragonProcessGroupError, pg.start)
         self.assertRaises(TimeoutError, pg.join, 0)
-        self.assertTrue(pg._state == PGExecutionState.RUNNING)
+        self.assertTrue(pg._state == State.RUNNING)
         self.assertRaises(DragonProcessGroupError, pg.start)
 
         pg.kill()
         pg.stop()
-        self.assertTrue(pg._state == PGExecutionState.IDLE)
+        self.assertTrue(pg._state == State.IDLE)
 
         pg.close()
         self.assertRaises(DragonProcessGroupError, pg.stop)
@@ -834,9 +834,9 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
 
         pg.terminate()
 
-        while not pg._state == PGExecutionState.IDLE:
+        while not pg._state == State.IDLE:
             time.sleep(0.1)
-            self.assertTrue(pg._state != PGExecutionState.ERROR)
+            self.assertTrue(pg._state != State.ERROR)
 
         gs_info = query(mgr_puid)
         self.assertTrue(gs_info.state == gs_info.State.ACTIVE)
@@ -887,16 +887,16 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
 
             mgr_pdesc = query(mgr_puid)
             self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
-            self.assertTrue(pg._state != PGExecutionState.ERROR)
+            self.assertTrue(pg._state != State.ERROR)
             time.sleep(0.2)
 
         puids = pg.puids
 
         pg.terminate()
 
-        while not pg._state == PGExecutionState.IDLE:
+        while not pg._state == State.IDLE:
             time.sleep(0.1)
-            self.assertTrue(pg._state != PGExecutionState.ERROR)
+            self.assertTrue(pg._state != State.ERROR)
 
         mgr_pdesc = query(mgr_puid)
         self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
@@ -1029,7 +1029,7 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
 
             mgr_pdesc = query(mgr_puid)
             self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
-            self.assertTrue(pg._state != PGExecutionState.ERROR)
+            self.assertTrue(pg._state != State.ERROR)
 
             time.sleep(0.2)
 
@@ -1037,9 +1037,9 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         pg.stop()
         pg.join()
 
-        while not pg._state == PGExecutionState.IDLE:
+        while not pg._state == State.IDLE:
             time.sleep(0.1)
-            self.assertTrue(pg._state != PGExecutionState.ERROR)
+            self.assertTrue(pg._state != State.ERROR)
 
         mgr_pdesc = query(mgr_puid)
         self.assertTrue(mgr_pdesc.state == ProcessDescriptor.State.ACTIVE)
@@ -1062,9 +1062,9 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         start = time.monotonic()
         pg.start()
 
-        while not pg._state == PGExecutionState.IDLE:
+        while not pg._state == State.IDLE:
             time.sleep(0.1)
-            self.assertFalse(pg._state == PGExecutionState.ERROR)
+            self.assertFalse(pg._state == State.ERROR)
 
         elap = time.monotonic() - start
 

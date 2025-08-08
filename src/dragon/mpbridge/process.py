@@ -1,6 +1,5 @@
 """Dragon's replacement classes for Multiprocessing Process."""
 
-import gc
 import io
 import logging
 import os
@@ -119,16 +118,12 @@ class DragonProcess(multiprocessing.process.BaseProcess):
         Method to be run in sub-process; can be overridden in sub-class
         '''
         try:
-            if self._target:
-                self._target(*self._args, **self._kwargs)
-        except:
-            raise
+            super().run()
         finally:
-            del self._args    # This is done so references are removed
-            del self._kwargs  # allowing Dragon to free resources.
-            self._args = ()   # set it in case it is referenced after
-            self._kwargs = {} # the run function returns.
-            gc.collect()
+            # Doing this helps guarantee that arguments will be garbage
+            # collected at process exit. This is needed for Dragon refcounts.
+            self._args = ()
+            self._kwargs = {}
 
     @property
     def ident(self) -> int:

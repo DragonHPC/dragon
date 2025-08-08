@@ -5,7 +5,6 @@ import socket
 import sys
 import os
 
-from subprocess import check_output
 from .src import run_wrapper
 from .src.common_args import add_common_args
 from .src.exceptions import DragonRunMissingAllocation, DragonRunNoSupportedWLM, DragonRunSingleNodeUnsupported
@@ -16,7 +15,7 @@ logger = logging.getLogger(__name__)
 logging.basicConfig(
     filename=f"drun_{socket.gethostname()}.log",
     encoding="utf-8",
-    level=logging.DEBUG,
+    level=logging.INFO,
     format="%(relativeCreated)6d %(threadName)s %(thread)d %(levelname)s:%(name)s:%(message)s",
 )
 
@@ -127,7 +126,7 @@ def main():
             user_command=user_command,
             env=env,
             host_list=hosts,
-            force_wlm=args.get("wlm"),  # type: ignore
+            force_wlm=args.get("force_wlm"),  # type: ignore
             force_single_node=args["force_single_node"],
             force_multi_node=args["force_multi_node"],
             exec_on_fe=args["include_fe"],

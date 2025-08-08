@@ -101,7 +101,7 @@ class BackendConnector:
                 except Empty:
                     pass
         except RemoteProcessError as rpe:
-            logger.info("RemoteProcessError %s ExitCode=%d", rpe.args, rpe.exit_code)
+            logger.error("RemoteProcessError %s ExitCode=%d", rpe.args, rpe.exit_code)
             raise
         except Exception as ex:
             logger.error("host=%s host_recv_thread Unhandled Exception: %s", self.hostname, ex)

@@ -122,6 +122,7 @@ class TestHSTA(BaseTestHSTA):
     def test_8_abnormal_termination(self):
         self.abnormal_termination(8, 60)
 
+    @unittest.skip("AICI-1895: to be fixed, has a race condition")
     def test_9_abnormal_termination(self):
         self.abnormal_termination(9, 60)
 

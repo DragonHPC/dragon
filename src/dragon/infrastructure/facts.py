@@ -74,6 +74,7 @@ env_vars = frozenset(
         "OVERLAY_FANOUT",
         "NET_CONF_CACHE",
         "NET_CONF_CACHE_TIMEOUT",
+        "NET_CONF_CACHE_SALT",
         OOM_WARNING_PCT_VAR,
         OOM_WARNING_BYTES_VAR,
         OOM_CRITICAL_PCT_VAR,
@@ -803,6 +804,7 @@ DRAGON_POLICY_CONTEXT_ENV = "DRAGON_POLICY_CONTEXT_ENV"
 
 DEFAULT_NET_CONF_CACHE = os.path.join(os.getcwd(), ".dragon-net-conf")
 DEFAULT_NET_CONF_CACHE_TIMEOUT = 60 * 60
+DEFAULT_NET_CONF_CACHE_SALT = str(os.urandom(4).hex())  # 4 bytes of random data,
 
 # Default dragon config directory and file
 DRAGON_CONFIG_DIR = Path(DRAGON_BASE_DIR) / ".hsta-config"

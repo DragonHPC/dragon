@@ -17,7 +17,7 @@ from typing import Iterable, Any
 from ..native.pool import Pool as NativePool
 from ..native.pool import job_counter, mapstar, ApplyResult, MapResult
 from ..native.process import Process
-from ..native.process_group import ProcessGroup, PGExecutionState
+from ..native.process_group import ProcessGroup, State
 from ..globalservices.process import multi_join
 
 
@@ -288,7 +288,7 @@ class DragonPool(NativePool):
         # repopulate pool by shutting PG down and then starting new PG
         if self._close_thread is not None:
             raise RuntimeError("Trying to repopulate a pool that was previously closed. This pattern is not supported.")
-        if not self._pg._state == PGExecutionState.IDLE:
+        if not self._pg._state == State.IDLE:
             self.terminate()
         if not self._pg_closed:
             self._pg.join(timeout=None)

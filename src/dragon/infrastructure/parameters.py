@@ -367,6 +367,12 @@ class LaunchParameters:
                 default=dfacts.DEFAULT_NET_CONF_CACHE_TIMEOUT,
             ),
             TypedParm(
+                name=dfacts.NET_CONF_CACHE_SALT,
+                cast=typecast(str),
+                check=nocheck,
+                default=dfacts.DEFAULT_NET_CONF_CACHE_SALT,
+            ),
+            TypedParm(
                 name=dfacts.OOM_WARNING_PCT_VAR,
                 cast=typecast(float),
                 check=check_pct,

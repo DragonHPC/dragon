@@ -16,8 +16,8 @@ cc --version
 # Create virtual env
 source ~/.bashrc
 conda activate _dev
-conda remove -y libstdcxx
-conda remove -y libstdcxx-ng
+conda remove -y libstdcxx || true
+conda remove -y libstdcxx-ng || true
 python3 --version
 which python3
 

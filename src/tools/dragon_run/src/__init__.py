@@ -1,21 +1,16 @@
-from threading import Thread
-
-from queue import Queue, Empty
-from multiprocessing import Event
 from typing import List, Dict, Optional
 
-from .remote_executor import FERemoteExecutor
 from .dragon_run import DragonRunFE
-from .exceptions import DragonRunMissingAllocation, DragonRunSingleNodeUnsupported
+from .exceptions import DragonRunMissingAllocation
 from .wlm import WLM, wlm_cls_dict
 from .wlm.base import WLMBase
 from .facts import DEFAULT_FANOUT
 
 
 def determine_wlm(
-        force_single_node: bool = False,
-        force_multi_node: bool = False,
-        force_wlm: Optional[WLM] = None
+    force_single_node: bool = False,
+    force_multi_node: bool = False,
+    force_wlm: Optional[WLM] = None,
 ) -> Optional[WLMBase]:
     """
     Determine if dragon_run should be started in multi-node or single-node mode.
@@ -54,16 +49,17 @@ def determine_wlm(
 
     # Try to determine if we're on a supported multinode system
     if force_wlm != None:
-        # Hopefully only one of these will be true
-        is_slurm = force_wlm == str(WLM.SLURM)
-        is_dragon_ssh = force_wlm == str(WLM.DRAGON_SSH)
+        is_slurm = force_wlm == WLM.SLURM
+        is_pbs = force_wlm == WLM.PBS
+        is_dragon_ssh = force_wlm == WLM.DRAGON_SSH
     else:
         # Likewise, only one of these will be true
         is_slurm = wlm_cls_dict[WLM.SLURM].check_for_wlm_support()
+        is_pbs = wlm_cls_dict[WLM.PBS].check_for_wlm_support()
         is_dragon_ssh = wlm_cls_dict[WLM.DRAGON_SSH].check_for_wlm_support()
 
     # We cannot find a supported WLM
-    if is_dragon_ssh + is_slurm == 0:
+    if is_dragon_ssh + is_slurm + is_pbs == 0:
 
         # If the user requested multi-node mode, then we have a problem.
         if force_multi_node:
@@ -78,6 +74,8 @@ def determine_wlm(
         wlm_cls = wlm_cls_dict[WLM.DRAGON_SSH]
     elif is_slurm:
         wlm_cls = wlm_cls_dict[WLM.SLURM]
+    elif is_pbs:
+        wlm_cls = wlm_cls_dict[WLM.PBS]
     else:
         raise RuntimeError("Error: Unable to get WLM class object.")
 
@@ -93,7 +91,8 @@ def get_host_list(
     force_single_node: bool = False,
     force_multi_node: bool = False,
     force_wlm: Optional[WLM] = None,
-    *args, **kwargs
+    *args,
+    **kwargs,
 ) -> Optional[List[str]]:
     # If we're being provided with a host_list, then just use those, otherwise figure out our host_list
     if not host_list:
@@ -129,9 +128,4 @@ def run_wrapper(
         exec_on_fe = True
 
     with DragonRunFE(host_list, fanout=fanout) as drun:
-        drun.run_user_app(
-            user_command,
-            env,
-            cwd,
-            exec_on_fe=exec_on_fe
-        )
+        drun.run_user_app(user_command, env, cwd, exec_on_fe=exec_on_fe)

@@ -771,7 +771,6 @@ lower performing TCP transport agent for backend network communication.
                         args=args,
                         stdin=subprocess.DEVNULL,
                         stdout=subprocess.DEVNULL,
-                        env=the_env,
                         start_new_session=True,
                     )
                 wlm_proc = SSHSubprocessPopen(popen_dict)
@@ -1076,6 +1075,16 @@ Performance may be suboptimal."""
 
         self.la_fe_stdin = dlutil.OverlayNetLaFEQueue()
         self.la_fe_stdout = dlutil.LaOverlayNetFEQueue()
+
+        if this_process.net_conf_cache_salt:
+            log.debug("checking if net_conf_cache_salt is in the environment")
+            if "DRAGON_NET_CONF_CACHE_SALT" not in os.environ:
+                log.debug("Setting DRAGON_NET_CONF_CACHE_SALT in the environment")
+                os.environ["DRAGON_NET_CONF_CACHE_SALT"] = this_process.net_conf_cache_salt
+            else:
+                log.debug("DRAGON_NET_CONF_CACHE_SALT already set in the environment")
+        else:
+            log.debug("No net_conf_cache_salt set in this_process, not setting in the environment")
 
         if self._wlm is not WLM.K8S:
             # If we have the config via an earlier frontend, don't do it all over again

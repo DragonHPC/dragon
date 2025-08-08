@@ -190,26 +190,27 @@ class NodeDescriptor:
         )
 
     @classmethod
-    def get_local_network_conf_cache_file_name(cls):
-        tmp_dir = tempfile.gettempdir()
-        host_id = str(get_host_id())
+    def get_local_network_conf_cache_file_name(cls, salt: Optional[str] = None):
+        cache_file_dir = tempfile.gettempdir()
 
-        dragon_tmp_dir = os.path.join(tmp_dir, ".dragon")
-        os.makedirs(dragon_tmp_dir, exist_ok=True)
+        cache_file_name = f"dragon-{str(get_host_id())}"
+        if salt is not None:
+            cache_file_name += f"-{salt}"
 
-        return os.path.join(dragon_tmp_dir, host_id)
+        return os.path.join(cache_file_dir, cache_file_name)
 
     @classmethod
-    def remove_cached_local_network_conf(cls):
+    def remove_cached_local_network_conf(cls, salt: Optional[str] = None):
         try:
-            os.remove(cls.get_local_network_conf_cache_file_name())
+            cache_file_name = cls.get_local_network_conf_cache_file_name(salt=salt)
+            os.remove(cache_file_name)
         except (FileNotFoundError, IOError):
             pass
 
     @classmethod
-    def get_cached_local_network_conf(cls):
+    def get_cached_local_network_conf(cls, salt: Optional[str] = None):
         try:
-            with open(cls.get_local_network_conf_cache_file_name(), "r") as inf:
+            with open(cls.get_local_network_conf_cache_file_name(salt=salt), "r") as inf:
                 json_str = inf.read()
                 json_data = json.loads(json_str)
 
@@ -221,14 +222,14 @@ class NodeDescriptor:
                 if time_diff.total_seconds() < dparms.this_process.net_conf_cache_timeout:
                     return True, cls.from_sdict(json_data[cache_key])
 
-                return True, None
+                return False, None
         except (FileNotFoundError, IOError):
             return False, None
 
     @classmethod
-    def set_cached_local_network_conf(cls, node_info):
+    def set_cached_local_network_conf(cls, node_info, salt: Optional[str] = None):
         try:
-            with open(cls.get_local_network_conf_cache_file_name(), "w") as outf:
+            with open(cls.get_local_network_conf_cache_file_name(salt=salt), "w") as outf:
                 now = datetime.now()
                 json_str = json.dumps({now.isoformat(): node_info.sdesc})
                 outf.write(json_str)
