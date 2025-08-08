@@ -1,0 +1,49 @@
+@startuml
+skinparam monochrome true
+' skinparam responseMessageBelowArrow true
+skinparam style strictuml
+'   skinparam maxMessageSize 150
+
+participant "Trigger T1" as T1
+participant "Trigger T2" as T2
+participant "Trigger T3" as T3
+participant "Trigger T4" as T4
+
+participant "BCast Object" as B
+participant "Waiter W1" as W1
+participant "Waiter W2" as W2
+participant "Waiter W3" as W3
+participant "Waiter W4" as W4
+
+note over T1,T4: Trigger 1 Create BCast Object and serializes in bser
+
+T1 -> T2: bser
+T1 -> T3: bser
+T1 -> T4: bser
+T1 -> W1: bser
+T1 -> W2: bser
+T1 -> W3: bser
+T2 -> W4: bser (via shared mem or other means...)
+W1 -> B: (2) Idle Wait
+W2 -> B: Spin Wait
+W3 -> B: Idle Wait
+T3 -> B: (3) Trigger One with empty payload
+W4 -> B: Idle Wait (but will not be waiter until triggering has completed)
+B -> W2: Triggered
+note over B: W4 is now a waiter
+note over W2: W2 complete work
+T3 -> B: (4) Trigger All with payload1
+B -> W1: Triggered - payload1
+B -> W3: Triggered - payload1
+W2 -> B: (5) Spin Wait (but will not be waiter yet - triggering in progress)
+B -> W4: Triggered - payload1
+note over B: W2 is now a waiter
+W3 -> B: (6) Asynchronously Wait w/callback cb2
+T4 -> B: Trigger All with payload2
+B -> W3: (7) Call cb2 with args and \nasynchronously work (via a thread of W3)
+B -> W2: Triggered - payload2
+T4 -> B: (8) Trigger One (rejected, no waiters)
+
+
+
+@enduml
