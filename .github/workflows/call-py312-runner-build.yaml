@@ -1,0 +1,15 @@
+name: call-py312-runner-build
+
+#
+# Call runner-build.yaml for a python 3.12 dst-workflow or diy-workflow build
+#
+  
+on: [push, pull_request]
+
+jobs:
+  call-build:
+    uses: ./.github/workflows/runner-build.yaml
+    secrets: inherit
+    with:
+      build-command: "dst/dragon_build.sh -n -p 312" # dst example = "dst/dragon_build.sh -n -p 312" or diy example = "runBuildPrep.py312.sh" 
+      build-type: "use-hybrid-workflow" # options = use-dst-workflow use-hybrid-workflow use-diy-workflow

@@ -228,11 +228,10 @@ int dg_hostid_called = 0;
 dragonULInt
 dragon_host_id()
 {
-    char *k8s_pod_uid = getenv("POD_UID");
-
     if (dg_hostid_called == 0) {
 
         uint64_t lg_hostid;
+        char *k8s_pod_uid = getenv("POD_UID");
 
         if (k8s_pod_uid != NULL) { // if we are within a Kubernetes Pod
             char *pod_uid = strdup(k8s_pod_uid);

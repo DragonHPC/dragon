@@ -1,0 +1,115 @@
+---
+name: runner-build
+
+#
+# build dragon via github runners with either a dst-workflow or a diy-workflow
+#
+
+on:
+  workflow_call:
+    inputs:
+      build-command: # example dst input = "dst/dragon_build.sh -n -p 311" or diy input = "runBuildPrep.py311.sh"
+        type: string
+        required: true
+      build-type: # input options = use-dst-workflow or use-diy-workflow
+         type: string
+         required: true
+
+jobs:
+
+  #
+  # use call-reusable-dst-workflow job if we want to use dst libs and push to artifactory
+  #
+  
+  call-reusable-dst-workflow:
+    if: ${{ inputs.build-type == 'use-dst-workflow' }}
+    uses: hpe/hpc-dst-shared-actions/.github/workflows/build-pipeline.yml@main
+    with:
+      build-command: ${{ inputs.build-command }}
+      repo-name: ${{ github.repository }}
+      branch-name: ${{ github.ref }}
+    secrets: inherit
+
+  #
+  # or use our own hybrid workflow with dst libs and push to artifactory
+  #
+
+  create-hybrid-runner:
+    if: ${{ inputs.build-type == 'use-hybrid-workflow' }}
+    uses: hpc-sw/create_runners/.github/workflows/create_runners.yaml@master
+    with:
+      machine_size: 'small'
+      # small or large machine_size options
+    secrets: inherit
+  use-our-hybrid-workflow:
+    if: ${{ inputs.build-type == 'use-hybrid-workflow' }}
+    needs: create-hybrid-runner
+    runs-on: ${{ needs.create-hybrid-runner.outputs.runner_name }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Build and push artifacts DIY
+        run: |
+          echo $PWD
+          ls -alt
+          ls -alt ..
+          ${{ inputs.build-command }} # eg dst/dragon_build.sh -n -p 312
+        env:
+          JOB_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          BUILD_URL: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}"
+          BUILD_NUMBER: "${{ github.run_id }}"
+          JOB_NAME: "${{ github.repository }}_${{ github.run_id }}"
+          ART_COMMON_CREDS_PSW: ${{ secrets.DST_ARTI_SECRET }}
+          ART_COMMON_CREDS_USR: "pipeline_service"
+          JOB_USER: ${{ github.actor }}
+          JOB_PASS: ${{ github.token }}
+          # KEY_FILE: "~/.ssh/dst_signer_key"
+          BRANCH_NAME: ${{ github.ref_name }}
+          SNYK_TOKEN: ${{ secrets.DST_SNYK_TOKEN }}
+          # SONARQUBE_TOKEN: ${{ secrets.SONARQUBE_TOKEN }}
+
+  #
+  # or use create-runner + use-runner + use-our-workflow jobs to go it on our own diy and push artifact to github
+  #
+  
+  create-runner:
+    if: ${{ inputs.build-type == 'use-diy-workflow' }}
+    uses: hpc-sw/create_runners/.github/workflows/create_runners.yaml@master
+    with:
+      machine_size: 'small'
+      # small or large machine_size options
+    secrets: inherit
+  use-our-diy-workflow:
+    if: ${{ inputs.build-type == 'use-diy-workflow' }}
+    needs: create-runner
+    runs-on: ${{ needs.create-runner.outputs.runner_name }}
+    timeout-minutes: 90
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+      - name: Build and push artifacts DIY
+        run: |
+          echo $PWD
+          ls -alt
+          ls -alt ..
+          my_container=$(podman run -v $PWD:/workspace -d --shm-size=12gb --rm -it arti.hpc.amslabs.hpecorp.net/quay-remote/pypa/manylinux2014_x86_64)
+          echo $my_container
+          podman exec $my_container pwd
+          podman exec $my_container ls -alt
+          podman exec $my_container ls -alt /workspace
+          podman exec $my_container bash -c "cd /workspace && git status"
+          podman exec $my_container bash -c "cd /workspace && ./dst/${{ inputs.build-command }}" # only build prep script is python versioned
+          podman exec $my_container bash -c "cd /workspace && ./dst/runBuild.sh"
+          podman exec $my_container bash -c "cd /workspace && ./dst/runUnitTest.sh"
+          podman ps -a
+          podman exec $my_container ls -alt /workspace/RPMS
+          mkdir /tmp/dragonrpm
+          podman cp $my_container:/workspace/RPMS /tmp/dragonrpm
+          # example rpm path = /workspace/RPMS/centos7/py3.12/dragon-0.12rc4-py3.12.11-9b2da2b.x86_64.rpm
+          find /tmp/dragonrpm
+          podman kill $my_container
+      - uses: actions/upload-artifact@v3 # v4 not supported yet for hpe github version
+        with:
+          name: dragon-rpm
+          path: /tmp/dragonrpm

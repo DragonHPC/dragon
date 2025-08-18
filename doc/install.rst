@@ -10,9 +10,9 @@ install dragonhpc and other packages within that environment.
 
 .. code-block:: console
 
-    pip3 install dragonhpc
+    pip install dragonhpc
 
-After doing the `pip3` install of the package, you have completed the
+After doing the `pip` install of the package, you have completed the
 prerequisites for running Dragon multiprocessing programs.
 
 Dragon is built with `manylinux2014` support and should function on most Linux
@@ -46,10 +46,10 @@ Some example high-speed transport agent configuration commands are:
 .. code-block:: console
 
     # For UCX communication, provide a library path that contains a libucp.so:
-    dragon-config -a "ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib"
+    dragon-config add --ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib
 
     # For OFI communication, provide a library path that contains a libfabric.so:
-    dragon-config -a "ofi-runtime-lib=/opt/cray/libfabric/1.22.0/lib64"
+    dragon-config add --ofi-runtime-lib=/opt/cray/libfabric/1.22.0/lib64
 
 As mentioned, if `dragon-config` is not run to tell Dragon where the appropriate libraries exist, Dragon will
 fall back to using the TCP transport agent. You'll know this because a message similar to the following will print:
@@ -64,14 +64,14 @@ fall back to using the TCP transport agent. You'll know this because a message s
     for network communication. To eliminate this message and continue to use
     the TCP transport agent, run:
 
-        dragon-config -a 'tcp-runtime=True'
+        dragon-config add --tcp-runtime=True
 
 If you get tired of seeing this message and plan to only use TCP communication over ethernet, follow the
 directions above and run the `dragon-config` command to silence it with:
 
 .. code-block:: console
 
-    dragon-config -a 'tcp-runtime=True'
+    dragon-config add --tcp-runtime=True
 
 For help without referring to this README.md, you can always use `dragon-config --help`.
 

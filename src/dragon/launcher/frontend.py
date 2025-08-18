@@ -1463,28 +1463,19 @@ Performance may be suboptimal."""
             sys.exit(LAUNCHER_FAIL_EXIT)
         gs_cd = gs_cds[0]
 
-        # Set the number of gateway channels per node. When
-        # HSTA is used, and the pals library is present, then
-        # we are on a Shasta (EX) machine and we can then use
-        # multi-nic support under HSTA when multiple NICs per
-        # node are available. In this circumstance, the number of
-        # gateway channels will control the number of HSTA Agent
-        # procs created and HSTA uses the default MPI binding to
-        # bind each agent to a separate NIC. All other configurations
-        # will have one NIC per node and one gateway per node used
-        # (for now anyway - eventually the number of gateways may not
-        # be tied to multiple NIC support).
-        if (min_nics_per_node > 1) and self.pals_lib_present and (self.transport is dfacts.TransportAgentOptions.HSTA):
-            num_gw_channels = min_nics_per_node
+        # Set the number of gateway channels per node. When HSTA is used and multiple
+        # NICs per node are available, we can use multi-nic support. In this case, the
+        # number of gateway channels will control the number of HSTA Agents, with each
+        # agent binding to a separate NIC. All other configurations will have one NIC
+        # per node and one gateway per node (for now anyway - eventually the number of
+        # gateways may not be tied to multiple NIC support).
+        if self.transport is dfacts.TransportAgentOptions.HSTA:
+            try:
+                num_nics = int(os.environ["DRAGON_HSTA_NUM_NICS"])
+                num_gw_channels = min(num_nics, min_nics_per_node)
+            except KeyError:
+                num_gw_channels = min_nics_per_node
         else:
-            num_gw_channels = 1
-
-        if "DRAGON_HSTA_FABRIC_BACKEND" in os.environ:
-            if os.environ["DRAGON_HSTA_FABRIC_BACKEND"] != "ofi_rma":
-                num_gw_channels = 1
-        else:
-            # TODO: default fabric backend
-            # assume default fabric backend is ofi/p2p for now
             num_gw_channels = 1
 
         # HSTA uses NUM_GW_TYPES gateways per agent

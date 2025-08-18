@@ -89,7 +89,7 @@ public:
 
         // attach to memory pool
 
-        err = dragon_memory_pool_attach_from_env(&this->mpool, "DRAGON_INF_PD");
+        err = dragon_memory_pool_attach_from_env(&this->mpool, "DRAGON_DEFAULT_PD");
         check_err(err);
     }
 
@@ -370,7 +370,7 @@ dragonChPerfKernel::run(double *run_time)
     auto begin_time = get_time();
 
     // run user's kernel
-    int num_iters = 10;
+    int num_iters = 1;
     for (auto i = 0; i < num_iters; ++i) {
         for (auto op : this->ops) {
             auto err = op->exec();

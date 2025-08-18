@@ -2166,11 +2166,21 @@ _attach_to_gateway(char *ip_addrs_key, dragonChannelDescr_t *gw_ch)
 static dragonError_t
 _get_gw_idx(const dragonChannelDescr_t *ch, dragonChannelOpType_t op_type, int *gw_idx)
 {
+    dragonError_t err = DRAGON_SUCCESS;
+    dragonULInt hostid;
     dragonULInt target_hostid;
+    static dragonULInt gw_group_counter = ULONG_MAX;
 
-    dragonError_t err = dragon_channel_get_hostid(ch, &target_hostid);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Failed to obtain hostid for target channel.");
+    if (gw_group_counter == ULLONG_MAX) {
+        err = dragon_channel_get_hostid(ch, &target_hostid);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to obtain hostid for target channel.");
+
+        hostid = dragon_host_id();
+
+        srand(time(NULL) ^ (unsigned)hostid ^ (unsigned)target_hostid);
+        gw_group_counter = rand();
+    }
 
     /* For tcp agents, there is always 1 gateway and the index is hence always 0.
      * For hsta agents, there will be a multiple of dg_num_gateway_types gateways,
@@ -2191,7 +2201,7 @@ _get_gw_idx(const dragonChannelDescr_t *ch, dragonChannelOpType_t op_type, int *
         *gw_idx = 0;
     } else {
         int num_gw_groups = num_gws / dg_num_gateway_types;
-        int my_gw_group = dragon_hash_ulint(target_hostid) % num_gw_groups;
+        int my_gw_group = (gw_group_counter++) % num_gw_groups;
         *gw_idx = (dg_num_gateway_types * my_gw_group) + op_type;
     }
 

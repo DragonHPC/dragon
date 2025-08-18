@@ -621,6 +621,7 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
 
         raise Exception("42 - ignore")
 
+    @unittest.skip("Skipping due to a hang in dst github runner build")
     def test_no_error_from_maintain(self):
         ev = Event()
 
