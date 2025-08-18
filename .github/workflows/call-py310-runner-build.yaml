@@ -1,0 +1,15 @@
+name: call-py310-runner-build
+
+#
+# Call runner-build.yaml for a python 3.10 dst-workflow or diy-workflow build
+#
+  
+on: [push, pull_request]
+
+jobs:
+  call-build:
+    uses: ./.github/workflows/runner-build.yaml
+    secrets: inherit
+    with:
+      build-command: "dst/dragon_build.sh -n -p 310" # dst example = "dst/dragon_build.sh -n -p 310" or diy example = "runBuildPrep.py310.sh" 
+      build-type: "use-hybrid-workflow" # options = use-dst-workflow use-hybrid-workflow use-diy-workflow
