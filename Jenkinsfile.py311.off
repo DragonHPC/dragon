@@ -1,8 +1,0 @@
-@Library("dst-shared-2@master") _
-
-buildRunner {
-  product = "dragon"
-  buildAgent = "dragon-dst-build"
-  timeout = 90
-  buildScript = "dst/dragon_build.sh -n -p 311"
-}
