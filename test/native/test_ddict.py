@@ -39,11 +39,10 @@ from dragon.infrastructure.policy import Policy
 from dragon.utils import b64encode, b64decode, hash as dhash, host_id
 from dragon.data.ddict import (
     DDict,
-    DDictManagerFull,
-    DDictUnableToCreateDDict,
+    DDictFullError,
     DDictError,
-    DDictCheckpointSync,
-    DDictFutureCheckpoint,
+    DDictCheckpointSyncError,
+    DDictFutureCheckpointError,
     DDictPersistCheckpointError,
     strip_pickled_bytes,
     PosixCheckpointPersister,
@@ -57,7 +56,7 @@ from multiprocessing import Barrier, Pool, Queue, Event, set_start_method
 
 NUM_BUCKETS = 4
 POOL_MUID = 897
-
+DAOS_POOL_NAME = "testpool"
 
 class numPy2dValuePickler:
     def __init__(self, shape: tuple, data_type: np.dtype, chunk_size=0):
@@ -148,6 +147,14 @@ def client_func_1_get_newest_chkpt_id(d):
     d.detach()
 
 
+def get_value(dd, q):
+    x = dd["hello"]
+    if x == "world":
+        q.put(True)
+    else:
+        q.put(False)
+
+
 def client_func_1_wait_keys_clear(d, ev):
     ## 0
     d.pput("hello0", "world0")
@@ -199,6 +206,10 @@ def client_func_1_nonpersist(d, ev):
     ev.set()
     d.detach()
 
+
+def client_put(d):
+    d["my_key"] = "my_value"
+    d.detach()
 
 def client_func_2_nonpersist(d, ev):
     ev.set()
@@ -860,7 +871,7 @@ def client_too_big3(d):
         x = np.ones(4 * 1024 * 1024, dtype=np.int32)
         d["np array"] = x
         return 1
-    except DDictManagerFull:
+    except DDictFullError:
         return 0
     except Exception:
         return 1
@@ -1140,11 +1151,59 @@ class TestDDict(unittest.TestCase):
 
     def test_put_get(self):
         d = DDict(2, 1, 3000000, trace=True)
-        def_pool = dmem.MemoryPool.attach_default()
         d["abc"] = "def"
         x = d["abc"]
         x1 = d["abc"]
         self.assertEqual(x1, "def")
+        d.destroy()
+
+    def test_keys_values_lookup(self):
+        d = DDict(1, 1, 3000000, trace=True)
+        d["abc"] = "def"
+        keys = list(d.keys())
+        values = set(d.values())
+        for key in keys:
+            self.assertTrue(d[key] in values)
+        d.destroy()
+
+    def test_keys_items_lookup(self):
+        d = DDict(1, 1, 3000000, trace=True)
+        d["abc"] = "def"
+        keys = list(d.keys())
+        values = set(y for x,y in d.items())
+        for key in keys:
+            self.assertTrue(d[key] in values)
+        d.destroy()
+
+    def test_frozen_values_lookup(self):
+        d = DDict(1, 1, 3000000, trace=True)
+        d["abc"] = "def"
+        d.freeze()
+        values = set(d.values())
+        for key in d.keys():
+            self.assertTrue(d[key] in values)
+        d.unfreeze()
+        d.destroy()
+
+    def test_frozen_items_lookup(self):
+        d = DDict(1, 1, 3000000, trace=True)
+        d["abc"] = "def"
+        d.freeze()
+        values = set(y for x,y in d.items())
+        for key in d.keys():
+            self.assertTrue(d[key] in values)
+        d.unfreeze()
+        d.destroy()
+
+    def test_put_get_separate_proc(self):
+        d = DDict(1, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        q = mp.Queue()
+        proc = mp.Process(target=get_value, args=(d, q))
+        proc.start()
+        d["hello"] = "world"
+        success = q.get()
+        self.assertTrue(success, "The client process did not find the right value or had some other problem. ")
+        d.destroy()
 
     @unittest.skip("The memory assertion passes when run manually. Fails in pipeline.")
     def test_put_and_get(self):
@@ -1491,7 +1550,7 @@ class TestDDict(unittest.TestCase):
 
     def test_fill(self):
         d = DDict(1, 1, 900000)
-        self.assertRaises(DDictManagerFull, fillit, d)
+        self.assertRaises(DDictFullError, fillit, d)
         d.destroy()
 
     def test_attach_ddict(self):
@@ -1560,6 +1619,19 @@ class TestDDict(unittest.TestCase):
         self.assertEqual(0, proc1.exitcode)
         self.assertEqual(0, proc2.exitcode)
 
+        d.destroy()
+
+    def test_wait_keys_put_get_2(self):
+        """Make sure we wait for keys correctly"""
+        d = DDict(2, 1, 3000000, wait_for_keys=True, working_set_size=2)
+
+        # non-persistent key
+        proc1 = mp.Process(target=client_put, args=(d,))
+        proc1.start()
+        val = d['my_key']
+        self.assertEqual(val, 'my_value')
+        proc1.join()
+        self.assertEqual(0, proc1.exitcode)
         d.destroy()
 
     def test_wait_keys_get_put(self):
@@ -1741,7 +1813,7 @@ class TestDDict(unittest.TestCase):
         d["hello"] = "world"
         d.rollback()  ## 1
         d.rollback()  ## 0
-        with self.assertRaises(DDictCheckpointSync):
+        with self.assertRaises(DDictCheckpointSyncError):
             d.clear()
         d.destroy()
 
@@ -1971,6 +2043,58 @@ class TestDDict(unittest.TestCase):
             manager_nodes_d2[i] = b64encode(cloudpickle.dumps(manager_nodes_d2[i]))
         self.assertEqual(manager_nodes, manager_nodes_d2)
         d2.destroy()
+
+    def test_restart_with_path(self):
+        name = f"ddict_test_restart_{getpass.getuser()}"
+        d = DDict(2, 1, 3000000, trace=True, name=name, persist_path="../")
+        manager_nodes = d.manager_nodes
+        for i in range(len(manager_nodes)):
+            manager_nodes[i] = b64encode(cloudpickle.dumps(manager_nodes[i]))
+        d.destroy(allow_restart=True)
+
+        d2 = DDict(2, 1, 3000000, trace=True, name=name, restart=True, persist_path="../")
+        manager_nodes_d2 = d2.manager_nodes
+        for i in range(len(manager_nodes)):
+            manager_nodes_d2[i] = b64encode(cloudpickle.dumps(manager_nodes_d2[i]))
+        self.assertEqual(manager_nodes, manager_nodes_d2)
+        d2.destroy()
+
+    def test_restart_posix_persister(self):
+        name = f"ddict_test_restart_{getpass.getuser()}"
+        d = DDict(2, 1, 3000000, trace=True, name=name, wait_for_keys=True, working_set_size=2, persister_class=PosixCheckpointPersister)
+        manager_nodes = d.manager_nodes
+        for i in range(len(manager_nodes)):
+            manager_nodes[i] = b64encode(cloudpickle.dumps(manager_nodes[i]))
+        d.destroy(allow_restart=True)
+
+        d2 = DDict(2, 1, 3000000, trace=True, name=name, restart=True, wait_for_keys=True, working_set_size=2, persister_class=PosixCheckpointPersister)
+        manager_nodes_d2 = d2.manager_nodes
+        for i in range(len(manager_nodes)):
+            manager_nodes_d2[i] = b64encode(cloudpickle.dumps(manager_nodes_d2[i]))
+        self.assertEqual(manager_nodes, manager_nodes_d2)
+        d2.destroy()
+
+    @unittest.skipIf(not DAOS_EXISTS, "Skipped. DAOS is not available on the system.")
+    def test_restart_daos_persister(self):
+        name = f"ddict_test_restart_{getpass.getuser()}"
+        d = DDict(2, 1, 3000000, trace=True, name=name, wait_for_keys=True, working_set_size=2, persister_class=DAOSCheckpointPersister, persist_path="testpool")
+        manager_nodes = d.manager_nodes
+        for i in range(len(manager_nodes)):
+            manager_nodes[i] = b64encode(cloudpickle.dumps(manager_nodes[i]))
+        d.destroy(allow_restart=True)
+
+        d2 = DDict(2, 1, 3000000, trace=True, name=name, restart=True, wait_for_keys=True, working_set_size=2, persister_class=DAOSCheckpointPersister, persist_path="testpool")
+        manager_nodes_d2 = d2.manager_nodes
+        for i in range(len(manager_nodes)):
+            manager_nodes_d2[i] = b64encode(cloudpickle.dumps(manager_nodes_d2[i]))
+        self.assertEqual(manager_nodes, manager_nodes_d2)
+        d2.destroy()
+        subprocess.run(
+            f"daos cont destroy {DAOS_POOL_NAME} {name}",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     def test_restart_with_keys(self):
         name = f"ddict_test_restart_with_keys_{getpass.getuser()}"
@@ -2284,7 +2408,7 @@ class TestDDict(unittest.TestCase):
         ddict.start_batch_put(persist=False)
         ddict["hello"] = "world"
         ddict[1] = 2
-        with self.assertRaises(DDictFutureCheckpoint):
+        with self.assertRaises(DDictFutureCheckpointError):
             ddict.end_batch_put()
 
         ddict.destroy()
@@ -2302,7 +2426,7 @@ class TestDDict(unittest.TestCase):
         ddict.start_batch_put(persist=False)
         ddict["hello"] = "world"
         ddict[1] = 2
-        with self.assertRaises(DDictCheckpointSync):
+        with self.assertRaises(DDictCheckpointSyncError):
             ddict.end_batch_put()
 
         ddict.destroy()
@@ -2576,7 +2700,7 @@ class TestDDict(unittest.TestCase):
         ddict.start_batch_put(persist=False)
         ddict.bput("hello", "world")
         ddict.bput(1, 2)
-        with self.assertRaises(DDictFutureCheckpoint) as ex:
+        with self.assertRaises(DDictFutureCheckpointError) as ex:
             ddict.end_batch_put()
         self.assertEqual("DRAGON_DDICT_FUTURE_CHECKPOINT", ex.exception.lib_err)
 
@@ -2596,7 +2720,7 @@ class TestDDict(unittest.TestCase):
         ddict.start_batch_put(persist=False)
         ddict.bput("hello", "world")
         ddict.bput(1, 2)
-        with self.assertRaises(DDictCheckpointSync):
+        with self.assertRaises(DDictCheckpointSyncError):
             ddict.end_batch_put()
 
         ddict.destroy()
@@ -2605,7 +2729,7 @@ class TestDDict(unittest.TestCase):
         NUM_MANAGERS = 12
         ddict = DDict(NUM_MANAGERS, 1, 4096 * NUM_MANAGERS, trace=True, working_set_size=2, wait_for_keys=True)
         x = np.ones(4096, dtype=np.int32)
-        with self.assertRaises(DDictManagerFull):
+        with self.assertRaises(DDictFullError):
             ddict.bput("np array ", x)
         ddict.destroy()
 
@@ -2715,6 +2839,9 @@ class TestDDictPersist(unittest.TestCase):
         for p in pathlib.Path(".").glob("*.ddict"):
             os.remove(p)
 
+        for p in pathlib.Path(".").glob("ddict_orc_*"):
+            os.remove(p)
+
     def test_persist_1_checkpoint_freq_1_cnt_1_restore_from_0(self):
         """Persist one checkpoint and restore."""
         # This test persists chkpt 0 to disk. Persist count is 1 so the chkpt is kept.
@@ -2751,6 +2878,7 @@ class TestDDictPersist(unittest.TestCase):
             name=restore_name,
             restore_from=chkpt_restore,
             read_only=True,
+            persister_class=PosixCheckpointPersister,
         )
         # chkpt ID should be set to the one ddict restored from
         self.assertEqual(dd_restore.checkpoint_id, chkpt_restore)
@@ -2803,6 +2931,7 @@ class TestDDictPersist(unittest.TestCase):
             name=restore_name,
             restore_from=chkpt_restore,
             read_only=True,
+            persister_class=PosixCheckpointPersister,
         )
         # checkpoint ID should be set to the one ddict restored from
         self.assertEqual(dd_restore.checkpoint_id, chkpt_restore)
@@ -2866,6 +2995,7 @@ class TestDDictPersist(unittest.TestCase):
             name=restore_name,
             restore_from=chkpt_restore,
             read_only=True,
+            persister_class=PosixCheckpointPersister,
         )
         # checkpoint ID should be set to the one ddict restored from
         self.assertEqual(dd_restore.checkpoint_id, chkpt_restore)
@@ -2934,6 +3064,7 @@ class TestDDictPersist(unittest.TestCase):
             name=restore_name,
             restore_from=chkpt_restore,
             read_only=True,
+            persister_class=PosixCheckpointPersister,
         )
         self.assertEqual(dd_restore.persisted_ids(), [0, 2])
         # checkpoint ID should be set to the one ddict restored from
@@ -3014,6 +3145,7 @@ class TestDDictPersist(unittest.TestCase):
             name=restore_name,
             restore_from=chkpt_restore,
             read_only=True,
+            persister_class=PosixCheckpointPersister,
         )
         self.assertEqual(dd_restore.persisted_ids(), [2, 4])
         # checkpoint ID should be set to the one ddict restored from
@@ -3061,6 +3193,7 @@ class TestDDictPersist(unittest.TestCase):
                 name=restore_name,
                 restore_from=chkpt_restore,
                 read_only=True,
+                persister_class=PosixCheckpointPersister,
             )
         self.assertIn(
             "DRAGON_DDICT_PERSIST_CHECKPOINT_UNAVAILABLE",
@@ -3129,6 +3262,7 @@ class TestDDictPersist(unittest.TestCase):
             name=restore_name,
             restore_from=chkpt_restore,
             read_only=True,
+            persister_class=PosixCheckpointPersister,
         )
         # checkpoint ID should be set to the one ddict restored from
         self.assertEqual(dd_restore.checkpoint_id, chkpt_restore)
@@ -3197,6 +3331,7 @@ class TestDDictPersist(unittest.TestCase):
             name=restore_name,
             restore_from=chkpt_restore,
             read_only=True,
+            persister_class=PosixCheckpointPersister,
         )
         # checkpoint ID should be set to the one ddict restored from
         self.assertEqual(dd_restore.checkpoint_id, chkpt_restore)
@@ -3251,6 +3386,7 @@ class TestDDictPersist(unittest.TestCase):
             read_only=True,
             name=name,
             restore_from=0,
+            persister_class=PosixCheckpointPersister,
         )
         self.assertEqual(dd_restore.persisted_ids(), [i for i in range(MAX_PERSISTED_CHKPT_ID + 1)])
         self.assertEqual(dd_restore["key"], "val0")
@@ -3358,6 +3494,7 @@ class TestDDictPersist(unittest.TestCase):
             persist_freq=1,
             name=name,
             restore_from=2,
+            persister_class=PosixCheckpointPersister,
         )
 
         path = pathlib.Path(".")
@@ -3451,6 +3588,7 @@ class TestDDictPersist(unittest.TestCase):
             restore_from=0,
             name=name,
             trace=True,
+            persister_class=PosixCheckpointPersister,
         )
         self.assertEqual(d_restore.persisted_ids(), [0])
         self.assertEqual(d_restore["key"], "val0")
@@ -3472,6 +3610,7 @@ class TestDDictPersist(unittest.TestCase):
             persist_freq=1,
             restore_from=0,
             name=name,
+            persister_class=PosixCheckpointPersister,
         )
         self.assertEqual(d_second_restore["key"], "valrestore0")
         self.assertEqual(d_second_restore["hello"], "world0")
@@ -3544,6 +3683,7 @@ class TestDDictPersist(unittest.TestCase):
             persist_freq=1,
             name=restore_name,
             restore_from=0,
+            persister_class=PosixCheckpointPersister,
         )
         self.assertEqual(d_restore.persisted_ids(), [i for i in range(3)])
         d_restore.destroy()
@@ -3610,6 +3750,7 @@ class TestDDictPersist(unittest.TestCase):
             read_only=True,
             name=restore_name,
             restore_from=1,
+            persister_class=PosixCheckpointPersister,
         )
         self.assertEqual(d_restore.persisted_ids(), [1, 2])
         d_restore.destroy()
@@ -3647,6 +3788,7 @@ class TestDDictPersist(unittest.TestCase):
             read_only=True,
             name=restore_name,
             restore_from=1,
+            persister_class=PosixCheckpointPersister,
         )
         self.assertEqual(d_restore.persisted_ids(), [1])
         self.assertEqual(d_restore["hello"], "world1")
@@ -3918,6 +4060,7 @@ class TestDDictPersist(unittest.TestCase):
             read_only=True,
             name=name,
             restore_from=0,
+            persister_class=PosixCheckpointPersister,
         )
         # put
         with self.assertRaises(DDictError) as ex:
@@ -4022,7 +4165,7 @@ class TestDDictDAOSPersist(unittest.TestCase):
 
     def tearDown(self):
         subprocess.run(
-            f"daos cont destroy {self._daos_pool_name} {self._ddict_name}",
+            f"daos cont destroy {DAOS_POOL_NAME} {self._ddict_name}",
             shell=True,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -4030,8 +4173,6 @@ class TestDDictDAOSPersist(unittest.TestCase):
 
     @unittest.skipIf(not DAOS_EXISTS, "Skipped. DAOS is not available on the system.")
     def test_daos_write_one_chkpt(self):
-        POOL_NAME = "testpool"
-        self._daos_pool_name = POOL_NAME
         dd = DDict(
             1,
             1,
@@ -4039,7 +4180,7 @@ class TestDDictDAOSPersist(unittest.TestCase):
             trace=True,
             working_set_size=2,
             wait_for_keys=True,
-            persist_path=POOL_NAME,
+            persist_path=DAOS_POOL_NAME,
             persist_freq=1,
             persist_count=-1,
             persister_class=DAOSCheckpointPersister,
@@ -4056,8 +4197,6 @@ class TestDDictDAOSPersist(unittest.TestCase):
 
     @unittest.skipIf(not DAOS_EXISTS, "Skipped. DAOS is not available on the system.")
     def test_daos_write_and_read_one_chkpt(self):
-        POOL_NAME = "testpool"
-        self._daos_pool_name = POOL_NAME
         dd = DDict(
             1,
             1,
@@ -4065,7 +4204,7 @@ class TestDDictDAOSPersist(unittest.TestCase):
             trace=True,
             working_set_size=2,
             wait_for_keys=True,
-            persist_path=POOL_NAME,
+            persist_path=DAOS_POOL_NAME,
             persist_freq=1,
             persist_count=-1,
             persister_class=DAOSCheckpointPersister,
@@ -4086,11 +4225,12 @@ class TestDDictDAOSPersist(unittest.TestCase):
             1,
             1500000,
             trace=True,
-            persist_path=POOL_NAME,
+            persist_path=DAOS_POOL_NAME,
             persist_freq=1,
             restore_from=0,
             name=dd_name,
             read_only=True,
+            persister_class=DAOSCheckpointPersister,
         )
         self.assertEqual(dd_restore.persisted_ids(), [0])
         self.assertEqual(dd_restore["key"], "val0")
@@ -4098,8 +4238,6 @@ class TestDDictDAOSPersist(unittest.TestCase):
 
     @unittest.skipIf(not DAOS_EXISTS, "Skipped. DAOS is not available on the system.")
     def test_daos_write_and_read_two_chkpt(self):
-        POOL_NAME = "testpool"
-        self._daos_pool_name = POOL_NAME
         dd = DDict(
             1,
             1,
@@ -4107,7 +4245,7 @@ class TestDDictDAOSPersist(unittest.TestCase):
             trace=True,
             working_set_size=2,
             wait_for_keys=True,
-            persist_path=POOL_NAME,
+            persist_path=DAOS_POOL_NAME,
             persist_freq=1,
             persist_count=-1,
             persister_class=DAOSCheckpointPersister,
@@ -4130,11 +4268,12 @@ class TestDDictDAOSPersist(unittest.TestCase):
             1,
             1500000,
             trace=True,
-            persist_path=POOL_NAME,
+            persist_path=DAOS_POOL_NAME,
             persist_freq=1,
             restore_from=0,
             name=dd_name,
             read_only=True,
+            persister_class=DAOSCheckpointPersister,
         )
         self.assertEqual(dd_restore.persisted_ids(), [0, 1])
         self.assertEqual(dd_restore["key"], "val0")
@@ -4181,7 +4320,7 @@ class TestTooBig(unittest.TestCase):
         d = DDict(1, 1, 4096)
         x = np.ones(4096, dtype=np.int32)
 
-        with self.assertRaises(DDictManagerFull):
+        with self.assertRaises(DDictFullError):
             d["np array"] = x
 
         d.destroy()
@@ -4193,7 +4332,7 @@ class TestTooBig(unittest.TestCase):
         d = DDict(1, 1, 4 * 1024 * 1024)
         x = np.ones(4 * 1024 * 1024, dtype=np.int32)
 
-        with self.assertRaises(DDictManagerFull):
+        with self.assertRaises(DDictFullError):
             d["np array"] = x
 
         d.destroy()
@@ -4211,7 +4350,7 @@ class TestTooBig(unittest.TestCase):
 
         x = np.ones(4 * 1024 * 1024, dtype=np.int32)
 
-        with self.assertRaises(DDictManagerFull):
+        with self.assertRaises(DDictFullError):
             d["np array"] = x
 
         d.destroy()

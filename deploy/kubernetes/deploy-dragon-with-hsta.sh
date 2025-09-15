@@ -88,7 +88,7 @@ data:
                 fieldRef:
                   fieldPath: metadata.uid
             - name: DRAGON_LOG_DEVICE_ACTOR_FILE
-              value: "DEBUG"
+              value: "{{temp_log_value}}"
             # - name: UCX_TCP_MAX_CONN_RETRIES
             #   value: "250"
             # - name: UCX_LOG_LEVEL

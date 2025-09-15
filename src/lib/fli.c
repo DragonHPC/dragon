@@ -450,9 +450,11 @@ static dragonError_t _free_buffered_mem(dragonFLIRecvHandle_t* recvh) {
 
     while (node != NULL) {
         prev = node;
-        err = dragon_memory_free(&node->mem);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not free buffered managed memory.");
+        if (recvh->free_mem) {
+            err = dragon_memory_free(&node->mem);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not free buffered managed memory.");
+        }
         node = node->next;
         free(prev);
     }
@@ -1065,8 +1067,11 @@ static dragonError_t _empty_the_channel(dragonChannelDescr_t* channel, bool* fou
             if (arg == FLI_EOT && found_EOT != NULL)
                 *found_EOT = true;
 
-            if ((arg == FLI_EOT) || free_mem)
+            if ((arg == FLI_EOT) || free_mem) {
                 err = dragon_memory_free(&mem);
+                if (err != DRAGON_CHANNEL_EMPTY)
+                    append_err_return(err, "There was an error free memory in while emptying the channel.");
+            }
 
             if (num_read == max)
                 err = DRAGON_CHANNEL_EMPTY;

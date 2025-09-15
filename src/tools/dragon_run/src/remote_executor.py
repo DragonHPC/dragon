@@ -33,11 +33,12 @@ class RemoteExecutor:
 
     _DTBL = {}  # dispatch router, keyed by type of shepherd message
 
-    def __init__(self, my_rank, hosts, fanout=facts.DEFAULT_FANOUT):
+    def __init__(self, my_rank, hosts, fanout=facts.DEFAULT_FANOUT, log_level: int = logging.NOTSET):
         self.hosts: List[str] = hosts
         self.n_hosts: int = len(hosts)
         self.fanout: int = fanout
         self.my_rank: int = my_rank
+        self.log_level: int = log_level
         self.msg_q: Queue = Queue()
         self.num_children: int = min(self.n_hosts, self.fanout)
         self.shutdown_event: threading.Event = threading.Event()
@@ -162,10 +163,7 @@ class RemoteExecutor:
             for i in range(self.num_children):
                 child_rank: int = self.my_rank * self.fanout + i + 1
                 backend_connector = BackendConnector(
-                    host=SSHHost(
-                        hostname=self.hosts[i],
-                        rank=child_rank,
-                    ),
+                    host=SSHHost(hostname=self.hosts[i], rank=child_rank, log_level=self.log_level),
                     child_tree=self.get_child_tree(i),
                     fanout=self.fanout,
                     remote_executor_q=self.msg_q,
@@ -237,8 +235,8 @@ class RemoteExecutor:
 
 
 class FERemoteExecutor(RemoteExecutor):
-    def __init__(self, hostnames: List[str], drun_q: Queue, fanout: int = facts.DEFAULT_FANOUT):
-        super().__init__(0, hostnames, fanout)
+    def __init__(self, hostnames: List[str], drun_q: Queue, fanout: int = facts.DEFAULT_FANOUT, log_level: int = logging.NOTSET):
+        super().__init__(0, hostnames, fanout, log_level)
         self.drun_q = drun_q
 
     def _handleAbnormalRuntimeExit(self, msg: messages.AbnormalRuntimeExit):
@@ -256,8 +254,8 @@ class FERemoteExecutor(RemoteExecutor):
 
 
 class BERemoteExecutor(RemoteExecutor):
-    def __init__(self, my_rank, hostnames, fanout, drbe_q):
-        super().__init__(my_rank, hostnames, fanout)
+    def __init__(self, my_rank, hostnames, fanout, drbe_q, log_level: int = logging.NOTSET):
+        super().__init__(my_rank, hostnames, fanout, log_level)
         self.drbe_q = drbe_q
 
     def _handleAbnormalRuntimeExit(self, msg: messages.AbnormalRuntimeExit):

@@ -8,6 +8,9 @@ import dragon
 from dragon.data.ddict.ddict import DDict, PosixCheckpointPersister, DAOSCheckpointPersister
 from multiprocessing import set_start_method
 
+daos_total_time = []
+posix_total_time = []
+
 class TestTimer:
 
     def __init__(self):
@@ -28,6 +31,7 @@ class TestDDictChkptDump:
         self._managers_per_node = parser.managers_per_node
         self._total_mem_size = int(parser.total_mem_size * (1024**3))
         self._persister = persister
+        self._trace = parser.trace
 
         self._persist_path_created = False
         if persister == PosixCheckpointPersister:
@@ -74,8 +78,14 @@ class TestDDictChkptDump:
         self._fill_chkpt()
         t = TestTimer()
         self._dd.persist()
-        t_end = t.elapsed()
-        print(f"{self._persister} persisted one chkpt, time: {t_end}s", flush=True)
+        total_time = t.elapsed()
+        if self._trace:
+            print(f"{self._persister} persisted one chkpt, time: {total_time}s", flush=True)
+        if self._persister == PosixCheckpointPersister:
+            posix_total_time.append(total_time)
+        elif self._persister == DAOSCheckpointPersister:
+            daos_total_time.append(total_time)
+
 
     def destroy(self):
         # cleanup files
@@ -113,12 +123,6 @@ if __name__ == "__main__":
         help="number of nodes the dictionary distributed across",
     )
     parser.add_argument(
-        "--nclients",
-        type=int,
-        default=1,
-        help="number of client processes performing operations on the dict",
-    )
-    parser.add_argument(
         "--managers_per_node",
         type=int,
         default=1,
@@ -127,20 +131,58 @@ if __name__ == "__main__":
     parser.add_argument(
         "--total_mem_size",
         type=float,
-        default=0.25,
+        default=40,
         help="total managed memory size for dictionary in GB",
+    )
+    parser.add_argument(
+        "--trace",
+        action="store_true",
+        help="trace time performance for each iteration",
+    )
+    parser.add_argument(
+        "--benchmarks",
+        action="store_true",
+        help="run with a list of different sizes of checkpoint and get the performance comparison",
     )
 
     my_args = parser.parse_args()
     set_start_method("dragon")
 
-    test_posix_dump = TestDDictChkptDump(PosixCheckpointPersister, my_args)
-    test_daos_dump = TestDDictChkptDump(DAOSCheckpointPersister, my_args)
+    if my_args.benchmarks:
+        for chkpt_sz in range(100, 10001, 100):
+            posix_total_time = []
+            daos_total_time = []
 
-    test_posix_dump.stats()
+            for i in range(10):
+                print(f"========== size {chkpt_sz}, round {i} ==========", flush=True)
+                my_args.chkpt_size = chkpt_sz * (1024**2)
+                test_daos_dump = TestDDictChkptDump(DAOSCheckpointPersister, my_args)
+                test_daos_dump.write_and_persist_current_chkpt()
+                test_daos_dump.destroy()
+                assert (i+1) == len(daos_total_time)
+                res = f"DAOS persister: {sum(daos_total_time)/len(daos_total_time)}"
+                print(res, flush=True)
 
-    test_posix_dump.write_and_persist_current_chkpt()
-    test_daos_dump.write_and_persist_current_chkpt()
+                test_posix_dump = TestDDictChkptDump(PosixCheckpointPersister, my_args)
+                test_posix_dump.write_and_persist_current_chkpt()
+                # test_posix_dump.stats()
+                test_posix_dump.destroy()
+                assert (i+1) == len(posix_total_time)
+                res = f"POSIX persister: {sum(posix_total_time)/len(posix_total_time)}"
+                print(res, flush=True)
+    else:
+        posix_total_time = []
+        daos_total_time = []
+        test_daos_dump = TestDDictChkptDump(DAOSCheckpointPersister, my_args)
+        test_daos_dump.write_and_persist_current_chkpt()
+        test_daos_dump.stats()
+        test_daos_dump.destroy()
+        res = f"DAOS persister: {daos_total_time[0]}"
+        print(res, flush=True)
 
-    test_posix_dump.destroy()
-    test_daos_dump.destroy()
+        test_posix_dump = TestDDictChkptDump(PosixCheckpointPersister, my_args)
+        test_posix_dump.write_and_persist_current_chkpt()
+        test_posix_dump.destroy()
+        res = f"POSIX persister: {posix_total_time[0]}"
+        print(res, flush=True)
+

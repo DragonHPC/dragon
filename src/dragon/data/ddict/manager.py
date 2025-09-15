@@ -40,10 +40,10 @@ from ...rc import DragonError
 from .ddict import (
     KEY_HINT,
     VALUE_HINT,
-    DDictManagerFull,
-    DDictCheckpointSync,
+    DDictFullError,
+    DDictCheckpointSyncError,
     DDictManagerStats,
-    DDictFutureCheckpoint,
+    DDictFutureCheckpointError,
     DDictPersistCheckpointError,
 )
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
@@ -422,7 +422,7 @@ class PutOp(DictOp):
             self.manager._send_msg(resp_msg, self.manager._buffered_client_connections_map[self.client_id])
             return True
 
-        except (DDictManagerFull, fli.DragonFLIOutOfMemoryError) as ex:
+        except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
             log.info(
                 "Manager %s with PUID %s could not process put request. %s",
                 self.manager._manager_id,
@@ -436,7 +436,7 @@ class PutOp(DictOp):
             self.manager._send_msg(resp_msg, self.manager._buffered_client_connections_map[self.client_id])
             return True
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info(
                 "Manager %s with PUID %s could not process put request. %s",
                 self.manager._manager_id,
@@ -492,7 +492,7 @@ class BatchPutOp(PutOp):
         chkpt = self.manager._working_set.put(self.chkpt_id)
 
         if chkpt is None:
-            raise DDictFutureCheckpoint(
+            raise DDictFutureCheckpointError(
                 DragonError.DDICT_FUTURE_CHECKPOINT,
                 f"The checkpoint id {self.chkpt_id} is newer than the working set and cannot be used for a put operation.",
             )
@@ -567,7 +567,7 @@ class BPutOp(PutOp):
             connection.detach()
             return True
 
-        except (DDictManagerFull, fli.DragonFLIOutOfMemoryError) as ex:
+        except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
             log.info(
                 "Manager %s with PUID %s could not process bput request. %s",
                 self.manager._manager_id,
@@ -591,7 +591,7 @@ class BPutOp(PutOp):
             connection.detach()
             return True
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info("Manager %s with PUID %s could not process bput request. %s", self._manager_id, self._puid, ex)
             errInfo = f"The requested bput operation for checkpoint id {self.chkpt_id} was older than the working set range of {self.manager._working_set.range}"
             log.info(errInfo)
@@ -686,7 +686,7 @@ class GetOp(DictOp):
 
             return True
 
-        except (DDictManagerFull, fli.DragonFLIOutOfMemoryError) as ex:
+        except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
             log.info(
                 "Manager %s with PUID=%s could not process get request. %s",
                 self.manager._manager_id,
@@ -706,7 +706,7 @@ class GetOp(DictOp):
             )
             return True
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info(
                 "Manager %s with PUID=%s could not process get request. %s",
                 self.manager._manager_id,
@@ -797,7 +797,7 @@ class PopOp(DictOp):
 
             return True
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info(
                 "Manager %s with PUID=%s could not process pop request. %s",
                 self.manager._manager_id,
@@ -944,9 +944,15 @@ class ValuesOp(DictOp):
 
         values = self.manager._working_set.values(self.chkpt_id)
 
-        resp_msg = dmsg.DDValuesResponse(self.manager._tag_inc(), ref=self.tag, err=DragonError.SUCCESS)
+        free_mem = not self.manager._read_only
+        resp_msg = dmsg.DDValuesResponse(self.manager._tag_inc(), ref=self.tag, err=DragonError.SUCCESS, freeMem=free_mem)
         connection = fli.FLInterface.attach(b64decode(self.respFLI))
 
+        # Since this runs in a thread, a client that changes the read_only attribute while iterating over the values of
+        # a DDict will not necessarily have the right value of read_only. It is up to a client program to finish any
+        # iterations (i.e. closing an iteration - breaking a loop for instance - or completing it) before changing the
+        # value of read_only.
+        log.debug(f'In ValuesOp with {self.manager._read_only=}')
         t = threading.Thread(
             target=self.manager._send_dmsg_and_values,
             args=(
@@ -954,8 +960,8 @@ class ValuesOp(DictOp):
                 connection,
                 values,
                 True,
-                True,
-            ),  # TBD: The last True should be replaced with the read_only attribute in manager.
+                self.manager._read_only,
+            ),
         )
         t.start()
         self.manager._threads.append(t)
@@ -976,9 +982,14 @@ class ItemsOp(DictOp):
 
         items = self.manager._working_set.items(self.chkpt_id)
 
-        resp_msg = dmsg.DDItemsResponse(self.manager._tag_inc(), ref=self.tag, err=DragonError.SUCCESS)
+        free_mem = not self.manager._read_only
+        resp_msg = dmsg.DDItemsResponse(self.manager._tag_inc(), ref=self.tag, err=DragonError.SUCCESS, freeMem=free_mem)
         connection = fli.FLInterface.attach(b64decode(self.respFLI))
 
+        # Since this runs in a thread, a client that changes the read_only attribute while iterating over the items of
+        # a DDict will not necessarily have the right value of read_only. It is up to a client program to finish any
+        # iterations (i.e. closing an iteration - breaking a loop for instance - or completing it) before changing the
+        # value of read_only.
         t = threading.Thread(
             target=self.manager._send_dmsg_and_items,
             args=(resp_msg, connection, items, True),
@@ -1015,7 +1026,7 @@ class ClearOp(DictOp):
 
             return True
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info(
                 "Manager %s with PUID=%s could not process cleaer request. %s",
                 self.manager._manager_id,
@@ -1161,19 +1172,11 @@ class WorkingSet:
                 key.free()
 
     def _force_persist(self, chkptID: int):
-
-        def retire_thread_func(chkpt):
-            self._manager._persister.dump(chkpt, force=True)
-            chkpt.retire()
-
         chkpt = self._chkpts[chkptID]
-        kvs_to_clear = set(chkpt.map.keys())
-        chkpt.set_kvs_to_clear(kvs_to_clear)
-
-        chkpt._reattach = False
-        t = threading.Thread(target=retire_thread_func, args=(chkpt,))
-        t.start()
-        self._manager._threads.append(t)
+        reattach = self._manager._reattach
+        self._manager._reattach = False
+        self._manager._persister.dump(chkpt, force=True)
+        self._manager._reattach = reattach
 
     def _retire_checkpoint(self, checkpoints: dict[int, Checkpoint], id_to_retire: int):
         # This method is invoked only under non read-only mode. In read-only mode
@@ -1219,7 +1222,7 @@ class WorkingSet:
 
         # Asking for a retired checkpoint that no longer exist.
         if chkpt_id < oldest_chkpt_id:
-            raise DDictCheckpointSync(
+            raise DDictCheckpointSyncError(
                 DragonError.DDICT_CHECKPOINT_RETIRED,
                 f"The checkpoint id {chkpt_id} is older than the working set and cannot be used for a get operation.",
             )
@@ -1310,7 +1313,7 @@ class WorkingSet:
 
             # Asking for a retired checkpoint that no longer exist.
             if chkpt_id < oldest_chkpt_id:
-                raise DDictCheckpointSync(
+                raise DDictCheckpointSyncError(
                     DragonError.DDICT_CHECKPOINT_RETIRED,
                     f"The checkpoint id {chkpt_id} is older than the working set and cannot be used for a get operation.",
                 )
@@ -1355,7 +1358,7 @@ class WorkingSet:
             oldest_chkpt_id = self.oldest_chkpt_id
 
             if chkpt_id < oldest_chkpt_id:
-                raise DDictCheckpointSync(
+                raise DDictCheckpointSyncError(
                     DragonError.DDICT_CHECKPOINT_RETIRED,
                     f"The checkpoint id {chkpt_id} is older than the working set and cannot be used for a put operation.",
                 )
@@ -1380,7 +1383,7 @@ class WorkingSet:
 
             # Asking for a retired checkpoint that no longer exist.
             if chkpt_id < oldest_chkpt_id:
-                raise DDictCheckpointSync(
+                raise DDictCheckpointSyncError(
                     DragonError.DDICT_CHECKPOINT_RETIRED,
                     f"The checkpoint id {chkpt_id} is older than the working set and cannot be used for a get operation.",
                 )
@@ -1449,7 +1452,7 @@ class WorkingSet:
 
             # Asking for a retired checkpoint that no longer exist.
             if chkpt_id < oldest_chkpt_id:
-                raise DDictCheckpointSync(
+                raise DDictCheckpointSyncError(
                     DragonError.DDICT_CHECKPOINT_RETIRED,
                     f"The checkpoint id {chkpt_id} is older than the working set and cannot be used for a the operation.",
                 )
@@ -1698,6 +1701,7 @@ class Manager:
                 return
 
         try:
+            log.debug("DDict Manager Created/Attached to pool with muid=%d" % self._pool.muid)
             # We create these two channels in the default pool to isolate them
             # from the manager pool which could fill up. This is to make the
             # receiving of messages a bit more resistant to the manager pool
@@ -1750,7 +1754,7 @@ class Manager:
                 persist_freq=self._persist_freq,
             )
 
-        # Restore from the persistent checkpoint.
+        # Restore from the persisted checkpoint.
         try:
             if self._restore_from is not None:
                 self._persister.position(self._restore_from)
@@ -1903,7 +1907,7 @@ class Manager:
                 new_mem = client_mem.copy(self._pool, timeout=0)
                 log.debug("Manager was required to copy value to pool. This should not happen!")
             except dmem.DragonMemoryError:
-                raise DDictManagerFull(DragonError.MEMORY_POOL_FULL, "Could not move data to manager pool.")
+                raise DDictFullError(DragonError.MEMORY_POOL_FULL, "Could not move data to manager pool.")
             finally:
                 client_mem.free()
 
@@ -2027,8 +2031,9 @@ class Manager:
                                 chkpt.persist.remove(key_mem)
 
     def _send_dmsg_and_values(
-        self, resp_msg, connection, values: list, detach: bool = False, no_copy_read_only=False
+        self, resp_msg, connection, values: list, detach: bool = False, no_copy_read_only: bool = False
     ) -> None:
+
 
         if no_copy_read_only:
             turbo_mode=False # True seems to have no affect here.
@@ -2071,16 +2076,36 @@ class Manager:
         if detach:
             connection.detach()
 
-    def _send_dmsg_and_items(self, resp_msg, connection, items: dict, detach: bool = False) -> None:
+    def _send_dmsg_and_items(
+            self, resp_msg, connection, items: dict, detach: bool = False, no_copy_read_only: bool = False
+    ) -> None:
+
+        if no_copy_read_only:
+            turbo_mode=False # True seems to have no affect here.
+        else:
+            turbo_mode=False
+
         try:
-            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout) as sendh:
+            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=turbo_mode) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if resp_msg.err == DragonError.SUCCESS:
                     for key in items:
-                        sendh.send_mem(key, transfer_ownership=False, arg=KEY_HINT, timeout=self._timeout)
+                        sendh.send_mem(
+                            key,
+                            transfer_ownership=False,
+                            no_copy_read_only=no_copy_read_only,
+                            arg=KEY_HINT,
+                            timeout=self._timeout
+                        )
                         val_list = items[key]
                         for val in val_list:
-                            sendh.send_mem(val, transfer_ownership=False, arg=VALUE_HINT, timeout=self._timeout)
+                            sendh.send_mem(
+                                val,
+                                transfer_ownership=False,
+                                no_copy_read_only=no_copy_read_only,
+                                arg=VALUE_HINT,
+                                timeout=self._timeout
+                            )
         except EOFError:
             # The receiver ended transmission early so just ignore it.
             pass
@@ -2229,6 +2254,13 @@ class Manager:
                             tb,
                         )
 
+        except fli.DragonFLIError as ex:
+            tb = traceback.format_exc()
+            if ex.rc == DragonError.OBJECT_DESTROYED:
+                log.debug("An error occurred in the manager on the main FLI receive handle. The error may have occurred because you did not destroy the DDict before the Dragon run-time exited.")
+                log.debug("Here are the error details:")
+            log.debug("FLI exception in manager:\n%s\n Traceback:\n%s", ex, tb)
+
         except Exception as ex:
             tb = traceback.format_exc()
             log.debug("There was an exception in manager:\n%s\n Traceback:\n%s", ex, tb)
@@ -2238,7 +2270,7 @@ class Manager:
             # orchestrator will get overwhelmed with pending
             # responses if we hold onto the receive handle and try to
             # send response at the same time. The issue is that the
-            # orchestrator as one stream channel and that stream
+            # orchestrator has one stream channel and that stream
             # channel is not re-usable until the receive handle is
             # closed. HOWEVER, if we hold open the receive handle AND
             # the orc's response queue also fills with pending
@@ -2404,7 +2436,7 @@ class Manager:
 
         try:
             if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
-                raise DDictManagerFull(
+                raise DDictFullError(
                     DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                 )
 
@@ -2460,7 +2492,7 @@ class Manager:
                     self._process_deferred_ops(msg.chkptID)
 
                     if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
-                        raise DDictManagerFull(
+                        raise DDictFullError(
                             DragonError.MEMORY_POOL_FULL,
                             f"DDict Manager {self._manager_id}: Pool reserve limit exceeded.",
                         )
@@ -2468,7 +2500,7 @@ class Manager:
                     client_key_mem = next_client_key_mem
 
                 # Discard the rest of stuff in recvh as we don't have enough memory.
-                except (DDictManagerFull, fli.DragonFLIOutOfMemoryError) as ex:
+                except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
                     log.info(
                         "Manager %s with PUID=%s could not process batch put request. %s",
                         self._manager_id,
@@ -2490,7 +2522,7 @@ class Manager:
                     return
 
                 # Discard the rest of stuff in recvh as the checkpoint is retired.
-                except DDictCheckpointSync as ex:
+                except DDictCheckpointSyncError as ex:
                     log.info(
                         "Manager %s with PUID=%s could not process batch put request. %s",
                         self._manager_id,
@@ -2513,7 +2545,7 @@ class Manager:
                     log.info("Streamed data now recovered. Sending put response to indicate failure.")
                     return
 
-                except DDictFutureCheckpoint as ex:
+                except DDictFutureCheckpointError as ex:
                     log.info(
                         "Manager %s with PUID=%s could not process batch put request. %s",
                         self._manager_id,
@@ -2626,7 +2658,7 @@ class Manager:
 
         try:
             if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
-                raise DDictManagerFull(
+                raise DDictFullError(
                     DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                 )
 
@@ -2730,7 +2762,7 @@ class Manager:
                     client_key_mem = next_client_key_mem
 
                 # Discard the rest of stuff in recvh as we don't have enough memory.
-                except (DDictManagerFull, fli.DragonFLIOutOfMemoryError) as ex:
+                except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
                     log.info(
                         "Manager %s with PUID %s could not process broadcast put request. %s",
                         self._manager_id,
@@ -2752,7 +2784,7 @@ class Manager:
                     return
 
                 # Discard the rest of stuff in recvh as the checkpoint is retired.
-                except DDictCheckpointSync as ex:
+                except DDictCheckpointSyncError as ex:
                     log.info(
                         "Manager %s with PUID=%s could not process batch put request. %s",
                         self._manager_id,
@@ -2775,7 +2807,7 @@ class Manager:
                     log.info("Streamed data now recovered. Sending bput response to indicate failure.")
                     return
 
-                except DDictFutureCheckpoint as ex:
+                except DDictFutureCheckpointError as ex:
                     log.info(
                         "Manager %s with PUID %s could not process broadcast put request. %s",
                         self._manager_id,
@@ -2824,7 +2856,7 @@ class Manager:
                 managerID=self._manager_id,
             )
 
-        except (DDictManagerFull, fli.DragonFLIOutOfMemoryError) as ex:
+        except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
             log.info(
                 "Manager %s with PUID=%s could not process broadcast bput request. %s",
                 self._manager_id,
@@ -2910,7 +2942,7 @@ class Manager:
         try:
             try:
                 if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
-                    raise DDictManagerFull(
+                    raise DDictFullError(
                         DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                     )
 
@@ -2984,7 +3016,7 @@ class Manager:
                     # if there's any get for this key, then process deferred gets
                     self._process_deferred_ops(msg.chkptID)
 
-            except (DDictManagerFull, fli.DragonFLIOutOfMemoryError) as ex:
+            except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
                 log.info("Manager %s with PUID %s could not process bput request. %s", self._manager_id, self._puid, ex)
                 # recover from the error by freeing memory and cleaning recvh.
                 log.info("About to recover memory")
@@ -3002,7 +3034,7 @@ class Manager:
                 self._send_msg(resp_msg, connection)
                 connection.detach()
 
-            except DDictCheckpointSync as ex:
+            except DDictCheckpointSyncError as ex:
                 log.info("Manager %s with PUID %s could not process bput request. %s", self._manager_id, self._puid, ex)
                 errInfo = f"The requested bput operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}"
                 log.info(errInfo)
@@ -3074,7 +3106,7 @@ class Manager:
 
         try:
             if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
-                raise DDictManagerFull(
+                raise DDictFullError(
                     DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                 )
 
@@ -3113,7 +3145,7 @@ class Manager:
                 # if there's any get for this key, then process deferred gets
                 self._process_deferred_ops(msg.chkptID)
 
-        except (DDictManagerFull, fli.DragonFLIOutOfMemoryError) as ex:
+        except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
             log.info("Manager %s with PUID %s could not process put request. %s", self._manager_id, self._puid, ex)
             # recover from the error by freeing memory and cleaning recvh.
             log.info("About to recover memory")
@@ -3122,7 +3154,7 @@ class Manager:
             resp_msg = dmsg.DDPutResponse(self._tag_inc(), ref=msg.tag, err=DragonError.MEMORY_POOL_FULL)
             self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info("Manager %s with PUID %s could not process put request. %s", self._manager_id, self._puid, ex)
             errInfo = f"The requested put operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}"
             log.info(errInfo)
@@ -3237,7 +3269,7 @@ class Manager:
 
             contains_op.perform()
 
-        except (DDictManagerFull, fli.DragonFLIOutOfMemoryError) as ex:
+        except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
             log.info("Manager %s with PUID=%s could not process get request. %s", self._manager_id, self._puid, ex)
             log.info("The requested contains operation could not be completed because the manager pool is too full")
             # recover from the error by freeing memory and cleaning recvh.
@@ -3249,7 +3281,7 @@ class Manager:
             )
             self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info("Manager %s with PUID=%s could not process contains request. %s", self._manager_id, self._puid, ex)
             errInfo = f"The requested contains operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}"
             log.info(errInfo)
@@ -3283,7 +3315,7 @@ class Manager:
 
             length_op.perform()
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info("Manager %s with PUID=%s could not process length request. %s", self._manager_id, self._puid, ex)
             errInfo = f"The requested length operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}"
             log.info(errInfo)
@@ -3442,7 +3474,7 @@ class Manager:
 
             keys_op.perform()
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info("Manager %s with PUID=%s could not process keys request. %s", self._manager_id, self._puid, ex)
             errInfo = f"The requested keys operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}"
             log.info(errInfo)
@@ -3477,7 +3509,7 @@ class Manager:
 
             values_op.perform()
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info("Manager %s with PUID=%s could not process values request. %s", self._manager_id, self._puid, ex)
             errInfo = f"The requested values operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}"
             log.info(errInfo)
@@ -3507,7 +3539,7 @@ class Manager:
 
             items_op.perform()
 
-        except DDictCheckpointSync as ex:
+        except DDictCheckpointSyncError as ex:
             log.info("Manager %s with PUID=%s could not process items request. %s", self._manager_id, self._puid, ex)
             errInfo = f"The requested items operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}"
             log.info(errInfo)

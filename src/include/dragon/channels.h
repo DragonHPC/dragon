@@ -573,6 +573,9 @@ dragonError_t
 dragon_channel_message_get_mem(const dragonMessage_t* msg, dragonMemoryDescr_t* mem_descr);
 
 dragonError_t
+dragon_channel_message_get_ptr_info(const dragonMessage_t* msg, void** ptr, size_t* size);
+
+dragonError_t
 dragon_channel_message_count(const dragonChannelDescr_t* ch, uint64_t* count);
 
 dragonError_t

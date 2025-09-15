@@ -82,6 +82,10 @@ typedef struct dragonBCastAttr_st {
     dragonULInt sync_num; /**< Only valid when DRAGON_SYNC is specified.
                                This specifies the number of waiters that must be waiting
                                before a trigger can occur. */
+    dragonULInt max_procs_to_track; /**< Track this many processes that are waiting on bcast.
+                                      If 0, then don't track them. The procs are tracked
+                                      so if a process exits while waiting on the bcast it
+                                      can be detected that the process no longer exists. */
 } dragonBCastAttr_t;
 
 typedef void

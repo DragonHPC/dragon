@@ -260,7 +260,7 @@ class DragonServer:
                     # return query request body as part of response
                     if tsdb_tag == "None":
                         tsdb_tag = None
-                    if request_body["showQuery"] == True:
+                    if request_body.get("showQuery", None) == True:
                         res["query"] = q
                         res["query"]["index"] = queries.index(q)
                     res["metric"] = q["metric"]

@@ -21,6 +21,7 @@ Python Reference
 
     channel_desc
     facts
+    gpu_desc
     group_desc
     messages
     node_desc

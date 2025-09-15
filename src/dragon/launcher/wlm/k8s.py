@@ -1,16 +1,17 @@
 import os
 import yaml
+import subprocess
 
-from .base import BaseNetworkConfig
+from .base import BaseWLM
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.facts import DEFAULT_TRANSPORT_NETIF, DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_PORT_RANGE
-from ...infrastructure.util import port_check
 from ...utils import host_id_from_k8s
 
-from typing import Union, Tuple
+
+from typing import Union, Tuple, Optional
 
 
-class KubernetesNetworkConfig(BaseNetworkConfig):
+class KubernetesNetworkConfig(BaseWLM):
 
     def __init__(self, network_prefix=None, port=None, hostlist=None):
 
@@ -85,3 +86,42 @@ class KubernetesNetworkConfig(BaseNetworkConfig):
                 port=int(be_port),
             )
         return self.node_descriptors
+
+    def _get_dragon_launch_be_args(
+        self,
+        fe_ip_addr: str,
+        fe_host_id: str,
+        frontend_sdesc: str,
+        network_prefix: str,
+        overlay_port: int,
+        transport_test_env: bool,
+    ) -> list[str]:
+        raise RuntimeError("KubernetesNetworkConfig does not implement _get_dragon_launch_be_args")
+
+    def _get_wlm_launch_be_args(self, args_map: dict, launch_args: list):
+        raise RuntimeError("KubernetesNetworkConfig does not implement _get_wlm_launch_be_args")
+
+    def _get_launch_be_args(
+        self,
+        args_map: dict,
+        launch_args: list,
+        nnodes: Optional[int] = None,
+        nodelist: Optional[list[str]] = None,
+        hostname: Optional[str] = None,
+    ):
+        raise RuntimeError("KubernetesNetworkConfig does not implement _get_launch_be_args")
+
+    def launch_backend(
+        self,
+        nnodes: int,
+        node_ip_addrs: Optional[list[str]],
+        nodelist: list[str],
+        args_map: dict,
+        fe_ip_addr: str,
+        fe_host_id: str,
+        frontend_sdesc: str,
+        network_prefix: str,
+        overlay_port: int,
+        transport_test_env: bool,
+    ) -> subprocess.Popen:
+        raise RuntimeError("KubernetesNetworkConfig does not implement launch_backend")

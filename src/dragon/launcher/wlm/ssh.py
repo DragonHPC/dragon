@@ -6,14 +6,14 @@ from itertools import groupby
 from io import BufferedIOBase, TextIOBase
 from os import environ, getcwd
 from shlex import quote
-from typing import Dict, List
+from typing import Dict, List, Union, Optional
 
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.parameters import this_process
 from ...infrastructure.config import dragon_config
-from .base import BaseNetworkConfig
+from .base import BaseWLM
 
-SSH_OPTIONS = 'ssh-options'
+SSH_OPTIONS = "ssh-options"
 
 # TODO: we're propagating environment variables to make sure
 #       the SSH envionment has the same envrionment as the
@@ -23,7 +23,7 @@ SSH_OPTIONS = 'ssh-options'
 #       such as PATH on the head node, but this requires
 #       documentation/explanation for users.  Ultimately we
 #       wish to propagate Dragon out absent a shared filesystem.
-ENV_VARS = None
+
 BASE_ENV_VARNAMES = (
     "DRAGON_BASE_DIR",
     "DRAGON_VERSION",
@@ -39,44 +39,9 @@ BASE_ENV_VARNAMES = (
 )
 
 
-def get_ssh_env_vars(args_map=None, propagate_base=BASE_ENV_VARNAMES) -> None:
-
-    global ENV_VARS
-    ENV_VARS = [f'{varname}={environ.get(varname, "")}' for varname in propagate_base]
-
-    # Make sure we propogate the device logging
-    try:
-        local_env = [f"{log_device}={log_level}" for log_device, log_level in args_map["log_device_level_map"].items()]
-    except (KeyError, TypeError):
-        local_env = []
-    ENV_VARS.extend(local_env)
-
-    # Construct a list of all the environment variables
-    this_process_envs = [f"{var}={quote(val)}" for var, val in this_process.env().items()]
-    ENV_VARS.extend(this_process_envs)
-
-
-def get_ssh_launch_be_args(args_map: Dict, launch_args: Dict) -> List:
-
-    global ENV_VARS
-    if ENV_VARS is None or args_map is not None:
-        get_ssh_env_vars(args_map=args_map)
-
-    bash_cmd = f"cd {getcwd()} && {' '.join(ENV_VARS + launch_args)}"
-
-    ssh_cmd = ["ssh", "-oBatchMode=yes"]
-    cfg_dict = dragon_config()
-    if SSH_OPTIONS in cfg_dict:
-        ssh_cmd.append(cfg_dict[SSH_OPTIONS])
-
-    ssh_cmd.extend([args_map["hostname"], bash_cmd])
-
-    return ssh_cmd
-
-
 class SSHIOStream(BufferedIOBase):
 
-    def __init__(self, streams: list[(int, TextIOBase)]):
+    def __init__(self, streams: List[Union[int, TextIOBase]]):
 
         self._inputs = streams
         self.selectors = {}
@@ -250,12 +215,13 @@ class SSHSubprocessPopen:
         return self._returncode
 
 
-class SSHNetworkConfig(BaseNetworkConfig):
+class SSHWLM(BaseWLM):
 
     def __init__(self, network_prefix, port, hostlist):
 
         super().__init__("ssh", network_prefix, port, len(hostlist))
         self.hostlist = hostlist
+        self.ENV_VARS = None
 
     @classmethod
     def check_for_wlm_support(cls) -> bool:
@@ -266,7 +232,7 @@ class SSHNetworkConfig(BaseNetworkConfig):
         return True
 
     def _get_wlm_job_id(self) -> str:
-        raise RuntimeError("SSHNetworkConfig does not implement _get_wlm_job_id")
+        raise RuntimeError("SSHWorkloadManager does not implement _get_wlm_job_id")
 
     def _supports_net_conf_cache(self) -> bool:
         return False
@@ -276,7 +242,9 @@ class SSHNetworkConfig(BaseNetworkConfig):
 
         for host in self.hostlist:
             args_map = {"hostname": host}
-            ssh_args = get_ssh_launch_be_args(args_map=args_map, launch_args=self.NETWORK_CFG_HELPER_LAUNCH_SHELL_CMD)
+            ssh_args = self._get_wlm_launch_be_args(
+                args_map=args_map, launch_args=self.NETWORK_CFG_HELPER_LAUNCH_SHELL_CMD
+            )
             self.LOGGER.debug(f"Launching config with: {ssh_args}")
 
             popen_dict[host] = subprocess.Popen(
@@ -284,3 +252,113 @@ class SSHNetworkConfig(BaseNetworkConfig):
             )
 
         return SSHSubprocessPopen(popen_dict)
+
+    def _get_dragon_launch_be_args(
+        self,
+        fe_ip_addr: str,
+        fe_host_id: str,
+        frontend_sdesc: str,
+        network_prefix: str,
+        overlay_port: int,
+        transport_test_env: bool,
+    ) -> list[str]:
+        """Return the launch arguments for the backend process."""
+        try:
+            assert self._BE_LAUNCHARGS is not None
+            be_args = self._BE_LAUNCHARGS.format(
+                ip_addr=fe_ip_addr,
+                host_id=fe_host_id,
+                frontend_sdesc=frontend_sdesc,
+                network_prefix=quote(network_prefix),
+                overlay_port=overlay_port,
+            ).split()
+            if transport_test_env:
+                be_args.append("--transport-test")
+            return be_args
+        except Exception:
+            raise RuntimeError("Unable to construct backend launcher arg list")
+
+    def _get_ssh_env_vars(self, args_map=None, propagate_base=BASE_ENV_VARNAMES) -> None:
+        self.ENV_VARS = [f'{varname}={environ.get(varname, "")}' for varname in propagate_base]
+
+        # Make sure we propogate the device logging
+        try:
+            local_env = [
+                f"{log_device}={log_level}" for log_device, log_level in args_map["log_device_level_map"].items()
+            ]
+        except (KeyError, TypeError):
+            local_env = []
+        self.ENV_VARS.extend(local_env)
+
+        # Construct a list of all the environment variables
+        this_process_envs = [f"{var}={quote(val)}" for var, val in this_process.env().items()]
+        self.ENV_VARS.extend(this_process_envs)
+
+    def _get_wlm_launch_be_args(self, args_map: dict, launch_args: list):
+        if self.ENV_VARS is None or args_map is not None:
+            self._get_ssh_env_vars(args_map=args_map)
+
+        bash_cmd = f"cd {getcwd()} && {' '.join(self.ENV_VARS + launch_args)}"
+
+        ssh_cmd = ["ssh", "-oBatchMode=yes"]
+        cfg_dict = dragon_config()
+        if SSH_OPTIONS in cfg_dict:
+            ssh_cmd.append(cfg_dict[SSH_OPTIONS])
+
+        ssh_cmd.extend([args_map["hostname"], bash_cmd])
+
+        return ssh_cmd
+
+    def launch_backend(
+        self,
+        nnodes: int,
+        node_ip_addrs: Optional[list[str]],
+        nodelist: list[str],
+        args_map: dict,
+        fe_ip_addr: str,
+        fe_host_id: str,
+        frontend_sdesc: str,
+        network_prefix: str,
+        overlay_port: int,
+        transport_test_env: bool,
+    ):
+        try:
+            popen_dict = {}
+
+            for host_name, host_ip_addr in zip(nodelist, node_ip_addrs):
+                rt_uid = environ["DRAGON_RT_UID"]
+                dragon_hsta_get_fabric = environ.get("DRAGON_HSTA_GET_FABRIC", "True")
+
+                be_args = self._get_dragon_launch_be_args(
+                    fe_ip_addr=fe_ip_addr,
+                    fe_host_id=fe_host_id,
+                    frontend_sdesc=frontend_sdesc,
+                    network_prefix=network_prefix,
+                    overlay_port=overlay_port,
+                    transport_test_env=transport_test_env,
+                )
+
+                launch_args = (
+                    [
+                        f"DRAGON_RT_UID={rt_uid}",
+                        f"DRAGON_RT_UID__{rt_uid}={frontend_sdesc!r}",
+                        f"DRAGON_HSTA_GET_FABRIC={dragon_hsta_get_fabric!s}",
+                    ]
+                    + be_args
+                    + ["--backend-ip-addr", host_ip_addr, "--backend-hostname", host_name]
+                )
+                args = self._get_launch_be_args(args_map=args_map, launch_args=launch_args, hostname=host_name)
+                self.LOGGER.info(f"SSH launch config: {args}")
+
+                popen_dict[host_name] = subprocess.Popen(
+                    args=args,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    start_new_session=True,
+                )
+
+            wlm_proc = SSHSubprocessPopen(popen_dict)
+            return wlm_proc
+
+        except Exception as ex:
+            raise RuntimeError(f"Unable to launch backend via SSH loop {ex!r}")

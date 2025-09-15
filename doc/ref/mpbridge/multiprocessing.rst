@@ -12,7 +12,8 @@ documentation below.
 .. autoclass:: dragon.mpbridge.context.DragonContext
     :members:
     :no-undoc-members:
-    :no-index:
+    :inherited-members:
+    :show-inheritance:
 
 
 .. _MPBridgeAPI:

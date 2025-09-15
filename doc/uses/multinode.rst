@@ -62,10 +62,12 @@ To use SSH launch, the following configuration options must be provided on the `
 launcher command line:
 
 1. Select the SSH Workload Manager
+
   The `--wlm ssh / -w ssh` option tells the `dragon` launcher to use generic SSH launch
   semantics.
 
 2. Provide available backend compute resources
+
   The list of available backend compute resources can be provided to the `dragon` launcher in
   one of several ways
 

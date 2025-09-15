@@ -1,3 +1,4 @@
+"""Module for detecting GPU devices across differet vendors"""
 import re
 import enum
 from dataclasses import dataclass, field
@@ -41,14 +42,17 @@ class AcceleratorDescriptor:
 
 def find_nvidia() -> list:
     """Return list of Nvidia GPUs returned by nvidia-smi. Expected output from smi:
-    .
-    .
-    .
-    GPU 1: NVIDIA A100-SXM4-40GB (UUID: GPU-ccdb6af5-102b-3fb4-4e06-8b7aaeba0578)
-    GPU 2: NVIDIA A100-SXM4-40GB (UUID: GPU-43539da6-e86a-d93e-8db2-f8814ef47c41)
-    .
-    .
-    .
+
+    .. code-block:: text
+
+        .
+        .
+        .
+        GPU 1: NVIDIA A100-SXM4-40GB (UUID: GPU-ccdb6af5-102b-3fb4-4e06-8b7aaeba0578)
+        GPU 2: NVIDIA A100-SXM4-40GB (UUID: GPU-43539da6-e86a-d93e-8db2-f8814ef47c41)
+        .
+        .
+        .
 
 
     :return: list of GPUs with IDs.
@@ -63,14 +67,17 @@ def find_nvidia() -> list:
 
 def find_amd() -> list:
     """Return list of AMD GPUs returned by rocm-smi. Expected output from smi:
-    .
-    .
-    .
-    card2,0x4eda2591da9a0592
-    card3,0x96ca52b5699c2baf
-    .
-    .
-    .
+
+    .. code-block:: text
+
+        .
+        .
+        .
+        card2,0x4eda2591da9a0592
+        card3,0x96ca52b5699c2baf
+        .
+        .
+        .
 
     :return: a list of cards that can be iterated over
     :rtype: list
@@ -89,29 +96,32 @@ def find_amd() -> list:
 
 def find_intel() -> list:
     """Return list of Intel GPUs returned by xpu-smi. Expected output from smi:
+
+    .. code-block:: text
+
         .
         .
         .
         +-----------+--------------------------------------------------------------------------------------+
-    | 2         | Device Name: Intel(R) Data Center GPU Max 1550                                       |
-    |           | Vendor Name: Intel(R) Corporation                                                    |
-    |           | SOC UUID: 00000000-0000-0000-0a2a-ca25127eb373                                       |
-    |           | PCI BDF Address: 0000:6c:00.0                                                        |
-    |           | DRM Device: /dev/dri/card2                                                           |
-    |           | Function Type: physical                                                              |
-    +-----------+--------------------------------------------------------------------------------------+
-    | 3         | Device Name: Intel(R) Data Center GPU Max 1550                                       |
-    |           | Vendor Name: Intel(R) Corporation                                                    |
-    |           | SOC UUID: 00000000-0000-0000-e986-d69bb5dc50cb                                       |
-    |           | PCI BDF Address: 0001:18:00.0                                                        |
-    |           | DRM Device: /dev/dri/card3                                                           |
-    |           | Function Type: physical                                                              |
+        | 2         | Device Name: Intel(R) Data Center GPU Max 1550                                       |
+        |           | Vendor Name: Intel(R) Corporation                                                    |
+        |           | SOC UUID: 00000000-0000-0000-0a2a-ca25127eb373                                       |
+        |           | PCI BDF Address: 0000:6c:00.0                                                        |
+        |           | DRM Device: /dev/dri/card2                                                           |
+        |           | Function Type: physical                                                              |
+        +-----------+--------------------------------------------------------------------------------------+
+        | 3         | Device Name: Intel(R) Data Center GPU Max 1550                                       |
+        |           | Vendor Name: Intel(R) Corporation                                                    |
+        |           | SOC UUID: 00000000-0000-0000-e986-d69bb5dc50cb                                       |
+        |           | PCI BDF Address: 0001:18:00.0                                                        |
+        |           | DRM Device: /dev/dri/card3                                                           |
+        |           | Function Type: physical                                                              |
         .
         .
         .
 
-        :return: list of tuples with gpu device number and ID
-        :rtype: list
+    :return: list of tuples with gpu device number and ID
+    :rtype: list
     """
     try:
         output = check_output(["xpu-smi", "discovery"], stderr=DEVNULL).decode("utf-8").splitlines()
@@ -127,6 +137,7 @@ def find_intel() -> list:
 
 
 def find_accelerators() -> AcceleratorDescriptor:
+    """Scan for accelerators across all supported vendors"""
     devices = find_nvidia()
     if devices is not None:
         acc = AcceleratorDescriptor(

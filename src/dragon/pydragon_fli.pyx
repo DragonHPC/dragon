@@ -53,13 +53,18 @@ class DragonFLIError(Exception):
         cdef char * errstr = dragon_getlasterrstr()
 
         self.msg = msg
+        self.lib_err = lib_err
         self.lib_msg = errstr[:].decode('utf-8')
         lib_err_str = dragon_get_rc_string(lib_err)
-        self.lib_err = lib_err_str[:].decode('utf-8')
+        self.lib_err_str = lib_err_str[:].decode('utf-8')
         free(errstr)
 
     def __str__(self):
-        return f"{type(self).__name__}: {self.msg}\n*** Dragon C-level Traceback: ***\n{self.lib_msg}\n*** End C-level Traceback: ***\nDragon Error Code: {self.lib_err}"
+        return f"{type(self).__name__}: {self.msg}\n*** Dragon C-level Traceback: ***\n{self.lib_msg}\n*** End C-level Traceback: ***\nDragon Error Code: {self.lib_err_str}"
+
+    @property
+    def rc(self):
+        return self.lib_err
 
 class DragonFLITimeoutError(DragonFLIError, TimeoutError):
     pass
@@ -1075,10 +1080,14 @@ cdef class PickleReadAdapter:
         self._offset = 0
 
     def __dealloc__(self):
+        cdef:
+            dragonError_t derr
 
         if self._have_mem:
             if self._free_mem:
-                dragon_memory_free(&self._mem)
+                derr = dragon_memory_free(&self._mem)
+                if derr != DRAGON_SUCCESS:
+                    raise DragonFLIError(derr, "Got error while freeing Dragon memory.")
             self._have_mem = False
 
     def read(self, size=0):
@@ -1099,7 +1108,9 @@ cdef class PickleReadAdapter:
         if self._offset >= self._mem_size:
             if self._have_mem:
                 if self._free_mem:
-                    dragon_memory_free(&self._mem)
+                    derr = dragon_memory_free(&self._mem)
+                    if derr != DRAGON_SUCCESS:
+                        raise DragonFLIError(derr, "Got error while freeing Dragon memory.")
                 self._have_mem = False
 
             time_ptr = _computed_timeout(self._timeout, &timer)

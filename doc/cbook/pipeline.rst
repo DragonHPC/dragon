@@ -1,4 +1,4 @@
-.. _pipeline:
+.. _cbook_pipeline:
 
 Creating and Using a Pipeline with Multiprocessing
 +++++++++++++++++++++++++++++++++++++++++++++++++++

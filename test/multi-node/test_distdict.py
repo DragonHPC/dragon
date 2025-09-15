@@ -13,7 +13,7 @@ from dragon.data.ddict import DDict
 from dragon.globalservices.node import get_list
 import multiprocessing as mp
 from dragon.rc import DragonError
-from dragon.data.ddict import DDictManagerFull
+from dragon.data.ddict import DDictFullError
 from dragon.native.queue import Queue
 from dragon.native.machine import System, Node
 from dragon.native.process import Process
@@ -29,7 +29,7 @@ def fillit(d):
             d[key] = key
             i += 1
             key += "abc" * i
-    except DDictManagerFull:
+    except DDictFullError:
         pass
 
 

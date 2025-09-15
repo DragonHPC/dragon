@@ -161,7 +161,8 @@ class GlobalContext(object):
 
         self.circ_index = 0  # helper index for implementing the circular order of choosing shepherds
 
-        self.policy_eval = None  # Policy Evaluator, init'd in `handle_sh_ping`
+        self.process_policy_evaluator = None  # Process Placement Policy Evaluator, init'd in `handle_sh_ping`
+        self.channel_policy_evaluator = None  # Separate Evaluator for Channel Placement.
         self.resilient_groups = (
             False  # Whether to handle Groups as if they are a group of individually critical processes
         )
@@ -340,6 +341,21 @@ class GlobalContext(object):
         log = self._dispatch_logger
 
         assert isinstance(msg, dmsg.GSChannelCreate)
+
+        if msg.policy is not None and self.channel_policy_evaluator is not None:
+            # The node may have been specified in a policy
+            # so use the policy. Calling evaluate below could
+            # raise an exception. It should be caught and surfaced
+            # to user if it does.
+            layout = self.channel_policy_evaluator.evaluate([msg.policy])[0]
+            if layout.node_specified:
+                log.debug("Choosing channel node on branch 0")
+                node_idx = self.node_table[layout.h_uid].ls_index
+                # We record the m_uid in the message because this is
+                # where subsequent code will look for it.
+                msg.m_uid = dfacts.default_pool_muid_from_index(node_idx)
+                return node_idx
+
         if msg.m_uid < dfacts.FIRST_LOGGING_MUID:
             # Then this is an infrastructure Pool m_uid.
             if msg.p_uid in self.process_table:
@@ -624,10 +640,14 @@ class GlobalContext(object):
         """
         ctx = NodeContext.construct(msg)
 
+        # Add a 0 - nnodes-1 index. As of 9/3/2025, this index is only used for
+        # ensuring PMIx servers are assigned a unique 0 - nnodes-1 ID that will
+        # remain the same during the runtime's life
+        ctx.g_idx = self.sh_pings_recvd
         self.node_table[ctx.h_uid] = ctx
         self.node_names[ctx.name] = ctx.h_uid
 
-        self._node_logger.info(f"Added node {ctx.name}, h_uid={ctx.h_uid}")
+        self._node_logger.info("Added node %s, g_idx=%s, h_uid=%s", ctx.name, ctx.g_idx, ctx.h_uid)
 
     def detach_from_channels(self):
         # this does the infrastructure channels.  Detaching from
@@ -722,7 +742,9 @@ class GlobalContext(object):
             # When we get to elasticity we can do more by creating the evaluator here
             # Get a list of NodeDescriptors from NodeContext
             node_descrs = [x.descriptor for x in self.node_table.values()]
-            self.policy_eval = PolicyEvaluator(node_descrs, Policy.global_policy())
+            self.process_policy_evaluator = PolicyEvaluator(node_descrs, Policy.global_policy())
+            # Create a separate policy evaluator for channel placement
+            self.channel_policy_evaluator = PolicyEvaluator(node_descrs, Policy.global_policy())
 
     @dutil.route(dmsg.GSTeardown, DTBL)
     def handle_gs_teardown(self, msg):

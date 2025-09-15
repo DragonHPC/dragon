@@ -12,12 +12,6 @@ from .src.exceptions import DragonRunMissingAllocation, DragonRunNoSupportedWLM,
 import logging
 
 logger = logging.getLogger(__name__)
-logging.basicConfig(
-    filename=f"drun_{socket.gethostname()}.log",
-    encoding="utf-8",
-    level=logging.INFO,
-    format="%(relativeCreated)6d %(threadName)s %(thread)d %(levelname)s:%(name)s:%(message)s",
-)
 
 
 EXPORT_HELP = (
@@ -31,6 +25,11 @@ USER_CMD_HELP = "The executable, including any command line options, to execute 
 SINGLE_MODE_HELP = "Override automatic launcher selection to force use of the single node launcher"
 MULTI_MODE_HELP = "Override automatic launcher selection to force use of the multi-node launcher"
 FANOUT_HELP = "DragonRun uses a fanout tree to effeciently communicate with its backend nodes. This value sets the number of children each node in this fanout tree talks to."
+
+LOGGING_HELP = """Enables the output of diagnostic log messages. By default, the
+DragonRun runtime disables all diagnostic log messaging. Passing one of NOTSET, DEBUG,
+INFO, WARNING, ERROR, or CRITICAL to this option, the Dragon runtime will enable
+the specified log verbosity."""
 
 EXPORT_ALL = "ALL"
 EXPORT_NONE = "NONE"
@@ -84,7 +83,14 @@ def get_parser():
         type=int,
         help=FANOUT_HELP,
     )
-    # TODO Add command line options for log level
+    parser.add_argument(
+        "-l",
+        "--log-level",
+        choices=logging.getLevelNamesMapping().keys(),
+        metavar="LOG_LEVEL",
+        help=LOGGING_HELP,
+        default=logging.getLevelName(logging.NOTSET),
+    )
 
     parser.add_argument(
         "user_cmd",
@@ -106,6 +112,21 @@ def get_args(args_input=None):
 
 def main():
     args = get_args(sys.argv[1:])
+
+    log_level = args.get("log_level")
+    if not isinstance(log_level, int):
+        numeric_log_level = getattr(logging, str(log_level), None)
+        if not isinstance(numeric_log_level, int):
+            raise ValueError(f"Invalid log level: {log_level}")
+        log_level = numeric_log_level
+
+    if log_level != logging.NOTSET:
+        logging.basicConfig(
+            filename=f"drun_{socket.gethostname()}.log",
+            encoding="utf-8",
+            level=log_level,
+            format="%(relativeCreated)6d %(threadName)s %(thread)d %(levelname)s:%(name)s:%(message)s",
+        )
 
     if not args["user_cmd"]:
         print("You must specify a command to run")
@@ -131,6 +152,7 @@ def main():
             force_multi_node=args["force_multi_node"],
             exec_on_fe=args["include_fe"],
             fanout=args["fanout"],
+            log_level=args.get("log_level"),  # type: ignore
         )
     except (DragonRunMissingAllocation, DragonRunNoSupportedWLM, DragonRunSingleNodeUnsupported) as exc:
         print(exc, flush=True)

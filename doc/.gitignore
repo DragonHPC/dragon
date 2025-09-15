@@ -1,8 +1,6 @@
 _build/
 *.png
-!images/ddict.png
-!images/ddict_128nodes.png
-!images/ddict_128to648nodes.png
+!benchmarks/images/*.png
 plantuml.jar
 ref/dragon*.rst
 ref/ai/dragon*.rst

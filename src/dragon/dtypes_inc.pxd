@@ -26,6 +26,7 @@ cdef extern from "<dragon/global_types.h>":
     ctypedef uint64_t dragonC_UID_t
     ctypedef uint64_t dragonP_UID_t
     ctypedef uint64_t dragonM_UID_t
+    ctypedef uint64_t dragonG_UID_t
     ctypedef uint64_t dragonULInt
     ctypedef uint32_t dragonUInt
     ctypedef uint8_t dragonUUID[16]
@@ -727,12 +728,9 @@ cdef extern from "dragon/fli.h":
 
 cdef extern from "_pmix.h":
 
-    ctypedef struct dragonPMIxServer_t:
-        pass
-
     cdef uint32_t DRAGON_PMIX_RANK_WILDCARD
 
-    dragonError_t dragon_initialize_pmix_server(dragonPMIxServer_t **d_server,
+    dragonError_t dragon_initialize_pmix_server(dragonG_UID_t guid,
                                                 char *pmix_sdesc,
                                                 char *local_mgr_sdesc,
                                                 dragonChannelSerial_t out_to_ls,
@@ -741,15 +739,19 @@ cdef extern from "_pmix.h":
                                                 int node_rank,
                                                 int nhosts,
                                                 int nprocs,
-                                                int ppn,
+                                                int *proc_ranks,
+                                                int *ppn,
+                                                int *node_ranks,
                                                 char **hosts,
-                                                char *server_nspace,
-                                                char *client_nspace,
-                                                char *tmp_space) nogil
+                                                char *client_tmpdir,
+                                                char *server_tmpdir) nogil
 
-    dragonError_t dragon_pmix_get_client_env(dragonPMIxServer_t *d_server,
+
+    dragonError_t dragon_pmix_get_client_env(dragonG_UID_t guid,
                                              int rank,
                                              char ***env,
                                              int *nenv)
 
-    dragonError_t dragon_pmix_finalize_server(dragonPMIxServer_t *d_server)
+    bool dragon_pmix_is_server_host(dragonG_UID_t guid)
+    dragonError_t dragon_pmix_finalize_job(dragonG_UID_t guid)
+    dragonError_t dragon_pmix_finalize_server()

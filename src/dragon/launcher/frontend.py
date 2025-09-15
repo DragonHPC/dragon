@@ -32,7 +32,7 @@ from ..infrastructure import messages as dmsg
 from . import util as dlutil
 from .network_config import NetworkConfig
 from .launchargs import parse_hosts
-from .wlm import WLM
+from .wlm import WLM, wlm_cls_dict
 from .wlm.ssh import SSHSubprocessPopen
 from .wlm.k8s import KubernetesNetworkConfig
 
@@ -113,15 +113,6 @@ class LauncherFrontEnd:
     _STBL = {}  # dispatch router for SIGINT handling, keyed by current state
     _TRDOWN = {}  # dispatch router teardown errors, keyed by FrontendState
 
-    _BE_LAUNCHARGS = (
-        f"{dfacts.PROCNAME_LA_BE}"
-        " --ip-addr {ip_addr}"
-        " --host-id {host_id}"
-        " --frontend-sdesc {frontend_sdesc}"
-        " --network-prefix {network_prefix}"
-        " --overlay-port {overlay_port}"
-    )
-
     _STATE = None
 
     def __init__(self, args_map, sigint_trigger=None):
@@ -147,7 +138,6 @@ class LauncherFrontEnd:
         self.nnodes = args_map.get("node_count", 0)
         self.n_idle = args_map.get("idle_count", 0)
         self.telemetry_level = args_map.get("telemetry_level", 0)
-        self.ntree_nodes = this_process.overlay_fanout
         self.network_prefix = args_map.get("network_prefix", dfacts.DEFAULT_TRANSPORT_NETIF)
         self.overlay_port = args_map.get("overlay_port", dfacts.DEFAULT_OVERLAY_NETWORK_PORT)
         self.frontend_port = args_map.get("frontend_port", dfacts.DEFAULT_FRONTEND_PORT)
@@ -214,8 +204,14 @@ lower performing TCP transport agent for backend network communication.
         if self._wlm is None:
             self._wlm = dlutil.detect_wlm()
 
+        # Get an instance of the workload manager helper class
+        self.wlm_cls = wlm_cls_dict.get(WLM.from_str(self._wlm), None)
+        if not self.wlm_cls:
+            raise RuntimeError(f"Unsupported workload manager specified: {self._wlm}")
+        self.wlm_obj = self.wlm_cls(self.network_prefix, self.port, self.hostlist)
+
         # If using SSH, confirm we have enough info do that:
-        if self._wlm == WLM.SSH and self._config_from_file is None:
+        if self._wlm in (WLM.SSH, WLM.DRUN) and self._config_from_file is None:
             self.hostlist = parse_hosts(self.hostlist, self.hostfile)
 
         # Handle some sanity checks on the resilient mode
@@ -297,6 +293,7 @@ lower performing TCP transport agent for backend network communication.
             self._STATE = FrontendState.ABNORMAL_TEARDOWN
             log.debug("Updated state to %s", self._STATE)
             try:
+                assert self.conn_outs is not None
                 self.conn_outs[0].send(dmsg.GSTeardown(tag=dlutil.next_tag()).serialize())
             except Exception:
                 raise TimeoutError
@@ -698,85 +695,25 @@ lower performing TCP transport agent for backend network communication.
         frontend_sdesc: str,
         network_prefix: str,
         *,
-        node_ip_addrs: list[str] = None,
+        node_ip_addrs: Optional[list[str]] = None,
     ):
         """Launch backend with selected wlm"""
         log = logging.getLogger(dls.LA_FE).getChild("_launch_backend")
-        try:
-            if self._wlm is WLM.SSH:
-                be_args = self._BE_LAUNCHARGS.format(
-                    ip_addr=fe_ip_addr,
-                    host_id=fe_host_id,
-                    frontend_sdesc=frontend_sdesc,
-                    network_prefix=quote(network_prefix),
-                    overlay_port=self.overlay_port,
-                ).split()
-            else:
-                be_args = self._BE_LAUNCHARGS.format(
-                    ip_addr=fe_ip_addr,
-                    host_id=fe_host_id,
-                    frontend_sdesc=frontend_sdesc,
-                    network_prefix=network_prefix,
-                    overlay_port=self.overlay_port,
-                ).split()
-            if self.transport_test_env:
-                be_args.append("--transport-test")
 
-        except Exception:
-            raise RuntimeError("Unable to construct backend launcher arg list")
-
-        # TODO: The differentiation between the SSH path vs. other paths
-        #       is clunky. Ideally, this could be abstracted to make the
-        #       if/else disappear
-
-        # Syntax is largely same for anything launched with a true WLM
-        if self._wlm is not WLM.SSH:
-            try:
-                args = dlutil.get_wlm_launch_args(
-                    args_map=self.args_map, launch_args=be_args, nodes=(nnodes, nodelist), wlm=self._wlm
-                )
-                log.info(f"launch be with {args}")
-
-                wlm_proc = subprocess.Popen(
-                    args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, start_new_session=True
-                )
-            except Exception:
-                raise RuntimeError("Unable to launch backend using workload manager launch")
-
-        # in case of SSH, we need to loop over each host to launch our backend and
-        # the bundle up all the processes into a monitoring object that allows
-        # the frontend server to query only one object for its monitoring needs
-        else:
-            try:
-                popen_dict = {}
-
-                for host_name, host_ip_addr in zip(nodelist, node_ip_addrs):
-                    rt_uid = os.environ["DRAGON_RT_UID"]
-                    dragon_hsta_get_fabric = os.environ.get("DRAGON_HSTA_GET_FABRIC", "True")
-                    launch_args = (
-                        [
-                            f"DRAGON_RT_UID={rt_uid}",
-                            f"DRAGON_RT_UID__{rt_uid}={frontend_sdesc!r}",
-                            f"DRAGON_HSTA_GET_FABRIC={dragon_hsta_get_fabric!s}",
-                        ]
-                        + be_args
-                        + ["--backend-ip-addr", host_ip_addr, "--backend-hostname", host_name]
-                    )
-                    args = dlutil.get_wlm_launch_args(
-                        args_map=self.args_map, launch_args=launch_args, hostname=host_name, wlm=self._wlm
-                    )
-                    log.info(f"SSH launch config: {args}")
-
-                    popen_dict[host_name] = subprocess.Popen(
-                        args=args,
-                        stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,
-                        start_new_session=True,
-                    )
-                wlm_proc = SSHSubprocessPopen(popen_dict)
-
-            except Exception as ex:
-                raise RuntimeError(f"Unable to launch backend via SSH loop {ex!r}")
+        assert self.wlm_obj
+        log.debug("Launching backend with wlm %s (wlm_obj=%s)", self._wlm, self.wlm_obj)
+        wlm_proc = self.wlm_obj.launch_backend(
+            nnodes=nnodes,
+            node_ip_addrs=node_ip_addrs,
+            nodelist=nodelist,
+            args_map=self.args_map,
+            fe_ip_addr=fe_ip_addr,
+            fe_host_id=fe_host_id,
+            frontend_sdesc=frontend_sdesc,
+            network_prefix=network_prefix,
+            overlay_port=self.overlay_port,
+            transport_test_env=self.transport_test_env,
+        )
 
         return wlm_proc
 
@@ -1226,6 +1163,9 @@ Performance may be suboptimal."""
 
                 # Replace the placeholder for the FE channel with the actual value
                 be_job_config_str = be_job_config_str.replace("{{temp_fe_sdesc}}", encoded_inbound_str)
+
+                # Replace the placeholder for the dragon log with the actual value
+                be_job_config_str = be_job_config_str.replace("{{temp_log_value}}", os.environ["DRAGON_LOG_DEVICE_ACTOR_FILE"])
 
                 # Do the same for the gateway channel env variable
                 be_job_config_str = be_job_config_str.replace(

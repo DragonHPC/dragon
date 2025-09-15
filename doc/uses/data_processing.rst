@@ -4,8 +4,8 @@ Data Processing
 +++++++++++++++
 
 Dragon supports processing data sets through a number of its APIs, including with the
-`Python multiprocessing API <https://docs.python.org/3/library/multiprocessing.html>`_. Let's go through a few common
-use cases and how to implement them with Dragon.
+:external+python:doc:`Python multiprocessing API <library/multiprocessing>`. Let's go through a few common
+data processing use cases and how to implement them with Dragon.
 
 
 Processing Files
@@ -23,8 +23,8 @@ Filesystem Visible Only on One Node
 Consider the case where files are created in node-local storage and now we need to initiate processing from a Python
 process on that node. In this case we cannot directly access the data from a process running on any compute node.
 We must instead read the data in from the current process and send that data out to each node we want to parallelize
-the processing across. The simplest way to program that is with :external+python:py:class:`multiprocessing.pool.Pool`
-(`mp.Pool()` for short). Let's assume to start that there is enough memory on the initial node to read all the data in
+the processing across. The simplest way to program that is with :py:meth:`~dragon.mpbridge.context.DragonContext.Pool`.
+Let's assume to start that there is enough memory on the initial node to read all the data in
 and hold two copies of it in process memory.
 
 .. code-block:: python
@@ -58,7 +58,7 @@ and hold two copies of it in process memory.
 
 One drawback to this implementation is the sequential nature of reading all the data in before any processing can begin.
 Depending on the nature of the processing it may be much better to use a iterator along with
-:external+python:py:method:`multiprocessing.pool.Pool.imap`, which will also save us some memory overhead.
+:py:class:`Pool.imap() <dragon.mpbridge.pool.DragonPool.imap>`, which will also save us some memory overhead.
 
 .. code-block:: python
     :linenos:
@@ -292,7 +292,7 @@ giving different amounts of CPU cores to the two processing phases.
         consumers.join()
 
 
-The implementation uses :external+python:py:method:`multiprocessing.pool.Pool.imap` to pull work through an iterator
+The implementation uses :py:class:`Pool.imap() <dragon.mpbridge.pool.DragonPool.imap>` to pull work through an iterator
 class `StreamDataReader`. As blocks of data come in through the socket, they are fed to a pool of
 
 Related Cookbook Examples

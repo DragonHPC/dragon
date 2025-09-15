@@ -65,7 +65,7 @@ class TestZarrStoreMultiNode(unittest.TestCase):
         self.assertEqual(FV, zg["0"][20][20][20])
         dstore.destroy()
 
-    def test_basic_mirror(self):
+    def _base_mirror(self, use_copy_store):
         path = PATH
         zg_cold = self._create_dir_store(path)
 
@@ -75,6 +75,7 @@ class TestZarrStoreMultiNode(unittest.TestCase):
             n_nodes=System().nnodes,
             total_mem=(DD_MB * (1024**2)),
             path=path,
+            use_copy_store=use_copy_store,
         )
 
         loaded = dstore.wait_on_load()
@@ -82,6 +83,12 @@ class TestZarrStoreMultiNode(unittest.TestCase):
         zg = zarr.open(store=dstore)
         self.assertTrue(np.array_equal(zg_cold["0"], zg["0"]))
         dstore.destroy()
+
+    def test_basic_mirror(self):
+        self._base_mirror(True)
+
+    def test_key_mirror(self):
+        self._base_mirror(False)
 
     def test_multiple_clients(self):
         dstore = Store(

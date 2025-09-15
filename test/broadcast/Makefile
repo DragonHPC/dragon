@@ -17,7 +17,7 @@ endif
 INCLUDE = $(DRAGON_INCLUDE)
 LIBS = $(DRAGON_LINK)
 
-BIN_FILES = test_bcast pPrf_bcast
+BIN_FILES = test_bcast perf_bcast
 
 %.c.o: %.c
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@

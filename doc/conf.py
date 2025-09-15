@@ -1,5 +1,6 @@
 import os
 import sys
+import inspect
 from typing import Any
 
 from sphinx.ext import autodoc
@@ -41,6 +42,8 @@ extensions = [
     "sphinx.ext.autosectionlabel",
     "sphinxfortran.fortran_domain",
     "sphinxfortran.fortran_autodoc",
+    "sphinx.ext.linkcode",
+    "sphinx.ext.extlinks",
     "sphinx_copybutton",
     "sphinxcontrib.plantuml",
     "sphinx_new_tab_link"
@@ -150,3 +153,61 @@ autodoc_default_options = {
 
 def setup(app):
     app.add_autodocumenter(AutoDocstringOnly)
+
+def linkcode_resolve(domain, info):
+    """
+    Returns a link to the source code on GitHub, with appropriate lines highlighted.
+    """
+    if domain != 'py':
+        return None  # Only handle Python objects
+
+    modname = info.get('module')
+    fullname = info.get('fullname')
+
+    if not modname or not fullname:
+        return None
+
+    try:
+        obj = sys.modules[modname]
+        for part in fullname.split('.'):
+            obj = getattr(obj, part)
+    except AttributeError:
+        return None
+
+    try:
+        filename = inspect.getsourcefile(obj)
+        lines, first_line_no = inspect.getsourcelines(obj)
+    except TypeError:
+        return None
+    except OSError:
+        # this path happens for Cython code. Will need a solution for this yet.
+        return None
+
+    if not filename:
+        return None
+
+    # Adjust path to be relative to the repository root
+    # This example assumes your project is hosted on GitHub and the source
+    # code is in a 'src' directory at the root of your repository.
+    # You will need to adapt this part to your specific repository structure.
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+    relative_filename = os.path.relpath(filename, repo_root).replace("hpc-pe-dragon-dragon/","") # done like this so builds work on both internal and extrnal repo
+
+    # Construct the GitHub URL
+    github_repo_url = "https://github.com/DragonHPC/dragon"
+    github_branch = "main" # or "develop", "master", etc.
+
+    return f"{github_repo_url}/blob/{github_branch}/{relative_filename}#L{first_line_no}-L{first_line_no + len(lines) - 1}"
+
+extlinks = {
+    'example_benchmark': ('https://github.com/DragonHPC/dragon/tree/main/examples/benchmarks/%s', '%s'),  # use as :example_benchmark:`file.py` to link to examples/benchmarks/file.py
+    'example_ai': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_ai/%s', '%s'),  # use as :example_ai:`file.py` to link to examples/dragon_ai/file.py
+    'example_core': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_core/%s', '%s'),
+    'example_data': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_data/%s', '%s'),
+    'example_gs_client': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_gs_client/%s', '%s'),
+    'example_native': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_native/%s', '%s'),
+    'example_telemetry': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_telemetry/%s', '%s'),
+    'example_workflows': ('https://github.com/DragonHPC/dragon/tree/main/examples/workflows/%s', '%s'),
+    'example_jupyter': ('https://github.com/DragonHPC/dragon/tree/main/examples/jupyter/%s', '%s'),
+    'example_multiprocessing': ('https://github.com/DragonHPC/dragon/tree/main/examples/multiprocessing/%s', '%s'),
+    }

@@ -6,7 +6,9 @@ import subprocess
 import signal
 from enum import Enum
 from shlex import quote
+from typing import Optional
 
+from ...infrastructure.facts import PROCNAME_LA_BE
 from ...infrastructure.parameters import this_process
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.util import NewlineStreamWrapper
@@ -20,7 +22,7 @@ class NetworkConfigState(Enum):
     CONFIG_DONE = 2
 
 
-class BaseNetworkConfig(ABC):
+class BaseWLM(ABC):
 
     def __init__(self, wlm, network_prefix, port, nnodes):
         self.wlm = wlm
@@ -39,9 +41,18 @@ class BaseNetworkConfig(ABC):
             "--port",
             f"{port}",
         ]
-        self.NET_CONF_CACHE = this_process.net_conf_cache
+        self.NET_CONF_CACHE = this_process.net_conf_cache  # type: ignore
 
-        self.LOGGER = logging.getLogger("NetworkConfig")
+        self._BE_LAUNCHARGS = (
+            f"{PROCNAME_LA_BE}"
+            " --ip-addr {ip_addr}"
+            " --host-id {host_id}"
+            " --frontend-sdesc {frontend_sdesc}"
+            " --network-prefix {network_prefix}"
+            " --overlay-port {overlay_port}"
+        )
+
+        self.LOGGER = logging.getLogger("WorkloadManager")
 
         self.node_descriptors = {}
 
@@ -70,6 +81,7 @@ class BaseNetworkConfig(ABC):
 
     def _parse_network_configuration(self) -> None:
         last_node_descriptor_count = 0
+        assert self.config_helper is not None
         stdout_stream = NewlineStreamWrapper(self.config_helper.stdout)
         stderr_stream = NewlineStreamWrapper(self.config_helper.stderr)
         node_returns = 0
@@ -122,7 +134,8 @@ class BaseNetworkConfig(ABC):
                 if str(node_index) not in temp_uniqueness_guarantee.keys():
                     self.LOGGER.debug(json.loads(node_desc))
                     node = NodeDescriptor.from_sdict(json.loads(node_desc))
-                    if len(node.ip_addrs) > 0:
+                    assert node is not None
+                    if len(node.ip_addrs) > 0:  # type: ignore
                         self.node_descriptors[str(node_returns)] = node
                         temp_uniqueness_guarantee[str(node_index)] = node_returns
                     node_returns += 1
@@ -133,10 +146,13 @@ class BaseNetworkConfig(ABC):
         """Safely teardown network config infrastructure"""
 
         try:
-            if self.config_helper.is_alive():
+            assert self.config_helper is not None
+            if self.config_helper.poll() is None:
                 self.LOGGER.info("Transmitting SIGINT to config helper")
                 self.config_helper.send_signal(signal.SIGINT)
                 self.config_helper.wait()
+        except NotImplementedError:  # AICI-1917 drun does not support send_signal or terminate
+            pass
         except AttributeError:
             pass
 
@@ -183,7 +199,7 @@ class BaseNetworkConfig(ABC):
     def get_allocation_node_count(self) -> int:
         return self.NNODES
 
-    def get_network_config(self, sigint_trigger=None) -> map:
+    def get_network_config(self, sigint_trigger=None) -> dict[str, NodeDescriptor]:
 
         try:
             self.orig_handler = signal.signal(signal.SIGINT, self._sigint_handler)
@@ -213,6 +229,8 @@ class BaseNetworkConfig(ABC):
                     raise RuntimeError(str(err))
 
                 self.LOGGER.debug("Closing config helper's stdout handle.")
+                assert self.config_helper.stdout is not None
+                assert self.config_helper.stderr is not None
                 self.config_helper.stdout.close()
                 self.config_helper.stderr.close()
 
@@ -236,3 +254,100 @@ class BaseNetworkConfig(ABC):
 
         except Exception as e:
             raise RuntimeError(e)
+
+    def _get_dragon_launch_be_args(
+        self,
+        fe_ip_addr: str,
+        fe_host_id: str,
+        frontend_sdesc: str,
+        network_prefix: str,
+        overlay_port: int,
+        transport_test_env: bool,
+    ) -> list[str]:
+        """Return the launch arguments for the backend process."""
+        try:
+            assert self._BE_LAUNCHARGS is not None
+            be_args = self._BE_LAUNCHARGS.format(
+                ip_addr=fe_ip_addr,
+                host_id=fe_host_id,
+                frontend_sdesc=frontend_sdesc,
+                network_prefix=network_prefix,
+                overlay_port=overlay_port,
+            ).split()
+            if transport_test_env:
+                be_args.append("--transport-test")
+            return be_args
+        except Exception:
+            raise RuntimeError("Unable to construct backend launcher arg list")
+
+    @abstractmethod
+    def _get_wlm_launch_be_args(self, args_map: dict, launch_args: list):
+        """
+        Abstract method to return WLM specific command line arguments
+        to use to launch the backend process.
+        """
+        raise NotImplementedError
+
+    def _get_launch_be_args(
+        self,
+        args_map: dict,
+        launch_args: list,
+        nnodes: Optional[int] = None,
+        nodelist: Optional[list[str]] = None,
+        hostname: Optional[str] = None,
+    ):
+        """Get arguments for WLM to launch the backend"""
+
+        try:
+            if hostname is not None:
+                args_map["hostname"] = hostname
+
+            if nnodes is not None and nodelist is not None:
+                args_map["nnodes"] = nnodes
+                args_map["nodelist"] = ",".join(nodelist)
+
+            wlm_args = self._get_wlm_launch_be_args(args_map=args_map, launch_args=launch_args)
+
+        except Exception:
+            raise RuntimeError("Unable to generate WLM backend launch args")
+
+        return wlm_args
+
+    def launch_backend(
+        self,
+        nnodes: int,
+        node_ip_addrs: Optional[list[str]],
+        nodelist: list[str],
+        args_map: dict,
+        fe_ip_addr: str,
+        fe_host_id: str,
+        frontend_sdesc: str,
+        network_prefix: str,
+        overlay_port: int,
+        transport_test_env: bool,
+    ) -> subprocess.Popen:
+        try:
+            dragon_be_args = self._get_dragon_launch_be_args(
+                fe_ip_addr=fe_ip_addr,
+                fe_host_id=fe_host_id,
+                frontend_sdesc=frontend_sdesc,
+                network_prefix=network_prefix,
+                overlay_port=overlay_port,
+                transport_test_env=transport_test_env,
+            )
+
+            wlm_launch_args = self._get_launch_be_args(
+                args_map=args_map,
+                launch_args=dragon_be_args,
+                nnodes=nnodes,
+                nodelist=nodelist,
+            )
+            self.LOGGER.info(f"launch be with {wlm_launch_args}")
+
+            wlm_proc = subprocess.Popen(
+                wlm_launch_args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, start_new_session=True
+            )
+        except Exception:
+            raise RuntimeError("Unable to launch backend using workload manager launch")
+
+        return wlm_proc

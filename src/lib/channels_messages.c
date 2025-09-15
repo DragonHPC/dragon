@@ -336,7 +336,7 @@ _encode_gateway_message_objects(dragonGatewayMessage_t * gmsg, dragonChannelSeri
 
                 err = dragon_memory_free(payload_mem_descr);
                 if (err != DRAGON_SUCCESS)
-                    append_err_return(err, "Could not free payload memory on remote send operaiton.");
+                    append_err_return(err, "Could not free payload memory on remote send operation.");
             }
 
         } else {
@@ -718,9 +718,40 @@ dragon_channel_message_get_mem(const dragonMessage_t * msg, dragonMemoryDescr_t 
     if (msg->_mem_descr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "no memory descriptor associated with this message");
 
+    /* TODO: Is this cloned descriptor ever freed? */
     dragonError_t err = dragon_memory_descr_clone(mem_descr, msg->_mem_descr, 0, NULL);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "cannot clone memory descriptor");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Get the virtual address and size of the buffer associated with a Message.
+ *
+ * Get the virtual address and size of the buffer associated with the Message. An error will be returned
+ * if the Message has no Managed Memory descriptor associated with it.
+ *
+ * @param msg is a pointer to the dragonMessage structure.
+ *
+ * @param ptr is a double pointer to update with the virtual address of the underlying buffer.
+ *
+ * @param size is a pointer to update with the size in bytes of the underlying buffer.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_message_get_ptr_info(const dragonMessage_t * msg, void ** ptr, size_t * size)
+{
+    if (msg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "invalid message");
+
+    if (msg->_mem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "no memory descriptor associated with this message");
+
+    dragonError_t err = dragon_memory_get_ptr_info(msg->_mem_descr, ptr, size);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid memory descriptor");
 
     no_err_return(DRAGON_SUCCESS);
 }

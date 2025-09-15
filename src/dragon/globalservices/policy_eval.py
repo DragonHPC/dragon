@@ -12,6 +12,7 @@ LOG = logging.getLogger("policy_eval:")
 class ResourceLayout:
     h_uid: int
     host_name: str
+    node_specified: bool
     numa_node: int  # TODO
     cpu_core: [int]  # List of acceptable CPU cores the layout can be applied to
     gpu_core: [int]
@@ -57,7 +58,7 @@ class PolicyEvaluator:
 
         return node
 
-    def _add_layout(self, node, cpu_affinity, gpu_affinity, env_str, layouts):
+    def _add_layout(self, node, node_specified, cpu_affinity, gpu_affinity, env_str, layouts):
         """
         Short helper function to auto-increment num_policies value on nodes
 
@@ -68,7 +69,7 @@ class PolicyEvaluator:
         """
         # NOTE: Numa node and accelerator are placeholders
         numa_node = 0
-        layouts.append(ResourceLayout(node.h_uid, node.host_name, numa_node, cpu_affinity, gpu_affinity, env_str))
+        layouts.append(ResourceLayout(node.h_uid, node.host_name, node_specified, numa_node, cpu_affinity, gpu_affinity, env_str))
         node.num_policies += 1
 
     def _node_by_id(self, host_id) -> NodeDescriptor:
@@ -102,9 +103,10 @@ class PolicyEvaluator:
 
         return node
 
-    def _get_node(self, p: Policy) -> NodeDescriptor:
+    def _get_node(self, p: Policy) -> tuple[bool, NodeDescriptor]:
         """
-        Find the next available node based on the provided policy
+        Find the next available node based on the provided policy.
+        Returns true for bool if node was specified and false otherwise.
         """
 
         # Reset to the first node if we've cycled all the way through
@@ -113,9 +115,9 @@ class PolicyEvaluator:
 
         # If placement is specified to a host ID or name, apply to that node no questions asked
         if p.placement == Policy.Placement.HOST_ID:
-            return self._node_by_id(p.host_id)
+            return (True, self._node_by_id(p.host_id))
         elif p.placement == Policy.Placement.HOST_NAME:
-            return self._node_by_name(p.host_name)
+            return (True, self._node_by_name(p.host_name))
 
         else:
             # TODO: Other placements not used in any meaningful way yet
@@ -132,7 +134,7 @@ class PolicyEvaluator:
         # TODO: Mimic some overprovisioning logic like in BLOCK for roundrobin to find the next empty slot?
         if distribution == Policy.Distribution.ROUNDROBIN:
             self.cur_node += 1
-            return node
+            return (False, node)
 
         elif distribution == Policy.Distribution.BLOCK:
             if self.overprovision:
@@ -146,7 +148,7 @@ class PolicyEvaluator:
                     self.cur_node += 1  # Move to next node in cycle (round robin, essentially)
                 node = next_node  # Assign current node to "next node" (either open node, or same node to begin with)
 
-            return node
+            return (False, node)
 
     def _get_cpu_affinity(self, p: Policy, node: NodeDescriptor) -> list[int]:
         """
@@ -188,12 +190,12 @@ class PolicyEvaluator:
         for p in policies:
             # Merge incoming policies against the self.default_policy so any DEFAULT enums get replaced with the default policy option
             p = Policy.merge(self.default_policy, p)
-            node = self._get_node(p)  # Get a node based on policy (if requesting specific nodes, may raise exception)
+            node_specified, node = self._get_node(p)  # Get a node based on policy (if requesting specific nodes, may raise exception)
             cpu_affinity = self._get_cpu_affinity(p, node)  # Get affinity based on policy
             gpu_affinity = self._get_gpu_affinity(p, node)
             env_str = ""  # Environment string for setting accelerator affinity
             if gpu_affinity:
                 env_str = node.accelerators.env_str
-            self._add_layout(node, cpu_affinity, gpu_affinity, env_str, layouts)
+            self._add_layout(node, node_specified, cpu_affinity, gpu_affinity, env_str, layouts)
 
         return layouts

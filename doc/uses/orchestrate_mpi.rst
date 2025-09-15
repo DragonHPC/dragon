@@ -3,6 +3,20 @@
 Orchestrate MPI Applications
 ++++++++++++++++++++++++++++
 
+Python makes it easy to run functions in a new process through
+:external+python:doc:`multiprocessing <library/multiprocessing>` and run executables through libraries like
+:external+python:doc:`subprocess <library/subprocess>`. Python is a convenient tool for writing workflows that
+orchestrate many things, but often that is limited by these APIs to a single node. Dragon makes it possible to orchestrate
+across many nodes and even run parallel applications, such as those written with the Message Passing Interface (MPI)
+most often used for HPC applications.
+
+Using Dragon to orchestrate MPI applications makes it simple to develop workflows like parameter studies, where the
+setup of a simulation code using MPI is varied in pursuit of "what if?" questions (e.g., "what if my airplane wing
+was shaped like this?"). Dragon does not rely on a traditional workload manager (e.g., Slurm) to do this. Instead
+Dragon runs on some set of nodes and orchestrates potentially many MPI applications run concurrently within those nodes.
+This enables much more sophisticated workflows that can have dependencies or logical branches. In this short tutorial,
+we'll show some basic examples to get you started.
+
 Launching of MPI Applications
 =============================
 
@@ -60,10 +74,10 @@ First let's define our MPI program:
     }
 
 And now the Dragon python code is the same except the data generation function
-launches its own :py:class:`~dragon.native.process_group.ProcessGroup``, requesting Dragon set up an MPI-friendly
-environment via the `pmi_enabled=True` kwarg. Note: launching an MPI application through
-Dragon currently requires `cray-pmi`, though development is ongoing to extend support to
-`PMIx`:
+launches its own :py:class:`~dragon.native.process_group.ProcessGroup`, requesting Dragon set up an MPI-friendly
+environment for a system with Cray PMI via the `pmi=PMIBackend.CRAY` kwarg. If the system is instead setup to use
+PMIX for intializing an MPI application, set `pmi=PMIBackend.PMIX`
+(see also :py:class:`~dragon.infrastructure.facts.PMIBackend`).
 
 .. code-block:: python
     :linenos:
@@ -71,6 +85,7 @@ Dragon currently requires `cray-pmi`, though development is ongoing to extend su
 
     import os
 
+    from dragon.infrastructure.facts import PMIBackend
     from dragon.native.process_group import ProcessGroup
     from dragon.native.process import ProcessTemplate, Process, Popen
     from dragon.native.queue import Queue
@@ -116,9 +131,7 @@ Dragon currently requires `cray-pmi`, though development is ongoing to extend su
         """Launch process group and parse data"""
         exe = os.path.join(os.getcwd(), "gather_random_numbers")
 
-        # the 'pmi_enabled' kwarg tells Dragon to manipulate the PMI
-        # environment to allow execution of your MPI app.
-        mpi_pg = ProcessGroup(pmi_enabled=True)
+        mpi_pg = ProcessGroup(pmi=PMIBackend.CRAY)  # or PMIBackend.PMIX
 
         # Pipe the stdout output from rank 0, since we're going to do a simple MPI_Gather
         # to rank 0 of the MPI app
@@ -178,4 +191,77 @@ Dragon currently requires `cray-pmi`, though development is ongoing to extend su
 Running `mpi4py` Functions
 ==========================
 
-Add in how to delay initialization and connect into the infra.
+:py:class:`~dragon.native.process_group.ProcessGroup` can also be used to run `mpi4py`, which is most easily done
+following this recipe. First, we recommend that you access your `mpi4py` application as a target function rather
+than starting `python` explictly as an executable. Next, you will need to delay MPI initialization and do it
+explictly via the `mpi4py` API as opposed to the default automatic initialization done on import of `mpi4py`. The
+primary motivation for this is to make it easy to pass Dragon objects to the MPI ranks, such as a
+:py:class:`~dragon.native.queue.Queue` or :py:class:`~dragon.data.DDict`. Here is an example `mpi4py` application with
+these suggested changes that also can access a Dragon :py:class:`~dragon.native.queue.Queue`:
+
+.. code-block:: python
+    :linenos:
+    :caption: **Basic mpi4py application with a target main() function and MPI initialization done explicitly**
+
+    import mpi4py
+    mpi4py.rc.initialize = False
+
+    from mpi4py import MPI
+
+    def main(output_q):
+
+        MPI.Init()  # now we can initializatize MPI
+
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        size = comm.Get_size()
+        print(f"Rank {rank} of {size} says: Hello from MPI!", flush=True)
+
+        # do some parallel work
+
+        # let's write something unique from this MPI rank into the provided shared output Queue
+        output_q.put(f"Rank {rank} did some work")
+
+
+Let's say this code is in the local file `my_mpi4py.py` and can be imported with `import my_mpi4py`. The associated
+Dragon application that uses :py:class:`~dragon.native.process_group.ProcessGroup` to orchestrate a single execution
+of `my_mpi4py.py` looks like this:
+
+.. code-block:: python
+    :linenos:
+    :caption: **Simple orchestrator for my_mpi4py that also allows ranks to communicate data back through a Queue**
+
+    import os
+    import my_mpi4py
+
+    from dragon.infrastructure.facts import PMIBackend
+    from dragon.native.process_group import ProcessGroup
+    from dragon.native.process import ProcessTemplate
+    from dragon.native.queue import Queue
+
+    if __name__ == '__main__':
+
+        q = Queue()
+        pg = ProcessGroup(pmi=PMIBackend.CRAY)  # or PMIBackend.PMIX
+
+        num_ranks = 16
+        mpi_template = ProcessTemplate(target=my_mpi4py.main,
+                                       args=(q,))
+
+        pg.add_process(nproc=num_ranks, template=mpi_template)
+
+        pg.init()
+        pg.start()
+
+        for _ in range(num_ranks):
+            print(f"I got back: {q.get()}", flush=True)
+
+        pg.join()
+        pg.close()
+
+
+Related Cookbook Examples
+=========================
+
+* :ref:`cbook_ai_in_the_loop`
+* :ref:`cbook_mpi_workflow`

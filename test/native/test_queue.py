@@ -30,6 +30,11 @@ def _putter(env_str):
 def _getter(q):
     q.get()
 
+def _getter_two_items(qin, qout):
+    x = qin.get()
+    qout.put(x)
+    qin.get()
+
 def _joiner(env_str):
 
     bytes = du.B64.str_to_bytes(env_str)
@@ -301,6 +306,18 @@ class TestQueue(unittest.TestCase):
         self.assertEqual(q.get(), "hello")
         q.destroy()
 
+    def test_kill_proc_in_bcast_wait(self):
+        """If this test does not hang, then the bcast tracking of pids correctly handles a process dying/terminating while waiting."""
+        qin = Queue()
+        qout = Queue()
+        proc = mp.Process(target=_getter_two_items, args=(qin, qout))
+        proc.start()
+        qin.put("hello")
+        self.assertEqual(qout.get(), "hello")
+        time.sleep(2)
+        proc.kill()
+        qin.put("goodbye")
+
     def test_single_multiple_put_get(self):
         q = Queue()
         for i in range(8):
@@ -436,16 +453,6 @@ class TestQueue(unittest.TestCase):
         proc.join(timeout=None)
         self.assertEqual(proc.exitcode, 0)
         q.destroy()
-
-    def test_create_without_main_mgr_str_channels(self):
-        with self.assertRaises(DragonFLIError) as ex:
-            q = Queue(buffered=False)
-        self.assertEqual(ex.exception.lib_err, "DRAGON_INVALID_ARGUMENT")
-        self.assertIn(
-            "The main channel and the manager channel cannot both be null when the number of stream channels is 0.",
-            ex.exception.lib_msg,
-            "Expected message not found in the exception.",
-        )
 
     def test_unbuffered_queue_with_mgr_channel(self):
         mgr_ch = Channel.make_process_local()

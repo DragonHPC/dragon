@@ -176,7 +176,7 @@ class PbsPalsNetworkConfigTest(unittest.TestCase):
 
     def setUp(self):
         """Set values specific to PBS+PALS"""
-        self.wlm = WLM.PBS_PALS
+        self.wlm = WLM.PBS
         self.config_files = {}
 
     def test_pbs_pals(self):
@@ -186,14 +186,14 @@ class PbsPalsNetworkConfigTest(unittest.TestCase):
             logging.info("PBS+PALS test is checking for error")
             with self.assertRaises(RuntimeError):
                 net = NetworkConfig.from_wlm(
-                    workload_manager=WLM.PBS_PALS,
+                    workload_manager=WLM.PBS,
                     port=DEFAULT_OVERLAY_NETWORK_PORT,
                     network_prefix=DEFAULT_TRANSPORT_NETIF,
                 )
         else:
             logging.info("PBS+PALS test launched backend config jobs")
             net = NetworkConfig.from_wlm(
-                workload_manager=WLM.PBS_PALS, port=DEFAULT_OVERLAY_NETWORK_PORT, network_prefix=DEFAULT_TRANSPORT_NETIF
+                workload_manager=WLM.PBS, port=DEFAULT_OVERLAY_NETWORK_PORT, network_prefix=DEFAULT_TRANSPORT_NETIF
             )
             self.assertIsInstance(net, NetworkConfig)
 

@@ -9,6 +9,7 @@ import dragon.globalservices.api_setup as das
 import dragon.infrastructure.messages as dmsg
 
 from dragon.infrastructure.parameters import this_process
+from dragon.infrastructure.policy import Policy
 from dragon.infrastructure.channel_desc import ChannelDescriptor
 
 log = logging.getLogger("channel_api")
@@ -18,22 +19,39 @@ class ChannelError(Exception):
     pass
 
 
-def create(m_uid, user_name="", options=None, soft=False, puid_override=None):
-    """Asks Global Services to create a new channel
+def create(m_uid, user_name="", options=None, soft=False, puid_override=None, policy=None):
+    """Asks Global Services to create a new channel. If m_uid is specified, it must
+       be a pool on the current node. If a specific node is specified with the policy
+       then the channel will be created in the default pool on the specified node.
+       One of policy or m_uid must be specified. Specifying policy overrides a
+       specified m_uid.
 
-    :param m_uid: m_uid of pool to create the channel in
+    :param m_uid: m_uid of pool to in which to create the channel.
     :param user_name: Requested user specified reference name
-    :param options: ChannelOptions object, what options to apply to creation
+    :param options: ChannelOptions object which specifies options to apply to creation.
     :param soft: Default False.
                  If channel already exists with given name, do not create and
                  return descriptor instead.
     :param puid_override: Only needed when the channel is being created on behalf
                  of some other process. Normally this is not needed.
+    :param policy: A Policy specifying on which node the channel should be created.
+                 If a node is specified in the policy, the channel will be created
+                 in the default pool on the specified node. If policy is provided
+                 it overrides any value specified for m_uid.
     :return: ChannelDescriptor object
     """
 
     if options is None:
         options = {}
+
+    thread_policy = Policy.thread_policy()
+    if all([policy, thread_policy]):
+        # merge local policy and the specified policy
+        policy = Policy.merge(thread_policy, policy)
+    elif policy is None:
+        # If policy is None, then let's assign thread_policy to policy. thread_policy
+        # may also be None, but that's OK.
+        policy = thread_policy
 
     if soft and not user_name:
         raise ChannelError("soft create requires a user supplied channel name")
@@ -44,7 +62,13 @@ def create(m_uid, user_name="", options=None, soft=False, puid_override=None):
         puid = this_process.my_puid
 
     req_msg = dmsg.GSChannelCreate(
-        tag=das.next_tag(), p_uid=puid, r_c_uid=das.get_gs_ret_cuid(), m_uid=m_uid, user_name=user_name, options=options
+        tag=das.next_tag(),
+        p_uid=puid,
+        r_c_uid=das.get_gs_ret_cuid(),
+        m_uid=m_uid,
+        user_name=user_name,
+        options=options,
+        policy=policy,
     )
 
     reply_msg = das.gs_request(req_msg)

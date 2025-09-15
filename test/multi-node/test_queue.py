@@ -9,6 +9,10 @@ import random
 
 import dragon
 import multiprocessing as mp
+from dragon.native.machine import System, Node
+from dragon.native.process import Process
+from dragon.infrastructure.policy import Policy
+import dragon.native.queue as native
 
 max_msg_size = 1024  # limit to 1KB
 
@@ -83,6 +87,64 @@ class TestQueueMultiNode(unittest.TestCase):
 
         q.close()
         q_ver.close()
+
+    def test_policy(self):
+        my_alloc = System()
+        node_list = my_alloc.nodes
+        qlist = []
+        channel_nodes = set()
+
+        for node_id in node_list:
+            node = Node(node_id)
+            policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node.hostname)
+            nQueue = native.Queue(policy=policy)
+            channel_nodes.add(nQueue.node)
+            qlist.append(nQueue)
+
+        self.assertEqual(len(channel_nodes), len(node_list))
+        print(f"Created Queues on {len(channel_nodes)} nodes ... ", flush=True, end="")
+
+        qlist[0].put("Hello World")
+
+        for i in range(3):
+            for from_idx in range(len(node_list)):
+                to_idx = (from_idx + 1) % len(node_list)
+                qlist[to_idx].put(qlist[from_idx].get())
+
+        text = qlist[0].get()
+
+        self.assertEqual(
+            text, "Hello World", "The string 'Hello World' did not match after we were done passing it around."
+        )
+
+    def test_policy_context(self):
+        my_alloc = System()
+        node_list = my_alloc.nodes
+        qlist = []
+        channel_nodes = set()
+
+        for node_id in node_list:
+            node = Node(node_id)
+            with Policy(placement=Policy.Placement.HOST_NAME, host_name=node.hostname) as policy:
+                nQueue = native.Queue()
+            channel_nodes.add(nQueue.node)
+            qlist.append(nQueue)
+
+        self.assertEqual(len(channel_nodes), len(node_list))
+        print(f"Created Queues on {len(channel_nodes)} nodes ... ", flush=True, end="")
+
+        qlist[0].put("Hello World")
+
+        for i in range(3):
+            for from_idx in range(len(node_list)):
+                to_idx = (from_idx + 1) % len(node_list)
+                qlist[to_idx].put(qlist[from_idx].get())
+
+        text = qlist[0].get()
+
+        self.assertEqual(
+            text, "Hello World", "The string 'Hello World' did not match after we were done passing it around."
+        )
 
     def test_joinable(self):
         """Test joinability of a multi-node queue"""

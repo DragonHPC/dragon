@@ -8,7 +8,7 @@ import threading
 from queue import Queue, Empty
 from multiprocessing import Event
 from multiprocessing.synchronize import Event as EventClass
-from typing import Dict, Optional, BinaryIO, cast
+from typing import Dict, Optional, BinaryIO, cast, IO
 from dataclasses import dataclass, field
 
 from . import facts
@@ -42,17 +42,28 @@ class DragonRunFE:
 
     _DTBL = {}
 
-    def __init__(self, children, fanout):
-        self.children = children
-        self.fanout = fanout
+    def __init__(
+        self,
+        children: Optional[list[str]],
+        fanout: int,
+        log_level: int = logging.NOTSET,
+        stdout_wh: Optional[IO] = None,
+        stderr_wh: Optional[IO] = None,
+    ):
+        self.children: Optional[list[str]] = children
+        self.fanout: int = fanout
+        self.stdout_wh: Optional[IO] = stdout_wh
+        self.stderr_wh: Optional[IO] = stderr_wh
 
         self.msg_q: Queue = Queue()
         self.shutdown_event: EventClass = Event()
-        self.main_thread: Optional[threading.Thread] = None
+        self.run_thread: Optional[threading.Thread] = None
 
         self.remote_executor = None
         if self.children:
-            self.remote_executor = FERemoteExecutor(hostnames=self.children, drun_q=self.msg_q, fanout=self.fanout)
+            self.remote_executor = FERemoteExecutor(
+                hostnames=self.children, drun_q=self.msg_q, fanout=self.fanout, log_level=log_level
+            )
 
         self.local_executor_thread: Optional[threading.Thread] = None
         self.pending: dict[int, PendingRequest] = dict()  # key = tag, value = Event
@@ -69,17 +80,25 @@ class DragonRunFE:
         try:
             if self.remote_executor:
                 self.remote_executor.connect()
-            self.main_thread = threading.Thread(name="DragonRunFE MainThread", target=self.run)
-            self.main_thread.start()
+            self.run_thread = threading.Thread(name="DragonRunFE MainThread", target=self.run)
+            self.run_thread.start()
         finally:
             logger.debug("--DragonRunFE.start")
 
     def stop(self):
-        if self.main_thread:
+        if self.run_thread:
             self.shutdown_event.set()
-            self.main_thread.join()
+            self.run_thread.join()
             if self.remote_executor:
                 self.remote_executor.disconnect()
+                self.remote_executor = None
+            self.run_thread = None
+        if self.stderr_wh:
+            self.stderr_wh.close()
+            self.stderr_wh = None
+        if self.stdout_wh:
+            self.stdout_wh.close()
+            self.stdout_wh = None
 
     def run_user_app(self, command, env=None, cwd=None, exec_on_fe=False):
         logger.info("++run_user_app command=%s", command)
@@ -94,7 +113,7 @@ class DragonRunFE:
             num_ranks += 1
 
         logger.debug("run_user_app - 1")
-        if self.remote_executor:
+        if self.remote_executor and self.children:
             logger.debug("run_user_app - 2")
             expected_responses += len(self.children)
             msg = messages.RunUserApp(tag=tag, command=command, num_ranks=num_ranks, env=env, cwd=cwd)
@@ -127,13 +146,13 @@ class DragonRunFE:
     @util.route(messages.FwdOutput, _DTBL)
     def handleFwdOutput(self, msg: messages.FwdOutput):
         out_h = {
-            messages.FwdOutput.FDNum.STDOUT.value: sys.stdout,
-            messages.FwdOutput.FDNum.STDERR.value: sys.stderr,
+            messages.FwdOutput.FDNum.STDOUT.value: self.stdout_wh if self.stdout_wh else sys.stdout,
+            messages.FwdOutput.FDNum.STDERR.value: self.stderr_wh if self.stderr_wh else sys.stderr,
         }[msg.fd_num]
 
         lines = str(msg.data).splitlines()
         for line in lines:
-            print(f"{msg.fd_num} ({msg.hostname}) {line}", file=out_h, flush=True)
+            print(f"{msg.hostname}: {line}", file=out_h, flush=True)
 
     @util.route(messages.UserAppExit, _DTBL)
     def handleUserAppExit(self, msg: messages.UserAppExit):
@@ -160,7 +179,6 @@ class DragonRunFE:
         logger.debug("++run")
         try:
             while not self.shutdown_event.is_set():
-                logger.debug("run -- loop")
                 try:
                     msg = self.msg_q.get(timeout=facts.QUEUE_GET_TIMEOUT)
                     logger.debug("main_thread_msg_proc msg=%s", msg)
@@ -188,8 +206,9 @@ class DragonRunBE:
 
     _DTBL = {}  # dispatch router for messages being sent to our local_executor
 
-    def __init__(self, my_rank):
+    def __init__(self, my_rank, log_level: int = logging.NOTSET):
         self.my_rank = my_rank
+        self.log_level = log_level
         self.my_hostname = socket.gethostname()
 
         self.shutdown_event: EventClass = Event()
@@ -312,7 +331,9 @@ class DragonRunBE:
     def handleCreateTree(self, msg: messages.CreateTree):
         if msg.children:
             # TODO: Add exception handling about BERemoteExecutor. RemoteProcessError
-            self.remote_executor = BERemoteExecutor(self.my_rank, msg.children, msg.fanout, self.send_msg_q)
+            self.remote_executor = BERemoteExecutor(
+                self.my_rank, msg.children, msg.fanout, self.send_msg_q, self.log_level
+            )
             self.remote_executor.connect()
 
         return messages.BackendUp(util.next_tag(), self.my_hostname)

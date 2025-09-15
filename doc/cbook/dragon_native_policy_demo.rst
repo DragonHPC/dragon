@@ -1,20 +1,22 @@
-Using Dragon policies to control placement and resources for processes 
+.. _cbook_policy:
+
+Using Dragon Policies to Control Placement and Resources for Processes
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
 This example shows how policies can be passed and applied to processes that are started from a process group.
-Policies can be applied to the whole group as well as to individual processes. 
+Policies can be applied to the whole group as well as to individual processes.
 In this example, we apply a group policy that restricts the cpu affinity of all processes that are part of the group.
-A policy is then applied in batches to processes that are part of the group that restrict the placement of the processes to specific nodes. 
+A policy is then applied in batches to processes that are part of the group that restrict the placement of the processes to specific nodes.
 To demonstrate this restricted placement, we launch an MPI program, `mpi_hello`, that returns the hostname that it is running on along with its local process ID and its rank within the group.
 
-Note, if the group policy and process policy conflict, an error is not raised. 
-Instead, we resolve conflicts based on the following hierarchy: process policies > group policies > global policy.   
+Note, if the group policy and process policy conflict, an error is not raised.
+Instead, we resolve conflicts based on the following hierarchy: process policies > group policies > global policy.
 
 This example consists of the following files:
 
-* `policy_demo.py` - This is the main file. It defines the policies and process group, launches the group, and then parses the output from the ranks before printing the output. 
+* `policy_demo.py` - This is the main file. It defines the policies and process group, launches the group, and then parses the output from the ranks before printing the output.
 
-* `mpi_hello.c` - This file contains a simple MPI program that prints the hostname, pid, and rank within the MPI group. 
+* `mpi_hello.c` - This file contains a simple MPI program that prints the hostname, pid, and rank within the MPI group.
 
 Below, we present the main python code (`policy_demo.py`) which acts as the coordinator of the workflow.
 The code of the other files can be found in the release package, inside `examples/dragon_native/mpi` directory.
@@ -26,7 +28,7 @@ The code of the other files can be found in the release package, inside `example
 How to run
 ==========
 
-Example Output when run on 4 nodes with 8 AMD GPUs per node 
+Example Output when run on 4 nodes with 8 AMD GPUs per node
 -------------------------------------------------------------------------------------
 
 .. code-block:: console

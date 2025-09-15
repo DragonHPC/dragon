@@ -58,7 +58,7 @@ def main():
 
 def start_server():
     check_for_jupyter()
-    sys.argv = ["dragon", __file__]
+    sys.argv = ["dragon"] + sys.argv[1:] + [__file__]
     sys.exit(launcher.main())
 
 if __name__ == "__main__":

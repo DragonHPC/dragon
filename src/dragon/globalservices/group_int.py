@@ -34,10 +34,11 @@ class PMIJobHelper:
 
     _PMI_PID_DICT = {}  # key: hostname; value: list of tuples representing (base, size) allocations
 
-    def __init__(self, items, layout_list):
+    def __init__(self, items, layout_list, node_table):
         self._index = 0
         self.items = items
         self.layout_list = layout_list
+        self.node_table = node_table
 
         # Store the requested PMI backend
         self.backend = None
@@ -51,10 +52,10 @@ class PMIJobHelper:
         self.job_id = self.get_next_pmi_job_id()
         self.nranks = self.get_nranks()
 
-        (self.nid_list, self.host_list, self.ppn_map, self.lrank_list) = self.get_nid_and_host_data()
+        (self.nid_map, self.host_map, self.ppn_map, self.lrank_list) = self.get_nid_and_host_data()
         self.pmi_h_uid_list = list(self.ppn_map.keys())
 
-        self.pmi_nnodes = len(self.host_list)
+        self.pmi_nnodes = len(self.host_map)
 
         self.control_port = dfacts.DEFAULT_PMI_CONTROL_PORT + self.job_id
         self.pid_base_map = {}  # key h_uid, value base value
@@ -145,29 +146,49 @@ class PMIJobHelper:
         that do require PMI, determine number of PMI processes assigned to each h_uid.
         """
         layout_index = 0
-        nid_list = []
-        host_list = []
+        nid_map = {}
+        host_map = {}
         ppn_map = {}
         lrank_list = []
+        pmod_nid = 0
+        starting_rank = 0
+        running_rank = 0
         for count, res_msg in self.items:
             resource_msg = dmsg.parse(res_msg)
             if isinstance(resource_msg, dmsg.GSProcessCreate) and resource_msg.pmi is not None:
-                for _ in range(count):
+                for rank in range(count):
+                    running_rank = rank + starting_rank
                     h_uid = self.layout_list[layout_index].h_uid
                     lrank = ppn_map.get(h_uid, 0)
                     lrank_list.append(lrank)
 
                     if h_uid not in ppn_map:
                         # add this host to the host list
-                        host_list.append(self.layout_list[layout_index].host_name)
+                        if self.backend == dfacts.PMIBackend.CRAY:
+                            host_map[pmod_nid] = self.layout_list[layout_index].host_name
+                            pmod_nid += 1
+                        elif self.backend == dfacts.PMIBackend.PMIX:
+                            host_map[self.node_table[h_uid].g_idx] = self.layout_list[layout_index].host_name
 
                     ppn_map[h_uid] = lrank + 1
-                    nid_list.append(list(ppn_map.keys()).index(h_uid))
+                    if self.backend == dfacts.PMIBackend.CRAY:
+                        nid_map[running_rank] = list(ppn_map.keys()).index(h_uid)
+                    elif self.backend == dfacts.PMIBackend.PMIX:
+                        nid_map[running_rank] = self.node_table[h_uid].g_idx
                     layout_index += 1
             else:
                 layout_index += count
 
-        return nid_list, host_list, ppn_map, lrank_list
+            starting_rank = running_rank + 1
+        LOG.debug(
+            "PMI Job helper lists: {nid_map=%s, host_map=%s, ppn_map=%s, lrank_list=%s",
+            nid_map,
+            host_map,
+            ppn_map,
+            lrank_list,
+        )
+
+        return nid_map, host_map, ppn_map, lrank_list
 
     def get_host_id_from_index(self, rank):
         layout_index = 0
@@ -193,6 +214,7 @@ class PMIJobHelper:
                 lrank=lrank,
                 ppn=self.ppn_map[h_uid],
                 nid=self.pmi_h_uid_list.index(h_uid),
+                pmix_nid=self.node_table[h_uid].g_idx,
                 pid_base=self.pid_base_map[h_uid],
             )
             self._index += 1
@@ -381,14 +403,12 @@ class GroupContext:
         LOG.debug("policies=%s", policies)
 
         # Gather our node list and evaluate the policies against it
-        layout_list = server.policy_eval.evaluate(policies=policies)
-        if int(os.environ.get("PMI_DEBUG", 0)):
-            LOG.info("layout_list=%s", layout_list)
+        layout_list = server.process_policy_evaluator.evaluate(policies=policies)
 
         pmi_job_helper = None
         if PMIJobHelper.is_pmi_required(msg.items):
             # Setup PMI Helper
-            pmi_job_helper = PMIJobHelper(msg.items, layout_list)
+            pmi_job_helper = PMIJobHelper(msg.items, layout_list, server.node_table)
             pmi_job_iter = iter(pmi_job_helper)
 
         group_context = cls(
@@ -519,8 +539,8 @@ class GroupContext:
                 job_id=pmi_job_helper.job_id,
                 nnodes=pmi_job_helper.pmi_nnodes,
                 nranks=pmi_job_helper.nranks,
-                nidlist=pmi_job_helper.nid_list,
-                hostlist=pmi_job_helper.host_list,
+                nid_map=pmi_job_helper.nid_map,
+                host_map=pmi_job_helper.host_map,
                 control_port=pmi_job_helper.control_port,
                 pmix_desc=msg.pmix_desc,
             )
@@ -811,7 +831,7 @@ class GroupContext:
                 policies = [policy] * total_members
 
                 # Gather our node list and evaluate the policies against it
-                layout_list = server.policy_eval.evaluate(policies=policies)
+                layout_list = server.process_policy_evaluator.evaluate(policies=policies)
                 if int(os.environ.get("PMI_DEBUG", 0)):
                     LOG.debug("layout_list=%s", layout_list)
 
@@ -1681,7 +1701,7 @@ class GroupContext:
 
             # if we have received responses for all the members of this list, send the final response
             if server.group_destroy_pmix_count[msg.guid] == 0:
-                # now we can send the GSGroupCreateResponse msg back to the client
+                # now we can send the destroy msg back to the client
                 response = out_msg(
                     tag=server.tag_inc(),
                     ref=groupctx.destroy_pmix_request.tag,

@@ -1,4 +1,5 @@
 """A class for controlling object or process affinity to physical resources."""
+
 import os
 import enum
 from dataclasses import dataclass, field, fields

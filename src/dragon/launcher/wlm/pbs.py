@@ -5,42 +5,8 @@ import subprocess
 import json
 
 
-from .base import BaseNetworkConfig
+from .base import BaseWLM
 from ...infrastructure import facts as dfacts
-
-
-def get_pbs_pals_launch_be_args(args_map, launch_args):
-    config_file_path = dfacts.CONFIG_FILE_PATH
-
-    mpiexec_override = None
-    if config_file_path.exists():
-        with open(config_file_path) as config_file:
-            config_dict = json.load(config_file)
-
-        # Get all the runtimes
-        try:
-            mpiexec_override = config_dict["backend_mpiexec_override"]
-        except KeyError:
-            pass
-
-    if mpiexec_override is not None:
-        pbs_pals_launch_be_args = mpiexec_override.format(
-            nnodes=str(args_map["nnodes"]), nodelist=args_map["nodelist"]
-        ).split()
-    else:
-        pbs_pals_launch_be_args = [
-            "mpiexec",
-            "--np",
-            str(args_map["nnodes"]),
-            "--ppn",
-            "1",
-            "--cpu-bind",
-            "none",
-            "--hosts",
-            args_map["nodelist"],
-            "--line-buffer",
-        ]
-    return pbs_pals_launch_be_args + launch_args
 
 
 def get_nodefile_node_count(filename) -> int:
@@ -51,7 +17,7 @@ def get_nodefile_node_count(filename) -> int:
     return nnodes
 
 
-class PBSPalsNetworkConfig(BaseNetworkConfig):
+class PBSWLM(BaseWLM):
     MPIEXEC_COMMAND_LINE = "mpiexec --np {nnodes} -ppn 1 -l --line-buffer"
     ENV_PBS_JOB_ID = "PBS_JOBID"
 
@@ -104,6 +70,7 @@ Resubmit as part of a 'qsub' execution"""
         return os.environ.get(cls.ENV_PBS_JOB_ID) is not None
 
     def _get_wlm_job_id(self) -> str:
+        assert self.job_id
         return self.job_id
 
     def _supports_net_conf_cache(self) -> bool:
@@ -111,10 +78,43 @@ Resubmit as part of a 'qsub' execution"""
 
     def _launch_network_config_helper(self) -> subprocess.Popen:
         mpiexec_launch_args = self.MPIEXEC_ARGS[:]
-        mpiexec_launch_args.extend(self.NETWORK_CFG_HELPER_LAUNCH_CMD)
+        mpiexec_launch_args.extend(self.NETWORK_CFG_HELPER_LAUNCH_CMD) # type: ignore
 
         self.LOGGER.debug(f"Launching config with: {mpiexec_launch_args=}")
 
         return subprocess.Popen(
             args=mpiexec_launch_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0, start_new_session=True
         )
+
+    def _get_wlm_launch_be_args(self, args_map, launch_args):
+        config_file_path = dfacts.CONFIG_FILE_PATH
+
+        mpiexec_override = None
+        if config_file_path.exists():
+            with open(config_file_path) as config_file:
+                config_dict = json.load(config_file)
+
+            # Get all the runtimes
+            try:
+                mpiexec_override = config_dict["backend_mpiexec_override"]
+            except KeyError:
+                pass
+
+        if mpiexec_override is not None:
+            pbs_pals_launch_be_args = mpiexec_override.format(
+                nnodes=str(args_map["nnodes"]), nodelist=args_map["nodelist"]
+            ).split()
+        else:
+            pbs_pals_launch_be_args = [
+                "mpiexec",
+                "--np",
+                str(args_map["nnodes"]),
+                "--ppn",
+                "1",
+                "--cpu-bind",
+                "none",
+                "--hosts",
+                args_map["nodelist"],
+                "--line-buffer",
+            ]
+        return pbs_pals_launch_be_args + launch_args

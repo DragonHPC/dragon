@@ -45,7 +45,7 @@ Installation
 
 After installing dragon, the only other dependency that needs to be manually installed is the user's Grafana server.
 
-Grafana can be downloaded `here <https://grafana.com/grafana/download?edition=oss>`_. We suggest following the instructions provided by Grafana to install Grafana locally. We recommend Grafana v10.4.x at this time.
+Grafana can be downloaded `here <https://grafana.com/grafana/download?edition=oss>`_. We suggest following the instructions provided by Grafana to install Grafana locally. Telemetry has been verified to be working with Grafana v12.1.0 (current latest) and is compatible with all versions starting from v10.4.x.
 
 We have created a custom config YAML for Grafana OpenTSDB connection setup that can be found in ``/dragon/telemetry/imports/custom.yaml``
 Place this file where you have installed Grafana in ``grafana/conf/provisioning/datasources``.

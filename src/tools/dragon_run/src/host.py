@@ -1,8 +1,6 @@
 import os
 import logging
 import paramiko
-import socket
-import time
 
 from abc import ABC, abstractmethod
 from shlex import quote
@@ -16,9 +14,10 @@ logger = logging.getLogger(__name__)
 
 
 class RemoteHost(ABC):
-    def __init__(self, hostname, rank):
+    def __init__(self, hostname: str, rank: int, log_level: int):
         self.hostname: str = hostname
         self.rank: int = rank
+        self.log_level: int = log_level
 
     def __enter__(self):
         self.connect()
@@ -55,8 +54,8 @@ class SSHHost(RemoteHost):
         "PATH",
     )
 
-    def __init__(self, hostname, rank):
-        super().__init__(hostname, rank)
+    def __init__(self, hostname: str, rank: int, log_level: int = logging.NOTSET):
+        super().__init__(hostname, rank, log_level)
         self.stdin: Optional[paramiko.ChannelFile] = None
         self.stdout: Optional[paramiko.ChannelFile] = None
         self.stderr: Optional[paramiko.ChannelFile] = None
@@ -95,7 +94,13 @@ class SSHHost(RemoteHost):
         logger.debug("++run ssh_host=%s rank=%d cmd=%s", self.hostname, self.rank, command)
         try:
             environment = {key: os.environ.get(key, "") for key in self.SSH_ENV_VARNAMES}
+
+            # Set the rank of the remote process
             environment["DRAGON_RUN_RANK"] = str(self.rank)
+
+            if self.log_level:
+                # Set the log level for the remote process
+                environment["DRAGON_RUN_LOG_LEVEL"] = str(self.log_level)
 
             # cd <dir> ; bash -c "key1=val1 key2=val2 command"
             remote_command_list = [f"cd {os.getcwd()};"]

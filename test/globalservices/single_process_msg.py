@@ -422,7 +422,7 @@ class SingleProcMsgChannels(unittest.TestCase):
             the_puid=dfacts.LAUNCHER_PUID,
             the_rcuid=dfacts.BASE_BE_CUID,
             pmi=dfacts.PMIBackend.CRAY,
-            pmi_info=dmsg.PMIProcessInfo(lrank=0, ppn=1, nid=1, pid_base=1),
+            pmi_info=dmsg.PMIProcessInfo(lrank=0, ppn=1, nid=1, pmix_nid=1, pid_base=1),
             head_proc=True,
         )
 

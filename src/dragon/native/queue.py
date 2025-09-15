@@ -15,7 +15,7 @@ import logging
 from ..channels import Channel, ChannelEmpty, ChannelFull
 from ..managed_memory import MemoryPool
 from ..utils import b64encode
-from ..globalservices.channel import create, destroy, release_refcnt, get_refcnt
+from ..globalservices.channel import create, destroy, release_refcnt, get_refcnt, query
 from ..infrastructure.parameters import POLICY_USER, Policy
 from ..infrastructure.channel_desc import ChannelOptions
 import dragon.fli as fli
@@ -27,29 +27,41 @@ class QueueError(Exception):
     pass
 
 
-def _mk_channel(*, pool=None, block_size=None, capacity=100):
+def _mk_channel(*, pool=None, block_size=None, capacity=100, policy=None):
     if pool is None:
         pool = MemoryPool.attach_default()
+
+    if pool is not None:
+        muid = pool.muid
+    else:
+        muid = None
+
     the_options = ChannelOptions(ref_count=True)
     the_options.local_opts.block_size = block_size
     the_options.local_opts.capacity = capacity
 
     try:
-        descr = create(m_uid=pool.muid, options=the_options)
+        descr = create(m_uid=muid, options=the_options, policy=policy)
         channel = Channel.attach(descr.sdesc)
         return channel
     except Exception as e:
         raise QueueError(f"Could not create queue main channel.\n{e}")
 
 
-def _mk_sem_channel(*, pool=None, block_size=None):
+def _mk_sem_channel(*, pool=None, block_size=None, policy=None):
     if pool is None:
         pool = MemoryPool.attach_default()
+
+    if pool is not None:
+        muid = pool.muid
+    else:
+        muid = None
+
     local_opts = {"semaphore": True, "bounded_semaphore": False, "initial_sem_value": 0}
     the_options = ChannelOptions(ref_count=True, local_opts=local_opts)
 
     try:
-        descr = create(m_uid=pool.muid, options=the_options)
+        descr = create(m_uid=muid, options=the_options, policy=policy)
         sem_channel = Channel.attach(descr.sdesc)
         return sem_channel
     except Exception as e:
@@ -79,7 +91,7 @@ class Queue:
         block_size: int = 2**16,  # 64 kbytes
         joinable: bool = False,
         buffered: bool = True,
-        policy: Policy = POLICY_USER,
+        policy: Policy = None,
         num_streams: int = 0,
         main_channel: object = None,
         mgr_channel: object = None,
@@ -101,7 +113,8 @@ class Queue:
         :type joinable: bool, optional
         :param buffered: This queue is to be a buffered queue where all data is buffered internally so receivers do only one
         get operation for a complete transmission from a sender.
-        :param policy: policy object, defaults to POLICY_USER
+        :param policy: policy object, defaults to None. If specified with a specific node/host, the policy dictates
+        where any internal channels are created. They will be created in the default pool of the specified node.
         :type policy: object, optional
         :param num_streams: The number of stream channels to be created for a managed FLI queue. If greater than zero, then a
         main and manager channel will be automatically created and managed internally if not provided.
@@ -136,9 +149,6 @@ class Queue:
         if maxsize <= 0:
             maxsize = 100
 
-        if not isinstance(policy, Policy):
-            raise ValueError("The class of service must be a dragon.infrastructure.parameters.Policy value.")
-
         if pool is None:
             pool = MemoryPool.attach_default()
 
@@ -158,6 +168,7 @@ class Queue:
         self._num_managed_strm_channels = 0
         self._strm_channels = [] if strm_channels is None else strm_channels
         self._pickler = pickler
+        self._node_index = None  # Don't set it here. That way we won't talk to GS unless asked to.
 
         # Now detect what needs to be managed internally and if there are conflicts in
         # the combination of provided arguments.
@@ -179,7 +190,9 @@ class Queue:
                 )
 
             if main_channel is None:
-                self._main_channel = _mk_channel(pool=self._pool, block_size=block_size, capacity=maxsize)
+                self._main_channel = _mk_channel(
+                    pool=self._pool, block_size=block_size, capacity=maxsize, policy=policy
+                )
                 self._main_channel_internally_managed = True
         else:
             # This is not a buffered Queue. So there will be stream channels either provided on the
@@ -190,22 +203,26 @@ class Queue:
 
                 # Then we must have a manager and a main channel if stream channels are managed by the FLI.
                 if main_channel is None:
-                    self._main_channel = _mk_channel(pool=self._pool, block_size=None, capacity=num_streams)
+                    self._main_channel = _mk_channel(
+                        pool=self._pool, block_size=None, capacity=num_streams, policy=policy
+                    )
                     self._main_channel_internally_managed = True
 
                 if mgr_channel is None:
-                    self._mgr_channel = _mk_channel(pool=self._pool, block_size=None, capacity=num_streams)
+                    self._mgr_channel = _mk_channel(
+                        pool=self._pool, block_size=None, capacity=num_streams, policy=policy
+                    )
                     self._mgr_channel_internally_managed = True
 
                 while len(self._strm_channels) < num_streams:
                     self._strm_channels.append(
-                        _mk_channel(pool=self._pool, block_size=self._block_size, capacity=self._maxsize)
+                        _mk_channel(pool=self._pool, block_size=self._block_size, capacity=self._maxsize, policy=policy)
                     )
                     self._num_managed_strm_channels += 1
 
         if joinable:
             if sem_channel is None:
-                self._sem_channel = _mk_sem_channel(pool=self._pool)
+                self._sem_channel = _mk_sem_channel(pool=self._pool, policy=policy)
                 self._sem_channel_internally_managed = True
 
         self._fli = fli.FLInterface(
@@ -246,6 +263,7 @@ class Queue:
             self._num_managed_strm_channels,
             self._strm_channels,
             self._fli,
+            self._node_index,
             pickler,
         )
 
@@ -268,6 +286,7 @@ class Queue:
             self._num_managed_strm_channels,
             self._strm_channels,
             self._fli,
+            self._node_index,
             pickler,
         ) = state
 
@@ -476,7 +495,23 @@ class Queue:
 
     @property
     def closed(self) -> bool:
+        """Close the queue so nothing can be put over it.
+        :return: None
+        """
         return self._closed
+
+    @property
+    def node(self) -> int:
+        """Return the node index within the current run-time
+           where the main channel of this Queue resides.
+        :rtype: int
+        :return: The integer node index.
+        """
+        if self._node_index is None:
+            cdesc = query(self._main_channel.cuid)  # reaching inside Queue. Only for test purposes
+            self._node_index = cdesc.node
+
+        return self._node_index
 
     # for dragon wait
 

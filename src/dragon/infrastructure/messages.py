@@ -479,8 +479,8 @@ class PMIGroupInfo:
     job_id: int
     nnodes: int
     nranks: int
-    nidlist: list[int]
-    hostlist: list[str]
+    nid_map: dict[int, int]  # ranks to node id
+    host_map: dict[int, str]  # node id to hostname
     control_port: int
     pmix_desc: str
 
@@ -501,6 +501,7 @@ class PMIProcessInfo:
     lrank: int
     ppn: int
     nid: int
+    pmix_nid: int
     pid_base: int
 
     @classmethod
@@ -2342,8 +2343,24 @@ class DDValues(CapNProtoMsg):
 class DDValuesResponse(CapNProtoResponseMsg):
     _tc = MessageTypes.DD_VALUES_RESPONSE
 
-    def __init__(self, tag, ref, err, errInfo=""):
+    def __init__(self, tag, ref, err, errInfo="", freeMem=False):
         super().__init__(tag, ref, err, errInfo)
+        self._freeMem = freeMem
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["freeMem"] = self._freeMem
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.freeMem = self._freeMem
+        return cap_msg
+
+    @property
+    def freeMem(self):
+        return self._freeMem
 
 
 class DDItems(CapNProtoMsg):
@@ -2386,8 +2403,24 @@ class DDItems(CapNProtoMsg):
 class DDItemsResponse(CapNProtoResponseMsg):
     _tc = MessageTypes.DD_ITEMS_RESPONSE
 
-    def __init__(self, tag, ref, err, errInfo=""):
+    def __init__(self, tag, ref, err, errInfo="", freeMem=False):
         super().__init__(tag, ref, err, errInfo)
+        self._freeMem = freeMem
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["freeMem"] = self._freeMem
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.freeMem = self._freeMem
+        return cap_msg
+
+    @property
+    def freeMem(self):
+        return self._freeMem
 
 
 class DDEmptyManagers(CapNProtoMsg):
@@ -4225,7 +4258,7 @@ class GSGroupCreate(InfraMsg):
         elif isinstance(policy, Policy):
             self.policy = policy
         elif isinstance(policy, list):
-            raise ValueError(f"GS Group policy cannot be a list.")
+            raise ValueError("GS Group policy cannot be a list.")
         else:
             raise ValueError(f"GS Groups unsupported policy value {policy=}")
 
@@ -4274,6 +4307,7 @@ class GSGroupCreateResponse(InfraMsg):
     def get_sdict(self):
         rv = super().get_sdict()
         rv["desc"] = None if self.desc is None else self.desc.get_sdict()
+
         return rv
 
 
@@ -4996,7 +5030,7 @@ class GSChannelCreate(InfraMsg):
 
     _tc = MessageTypes.GS_CHANNEL_CREATE
 
-    def __init__(self, tag, p_uid, r_c_uid, m_uid, options=None, user_name="", _tc=None):
+    def __init__(self, tag, p_uid, r_c_uid, m_uid, options=None, user_name="", policy=None, _tc=None):
         super().__init__(tag)
 
         if options is None:
@@ -5008,6 +5042,15 @@ class GSChannelCreate(InfraMsg):
         self.user_name = user_name
         self.options = options
 
+        if policy is None:
+            self.policy = None
+        elif isinstance(policy, dict):
+            self.policy = Policy(**policy)
+        elif isinstance(policy, Policy):
+            self.policy = policy
+        else:
+            raise ValueError(f"GS unsupported policy value {policy=}")
+
     def get_sdict(self):
         rv = super().get_sdict()
         rv["p_uid"] = self.p_uid
@@ -5015,6 +5058,7 @@ class GSChannelCreate(InfraMsg):
         rv["user_name"] = self.user_name
         rv["m_uid"] = self.m_uid
         rv["options"] = self.options.get_sdict()
+        rv["policy"] = None if self.policy is None else asdict(self.policy)
         return rv
 
     @property

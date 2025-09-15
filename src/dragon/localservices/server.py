@@ -107,6 +107,7 @@ class PMIxGroupResources:
         self.ret_ch = ret_ch
         self.buffered_resp_ch = buffered_resp_ch
         self._server = None
+        self._job_destroyed = False
 
     @property
     def server(self):
@@ -116,7 +117,7 @@ class PMIxGroupResources:
     def server(self, server: DragonPMIxServer):
         self._server = server
 
-    def destroy(self):
+    def destroy_job(self):
         try:
             self.ls_ch.destroy()
         except Exception:
@@ -133,9 +134,14 @@ class PMIxGroupResources:
             pass
 
         try:
-            self._server.finalize()
+            self._server.finalize_job()
         except Exception as e:
-            raise RuntimeError("Unable to shutdown PMIx server: %s", e)
+            raise RuntimeError("Unable to cleanup PMIx jobs: %s", e)
+
+        self._job_destroyed = True
+
+    def destroy_server(self):
+        self._server.finalize_server()
 
 
 class TerminationException(Exception):
@@ -918,7 +924,16 @@ class LocalServer:
             else:
                 self._abnormal_termination("unexpected msg type: %s" % repr(msg))
 
-        log.info("Main loop has exited. Now cleaning up local channels and pools")
+        log.info("Main loop has exited. Now cleaning up local channels, pools, and other resources")
+
+        # If we created a pmix server, clean it up now
+        if bool(self.group_resources):
+            for guid, pmix_server in self.group_resources.items():
+                if isinstance(pmix_server, DragonPMIxServer):
+                    if pmix_server.server.is_server_host():
+                        log.info("Destroying PMIx server associated with guid %s", guid)
+                        pmix_server.destroy_server()
+                        del pmix_server
 
         for proc in self.apt.values():
             self.cleanup_local_channels_pools(proc)
@@ -1230,11 +1245,32 @@ class LocalServer:
             base_rank = None
             log.debug("PMI group info multi proc create: %s", msg.pmi_group_info)
             if msg.pmi_group_info.backend == dfacts.PMIBackend.PMIX:
-                node_id = msg.procs[0].pmi_info.nid
-                ppn = len([nid for nid in msg.pmi_group_info.nidlist if nid == node_id])
-                base_rank = len([nid for nid in msg.pmi_group_info.nidlist if nid < node_id])
+                my_node_id = msg.procs[0].pmi_info.pmix_nid  # This node's unique value
 
-                log.debug("Create PMIx rsources for guid %s", msg.guid)
+                # Parse the ranks->nidlist dict and get all the unique node ids out of it:
+                pmix_nidlist = list(set(msg.pmi_group_info.nid_map.values()))
+
+                # Create hostlist ordered by node id
+                pmix_hostlist = [msg.pmi_group_info.host_map[str(nid)] for nid in pmix_nidlist]
+
+                # Create a list of ranks where index is rank and value is node id that rank is on
+                pmix_ranklist = [msg.pmi_group_info.nid_map[str(rank)] for rank in range(msg.pmi_group_info.nranks)]
+
+                # Create a ppn for each node ordered by node id
+                ppns = [len([nid for nid in pmix_ranklist if nid == current_id]) for current_id in pmix_nidlist]
+
+                log.debug(
+                    "Create PMIx resources for guid %s on node id %s | ppns %s | node_ids %s | hosts %s | rank-to-nid %s",
+                    msg.guid,
+                    my_node_id,
+                    ppns,
+                    pmix_nidlist,
+                    pmix_hostlist,
+                    pmix_ranklist,
+                )
+
+                if not bool(self.group_resources):
+                    self.group_resources["server_created"] = False
                 self.group_resources[msg.guid] = PMIxGroupResources(
                     self.make_local_channel(), self.make_local_channel(), self.make_local_channel()
                 )
@@ -1254,17 +1290,22 @@ class LocalServer:
                     raise AttributeError(err_info)
                 else:
                     self.group_resources[msg.guid].server = DragonPMIxServer(
+                        msg.guid,
+                        self.group_resources["server_created"],
                         msg.pmi_group_info.pmix_desc,
                         local_mgr_desc,
                         self.group_resources[msg.guid].ls_ch.serialize(),
                         self.group_resources[msg.guid].ret_ch.serialize(),
                         self.group_resources[msg.guid].buffered_resp_ch.serialize(),
-                        msg.pmi_group_info.nranks,
-                        node_id,
-                        ppn,
-                        msg.pmi_group_info.hostlist,
+                        my_node_id,
+                        pmix_ranklist,
+                        ppns,
+                        pmix_nidlist,
+                        pmix_hostlist,
                     )
-                    log.info("Initialized local PMIx server")
+
+                    if self.group_resources[msg.guid].server.is_server_host():
+                        self.group_resources["server_created"] = True
         # In case PMI stuff isn't happening
         except AttributeError as e:
             log.debug("Error starting PMIx server: %s", e)
@@ -1450,11 +1491,9 @@ class LocalServer:
                         pass
 
                 elif pmi_group_info.backend == dfacts.PMIBackend.PMIX:
-                    log.info(f"Establishing parameters for PMIx launch of MPI app. Initial env length: {len(the_env)}")
+                    log.info(f"Establishing parameters for PMIx launch of MPI app")
                     try:
-                        the_env = self.group_resources[guid].server.get_client_env(
-                            the_env, base_rank + msg.pmi_info.lrank
-                        )
+                        the_env = self.group_resources[guid].server.get_client_env(the_env, msg.pmi_info.lrank)
                     except AttributeError:
                         resp_msg = fail("A PMIx backend was requested, but no PMIx server was found.")
                         return resp_msg
@@ -1464,6 +1503,7 @@ class LocalServer:
                     the_env["MPIR_CVAR_ENABLE_GPU"] = "0"
 
                     nenv = len(the_env)
+                    log.debug("PMIx backend nenv: %s", nenv)
                     for idx, (k, v) in enumerate(the_env.items()):
                         log.debug("Env %s/%s -> %s: %s", idx, nenv, k, v)
 
@@ -1530,14 +1570,17 @@ class LocalServer:
 
             if msg.pmi_info:
                 if pmi_group_info.backend == dfacts.PMIBackend.CRAY:
+                    pmod_nidlist = [pmi_group_info.nid_map[str(idx)] for idx in range(pmi_group_info.nranks)]
+                    pmod_hostlist = [pmi_group_info.host_map[str(idx)] for idx in range(pmi_group_info.nnodes)]
+                    log.debug(f"pmod_nidlist = {pmod_nidlist} | pmod_hostlist = {pmod_hostlist}")
                     log.info("p_uid %s sending cray-pmi mpi data for %s" % (msg.t_p_uid, msg.pmi_info.lrank))
                     pmod.PMOD(
                         msg.pmi_info.ppn,
                         msg.pmi_info.nid,
                         pmi_group_info.nnodes,
                         pmi_group_info.nranks,
-                        pmi_group_info.nidlist,
-                        pmi_group_info.hostlist,
+                        pmod_nidlist,
+                        pmod_hostlist,
                         pmi_group_info.job_id,
                     ).send_mpi_data(msg.pmi_info.lrank, pmod_launch_ch)
                     log.info("p_uid %s DONE: sending mpi data for %s" % (msg.t_p_uid, msg.pmi_info.lrank))
@@ -1748,10 +1791,11 @@ class LocalServer:
         success, fail = mk_response_pairs(dmsg.LSDestroyPMIxResponse, msg.tag)
         log.debug("Cleaning up PMIx resources for guid %s", msg.guid)
         try:
-            self.group_resources[msg.guid].destroy()
-            del self.group_resources[msg.guid]
+            self.group_resources[msg.guid].destroy_job()
+            if not self.group_resources[msg.guid].server.is_server_host():
+                del self.group_resources[msg.guid]
             resp_msg = success(guid=msg.guid)
-            log.debug("Successfully destroying PMIx resources for guid %s", msg.guid)
+            log.debug("Successfully destroyed PMIx resources for guid %s", msg.guid)
         except KeyError:
             err = f"Found no resources allocated to guid {msg.guid}"
             log.debug(err)

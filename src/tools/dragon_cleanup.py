@@ -265,8 +265,11 @@ class DragonCleanup:
             flush=True,
         )
 
-        for tmp_file in [item for item in tmp_dir.iterdir() if item.is_file()]:
+        for tmp_file in tmp_dir.iterdir():
             try:
+                if not tmp_file.is_file():
+                    continue
+
                 if tmp_file.owner() == DragonCleanup.MY_USERNAME and any(
                     [
                         tmp_file.match(DragonCleanup.DATABASE_FILES),
@@ -283,6 +286,8 @@ class DragonCleanup:
             except KeyError:
                 # A KeyError can be thrown when the file is owned by
                 # a user that is not listed in the /etc/passwd file.
+                pass
+            except PermissionError as e:
                 pass
 
     def cleanup(self):
@@ -396,7 +401,7 @@ def drun():
     try:
         drun.run_wrapper(
             user_command=user_command,
-            host_list=args["host_list"] ,
+            host_list=args["host_list"],
             force_single_node=args["force_single_node"],
             force_multi_node=args["force_multi_node"],
             force_wlm=args["force_wlm"],

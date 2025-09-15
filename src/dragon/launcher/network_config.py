@@ -16,7 +16,7 @@ from ..dlogging import util as dlog
 from .launchargs import HOSTFILE_HELP, HOSTLIST_HELP, WLM_HELP
 from .launchargs import SplitArgsAtComma, parse_hosts
 from .wlm import WLM, wlm_cls_dict
-from .wlm import SlurmNetworkConfig, PBSPalsNetworkConfig, SSHNetworkConfig, KubernetesNetworkConfig
+from .wlm import SlurmWLM, PBSWLM, SSHWLM, KubernetesNetworkConfig
 
 
 @enum.unique
@@ -386,7 +386,7 @@ def get_args(inputs=None):
             raise RuntimeError("Could not detect a supported WLM environment.")
 
     # Handle the ssh case
-    if wlm is WLM.SSH:
+    if wlm in (WLM.SSH, WLM.DRUN):
         args.hostlist = parse_hosts(args.hostlist, args.hostfile)
     else:
         if args.hostlist is not None or args.hostfile is not None:

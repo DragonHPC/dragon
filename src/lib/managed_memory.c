@@ -3756,6 +3756,45 @@ dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMe
 }
 
 /**
+ * @brief Get the virtual address and size of the buffer associated with a memory descriptor.
+ *
+ * Get the virtual address and size of the buffer associated with the memory descriptor.
+ *
+ * @param mem_descr is the memory descriptor.
+ *
+ * @param ptr is a double pointer to update with the virtual address of the underlying buffer.
+ *
+ * @param size is a pointer to update with the size in bytes of the underlying buffer.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_memory_get_ptr_info(const dragonMemoryDescr_t * mem_descr, void ** ptr, size_t * size)
+{
+    if (mem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "NULL memory descriptor");
+
+    dragonMemory_t * mem;
+    dragonError_t err = _mem_from_descr(mem_descr, &mem);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid memory descriptor");
+
+    *size = mem->bytes;
+
+    if (*size == 0) {
+        *ptr = NULL;
+    }
+    else {
+        if (mem->local_dptr == NULL)
+            err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot get a pointer to a non-local memory allocation.");
+
+        *ptr = mem->local_dptr + mem->offset;
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
  * @brief Clone a memory descriptor with a custom offset
  *
  * Given a memory descriptor, construct a clone with a new offset

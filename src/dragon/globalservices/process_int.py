@@ -233,7 +233,7 @@ class ProcessContext:
 
         # If a policy was passed through but has not been evaluated into a layout, do so now
         if msg.layout is None and msg.policy is not None:
-            msg.layout = server.policy_eval.evaluate([msg.policy])[0]
+            msg.layout = server.process_policy_evaluator.evaluate([msg.policy])[0]
 
         # Update the resiliency flag if the launcher requested it
         if not server.resilient_groups:

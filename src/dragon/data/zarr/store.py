@@ -56,7 +56,7 @@ class Store(DDict, ZStore):
 
     _erasable = False
 
-    def __init__(self, *args, path: str = None, nloaders: int = 2, dimension_separator: str = None, **kwargs):
+    def __init__(self, *args, path: str = None, nloaders: int = 2, dimension_separator: str = None, use_copy_store: bool = True, **kwargs):
         """
         Construct a new DDict-backed Zarr store that is either empty or a cached form of a Zarr file-based store.
         This class is a subclass of `DDict` and accepts all arguments it takes.
@@ -65,6 +65,8 @@ class Store(DDict, ZStore):
         :param nloaders: The number of processes used to load data in parallel from the file-based store.
         :param dimension_separator: (optional) Separator placed between the dimensions of a chunk. Used only when
                                     determining how to parallelize loading of a store from a path.
+        :param use_copy_store: Use the copy_store to duplicate data from the base Zarr store if possible. This is faster
+                               when keys in the store are large and there are many of them.
         """
         vpath = None
         if path is not None:
@@ -89,6 +91,8 @@ class Store(DDict, ZStore):
         if dimension_separator is not None:
             self._sep = dimension_separator
 
+        self._use_copy_store = use_copy_store
+
     def _init_zprops(self):
         self._path = None
         self._src_zg = None
@@ -98,6 +102,7 @@ class Store(DDict, ZStore):
         self._timer = 0
         self._zkeys = None
         self._sep = "/"
+        self._use_copy_store = None
 
     def __getstate__(self):
         dstate = super().__getstate__()
@@ -105,16 +110,22 @@ class Store(DDict, ZStore):
         if self._loadp is not None:
             lp_puid = self._loadp.puid
 
-        return (self._sep, self._path, self._loaded_bytes, lp_puid) + dstate
+        return (self._sep, self._path, self._loaded_bytes, self._use_copy_store, lp_puid) + dstate
 
     def __setstate__(self, state):
         self._init_zprops()
-        self._sep, self._path, self._loaded_bytes, lp_puid, *dstate = state
+        self._sep, self._path, self._loaded_bytes, self._use_copy_store, lp_puid, *dstate = state
         super().__setstate__(dstate)
 
         self._init_store()
         if lp_puid is not None:
             self._loadp = Process(None, ident=lp_puid)
+
+    def __len__(self):
+        if self._loadp is not None and self._loadp.is_alive:
+            return len(self._src_zg.store)
+        else:
+            return super().__len__()
 
     def keys(self) -> list[object]:
         """
@@ -226,27 +237,31 @@ class Store(DDict, ZStore):
                 return (key, e, None)
 
     @classmethod
-    def _find_gkeys(cls, sep, path, zg):
+    def _find_gkeys(cls, sep, path, zg, use_copy_store):
         thekeys = set()
-        for k in zg.store.keys():
-            lk = k.split(sep)
+        if use_copy_store:
 
-            # try to parallelize on the second index
-            try:
-                sk = f"{lk[0]}{sep}{lk[1]}"
-            except:
-                sk = lk[0]
-            thekeys.add(sk)
+            for k in zg.store.keys():
+                lk = k.split(sep)
+
+                # try to parallelize on the second index
+                try:
+                    sk = f"{lk[0]}{sep}{lk[1]}"
+                except:
+                    sk = lk[0]
+                thekeys.add(sk)
+        else:
+            thekeys = zg.store.keys()
 
         return list(thekeys)
 
     @classmethod
-    def _parallel_loader(cls, sep, path, nloaders, dstore, loadv):
+    def _parallel_loader(cls, sep, path, nloaders, dstore, loadv, use_copy_store):
         # get the top level array keys we'll use to break up the loading
         src_zg = zarr.open(path, mode="r")
 
         # TODO change to a real iterable for better performance so we can overlap key scans with loading
-        keys_to_proc = iter(cls._find_gkeys(sep, "", src_zg))
+        keys_to_proc = iter(cls._find_gkeys(sep, "", src_zg, use_copy_store))
 
         # do the initial touch of the DDict-based store
         warm_zg = zarr.group(store=dstore)
@@ -290,7 +305,7 @@ class Store(DDict, ZStore):
 
     def _start_parallel_loader(self, nloaders):
         self._loadp = Process(
-            target=self._parallel_loader, args=(self._sep, self._path, nloaders, self, self._loaded_bytes)
+            target=self._parallel_loader, args=(self._sep, self._path, nloaders, self, self._loaded_bytes, self._use_copy_store)
         )
         self._loadp.start()
 

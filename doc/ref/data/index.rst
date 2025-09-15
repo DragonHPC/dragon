@@ -11,6 +11,9 @@ together for each of the supported Dragon Data Types.
 Python Reference
 ================
 
+In-Memory Distributed Dictionary
+-----------------------------------
+
 .. currentmodule:: dragon.data
 
 .. autosummary::
@@ -18,7 +21,42 @@ Python Reference
     :recursive:
 
     DDict
-    zarr.Store
+
+.. currentmodule:: dragon.data.ddict
+
+.. autosummary::
+    :toctree:
+    :recursive:
+
+    DDictError
+    DDictSyncError
+    DDictFullError
+    DDictTimeoutError
+    DDictPersistCheckpointError
+    DDictKeyError
+    DDictCheckpointSyncError
+    DDictUnableToCreateError
+    DDictFutureCheckpointError
+    DDictManagerStats
+    CheckpointPersister
+    NULLCheckpointPersister
+    PosixCheckpointPersister
+    DAOSCheckpointPersister
+    DDictKeysView
+    DDictValuesView
+    DDictItemsView
+    FilterContextManager
+
+Zarr Store
+------------
+
+.. currentmodule:: dragon.data.zarr
+
+.. autosummary::
+    :toctree:
+    :recursive:
+
+    Store
 
 
 C Reference

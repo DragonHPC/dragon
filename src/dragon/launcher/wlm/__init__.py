@@ -1,9 +1,10 @@
 import enum
 
-from .slurm import SlurmNetworkConfig, get_slurm_launch_be_args
-from .pbs_pals import PBSPalsNetworkConfig, get_pbs_pals_launch_be_args
-from .ssh import SSHNetworkConfig, get_ssh_launch_be_args
+from .slurm import SlurmWLM
+from .pbs import PBSWLM
+from .ssh import SSHWLM
 from .k8s import KubernetesNetworkConfig
+from .drun import DRunWLM
 
 
 @enum.unique
@@ -11,9 +12,10 @@ class WLM(enum.Enum):
     """Enumerated list of supported workload manager"""
 
     SLURM = "slurm"
-    PBS_PALS = "pbs+pals"
+    PBS = "pbs+pals"
     SSH = "ssh"
     K8S = "k8s"
+    DRUN = "drun"
 
     def __str__(self):
         return self.value
@@ -23,7 +25,7 @@ class WLM(enum.Enum):
         """Obtain enum value from WLM string
 
         Args:
-            s (str): name of WLM (eg: 'slurm', 'pbs_pals', etc.)
+            s (str): name of WLM (eg: 'slurm', 'pbs', etc.)
 
         Raises:
             ValueError: invalid string input
@@ -38,14 +40,9 @@ class WLM(enum.Enum):
 
 
 wlm_cls_dict = {
-    WLM.SLURM: SlurmNetworkConfig,
-    WLM.PBS_PALS: PBSPalsNetworkConfig,
+    WLM.SLURM: SlurmWLM,
+    WLM.PBS: PBSWLM,
     WLM.K8S: KubernetesNetworkConfig,
-    WLM.SSH: SSHNetworkConfig,
-}
-
-wlm_launch_dict = {
-    WLM.SLURM: get_slurm_launch_be_args,
-    WLM.PBS_PALS: get_pbs_pals_launch_be_args,
-    WLM.SSH: get_ssh_launch_be_args,
+    WLM.SSH: SSHWLM,
+    WLM.DRUN: DRunWLM,
 }

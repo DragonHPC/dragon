@@ -44,30 +44,31 @@ Please specify only '--single-node-override' or '--multi-node-override'"""
     # Try to determine if we're on a supported multinode system
     if wlm != "":
         # only one of these will be true
-        is_pbs = wlm == str(WLM.PBS_PALS)
+        is_pbs = wlm == str(WLM.PBS)
         is_slurm = wlm == str(WLM.SLURM)
         is_ssh = wlm == str(WLM.SSH)
+        is_drun = wlm == str(WLM.DRUN)
         is_k8s = wlm == str(WLM.K8S)
     else:
         # Likewise, only one of these will be true (unless somehow they have both PBS and slurm installed)
-        is_pbs = wlm_cls_dict[WLM.PBS_PALS].check_for_wlm_support()
+        is_pbs = wlm_cls_dict[WLM.PBS].check_for_wlm_support()
         is_slurm = wlm_cls_dict[WLM.SLURM].check_for_wlm_support()
         is_ssh = False
+        is_drun = False
         is_k8s = (os.getenv("KUBERNETES_SERVICE_HOST", None) and os.getenv("KUBERNETES_SERVICE_PORT", None)) is not None
-    if is_ssh + is_pbs + is_slurm + is_k8s >= 2:
+
+    if is_ssh + is_drun + is_pbs + is_slurm + is_k8s >= 2:
         # adding the booleans here is a quick check that two or more are not True.
         raise RuntimeError(
             "Dragon cannot determine the correct multi-node launch mode. Please specify the workload manager with --wlm"
         )
 
-    if is_ssh:
-        return True
-
-    if is_k8s:
+    if any([is_ssh, is_drun, is_k8s]):
+        # If we're using SSH, DRUN, or K8s, we can use the multi node launcher
         return True
 
     if is_pbs:
-        if not wlm_cls_dict[WLM.PBS_PALS].check_for_allocation():
+        if not wlm_cls_dict[WLM.PBS].check_for_allocation():
             msg = """Using a supported PALS with PBS config. However, no active jobs allocation
 has been detected. Resubmit as part of a 'qsub' execution."""
             raise RuntimeError(msg)
@@ -93,6 +94,9 @@ def get_launcher():
     if multi_mode:
         from dragon.launcher import dragon_multi_fe as dl
     else:
+        from dragon import _patch_multiprocessing
+
+        _patch_multiprocessing()
         from dragon.launcher import dragon_single as dl
     return dl
 
@@ -161,9 +165,7 @@ def main():
           --verbose-label
           --version             show program's version number and exit
     """
-    from dragon import _patch_multiprocessing
 
-    _patch_multiprocessing()
     dl = get_launcher()
     sys.exit(dl.main())
 

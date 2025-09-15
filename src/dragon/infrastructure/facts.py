@@ -236,6 +236,10 @@ FIRST_GUID = 2**63
 #: Frontend's magic host ID
 FRONTEND_HOSTID = 1
 
+#: Timeout for launch of the runtime. Local for node-local comms. Remote for transport agent enabled.
+LOCAL_LAUNCH_TIMEOUT = 60
+REMOTE_LAUNCH_TIMEOUT = 420
+
 # Names
 DEFAULT_PROCESS_NAME_BASE = "dragon_process_"
 DEFAULT_POOL_NAME_BASE = "dragon_pool_"

@@ -88,6 +88,26 @@ class ChannelContext:
                 reply_channel.send(rm.serialize())
             return False, None, None
 
+        try:
+            if node_override is not None:
+                which_node = node_override
+            else:
+                which_node = server.choose_channel_node(msg)
+        except ValueError:
+            # the requested pool to create the channel on does not exist
+            # and we need to log this
+            errmsg = (
+                f"Error creating channel. Either m_uid {msg.m_uid} does not exist (it is neither a predefined pool nor a user defined pool)\n"
+                + f"or the Policy did not specify a node on which to create the channel."
+            )
+            LOG.info(errmsg)
+            if send_msg:
+                rm = dmsg.GSChannelCreateResponse(
+                    tag=server.tag_inc(), ref=msg.tag, err=dmsg.GSChannelCreateResponse.Errors.FAIL, err_info=errmsg
+                )
+                reply_channel.send(rm.serialize())
+            return False, None, None
+
         # check if the m_uid is ok
         if not (dfacts.is_pre_defined_pool(msg.m_uid) or msg.m_uid in server.pool_table):
             errmsg = f"m_uid {msg.m_uid} unknown"
@@ -105,22 +125,6 @@ class ChannelContext:
             msg.user_name = auto_name
 
         outbound_tag = server.tag_inc()
-
-        try:
-            which_node = node_override
-            if which_node is None:
-                which_node = server.choose_channel_node(msg)
-        except ValueError:
-            # the requested pool to create the channel on does not exist
-            # and we need to log this
-            errmsg = f"m_uid {msg.m_uid} does not exist - it is neither a predefined pool nor a user defined pool"
-            LOG.info(errmsg)
-            if send_msg:
-                rm = dmsg.GSChannelCreateResponse(
-                    tag=server.tag_inc(), ref=msg.tag, err=dmsg.GSChannelCreateResponse.Errors.FAIL, err_info=errmsg
-                )
-                reply_channel.send(rm.serialize())
-            return False, None, None
 
         context = cls(server, msg, reply_channel, this_cuid, which_node)
         server.channel_names[msg.user_name] = this_cuid

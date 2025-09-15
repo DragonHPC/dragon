@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.12.2] - 2025-09-11
+
+### Changed
+
+AICI-1881 Switch SSH launch to drun Eric Cozzi
+
+AICI-1898 Update docs with new dragon-config arguments  Pete Mendygral
+
+### Added
+
+AICI-1911 Implement Policy on native Queue  Kent Lee
+
+AICI-1905 New DDict benchmark section in the docs Pete Mendygral
+
+AICI-1880 Make Telemetry compatible with OpenTSDB 2.4 Indira Pimpalkhare
+
+AICI-1929 Zarr store needs len implemented so it can be used for a PyTorch Dataset  Pete Mendygral
+
+AICI-1385 Optimize Multi-NIC HSTA Nick Radcliffe
+
+### Fixed
+
+AICI-1922 Hang when Process Dies in BCast Kent Lee
+
+AICI-1825 Enable/confirm ability to run concurrent MPI apps via ProcessGroup  Nick Hill
+
+AICI-1879 For PMIx, launch of multiple MPI apps within one instance of the dragon runtime Nick Hill
+
+AICI-1896 Fix GSPingSH timeout logic in local services  Nick Hill
+
+AICI-1904 Identify and mitigating apparent memory leaks in HSTA Nick Radcliffe
+
+
 ## [0.12.1] - 2025-08-08
 
 ### Changed
@@ -135,9 +168,9 @@ Make SSH launch respect --hostfile option #998 by kent-lee was merged May 16, 20
 
 Fixed up timeout value for low resources in DST #996 by kent-lee was merged May 7, 2025
 
-Fixing mpbridge context passing #1010 by veena-venkata-ghorakavi was merged Jul 3, 2025 
+Fixing mpbridge context passing #1010 by veena-venkata-ghorakavi was merged Jul 3, 2025
 
-remove ctx being passed to base RLock erroneously #1008 by mendygra was merged May 21, 2025 
+remove ctx being passed to base RLock erroneously #1008 by mendygra was merged May 21, 2025
 
 Some patching issues fixed #992 by kent-lee was merged May 2, 2025
 

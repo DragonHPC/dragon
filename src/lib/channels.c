@@ -1617,7 +1617,10 @@ _get_msg(dragonChannel_t* channel, dragonMessage_t* msg_recv, timespec_t* end_ti
 
         err = dragon_memory_attach(&mem_descr, &mem_ser);
         if (err != DRAGON_SUCCESS) {
+            char* tb = dragon_getlasterrstr();
             _release_ot_lock(channel);
+            err_noreturn(tb);
+            free(tb);
             append_err_return(err, "Cannot attach to serialized message");
         }
         err = dragon_memory_get_size(&mem_descr, &src_mem_size);

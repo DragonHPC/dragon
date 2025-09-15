@@ -229,10 +229,18 @@ struct DDValuesDef {
     respFLI @2: Text;
 }
 
+struct DDValuesResponseDef {
+    freeMem @0: Bool;
+}
+
 struct DDItemsDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
     respFLI @2: Text;
+}
+
+struct DDItemsResponseDef {
+    freeMem @0: Bool;
 }
 
 struct DDEmptyManagersDef {
@@ -483,6 +491,8 @@ struct MessageDef {
         ddGetFreezeResponse @78: DDGetFreezeResponseDef;
         ddGetResponse @79: DDGetResponseDef;
         ddPopResponse @80: DDPopResponseDef;
-        pmIxFenceMsg @81: PMIxFenceMsgDef;
+        ddValuesResponse @81: DDValuesResponseDef;
+        ddItemsResponse @82: DDItemsResponseDef;
+        pmIxFenceMsg @83: PMIxFenceMsgDef;
     }
 }

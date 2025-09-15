@@ -14,7 +14,7 @@ from ..infrastructure import messages as dmsg
 from ..infrastructure import facts as dfacts
 from ..infrastructure import process_desc as pdesc
 
-from .wlm import wlm_launch_dict, WLM, wlm_cls_dict
+from .wlm import WLM, wlm_cls_dict
 
 
 # general amount of patience we have for an expected message
@@ -83,36 +83,13 @@ It requires passwordless SSH to all backend compute nodes and a list of hosts. P
 and `dragon --help` for more information.
 """
         raise RuntimeError(msg)
+    elif wlm is WLM.DRUN:
+        msg = """DRun was the only supported launcher found. To use it, specify `--wlm drun` as input to the dragon launcher.
+It requires passwordless SSH to all backend compute nodes and a list of hosts. Please see documentation
+and `dragon --help` for more information.
+"""
 
     return wlm
-
-
-def get_wlm_launch_args(
-    args_map: dict = None,
-    launch_args: dict = None,
-    nodes: tuple[int, list[str]] = None,
-    hostname: str = None,
-    wlm: WLM = None,
-):
-    """Get arguments for WLM to launch the backend"""
-
-    try:
-        if wlm is None:
-            wlm = detect_wlm()
-
-        if hostname is not None:
-            args_map["hostname"] = hostname
-
-        if nodes is not None:
-            args_map["nnodes"] = nodes[0]
-            args_map["nodelist"] = ",".join(nodes[1])
-
-        wlm_args = wlm_launch_dict[wlm](args_map=args_map, launch_args=launch_args)
-
-    except Exception:
-        raise RuntimeError("Unable to generate WLM backend launch args")
-
-    return wlm_args
 
 
 def queue_monitor(func: Callable, *, log_test_queue=None):

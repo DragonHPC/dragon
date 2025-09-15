@@ -66,6 +66,7 @@ class NodeDescriptor:
         host_name: str = "",
         cpu_devices: Optional[list[int]] = None,
         accelerators: Optional[AcceleratorDescriptor] = None,
+        g_idx: int = None,
     ):
         self.h_uid = h_uid
         self.name = name
@@ -80,6 +81,7 @@ class NodeDescriptor:
         self.host_id = host_id
         self.cpu_devices = cpu_devices
         self.accelerators = accelerators
+        self.g_idx = g_idx
 
         # Not a very accurate measure since we don't know when a policy group is done,
         # but it gives some manner of tracking for block application
@@ -336,7 +338,6 @@ class NodeDescriptor:
         return self.get_sdict()
 
     def get_sdict(self):
-
         rv = {
             "state": int(self.state),
             "h_uid": self.h_uid,

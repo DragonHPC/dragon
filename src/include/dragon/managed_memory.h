@@ -333,6 +333,9 @@ dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMe
                                  const dragonULInt id, const dragonULInt offset, const dragonULInt* bytes_size);
 
 dragonError_t
+dragon_memory_get_ptr_info(const dragonMemoryDescr_t * mem_descr, void ** ptr, size_t * size);
+
+dragonError_t
 dragon_memory_pool_allocations_destroy(dragonMemoryPoolAllocations_t * allocs);
 
 dragonError_t

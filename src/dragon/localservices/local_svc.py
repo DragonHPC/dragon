@@ -518,9 +518,9 @@ def multinode(
 
             # Do a timeout on this recv. Just a few seconds if primary. Longer if we're getting remote comms from GS
             # If it fails, check that it didn't fall over on instantiation
-            gs_timeout = 60
+            gs_timeout = dfacts.REMOTE_LAUNCH_TIMEOUT
             if is_primary:
-                gs_timeout = 10
+                gs_timeout = dfacts.LOCAL_LAUNCH_TIMEOUT
             if ls_input.poll(timeout=gs_timeout):
                 gs_ping_ls = dmsg.parse(ls_input.recv())
             else:

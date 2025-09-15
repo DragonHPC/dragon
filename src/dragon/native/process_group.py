@@ -448,6 +448,7 @@ class PGProcessHistory:
     active_processes_inv_map: dict = field(default_factory=dict)  # map of p_uid to index in active_processes
     inactive_nprocs: int = 0
     inactive_processes: list = field(default_factory=list)  # tuple of p_uid and exit code (from all previous g_uids)
+    guids: list = field(default_factory=list)
     lock: threading.Lock = None
     archived: bool = False
 
@@ -547,6 +548,16 @@ class PGProcessHistory:
             # Something has already moved this to the archive
             except KeyError:
                 pass
+
+    def add_guid(self, guid: int) -> None:
+        """Add a guid to the history once it's created"""
+
+        self.guids.append(guid)
+
+    def get_guids(self) -> List:
+        """Return a list of all guids for groups this manager has overseen execution of"""
+
+        return self.guids
 
     def __str__(self) -> str:
         return f"ProcessGroup History running procs (count={self.active_nprocs}) = [{list(self.get_running_p_uids())}]"
@@ -719,7 +730,12 @@ class Idle(BaseState):
 
         if signal_msg.signal == PGSignals.START:
             fdebug("Requesting a Start state")
-            desired_state = PGState(state=Start(), p_templates=pstate.p_templates, exq=signal_msg.payload["exq"])
+            desired_state = PGState(
+                state=Start(),
+                p_templates=pstate.p_templates,
+                exq=signal_msg.payload["exq"],
+                pmix_ddict=signal_msg.payload["pmix_sdd"],
+            )
             msg = PGSignalMessage(signal=PGSignals.READY_TO_START, desired_state=desired_state)
         elif (signal_msg.signal == PGSignals.STOP or signal_msg.signal == PGSignals.CLOSE) and pstate.g_uid is not None:
             desired_state = PGState(
@@ -732,7 +748,6 @@ class Idle(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
-                pmix_ddict=pstate.pmix_ddict,
             )
 
             closeit = signal_msg.close
@@ -744,11 +759,13 @@ class Idle(BaseState):
             )
         else:
             fdebug("Requesting an Idle state")
-            desired_state = PGState(state=Idle(), p_templates=pstate.p_templates)
+
             if signal_msg.signal == PGSignals.CLOSE:
                 closeit = True
+                desired_state = PGState(state=Idle(), p_templates=pstate.p_templates)
             else:
                 closeit = signal_msg.close
+                desired_state = PGState(state=Idle(), p_templates=pstate.p_templates)
             msg = PGSignalMessage(signal=PGSignals.SUCCESS, desired_state=desired_state, close=closeit)
         return msg
 
@@ -778,38 +795,12 @@ class Start(BaseState):
             expanded_templates.extend(replicas * [create_template])
 
         # Create a ddict for PMIx servers if PMIx backend was requested.
-        pmix_ddser = None
-        pmix_dd = None
         try:
-            fdebug("Checking whether we need to make a PMIx ddict. Props: %s", props)
-            if PMIBackend.from_str(props.pmi) == PMIBackend.PMIX:
-                from ..data.ddict import DDict
-
-                fdebug("Creating PMIx DDict for %s procs", len(expanded_templates))
-                n_nodes = self._derive_nnodes_for_pmix_ddict(len(expanded_templates))
-                fdebug("Will run PMIx DDict on %s nodes", n_nodes)
-                pmix_dd = DDict(
-                    managers_per_node=1,
-                    n_nodes=n_nodes,
-                    total_mem=n_nodes * 128 * 1024 * 1024,
-                    wait_for_keys=True,
-                    working_set_size=2,
-                )
-                pmix_ddser = pmix_dd.serialize()
-                fdebug("Successfully created PMIx DDict")
-        # In case props.pmi is None
-        except ValueError as e:
-            fdebug("Value error with PMIx DDict creation: %s", e)
-            pass
-        except Exception as e:
-            fdebug("Other exception: %s", e)
-            raise
-        try:
-            fdebug("Sending group create request with pmix ddict: %s", pmix_ddser)
+            fdebug("Sending group create request with pmix ddict: %s", pstate.pmix_ddict)
             group_descr = group_create(
                 [(replicas, messages[i].serialize()) for i, (replicas, _) in enumerate(pstate.p_templates)],
                 props.policy,
-                pmix_ddict=pmix_dd,
+                pmix_ddict=pstate.pmix_ddict,
             )
 
         except Exception:
@@ -827,28 +818,13 @@ class Start(BaseState):
             walltime_event=threading.Event(),
             pending_replies=queue.Queue(),
             exq=pstate.exq,
-            pmix_ddict=pmix_ddser,
         )
 
         with cur_procs.lock:
             cur_procs.init_active_processes([descr.uid for lst in group_descr.sets for descr in lst])
+            cur_procs.add_guid(group_descr.g_uid)
 
-        return PGSignalMessage(
-            signal=PGSignals.START_JOIN_THREAD, desired_state=desired_state, payload={"pmix_ddict": pmix_dd}
-        )
-
-    def _derive_nnodes_for_pmix_ddict(self, nprocs):
-        """Determine number of nodes to host the PMIx dictionary on"""
-
-        # Get the number of nodes in our runtime
-        n_nodes = len(System().nodes)
-
-        # If the number of procs >= nnodes, place one manager on each node
-        if n_nodes <= nprocs:
-            return n_nodes
-        # If it's less, just use nprocs
-        else:
-            return nprocs
+        return PGSignalMessage(signal=PGSignals.START_JOIN_THREAD, desired_state=desired_state)
 
 
 class MakeJoiner(BaseState):
@@ -885,7 +861,6 @@ class MakeJoiner(BaseState):
             walltime_event=pstate.walltime_event,
             pending_replies=pstate.pending_replies,
             exq=pstate.exq,
-            pmix_ddict=pstate.pmix_ddict,
         )
 
         return PGSignalMessage(signal=PGSignals.READY_TO_RUN, desired_state=desired_state)
@@ -1005,7 +980,6 @@ class Running(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
-                pmix_ddict=pstate.pmix_ddict,
             )
             return PGSignalMessage(
                 signal=signal_msg.signal,
@@ -1037,7 +1011,6 @@ class Running(BaseState):
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
                 exq=pstate.exq,
-                pmix_ddict=pstate.pmix_ddict,
             )
 
             if pstate.joiner_thread.is_alive():
@@ -1096,7 +1069,6 @@ class Running(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
-                pmix_ddict=pstate.pmix_ddict,
             )
 
             return PGSignalMessage(
@@ -1124,7 +1096,6 @@ class Running(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
-                pmix_ddict=pstate.pmix_ddict,
             )
 
             if pstate.walltime_event.is_set():
@@ -1202,7 +1173,6 @@ class Running(BaseState):
                 joiner_thread=pstate.joiner_thread,
                 walltime_event=pstate.walltime_event,
                 pending_replies=pstate.pending_replies,
-                pmix_ddict=pstate.pmix_ddict,
             )
 
             return PGSignalMessage(
@@ -1237,6 +1207,7 @@ class Join(BaseState):
         fdebug, finfo = get_logs("State=Join")
 
         q = pstate.pending_replies
+
         # append new request to the joinq
         if signal_msg.signal == PGSignals.JOIN:
             requester = signal_msg.p_uid
@@ -1277,18 +1248,6 @@ class Join(BaseState):
                         put_back.append((requester, timeout, deadline, tag))
             else:
                 fdebug("Client join completed: %s, %s, %s, %s", requester, timeout, deadline, tag)
-                if pstate.pmix_ddict is not None:
-                    from ..data.ddict import DDict
-
-                    dd = DDict.attach(pstate.pmix_ddict)
-                    # First tell GS to get LS to destroy PMIx resources it may have create
-                    fdebug("Asking global services to cleanup PMIx resources")
-                    cleanup_pmix_resources(pstate.g_uid)
-
-                    # Destroy the dictionary now
-                    fdebug("Destng PMIx ddict")
-                    dd.destroy()
-
                 payload.append((requester, PGSignalMessage(signal=PGSignals.SUCCESS, tag=tag)))
 
         for item in put_back:
@@ -1307,7 +1266,6 @@ class Join(BaseState):
             joiner_thread=pstate.joiner_thread,
             walltime_event=pstate.walltime_event,
             pending_replies=pstate.pending_replies,
-            pmix_ddict=pstate.pmix_ddict,
         )
 
         return PGSignalMessage(
@@ -1484,6 +1442,10 @@ class Manager:
 
         self._walltime_expired = threading.Event()
         self._join_thread = None
+
+        self.pmix_dd = None
+        self.pmix_sdd = None
+        self.my_guids = []
 
         # setup logging with deferred f-string eval support
         pgname = ""
@@ -1690,6 +1652,18 @@ class Manager:
         # note: the state runner thread actually sets the stop_serving event since we really needed to know
         #  that it's safe from its perspective
         th.join()
+
+        # Close the pmix DDict if one was created:
+        if self.pmix_dd is not None:
+            fdebug("Destroying PMIx dictionary")
+            self.pmix_dd.destroy()
+            fdebug('PMIx dictionary destroyed"')
+
+            for guid in self._cur_procs.get_guids():
+                fdebug("Cleaning up PMIx resources for guid %s", guid)
+                cleanup_pmix_resources(guid)
+                fdebug("PMIx resources for guid %s destroyed", guid)
+
         fdebug("detaching from dragon handler")
         dlog.detach_from_dragon_handler(dls.PG)
         fdebug("detached from dragon handler")
@@ -1734,6 +1708,19 @@ class Manager:
             fdebug("Preparing reply for p_uid=%s reply=%s", p_uid, reply)
             msg = dmsg.PGClientResponse(self._tag_inc(), error=reply.signal, payload=reply.payload, src_tag=reply.tag)
             self._send_response(p_uid, msg)
+
+    def _derive_nnodes_for_pmix_ddict(self, nprocs):
+        """Determine number of nodes to host the PMIx dictionary on"""
+
+        # Get the number of nodes in our runtime
+        n_nodes = len(System().nodes)
+
+        # If the number of procs >= nnodes, place one manager on each node
+        if n_nodes <= nprocs:
+            return n_nodes
+        # If it's less, just use nprocs
+        else:
+            return nprocs
 
     @dutil.route(dmsg.PGRegisterClient, _DTBL)
     def register_client(self, msg: dmsg.PGRegisterClient, p_uid):
@@ -1816,6 +1803,39 @@ class Manager:
             msg = dmsg.PGClientResponse(self._tag_inc(), error=PGSignals.RAISE_EXCEPTION, ex=ex, src_tag=msg.tag)
             self._send_response(p_uid, msg)
 
+        # Take a look at the messages, if PMIx is requested, create a ddict. Note: we should
+        # only create 1 ddict per manager. Ideally this code is only called once. Otherwise,
+        # errors are likely.
+        try:
+            fdebug("Checking whether we need to make a PMIx ddict. Props: %s", self._props)
+            if PMIBackend.from_str(self._props.pmi) == PMIBackend.PMIX:
+                from ..data.ddict import DDict
+
+                expanded_templates = []
+                for i, (replicas, create_template) in enumerate(p_templates):
+                    expanded_templates.extend(replicas * [create_template])
+
+                fdebug("Creating PMIx DDict for %s procs", len(expanded_templates))
+                n_nodes = self._derive_nnodes_for_pmix_ddict(len(expanded_templates))
+                fdebug("Will run PMIx DDict on %s nodes", n_nodes)
+                self.pmix_dd = DDict(
+                    managers_per_node=1,
+                    n_nodes=n_nodes,
+                    total_mem=n_nodes * 128 * 1024 * 1024,
+                    wait_for_keys=True,
+                    working_set_size=2,
+                )
+                fdebug("Successfully created PMIx DDict")
+
+                self.pmix_sdd = self.pmix_dd.serialize()
+        # In case props.pmi is None
+        except ValueError as e:
+            fdebug("Value error with PMIx DDict creation: %s", e)
+            pass
+        except Exception as e:
+            fdebug("Other exception: %s", e)
+            raise
+
         msg = PGSignalMessage(
             signal=PGSignals.ADD_TEMPLATES,
             p_uid=p_uid,
@@ -1829,7 +1849,9 @@ class Manager:
         fdebug, finfo = get_logs("start")
 
         fdebug("Processing process start from p_uid=%s", p_uid)
-        msg = PGSignalMessage(signal=PGSignals.START, p_uid=p_uid, payload={"exq": self._exq}, tag=msg.tag)
+        msg = PGSignalMessage(
+            signal=PGSignals.START, p_uid=p_uid, payload={"exq": self._exq, "pmix_sdd": self.pmix_sdd}, tag=msg.tag
+        )
         fdebug("Putting start signal msg in queue: %s", msg)
         self._state_inq.put(msg)
 

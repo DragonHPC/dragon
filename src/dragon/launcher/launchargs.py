@@ -302,7 +302,7 @@ def get_args(args_input=None):
 
         # If no workload manager is specified and hostfile is provided, assume ssh
         if ('hostfile' in args_dict or 'hostlist' in args_dict) and not 'wlm' in args_dict:
-            args_dict['wlm'] = WLM.SSH
+            args_dict['wlm'] = WLM.DRUN
 
         return args_dict
 

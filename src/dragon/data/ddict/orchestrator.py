@@ -118,19 +118,15 @@ class Orchestrator:
             tb = traceback.format_exc()
             log.debug("There was an exception in the Orchestrator: %s\n Traceback: %s", ex, tb)
 
-    def __setstate__(self, fname):
+    def __setstate__(self):
         # read managers' serialized pool descriptors from file
-        with open(fname, "r") as f:
-            (self._serialized_manager_pool, self._manager_nodes, self._loaded_persister) = cloudpickle.loads(
-                b64decode(f.read())
-            )
+        ser_metadata = self._persister.load_metadata(log, self._persist_path, self._name)
+        (self._serialized_manager_pool, self._manager_nodes, self._loaded_persister) = cloudpickle.loads(b64decode(ser_metadata))
 
     def __getstate__(self):
         # write the map of managers' serialized memory pool descriptors to the file
-        # self._pickle_new = "/tmp/ddict_orc_" + self._name
-        with open(self._pickle_new, "w") as f:
-            f.write(b64encode(cloudpickle.dumps((self._serialized_manager_pool, self._manager_nodes, self._persister))))
-        return fname
+        ser_metadata = b64encode(cloudpickle.dumps((self._serialized_manager_pool, self._manager_nodes, self._persister)))
+        self._persister.dump_metadata(log, self._persist_path, self._name, ser_metadata)
 
     def run(self):
 
@@ -198,17 +194,10 @@ class Orchestrator:
             self._send_msg(resp_msg, connection)
             connection.detach()
 
-        # remove old pickle file in the end
-        try:
-            if self._restart and self._pickle_old != self._pickle_new:
-                os.remove(self._pickle_old)
-        except Exception as e:
-            log.debug("Caught error while removing old pickle file. %s", e)
-
         # remove new pickle file in the end if not allow restart
         try:
-            if not self._allow_restart and self._persister == NULLCheckpointPersister:
-                os.remove(self._pickle_new)
+            if not self._allow_restart:
+                self._persister.cleanup_metadata(self._persist_path, self._name)
         except Exception as e:
             log.debug("Caught error while removing new pickle file. %s", e)
 
@@ -253,45 +242,7 @@ class Orchestrator:
         """
         Remove persisted chkpt that is later than the restoring chkpt specified in bringup without read-only.
         """
-        if self._restore_from is not None:
-            try:
-                with open(self._pickle_new, "r") as f:
-                    (_, _, self._persister) = cloudpickle.loads(b64decode(f.read()))
-            except FileNotFoundError:
-                self._persister = NULLCheckpointPersister
-
-        if not self._read_only and self._restore_from is not None:
-            if self._persister == PosixCheckpointPersister:
-                # Remove any persisted file with chkpt later than restore_from so that the persisted file
-                # won't be overwritten later.
-                FNAME_PREFIX = f"{self._name}_"
-                FNAME_SUFFIX = f".ddict"
-                # filename = {FNAME_PREFIX}{managerID}_{chkptID}{FNAME_SUFFIX}
-                path = Path(self._persist_path)
-                dat_files = list(path.glob(f"{FNAME_PREFIX}*{FNAME_SUFFIX}"))
-                for f in dat_files:
-                    strf = str(basename(f))
-                    # managerID_chkptID = {managerID}_{chkptID}
-                    managerID_chkptID = strf[len(FNAME_PREFIX) :][: -len(FNAME_SUFFIX)]
-                    chkptID = int(managerID_chkptID.split("_")[-1])
-                    if chkptID > self._restore_from:
-                        os.remove(f)
-        if self._restore_from is None and self._persister == DAOSCheckpointPersister:
-            # If not restore, remove the existing containers with name ddict_name
-            log.debug(f"Removing DAOS container {self._name} from pool {self._persist_path}")
-            subprocess.run(
-                f"daos cont destroy {self._persist_path} {self._name}",
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            # TBD: should we catch the exception if the container doesn't exist?
-            log.debug(f"Creating a new DAOS container {self._name} from pool {self._persist_path}")
-            subprocess.run(f"daos cont create {self._persist_path} {self._name} --type PYTHON", shell=True)
-            dcont = pydaos.DCont(self._persist_path, self._name)
-            log.debug(f"DAOS container created. Now creating metadata dictionary.")
-            metadata_daos_dd = dcont.dict("metadata", {})
-            log.debug(f"DAOS metadata dictionary created.")
+        self._persister.prepare(log, self._persist_path, self._name, self._restore_from, self._read_only)
 
     @dutil.route(dmsg.DDEmptyManagers, _DTBL)
     def empty_managers(self, msg: dmsg.DDEmptyManagers) -> None:
@@ -363,11 +314,12 @@ class Orchestrator:
                 return
             try:
                 # unpickle orchestrator
-                self._pickle_old = "/tmp/ddict_orc_" + self._name
-                self.__setstate__(self._pickle_old)
+                self.__setstate__()
             except Exception as ex:
-                log.debug("Exception ocurred while calling __setstate__: %s", ex)
-                self._return_create_failure(DragonError.FAILURE, str(ex))
+                tb = traceback.format_exc()
+                err_str = f"Exception occurred while calling __setstate__:{ex}\n{tb}"
+                log.debug(err_str)
+                self._return_create_failure(DragonError.FAILURE, err_str)
                 self._serving = False
                 return
 
@@ -386,10 +338,8 @@ class Orchestrator:
         if not self._name:  # TODO: name - time and date
             random.seed()
             self._name = "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
-        self._pickle_new = "/tmp/ddict_orc_" + self._name
 
         self._prepare()
-
         # update args
         args = (
             self._working_set_size,

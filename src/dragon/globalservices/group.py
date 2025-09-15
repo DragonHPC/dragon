@@ -79,7 +79,7 @@ def create(items, policy, user_name="", soft=False, pmix_ddict=None):
     pmix_desc = None
     if pmix_ddict is not None:
         log.debug("pmix ddict2: %s", pmix_ddict)
-        pmix_desc = pmix_ddict.serialize()
+        pmix_desc = pmix_ddict
         log.debug("pmix desc: %s", pmix_desc)
 
     req_msg = dmsg.GSGroupCreate(

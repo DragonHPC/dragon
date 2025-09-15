@@ -1,3 +1,5 @@
+.. _cbook_mpi_workflow:
+
 An example MPI workflow using Dragon ProcessGroup
 =================================================
 
@@ -47,6 +49,7 @@ processes:
     from dragon.globalservices import node
     from dragon.globalservices.process import multi_join
     from dragon.infrastructure.connection import Connection
+    from dragon.infrastructure.facts import PMIBackend
     from dragon.native.process import MSG_PIPE, MSG_DEVNULL, Process, ProcessTemplate
     from dragon.native.process_group import ProcessGroup
 
@@ -76,7 +79,7 @@ processes:
         args = ["--warmup", "10", "-m", "4096"]
         run_dir = os.getcwd()
 
-        grp = ProcessGroup(restart=False, pmi_enabled=True)
+        grp = ProcessGroup(restart=False, pmi=PMIBackend.CRAY)  # or PMIBackend.PMIX
 
         # Pipe the stdout output from the head process to a Dragon connection
         grp.add_process(

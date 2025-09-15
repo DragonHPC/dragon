@@ -20,6 +20,7 @@ typedef uint64_t dragonC_UID_t;
 typedef uint64_t dragonP_UID_t;
 typedef uint64_t dragonM_UID_t;
 typedef uint64_t dragonQ_UID_t;
+typedef uint64_t dragonG_UID_t;
 typedef uint64_t dragonULInt;
 typedef uint32_t dragonUInt;
 typedef uint8_t dragonUUID[DRAGON_UUID_NELEM];

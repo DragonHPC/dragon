@@ -1,3 +1,29 @@
+# Dragon 0.12.2 Release Summary
+
+We're excited to announce the release of version 0.12.2, which includes several improvements, new features, and bug fixes. Here are the highlights: 
+
+### New Features:
+
+- We've implemented a policy on native queues, making it easier to specify where a queue should be created.   
+- Telemetry is now compatible with OpenTSDB 2.4
+- The Zarr store now supports the len function, making it compatible with PyTorch datasets.
+- We've optimized Multi-NIC HSTA for better scaling performance.
+     
+### Improvements:
+
+- The SSH launch process has been updated to use drun, providing an easier way to launch applications via SSH.
+- Documentation has been updated to reflect new dragon-config arguments.
+- A new benchmark section for DDict has been added to the documentation.
+
+### Bug Fixes: 
+
+- We've resolved an issue where the system would hang when a process died in a channels BCast.
+- Concurrent MPI applications can now be run via ProcessGroup and a PMIx backend without issues.
+- Multiple MPI applications can be launched within a single instance of the dragon runtime using the PMIx backend
+- The GSPingSH timeout logic in local services has been fixed, helping prevent indefinite hangs should something go wrong launching the runtime
+- Memory leaks in HSTA have been identified and mitigated.
+
+
 # Dragon 0.12.1 Release Summary
 
 This release addresses several bugs encountered in 0.12.0 as well as a few new features

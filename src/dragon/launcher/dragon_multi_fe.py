@@ -21,7 +21,8 @@ def main(args_map=None):
     if args_map is None:
         args_map = get_cli_args()
 
-    setup_FE_logging(log_device_level_map=args_map["log_device_level_map"], basename="dragon", basedir=os.getcwd())
+    basename = f"{os.getenv('RELEASE_NAME')}_dragon" if os.getenv("RELEASE_NAME") else "dragon"
+    setup_FE_logging(log_device_level_map=args_map["log_device_level_map"], basename=basename, basedir=os.getcwd())
     log = logging.getLogger(dls.LA_FE).getChild("main")
     log.info(f"start in pid {os.getpid()}, pgid {os.getpgid(0)}")
 

@@ -21,6 +21,9 @@
 #define DRAGON_BCAST_SPIN_CHECK_TIMEOUT_ITERS 10000UL
 #define DRAGON_BCAST_ADAPTIVE_WAIT_TO_IDLE 10
 #define DRAGON_BCAST_DESTROY_TIMEOUT_SEC 10
+#define DRAGON_BCAST_DEFAULT_TRACK_PROCS 128
+#define DRAGON_BCAST_DEFAULT_ITERS_CHECK_PROCS 100000UL
+#define DRAGON_BCAST_BACKOFF_ITERS_CHECK_PROCS 999999999UL
 
 /* attributes and header info embedded into a BCast object NOTE: This must match
 the pointers assigned in _map_header and _init_header of bcast.c */
@@ -36,6 +39,8 @@ typedef struct dragonBCastHeader_st {
     atomic_uint * lock_sz;
     atomic_uint * spin_list_sz; // array size, not bytes
     atomic_uint * spin_list_count; // number of active spinners
+    atomic_uint * proc_max;
+    atomic_uint * proc_num;
     atomic_uint * payload_area_sz;
     volatile atomic_uint * payload_sz;
     atomic_uint * sync_type;
@@ -45,6 +50,7 @@ typedef struct dragonBCastHeader_st {
     atomic_uint * lock_type;
     atomic_uint * lock;
     volatile atomic_uint * spin_list;
+    pid_t * proc_list;
     void * payload_area;
 } dragonBCastHeader_t;
 
@@ -60,7 +66,7 @@ used in computing the object size. All others in the actual BCast object are the
 size of dragonULInts and we calculate the number of dragonULInts for the rest of
 the object here. */
 
-#define DRAGON_BCAST_NULINTS ((sizeof(dragonBCastHeader_t)/sizeof(dragonULInt*))-3)
+#define DRAGON_BCAST_NULINTS ((sizeof(dragonBCastHeader_t)/sizeof(dragonULInt*))-4)
 
 /* A seated BCast handle. For internal use only. */
 
