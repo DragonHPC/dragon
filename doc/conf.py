@@ -191,7 +191,7 @@ def linkcode_resolve(domain, info):
     # code is in a 'src' directory at the root of your repository.
     # You will need to adapt this part to your specific repository structure.
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    #relative_filename = os.path.relpath(filename, repo_root).replace("hpc-pe-dragon-dragon/","") # done like this so builds work on both internal and external repos
+    relative_filename = os.path.relpath(filename, repo_root).replace("hpc-pe-dragon-dragon/","") # done like this so builds work on both internal and external repos
 
     # Construct the GitHub URL
     github_repo_url = "https://github.com/DragonHPC/dragon"
