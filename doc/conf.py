@@ -192,6 +192,8 @@ def linkcode_resolve(domain, info):
     # You will need to adapt this part to your specific repository structure.
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
     relative_filename = os.path.relpath(filename, repo_root).replace("hpc-pe-dragon-dragon/","") # done like this so builds work on both internal and external repos
+    if relative_filename.startswith('dragon/'):
+        relative_filename = relative_filename[len('dragon/'):]
 
     # Construct the GitHub URL
     github_repo_url = "https://github.com/DragonHPC/dragon"
