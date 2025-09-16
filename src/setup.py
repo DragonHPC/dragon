@@ -194,7 +194,7 @@ setup(
         "pyyaml>=6.0.2",
         "requests>=2.32.2",
         "psutil>=5.9.0",
-        "pycapnp>=2.0.0",
+        "pycapnp>=2.0.0,<2.2.0",
         "paramiko>=3.5.1",
         "flask-jwt-extended>=4.7.1",
     ],
