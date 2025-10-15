@@ -1,0 +1,41 @@
+name: test-build
+
+on: [push, pull_request]
+
+jobs:
+
+  build:
+
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Environment
+        run: |
+          set -x
+          uname -a 
+          git branch 
+          ls -alt
+          whoami
+          sudo apt update
+          sudo apt install podman -y
+          podman --version
+          podman run hello-world
+          my_container=$(podman run -v $PWD:/workspace -d --shm-size=4gb --rm -it quay.io/pypa/manylinux2014_x86_64)
+          echo $my_container
+          podman exec $my_container ls -alt
+          podman exec $my_container ls -alt /workspace
+          podman exec $my_container bash -c "cd /workspace && git status"
+          podman exec $my_container bash -c "cd /workspace && ./dst/runBuildPrep.py312.sh"
+          podman exec $my_container bash -c "cd /workspace && ./dst/runBuild.sh"
+          podman exec $my_container bash -c "cd /workspace && ./dst/runUnitTest.sh"
+          ls -alt src/release/dragon*tar.gz
+          podman ps -a
+          podman kill $my_container
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+           name: dragon-pkg
+           path: src/release/dragon*tar.gz

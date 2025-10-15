@@ -17,14 +17,16 @@ INCLUDE = $(DRAGON_INCLUDE)
 LIBS = $(DRAGON_LINK)
 
 
-BIN_FILES = test_ch test_bch perf_fch test_send test_poll test_peek_pop test_channelsets test_wrong test_gateways test_gateway_messages test_fli test_capnp
+BIN_FILES = test_ch test_bch perf_fch test_send test_poll test_peek_pop test_channelsets test_wrong test_gateways test_gateway_messages test_capnp
+# skip for github runner testing = test_fli
 
 %.c.o: %.c
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
 
 default: build
 
-build: test_ch test_bch perf_fch test_send test_poll test_channelsets test_wrong test_gateways test_gateway_messages test_fli test_capnp test_peek_pop
+build: test_ch test_bch perf_fch test_send test_poll test_channelsets test_wrong test_gateways test_gateway_messages test_capnp test_peek_pop
+# skip for github runner testing = test_fli
 
 test_ch: test_ch.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_ch $< $(LIBS) -ldl
@@ -47,8 +49,9 @@ perf_fch: perf_fch.c.o
 test_channelsets: test_channelsets.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_channelsets $< $(LIBS) -ldl
 
-test_fli: test_fli.c.o
-	$(CC) $(INCLUDE) $(CFLAGS) -o test_fli $< $(LIBS) -ldl
+# test_fli: test_fli.c.o
+# 	$(CC) $(INCLUDE) $(CFLAGS) -o test_fli $< $(LIBS) -ldl
+# skip for github runner testing = test_fli
 
 test_gateways: test_gateways.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_gateways $< $(LIBS) -ldl

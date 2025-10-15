@@ -15,6 +15,10 @@ cc --version
 
 # Create virtual env
 source ~/.bashrc
+
+# conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+# conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
 conda activate _dev
 conda remove -y libstdcxx || true
 conda remove -y libstdcxx-ng || true
@@ -47,7 +51,7 @@ make -C src build
 make -C test test
 
 # Build docs (requires dev build)
-make -C doc -j ${DRAGON_BUILD_NTHREADS} dist
+# make -C doc -j ${DRAGON_BUILD_NTHREADS} dist
 
 # Build release
 rm -fr src/dist && make -C src release
@@ -58,24 +62,28 @@ PYTHON_VERSION=`python -c 'import sys; version=sys.version_info[:3]; print("{0}.
 PYTHON_MAJOR_VERSION=`python -c 'import sys; print(sys.version_info[0])'`
 PYTHON_MINOR_VERSION=`python -c 'import sys; print(sys.version_info[1])'`
 
+echo "BUILD COMPLETE"
+
+ls -alt src/release/dragon-${DRAGON_VERSION}-${GITHASH}.tar.gz
+
 # Make fake RPMs
 mkdir -p /workspace/RPMS/centos7/py${PYTHON_MAJOR_VERSION}.${PYTHON_MINOR_VERSION}
 cp src/release/dragon-${DRAGON_VERSION}-${GITHASH}.tar.gz \
     /workspace/RPMS/centos7/py${PYTHON_MAJOR_VERSION}.${PYTHON_MINOR_VERSION}/dragon-${DRAGON_VERSION}-py${PYTHON_VERSION}-${GITHASH}.x86_64.rpm
-cp doc/dragondocs-$DRAGON_VERSION-$GITBRANCH-$GITHASH.tar.gz \
-    /workspace/RPMS/centos7/dragondocs-$DRAGON_VERSION-$GITHASH.x86_64.rpm
+# cp doc/dragondocs-$DRAGON_VERSION-$GITBRANCH-$GITHASH.tar.gz \
+#     /workspace/RPMS/centos7/dragondocs-$DRAGON_VERSION-$GITHASH.x86_64.rpm
 
 # Publish docs
-if [[ "${GITBRANCH}" = "master" ]] && [[ "${PYTHON_VERSION}" =~ "3.10" ]]; then
-    # push docs update only for cray-python/3.10.x and a master branch build
-    git checkout master-docs
-    git rm -rf docs
-    mv doc/_build/html docs
-    touch docs/.nojekyll
-    git add -f docs
-    git config --global user.email dst@example.com
-    git config --global user.name DST Build
-    git commit -m "automated update docs to master ${GITHASH}"
-    git push https://$HPE_GITHUB_TOKEN@github.hpe.com/hpe/hpc-pe-dragon-dragon.git master-docs
-    git checkout ${GITBRANCH}
-fi
+# if [[ "${GITBRANCH}" = "master" ]] && [[ "${PYTHON_VERSION}" =~ "3.10" ]]; then
+#     # push docs update only for cray-python/3.10.x and a master branch build
+#     git checkout master-docs
+#     git rm -rf docs
+#     mv doc/_build/html docs
+#     touch docs/.nojekyll
+#     git add -f docs
+#     git config --global user.email dst@example.com
+#     git config --global user.name DST Build
+#     git commit -m "automated update docs to master ${GITHASH}"
+#     git push https://$HPE_GITHUB_TOKEN@github.hpe.com/hpe/hpc-pe-dragon-dragon.git master-docs
+#     git checkout ${GITBRANCH}
+# fi

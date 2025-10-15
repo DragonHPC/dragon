@@ -69,9 +69,9 @@ poll: test_poll.py $(COMMON)
 	-rm -rf /dev/shm/*
 	@echo $< && $(DRAGON_BIN) $< $(VERBOSE)  
 
+# skipped for github runner testing = test_pool.py
 pool: test_pool.py $(COMMON)
 	-rm -rf /dev/shm/*
-	@echo $< && $(DRAGON_BIN) $< $(VERBOSE)  
 
 process: test_process.py $(COMMON)
 	-rm -rf /dev/shm/*

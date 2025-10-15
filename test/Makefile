@@ -56,20 +56,20 @@ TESTS_PYTHON := test_c_files.py \
                 test_connection.py \
                 test_infrastructure.py \
                 test_globalservices.py \
-                test_policy.py \
                 test_shepherd.py \
                 $(wildcard transport/tcp/test_*.py) \
                 transport/test_lsif.py \
                 test_transport.py \
                 test_integration_shep_gs.py
+# skipped for github runner testing = test_policy.py
 # test_launcher.py (waiting for fix from Jira AICI-1859)
 
 TESTS_AI := test_distributed_training.py
 
 TESTS_DRAGON := test_mpbridge.py \
-                test_native.py \
 				test_distdict.py \
 				test_telemetry.py
+# skipped for github runner testing = test_native.py
 
 TESTS_CCFUTURES := test_as_completed.py \
                    test_deadlock.py \

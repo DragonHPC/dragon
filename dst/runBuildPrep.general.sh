@@ -23,8 +23,8 @@ ${my_install} install \
   wget
 
 # We need NVIDIA bits for our UCX support:
-wget https://arti.hpc.amslabs.hpecorp.net/artifactory/dragon-misc-master-local/hpcx-v2.18.1-gcc-mlnx_ofed-suse15.3-cuda12-x86_64.tbz
-mkdir mlnx && tar -xvf hpcx*.tbz -C mlnx && mv mlnx/hpcx*/ucx . && rm -rf mlnx hpcx*.tbz
+# wget https://arti.hpc.amslabs.hpecorp.net/artifactory/dragon-misc-master-local/hpcx-v2.18.1-gcc-mlnx_ofed-suse15.3-cuda12-x86_64.tbz
+# mkdir mlnx && tar -xvf hpcx*.tbz -C mlnx && mv mlnx/hpcx*/ucx . && rm -rf mlnx hpcx*.tbz
 
 # We need a newer pmix than is provided via centos/rhel repositories
 wget https://github.com/openpmix/openpmix/releases/download/v5.0.8/pmix-5.0.8.tar.gz
@@ -52,24 +52,26 @@ ${my_install} install \
   flex
 
 # Install a newer doxygen than is available in centos7 repos:
-wget https://arti.hpc.amslabs.hpecorp.net:443/artifactory/dragon-misc-master-local/doxygen-1.13.2.src.tar.gz
-tar -xvf doxygen-1.13.2.src.tar.gz
-cd doxygen-1.13.2
-mkdir build && cd build
-cmake -G "Unix Makefiles" ..
-make -j6
-make install
+# wget https://arti.hpc.amslabs.hpecorp.net:443/artifactory/dragon-misc-master-local/doxygen-1.13.2.src.tar.gz
+# tar -xvf doxygen-1.13.2.src.tar.gz
+# cd doxygen-1.13.2
+# mkdir build && cd build
+# cmake -G "Unix Makefiles" ..
+# make -j6
+# make install
 
 # SRMStoFigs for documenations
-cd /usr/local/src && git clone https://github.com/kentdlee/SRMStoFigs.git
-cd /usr/local/src/SRMStoFigs \
-  && make -B srmstofigs CC=gcc \
-  && install -D -m 755 srmstofigs srms2pdf srms2png /usr/local/bin \
-  && cd -
+# cd /usr/local/src && git clone https://github.com/kentdlee/SRMStoFigs.git
+# cd /usr/local/src/SRMStoFigs \
+#   && make -B srmstofigs CC=gcc \
+#   && install -D -m 755 srmstofigs srms2pdf srms2png /usr/local/bin \
+#   && cd -
 
 # Install the common miniconda enviroments
 mkdir miniconda3
-wget https://arti.hpc.amslabs.hpecorp.net/artifactory/dragon-misc-master-local/Miniconda3-latest-Linux-x86_64.sh -O $PWD/miniconda3/miniconda.sh
+# wget https://arti.hpc.amslabs.hpecorp.net/artifactory/dragon-misc-master-local/Miniconda3-latest-Linux-x86_64.sh -O $PWD/miniconda3/miniconda.sh
+# wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh -O $PWD/miniconda3/miniconda.sh
+wget https://github.com/conda-forge/miniforge/releases/download/25.3.1-0/Miniforge3-25.3.1-0-Linux-x86_64.sh -O $PWD/miniconda3/miniconda.sh
 bash $PWD/miniconda3/miniconda.sh -b -u -p $PWD/miniconda3
 rm $PWD/miniconda3/miniconda.sh
 rm -rf $PWD/miniconda3/miniconda.sh
@@ -77,8 +79,13 @@ source $PWD/miniconda3/bin/activate
 conda init --all
 source ~/.bashrc
 
-conda config --add channels conda-forge
-conda config --remove channels https://repo.anaconda.com/pkgs/r
-conda config --remove channels https://repo.anaconda.com/pkgs/main
-conda config --file $PWD/miniconda3/.condarc --remove channels https://repo.anaconda.com/pkgs/r
-conda config --file $PWD/miniconda3/.condarc --remove channels https://repo.anaconda.com/pkgs/main
+conda config --show channels
+
+# conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+# conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+
+# conda config --add channels conda-forge
+# conda config --remove channels https://repo.anaconda.com/pkgs/r
+# conda config --remove channels https://repo.anaconda.com/pkgs/main
+# conda config --file $PWD/miniconda3/.condarc --remove channels https://repo.anaconda.com/pkgs/r
+# conda config --file $PWD/miniconda3/.condarc --remove channels https://repo.anaconda.com/pkgs/main
