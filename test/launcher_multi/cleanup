@@ -1,0 +1,4 @@
+#!/bin/bash
+
+find /dev/shm -user $USER -exec rm -fr {} \;
+find /dev/mqueue -user $USER -exec rm -fr {} \;
