@@ -26,7 +26,7 @@ dragon-config add --ucx-build-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_li
 dragon-config add --ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib
 
 Set TCP transport as always-on default backend:
-dragon-config add --tcp-runtime=True
+dragon-config add --tcp-runtime
 
 Set PMIx header files location to enable PMIx support for MPI applications. Specifically looking for
 path <pmix include>/src/include/pmix_globals.h

@@ -21,34 +21,26 @@ def get_fabric_backend():
         with open(config_file_path) as config_file:
             config_dict = json.load(config_file)
 
-        # Get all the runtimes
-        backends = [(key.split("_")[0], config_dict[key]) for key in config_dict.keys() if "runtime" in key]
+        # Get all the runtimes. We'll cull the list from there
+        backend_runtimes = {key.split("_")[0]: config_dict[key] for key in config_dict.keys() if "runtime" in key}
 
-        # If there's more than 1 runtime, do some selection work
-        if len(backends) > 1:
-            backend_names, _ = zip(*backends)
-
-            # if tcp is included, always use it
-            if "tcp" in backend_names:
+        # if tcp is set to true, always use it
+        try:
+            if backend_runtimes["tcp"] is True:
                 return "tcp", None
+        except KeyError:
+            pass
 
-            # otherwise return the first that's not TCP
-            else:
-                for backend_name, backend_lib in backends:
-                    # Handle list of paths
-                    if isinstance(backend_lib, list):
-                        backend_lib = ":".join(backend_lib)
-                    if "tcp" not in backend_name:
-                        return backend_name, backend_lib
-
-        # If there's only one, return it
-        else:
-            name, lib = backends[0]
+        # otherwise return the first runtime that's not TCP AND is in our enumerated support types
+        for backend_name, backend_lib in backend_runtimes.items():
             # Handle list of paths
-            if isinstance(lib, list):
-                lib = ":".join(lib)
-            return name, lib
+            if backend_name in set(dfacts.HighSpeedTransportBackends):
+                # if the runtime is a list, join it with ':'
+                if isinstance(backend_lib, list):
+                    backend_lib = ":".join(backend_lib)
+                return backend_name, backend_lib
 
+    # If we got here, we don't have a config or an appropriately defined backend
     return None, None
 
 
@@ -60,7 +52,7 @@ def create_hsta_env(nic_idx):
     env = dict(os.environ)
 
     # set the debugging flag
-    logging_enabled = (log.getEffectiveLevel() == logging.DEBUG)
+    logging_enabled = log.getEffectiveLevel() == logging.DEBUG
     if logging_enabled:
         env["DRAGON_HSTA_DEBUG"] = "1"
     else:

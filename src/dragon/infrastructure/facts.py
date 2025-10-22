@@ -680,6 +680,32 @@ class TransportAgentOptions(enum.Enum):
             raise ValueError()
 
 
+@enum.unique
+class HighSpeedTransportBackends(str, enum.Enum):
+    """Enumerated list of supported high-speed transport backends"""
+
+    UCX = "ucx"
+    OFI = "ofi"
+
+    def __str__(self):
+        return self.value
+
+    @staticmethod
+    def from_str(s):
+        """Obtain enum value from HighSpeedTransportBackends string
+
+        :param s: string representation of enumerated HighSpeedTransportBackends
+        :type s: str
+        :returns: name of the available high-speed transport backend
+        :rtype: HighSpeedTransportBackends
+        :raises: ValueError
+        """
+        try:
+            return HighSpeedTransportBackends(s)
+        except KeyError:
+            raise ValueError()
+
+
 TRANSPORT_AGENT_ALIASES = {
     # NOTE Cannot use dragon.cli.console_script_args() as it would cause a
     # NOTE circular import.
@@ -720,32 +746,6 @@ class PMIBackend(str, enum.Enum):
     def from_str(s):
         try:
             return PMIBackend(s)
-        except KeyError:
-            raise ValueError()
-
-
-@enum.unique
-class TransportAgentOptions(enum.Enum):
-    """Enumerated list of supported transport agents"""
-
-    HSTA = "hsta"
-    TCP = "tcp"
-    DRAGON_CONFIG = "configured"
-
-    def __str__(self):
-        return self.value
-
-    @staticmethod
-    def from_str(s):
-        """Obtain enum value from TransportAgentOptions string
-
-        :param s: string representation of enumerated TransportAgentOptions
-        :type s: str
-        :return: name of an available transport agent
-        :rtype: TransportAgentOptions
-        """
-        try:
-            return TransportAgentOptions(s)
         except KeyError:
             raise ValueError()
 

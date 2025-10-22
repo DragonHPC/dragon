@@ -41,8 +41,44 @@ ifdef SLURM_JOB_PARTITION
 		HAVE_NVIDIA_GPUS = true
 	endif
 endif
-# TODO: Sort out the right way to get the num nodes here for K8s
 
+## Configure all the MPI library flags
+ifeq ($(TEST_OPEN_MPI_FLAGS),)
+OMPI_DIR := $(shell echo $(shell dragon-config -g open_mpi))
+    ifeq ($(OMPI_DIR),)
+$(shell dragon-config test --open-mpi=/lus/scratch/dragonhpc/openmpi)
+	    OMPI_DIR = $(shell echo $(shell dragon-config -g open_mpi))
+    endif
+	OMPI_FLAGS = -I $(OMPI_DIR)/include -L $(OMPI_DIR)/lib -lmpi
+else
+    OMPI_FLAGS = $(TEST_OPEN_MPI_FLAGS)
+endif
+
+ifeq ($(TEST_ANL_MPICH_FLAGS),)
+ANL_MPICH_DIR := $(shell echo $(shell dragon-config -g anl_mpich))
+    ifeq ($(ANL_MPICH_DIR),)
+$(shell dragon-config test --anl-mpich=/lus/scratch/dragonhpc/mpich)
+        ANL_MPICH_DIR := $(shell echo $(shell dragon-config -g anl_mpich))
+    endif
+    ANL_MPICH_FLAGS = -I $(ANL_MPICH_DIR)/include -L $(ANL_MPICH_DIR)/lib -lmpich
+else
+	ANL_MPICH_FLAGS = $(TEST_ANL_MPICH_FLAGS)
+endif
+
+
+ifeq ($(TEST_CRAY_MPICH_FLAGS),)
+CRAY_MPICH_DIR := $(shell echo $(shell dragon-config -g cray_mpich))
+    ifeq ($(CRAY_MPICH_DIR),)
+$(shell dragon-config test --cray-mpich=${CRAY_MPICH_PREFIX})
+        CRAY_MPICH_DIR := $(shell echo $(shell dragon-config -g cray_mpich))
+    endif
+    CRAY_MPICH_FLAGS = -I $(CRAY_MPICH_DIR)/include -L $(CRAY_MPICH_DIR)/lib -lmpich
+else
+	CRAY_MPICH_FLAGS = $(TEST_CRAY_MPICH_FLAGS)
+endif
+
+
+# TODO: Sort out the right way to get the num nodes here for K8s
 CPPFLAGS = $(DRAGON_INCLUDE) -DDRAGON_DEBUG
 LIBS = $(DRAGON_LINK)
 INCLUDE = $(DRAGON_INCLUDE)
@@ -126,34 +162,13 @@ $(TESTS_DRAGON_HSTA):
 
 # Try to dynamically set up MPI compiler and linker flags for testing.
 $(MPI_HELLO_CRAY): $(MPI_HELLO_SRC)
-ifeq ($(TEST_CRAY_MPICH_FLAGS),)
-	if dragon-config test --cray-mpich=${CRAY_MPICH_PREFIX}; then \
-		LOCALLY_LOADED_FLAGS=$$(cat $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk | grep "TEST_CRAY_MPICH_FLAGS" | cut -d'=' -f 2); \
-		$(CC) $$LOCALLY_LOADED_FLAGS $(INCLUDE) $(LIBS) $^ -o $@; \
-	fi
-else
-	$(CC) $(TEST_CRAY_MPICH_FLAGS) $(INCLUDE) $(LIBS) $^ -o $@
-endif
+	$(CC) $(CRAY_MPICH_FLAGS) $(INCLUDE) $(LIBS) $^ -o $@
 
 $(MPI_HELLO_OMPI): $(MPI_HELLO_SRC)
-ifeq ($(TEST_OPEN_MPI_FLAGS),)
-	if dragon-config test --open-mpi=/lus/scratch/dragonhpc/openmpi; then \
-		LOCALLY_LOADED_FLAGS=$$(cat $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk | grep "TEST_OPEN_MPI_FLAGS" | cut -d'=' -f 2);  \
-		$(CC) $$LOCALLY_LOADED_FLAGS $(INCLUDE) $(LIBS) $^ -o $@; \
-	fi
-else
-	$(CC) $(TEST_OPEN_MPI_FLAGS) $(INCLUDE) $(LIBS) $^ -o $@
-endif
+	$(CC) $(OMPI_FLAGS) $(INCLUDE) $(LIBS) $^ -o $@
 
 $(MPI_HELLO_MPICH): $(MPI_HELLO_SRC)
-ifeq ("$(TEST_ANL_MPICH_FLAGS)","")
-	if dragon-config test --anl-mpich=/lus/scratch/dragonhpc/mpich; then \
-		LOCALLY_LOADED_FLAGS=$$(cat $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk | grep "TEST_ANL_MPICH_FLAGS" | cut -d'=' -f 2); \
-		$(CC) $$LOCALLY_LOADED_FLAGS $(INCLUDE) $(LIBS) $^ -o $@; \
-	fi
-else
-	$(CC) $(TEST_ANL_MPICH_FLAGS) $(INCLUDE) $(LIBS) $^ -o $@
-endif
+	$(CC) $(ANL_MPICH_FLAGS) $(INCLUDE) $(LIBS) $^ -o $@
 
 .PHONY: $(TESTS_DRAGON_PMI_BACKENDS)
 $(TESTS_DRAGON_PMI_BACKENDS): $(MPI_HELLO_CRAY) $(MPI_HELLO_OMPI) $(MPI_HELLO_MPICH)

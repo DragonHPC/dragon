@@ -60,6 +60,7 @@ DRAGON_RUN_TOOLS := tools/dragon_cleanup.py \
 BINARIES := $(addprefix bin/, $(notdir $(TOOLS)))
 
 export SYMBOLIC_BIN := $(abspath dragon/bin)
+SYMBOLIC_LIB := $(abspath dragon/lib)
 
 EXTERNAL := ../external/capnproto
 
@@ -70,32 +71,28 @@ CY_FILES := dragon/pydragon_rc.pyx \
 .PHONY: all
 all: build
 
+
 .PHONY: build
 build: $(EXTERNAL) $(LIBRARIES) $(CYFILES) $(BINARIES) install-pythondeps
 	# Build cython code
 	$(PYTHON) setup.py build $(SETUP_PY_BUILD_FLAGS)
 	# Build cli entry points
 	$(PYTHON) setup.py develop
+	# Symbolic link to lib. Needs to go here and only used for dev builds. The setup.py step clears it otherwise
+	ln -sf $(abspath lib) $(SYMBOLIC_LIB)
 
 
 .PHONY: $(EXTERNAL)
 $(EXTERNAL):
 	$(MAKE) -C ../external build-capnproto
 
-# Define symbolic lib
-SYMBOLIC_LIB = $(abspath dragon/lib)
-
-# New rule
-$(SYMBOLIC_LIB):
-	ln -sf $(abspath lib) $@
-
 #lib:
 .PHONY: lib
-lib: $(SYMBOLIC_LIB)
+lib:
 	$(MAKE) -C lib
 
 .PHONY: include
-include: $(SYMBOLIC_LIB)
+include:
 	$(MAKE) -C include
 
 lib/libdragon.so: $(EXTERNAL) include lib
