@@ -39,10 +39,10 @@ DIST_SOURCES := $(wildcard pkg/*) \
 				multi-node/test_queue.py \
 				multi-node/test_value.py \
                 multi-node/test_process_group.py \
-				multi-node/mpi_hello.c \
+				multi-node/mpi_allgather_hello.c \
 				multi-node/c_ddict.c \
                 multi-node/cpp_ddict.cpp \
-				multi-node/test_mpi_hello_world.py \
+				multi-node/test_pmi_backends.py \
 				multi-node/Makefile
 
 DIST_DIR := $(INSTALL_DIR)/dragon_unittests
@@ -61,7 +61,8 @@ TESTS_PYTHON := test_c_files.py \
                 $(wildcard transport/tcp/test_*.py) \
                 transport/test_lsif.py \
                 test_transport.py \
-                test_integration_shep_gs.py
+                test_integration_shep_gs.py \
+                test_dragon_cleanup.py
 # test_launcher.py (waiting for fix from Jira AICI-1859)
 
 TESTS_AI := test_distributed_training.py

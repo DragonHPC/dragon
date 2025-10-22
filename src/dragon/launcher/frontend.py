@@ -204,15 +204,15 @@ lower performing TCP transport agent for backend network communication.
         if self._wlm is None:
             self._wlm = dlutil.detect_wlm()
 
+        # If using SSH, confirm we have enough info do that:
+        if self._wlm in (WLM.SSH, WLM.DRUN) and self._config_from_file is None:
+            self.hostlist = parse_hosts(self.hostlist, self.hostfile)
+
         # Get an instance of the workload manager helper class
         self.wlm_cls = wlm_cls_dict.get(WLM.from_str(self._wlm), None)
         if not self.wlm_cls:
             raise RuntimeError(f"Unsupported workload manager specified: {self._wlm}")
         self.wlm_obj = self.wlm_cls(self.network_prefix, self.port, self.hostlist)
-
-        # If using SSH, confirm we have enough info do that:
-        if self._wlm in (WLM.SSH, WLM.DRUN) and self._config_from_file is None:
-            self.hostlist = parse_hosts(self.hostlist, self.hostfile)
 
         # Handle some sanity checks on the resilient mode
 

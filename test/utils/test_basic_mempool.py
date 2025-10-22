@@ -269,7 +269,7 @@ class MemPoolCreateTest(unittest.TestCase):
 
     def test_create_too_many_args(self):
         with self.assertRaises(TypeError):
-            _ = MemoryPool(MIN_POOL_SIZE, "mpool_test", DEFAULT_UID, None, None, None, None)
+            _ = MemoryPool(MIN_POOL_SIZE, "mpool_test", DEFAULT_UID, None, None, None, None, None)
 
 
 class MemoryPoolAllocTest(unittest.TestCase):

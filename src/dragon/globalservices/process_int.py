@@ -154,13 +154,28 @@ class ProcessContext:
             stderr_msg = self.stderr_context.shchannelcreate_msg
         else:
             stderr_msg = None
+
+        # hooks for launching the head process with a profiler
+        # example for NVIDIA profiler would be
+        # export _DRAGON_GS_HEAD_PROC_PREAMBLE_EXE= "nsys"
+        # export _DRAGON_GS_HEAD_PROC_PREAMBLE_ARGS= "profile"
+        if self.request.head_proc and the_env.get("_DRAGON_GS_HEAD_PROC_PREAMBLE_EXE") is not None:
+            temp_exe = the_env.get("_DRAGON_GS_HEAD_PROC_PREAMBLE_EXE")
+        else:
+            temp_exe = self.request.exe
+
+        if self.request.head_proc and the_env.get("_DRAGON_GS_HEAD_PROC_PREAMBLE_ARGS") is not None:
+            temp_args = the_env.get("_DRAGON_GS_HEAD_PROC_PREAMBLE_ARGS") + [self.request.exe] + self.request.args
+        else:
+            temp_args = self.request.args
+
         return dmsg.SHProcessCreate(
             tag=the_tag,
             p_uid=dfacts.GS_PUID,
             r_c_uid=dfacts.GS_INPUT_CUID,
             t_p_uid=self.descriptor.p_uid,
-            exe=self.request.exe,
-            args=self.request.args,
+            exe=temp_exe,
+            args=temp_args,
             rundir=self.request.rundir,
             env=the_env,
             stdin=self.request.stdin,

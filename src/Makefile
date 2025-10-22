@@ -59,7 +59,7 @@ DRAGON_RUN_TOOLS := tools/dragon_cleanup.py \
 
 BINARIES := $(addprefix bin/, $(notdir $(TOOLS)))
 
-SYMBOLIC_BIN := $(abspath dragon/bin)
+export SYMBOLIC_BIN := $(abspath dragon/bin)
 
 EXTERNAL := ../external/capnproto
 
@@ -82,12 +82,23 @@ build: $(EXTERNAL) $(LIBRARIES) $(CYFILES) $(BINARIES) install-pythondeps
 $(EXTERNAL):
 	$(MAKE) -C ../external build-capnproto
 
+# Define symbolic lib
+SYMBOLIC_LIB = $(abspath dragon/lib)
 
+# New rule
+$(SYMBOLIC_LIB):
+	ln -sf $(abspath lib) $@
+
+#lib:
 .PHONY: lib
-lib:
+lib: $(SYMBOLIC_LIB)
 	$(MAKE) -C lib
 
-lib/libdragon.so: $(EXTERNAL) lib
+.PHONY: include
+include: $(SYMBOLIC_LIB)
+	$(MAKE) -C include
+
+lib/libdragon.so: $(EXTERNAL) include lib
 
 # Copy tools dir to bin
 bin/$(notdir $(TOOLS)): $(TOOLS) $(SYMBOLIC_BIN)

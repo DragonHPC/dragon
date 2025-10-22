@@ -30,7 +30,7 @@ dragon_gpu_resolve_hip_symbols(void *libhandle)
     fn_hipFree = (hipError_t (*)(void *)) dlsym(libhandle, "hipFree");
     assert(fn_hipFree != nullptr);
 
-    fn_hipMemcpy = (hipError_t (*)(void *, const void *, size_t, hipMemcpyKind)) dlsym(libhandle, "hipMalloc");
+    fn_hipMemcpy = (hipError_t (*)(void *, const void *, size_t, hipMemcpyKind)) dlsym(libhandle, "hipMemcpy");
     assert(fn_hipMemcpy != nullptr);
 
     fn_hipMemset = (hipError_t (*)(void *, int, size_t)) dlsym(libhandle, "hipMemset");
@@ -216,7 +216,7 @@ dragonGPU_hip::get_errstr(const char *event, int hip_rc)
 {
     auto errstr = fn_hipGetErrorString((hipError_t) hip_rc);
 
-    auto log_str = 
+    auto log_str =
           std::string(event)
         + std::string(": rc=") + std::to_string(hip_rc)
         + (errstr ? std::string(", ") + std::string(errstr) : std::string(""));

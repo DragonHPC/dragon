@@ -25,7 +25,13 @@ def make_relative_rpath_args(path):
 
 DragonExtension = partial(
     Extension,
-    include_dirs=[f"{ROOTDIR}/lib", f"{ROOTDIR}/include", f"{ROOTDIR}/lib/pmix", f"{ROOTDIR}/lib/event"],
+    include_dirs=[
+        f"{ROOTDIR}/lib",
+        f"{ROOTDIR}/include",
+        f"{ROOTDIR}/lib/gpu",
+        f"{ROOTDIR}/lib/pmix",
+        f"{ROOTDIR}/lib/event",
+    ],
     library_dirs=[f"{ROOTDIR}/lib"],
     libraries=["dragon", "rt"],
     extra_link_args=make_relative_rpath_args("lib"),

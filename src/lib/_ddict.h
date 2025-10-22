@@ -10,7 +10,8 @@ extern "C" {
 #endif
 dragonError_t _dragon_ddict_attach(const char * dd_ser, dragonDDictDescr_t * dd, timespec_t * default_timeout,
                                    dragonChannelSerial_t *str_chser, dragonChannelSerial_t *resp_chser,
-                                   dragonChannelSerial_t *buffered_resp_chser, char * mgr_ser);
+                                   dragonChannelSerial_t *buffered_resp_chser, char * mgr_ser,
+                                   bool check_for_local_mgr);
 #ifdef __cplusplus
 }
 #endif

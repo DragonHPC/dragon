@@ -52,6 +52,7 @@ dragon-config add --ofi-include=$PWD/ofi/include/ \
 dragon-config add --ucx-include=$PWD/ucx/include \
                   --ucx-build-lib=$PWD/ucx/lib \
                   --ucx-runtime-lib=$PWD/ucx/lib
+dragon-config add --cuda-include=$PWD/cuda/include 
 
 # Re-run unit tests to verify wheel
 make -C test test

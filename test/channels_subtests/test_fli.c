@@ -49,7 +49,9 @@ dragonError_t create_pool(dragonMemoryPoolDescr_t* mpool) {
     /* Create a memory pool to allocate messages and a Channel out of */
     size_t mem_size = 1UL<<31;
 
-    dragonError_t err = dragon_memory_pool_create(mpool, mem_size, POOL, POOL_M_UID, NULL);
+    char pool_name[200];
+    snprintf(pool_name, 199, "%s_%s_%d", POOL, getlogin(), getpid());
+    dragonError_t err = dragon_memory_pool_create(mpool, mem_size, pool_name, POOL_M_UID, NULL);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Failed to create memory pool");
 

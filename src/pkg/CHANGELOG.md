@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.12.3] - 2025-10-06
+
+### Added
+
+    [AICI-1903] - Managed memory support for GPU buffers
+    [AICI-1925] - Benchmark for checkpoint persistence test
+    [AICI-1927] - Document "which PMI do I use?" for MPI app launch
+    [AICI-1937] - dragon-cleanup tests added
+    [AICI-1936] - dragon-cleanup of telemetry processes added
+    [AICI-1831] - Make SSH launch testing part of merge to develop checklist
+
+### Fixed
+
+    [AICI-1933] - Make it possible to re-run a process group with a PMIx backend
+    [AICI-1959] - Fix utf8 decoding bug in local services
+    [AICI-1908] - Make src/dragon/lib symbolic link as part of Makefile build
+    [AICI-1926] - Address DDict documentation inconsistencies
+    [AICI-1935] - Fix erroneous hostlist error raise during WLM launch
+
+
 ## [0.12.2] - 2025-09-11
 
 ### Changed

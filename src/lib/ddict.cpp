@@ -3,6 +3,9 @@
 #include <string>
 #include <set>
 #include <algorithm>
+#include <numeric>
+#include <random>
+#include <limits>
 #include <dragon/ddict.h>
 #include "_ddict.hpp"
 #include "_ddict.h"
@@ -58,7 +61,7 @@ static dragonError_t _send(dragonFLIDescr_t * sendto_fli, dragonChannelDescr_t* 
     if (err != DRAGON_SUCCESS) {
         // We ignore the return code because there was an error on send.
         dragon_fli_close_send_handle(&sendh, timeout);
-        append_err_return(err, "Could not send message.");
+            append_err_return(err, "Could not send message.");
     }
 
     err = dragon_fli_close_send_handle(&sendh, timeout);
@@ -429,9 +432,7 @@ static dragonError_t _check_all_manager_connection(dragonDDict_t * dd) {
     no_err_return(DRAGON_SUCCESS);
 }
 
-static dragonError_t _build_key_choose_manager(dragonDDictReq_t * req) {
-
-    // Get the buffered data into a memory allocation and prepare to send it.
+static dragonError_t _build_key(dragonDDictReq_t * req) {
     dragonError_t err;
 
     err = dragon_fli_get_buffered_bytes(&req->key_sendh, &req->key_mem, NULL, req->ddict->timeout);
@@ -452,6 +453,11 @@ static dragonError_t _build_key_choose_manager(dragonDDictReq_t * req) {
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to get the buffered key pointer.");
 
+    no_err_return(DRAGON_SUCCESS);
+}
+
+static dragonError_t _choose_manager(dragonDDictReq_t * req) {
+
     req->key_hash = dragon_hash(req->key_data, req->key_size);
 
     if (req->ddict->has_chosen_manager) {
@@ -459,6 +465,21 @@ static dragonError_t _build_key_choose_manager(dragonDDictReq_t * req) {
     } else {
         req->manager_id = req->key_hash % req->ddict->num_managers;
     }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+static dragonError_t _build_key_choose_manager(dragonDDictReq_t * req) {
+
+    // Get the buffered data into a memory allocation and prepare to send it.
+    dragonError_t err;
+
+    err = _build_key(req);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to build the key.");
+
+    err = _choose_manager(req);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to hash key and choose manager.");
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -472,8 +493,8 @@ static dragonError_t _cleanup_request(dragonDDictReq_t * req) {
     no_err_return(DRAGON_SUCCESS);
 }
 
-static dragonError_t _get_main_manager(dragonDDict_t * ddict, char *mgr_sdesc) {
-    dragonError_t err;
+static dragonError_t _get_main_manager(dragonDDict_t * ddict, char *mgr_sdesc, bool check_for_local_mgr) {
+    dragonError_t err = DRAGON_SUCCESS;
     char * mgr_ser = mgr_sdesc;
     dragonFLISerial_t mgr_fli_ser;
     DDRandomManagerMsg * randomManagerMsg = nullptr;
@@ -481,11 +502,13 @@ static dragonError_t _get_main_manager(dragonDDict_t * ddict, char *mgr_sdesc) {
     DDRandomManagerResponseMsg * randomManagerResponseMsg = nullptr;
 
     if (mgr_ser == NULL) {
-        err = dragon_ls_get_kv((uint8_t*)ddict->ddict_ser.c_str(), (char**)&mgr_ser, nullptr);
-        if (err != DRAGON_SUCCESS && err != DRAGON_NOT_FOUND)
-            append_err_return(err, "Unable to ascertain existence of a local manager.");
+        if (check_for_local_mgr) {
+            err = dragon_ls_get_kv((uint8_t*)ddict->ddict_ser.c_str(), (char**)&mgr_ser, nullptr);
+            if (err != DRAGON_SUCCESS && err != DRAGON_NOT_FOUND)
+                append_err_return(err, "Unable to ascertain existence of a local manager.");
+        }
 
-        if (err == DRAGON_NOT_FOUND) {
+        if (err == DRAGON_NOT_FOUND || !check_for_local_mgr ) {
             // No manager found on node - Get random manager (check specific err code)
             // call get_random_manager (via orchestrator)
             randomManagerMsg = new DDRandomManagerMsg(_tag_inc(ddict), ddict->bufferedRespFLIStr.c_str());
@@ -599,42 +622,338 @@ static dragonError_t _get_local_managers(dragonDDict_t * ddict) {
     no_err_return(DRAGON_SUCCESS);
 }
 
-static dragonError_t _put(const dragonDDictRequestDescr_t * req_descr, bool persist) {
-    dragonDDictReq_t * req;
+static dragonError_t _put(dragonDDictReq_t * req, bool persist) {
+
     dragonError_t err;
     DDPutMsg * putMsg = nullptr;
 
-    if (req_descr == nullptr)
-        err_return(DRAGON_INVALID_ARGUMENT, "Invalid request descriptor.");
-
-    err = _ddict_req_from_descr(req_descr, &req);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not find valid request object.");
+    if (req->key_data != nullptr)
+        err_return(DRAGON_INVALID_OPERATION, "Key has already been sent, invalid operation order.");
 
     if (req->op_type != DRAGON_DDICT_NO_OP)
-        err_return(DRAGON_INVALID_OPERATION, "Cannot change the ddict operation.");
+        err_return(DRAGON_INVALID_OPERATION, "Could not change ddict operations.");
     req->op_type = DRAGON_DDICT_PUT_REQ;
 
     if (req->key_data == nullptr) {
-        // indicates this has not been called yet.
+
         err = _build_key_choose_manager(req);
         if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not build key.");
+            append_err_return(err, "Could not build key or connect to manager.");
+
+        err = _check_manager_connection(req->ddict, req->manager_id);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not connect to the manager.");
+
+        req->manager_fli = req->ddict->manager_table[req->manager_id];
+
+        req->msg_tag = _tag_inc(req->ddict);
+        putMsg = new DDPutMsg(req->msg_tag, req->ddict->clientID, req->ddict->chkpt_id, persist);
+        err = _send_msg_key_no_close_sendh(putMsg, req);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not send the put message and key.");
+
+    } else {
+        err_return(DRAGON_INVALID_OPERATION, "No data present in request.");
     }
 
-    err = _check_manager_connection(req->ddict, req->manager_id);
+    delete putMsg;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t _batch_put(dragonDDictReq_t * req, bool persist) {
+    dragonError_t err;
+    dragonFLISendHandleDescr_t * sendh;
+    dragonDDict_t * dd;
+    DDBatchPutMsg * batchPutMsg = nullptr;
+
+    if (req->key_data != nullptr)
+        err_return(DRAGON_INVALID_OPERATION, "Key has already been sent, invalid operation order.");
+
+    dd = req->ddict;
+
+    if (req->op_type != DRAGON_DDICT_NO_OP)
+        err_return(DRAGON_INVALID_OPERATION, "Could not change ddict operations.");
+    req->op_type = DRAGON_DDICT_BATCH_PUT_REQ;
+
+    if (req->key_data == nullptr) {
+        err = _build_key_choose_manager(req);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not build key or connect to manager.");
+
+        err = _check_manager_connection(dd, req->manager_id);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not connect to the manager.");
+
+        req->manager_fli = dd->manager_table[req->manager_id];
+    }
+
+    if (dd->opened_send_handles.find(req->manager_id) != dd->opened_send_handles.end()) {
+        sendh = dd->opened_send_handles[req->manager_id];
+        req->sendh = *sendh;
+    } else {
+        dragonChannelDescr_t * strm_ch = (dragonChannelDescr_t*)malloc(sizeof(dragonChannelDescr_t));
+
+        err = dragon_create_process_local_channel(strm_ch, 0, 0, 0, dd->timeout);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not create stream channel.");
+
+        dd->batch_put_stream_channels[req->manager_id] = strm_ch;
+        dd->opened_send_handles[req->manager_id] = new dragonFLISendHandleDescr_t();
+        err = dragon_fli_open_send_handle(&req->manager_fli, dd->opened_send_handles[req->manager_id], strm_ch, nullptr, dd->timeout);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not open send handle.");
+
+        req->sendh = *dd->opened_send_handles[req->manager_id];
+
+        req->msg_tag = _tag_inc(dd);
+
+        batchPutMsg = new DDBatchPutMsg(req->msg_tag, dd->clientID, dd->chkpt_id, persist);
+        dd->batch_put_msg_tags.insert(req->msg_tag);
+
+        // send batch put message
+        err = batchPutMsg->send(&req->sendh, dd->timeout);
+        if (err != DRAGON_SUCCESS) {
+            // We ignore the return code because there was an error on send.
+            dragonError_t close_fli_err = dragon_fli_close_send_handle(&req->sendh, dd->timeout);
+            if (close_fli_err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not send message and close send handle.");
+
+            append_err_return(err, "Could not send message.");
+        }
+    }
+
+    if (req->key_data != nullptr) {
+        err = dragon_fli_send_mem(&req->sendh, &req->key_mem, KEY_HINT, false, false, req->ddict->timeout);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not send key to manager.");
+    }
+
+    delete batchPutMsg;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t _end_bput_with_batch(dragonDDict_t * dd) {
+
+    dragonError_t err;
+
+    if (dd == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict.");
+
+    err = dragon_fli_close_send_handle(&dd->bput_root_manager_sendh, dd->timeout);
     if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not connect to the manager.");
+        append_err_return(err, "Could not close send handle.");
 
-    req->manager_fli = req->ddict->manager_table[req->manager_id];
-    req->msg_tag = _tag_inc(req->ddict);
-    putMsg = new DDPutMsg(req->msg_tag, req->ddict->clientID, req->ddict->chkpt_id, persist);
+    dd->has_bput_root_manager_sendh = false;
 
-    err = _send_msg_key_no_close_sendh(putMsg, req);
-    if (err != DRAGON_SUCCESS) {
-        delete putMsg;
-        append_err_return(err, "Could not send the put message and key.");
+    uint64_t resp_num = dd->num_managers;
+    DragonResponseMsg ** resp_msgs = nullptr;
+
+    // receive response from all managers
+    resp_msgs = new DragonResponseMsg*[resp_num];
+    if (resp_msgs == nullptr)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    std::set<uint64_t> msg_tags;
+    msg_tags.insert(dd->bput_tag);
+
+    err = _recv_responses(&dd->bput_respFLI, resp_msgs, msg_tags, resp_num, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get bput response.");
+
+    for (size_t i=0 ; i<resp_num ; i++) {
+        if (resp_msgs[i] == nullptr)
+            err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+        if (resp_msgs[i]->tc() != DDBPutResponseMsg::TC)
+            err_return(DRAGON_FAILURE, "Failed to get expected bput response message.");
+
+        DDBPutResponseMsg * bputResponseMsg = (DDBPutResponseMsg*) resp_msgs[i];
+        err = bputResponseMsg->err();
+        if (err != DRAGON_SUCCESS)
+            err_return(err, bputResponseMsg->errInfo());
+
+        if (bputResponseMsg->numPuts() != dd->num_bputs) {
+            char msg[200];
+            snprintf(msg, 199, "Failed to store all keys in manager %lu in the distributed dictionary. Expected number of keys to be written: %lu, number of successful writes: %lu", bputResponseMsg->managerID(), dd->num_bputs, bputResponseMsg->numPuts());
+            err_return(DRAGON_FAILURE, msg);
+        }
+
+        delete resp_msgs[i];
     }
+
+    // cleanup
+    dd->num_bputs = 0;
+    dragon_fli_destroy(&dd->bput_respFLI);
+    dragon_destroy_process_local_channel(&dd->bput_strm, dd->timeout);
+    dragon_destroy_process_local_channel(&dd->bput_resp_strm, dd->timeout);
+
+    delete[] resp_msgs;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t _restore(dragonDDict_t * dd, uint64_t chkpt_id) {
+    dragonError_t err;
+    std::set<uint64_t> msg_tags;
+    DragonResponseMsg ** resp_msgs = nullptr;
+
+    if (dd == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict.");
+
+    err = _check_manager_connection(dd, 0);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not connect to root manager.");
+
+    uint64_t msg_tag = _tag_inc(dd);
+    msg_tags.insert(msg_tag);
+    DDRestoreMsg * restoreMsg = new DDRestoreMsg(msg_tag, chkpt_id, dd->clientID, dd->bufferedRespFLIStr.c_str());
+    err = _send(&dd->manager_table[0], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, restoreMsg, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the restore message to root manager.");
+
+    resp_msgs = new DragonResponseMsg*[dd->num_managers];
+    if (resp_msgs == nullptr)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    err =  _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, dd->num_managers, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to receive restore response.");
+
+    for (uint64_t i=0 ; i<dd->num_managers ; i++) {
+
+        if (resp_msgs[i] == nullptr)
+            err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+        if (resp_msgs[i]->tc() != DDRestoreResponseMsg::TC)
+            err_return(DRAGON_FAILURE, "Failed to get expected restore response message.");
+
+        DDRestoreResponseMsg * restoreResponseMsg = (DDRestoreResponseMsg*) resp_msgs[i];
+        err = restoreResponseMsg->err();
+        if (err != DRAGON_SUCCESS)
+            err_return(err, restoreResponseMsg->errInfo());
+
+        delete resp_msgs[i];
+    }
+
+    delete restoreMsg;
+    delete[] resp_msgs;
+
+    dd->chkpt_id = chkpt_id;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t _chkpt_avail(dragonDDict_t * dd, uint64_t chkpt_id) {
+
+    dragonError_t err;
+    std::set<uint64_t> msg_tags;
+    DragonResponseMsg ** resp_msgs = nullptr;
+
+    if (dd == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict.");
+
+    err = _check_manager_connection(dd, 0);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not connect to root manager.");
+
+    uint64_t msg_tag = _tag_inc(dd);
+    msg_tags.insert(msg_tag);
+    DDChkptAvailMsg * chkptAvailMsg = new DDChkptAvailMsg(msg_tag, chkpt_id, dd->bufferedRespFLIStr.c_str());
+
+    err = _send(&dd->manager_table[0], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, chkptAvailMsg, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the chkpt available message to root manager.");
+
+    resp_msgs = new DragonResponseMsg*[dd->num_managers];
+    if (resp_msgs == nullptr)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    err =  _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, dd->num_managers, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to receive chkpt available response.");
+
+    for (uint64_t i=0 ; i<dd->num_managers ; i++) {
+
+        if (resp_msgs[i] == nullptr)
+            err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+        if (resp_msgs[i]->tc() != DDChkptAvailResponseMsg::TC)
+            err_return(DRAGON_FAILURE, "Failed to get expected chkpt available response message.");
+
+        DDChkptAvailResponseMsg * chkptAvailResponseMsg = (DDChkptAvailResponseMsg*) resp_msgs[i];
+        err = chkptAvailResponseMsg->err();
+        if (err != DRAGON_SUCCESS)
+            err_return(err, chkptAvailResponseMsg->errInfo());
+
+        if (!chkptAvailResponseMsg->available()) {
+            char msg[200];
+            snprintf(msg, 199, "Unable to access checkpoint %lu from manager %lu. The checkpoint is not available.", chkpt_id, chkptAvailResponseMsg->managerID());
+            err_return(DRAGON_INVALID_OPERATION, msg);
+        }
+
+        delete resp_msgs[i];
+    }
+
+    delete chkptAvailMsg;
+    delete[] resp_msgs;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t _persisted_chkpt_avail(dragonDDict_t * dd, uint64_t chkpt_id) {
+    // Check the availability of the persisted checkpoint.
+    dragonError_t err;
+    std::set<uint64_t> msg_tags;
+    DragonResponseMsg ** resp_msgs = nullptr;
+
+    if (dd == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict.");
+
+    err = _check_manager_connection(dd, 0);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not connect to root manager.");
+
+    uint64_t msg_tag = _tag_inc(dd);
+    msg_tags.insert(msg_tag);
+    DDPersistedChkptAvailMsg * persistedChkptAvailMsg = new DDPersistedChkptAvailMsg(msg_tag, chkpt_id, dd->bufferedRespFLIStr.c_str());
+    err = _send(&dd->manager_table[0], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, persistedChkptAvailMsg, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the persisted chkpt available message to root manager.");
+
+    resp_msgs = new DragonResponseMsg*[dd->num_managers];
+    if (resp_msgs == nullptr)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    err =  _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, dd->num_managers, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to receive persisted chkpt available response.");
+
+    for (uint64_t i=0 ; i<dd->num_managers ; i++) {
+
+        if (resp_msgs[i] == nullptr)
+            err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+        if (resp_msgs[i]->tc() != DDPersistedChkptAvailResponseMsg::TC)
+            err_return(DRAGON_FAILURE, "Failed to get expected persisted chkpt available response message.");
+
+        DDPersistedChkptAvailResponseMsg * persistedChkptAvailResponseMsg = (DDPersistedChkptAvailResponseMsg*) resp_msgs[i];
+        err = persistedChkptAvailResponseMsg->err();
+        if (err != DRAGON_SUCCESS)
+            err_return(err, persistedChkptAvailResponseMsg->errInfo());
+
+        if (!persistedChkptAvailResponseMsg->available()) {
+            char msg[200];
+            snprintf(msg, 199, "Unable to access persisted checkpoint %lu from manager %lu. The checkpoint is not available.", chkpt_id, persistedChkptAvailResponseMsg->managerID());
+            err_return(DRAGON_INVALID_OPERATION, msg);
+        }
+
+        delete resp_msgs[i];
+    }
+
+    delete persistedChkptAvailMsg;
+    delete[] resp_msgs;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -881,7 +1200,8 @@ dragonError_t dragon_ddict_serialize(const dragonDDictDescr_t * dd, const char *
 /************************************************************/
 dragonError_t _dragon_ddict_attach(const char * dd_ser, dragonDDictDescr_t * dd, timespec_t * default_timeout,
                                    dragonChannelSerial_t *str_chser, dragonChannelSerial_t *resp_chser,
-                                   dragonChannelSerial_t *buffered_resp_chser, char *mgr_ser)
+                                   dragonChannelSerial_t *buffered_resp_chser, char *mgr_ser,
+                                   bool check_for_local_mgr)
 {
 
     dragonError_t err;
@@ -985,7 +1305,7 @@ dragonError_t _dragon_ddict_attach(const char * dd_ser, dragonDDictDescr_t * dd,
     // Get random manage from local service.
     // If no manager on current node, client
     // request a random manager from orchestrator.
-    err = _get_main_manager(ddict, mgr_ser);
+    err = _get_main_manager(ddict, mgr_ser, check_for_local_mgr);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get main manager.");
 
@@ -997,6 +1317,11 @@ dragonError_t _dragon_ddict_attach(const char * dd_ser, dragonDDictDescr_t * dd,
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get local managers.");
 
+    ddict->batch_persist = false;
+    ddict->batch_put_started = false;
+    ddict->has_bput_root_manager_sendh = false;
+    ddict->num_bputs = 0;
+
     err = _add_umap_ddict_entry(dd, ddict);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not add new ddict entry to umap.");
@@ -1007,7 +1332,7 @@ dragonError_t _dragon_ddict_attach(const char * dd_ser, dragonDDictDescr_t * dd,
 dragonError_t dragon_ddict_attach(const char * dd_ser, dragonDDictDescr_t * dd, timespec_t * default_timeout) {
 
     // Route to the internal attach with NULL arguments for channels, so LS creates some for us.
-    dragonError_t err = _dragon_ddict_attach(dd_ser, dd, default_timeout, NULL, NULL, NULL, NULL);
+    dragonError_t err = _dragon_ddict_attach(dd_ser, dd, default_timeout, NULL, NULL, NULL, NULL, true);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Unable to attach to DDict");
 
@@ -1142,6 +1467,8 @@ dragonError_t dragon_ddict_finalize_request(const dragonDDictRequestDescr_t * re
     dragonDDictReq_t * req = nullptr;
     DDPutResponseMsg * putResponseMsg = nullptr;
     std::set<uint64_t> msg_tags;
+    uint64_t resp_num = 0;
+    DragonResponseMsg ** resp_msgs = nullptr;
 
     dragonError_t err = _ddict_req_from_descr(req_descr, &req);
     if (err != DRAGON_SUCCESS)
@@ -1198,17 +1525,78 @@ dragonError_t dragon_ddict_finalize_request(const dragonDDictRequestDescr_t * re
             delete putResponseMsg;
             break;
 
+        case DRAGON_DDICT_BATCH_PUT_REQ:
+            dd = req->ddict;
+            if (dd->num_batch_puts.find(req->manager_id) == dd->num_batch_puts.end())
+                dd->num_batch_puts[req->manager_id] = 0;
+            dd->num_batch_puts[req->manager_id] += 1;
+            break;
+
+        case DRAGON_DDICT_B_PUT_BATCH_REQ:
+            // add dd->num_bput but don't free the request?
+            dd = req->ddict;
+            dd->num_bputs++;
+            break;
+        case DRAGON_DDICT_B_PUT_REQ:
+            // receive bput response from buffered return fli and check resp.numBput==1
+            // Close send handle (signals "done")
+            err = dragon_fli_close_send_handle(&req->sendh, req->ddict->timeout);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not close send handle.");
+
+            // Get our response back confirming close
+            dd = req->ddict;
+            msg_tags.clear();
+            msg_tags.insert(req->msg_tag);
+
+            resp_num = dd->num_managers;
+            resp_msgs = nullptr;
+
+            // receive response from all managers
+            resp_msgs = new DragonResponseMsg*[resp_num];
+            if (resp_msgs == nullptr)
+                err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+            err = _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, resp_num, dd->timeout);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not get bput response.");
+
+            for (size_t i=0 ; i<resp_num ; i++) {
+                if (resp_msgs[i] == nullptr)
+                    err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+                if (resp_msgs[i]->tc() != DDBPutResponseMsg::TC)
+                    err_return(DRAGON_FAILURE, "Failed to get expected bput response message.");
+
+                DDBPutResponseMsg * bputResponseMsg = (DDBPutResponseMsg*) resp_msgs[i];
+                err = bputResponseMsg->err();
+                if (err != DRAGON_SUCCESS)
+                    err_return(err, bputResponseMsg->errInfo());
+
+                if (bputResponseMsg->numPuts() != 1) {
+                    char msg[200];
+                    snprintf(msg, 199, "Failed to store all keys in manager %lu in the distributed dictionary. Expected number of keys to be written: 1, number of successful writes: %lu", bputResponseMsg->managerID(), bputResponseMsg->numPuts());
+                    err_return(DRAGON_FAILURE, msg);
+                }
+
+                delete resp_msgs[i];
+            }
+            delete[] resp_msgs;
+            break;
         default:
             err_return(DRAGON_INVALID_ARGUMENT, "Unimplemented or invalid operator type.");
     }
 
-    // The Request is finalized. It will be deleted next.
+    // The Request is finalized and receiver has received the data. It will be deleted next.
+    if (req != nullptr) {
+        // The key in the request can't be freed until manager receives it.
+        err = _cleanup_request(req);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not cleanup request.");
 
-    err = _cleanup_request(req);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not cleanup request.");
-
-    free(req);
+        free(req);
+    }
+    req->op_type = DRAGON_DDICT_FINALIZED;
 
     dragon_umap_delitem(dg_ddict_reqs, req_descr->_idx); // Remove request from umap
 
@@ -1306,6 +1694,9 @@ dragonError_t dragon_ddict_write_bytes(const dragonDDictRequestDescr_t * req_des
 
     switch(req->op_type) {
         case DRAGON_DDICT_PUT_REQ:
+        case DRAGON_DDICT_BATCH_PUT_REQ:
+        case DRAGON_DDICT_B_PUT_REQ:
+        case DRAGON_DDICT_B_PUT_BATCH_REQ:
             // key is written and sent to manager, write values now
             err = dragon_fli_send_bytes(&req->sendh, num_bytes, bytes, VALUE_HINT, false, req->ddict->timeout);
             if (err != DRAGON_SUCCESS)
@@ -1488,7 +1879,7 @@ dragonError_t dragon_ddict_contains(const dragonDDictRequestDescr_t * req_descr)
         err_return(DRAGON_FAILURE, "Failed to get expected contains response message.");
 
     containsResponseMsg = (DDContainsResponseMsg*) resp_msg;
-    resp_err =containsResponseMsg->err();
+    resp_err = containsResponseMsg->err();
     if (resp_err != DRAGON_SUCCESS && resp_err != DRAGON_KEY_NOT_FOUND && resp_err != DRAGON_DDICT_CHECKPOINT_RETIRED)
         err_return(resp_err, containsResponseMsg->errInfo());
 
@@ -1595,6 +1986,10 @@ dragonError_t dragon_ddict_which_manager(const dragonDDictRequestDescr_t * req_d
         err = _build_key_choose_manager(req);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not build key.");
+    } else {
+        err = _choose_manager(req);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to hash the key and choose manager.");
     }
 
     *manager_id = req->manager_id;
@@ -1605,27 +2000,42 @@ dragonError_t dragon_ddict_which_manager(const dragonDDictRequestDescr_t * req_d
 dragonError_t dragon_ddict_put(const dragonDDictRequestDescr_t* req_descr) {
 
     dragonError_t err;
-    bool persist = false;
+    dragonDDictReq_t * req;
 
     if (req_descr == nullptr)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid request descriptor.");
 
-    err = _put(req_descr, persist);
+    err = _ddict_req_from_descr(req_descr, &req);
     if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not perform put op.");
+        append_err_return(err, "Could not find valid request object.");
+
+    if (req->ddict->batch_put_started) {
+        if (req->ddict->batch_persist)
+            append_err_return(DRAGON_INVALID_OPERATION, "Persistent value mismatch. Could not perform batch put.");
+        err = _batch_put(req, false);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not perform batch put op.");
+    } else {
+        err = _put(req, false);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not perform put op.");
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 dragonError_t dragon_ddict_pput(const dragonDDictRequestDescr_t* req_descr) {
-
     dragonError_t err;
-    bool persist = true;
+    dragonDDictReq_t * req;
 
     if (req_descr == nullptr)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid request descriptor.");
 
-    err = _put(req_descr, persist);
+    err = _ddict_req_from_descr(req_descr, &req);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find valid request object.");
+
+    err = _put(req, true);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not perform persistent put op.");
 
@@ -2589,7 +2999,7 @@ dragonError_t dragon_ddict_clone(const dragonDDictDescr_t * dd_descr, const char
     resp_num = num_serialized_ddicts;
     resp_msgs = new DragonResponseMsg*[resp_num];
     if (resp_msgs == nullptr)
-        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for get meta data responsese -- out of memory.");
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for get meta data responses -- out of memory.");
 
     err = _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, resp_num, dd->timeout);
     if (err != DRAGON_SUCCESS)
@@ -2628,5 +3038,785 @@ dragonError_t dragon_ddict_clone(const dragonDDictDescr_t * dd_descr, const char
     delete sync_serialized_ddicts[0];
     delete[] sync_serialized_ddicts;
 
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_is_frozen(const dragonDDictDescr_t * dd_descr, bool * frozen) {
+    dragonError_t err;
+    DDGetFreezeMsg * getFreezeMsg = nullptr;
+    DDGetFreezeResponseMsg * getFreezeResponseMsg = nullptr;
+    DragonResponseMsg * resp_msg = nullptr;
+    dragonDDict_t * dd = nullptr;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find ddict object.");
+
+    if (frozen == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict frozen pointer. Frozen should be non null.");
+
+    *frozen = false;
+
+    getFreezeMsg = new DDGetFreezeMsg(_tag_inc(dd), dd->clientID);
+    err = _send_receive(&dd->main_manager_fli, STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, getFreezeMsg, &dd->bufferedRespFLI, &resp_msg, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the get frozen message and receive response.");
+
+    if (resp_msg->tc() != DDGetFreezeResponseMsg::TC)
+        append_err_return(DRAGON_FAILURE, "Failed to get expected get frozen response message.");
+
+    getFreezeResponseMsg = (DDGetFreezeResponseMsg*) resp_msg;
+    if (getFreezeResponseMsg->err() != DRAGON_SUCCESS)
+        append_err_return(getFreezeResponseMsg->err(), getFreezeResponseMsg->errInfo());
+
+    *frozen = getFreezeResponseMsg->frozen();
+
+    delete getFreezeMsg;
+    delete getFreezeResponseMsg;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_freeze(const dragonDDictDescr_t * dd_descr) {
+    dragonError_t err;
+    DDFreezeMsg * freezeMsg = nullptr;
+    DDFreezeResponseMsg * freezeResponseMsg = nullptr;
+    DragonResponseMsg ** resp_msgs = nullptr;
+    dragonDDict_t * dd = nullptr;
+    uint64_t msg_tag;
+    uint64_t resp_num = 0;
+    std::set<uint64_t> msg_tags;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find ddict object.");
+
+    // check and connect to root manager
+    err = _check_manager_connection(dd, 0);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not connect to root manager.");
+
+    resp_num = dd->num_managers;
+    msg_tag = _tag_inc(dd);
+    msg_tags.insert(msg_tag);
+    freezeMsg = new DDFreezeMsg(msg_tag, dd->bufferedRespFLIStr.c_str());
+    err = _send(&dd->manager_table[0], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, freezeMsg, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the freeze message to root manager.");
+
+    // receive response from all managers
+    resp_msgs = new DragonResponseMsg*[resp_num];
+    if (resp_msgs == nullptr)
+        append_err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    err = _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, resp_num, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to receive freeze response.");
+
+    for (size_t i=0 ; i<resp_num ; i++) {
+        if (resp_msgs[i]->tc() != DDFreezeResponseMsg::TC)
+            append_err_return(DRAGON_FAILURE, "Failed to get expected freeze response message.");
+
+        freezeResponseMsg = (DDFreezeResponseMsg*) resp_msgs[i];
+        if (freezeResponseMsg->err() != DRAGON_SUCCESS)
+            append_err_return(freezeResponseMsg->err(), freezeResponseMsg->errInfo());
+
+        delete resp_msgs[i];
+    }
+
+    delete freezeMsg;
+    delete[] resp_msgs;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_unfreeze(const dragonDDictDescr_t * dd_descr) {
+    dragonError_t err;
+    DDUnFreezeMsg * unFreezeMsg = nullptr;
+    DDUnFreezeResponseMsg * unFreezeResponseMsg = nullptr;
+    DragonResponseMsg ** resp_msgs = nullptr;
+    dragonDDict_t * dd = nullptr;
+    uint64_t msg_tag;
+    uint64_t resp_num = 0;
+    std::set<uint64_t> msg_tags;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find ddict object.");
+
+    // check and connect to root manager
+    err = _check_manager_connection(dd, 0);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not connect to root manager.");
+
+    resp_num = dd->num_managers;
+    msg_tag = _tag_inc(dd);
+    msg_tags.insert(msg_tag);
+    unFreezeMsg = new DDUnFreezeMsg(msg_tag, dd->bufferedRespFLIStr.c_str());
+    err = _send(&dd->manager_table[0], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, unFreezeMsg, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the unfreeze message to root manager.");
+
+    // receive response from all managers
+    resp_msgs = new DragonResponseMsg*[resp_num];
+    if (resp_msgs == nullptr)
+        append_err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    err = _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, resp_num, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to receive unfreeze response.");
+
+    for (size_t i=0 ; i<resp_num ; i++) {
+        if (resp_msgs[i]->tc() != DDUnFreezeResponseMsg::TC)
+            append_err_return(DRAGON_FAILURE, "Failed to get expected unfreeze response message.");
+
+        unFreezeResponseMsg = (DDUnFreezeResponseMsg*) resp_msgs[i];
+        if (unFreezeResponseMsg->err() != DRAGON_SUCCESS)
+            append_err_return(unFreezeResponseMsg->err(), unFreezeResponseMsg->errInfo());
+
+        delete resp_msgs[i];
+    }
+
+    delete unFreezeMsg;
+    delete[] resp_msgs;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_start_batch_put(const dragonDDictDescr_t * dd_descr, bool persist) {
+    dragonError_t err;
+    dragonDDict_t * dd = nullptr;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find ddict object.");
+
+    dd->batch_put_started = true;
+    dd->batch_persist = persist;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_end_batch_put(const dragonDDictDescr_t * dd_descr) {
+
+    dragonError_t err;
+    dragonDDict_t * dd = nullptr;
+    size_t expected_num_responses = 0;
+    DragonResponseMsg ** resp_msgs = nullptr;
+    DDBatchPutResponseMsg * batchPutResponseMsg = nullptr;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find ddict object.");
+
+    if (dd->batch_put_started) {
+        dd->batch_put_started = false;
+
+        // TODO: If broadcast put (bput) is called during batch put, cleanup resources claimed for bput.
+        if (dd->has_bput_root_manager_sendh) {
+            err = _end_bput_with_batch(dd);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not end bput.");
+        }
+
+        // close all send handles created for batch put
+        for (auto& opened_sendh_it: dd->opened_send_handles) {
+            err = dragon_fli_close_send_handle(opened_sendh_it.second, dd->timeout);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not close send handle.");
+            delete opened_sendh_it.second;
+        }
+        dd->opened_send_handles.clear();
+
+        expected_num_responses = dd->num_batch_puts.size();
+        resp_msgs = new DragonResponseMsg*[expected_num_responses];
+        if (resp_msgs == nullptr)
+            append_err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+        err = _recv_responses(&dd->bufferedRespFLI, resp_msgs, dd->batch_put_msg_tags, expected_num_responses, dd->timeout);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to receive batch put response.");
+
+        dd->batch_put_msg_tags.clear();
+
+        for (size_t i=0 ; i<expected_num_responses ; i++) {
+            if (resp_msgs[i] == nullptr)
+                append_err_return(DRAGON_INVALID_MESSAGE, "Could not receive valid respose.");
+
+            if (resp_msgs[i]->tc() != DDBatchPutResponseMsg::TC)
+                append_err_return(DRAGON_FAILURE, "Failed to get expected batch put response message.");
+
+            batchPutResponseMsg = (DDBatchPutResponseMsg*) resp_msgs[i];
+            if (batchPutResponseMsg->err() != DRAGON_SUCCESS)
+                append_err_return(batchPutResponseMsg->err(), batchPutResponseMsg->errInfo());
+
+            if (batchPutResponseMsg->numPuts() != dd->num_batch_puts[batchPutResponseMsg->managerID()])
+                append_err_return(DRAGON_FAILURE, "Failed to store all keys in the distributed dictionary.");
+
+            delete resp_msgs[i];
+        }
+        dd->num_batch_puts.clear();
+
+        for (auto& strm_ch: dd->batch_put_stream_channels) {
+            dragonChannelDescr_t * ch = strm_ch.second;
+            dragon_destroy_process_local_channel(ch, dd->timeout);
+            err = dragon_destroy_process_local_channel(ch, dd->timeout);
+            free(ch);
+        }
+
+        dd->batch_put_stream_channels.clear();
+    } else {
+        append_err_return(DRAGON_INVALID_OPERATION, "Could not end batch put without starting.");
+    }
+
+    delete[] resp_msgs;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_bput(const dragonDDictRequestDescr_t* req_descr) {
+
+    dragonError_t err;
+    dragonDDict_t * dd = nullptr;
+    dragonDDictReq_t * req;
+    DDBPutMsg * bputMsg = nullptr;
+    dragonFLISerial_t ser_bput_resp_fli;
+
+    if (req_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid request descriptor.");
+
+    err = _ddict_req_from_descr(req_descr, &req);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find valid request object.");
+
+    dd = req->ddict;
+
+    if (req->key_data == nullptr) {
+        err = _build_key(req);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not build key.");
+    }
+
+    if (dd->batch_put_started) {
+        // bput with batch
+        if (dd->batch_persist)
+            err_return(DRAGON_INVALID_OPERATION, "Persistent value mismatch. Could not perform broadcast put during batch put as bput only writes non-persistent key.");
+
+        if (req->op_type != DRAGON_DDICT_NO_OP)
+            err_return(DRAGON_INVALID_OPERATION, "Could not change ddict operation.");
+        req->op_type = DRAGON_DDICT_B_PUT_BATCH_REQ;
+
+        /* First call to bput in current batch, select a random root manager and create a new send
+        handle for it. A response channel is created to receive bput response during cleanup of
+        the batch. */
+        if (!dd->has_bput_root_manager_sendh) {
+            /* This is the first call to bput in current batch, need to select a random root manager.
+            For bput without batch put, a random root manager is selected every time.*/
+
+            // For bput without batch put, a random root manager is selected every time.
+            std::vector<uint64_t> managers(dd->num_managers);
+            std::iota(managers.begin(), managers.end(), 0);
+
+            // random generator
+            std::random_device rd;
+            std::mt19937 g(rd());
+
+            // shuffle managers
+            std::shuffle(managers.begin(), managers.end(), g);
+
+            uint64_t root_manager = managers[0];
+            err = _check_manager_connection(dd, root_manager);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not connect to the manager.");
+
+            /* There might be other response expected in the main response channel, so create a new
+            response FLI that only receives the bput response for current batch. In the cleanup
+            of the broadcast put with batch, we will receive bput responses from every manager
+            through this response FLI. */
+            err = dragon_create_process_local_channel(&dd->bput_resp_strm, 0, 0, 0, dd->timeout);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not create stream channel for bput response FLI.");
+
+            err = dragon_fli_create(&dd->bput_respFLI, &dd->bput_resp_strm, nullptr, nullptr, 0, nullptr, true, nullptr);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not create bput response FLI.");
+
+            err = dragon_fli_serialize(&dd->bput_respFLI, &ser_bput_resp_fli);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not serialize buffered response FLI.");
+
+            dd->bput_respFLIStr = dragon_base64_encode(ser_bput_resp_fli.data, ser_bput_resp_fli.len);
+            err = dragon_fli_serial_free(&ser_bput_resp_fli);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not free serialized buffered response FLI.");
+
+            // create new send handle for the root manager
+            err = dragon_create_process_local_channel(&dd->bput_strm, 0, 0, 0, dd->timeout);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not create stream channel for root manager.");
+
+            err = dragon_fli_open_send_handle(&dd->manager_table[root_manager], &dd->bput_root_manager_sendh, &dd->bput_strm, nullptr, dd->timeout);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not open send handle.");
+
+            dd->has_bput_root_manager_sendh = true;
+
+            dd->bput_tag = _tag_inc(dd);
+            bputMsg = new DDBPutMsg(dd->bput_tag, dd->clientID, dd->chkpt_id, dd->bput_respFLIStr.c_str(), managers, true);
+            bputMsg->send(&dd->bput_root_manager_sendh, dd->timeout);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not send message.");
+        }
+        // send key
+        req->sendh = dd->bput_root_manager_sendh;
+        err = dragon_fli_send_mem(&req->sendh, &req->key_mem, KEY_HINT, false, false, req->ddict->timeout);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not send key to manager.");
+
+    } else {
+        // For bput without batch put, a random root manager is selected every time.
+
+        if (req->op_type != DRAGON_DDICT_NO_OP)
+            err_return(DRAGON_INVALID_OPERATION, "Could not change ddict operation.");
+        req->op_type = DRAGON_DDICT_B_PUT_REQ;
+
+        std::vector<uint64_t> managers(dd->num_managers);
+        std::iota(managers.begin(), managers.end(), 0);
+
+        // random generator
+        std::random_device rd;
+        std::mt19937 g(rd());
+
+        // shuffle managers
+        std::shuffle(managers.begin(), managers.end(), g);
+
+        req->manager_id = managers[0];
+        err = _check_manager_connection(dd, req->manager_id);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not connect to the manager.");
+
+        req->manager_fli = dd->manager_table[req->manager_id];
+
+        req->msg_tag = _tag_inc(dd);
+        bputMsg = new DDBPutMsg(req->msg_tag, dd->clientID, dd->chkpt_id, dd->bufferedRespFLIStr.c_str(), managers, false);
+        err = _send_msg_key_no_close_sendh(bputMsg, req);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not send the bput message and key.");
+    }
+
+    delete bputMsg;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_bget(const dragonDDictRequestDescr_t* req_descr) {
+
+    dragonError_t err;
+    dragonError_t resp_err;
+    dragonDDictReq_t * req;
+    dragonDDict_t * dd = nullptr;
+    bool is_local_manager = false;
+    DDGetMsg * getMsg = nullptr;
+    DDGetResponseMsg * getResponseMsg = nullptr;
+    DragonResponseMsg * resp_msg = nullptr;
+    dragonFLIRecvHandleDescr_t recvh;
+
+    if (req_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid request descriptor.");
+
+    err = _ddict_req_from_descr(req_descr, &req);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find valid request object.");
+
+    if (req->op_type != DRAGON_DDICT_NO_OP)
+        err_return(DRAGON_INVALID_OPERATION, "Could not change ddict operation.");
+    req->op_type = DRAGON_DDICT_GET_REQ;
+
+    dd = req->ddict;
+
+    if (req->key_data == nullptr) {
+        err = _build_key(req);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not build key.");
+    }
+
+    if (dd->has_chosen_manager) {
+        err = _check_manager_connection(dd, dd->chosen_manager);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not connect to the manager.");
+
+        req->manager_id = dd->chosen_manager;
+        req->manager_fli = dd->manager_table[dd->chosen_manager];
+    } else {
+        req->manager_id = dd->main_manager;
+        req->manager_fli = dd->main_manager_fli;
+    }
+
+    auto it = std::find(dd->local_managers.begin(), dd->local_managers.end(), req->manager_id);
+    is_local_manager = (it != dd->local_managers.end());
+
+    req->msg_tag = _tag_inc(dd);
+
+    getMsg = new DDGetMsg(req->msg_tag, dd->clientID, dd->chkpt_id, req->key_data, req->key_size);
+
+    err = _send_msg(getMsg, req, true);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the get message and key.");
+
+    err = _recv_dmsg_no_close_recvh(&recvh, &dd->respFLI, &resp_msg, getMsg->tag(), false, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to get expected get response message.");
+
+    req->recvh = recvh;
+    req->recvh_closed = false;
+
+    if (resp_msg->tc() != DDGetResponseMsg::TC)
+        err_return(DRAGON_FAILURE, "Failed to get expected get response message.");
+
+    getResponseMsg = (DDGetResponseMsg*) resp_msg;
+    resp_err = getResponseMsg->err();
+    // Close receive handle if the error code is not SUCCESS.
+    if (resp_err != DRAGON_SUCCESS) {
+        dragon_fli_close_recv_handle(&req->recvh, req->ddict->timeout);
+        req->recvh_closed = true;
+
+        if (resp_err != DRAGON_KEY_NOT_FOUND && resp_err != DRAGON_DDICT_CHECKPOINT_RETIRED)
+            err_return(resp_err, getResponseMsg->errInfo());
+    }
+
+    req->free_mem = getResponseMsg->freeMem() || !is_local_manager;
+    if (!req->free_mem) {
+        err = dragon_fli_reset_free_flag(&req->recvh);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not reset free memory flag in receive handle.");
+    }
+
+    delete getMsg;
+    delete getResponseMsg;
+
+    no_err_return(resp_err);
+}
+
+dragonError_t dragon_ddict_advance(const dragonDDictDescr_t * dd_descr) {
+    dragonError_t err;
+    dragonDDict_t * dd = nullptr;
+    std::set<uint64_t> msg_tags;
+    DragonResponseMsg ** resp_msgs = nullptr;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find object.");
+
+    err = _check_manager_connection(dd, 0);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not connect to root manager.");
+
+    uint64_t msg_tag = _tag_inc(dd);
+    msg_tags.insert(msg_tag);
+
+    DDAdvanceMsg * advanceMsg = new DDAdvanceMsg(msg_tag, dd->clientID, dd->bufferedRespFLIStr.c_str());
+    err = _send(&dd->manager_table[0], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, advanceMsg, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the advance message to root manager.");
+
+    resp_msgs = new DragonResponseMsg*[dd->num_managers];
+    if (resp_msgs == nullptr)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    err =  _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, dd->num_managers, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to receive advance response.");
+
+    uint64_t min_newest_chkpt_id = UINT64_MAX;
+    for (uint64_t i=0 ; i<dd->num_managers ; i++) {
+
+        if (resp_msgs[i] == nullptr)
+            err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+        if (resp_msgs[i]->tc() != DDAdvanceResponseMsg::TC)
+            err_return(DRAGON_FAILURE, "Failed to get expected advance response message.");
+
+        DDAdvanceResponseMsg * advanceResponseMsg = (DDAdvanceResponseMsg*) resp_msgs[i];
+        err = advanceResponseMsg->err();
+        if (err != DRAGON_SUCCESS)
+            err_return(err, advanceResponseMsg->errInfo());
+
+        min_newest_chkpt_id = min(min_newest_chkpt_id, advanceResponseMsg->chkptID());
+
+        delete resp_msgs[i];
+    }
+
+    delete advanceMsg;
+    delete[] resp_msgs;
+
+    dd->chkpt_id = min_newest_chkpt_id;
+
+    err = _restore(dd, dd->chkpt_id);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to restore checkpoint.");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_persist(const dragonDDictDescr_t * dd_descr) {
+    // Persist current checkpoint to disk.
+    dragonError_t err;
+    dragonDDict_t * dd = nullptr;
+    std::set<uint64_t> msg_tags;
+    DragonResponseMsg ** resp_msgs = nullptr;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find object.");
+
+    err = _chkpt_avail(dd, dd->chkpt_id);
+    if (err != DRAGON_SUCCESS)
+        err_return(err, "Failed to check the availability of the checkpoint or the checkpoint is unavaileble across all managers.");
+
+   err = _check_manager_connection(dd, 0);
+   if (err != DRAGON_SUCCESS)
+       append_err_return(err, "Could not connect to root manager.");
+
+    uint64_t msg_tag = _tag_inc(dd);
+    msg_tags.insert(msg_tag);
+    DDPersistMsg * persistMsg = new DDPersistMsg(msg_tag, dd->chkpt_id, dd->bufferedRespFLIStr.c_str());
+    err = _send(&dd->manager_table[0], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, persistMsg, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the persist message to root manager.");
+
+    resp_msgs = new DragonResponseMsg*[dd->num_managers];
+    if (resp_msgs == nullptr)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    err =  _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, dd->num_managers, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to receive persist response.");
+
+    for (uint64_t i=0 ; i<dd->num_managers ; i++) {
+
+        if (resp_msgs[i] == nullptr)
+            err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+        if (resp_msgs[i]->tc() != DDPersistResponseMsg::TC)
+            err_return(DRAGON_FAILURE, "Failed to get expected persist response message.");
+
+        DDPersistResponseMsg * persistResponseMsg = (DDPersistResponseMsg*) resp_msgs[i];
+        err = persistResponseMsg->err();
+        if (err != DRAGON_SUCCESS)
+            err_return(err, persistResponseMsg->errInfo());
+
+        delete resp_msgs[i];
+    }
+
+    delete persistMsg;
+    delete[] resp_msgs;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_restore(const dragonDDictDescr_t * dd_descr, uint64_t chkpt_id) {
+
+    dragonError_t err;
+    dragonDDict_t * dd = nullptr;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find object.");
+
+    if (dd->batch_put_started)
+        err_return(DRAGON_INVALID_OPERATION, "Restoring checkpoint during batch put is invalid.");
+
+    // check persisted checkpoint availability across all managers
+    err = _persisted_chkpt_avail(dd, chkpt_id);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to check if the checkpoint is an available persisted checkpoint.");
+
+    err = _restore(dd, chkpt_id);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to restore the checkpoint.");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_persisted_ids_vec(const dragonDDictDescr_t * dd_descr, std::vector<uint64_t>& persisted_ids) {
+    // Get a list of persisted checkpoint IDs.
+    dragonError_t err;
+    dragonDDict_t * dd = nullptr;
+    std::set<uint64_t> msg_tags;
+    DragonResponseMsg ** resp_msgs = nullptr;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find object.");
+
+   err = _check_manager_connection(dd, 0);
+   if (err != DRAGON_SUCCESS)
+       append_err_return(err, "Could not connect to root manager.");
+
+    uint64_t msg_tag = _tag_inc(dd);
+    msg_tags.insert(msg_tag);
+    DDPersistChkptsMsg * persistChkptsMsg = new DDPersistChkptsMsg(msg_tag, dd->clientID, dd->bufferedRespFLIStr.c_str());
+    err = _send(&dd->manager_table[0], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, persistChkptsMsg, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send the persist chkpts message to root manager.");
+
+    resp_msgs = new DragonResponseMsg*[dd->num_managers];
+    if (resp_msgs == nullptr)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    err =  _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, dd->num_managers, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to receive persist chkpts response.");
+
+    // initialize available chkpts with the chkpt IDs from the first responses
+    if (resp_msgs[0] == nullptr)
+        err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+    if (resp_msgs[0]->tc() != DDPersistChkptsResponseMsg::TC)
+        err_return(DRAGON_FAILURE, "Failed to get expected persist response message.");
+
+    DDPersistChkptsResponseMsg * persistChkptsResponseMsg = (DDPersistChkptsResponseMsg*) resp_msgs[0];
+    err = persistChkptsResponseMsg->err();
+    if (err != DRAGON_SUCCESS)
+        err_return(err, persistChkptsResponseMsg->errInfo());
+
+    persisted_ids = persistChkptsResponseMsg->chkptIDs();
+    delete resp_msgs[0];
+
+    for (uint64_t i=1 ; i<dd->num_managers ; i++) {
+        if (resp_msgs[i] == nullptr)
+            err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+        if (resp_msgs[i]->tc() != DDPersistChkptsResponseMsg::TC)
+            err_return(DRAGON_FAILURE, "Failed to get expected persist response message.");
+
+        DDPersistChkptsResponseMsg * persistChkptsResponseMsg = (DDPersistChkptsResponseMsg*) resp_msgs[i];
+        err = persistChkptsResponseMsg->err();
+        if (err != DRAGON_SUCCESS)
+            err_return(err, persistChkptsResponseMsg->errInfo());
+
+        // get intersection of the two vector
+        std::vector<uint64_t> chkpts = persistChkptsResponseMsg->chkptIDs();
+        std::vector<uint64_t> intersection;
+        std::set_intersection(persisted_ids.begin(), persisted_ids.end(), chkpts.begin(), chkpts.end(), std::back_inserter(intersection));
+        persisted_ids = intersection;
+        delete resp_msgs[i];
+    }
+
+    std::sort(persisted_ids.begin(), persisted_ids.end());
+
+    delete persistChkptsMsg;
+    delete[] resp_msgs;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_persisted_ids(const dragonDDictDescr_t * dd_descr, uint64_t ** persisted_ids, size_t * num_persisted_ids) {
+    dragonError_t err;
+    std::vector<uint64_t> persisted_ids_vec;
+
+    err = dragon_ddict_persisted_ids_vec(dd_descr, persisted_ids_vec);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get persisted checkpoint IDs from ddict.");
+
+    if (persisted_ids_vec.size() != 0)
+        *persisted_ids = (uint64_t*) malloc(persisted_ids_vec.size() * sizeof(uint64_t));
+
+    for (size_t i=0 ; i<persisted_ids_vec.size() ; i++)
+        (*persisted_ids)[i] = persisted_ids_vec[i];
+
+    *num_persisted_ids = persisted_ids_vec.size();
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t dragon_ddict_local_length(const dragonDDictDescr_t * dd_descr, uint64_t* local_length) {
+    dragonError_t err;
+    DragonResponseMsg ** resp_msgs = nullptr;
+    dragonDDict_t * dd = nullptr;
+    std::set<uint64_t> msg_tags;
+
+    if (dd_descr == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict descriptor.");
+
+    if (local_length == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid ddict length. Length should be non null.");
+
+    *local_length = 0;
+
+    err = _ddict_from_descr(dd_descr, &dd);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not find object.");
+
+    uint64_t num_local_managers = dd->local_managers.size();
+    for (uint64_t i=0 ; i<num_local_managers ; i++) {
+        err = _check_manager_connection(dd, i);
+        if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not connect to local manager.");
+    }
+
+    for (uint64_t i=0 ; i<num_local_managers ; i++) {
+        uint64_t msg_tag = _tag_inc(dd);
+        msg_tags.insert(msg_tag);
+        DDLengthMsg * lenMsg = new DDLengthMsg(msg_tag, dd->clientID, dd->bufferedRespFLIStr.c_str(), dd->chkpt_id, false);
+        err = _send(&dd->manager_table[i], STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, lenMsg, dd->timeout);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not send the length message to local manager.");
+        delete lenMsg;
+    }
+
+    resp_msgs = new DragonResponseMsg*[num_local_managers];
+    if (resp_msgs == nullptr)
+        err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate space for responses -- out of memory.");
+
+    err = _recv_responses(&dd->bufferedRespFLI, resp_msgs, msg_tags, num_local_managers, dd->timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to receive length response.");
+
+    for (uint64_t i=0 ; i<num_local_managers ; i++) {
+
+        if (resp_msgs[i] == nullptr)
+            err_return(DRAGON_INVALID_MESSAGE, "Did not receive valid response.");
+
+        if (resp_msgs[i]->tc() != DDLengthResponseMsg::TC)
+            err_return(DRAGON_FAILURE, "Failed to get expected length response message.");
+
+        DDLengthResponseMsg * lengthResponseMsg = (DDLengthResponseMsg*) resp_msgs[i];
+        err = lengthResponseMsg->err();
+        if (err != DRAGON_SUCCESS)
+            err_return(err, lengthResponseMsg->errInfo());
+
+        *local_length += lengthResponseMsg->length();
+
+        delete resp_msgs[i];
+    }
+    delete[] resp_msgs;
     no_err_return(DRAGON_SUCCESS);
 }

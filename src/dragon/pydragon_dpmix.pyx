@@ -3,35 +3,18 @@ import sys
 import tempfile
 import shutil
 
-cdef class DragonPMIxServer:
+cdef class DragonPMIxJob:
 
     cdef:
         char *server_tmp_dir
         char *job_tmp_dir
-        char *client_nspace
-        char *server_nspace
         dragonG_UID_t guid
 
     def __cinit__(self):
 
         self.server_tmp_dir = NULL
         self.job_tmp_dir = NULL
-        self.client_nspace = NULL
-        self.server_nspace = NULL
         self.guid = 0
-
-    def __del__(self):
-
-        try:
-            shutil.rmtree(self.job_tmp_dir.decode('utf-8'))
-        except Exception as e:
-            raise RuntimeError(f"Unable to clean up tmp directory for PMIx job {self.guid}") from e
-
-        if self.client_nspace != NULL:
-            free(self.client_nspace)
-
-        if self.server_nspace != NULL:
-            free(self.server_nspace)
 
 
     cdef char* _put_bytestring_into_c_char(self, str_in: str):
@@ -65,16 +48,19 @@ cdef class DragonPMIxServer:
             dragonChannelSerial_t c_ls_in
             dragonChannelSerial_t c_ls_resp
             dragonChannelSerial_t c_ls_buffered_resp
-            char *c_ddict_sdesc, *c_local_mgr_sdesc
+            dragonG_UID_t c_guid
+            char *c_ddict_sdesc
+            char *c_local_mgr_sdesc
             int c_node_rank, c_nhosts, c_nproc
-            int *c_ppn, *c_node_ranks, *c_proc_ranks
+            int *c_ppn
+            int *c_node_ranks
+            int *c_proc_ranks
 
         # Get a tmp directory for all the PMIx space. Save it to our space for
         # removal at finalization
         self.job_tmp_dir = self._put_bytestring_into_c_char(tempfile.mkdtemp())
         if not server_created:
             self.server_tmp_dir = self._put_bytestring_into_c_char(tempfile.mkdtemp())
-            self.server_tmp_dir = self.job_tmp_dir
 
         self.guid = guid
         # Construct a c list of hostnames in our PMIx group
@@ -110,7 +96,7 @@ cdef class DragonPMIxServer:
         c_node_rank = <int> node_rank
         c_nhosts = <int> nhosts
         c_nproc = <int> len(proc_ranks)
-        c_guid = <dragonG_UID_t> guid;
+        c_guid = <dragonG_UID_t> guid
 
         # Construct the pointers containing ppns and node ranks into an array for the PMIx code
         c_ppn = <int*> malloc(nhosts * sizeof(int))
@@ -133,21 +119,21 @@ cdef class DragonPMIxServer:
         for idx, nid in enumerate(proc_ranks):
             c_proc_ranks[idx] = <int> nid
 
-        derr = dragon_initialize_pmix_server(c_guid,
-                                             c_ddict_sdesc,
-                                             c_local_mgr_sdesc,
-                                             c_ls_in,
-                                             c_ls_resp,
-                                             c_ls_buffered_resp,
-                                             c_node_rank,
-                                             c_nhosts,
-                                             c_nproc,
-                                             c_proc_ranks,
-                                             c_ppn,
-                                             c_node_ranks,
-                                             hostnames,
-                                             self.job_tmp_dir,
-                                             self.server_tmp_dir)
+        derr = dragon_pmix_initialize_job(c_guid,
+                                          c_ddict_sdesc,
+                                          c_local_mgr_sdesc,
+                                          c_ls_in,
+                                          c_ls_resp,
+                                          c_ls_buffered_resp,
+                                          c_node_rank,
+                                          c_nhosts,
+                                          c_nproc,
+                                          c_proc_ranks,
+                                          c_ppn,
+                                          c_node_ranks,
+                                          hostnames,
+                                          self.job_tmp_dir,
+                                          self.server_tmp_dir)
 
         if derr != DRAGON_SUCCESS:
             raise RuntimeError("Unable to initialize PMIx server for launch of MPI application")
@@ -158,6 +144,8 @@ cdef class DragonPMIxServer:
         free(c_ppn)
         free(c_node_ranks)
         free(c_proc_ranks)
+        free(c_ddict_sdesc)
+        free(c_local_mgr_sdesc)
 
     def get_client_env(self,
                        the_env,
@@ -173,7 +161,6 @@ cdef class DragonPMIxServer:
         pmix_env = <char**> malloc(nitems * sizeof(char*))
         if (pmix_env == NULL):
             raise MemoryError("Unable to allocate memory for PMIx client environment variables")
-
 
         for idx, (name, val) in enumerate(the_env.items()):
             full_env_var = name + "=" + val
@@ -198,10 +185,6 @@ cdef class DragonPMIxServer:
 
         return p_env
 
-    def is_server_host(self):
-        """Check if this particular job is the server host"""
-        return dragon_pmix_is_server_host(self.guid)
-
     def finalize_job(self):
         """Cleanup resources associated with this particular PMIx job"""
 
@@ -210,6 +193,14 @@ cdef class DragonPMIxServer:
         derr = dragon_pmix_finalize_job(self.guid)
         if derr != DRAGON_SUCCESS:
             raise RuntimeError(f"Unable to finalize PMIx job for guid {self.guid}")
+
+        try:
+            if self.job_tmp_dir != NULL:
+                shutil.rmtree(self.job_tmp_dir.decode('utf-8'))
+                free(self.job_tmp_dir)
+        except Exception as e:
+            raise RuntimeError("Unable to clean up tmp directory for PMIx Server") from e
+
 
     def finalize_server(self):
         """Shutdown the PMIx server stood up on this node"""
@@ -220,7 +211,9 @@ cdef class DragonPMIxServer:
             raise RuntimeError(f"Unable to finalize PMIx server")
 
         try:
-            shutil.rmtree(self.server_tmp_dir.decode('utf-8'))
+            if self.server_tmp_dir != NULL:
+                shutil.rmtree(self.server_tmp_dir.decode('utf-8'))
+                free(self.server_tmp_dir)
         except Exception as e:
             raise RuntimeError("Unable to clean up tmp directory for PMIx Server") from e
 

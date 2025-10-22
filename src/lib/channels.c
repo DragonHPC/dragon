@@ -3768,8 +3768,11 @@ dragon_chsend_send_msg(const dragonChannelSendh_t* ch_sh, const dragonMessage_t*
 
             if (err == DRAGON_SUCCESS)
                 no_err_return(DRAGON_SUCCESS);
-            if (err != DRAGON_CHANNEL_FULL && err != DRAGON_DYNHEAP_REQUESTED_SIZE_NOT_AVAILABLE)
-                append_err_return(err, "failed to do initial spin to send a message");
+            if (err != DRAGON_CHANNEL_FULL && err != DRAGON_DYNHEAP_REQUESTED_SIZE_NOT_AVAILABLE) {
+                char msg[200];
+                snprintf(msg, 199, "failed to send msg on channel %ld", ch_sh->_ch._idx);
+                append_err_return(err, msg);
+            }
         }
 
         // If a zero timeout is provided, then return immediately

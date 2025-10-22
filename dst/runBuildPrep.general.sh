@@ -26,6 +26,12 @@ ${my_install} install \
 wget https://arti.hpc.amslabs.hpecorp.net/artifactory/dragon-misc-master-local/hpcx-v2.18.1-gcc-mlnx_ofed-suse15.3-cuda12-x86_64.tbz
 mkdir mlnx && tar -xvf hpcx*.tbz -C mlnx && mv mlnx/hpcx*/ucx . && rm -rf mlnx hpcx*.tbz
 
+wget https://developer.download.nvidia.com/compute/cuda/redist/cuda_cudart/linux-x86_64/cuda_cudart-linux-x86_64-12.9.79-archive.tar.xz
+mkdir cuda && tar -xf cuda_cudart*.tar.xz -C cuda && mv cuda/cuda_cudart*/include cuda/ && rm -rf cuda/cuda_cudart* cuda_cudart*.tar.xz
+wget https://developer.download.nvidia.com/compute/cuda/redist/cuda_crt/linux-x86_64/cuda_crt-linux-x86_64-13.0.48-archive.tar.xz
+tar -xf cuda_crt*.tar.xz -C cuda && cp -r cuda/cuda_crt*/include cuda/ && rm -rf cuda/cuda_crt* cuda_crt*.tar.xz
+ls cuda/include
+
 # We need a newer pmix than is provided via centos/rhel repositories
 wget https://github.com/openpmix/openpmix/releases/download/v5.0.8/pmix-5.0.8.tar.gz
 mkdir pmix && \

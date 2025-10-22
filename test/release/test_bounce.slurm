@@ -1,7 +1,9 @@
 #!/bin/bash
-#SBATCH --nodes=512
+#SBATCH --nodes=550
 #SBATCH --exclusive
 
+source ~/.bashrc
+conda activate _env312
 
 #To change the version of Python, please use the following commands:
 # To find the version of Python on your system: ls -ls /usr/bin/python*
@@ -34,10 +36,10 @@
 which dragon
 
 echo "Cold start"
-time dragon hello.py
+time dragon -N 512 hello.py
 
 echo "Warm start"
-time dragon hello.py
+time dragon -N 512 hello.py
 
 # #The following lines of code ensure swift clean up.
 # #dragon-cleanup

@@ -19,6 +19,7 @@ dragonError_t dragon_ddict_keys_vec(const dragonDDictDescr_t * dd_descr, key_col
 dragonError_t dragon_ddict_local_keys_vec(const dragonDDictDescr_t * dd_descr, key_collector function, void* key_collector_arg);
 dragonError_t dragon_ddict_empty_managers_vec(const dragonDDictDescr_t * dd_descr, std::vector<uint64_t>& ids);
 dragonError_t dragon_ddict_local_managers_vec(const dragonDDictDescr_t * dd_descr, std::vector<uint64_t>& ids);
+dragonError_t dragon_ddict_persisted_ids_vec(const dragonDDictDescr_t * dd_descr, std::vector<uint64_t>& persisted_ids);
 
 namespace dragon {
 
@@ -757,6 +758,228 @@ class DDict {
         for (size_t i=0 ; i<num_ser_ddicts ; i++)
             delete ser_ddicts_arr[i];
         delete[] ser_ddicts_arr;
+    }
+
+    /**
+     * @brief Get the frozen state of the DDict.
+     *
+     * Calling this retrieve the frozen state of the dictionary.
+     *
+     * @returns A bool to indicate whether the DDict is frozen or not.
+     */
+    bool is_frozen() {
+        dragonError_t err;
+        bool frozen;
+        err = dragon_ddict_is_frozen(&mCDict, &frozen);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not get frozen state of the DDict.");
+        return frozen;
+    }
+
+    /**
+     * @brief Freeze the DDict.
+     *
+     * Freeze the dictionary turns it to read-only mode. Freezing the DDict would
+     * gain better performance for reading keys.
+     */
+    void freeze() {
+        dragonError_t err;
+        err = dragon_ddict_freeze(&mCDict);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not freeze the DDict.");
+    }
+
+    /**
+     * @brief Unfreeze the DDict.
+     *
+     * Unfreeze the dictionary turns off the read-only mode.
+     */
+    void unfreeze() {
+        dragonError_t err;
+        err = dragon_ddict_unfreeze(&mCDict);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not unfreeze the DDict.");
+    }
+
+    /**
+     * @brief Start batch put.
+     *
+     * @param persist A bool to indicate whether the keys to be put in this batch
+     * are persistent or not. Using batch put to get better performance especially
+     * when writing a large number of keys.
+     */
+    void start_batch_put(bool persist) {
+        dragonError_t err;
+        err = dragon_ddict_start_batch_put(&mCDict, persist);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not start batch put.");
+    }
+
+    /**
+     * @brief End batch put.
+     *
+     * Calling this to complete the batch put.
+     */
+    void end_batch_put() {
+        dragonError_t err;
+        err = dragon_ddict_end_batch_put(&mCDict);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not end batch put.");
+    }
+
+    /**
+     * @brief Broadcast put.
+     *
+     * Broadcast the key to every DDict manager.
+     *
+     * @param key A serializable key for the DDict.
+     *
+     * @param value A serializable value for the DDict.
+     */
+    void bput(SerializableKey& key, SerializableValue& value) {
+        dragonDDictRequestDescr_t req;
+        dragonFLISendHandleDescr_t value_sendh;
+        dragonFLISendHandleDescr_t key_sendh;
+        dragonError_t err;
+
+        err = dragon_ddict_create_request(&mCDict, &req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not create DDict bput request.");
+
+        err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request key send handle.");
+
+        key.serialize(&key_sendh, KEY_HINT, true, mTimeout);
+
+        err = dragon_ddict_bput(&req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not send DDict bput message.");
+
+        err = dragon_ddict_request_value_sendh(&req, &value_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        value.serialize(&value_sendh, VALUE_HINT, false, mTimeout);
+
+        err = dragon_ddict_finalize_request(&req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not finalize DDict bput message.");
+    }
+
+    /**
+     * @brief Broadcast get the key.
+     *
+     * Reading the key that was broadcasted from the main manager of the DDict.
+     *
+     * @param key A serializable key for the DDict. This key should be written through broadcast put.
+     */
+    SerializableValue bget(SerializableKey& key) const {
+        dragonDDictRequestDescr_t req;
+        dragonError_t err;
+        dragonFLISendHandleDescr_t key_sendh;
+        dragonFLIRecvHandleDescr_t recvh;
+        uint64_t hint;
+
+        err = dragon_ddict_create_request(&mCDict, &req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not create DDict bget request.");
+
+        err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        key.serialize(&key_sendh, KEY_HINT, true, mTimeout);
+
+        err = dragon_ddict_bget(&req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not send DDict bget message.");
+
+        err = dragon_ddict_request_recvh(&req, &recvh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        SerializableValue value = SerializableValue::deserialize(&recvh, &hint, mTimeout);
+        if (hint != VALUE_HINT)
+            throw DragonError(DRAGON_INVALID_OPERATION, "The value hint when deserializing was not correct.");
+
+        err = dragon_ddict_finalize_request(&req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not finalize DDict bget request.");
+
+        return value;
+    }
+
+    /**
+     * @brief Advance to next available persisted checkpoint.
+     *
+     * Calling this to advance to next available persisted checkpoint. This operation is for read only mode.
+     */
+    void advance() {
+        dragonError_t err = dragon_ddict_advance(&mCDict);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not advance checkpoint.");
+    }
+
+    /**
+     * @brief Persist current checkpoint to disk.
+     *
+     * Calling this to persist current checkpoint to disk.
+     */
+    void persist() {
+        dragonError_t err = dragon_ddict_persist(&mCDict);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not persist checkpoint.");
+    }
+
+    /**
+     * @brief Restore from a persisted checkpoint.
+     *
+     * Restore from the persisted checkpoint.
+     *
+     * @param chkpt ID of the checkpoint to restore from.
+     */
+    void restore(uint64_t chkpt) {
+        dragonError_t err = dragon_ddict_restore(&mCDict, chkpt);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not restore checkpoint.");
+    }
+
+    /**
+     * @brief Get a list of persisted checkpoint IDs.
+     *
+     * Get a list of persisted checkpoint IDs.
+     *
+     * @returns A vector of available persisted IDs in the DDict.
+     */
+    std::vector<uint64_t> persisted_ids() {
+        dragonError_t err;
+        std::vector<uint64_t> chkptIDs;
+
+        err = dragon_ddict_persisted_ids_vec(&mCDict, chkptIDs);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not get the persisted checkpoint IDs.");
+
+        return chkptIDs;
+    }
+
+    /**
+     * @brief Get the number of on-node key/value pairs in the DDict.
+     *
+     * This method cannot be counted on to return an exact number
+     * of on-node key/value pairs. Due to the the nature of a parallel
+     * distributed dictionary the value may have changed by the
+     * time this method returns to the user.
+     *
+     * @returns The number of on-node key/value pairs at a moment in time.
+     */
+    uint64_t local_size() {
+        uint64_t len = 0;
+        dragonError_t err;
+        err = dragon_ddict_local_length(&mCDict, &len);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not get DDict local length.");
+        return len;
     }
 
     /*

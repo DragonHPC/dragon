@@ -1655,14 +1655,14 @@ class Manager:
 
         # Close the pmix DDict if one was created:
         if self.pmix_dd is not None:
-            fdebug("Destroying PMIx dictionary")
-            self.pmix_dd.destroy()
-            fdebug('PMIx dictionary destroyed"')
-
             for guid in self._cur_procs.get_guids():
                 fdebug("Cleaning up PMIx resources for guid %s", guid)
                 cleanup_pmix_resources(guid)
                 fdebug("PMIx resources for guid %s destroyed", guid)
+
+            fdebug("Destroying PMIx dictionary")
+            self.pmix_dd.destroy()
+            fdebug('PMIx dictionary destroyed"')
 
         fdebug("detaching from dragon handler")
         dlog.detach_from_dragon_handler(dls.PG)

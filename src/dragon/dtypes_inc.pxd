@@ -51,6 +51,8 @@ cdef extern from "<dragon/managed_memory.h>":
 
     ctypedef enum dragonMemoryPoolType_t:
         DRAGON_MEMORY_TYPE_SHM = 0,
+        DRAGON_MEMORY_TYPE_HUGEPAGE,
+        DRAGON_MEMORY_TYPE_GPU,
         DRAGON_MEMORY_TYPE_FILE,
         DRAGON_MEMORY_TYPE_PRIVATE
 
@@ -66,7 +68,8 @@ cdef extern from "<dragon/managed_memory.h>":
         DRAGON_MEMORY_ALLOC_BOOTSTRAP
 
     ctypedef struct dragonMemoryDescr_t:
-        pass
+        int _original
+        dragonULInt _idx
 
     ctypedef struct dragonMemorySerial_t:
         size_t len
@@ -84,6 +87,7 @@ cdef extern from "<dragon/managed_memory.h>":
         size_t total_data_size
         size_t free_space
         double utilization_pct
+        dragonMemoryPoolType_t mem_type
         size_t data_min_block_size
         size_t max_allocations
         size_t waiters_for_manifest
@@ -148,7 +152,9 @@ cdef extern from "<dragon/managed_memory.h>":
     dragonError_t dragon_memory_hash(dragonMemoryDescr_t* mem_descr, dragonULInt* hash_value) nogil
     dragonError_t dragon_memory_equal(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result) nogil
     dragonError_t dragon_memory_is(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result) nogil
-    dragonError_t dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout)
+    dragonError_t dragon_memory_copy_size(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, size_t size, const timespec_t* timeout)
+    dragonError_t dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, const timespec_t* timeout)
+    dragonError_t dragon_memory_copy_to_pool(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout)
     dragonError_t dragon_memory_get_pool(const dragonMemoryDescr_t * mem_descr, dragonMemoryPoolDescr_t * pool_descr) nogil
     dragonError_t dragon_memory_clear(dragonMemoryDescr_t* mem_descr, size_t start, size_t stop) nogil
 
@@ -728,23 +734,22 @@ cdef extern from "dragon/fli.h":
 
 cdef extern from "_pmix.h":
 
-    cdef uint32_t DRAGON_PMIX_RANK_WILDCARD
 
-    dragonError_t dragon_initialize_pmix_server(dragonG_UID_t guid,
-                                                char *pmix_sdesc,
-                                                char *local_mgr_sdesc,
-                                                dragonChannelSerial_t out_to_ls,
-                                                dragonChannelSerial_t in_from_ls,
-                                                dragonChannelSerial_t buffered_from_ls,
-                                                int node_rank,
-                                                int nhosts,
-                                                int nprocs,
-                                                int *proc_ranks,
-                                                int *ppn,
-                                                int *node_ranks,
-                                                char **hosts,
-                                                char *client_tmpdir,
-                                                char *server_tmpdir) nogil
+    dragonError_t dragon_pmix_initialize_job(dragonG_UID_t guid,
+                                             char *pmix_sdesc,
+                                             char *local_mgr_sdesc,
+                                             dragonChannelSerial_t out_to_ls,
+                                             dragonChannelSerial_t in_from_ls,
+                                             dragonChannelSerial_t buffered_from_ls,
+                                             int node_rank,
+                                             int nhosts,
+                                             int nprocs,
+                                             int *proc_ranks,
+                                             int *ppn,
+                                             int *node_ranks,
+                                             char **hosts,
+                                             char *client_tmpdir,
+                                             char *server_tmpdir) nogil
 
 
     dragonError_t dragon_pmix_get_client_env(dragonG_UID_t guid,

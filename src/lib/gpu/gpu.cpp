@@ -1,4 +1,11 @@
 #include "gpu.hpp"
+#include <iostream>
+#include <cstdlib>
+#include <vector>
+#include <string>
+#include <sstream>
+#include <algorithm>
+#include <cctype>
 
 bool dragon_gpu_debug = false;
 FILE *dragon_gpu_log = nullptr;
@@ -13,10 +20,20 @@ FILE *dragon_gpu_log = nullptr;
  */
 
 dragonError_t
-dragon_gpu_setup(dragonGPUBackend_t backend_type, dragonGPUHandle_t *gpuh)
+dragon_gpu_setup(dragonGPUBackend_t backend_type, int deviceID, void **dragon_gpu_handle)
 {
+    dragonGPUHandle_t* gpuh;
+    if (*dragon_gpu_handle == nullptr) {
+        gpuh = new dragonGPUHandle_t();
+        if (gpuh == nullptr) {
+            append_err_return(DRAGON_INTERNAL_MALLOC_FAIL, "failed to allocate GPU handle");
+        }
+        *dragon_gpu_handle = static_cast<void *>(gpuh);
+    }
+    else {
+        gpuh = static_cast<dragonGPUHandle_t *>(*dragon_gpu_handle);
+    }
     gpuh->lock.acquire();
-
     // set up debugging log file
 
     auto tmp_envstr = getenv("_DRAGON_GPU_DEBUG");
@@ -42,7 +59,7 @@ dragon_gpu_setup(dragonGPUBackend_t backend_type, dragonGPUHandle_t *gpuh)
         case DRAGON_GPU_BACKEND_CUDA: {
             auto libhandle = dragon_gpu_open_cuda_lib();
             if (libhandle) {
-                dragon_gpu_setup_cuda(libhandle, gpuh);
+                dragon_gpu_setup_cuda(libhandle, deviceID, gpuh);
             } else {
                 append_err_return(DRAGON_FAILURE, "failed to dlopen CUDA backend library");
             }
@@ -76,6 +93,11 @@ dragon_gpu_setup(dragonGPUBackend_t backend_type, dragonGPUHandle_t *gpuh)
         }
     }
 
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "exiting dragon_gpu_setup\n");
+        fflush(dragon_gpu_log);
+    }
+
     if (gpuh->dgpu != nullptr) {
         gpuh->lock.release();
         no_err_return(DRAGON_SUCCESS);
@@ -94,11 +116,29 @@ dragon_gpu_setup(dragonGPUBackend_t backend_type, dragonGPUHandle_t *gpuh)
  */
 
 dragonError_t
-dragon_gpu_cleanup(dragonGPUHandle_t *gpuh)
+dragon_gpu_cleanup(void **dragon_gpu_handle)
 {
+    if (*dragon_gpu_handle == nullptr) {
+        append_err_return(DRAGON_INVALID_ARGUMENT, "dragon_gpu_handle is null when trying to clean up.");
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(*dragon_gpu_handle);
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_cleanup called\n");
+        fflush(dragon_gpu_log);
+    }
+
     gpuh->lock.acquire();
     gpuh->dgpu.reset();
     gpuh->lock.release();
+    delete gpuh;
+    *dragon_gpu_handle = nullptr;
+    if (dragon_gpu_debug) {
+        if (dragon_gpu_log != nullptr) {
+            fclose(dragon_gpu_log);
+            dragon_gpu_log = nullptr;
+        }
+    }
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -113,8 +153,18 @@ dragon_gpu_cleanup(dragonGPUHandle_t *gpuh)
  */
 
 dragonError_t
-dragon_gpu_mem_alloc(dragonGPUHandle_t *gpuh, void **addr, size_t size)
+dragon_gpu_mem_alloc(void *dragon_gpu_handle, void **addr, size_t size)
 {
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_mem_alloc called\n");
+        fflush(dragon_gpu_log);
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_mem_alloc called\n");
+        fflush(dragon_gpu_log);
+    }
     gpuh->lock.acquire();
     auto derr = gpuh->dgpu->mem_alloc(addr, size);
     gpuh->lock.release();
@@ -131,8 +181,14 @@ dragon_gpu_mem_alloc(dragonGPUHandle_t *gpuh, void **addr, size_t size)
  */
 
 dragonError_t
-dragon_gpu_mem_free(dragonGPUHandle_t *gpuh, void *addr)
+dragon_gpu_mem_free(void *dragon_gpu_handle, void *addr)
 {
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_mem_free called\n");
+        fflush(dragon_gpu_log);
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
     gpuh->lock.acquire();
     auto derr = gpuh->dgpu->mem_free(addr);
     gpuh->lock.release();
@@ -150,10 +206,16 @@ dragon_gpu_mem_free(dragonGPUHandle_t *gpuh, void *addr)
  */
 
 dragonError_t
-dragon_gpu_get_ipc_handle(dragonGPUHandle_t *gpuh, void *addr, dragonIPCHandle_t *ipc_handle)
+dragon_gpu_get_ipc_handle(void *dragon_gpu_handle, void *addr, void **dragon_ipc_handle)
 {
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_get_ipc_handle called\n");
+        fflush(dragon_gpu_log);
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
     gpuh->lock.acquire();
-    auto derr = gpuh->dgpu->get_ipc_handle(addr, ipc_handle->data);
+    auto derr = gpuh->dgpu->get_ipc_handle(addr, dragon_ipc_handle);
     gpuh->lock.release();
     return derr;
 }
@@ -171,10 +233,18 @@ dragon_gpu_get_ipc_handle(dragonGPUHandle_t *gpuh, void *addr, dragonIPCHandle_t
  */
 
 dragonError_t
-dragon_gpu_free_ipc_handle(dragonGPUHandle_t *gpuh, dragonIPCHandle_t *ipc_handle)
+dragon_gpu_free_ipc_handle(void *dragon_gpu_handle, void **dragon_ipc_handle)
 {
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_free_ipc_handle called\n");
+        fflush(dragon_gpu_log);
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
     gpuh->lock.acquire();
-    auto derr = gpuh->dgpu->free_ipc_handle(ipc_handle->data);
+    auto derr = gpuh->dgpu->free_ipc_handle(dragon_ipc_handle);
+    free(*dragon_ipc_handle);
+    *dragon_ipc_handle = nullptr;
     gpuh->lock.release();
     return derr;
 }
@@ -194,11 +264,18 @@ dragon_gpu_free_ipc_handle(dragonGPUHandle_t *gpuh, dragonIPCHandle_t *ipc_handl
  */
 
 dragonError_t
-dragon_gpu_attach(dragonGPUHandle_t *gpuh, dragonIPCHandle_t *ipc_handle, void **addr)
+dragon_gpu_attach(void *dragon_gpu_handle, void *dragon_ipc_handle, void **addr)
 {
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_attach called\n");
+        fflush(dragon_gpu_log);
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
     gpuh->lock.acquire();
-    auto derr = gpuh->dgpu->attach(ipc_handle->data, addr);
+    auto derr = gpuh->dgpu->attach(dragon_ipc_handle, addr);
     gpuh->lock.release();
+
     return derr;
 }
 
@@ -217,8 +294,21 @@ dragon_gpu_attach(dragonGPUHandle_t *gpuh, dragonIPCHandle_t *ipc_handle, void *
  */
 
 dragonError_t
-dragon_gpu_detach(dragonGPUHandle_t *gpuh, void *addr)
+dragon_gpu_detach(void *dragon_gpu_handle, void *addr)
 {
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_detach called\n");
+        fflush(dragon_gpu_log);
+    }
+    if (addr == nullptr) {
+        if (dragon_gpu_debug) {
+            fprintf(dragon_gpu_log, "dragon_gpu_detach called on null pointer address\n");
+            fflush(dragon_gpu_log);
+        }
+        no_err_return(DRAGON_SUCCESS);
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
     gpuh->lock.acquire();
     auto derr = gpuh->dgpu->detach(addr);
     gpuh->lock.release();
@@ -236,14 +326,20 @@ dragon_gpu_detach(dragonGPUHandle_t *gpuh, void *addr)
  * @param dst_addr INOUT the destination buffer
  * @param src_addr IN the source buffer
  * @param size IN size in bytes of the data to be copied
- * @param memcpy_type IN direction of the memory copy 
+ * @param memcpy_type IN direction of the memory copy
  *
  * @return An error code for the operation. DRAGON_SUCCESS upon success.
  */
 
 dragonError_t
-dragon_gpu_copy(dragonGPUHandle_t *gpuh, void *dst_addr, const void *src_addr, size_t size, dragonGPUMemcpyType_t memcpy_type)
+dragon_gpu_copy(void *dragon_gpu_handle, void *dst_addr, const void *src_addr, size_t size, dragonGPUMemcpyType_t memcpy_type)
 {
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_copy called\n");
+        fflush(dragon_gpu_log);
+    }
     gpuh->lock.acquire();
     auto derr = gpuh->dgpu->copy(dst_addr, src_addr, size, memcpy_type);
     gpuh->lock.release();
@@ -255,15 +351,21 @@ dragon_gpu_copy(dragonGPUHandle_t *gpuh, void *dst_addr, const void *src_addr, s
  *
  * @param gpuh IN handle to the GPU
  * @param addr INOUT the buffer to be updated
- * @param val IN value between 0 and 255 to use for each byte in the buffer 
+ * @param val IN value between 0 and 255 to use for each byte in the buffer
  * @param size IN size in bytes of the data to updated
  *
  * @return An error code for the operation. DRAGON_SUCCESS upon success.
  */
 
 dragonError_t
-dragon_gpu_memset(dragonGPUHandle_t *gpuh, void *addr, int val, size_t size)
+dragon_gpu_memset(void *dragon_gpu_handle, void *addr, int val, size_t size)
 {
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_memset called\n");
+        fflush(dragon_gpu_log);
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
     gpuh->lock.acquire();
     auto derr = gpuh->dgpu->memset(addr, val, size);
     gpuh->lock.release();
@@ -282,10 +384,19 @@ dragon_gpu_memset(dragonGPUHandle_t *gpuh, void *addr, int val, size_t size)
 
 // TODO: this function needs work (including the backend implementations for it)
 void
-dragon_gpu_get_errstr(dragonGPUHandle_t *gpuh, const char *event, int rc, char *errstr, int strlen)
+dragon_gpu_get_errstr(void *dragon_gpu_handle, const char *event, int rc, char *errstr, int strlen)
 {
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
     gpuh->lock.acquire();
     strncpy(errstr, gpuh->dgpu->get_errstr(event, rc).c_str(), strlen);
     gpuh->lock.release();
 }
 
+size_t
+dragon_gpu_get_ipc_handle_size(void *dragon_gpu_handle)
+{
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
+    return gpuh->dgpu->get_ipc_handle_size();
+}

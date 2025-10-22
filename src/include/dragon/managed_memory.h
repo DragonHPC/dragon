@@ -21,6 +21,7 @@ static const int DRAGON_MEMORY_TEMPORARY_TIMEOUT_SECS = DRAGON_MEMORY_TEMPORARY_
 static const timespec_t DRAGON_MEMORY_TEMPORARY_TIMEOUT = {DRAGON_MEMORY_TEMPORARY_TIMEOUT_CONST,0};
 
 /**
+ * TODO: update this.
  * @brief The type of memory pool.
  *
  * For future use. Currently, the only valid value is DRAGON_MEMORY_TYPE_SHM.
@@ -28,6 +29,7 @@ static const timespec_t DRAGON_MEMORY_TEMPORARY_TIMEOUT = {DRAGON_MEMORY_TEMPORA
 typedef enum dragonMemoryPoolType_st {
     DRAGON_MEMORY_TYPE_SHM = 0,
     DRAGON_MEMORY_TYPE_HUGEPAGE,
+    DRAGON_MEMORY_TYPE_GPU,
     DRAGON_MEMORY_TYPE_FILE,
     DRAGON_MEMORY_TYPE_PRIVATE
 } dragonMemoryPoolType_t;
@@ -140,6 +142,13 @@ typedef struct dragonMemoryPoolAttr_st {
     /* !< The number of segments added to the memory pool. Ignored if set by the
      * user. */
 
+    dragonULInt gpu_device_id;
+    /* !< The GPU device ID index into the environment list. By default the first element in the list will be used. Which device will be used can be set by setting the list in the environment for the process or by specifying the index here. */
+
+    size_t ipc_handle_size;
+    /* !< The size of the GPU IPCHandle for GPU backed managed memory.
+    Read-only. */
+
     dragonLockKind_t lock_type;
     /*<! The type of lock to be used on the memory pool. */
 
@@ -178,6 +187,7 @@ typedef struct dragonMemoryPoolAttr_st {
     /*!< An array data segment file names when backed by a file.
      * The array of names is of length 1 + n_segments. This value is ignored if
      * set by the user. */
+
 } dragonMemoryPoolAttr_t;
 
 /**
@@ -433,7 +443,14 @@ dragonError_t
 dragon_memory_is(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result);
 
 dragonError_t
-dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout);
+dragon_memory_copy_size(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, size_t size);
+
+dragonError_t
+dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem);
+
+dragonError_t
+dragon_memory_copy_to_pool(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout);
+
 
 dragonError_t
 dragon_memory_clear(dragonMemoryDescr_t* mem_descr, size_t start, size_t stop);

@@ -2877,6 +2877,27 @@ class Manager:
             log.info("Streamed data now recovered. Sending bput response to indicate failure.")
             return
 
+        except fli.DragonFLIObjectDestroyed as ex:
+            log.info(
+                "Manager %s with PUID=%s could not process broadcast bput request. %s",
+                self._manager_id,
+                self._puid,
+                ex,
+            )
+            resp_msg = dmsg.DDBPutResponse(
+                self._tag_inc(),
+                ref=msg.tag,
+                err=DragonError.OBJECT_DESTROYED,
+                errInfo="",
+                numPuts=self._num_bput[msg.clientID],
+                managerID=self._manager_id,
+            )
+            # recover from the error by freeing memory and cleaning recvh.
+            log.info("About to recover memory")
+            self._recover_mem(client_key_mem, val_list, recvh)
+            log.info("Streamed data now recovered. Sending bput response to indicate failure.")
+            return
+
         except Exception as ex:
             tb = traceback.format_exc()
             errInfo = f"There was an unexpected exception in broadcast put in manager {self._manager_id} with PUID {self._puid}, {msg.clientID=}: {ex}\n{tb}"
@@ -3026,6 +3047,24 @@ class Manager:
                     self._tag_inc(),
                     ref=msg.tag,
                     err=DragonError.MEMORY_POOL_FULL,
+                    errInfo="",
+                    numPuts=1,
+                    managerID=self._manager_id,
+                )
+                connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+                self._send_msg(resp_msg, connection)
+                connection.detach()
+
+            except fli.DragonFLIObjectDestroyed as ex:
+                log.info("Manager %s with PUID %s could not process bput request. %s", self._manager_id, self._puid, ex)
+                # recover from the error by freeing memory and cleaning recvh.
+                log.info("About to recover memory")
+                self._recover_mem(client_key_mem, val_list, recvh)
+                log.info("Streamed data now recovered. Sending put response to indicate failure.")
+                resp_msg = dmsg.DDBPutResponse(
+                    self._tag_inc(),
+                    ref=msg.tag,
+                    err=DragonError.OBJECT_DESTROYED,
                     errInfo="",
                     numPuts=1,
                     managerID=self._manager_id,

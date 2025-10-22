@@ -478,6 +478,10 @@ dragon_destroy_process_local_channel(dragonChannelDescr_t* ch, const timespec_t*
     /* This is the channel's cuid. */
     cuid = ch->_idx;
 
+    err = dragon_channel_detach(ch);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not detach from process local channel.");
+
     err = dragon_get_return_sh_fli(&return_fli);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get the Local Services return channel.");
@@ -508,10 +512,6 @@ dragon_destroy_process_local_channel(dragonChannelDescr_t* ch, const timespec_t*
 
     if (resp->err() != DRAGON_SUCCESS)
         err_return(resp->err(), resp->errInfo());
-
-    err = dragon_channel_detach(ch);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not detach from process local channel.");
 
     delete resp;
 

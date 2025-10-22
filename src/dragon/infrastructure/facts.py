@@ -569,8 +569,8 @@ FOUR_GB = 2**32
 SIXTEEN_GB = 2**34
 
 # decision constant for argument delivery
-# TODO: tune this - 64K is probably too big. check size of e.g. pool worker Process call.
-ARG_IMMEDIATE_LIMIT = 2**16  # 64K
+# TODO: tune this - 128K is probably too big. check size of e.g. pool worker Process call.
+ARG_IMMEDIATE_LIMIT = 2**17  # 128K
 
 # environment variable name to use to pass in
 # some pickled pre-made test channels to gs

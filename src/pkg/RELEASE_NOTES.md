@@ -1,3 +1,31 @@
+# Dragon 0.12.3 Release Summary
+
+We announce the release of Dragon v0.12.3, which includes several updates, additions, and fixes. Here are the highlights:
+
+### Updates
+
+- The DDict filter now utilizes native interfaces instead of multiprocessing.
+
+### New Features
+
+- GPU support for managed memory support has been introduced.
+- A benchmark for checkpoint persistence testing has been added.
+- Documentation has been created to guide users in selecting the appropriate PMI backend for MPI applications.
+- Tests for dragon-cleanup have been implemented.
+- The dragon-cleanup process has been expanded to include telemetry processe in its clean-up.
+- SSH launch testing has been integrated into our merge to develop and release checklist.
+     
+
+### Resolved Issues
+
+- Users can now re-run a process group with a PMIx backend without needing to close and re-initialize a completely new ProcessGroup
+- utf-8 decoding errors in local services have been fixed.
+- The src/dragon/lib symbolic link is now created as part of the Makefile build process, simplifying development builds of the runtime
+- Inconsistencies in the DDict documentation have been addressed.
+- An erroneous hostlist error raise during WLM launch has been corrected.
+- Policy evaluator asserts that caused silent GS failures have been removed.
+     
+
 # Dragon 0.12.2 Release Summary
 
 We're excited to announce the release of version 0.12.2, which includes several improvements, new features, and bug fixes. Here are the highlights: 
@@ -15,7 +43,7 @@ We're excited to announce the release of version 0.12.2, which includes several 
 - Documentation has been updated to reflect new dragon-config arguments.
 - A new benchmark section for DDict has been added to the documentation.
 
-### Bug Fixes: 
+### Bug Fixes:
 
 - We've resolved an issue where the system would hang when a process died in a channels BCast.
 - Concurrent MPI applications can now be run via ProcessGroup and a PMIx backend without issues.

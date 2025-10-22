@@ -2379,12 +2379,14 @@ class TestDDict(unittest.TestCase):
         NUM_KEYS = 100
         random_key = np.random.rand(NUM_KEYS)
         random_val = np.random.rand(NUM_KEYS)
+        num_batches = 10
 
         # first batch
-        d.start_batch_put(persist=False)
-        for i in range(NUM_KEYS):
-            d[random_key[i]] = random_val[i]
-        d.end_batch_put()
+        for b in range(num_batches):
+            d.start_batch_put(persist=False)
+            for i in range(NUM_KEYS):
+                d[f"{random_key[i]}_{b}"] = random_val[i]
+            d.end_batch_put()
 
         # second batch
         d.start_batch_put(persist=True)
@@ -2393,6 +2395,10 @@ class TestDDict(unittest.TestCase):
         d.end_batch_put()
 
         # Check each pair of kv after batch put ends
+        for b in range(num_batches):
+            for i in range(NUM_KEYS):
+                self.assertEqual(d[f"{random_key[i]}_{b}"], random_val[i])
+
         for i in range(NUM_KEYS):
             self.assertEqual(d[random_key[i]], random_val[i])
         d.destroy()
@@ -2759,7 +2765,7 @@ class TestDDict(unittest.TestCase):
 
         ddict.destroy()
 
-    @unittest.skip("should ran manually only")
+    @unittest.skip("should run manually only")
     def test_defer_get_with_exception(self):
         NUM_MANAGERS = 1
         ddict = DDict(NUM_MANAGERS, 1, 1500000 * NUM_MANAGERS, trace=True, working_set_size=2, wait_for_keys=True)
@@ -3792,6 +3798,58 @@ class TestDDictPersist(unittest.TestCase):
         )
         self.assertEqual(d_restore.persisted_ids(), [1])
         self.assertEqual(d_restore["hello"], "world1")
+        d_restore.destroy()
+
+    def test_persist_current_checkpoints_and_restore(self):
+        NUM_MANAGERS = 1
+        working_set_size = 2
+        persist_freq = 8
+        persist_count = -1
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=working_set_size,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=persist_freq,
+            persist_count=persist_count,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        for i in range(5):
+            if i%2 == 0:
+                d["hello"] = "world"
+                d.persist()
+            d.checkpoint()
+
+        restore_name = d.get_name()
+
+        d.destroy()
+
+        d_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            persist_freq=2,
+            name=restore_name,
+            restore_from=0,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        d_restore.restore(4)
+        self.assertEqual(d_restore.persisted_ids(), [0, 2, 4])
+        self.assertEqual(d_restore.checkpoint_id, 4)
+        self.assertEqual(d_restore["hello"], "world")
+        d_restore.restore(2)
+        self.assertEqual(d_restore["hello"], "world")
+        self.assertEqual(d_restore.checkpoint_id, 2)
+        d_restore.restore(0)
+        self.assertFalse("hello" in d_restore) ## persist and then retire -> persisted chkpt 0 was overwritten as the first chkpt is always persited automatically
+        self.assertEqual(d_restore.checkpoint_id, 0)
         d_restore.destroy()
 
     ################################################

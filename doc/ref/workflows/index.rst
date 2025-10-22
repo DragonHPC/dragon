@@ -18,3 +18,4 @@ Python Reference
     parsl_batch_executor
     parsl_executor
     parsl_mpi_app
+    data_mover

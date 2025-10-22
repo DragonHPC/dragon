@@ -79,21 +79,21 @@ extern "C" {
 
 
 dragonError_t
-dragon_initialize_pmix_server(dragonG_UID_t guid,
-                              char *pmix_sdesc,
-                              char *local_mgr_sdesc,
-                              dragonChannelSerial_t out_to_ls,
-                              dragonChannelSerial_t in_from_ls,
-                              dragonChannelSerial_t buffered_from_ls,
-                              int node_rank,
-                              int nhosts,
-                              int nprocs,
-                              int *proc_ranks,
-                              int *ppn,
-                              int *node_ranks,
-                              char **hosts,
-                              char *client_tmpdir,
-                              char *server_tmpdir);
+dragon_pmix_initialize_job(dragonG_UID_t guid,
+                           char *pmix_sdesc,
+                           char *local_mgr_sdesc,
+                           dragonChannelSerial_t out_to_ls,
+                           dragonChannelSerial_t in_from_ls,
+                           dragonChannelSerial_t buffered_from_ls,
+                           int node_rank,
+                           int nhosts,
+                           int nprocs,
+                           int *proc_ranks,
+                           int *ppn,
+                           int *node_ranks,
+                           char **hosts,
+                           char *client_tmpdir,
+                           char *server_tmpdir);
 
 dragonError_t
 dragon_pmix_get_client_env(dragonG_UID_t guid,

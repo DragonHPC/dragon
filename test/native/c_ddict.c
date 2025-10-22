@@ -13,7 +13,7 @@
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
 
 static size_t VALUE_LENGTH = 10; // length of each value
-static timespec_t TIMEOUT = {0,500000000}; // Timeouts will be 0.5 second by default
+static timespec_t TIMEOUT = {0,50000000000}; // Timeouts will be 5 second by default
 
 dragonError_t _fill_vals(char *** vals, size_t num_vals) {
     *vals = (char**)malloc(num_vals * sizeof(char*));
@@ -85,6 +85,35 @@ dragonError_t _put(dragonDDictDescr_t * ddict, bool persist, char key[], char** 
     return DRAGON_SUCCESS;
 }
 
+dragonError_t _bput(dragonDDictDescr_t * ddict, char key[], char** vals, size_t num_vals) {
+    dragonError_t err;
+    dragonDDictRequestDescr_t req;
+
+    err = dragon_ddict_create_request(ddict, &req);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not create a new request");
+
+    err = dragon_ddict_write_bytes(&req, strlen(key), (uint8_t*)key);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not write the key.");
+
+    err = dragon_ddict_bput(&req);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not perform bput op.");
+
+    for (size_t i=0 ; i<num_vals ; i++) {
+        err = dragon_ddict_write_bytes(&req, strlen(vals[i]), (uint8_t*)vals[i]);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not write value");
+    }
+
+    err = dragon_ddict_finalize_request(&req);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not finalize request");
+
+    return DRAGON_SUCCESS;
+}
+
 dragonError_t _put_multiple_key_writes(dragonDDictDescr_t * ddict, bool persist, char** keys, char** vals, size_t num_key, size_t num_vals) {
     dragonError_t err;
     dragonDDictRequestDescr_t req;
@@ -123,6 +152,79 @@ dragonError_t _put_multiple_key_writes(dragonDDictDescr_t * ddict, bool persist,
     err = dragon_ddict_finalize_request(&req);
     if (err != DRAGON_SUCCESS)
         err_fail(err, "Could not finalize request");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t _bget_read_mem(dragonDDictDescr_t * ddict, char key[], char ** vals, size_t num_vals) {
+    dragonError_t err;
+    dragonDDictRequestDescr_t req;
+
+    err = dragon_ddict_create_request(ddict, &req);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not create a new request");
+
+    // write key to req
+    err = dragon_ddict_write_bytes(&req, strlen(key), (uint8_t*)key);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not write the key.");
+
+    err = dragon_ddict_bget(&req);
+    if (err == DRAGON_KEY_NOT_FOUND || err == DRAGON_DDICT_CHECKPOINT_RETIRED) {
+        return err;
+    } else if (err != DRAGON_SUCCESS) {
+        err_fail(err, "Could not perform get op");
+    }
+
+    bool free_mem = false;
+    err = dragon_ddict_free_required(&req, &free_mem);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not determine if the memory needs to be freed.");
+
+    size_t i = 0;
+    while (err == DRAGON_SUCCESS) {
+
+        dragonMemoryDescr_t mem;
+        err = dragon_ddict_read_mem(&req, &mem);
+        if (err != DRAGON_SUCCESS && err != DRAGON_EOT)
+            err_fail(err, "Could not receive value");
+
+        // compare value
+        if (i > num_vals && err != DRAGON_EOT)
+            misc_fail("Received more values than expected");
+
+        if (err == DRAGON_SUCCESS) {
+
+            size_t num_bytes = 0;
+            dragonError_t _err;
+            _err = dragon_memory_get_size(&mem, &num_bytes);
+            if (_err != DRAGON_SUCCESS)
+                err_fail(_err, "Could not get memory size.");
+            assert(num_bytes == strlen(vals[i]));
+
+            void * mem_ptr;
+            _err = dragon_memory_get_pointer(&mem, &mem_ptr);
+            if (_err != DRAGON_SUCCESS)
+                err_fail(_err, "Could not get memory pointer.");
+
+            if (memcmp((uint8_t*)vals[i], mem_ptr, num_bytes))
+                misc_fail("Expected value did not match received value");
+            // char* char_array_ptr = (char*)mem_ptr;
+            // printf("String from char_array_ptr: %s\n", char_array_ptr);
+        }
+
+        if (free_mem || err == DRAGON_EOT)
+            dragon_memory_free(&mem);
+
+        i += 1;
+    }
+
+    if (err != DRAGON_EOT)
+        err_fail(err, "Exited receive loop before EOT");
+
+    err = dragon_ddict_finalize_request(&req);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Failed to finalize GET request");
 
     return DRAGON_SUCCESS;
 }
@@ -295,7 +397,7 @@ dragonError_t _get_read_mem(dragonDDictDescr_t * ddict, char key[], char ** vals
                 misc_fail("Expected value did not match received value");
         }
 
-        if (free_mem)
+        if (free_mem || err == DRAGON_EOT)
             dragon_memory_free(&mem);
 
         i += 1;
@@ -381,7 +483,7 @@ dragonError_t _contains(dragonDDictDescr_t * ddict, char key[]) {
     if (err == DRAGON_KEY_NOT_FOUND || err == DRAGON_DDICT_CHECKPOINT_RETIRED)
         return err;
     else if (err != DRAGON_SUCCESS)
-        err_fail(err, "Could not perform put op");
+        err_fail(err, "Could not perform contains op");
     dragonError_t result = err;
     err = dragon_ddict_finalize_request(&req);
     if (err != DRAGON_SUCCESS)
@@ -2149,6 +2251,625 @@ dragonError_t test_clone(const char * ddict_ser, const char ** clone_ddicts_ser,
     return DRAGON_SUCCESS;
 }
 
+dragonError_t test_freeze(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    err = dragon_ddict_freeze(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not freeze the dictionary");
+
+    bool frozen;
+    err = dragon_ddict_is_frozen(&ddict, &frozen);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not get the frozen state of the dictionary");
+    assert(frozen);
+
+    err = dragon_ddict_unfreeze(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not unfreeze the dictionary");
+
+    err = dragon_ddict_is_frozen(&ddict, &frozen);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not get the frozen state of the dictionary");
+    assert(!frozen);
+
+    // Detach from the dictionary
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_get_from_frozen_dict(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    // Put op - 1
+    char key[] = "dragon";
+    // Fill values
+    char ** vals = NULL;
+    size_t num_vals = 1;
+    err = _fill_vals(&vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not allocate space.");
+    // call put API
+    bool persist = false;
+    err = _put(&ddict, persist, key, vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not perform 1st put op");
+
+    // Put op - 2
+    char key2[] = "Miska";
+    // Fill values
+    char ** vals2 = NULL;
+    size_t num_vals2 = 1;
+    err = _fill_vals(&vals2, num_vals2);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not allocate space.");
+    // call put API
+    err = _put(&ddict, persist, key2, vals2, num_vals2);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not perform 2nd put op");
+    _free_vals(&vals2, num_vals2);
+
+    // freeze ddict
+    err = dragon_ddict_freeze(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not freeze the dictionary");
+
+    bool frozen;
+    err = dragon_ddict_is_frozen(&ddict, &frozen);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not get the frozen state of the dictionary");
+    assert(frozen);
+
+    // read value twice
+    // Get op
+    err = _get_read_mem(&ddict, key, vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Caught err in 1st get request");
+
+    // Get op
+    err = _get_read_mem(&ddict, key, vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Caught err in 2nd get request");
+    _free_vals(&vals, num_vals);
+
+    // Detach from the dictionary
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_batch_put(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    err = dragon_ddict_start_batch_put(&ddict, false);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not start batch put");
+
+    // Put op
+    char key[] = "dragon";
+    // Fill values
+    char ** vals = NULL;
+    size_t num_vals = 1;
+    err = _fill_vals(&vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not allocate space.");
+    // call put API
+    bool persist = false;
+    err = _put(&ddict, persist, key, vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not perform first put op");
+
+    char key1[] = "hello";
+    err = _put(&ddict, persist, key1, vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not perform second put op");
+
+    char key2[] = "Miska";
+    err = _put(&ddict, persist, key2, vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not perform third put op");
+
+    err = dragon_ddict_end_batch_put(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not end batch put");
+
+    // Get op
+    err = _get_read_bytes(&ddict, key, vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Caught err in get request");
+
+    _free_vals(&vals, num_vals);
+
+    // Detach from the dictionary
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_bput_bget(const char * ddict_ser, uint64_t num_managers) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    // Put op - 1
+    char key[] = "dragon";
+    // Fill values
+    char ** vals = NULL;
+    size_t num_vals = 1;
+    err = _fill_vals(&vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not allocate space.");
+
+    err = _bput(&ddict, key, vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not perform bput op.");
+
+    for (uint64_t i=0 ; i<num_managers ; i++) {
+        dragonDDictDescr_t ddict_m;
+        err = dragon_ddict_manager(&ddict, &ddict_m, i);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not choose manager");
+
+        err = _bget_read_mem(&ddict, key, vals, num_vals);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Caught err in bget request");
+    }
+
+    _free_vals(&vals, num_vals);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_bput_batch(const char * ddict_ser, uint64_t num_managers) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    err = dragon_ddict_start_batch_put(&ddict, false);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not start batch put");
+
+    // Fill values
+    char ** vals = NULL;
+    size_t num_vals = 1;
+    err = _fill_vals(&vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not allocate space.");
+
+    size_t num_keys = 3;
+    for (size_t i=0 ; i<num_keys ; i++) {
+        char key[200];
+        snprintf(key, 199, "dragon%lu", i);
+        err = _bput(&ddict, key, vals, num_vals);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not perform bput op.");
+    }
+
+    err = dragon_ddict_end_batch_put(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not end batch put");
+
+    for (uint64_t i=0 ; i<num_managers ; i++) {
+        dragonDDictDescr_t ddict_m;
+        err = dragon_ddict_manager(&ddict, &ddict_m, i);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not choose manager");
+
+        // each manager should have all keys
+        for (uint64_t j=0 ; j<num_keys ; j++) {
+            char key[200];
+            snprintf(key, 199, "dragon%lu", j);
+            err = _bget_read_mem(&ddict, key, vals, num_vals);
+            if (err != DRAGON_SUCCESS)
+                err_fail(err, "Caught err in bget request");
+        }
+
+        err = dragon_ddict_detach(&ddict_m);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not detach");
+    }
+
+    _free_vals(&vals, num_vals);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_bput_invalid_op(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    err = dragon_ddict_start_batch_put(&ddict, true);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not start batch put");
+
+    // Fill values
+    char ** vals = NULL;
+    size_t num_vals = 1;
+    err = _fill_vals(&vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not allocate space.");
+    char key[] = "dragon";
+
+    dragonDDictRequestDescr_t req;
+    err = dragon_ddict_create_request(&ddict, &req);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not create a new request");
+
+    err = dragon_ddict_write_bytes(&req, strlen(key), (uint8_t*)key);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not write the key.");
+
+    err = dragon_ddict_bput(&req);
+    if (err != DRAGON_INVALID_OPERATION)
+        err_fail(DRAGON_FAILURE, "Failed to catch the expected error DRAGON_INVALID_OPERATION for bput.");
+
+    err = dragon_ddict_end_batch_put(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not end batch put");
+
+    _free_vals(&vals, num_vals);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_bput_multiple_batch(const char * ddict_ser, uint64_t num_managers) {
+
+    uint64_t num_batches = 10;
+    uint64_t num_keys = 5;
+
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    // Fill values
+    char ** vals = NULL;
+    size_t num_vals = 1;
+    err = _fill_vals(&vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not allocate space.");
+
+    for (uint64_t i_batch=0 ; i_batch<num_batches ; i_batch++) {
+        err = dragon_ddict_start_batch_put(&ddict, false);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not start batch put");
+
+        for (size_t i=0 ; i<num_keys ; i++) {
+            char key[200];
+            snprintf(key, 199, "dragon_%lu_%lu", i_batch, i);
+            err = _bput(&ddict, key, vals, num_vals);
+            if (err != DRAGON_SUCCESS)
+                err_fail(err, "Could not perform bput op.");
+        }
+        err = dragon_ddict_end_batch_put(&ddict);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not end batch put");
+    }
+
+    for (uint64_t i=0 ; i<num_managers ; i++) {
+        dragonDDictDescr_t ddict_m;
+        err = dragon_ddict_manager(&ddict, &ddict_m, i);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not choose manager");
+
+        // each manager should have all keys
+        for(uint64_t j_batch=0 ; j_batch<num_batches ; j_batch++) {
+            for (uint64_t j=0 ; j<num_keys ; j++) {
+                char key[200];
+                snprintf(key, 199, "dragon_%lu_%lu", j_batch, j);
+                err = _bget_read_mem(&ddict, key, vals, num_vals);
+                if (err != DRAGON_SUCCESS)
+                    err_fail(err, "Caught err in bget request");
+            }
+        }
+    }
+
+    _free_vals(&vals, num_vals);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_write_chkpts_to_disk(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    // Fill values
+    char ** vals = NULL;
+    size_t num_vals = 1;
+    err = _fill_vals(&vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not allocate space.");
+
+    char key[] = "dragon";
+    for (uint64_t i=0 ; i<5 ; i++) {
+        err = _put(&ddict, false, key, vals, num_vals);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Failed to put key.");
+        err = dragon_ddict_checkpoint(&ddict);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Failed to proceed checkpoint");
+    }
+    _free_vals(&vals, num_vals);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_advance(const char * ddict_ser) {
+    // persist freq 2
+    // call advance and check the chkpt ID, and check the key value
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    char key[] = "dragon";
+    for (uint64_t i=0 ; i<3 ; i+=2) {
+        uint64_t chkptID;
+        err = dragon_ddict_checkpoint_id(&ddict, &chkptID);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Failed to get current checkpoint ID.");
+        assert(chkptID == i);
+
+        err = _contains(&ddict, key);
+        if (err == DRAGON_KEY_NOT_FOUND) {
+            err_fail(err, "Could not find the key.");
+        } else if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not perform contains op.");
+
+        if (i != 2) {
+            err = dragon_ddict_advance(&ddict);
+            if (err != DRAGON_SUCCESS)
+                err_fail(err, "Failed to advance persisted checkpoint.");
+        }
+    }
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_persist(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    // Fill values
+    char ** vals = NULL;
+    size_t num_vals = 1;
+    err = _fill_vals(&vals, num_vals);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not allocate space.");
+
+    char key[] = "dragon";
+    for (uint64_t i=0 ; i<5 ; i++) {
+        if (i % 2 == 0) { // persist chkpt 0, 2, 4
+            err = _put(&ddict, false, key, vals, num_vals);
+            if (err != DRAGON_SUCCESS)
+                err_fail(err, "Failed to put key.");
+            err = dragon_ddict_persist(&ddict);
+            if (err != DRAGON_SUCCESS)
+                err_fail(err, "Failed to persist checkpoint.");
+        }
+
+        err = dragon_ddict_checkpoint(&ddict);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Failed to proceed checkpoint");
+    }
+    _free_vals(&vals, num_vals);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_restore(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    char key[] = "dragon";
+    for (uint64_t i=4 ; i>0 ; i-=2) {
+
+        uint64_t chkptID;
+
+        err = dragon_ddict_restore(&ddict, i);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Failed to restore checkpoint.");
+
+        err = dragon_ddict_checkpoint_id(&ddict, &chkptID);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Failed to get current checkpoint ID.");
+        assert(chkptID == i);
+
+        err = _contains(&ddict, key);
+        if (err == DRAGON_KEY_NOT_FOUND) {
+            err_fail(err, "Could not find the key.");
+        } else if (err != DRAGON_SUCCESS)
+            err_fail(err, "Could not perform contains op.");
+    }
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_persisted_ids_0_2_4(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    uint64_t * persisted_ids = NULL;
+    size_t num_persisted_ids = 0;
+    err = dragon_ddict_persisted_ids(&ddict, &persisted_ids, &num_persisted_ids);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not get the available persisted ids.");
+    assert(num_persisted_ids == 3);
+    assert(persisted_ids[0] == 0);
+    assert(persisted_ids[1] == 2);
+    assert(persisted_ids[2] == 4);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_persisted_ids_4_6(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    uint64_t * persisted_ids = NULL;
+    size_t num_persisted_ids = 0;
+    err = dragon_ddict_persisted_ids(&ddict, &persisted_ids, &num_persisted_ids);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not get the available persisted ids.");
+    assert(num_persisted_ids == 2);
+    assert(persisted_ids[0] == 4);
+    assert(persisted_ids[1] == 6);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_no_persisted_ids(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    uint64_t * persisted_ids = NULL;
+    size_t num_persisted_ids = 0;
+    err = dragon_ddict_persisted_ids(&ddict, &persisted_ids, &num_persisted_ids);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not get the available persisted ids.");
+    assert(num_persisted_ids == 0);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_local_length(const char * ddict_ser) {
+    dragonError_t err;
+    dragonDDictDescr_t ddict;
+
+    // Attach to the running instance of the dictionary
+    err = dragon_ddict_attach(ddict_ser, &ddict, &TIMEOUT);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not attach");
+
+    uint64_t length = 0;
+    err = dragon_ddict_local_length(&ddict, &length);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not get local length.");
+    assert(length==2);
+
+    err = dragon_ddict_detach(&ddict);
+    if (err != DRAGON_SUCCESS)
+        err_fail(err, "Could not detach");
+
+    return DRAGON_SUCCESS;
+}
+
 int main(int argc, char* argv[]) {
     char * ddict_descr = argv[1];
     char * test = argv[2];
@@ -2265,6 +2986,42 @@ int main(int argc, char* argv[]) {
         }
         err = test_clone(ddict_descr, (const char**)ser_dest_ddicts, num_ddicts);
         free(ser_dest_ddicts);
+    } else if (strcmp(test, "test_freeze") == 0) {
+        err = test_freeze(ddict_descr);
+    } else if (strcmp(test, "test_get_from_frozen_dict") == 0) {
+        err = test_get_from_frozen_dict(ddict_descr);
+    } else if (strcmp(test, "test_batch_put") == 0) {
+        err = test_batch_put(ddict_descr);
+    } else if (strcmp(test, "test_bput_bget") == 0) {
+        char *tmpptr;
+        uint64_t num_managers = strtoul(argv[3], &tmpptr, 10);
+        err = test_bput_bget(ddict_descr, num_managers);
+    } else if (strcmp(test, "test_bput_batch") == 0) {
+        char *tmpptr;
+        uint64_t num_managers = strtoul(argv[3], &tmpptr, 10);
+        err = test_bput_batch(ddict_descr, num_managers);
+    } else if (strcmp(test, "test_bput_invalid_op") == 0) {
+        err = test_bput_invalid_op(ddict_descr);
+    } else if (strcmp(test, "test_bput_multiple_batch") == 0) {
+        char *tmpptr;
+        uint64_t num_managers = strtoul(argv[3], &tmpptr, 10);
+        err = test_bput_multiple_batch(ddict_descr, num_managers);
+    } else if (strcmp(test, "test_write_chkpts_to_disk") == 0) {
+        err = test_write_chkpts_to_disk(ddict_descr);
+    } else if (strcmp(test, "test_advance") == 0) {
+        err = test_advance(ddict_descr);
+    } else if (strcmp(test, "test_persist") == 0) {
+        err = test_persist(ddict_descr);
+    } else if (strcmp(test, "test_restore") == 0) {
+        err = test_restore(ddict_descr);
+    } else if (strcmp(test, "test_persisted_ids_0_2_4") == 0) {
+        err = test_persisted_ids_0_2_4(ddict_descr);
+    } else if (strcmp(test, "test_persisted_ids_4_6") == 0) {
+        err = test_persisted_ids_4_6(ddict_descr);
+    } else if (strcmp(test, "test_no_persisted_ids") == 0) {
+        err = test_no_persisted_ids(ddict_descr);
+    } else if (strcmp(test, "test_local_length") == 0) {
+        err = test_local_length(ddict_descr);
     } else {
         return DRAGON_NOT_IMPLEMENTED;
     }

@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --nodes=512
+#SBATCH --nodes=550
 #SBATCH --exclusive
 #SBATCH --time=2:00:00
 
@@ -52,13 +52,13 @@ srun --nodes=512 hostname
 #
 
 ## 512 nodes, 2 img/worker
-dragon ../../examples/multiprocessing/numpy-mpi4py-examples/scipy_scale_work.py --dragon \
-                                                                                --num_workers 65536  \
-                                                                                --iterations 2 \
-                                                                                --burns 0 \
-                                                                                --size 32 \
-                                                                                --mem 1073741824 \
-                                                                                --work_time 1
+dragon -N 512 ../../examples/multiprocessing/numpy-mpi4py-examples/scipy_scale_work.py --dragon \
+                                                                                       --num_workers 65536  \
+                                                                                       --iterations 2 \
+                                                                                       --burns 0 \
+                                                                                       --size 32 \
+                                                                                       --mem 1073741824 \
+                                                                                       --work_time 1
 ## dragon 0.11 release from 512 nodes, 2 imgs/worker
 ## Number of images: 1048576
 ## Number of workers: 65536

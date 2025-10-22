@@ -34,7 +34,6 @@ import socket
 import os
 import copy
 from dataclasses import dataclass, field
-import multiprocessing as mp
 import heapq
 from types import FunctionType
 from collections.abc import Iterator
@@ -57,7 +56,9 @@ from ...infrastructure.parameters import this_process
 from ...infrastructure import messages as dmsg
 from ...infrastructure import policy
 from ...channels import Channel
-from ...native.process import Popen
+from ...native.process import Popen, Process
+from ...native.event import Event
+from ...native.queue import Queue
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 from ...dlogging.logger import DragonLoggingError
 from ...native.machine import Node
@@ -208,7 +209,7 @@ class SentinelQueue:
     _SENTINEL = "sentinel_queue_sentinel"
 
     def __init__(self):
-        self._queue = mp.Queue()
+        self._queue = Queue()
         self._put_called = False
         self._get_called = False
         self._sentinel_sent = False
@@ -235,7 +236,7 @@ class SentinelQueue:
             raise RuntimeError("Cannot put an item on a closed SentinelQueue")
 
         if not self._put_called:
-            self._shutdown_event = mp.Event()
+            self._shutdown_event = Event()
             self._queue.put(self._shutdown_event)
             self._put_called = True
 
@@ -545,7 +546,7 @@ class CheckpointPersister(ABC):
         pass
 
     @abstractmethod
-    def position(self):
+    def position(self, chkpt: int = 0):
         pass
 
     @abstractmethod
@@ -554,7 +555,7 @@ class CheckpointPersister(ABC):
 
     @classmethod
     @abstractmethod
-    def prepare(cls, orc_logger, metadata, restore_from, read_only):
+    def prepare(cls, orc_logger, persist_path, name, restore_from, read_only):
         pass
 
     @classmethod
@@ -564,12 +565,17 @@ class CheckpointPersister(ABC):
 
     @classmethod
     @abstractmethod
-    def load_metadata(cls, orc_logger, name):
+    def load_metadata(cls, orc_logger, persist_path, name):
         pass
 
     @classmethod
     @abstractmethod
     def cleanup_metadata(cls, persist_path, name):
+        pass
+
+    @property
+    @abstractmethod
+    def current_chkpt(self):
         pass
 
 class NULLCheckpointPersister(CheckpointPersister):
@@ -627,6 +633,10 @@ class NULLCheckpointPersister(CheckpointPersister):
         fname = path / f"ddict_orc_{name}"
         os.remove(fname)
 
+    @property
+    def current_chkpt(self):
+        pass
+
 class PosixCheckpointPersister(CheckpointPersister):
     def __init__(
         self,
@@ -681,47 +691,6 @@ class PosixCheckpointPersister(CheckpointPersister):
             file_name = self._path / f"{self._FNAME_PREFIX}{remove_chkpt_id}{self._FNAME_SUFFIX}"
             os.remove(file_name)
         self._log("Cleanup completed.")
-
-    @classmethod
-    def prepare(cls, orc_logger, persist_path, name, restore_from, read_only):
-
-        if not read_only and restore_from is not None:
-            # Remove any persisted file with chkpt later than restore_from so that the persisted file
-            # won't be overwritten later.
-            FNAME_PREFIX = f"{name}_"
-            FNAME_SUFFIX = f".ddict"
-            # filename = {FNAME_PREFIX}{managerID}_{chkptID}{FNAME_SUFFIX}
-            path = Path(persist_path)
-            dat_files = list(path.glob(f"{FNAME_PREFIX}*{FNAME_SUFFIX}"))
-            for f in dat_files:
-                strf = str(basename(f))
-                # managerID_chkptID = {managerID}_{chkptID}
-                managerID_chkptID = strf[len(FNAME_PREFIX) :][: -len(FNAME_SUFFIX)]
-                chkptID = int(managerID_chkptID.split("_")[-1])
-                if chkptID > restore_from:
-                    os.remove(f)
-
-    @classmethod
-    def dump_metadata(cls, orc_logger, persist_path, name, metadata):
-        path = Path(persist_path)
-        fname = path / f"ddict_orc_{name}"
-        with open(fname, "w") as f:
-            f.write(metadata)
-
-    @classmethod
-    def load_metadata(cls, orc_logger, persist_path, name) -> str:
-        path = Path(persist_path)
-        fname = path / f"ddict_orc_{name}"
-        metadata = ""
-        with open(fname, "r") as f:
-            metadata = f.read()
-        return metadata
-
-    @classmethod
-    def cleanup_metadata(cls, persist_path, name):
-        path = Path(persist_path)
-        fname = path / f"ddict_orc_{name}"
-        os.remove(fname)
 
     def dump(self, chkpt, force: bool = False):
         """
@@ -869,6 +838,47 @@ class PosixCheckpointPersister(CheckpointPersister):
         """
         return self._available_persisted_checkpoints
 
+    @classmethod
+    def prepare(cls, orc_logger, persist_path, name, restore_from, read_only):
+
+        if not read_only and restore_from is not None:
+            # Remove any persisted file with chkpt later than restore_from so that the persisted file
+            # won't be overwritten later.
+            FNAME_PREFIX = f"{name}_"
+            FNAME_SUFFIX = f".ddict"
+            # filename = {FNAME_PREFIX}{managerID}_{chkptID}{FNAME_SUFFIX}
+            path = Path(persist_path)
+            dat_files = list(path.glob(f"{FNAME_PREFIX}*{FNAME_SUFFIX}"))
+            for f in dat_files:
+                strf = str(basename(f))
+                # managerID_chkptID = {managerID}_{chkptID}
+                managerID_chkptID = strf[len(FNAME_PREFIX) :][: -len(FNAME_SUFFIX)]
+                chkptID = int(managerID_chkptID.split("_")[-1])
+                if chkptID > restore_from:
+                    os.remove(f)
+
+    @classmethod
+    def dump_metadata(cls, orc_logger, persist_path, name, metadata):
+        path = Path(persist_path)
+        fname = path / f"ddict_orc_{name}"
+        with open(fname, "w") as f:
+            f.write(metadata)
+
+    @classmethod
+    def load_metadata(cls, orc_logger, persist_path, name) -> str:
+        path = Path(persist_path)
+        fname = path / f"ddict_orc_{name}"
+        metadata = ""
+        with open(fname, "r") as f:
+            metadata = f.read()
+        return metadata
+
+    @classmethod
+    def cleanup_metadata(cls, persist_path, name):
+        path = Path(persist_path)
+        fname = path / f"ddict_orc_{name}"
+        os.remove(fname)
+
     @property
     def current_chkpt(self):
         return self._current_chkpt_id
@@ -921,69 +931,6 @@ class DAOSCheckpointPersister(CheckpointPersister):
 
         self._num_persists = len(self._available_persisted_checkpoints)
         self._current_chkpt_id = 0
-
-    @classmethod
-    def prepare(cls, orc_logger, persist_path, name, restore_from, read_only: bool = False):
-
-        pool_name = persist_path
-        if restore_from is None:
-            # If not restore, remove the existing containers with name ddict_name
-            orc_logger.debug(f"Removing DAOS container {name} from pool {pool_name}")
-            subprocess.run(
-                f"daos cont destroy {pool_name} {name}",
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            # TBD: should we catch the exception if the container doesn't exist?
-            orc_logger.debug(f"Creating a new DAOS container {name} from pool {pool_name}")
-            subprocess.run(f"daos cont create {pool_name} {name} --type PYTHON", shell=True)
-            dcont = pydaos.DCont(pool_name, name)
-            orc_logger.debug(f"DAOS container created. Now creating metadata dictionary.")
-            metadata_daos_dd = dcont.dict("chkpt_metadata", {})
-            orc_logger.debug(f"DAOS checkpoint metadata dictionary created.")
-
-    @classmethod
-    def dump_metadata(cls, orc_logger, persist_path, name, metadata):
-        pool_name = persist_path
-        name = f"ddict_orc_{name}"
-        # must remove the old ddict metadata container as we will create one later with the same name
-        orc_logger.debug(f"about to remove ddict metadata container {name}")
-        subprocess.run(
-            f"daos cont destroy {pool_name} {name}",
-            shell=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        orc_logger.debug(f"about to dump ddict metadata to container {name}")
-        subprocess.run(f"daos cont create {pool_name} {name} --type PYTHON", shell=True)
-        orc_logger.debug(f"ddict metadata container created!")
-        dcont = pydaos.DCont(pool_name, name)
-        # create a new DAOS dictionary and write DDict metadata.
-        metadata_daos_dd = dcont.dict("metadata", {})
-        metadata_daos_dd["data"] = metadata
-
-    @classmethod
-    def load_metadata(cls, orc_logger, persist_path, name) -> str:
-        pool_name = persist_path
-        name = f"ddict_orc_{name}"
-        orc_logger.debug(f"about to load ddict metadata to container {name}")
-        dcont = pydaos.DCont(pool_name, name)
-        orc_logger.debug("connected to ddict metadata container")
-        metadata_daos_dd = dcont.get("metadata")
-        metadata = metadata_daos_dd["data"].decode('utf-8')
-        return metadata
-
-    @classmethod
-    def cleanup_metadata(cls, persist_path, name):
-        pool_name = persist_path
-        name = f"ddict_orc_{name}"
-        subprocess.run(
-            f"daos cont destroy {pool_name} {name}",
-            shell=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
 
     def dump(self, chkpt, force: bool = False):
         """
@@ -1112,6 +1059,69 @@ class DAOSCheckpointPersister(CheckpointPersister):
         Return an iterator of all valid persisted checkpoint IDs in ascending order.
         """
         return self._available_persisted_checkpoints
+
+    @classmethod
+    def prepare(cls, orc_logger, persist_path, name, restore_from, read_only: bool = False):
+
+        pool_name = persist_path
+        if restore_from is None:
+            # If not restore, remove the existing containers with name ddict_name
+            orc_logger.debug(f"Removing DAOS container {name} from pool {pool_name}")
+            subprocess.run(
+                f"daos cont destroy {pool_name} {name}",
+                shell=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            # TBD: should we catch the exception if the container doesn't exist?
+            orc_logger.debug(f"Creating a new DAOS container {name} from pool {pool_name}")
+            subprocess.run(f"daos cont create {pool_name} {name} --type PYTHON", shell=True)
+            dcont = pydaos.DCont(pool_name, name)
+            orc_logger.debug(f"DAOS container created. Now creating metadata dictionary.")
+            metadata_daos_dd = dcont.dict("chkpt_metadata", {})
+            orc_logger.debug(f"DAOS checkpoint metadata dictionary created.")
+
+    @classmethod
+    def dump_metadata(cls, orc_logger, persist_path, name, metadata):
+        pool_name = persist_path
+        name = f"ddict_orc_{name}"
+        # must remove the old ddict metadata container as we will create one later with the same name
+        orc_logger.debug(f"about to remove ddict metadata container {name}")
+        subprocess.run(
+            f"daos cont destroy {pool_name} {name}",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        orc_logger.debug(f"about to dump ddict metadata to container {name}")
+        subprocess.run(f"daos cont create {pool_name} {name} --type PYTHON", shell=True)
+        orc_logger.debug(f"ddict metadata container created!")
+        dcont = pydaos.DCont(pool_name, name)
+        # create a new DAOS dictionary and write DDict metadata.
+        metadata_daos_dd = dcont.dict("metadata", {})
+        metadata_daos_dd["data"] = metadata
+
+    @classmethod
+    def load_metadata(cls, orc_logger, persist_path, name) -> str:
+        pool_name = persist_path
+        name = f"ddict_orc_{name}"
+        orc_logger.debug(f"about to load ddict metadata to container {name}")
+        dcont = pydaos.DCont(pool_name, name)
+        orc_logger.debug("connected to ddict metadata container")
+        metadata_daos_dd = dcont.get("metadata")
+        metadata = metadata_daos_dd["data"].decode('utf-8')
+        return metadata
+
+    @classmethod
+    def cleanup_metadata(cls, persist_path, name):
+        pool_name = persist_path
+        name = f"ddict_orc_{name}"
+        subprocess.run(
+            f"daos cont destroy {pool_name} {name}",
+            shell=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
     @property
     def current_chkpt(self):
@@ -2839,7 +2849,7 @@ class DDict:
 
                     # There might be other response expected in the main response channel, so create a new
                     # response FLI that only receives the bput response for current batch. In the cleanup
-                    # of the brocast put with batch, we will receive bput responses from every manager
+                    # of the broadcast put with batch, we will receive bput responses from every manager
                     # through this response FLI.
                     self._bput_resp_strm = Channel.make_process_local()
                     self._traceit(f"The local channel cuid is {self._bput_resp_strm.cuid}")
@@ -2919,9 +2929,9 @@ class DDict:
 
         try:
             self._bput_respFLI.destroy()
-            self._trace_it(f"Local channel cuid to be destroyed is {self._bput_resp_strm.cuid}")
+            self._traceit(f"Local channel cuid to be destroyed is {self._bput_resp_strm.cuid}")
             self._bput_resp_strm.destroy_process_local()
-            self._trace_it(f"Local channel cuid to be destroyed is {self._bput_strm.cuid}")
+            self._traceit(f"Local channel cuid to be destroyed is {self._bput_strm.cuid}")
             self._bput_strm.destroy_process_local()
         except:
             pass
@@ -3195,7 +3205,7 @@ class DDict:
             elif not resp_msg.available:
                 raise DDictError(
                     DragonError.INVALID_OPERATION,
-                    f"Unable to access persisted checkpoint {chkptID} from manager {resp_msg.managerID}. The checkpoint is not available",
+                    f"Unable to access checkpoint {chkptID} from manager {resp_msg.managerID}. The checkpoint is not available",
                 )
 
     def _persisted_chkpt_avail(self, chkptID: int):
@@ -3850,7 +3860,7 @@ class DDict:
         pickled_mgr_args = cloudpickle.dumps(mgr_code_args)
         pickled_comparator = cloudpickle.dumps(comparator)
 
-        filter_proc = mp.Process(
+        filter_proc = Process(
             target=filter_aggregator,
             args=(
                 self,
