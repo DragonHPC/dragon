@@ -46,7 +46,8 @@ extensions = [
     "sphinx.ext.extlinks",
     "sphinx_copybutton",
     "sphinxcontrib.plantuml",
-    "sphinx_new_tab_link"
+    "sphinx_new_tab_link",
+    'sphinxarg.ext',
 ]
 
 tls_verify = False
@@ -103,9 +104,7 @@ html_css_files = [
 ]
 
 # See https://sphinx-rtd-theme.readthedocs.io/en/stable/configuring.html
-html_theme_options = {
-    "navigation_depth": 6
-}
+html_theme_options = {"navigation_depth": 6}
 
 breathe_projects = {"dragon": "../src/doxygen/xml"}
 breathe_default_project = "dragon"
@@ -116,60 +115,68 @@ variables_to_export = [
     "DragonVersion",
 ]
 frozen_locals = dict(locals())
-rst_epilog = '\n'.join(map(lambda x: f".. |{x}| replace:: {frozen_locals[x]}", variables_to_export))
+rst_epilog = "\n".join(map(lambda x: f".. |{x}| replace:: {frozen_locals[x]}", variables_to_export))
 del frozen_locals
 
 # Define plantuml compilation
 plantuml = f'java -jar {os.path.join(os.getcwd(), "plantuml.jar")}'
+
 
 # Add an autodoc class that only posts the docstring without function
 # names. Useful for autodoc-ing the Dragon CLI commands
 class AutoDocstringOnly(autodoc.MethodDocumenter):
     objtype = "docstringonly"
 
-    #do not indent the content
+    # do not indent the content
     content_indent = ""
 
     @classmethod
     def can_document_member(cls, member: Any, membername: str, isattr: bool, parent: Any) -> bool:
         return False
 
-    #do not add a header to the docstring
+    # do not add a header to the docstring
     def add_directive_header(self, sig):
         pass
 
-autodoc_default_flags = ['members', 'private-members', 'special-members',
-                         #'undoc-members',
-                         'show-inheritance']
+
+autodoc_default_flags = [
+    "members",
+    "private-members",
+    "special-members",
+    #'undoc-members',
+    "show-inheritance",
+]
 
 autodoc_default_options = {
-    'members': True,
-    'member-order': 'bysource',
-    'special-members': '__setitem__,__getitem__,__delitem__,__len__,__contains__',
-    'undoc-members': False,
-    'exclude-members': '__weakref__,__new__,__doc__,__module__,__dict__',
-    'show-inheritance': True
+    "members": True,
+    "member-order": "bysource",
+    "special-members": "__setitem__,__getitem__,__delitem__,__len__,__contains__",
+    "undoc-members": False,
+    "exclude-members": "__weakref__,__new__,__doc__,__module__,__dict__",
+    "show-inheritance": True,
 }
+
 
 def setup(app):
     app.add_autodocumenter(AutoDocstringOnly)
+
 
 def linkcode_resolve(domain, info):
     """
     Returns a link to the source code on GitHub, with appropriate lines highlighted.
     """
-    if domain != 'py':
+    if domain != "py":
         return None  # Only handle Python objects
 
-    modname = info.get('module')
-    fullname = info.get('fullname')
+    modname = info.get("module")
+    fullname = info.get("fullname")
 
     if not modname or not fullname:
         return None
 
     try:
         obj = sys.modules[modname]
-        for part in fullname.split('.'):
+        for part in fullname.split("."):
             obj = getattr(obj, part)
     except AttributeError:
         return None
@@ -190,26 +197,37 @@ def linkcode_resolve(domain, info):
     # This example assumes your project is hosted on GitHub and the source
     # code is in a 'src' directory at the root of your repository.
     # You will need to adapt this part to your specific repository structure.
-    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-    relative_filename = os.path.relpath(filename, repo_root).replace("hpc-pe-dragon-dragon/","") # done like this so builds work on both internal and external repos
-    if relative_filename.startswith('dragon/'):
-        relative_filename = relative_filename[len('dragon/'):]
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    relative_filename = os.path.relpath(filename, repo_root).replace(
+        "hpc-pe-dragon-dragon/", ""
+    )  # done like this so builds work on both internal and external repos
+    if relative_filename.startswith("dragon/"):
+        relative_filename = relative_filename[len("dragon/") :]
 
     # Construct the GitHub URL
     github_repo_url = "https://github.com/DragonHPC/dragon"
-    github_branch = "main" # or "develop", "master", etc.
+    github_branch = "main"  # or "develop", "master", etc.
 
-    return f"{github_repo_url}/blob/{github_branch}/{relative_filename}#L{first_line_no}-L{first_line_no + len(lines) - 1}"
+    return (
+        f"{github_repo_url}/blob/{github_branch}/{relative_filename}#L{first_line_no}-L{first_line_no + len(lines) - 1}"
+    )
+
 
 extlinks = {
-    'example_benchmark': ('https://github.com/DragonHPC/dragon/tree/main/examples/benchmarks/%s', '%s'),  # use as :example_benchmark:`file.py` to link to examples/benchmarks/file.py
-    'example_ai': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_ai/%s', '%s'),  # use as :example_ai:`file.py` to link to examples/dragon_ai/file.py
-    'example_core': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_core/%s', '%s'),
-    'example_data': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_data/%s', '%s'),
-    'example_gs_client': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_gs_client/%s', '%s'),
-    'example_native': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_native/%s', '%s'),
-    'example_telemetry': ('https://github.com/DragonHPC/dragon/tree/main/examples/dragon_telemetry/%s', '%s'),
-    'example_workflows': ('https://github.com/DragonHPC/dragon/tree/main/examples/workflows/%s', '%s'),
-    'example_jupyter': ('https://github.com/DragonHPC/dragon/tree/main/examples/jupyter/%s', '%s'),
-    'example_multiprocessing': ('https://github.com/DragonHPC/dragon/tree/main/examples/multiprocessing/%s', '%s'),
-    }
+    "example_benchmark": (
+        "https://github.com/DragonHPC/dragon/tree/main/examples/benchmarks/%s",
+        "%s",
+    ),  # use as :example_benchmark:`file.py` to link to examples/benchmarks/file.py
+    "example_ai": (
+        "https://github.com/DragonHPC/dragon/tree/main/examples/dragon_ai/%s",
+        "%s",
+    ),  # use as :example_ai:`file.py` to link to examples/dragon_ai/file.py
+    "example_core": ("https://github.com/DragonHPC/dragon/tree/main/examples/dragon_core/%s", "%s"),
+    "example_data": ("https://github.com/DragonHPC/dragon/tree/main/examples/dragon_data/%s", "%s"),
+    "example_gs_client": ("https://github.com/DragonHPC/dragon/tree/main/examples/dragon_gs_client/%s", "%s"),
+    "example_native": ("https://github.com/DragonHPC/dragon/tree/main/examples/dragon_native/%s", "%s"),
+    "example_telemetry": ("https://github.com/DragonHPC/dragon/tree/main/examples/dragon_telemetry/%s", "%s"),
+    "example_workflows": ("https://github.com/DragonHPC/dragon/tree/main/examples/workflows/%s", "%s"),
+    "example_jupyter": ("https://github.com/DragonHPC/dragon/tree/main/examples/jupyter/%s", "%s"),
+    "example_multiprocessing": ("https://github.com/DragonHPC/dragon/tree/main/examples/multiprocessing/%s", "%s"),
+}

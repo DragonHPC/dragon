@@ -4371,6 +4371,22 @@ class TestTooBig(unittest.TestCase):
         for dd in dlist:
             dd.destroy()
 
+    @unittest.skip("Don't need to test every time.")
+    def test_too_big_def_pool(self):
+        """This test should print a default pool utilization warning message to the screen."""
+        def_pool = dmem.MemoryPool.attach_default()
+        channels = []
+
+        while def_pool.utilization < 95:
+            channels.append(dch.Channel.make_process_local())
+
+        time.sleep(30)
+
+        while len(channels) > 0:
+            dch.Channel.destroy_process_local(channels.pop())
+
+        self.assertEqual(len(channels), 0)
+
     def test_too_big(self):
         """Make sure we handle and respond to too big an allocation and raise an exception"""
 

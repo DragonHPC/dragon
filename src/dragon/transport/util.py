@@ -14,24 +14,38 @@ hsta_config_dict = {"fabric_ep_addrs_available": False}
 first_time_using_hsta_for_config = True
 
 
-def get_fabric_backend():
-    config_file_path = dfacts.CONFIG_FILE_PATH
-
-    if config_file_path.exists():
-        with open(config_file_path) as config_file:
-            config_dict = json.load(config_file)
-
-        # Get all the runtimes. We'll cull the list from there
-        backend_runtimes = {key.split("_")[0]: config_dict[key] for key in config_dict.keys() if "runtime" in key}
-
-        # if tcp is set to true, always use it
+def get_fabric_backend(config_file=None):
+    if config_file is None:
+        config_file = dfacts.CONFIG_FILE_PATH
+    else:
         try:
-            if backend_runtimes["tcp"] is True:
-                return "tcp", None
-        except KeyError:
-            pass
+            config_file = Path(config_file)
+        except Exception:
+            raise ValueError("config_file must be a valid path string")
 
-        # otherwise return the first runtime that's not TCP AND is in our enumerated support types
+    if config_file.exists():
+        with open(config_file) as config_file:
+            # Put in try block in case it's a malformed json or just empty as we do in unittests
+            try:
+                config_dict = json.load(config_file)
+            except json.decoder.JSONDecodeError:
+                config_dict = {}
+
+        # Make sure none of the keys have hyphens in them. argparse should lead to them
+        # being replaced with underscores, and their presence tells us they have a stale config
+        # file that needs to be updated. Otherwise if it's a runtime, add it to a new dict
+        backend_runtimes = {}
+        for key, val in config_dict.items():
+            if "-" in key:
+                raise ValueError(
+                    f"Config file {config_file} appears to be out of date. Please run `dragon-config -c` and generate a new one"
+                )
+
+            if "runtime" in key:
+                backend_name = key.split("_")[0]
+                backend_runtimes[backend_name] = val
+
+        # To prioritize a high speed network, search for one of the high speed backends first
         for backend_name, backend_lib in backend_runtimes.items():
             # Handle list of paths
             if backend_name in set(dfacts.HighSpeedTransportBackends):
@@ -40,7 +54,14 @@ def get_fabric_backend():
                     backend_lib = ":".join(backend_lib)
                 return backend_name, backend_lib
 
-    # If we got here, we don't have a config or an appropriately defined backend
+        # If there isn't a high speed backend available, use TCP intentionally, if told
+        try:
+            if backend_runtimes["tcp"] is True:
+                return "tcp", None
+        except KeyError:
+            pass
+
+    # If we got here, we don't have a config or an appropriately defined backend. The caller will do as they wish.
     return None, None
 
 
@@ -139,7 +160,7 @@ def create_hsta_env(nic_idx):
 
     # TODO: maybe set UCX_NET_DEVICES as well
 
-    is_k8s = (os.getenv("KUBERNETES_SERVICE_HOST") and os.getenv("KUBERNETES_SERVICE_PORT")) != None
+    is_k8s = (os.getenv("KUBERNETES_SERVICE_HOST") and os.getenv("KUBERNETES_SERVICE_PORT")) is not None
     if is_k8s:
         env["DRAGON_HSTA_UCX_NO_MEM_REGISTER"] = "1"
 

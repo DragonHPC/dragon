@@ -1,3 +1,32 @@
+# Dragon 0.13 Release Summary
+
+We're excited to announce the release of Dragon v0.13, which includes several updates, additions and fixes. Here are the highlights:
+
+### Updates
+
+- Multiple pages in the documentation have been updated
+- Reworked how Dragon manages and references PMIx namespaces
+- Updated the run_gups_scale.sh benchmark test to use --benchit commnd line option
+- Updated the release scaling tests
+- Removed distutils from entire Dragon codebase
+- Remove Futex from BCast for Mac OS Support
+
+### New Features
+
+- Implemented a TCP backend for the Dragon HSTA agent
+- Integrated a Dragon Batch workflow allowing jobs to be run via a Directed Acyclic Graph
+- Implemented new unittests for the dragon-config tool
+- Added usage pages to docs for dragon and dragon-config
+- Add a default memory pool tracker that emits warnings if it is getting full
+
+### Resolved Issues
+
+- Fixed issue with running the Dragon multi-node tests
+- Fixed PMIx teardown in local services
+- Fixed inconsistency in training group creation
+- Fixed issue with executable launch without arguments
+- Policy evaluator has asserts in it that cause silent GS failures
+
 # Dragon 0.12.3 Release Summary
 
 We announce the release of Dragon v0.12.3, which includes several updates, additions, and fixes. Here are the highlights:
@@ -14,7 +43,7 @@ We announce the release of Dragon v0.12.3, which includes several updates, addit
 - Tests for dragon-cleanup have been implemented.
 - The dragon-cleanup process has been expanded to include telemetry processe in its clean-up.
 - SSH launch testing has been integrated into our merge to develop and release checklist.
-     
+
 
 ### Resolved Issues
 
@@ -24,19 +53,19 @@ We announce the release of Dragon v0.12.3, which includes several updates, addit
 - Inconsistencies in the DDict documentation have been addressed.
 - An erroneous hostlist error raise during WLM launch has been corrected.
 - Policy evaluator asserts that caused silent GS failures have been removed.
-     
+
 
 # Dragon 0.12.2 Release Summary
 
-We're excited to announce the release of version 0.12.2, which includes several improvements, new features, and bug fixes. Here are the highlights: 
+We're excited to announce the release of version 0.12.2, which includes several improvements, new features, and bug fixes. Here are the highlights:
 
 ### New Features:
 
-- We've implemented a policy on native queues, making it easier to specify where a queue should be created.   
+- We've implemented a policy on native queues, making it easier to specify where a queue should be created.
 - Telemetry is now compatible with OpenTSDB 2.4
 - The Zarr store now supports the len function, making it compatible with PyTorch datasets.
 - We've optimized Multi-NIC HSTA for better scaling performance.
-     
+
 ### Improvements:
 
 - The SSH launch process has been updated to use drun, providing an easier way to launch applications via SSH.
@@ -62,20 +91,20 @@ This release addresses several bugs encountered in 0.12.0 as well as a few new f
 - Updated the dragon-run sequence diagram
 - Updated the mpbridge BaseProcess for futureproofing
 - Made documentation updates
-- Explicitly use 'bash -c' when executing the drun backend 
-     
+- Explicitly use 'bash -c' when executing the drun backend
+
 ### New Features:
 
 - Added PBS WLM support to dragon-run for dragon-cleanup
 - Introduced C++ support for semaphore barriers
-     
+
 ### Bug Fixes:
 
 - Fixed naming collisions with cached network config
 - Ignored errors when conda is unable to remove libstdcxx packages during pipeline builds
 - Fixed the barrier unit test by correctly storing the puid
 - Added missing ProcessGroup states to enumerated class
-     
+
 
 # Dragon 0.12.0 Release Summary
 
@@ -83,7 +112,7 @@ In Dragon 0.12, we introduce PMIx support for launching MPI applications, port o
 Queue implementation to C for a measured 20% performance improvement, add a read-only mode ('freeze')
 to our distributed dictionary for faster reads, and offer a new `dragon-cleanup` executable
 based on a new runtime launching mechanism we intend to ultimately subsume the responsibilities
-of the Dragon launcher frontend. 
+of the Dragon launcher frontend.
 
 ### New Features
  - Added support for native queue and passing Send/Receive handles via a new attribute
@@ -104,7 +133,7 @@ of the Dragon launcher frontend.
  - Added tests for HSTA during a runtime restart
  - Added ddict checkpoint persistence
  - Added script to update open source
-     
+
 ### Improvements
  - Made PMIx optional during developer build
  - Moved mpiexec override to dragon-config and added subparser
@@ -113,7 +142,7 @@ of the Dragon launcher frontend.
  - Improved string states as an enumerated class in ProcessGroup
  - Improved telemetry cleanup
  - Added torch import to ai/__init__.py to support documentation generation
-     
+
 ### Fixes
  - Fixed zarr unit test failure
  - Fixed several issues with mixed up mp contexts in tests
@@ -134,10 +163,10 @@ of the Dragon launcher frontend.
  - Fixed timeout value for low resources in DST
  - Fixed mpbridge context passing
  - Fixed issue where ctx was being passed to base RLock erroneously
-     
+
 ### Removals
  - Removed setting of DRAGON_NETWORK_CONFIG env var from backend launch
-     
+
 
 # Dragon 0.12rc1 Release Summary
 Dragon 0.12rc1 coincides with our open source release of code.

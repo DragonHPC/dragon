@@ -65,7 +65,9 @@ TESTS_PYTHON := test_c_files.py \
                 test_dragon_cleanup.py
 # test_launcher.py (waiting for fix from Jira AICI-1859)
 
-TESTS_AI := test_distributed_training.py
+TEST_WORKFLOWS = test_workflows
+
+TESTS_AI := test_collective_group.py
 
 TESTS_DRAGON := test_mpbridge.py \
                 test_native.py \
@@ -86,7 +88,11 @@ TESTS_CCFUTURES := test_as_completed.py \
 all: test
 
 .PHONY: test
-test: $(TESTS_PYTHON) $(TESTS_DRAGON) $(TESTS_CCFUTURES) $(TESTS_AI)
+test: $(TESTS_PYTHON) $(TESTS_DRAGON) $(TESTS_CCFUTURES) $(TESTS_AI) $(TEST_WORKFLOWS)
+
+.PHONY: $(TEST_WORKFLOWS)
+$(TEST_WORKFLOWS):
+	$(MAKE) -C workflows
 
 .PHONY: $(TESTS_PYTHON)
 $(TESTS_PYTHON):
@@ -125,8 +131,9 @@ CLEAN_COMPONENTS := $(addprefix clean-,$(COMPONENTS))
 
 .PHONY: clean
 clean: $(CLEAN_COMPONENTS)
-	$(RM) *.log
-	$(RM) /dev/shm/*
+	-$(RM) *.log
+	-$(RM) /dev/shm/*
+	$(MAKE) -C workflows clean
 
 .PHONY: $(CLEAN_COMPONENTS)
 $(CLEAN_COMPONENTS): clean-%:

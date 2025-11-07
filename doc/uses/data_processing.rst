@@ -293,7 +293,13 @@ giving different amounts of CPU cores to the two processing phases.
 
 
 The implementation uses :py:class:`Pool.imap() <dragon.mpbridge.pool.DragonPool.imap>` to pull work through an iterator
-class `StreamDataReader`. As blocks of data come in through the socket, they are fed to a pool of
+class (`StreamDataReader`). As blocks of data come in through the socket, they are fed to a pool of of processes that
+could perform some transform of each block in the `generate_data` function. This pools feeds another iterable,
+returned by :py:class:`Pool.imap() <dragon.mpbridge.pool.DragonPool.imap>`, that is used as input to another pool.
+This second pool performs further computation on the data in the `process_data` function. Finally, the primary
+process managing the pools can track the output from the second pool. All phases of this pipeline are running
+concurrently, which gives a scalable and performant pattern for programming asynchronous, distributed processing
+workflows!
 
 Related Cookbook Examples
 =========================

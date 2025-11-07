@@ -7,16 +7,20 @@
 
 #define LOCK_KIND DRAGON_LOCK_FIFO_LITE
 
-#define __lock_list(dlist) ({\
-    dragonError_t derr = _lock_list(dlist);\
-    if (derr != DRAGON_SUCCESS)\
-        append_err_return(derr,"Cannot lock dlist.");\
+#define __lock_list(dlist, locking) ({\
+    if (locking) {\
+        dragonError_t derr = _lock_list(dlist);\
+        if (derr != DRAGON_SUCCESS)\
+            append_err_return(derr,"Cannot lock dlist.");\
+    }\
 })
 
-#define __unlock_list(dlist) ({\
-    dragonError_t derr = _unlock_list(dlist);\
-    if (derr != DRAGON_SUCCESS)\
-        append_err_return(derr,"Cannot unlock dlist.");\
+#define __unlock_list(dlist, locking) ({\
+    if (locking) {\
+        dragonError_t derr = _unlock_list(dlist);\
+        if (derr != DRAGON_SUCCESS)\
+            append_err_return(derr,"Cannot unlock dlist.");\
+    }\
 })
 
 static dragonError_t
@@ -91,7 +95,7 @@ class dragonList
     {
         size_t size = dList.size();
 
-        if (size == 0)
+        if (size == 0 || (size_t) idx > size - 1)
              return NULL;
 
         return dList[idx];
@@ -164,7 +168,36 @@ dragon_ulist_destroy(dragonList_t **dlist_in)
 }
 
 dragonError_t
-dragon_ulist_additem(dragonList_t **dlist_in, const void *item)
+dragon_ulist_lock(dragonList_t **dlist_in)
+{
+
+    dragonList_t *dlist = *dlist_in;
+
+    if (dlist == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT,"The dlist handle is NULL. Cannot lock list.");
+
+    __lock_list(dlist, true);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+dragon_ulist_unlock(dragonList_t **dlist_in)
+{
+
+    dragonList_t *dlist = *dlist_in;
+
+    if (dlist == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT,"The dlist handle is NULL. Cannot unlock list.");
+
+    __unlock_list(dlist, true);
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+
+dragonError_t
+dragon_ulist_additem(dragonList_t **dlist_in, const void *item, bool locking)
 {
     dragonList_t *dlist = *dlist_in;
 
@@ -174,15 +207,15 @@ dragon_ulist_additem(dragonList_t **dlist_in, const void *item)
     dragonList * cpp_list;
     cpp_list = static_cast<dragonList *>(dlist->_list);
 
-    __lock_list(dlist);
+    __lock_list(dlist, locking);
     cpp_list->addItem(item);
-    __unlock_list(dlist);
+    __unlock_list(dlist, locking);
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 dragonError_t
-dragon_ulist_delitem(dragonList_t **dlist_in, const void *item)
+dragon_ulist_delitem(dragonList_t **dlist_in, const void *item, bool locking)
 {
     dragonList_t *dlist = *dlist_in;
 
@@ -192,9 +225,9 @@ dragon_ulist_delitem(dragonList_t **dlist_in, const void *item)
     dragonList * cpp_list;
     cpp_list = static_cast<dragonList *>(dlist->_list);
 
-    __lock_list(dlist);
+    __lock_list(dlist, locking);
     bool found = cpp_list->delItem(item);
-    __unlock_list(dlist);
+    __unlock_list(dlist, locking);
 
     if (!found)
         err_return(DRAGON_NOT_FOUND, "Did not find item in ulist to delete");
@@ -203,7 +236,7 @@ dragon_ulist_delitem(dragonList_t **dlist_in, const void *item)
 }
 
 bool
-dragon_ulist_contains(dragonList_t **dlist_in, const void *item)
+dragon_ulist_contains(dragonList_t **dlist_in, const void *item, bool locking)
 {
     dragonList_t *dlist = *dlist_in;
 
@@ -213,15 +246,15 @@ dragon_ulist_contains(dragonList_t **dlist_in, const void *item)
     dragonList * cpp_list;
     cpp_list = static_cast<dragonList *>(dlist->_list);
 
-    __lock_list(dlist);
+    __lock_list(dlist, locking);
     bool answer = cpp_list->contains(item);
-    __unlock_list(dlist);
+    __unlock_list(dlist, locking);
 
     return answer;
 }
 
 dragonError_t
-dragon_ulist_get_current_advance(dragonList_t **dlist_in, void **item)
+dragon_ulist_get_current_advance(dragonList_t **dlist_in, void **item, bool locking)
 {
     dragonList_t *dlist = *dlist_in;
 
@@ -234,15 +267,15 @@ dragon_ulist_get_current_advance(dragonList_t **dlist_in, void **item)
     dragonList * cpp_list;
     cpp_list = static_cast<dragonList *>(dlist->_list);
 
-    __lock_list(dlist);
+    __lock_list(dlist, locking);
     *item = (void*) cpp_list->getCurrentAdvance();
-    __unlock_list(dlist);
+    __unlock_list(dlist, locking);
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 dragonError_t
-dragon_ulist_get_by_idx(dragonList_t **dlist_in, int idx, void **item)
+dragon_ulist_get_by_idx(dragonList_t **dlist_in, int idx, void **item, bool locking)
 {
     dragonList_t *dlist = *dlist_in;
 
@@ -258,15 +291,15 @@ dragon_ulist_get_by_idx(dragonList_t **dlist_in, int idx, void **item)
     dragonList * cpp_list;
     cpp_list = static_cast<dragonList *>(dlist->_list);
 
-    __lock_list(dlist);
+    __lock_list(dlist, locking);
     *item = (void*) cpp_list->getByIdx(idx);
-    __unlock_list(dlist);
+    __unlock_list(dlist, locking);
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 size_t
-dragon_ulist_get_size(dragonList_t **dlist_in)
+dragon_ulist_get_size(dragonList_t **dlist_in, bool locking)
 {
     dragonList_t *dlist = *dlist_in;
 
@@ -276,9 +309,9 @@ dragon_ulist_get_size(dragonList_t **dlist_in)
     dragonList * cpp_list;
     cpp_list = static_cast<dragonList *>(dlist->_list);
 
-    __lock_list(dlist);
+    __lock_list(dlist, locking);
     size_t size = cpp_list->size();
-    __unlock_list(dlist);
+    __unlock_list(dlist, locking);
 
     return size;
 }

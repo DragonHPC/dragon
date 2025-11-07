@@ -16,6 +16,8 @@
 #include <dlfcn.h>
 
 #include <src/include/pmix_globals.h>
+#include "umap.h"
+#include "ulist.h"
 #include "_ddict.h"
 #include "_pmix.h"
 
@@ -24,7 +26,7 @@ static pmix_list_t pubdata;  // Data provided in lookup functions by the server
 
 #define SERVER_NSPACE_PREFIX "server-nspace-"
 #define CLIENT_NSPACE_PREFIX "client-nspace-"
-
+#define DRAGON_PMIX_UMAP_SEED 2212
 
 /*****************************************************************/
 /*                                                               */
@@ -119,7 +121,6 @@ typedef struct dragonPMIxJob_st {
     char *ddict_sdesc;
     dragonPMIxNode_t *nodes;
     dragonPMIxProcess_t *procs;
-    struct dragonPMIxJob_st *head, *next;
     dragonDDictDescr_t *ddict;
 } dragonPMIxJob_t;
 
@@ -136,8 +137,11 @@ typedef struct dragonPMIxServer_st {
 
 
 static dragonPMIxServer_t *dpmix_server = NULL;
-static dragonPMIxJob_t *job_list = NULL;
-static dragonPMIxJob_t *_dragon_get_job_from_nspace(char *nspace);
+static dragonMap_t *job_map = NULL;
+static dragonList_t *guid_map_keys = NULL;
+
+static dragonError_t
+_dragon_get_job_from_nspace(char *nspace, dragonPMIxJob_t **d_job);
 
 void
 setup_cbfunc(pmix_status_t status, pmix_info_t info[], size_t ninfo,
@@ -570,8 +574,9 @@ setup_cbfunc(pmix_status_t status, pmix_info_t info[], size_t ninfo,
 
     dragonPMIxCBData_t *state = (dragonPMIxCBData_t *) provided_cbdata;
 
-    dragonPMIxJob_t *d_job = _dragon_get_job_from_nspace(state->nspace);
-    if (d_job == NULL) {
+    dragonPMIxJob_t *d_job;
+    dragonError_t derr = _dragon_get_job_from_nspace(state->nspace, &d_job);
+    if (derr != DRAGON_SUCCESS) {
         cbfunc(PMIX_ERROR, cbdata);
     }
     size_t i;
@@ -786,8 +791,12 @@ fence_handler(
     void *cbdata)
 {
 
-    // Get a server ref
-    dragonPMIxJob_t *d_job = _dragon_get_job_from_nspace((char*) procs[0].nspace);
+    // Get a job ref
+    dragonPMIxJob_t *d_job;
+    dragonError_t derr = _dragon_get_job_from_nspace((char*) procs[0].nspace, &d_job);
+    if (derr != DRAGON_SUCCESS) {
+        return PMIX_ERROR;
+    }
 
     // We only support PMIX_COLLECT_DATA
     for (size_t i = 0; i < ninfo; i++) {
@@ -800,7 +809,7 @@ fence_handler(
     }
 
     // Prepare the data request going to LS and send it off
-    dragonError_t derr = _dragon_pmix_ddict_allgather(d_job, (pmix_proc_t*) procs, nprocs, data, ndata, cbfunc, cbdata);
+    derr = _dragon_pmix_ddict_allgather(d_job, (pmix_proc_t*) procs, nprocs, data, ndata, cbfunc, cbdata);
     if (derr != DRAGON_SUCCESS) {
         return PMIX_ERROR;
     }
@@ -1440,28 +1449,31 @@ _dragon_pmix_configure_local_support(dragonPMIxJob_t *d_job)
     no_err_return(DRAGON_SUCCESS);
 }
 
-static dragonPMIxJob_t*
-_dragon_get_job_ref(dragonG_UID_t guid)
+static dragonError_t
+_dragon_get_job_ref(dragonG_UID_t guid, dragonPMIxJob_t **d_job)
 {
 
-    dragonPMIxJob_t *d_job = job_list->head;
-    while (d_job != NULL) {
-        if (guid == d_job->guid) {
-            break;
+    dragonError_t err = dragon_umap_getitem(&job_map, (uint64_t) guid, (void**) d_job);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to find item in Dragon PMIx job umap.");
 
-        }
-        d_job = d_job->next;
-    }
-    return d_job;
+    no_err_return(DRAGON_SUCCESS);
 }
 
-static dragonPMIxJob_t*
-_dragon_get_job_from_nspace(char *nspace)
+static dragonError_t
+_dragon_get_job_from_nspace(char *nspace, dragonPMIxJob_t **d_job)
 {
 
     // Extract the guid from the nspace
     dragonG_UID_t guid = (dragonG_UID_t) strtoull(&nspace[strlen(CLIENT_NSPACE_PREFIX)], NULL, 10);
-    return _dragon_get_job_ref(guid);
+    if ((uint64_t) guid == 0UL)
+        append_err_return(DRAGON_FAILURE, "Failed to extract GUID from PMIx client nspace");
+
+    dragonError_t derr = _dragon_get_job_ref(guid, d_job);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to get PMIx job reference from nspace");
+
+    no_err_return(DRAGON_SUCCESS);
 
 }
 
@@ -1473,25 +1485,29 @@ _dragon_pmix_create_job_ref(dragonPMIxJob_t **d_job, dragonG_UID_t guid)
     if (l_job == NULL)
         append_err_return(DRAGON_FAILURE, "Unable to allocate space for new PMIx job structuure");
 
-    l_job->next = NULL;
     l_job->guid = guid;
 
-    // If job_list is NULL then this is our first attempt to do any of this, create a server and
-    // point our static reference to it:
-    if (job_list == NULL) {
-        l_job->head = l_job;
-        job_list = l_job;
+    // If job_map is NULL then this is our first attempt to do any of this, allocate the space
+    // for it
+    dragonError_t err;
+    if (job_map == NULL) {
+        job_map = (dragonMap_t*) malloc(sizeof(dragonMap_t));
+        if (job_map == NULL)
+            err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate umap for PMIx job structures.");
+
+        err = dragon_umap_create(&job_map, DRAGON_PMIX_UMAP_SEED);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to create umap for PMIx job structures.");
     }
 
-    // If job_list isn't NULL, we need to append it to the end of the list
-    else {
-        l_job->head = job_list->head;
+    if (guid_map_keys == NULL) {
+        guid_map_keys = (dragonList_t*) malloc(sizeof(dragonList_t));
+        if (guid_map_keys == NULL)
+            err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate umap for PMIx job structures.");
 
-        dragonPMIxJob_t *last = job_list->head;
-        while (last->next != NULL) {
-            last = last->next;
-        }
-        last->next = l_job;
+        err = dragon_ulist_create(&guid_map_keys);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to create ulist for PMIx guid tracking.");
     }
 
     *d_job = l_job;
@@ -1608,22 +1624,53 @@ _dragon_pmix_initialize_server(dragonPMIxServer_t **d_server,
 }
 
 
-static dragonDDictDescr_t*
-_find_already_attached_ddict(char* pmix_sdesc)
+static dragonError_t
+_find_already_attached_ddict(char* pmix_sdesc, dragonDDictDescr_t **ddict)
 {
 
-    dragonPMIxJob_t *d_job = job_list->head;
+    dragonPMIxJob_t *d_job = NULL;;
+    dragonError_t derr;
+    *ddict = NULL;
+    bool locking = false;
 
-    while (d_job != NULL) {
-        if (d_job->holding_ddict_attach && d_job->ddict_sdesc != NULL) {
-            if (strcmp(pmix_sdesc, d_job->ddict_sdesc) == 0) {
-                return d_job->ddict;
+    // We store the keys to the umap in the guid ulist. We'll use that to
+    // traverse the jobs in the umap
+    derr = dragon_ulist_lock(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to lock Dragon PMIx guid ulist while searching for ddict state");
+
+
+    size_t nguids = dragon_ulist_get_size(&guid_map_keys, locking);
+    for (size_t gidx = 0; gidx < nguids; gidx++) {
+
+        dragonG_UID_t *guid;
+        derr = dragon_ulist_get_by_idx(&guid_map_keys, (int) gidx, (void**) &guid, locking);
+        if (derr != DRAGON_SUCCESS) {
+            dragon_ulist_unlock(&guid_map_keys);
+            append_err_return(derr, "Failed to get GUID from PMIx job guid list");
+        }
+
+        if (guid != NULL) {
+            derr = dragon_umap_getitem(&job_map, (uint64_t) *guid, (void**) &d_job);
+            if (derr != DRAGON_SUCCESS) {
+                dragon_ulist_unlock(&guid_map_keys);
+                append_err_return(derr, "Failed to get PMIx job from job umap during ddict search");
+            }
+
+            if (d_job->holding_ddict_attach && d_job->ddict_sdesc != NULL) {
+                if (strcmp(pmix_sdesc, d_job->ddict_sdesc) == 0) {
+                    *ddict = d_job->ddict;
+                    dragon_ulist_unlock(&guid_map_keys);
+                    no_err_return(DRAGON_SUCCESS);
+                }
             }
         }
-        d_job = d_job->next;
     }
-    return NULL;
+    derr = dragon_ulist_unlock(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to unlock Dragon PMIx guid ulist while searching for ddict state");
 
+    no_err_return(DRAGON_SUCCESS);
 }
 
 dragonError_t
@@ -1663,9 +1710,11 @@ _dragon_pmix_initialize_job_struct(dragonPMIxJob_t **d_job,
     // to it because the ProcessGroup manager creates 1 dictionary for its lifetime. If we're seeing
     // the dict a second time it necessarily is from the same manager and is just a re-execution
     // of the process templates tied to that particular manager.
-    l_job->ddict = _find_already_attached_ddict(ddict_sdesc);
+    derr = _find_already_attached_ddict(ddict_sdesc, &l_job->ddict);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Error occurred while searching umap for PMIx dictionary");
 
-    // An already existing attachment wasn't found
+    // We could have gotten a success but just not found the ddict. If so, it's NULL
     if (l_job->ddict == NULL) {
         timespec_t *timeout = NULL;
         l_job->ddict = malloc(sizeof(dragonDDictDescr_t));
@@ -1691,7 +1740,6 @@ _dragon_pmix_initialize_job_struct(dragonPMIxJob_t **d_job,
     else {
         l_job->holding_ddict_attach = false;
     }
-
 
     // Fill the node and process structures:
     l_job->node_rank = d_server->node_rank;
@@ -1746,7 +1794,6 @@ _dragon_pmix_initialize_job_struct(dragonPMIxJob_t **d_job,
         node_map[l_job->nodes[node_count].nid] = node_count;
 
     }
-
     // initialize the ranks structure
     int *lrank_count = calloc(max_nid, sizeof(int));
     if (lrank_count == NULL)
@@ -1773,6 +1820,24 @@ _dragon_pmix_initialize_job_struct(dragonPMIxJob_t **d_job,
     }
     free(lrank_count);
     free(node_map);
+
+    // Add it to the umap
+    derr = dragon_umap_additem(&job_map, (uint64_t) l_job->guid, (void*) l_job);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to insert item into Dragon PMIx umap.");
+
+    // And add the guid to our list of known keys. This is needed to let us
+    // find what ddict we may already be attached which exists inside the job_map
+    // data structures.
+    dragonG_UID_t* l_guid = malloc(sizeof(dragonG_UID_t));
+    if (l_guid == NULL)
+        append_err_return(DRAGON_INTERNAL_MALLOC_FAIL, "unable to allocate space to store PMIx guid in ulist");
+
+    *l_guid = l_job->guid;
+    derr = dragon_ulist_additem(&guid_map_keys, (void*) l_guid, true);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to insert guid into Dragon PMIx ulist.");
+
 
     no_err_return(DRAGON_SUCCESS);
 
@@ -1853,7 +1918,6 @@ dragon_pmix_initialize_job(dragonG_UID_t guid,
         append_err_return(derr, "Unable to configure PMIx local support as defined by node rank 0");
 
     no_err_return(DRAGON_SUCCESS);
-
 }
 
 
@@ -1869,7 +1933,16 @@ dragon_pmix_get_client_env(dragonG_UID_t guid,
     pmix_proc_t proc;
 
     // Get our server ref
-    dragonPMIxJob_t *d_job = _dragon_get_job_ref(guid);
+    dragonPMIxJob_t *d_job = NULL;
+    dragonError_t derr = _dragon_get_job_ref(guid, &d_job);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to get PMIx job reference while generating client environment");
+
+    if (d_job == NULL) {
+        append_err_return(DRAGON_FAILURE, "Failed to find PMIx job structure for given GUID");
+    }
+
+
     PMIx_Load_nspace_p(proc.nspace, d_job->client_nspace);
 
     // Get the rank given the local rank. Start by finding our node in the array:
@@ -1926,6 +1999,7 @@ dragonError_t
 dragon_pmix_finalize_server()
 {
 
+    // Free the server
     dragonPMIxServer_t *d_server = dpmix_server;
 
     pmix_status_t rc;
@@ -1937,17 +2011,18 @@ dragon_pmix_finalize_server()
     if (PMIX_SUCCESS != (rc = PMIx_server_finalize_p())) {
         append_err_return(DRAGON_FAILURE, "Unable to finalize PMIx server");
     }
+    free(d_server);
 
-    // Since we're avoiding putting locks around use of the d_job list, free the full
-    // linked list now.
-    dragonPMIxJob_t *d_job = job_list->head;
-    dragonPMIxJob_t *free_job;
-    while (d_job != NULL) {
-        free_job = d_job;
-        d_job = d_job->next;
-        free(free_job);
-        free_job = NULL;
-    }
+    // Destroy the umap and ulists
+    dragonError_t derr = dragon_umap_destroy(&job_map);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to destroy Dragon PMIx job umap during server finalize");
+    free(job_map);
+
+    derr = dragon_ulist_destroy(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to destroy Dragon PMIx guid ulist during server finalize");
+    free(guid_map_keys);
 
     return DRAGON_SUCCESS;
 }
@@ -1957,7 +2032,14 @@ dragonError_t
 dragon_pmix_finalize_job(dragonG_UID_t guid)
 {
 
-    dragonPMIxJob_t *d_job = _dragon_get_job_ref(guid);
+    dragonPMIxJob_t *d_job = NULL;
+    dragonError_t derr = _dragon_get_job_ref(guid, &d_job);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to get PMIx job reference while generating client environment");
+
+    if (d_job == NULL) {
+        append_err_return(DRAGON_FAILURE, "Failed to find PMIx job structure for given GUID");
+    }
 
     PMIx_Deregister_event_handler_p(0, NULL, NULL);
 
@@ -1980,6 +2062,48 @@ dragon_pmix_finalize_job(dragonG_UID_t guid)
         free(d_job->ddict_sdesc);
         d_job->ddict_sdesc = NULL;
     }
+
+    derr = dragon_umap_delitem(&job_map, (uint64_t) guid);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to delete Dragon PMIx job from umap during job's finalize");
+
+    // Delete the guid from the list
+    bool locking = false;
+    derr = dragon_ulist_lock(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to lock Dragon PMIx guid ulist during job's finalize");
+
+    size_t nguids = dragon_ulist_get_size(&guid_map_keys, locking);
+    for (size_t gidx = 0; gidx < nguids; gidx++) {
+
+        dragonG_UID_t *l_guid;
+        derr = dragon_ulist_get_by_idx(&guid_map_keys, (int) gidx, (void**) &l_guid, locking);
+        if (derr != DRAGON_SUCCESS) {
+            dragon_ulist_unlock(&guid_map_keys);
+            append_err_return(derr, "Failed to get GUID from PMIx job guid list");
+        }
+
+        if (l_guid != NULL) {
+            if ((uint64_t) *l_guid == (uint64_t) guid) {
+                derr = dragon_ulist_delitem(&guid_map_keys, (void*) l_guid, locking);
+                if (derr != DRAGON_SUCCESS) {
+                    dragon_ulist_unlock(&guid_map_keys);
+                    append_err_return(derr, "Failed to delete GUID from PMIx job guid list during finalize");
+                }
+
+                free(l_guid);
+                l_guid = NULL;
+                break;
+            }
+        }
+    }
+    derr = dragon_ulist_unlock(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to unlock Dragon PMIx guid ulist during job's finalize");
+
+
+
+    free(d_job);
 
 
     no_err_return(DRAGON_SUCCESS);

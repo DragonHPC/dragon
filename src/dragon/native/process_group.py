@@ -119,15 +119,14 @@ from ..infrastructure.policy import Policy
 from ..infrastructure.parameters import this_process
 from ..infrastructure.facts import PMIBackend
 from ..infrastructure import messages as dmsg
-from ..native.machine import System
+from ..native.machine import System, Node
 from ..rc import DragonError
 
 import os
 import sys
-from ..native.machine import System, Node
 
 from .queue import Queue
-from .process import Process, ProcessTemplate, Popen
+from .process import Process, ProcessTemplate
 
 
 _DEFAULT_STOP_PATIENCE = 5.0  # seconds between successive signals to the group
@@ -174,62 +173,6 @@ class DragonProcessGroupJoinError(DragonProcessGroupError):
 
 class DragonProcessGroupSignalError(DragonProcessGroupError):
     pass
-
-
-@dataclass
-class RankInfo:
-    """Utility class for accessing process rank metadata from environment variables."""
-
-    def __init__(self):
-        self._my_local_rank = None
-        self._my_rank = None
-        self._my_node_rank = None
-        self._my_local_world_size = None
-        self._my_world_size = None
-        self._master_addr = None
-        self._master_port = None
-
-    @property
-    def master_addr(self):
-        if self._master_addr is None:
-            self._master_addr = os.environ["MASTER_ADDR"]
-        return self._master_addr
-
-    @property
-    def master_port(self):
-        if self._master_port is None:
-            self._master_port = os.environ["MASTER_PORT"]
-        return self._master_port
-
-    @property
-    def my_local_rank(self):
-        if self._my_local_rank is None:
-            self._my_local_rank = int(os.environ["DRAGON_PG_LOCAL_RANK"])
-        return self._my_local_rank
-
-    @property
-    def my_rank(self):
-        if self._my_rank is None:
-            self._my_rank = int(os.environ["DRAGON_PG_RANK"])
-        return self._my_rank
-
-    @property
-    def my_node_rank(self):
-        if self._my_node_rank is None:
-            self._my_node_rank = int(os.environ["DRAGON_PG_GROUP_RANK"])
-        return self._my_node_rank
-
-    @property
-    def my_local_world_size(self):
-        if self._my_local_world_size is None:
-            self._my_local_world_size = int(os.environ["DRAGON_PG_LOCAL_WORLD_SIZE"])
-        return self._my_local_world_size
-
-    @property
-    def my_world_size(self):
-        if self._my_world_size is None:
-            self._my_world_size = int(os.environ["DRAGON_PG_WORLD_SIZE"])
-        return self._my_world_size
 
 
 @enum.unique
@@ -1958,13 +1901,6 @@ def _run_manager(inq: Queue, exq: Queue, name: str):
     mgr.run()
 
 
-@dataclass(frozen=True)
-class TrainingGroupConfig:
-    nprocs: int
-    ppn: int
-    port: int
-
-
 class ProcessGroup:
     """Object providing API to manage group of Dragon Processes via Dragon Global Services
 
@@ -2035,7 +1971,6 @@ class ProcessGroup:
         self._props = PGProperties(restart, ignore_error_on_exit, pmi, walltime, policy, critical, name)
         self._local_templates = []
         self._registered = False
-        self._rank_info = RankInfo()
 
     def _start_manager(self, inq: Queue, exq: Queue, name: str = "", policy: Policy = None):
         proc = Process(target=_run_manager, args=(inq, exq, name), policy=None)
@@ -2451,7 +2386,7 @@ class ProcessGroup:
     @property
     @_check_exception
     def puids(self) -> list[int]:
-        """Return the currently executiing puids of processes contained in this group.
+        """Return the currently executing puids of processes contained in this group.
 
         :return: a list of puids
         :rtype: list[int]
@@ -2521,149 +2456,3 @@ class ProcessGroup:
         msg = dmsg.PGState(self._tag_inc(), this_process.my_puid)
         reply = self._send_msg(msg, "Failed to query state of the process group")
         return State(reply.payload["current_state"])
-
-    def make_ai_training_env(
-        self,
-        rank: int,
-        local_rank: int,
-        node_rank: int,
-        master_addr: str,
-        master_port: str,
-        world_size: int,
-        local_world_size: int,
-    ) -> dict:
-        env = dict(os.environ).copy()
-        env["MASTER_ADDR"] = master_addr
-        env["MASTER_PORT"] = master_port
-        env["DRAGON_PG_RANK"] = str(rank)
-        env["DRAGON_PG_LOCAL_RANK"] = str(local_rank)
-        env["DRAGON_PG_WORLD_SIZE"] = str(world_size)
-        env["DRAGON_PG_LOCAL_WORLD_SIZE"] = str(local_world_size)
-        env["DRAGON_PG_GROUP_RANK"] = str(node_rank)
-
-        return env
-
-    @classmethod
-    def configure_training_group(
-        cls,
-        *,
-        training_fn,
-        training_args: tuple = None,
-        training_kwargs: dict = None,
-        ppn: int = None,
-        nprocs: int = None,
-        hide_stderr: bool = False,
-        port: int = 29500,
-        policies: list = None,
-    ) -> "ProcessGroup":
-        """
-        Configure and return a ProcessGroup suitable for distributed training jobs. This helper sets up environment variables and process templates necessary for a training job (like PyTorch DDP) over multiple nodes using NCCL or similar backends.
-        Users can specify the group in two ways by either specifying processes per node, total processes or by providing a list of policies.
-
-        :param training_fn: The target function to run on each distributed process.
-        :type training_fn: callable
-        :param training_args: Positional arguments to pass to training_fn, defaults to None
-        :type training_args: tuple, optional
-        :param training_kwargs: Keyword arguments to pass to training_fn, defaults to None
-        :type training_kwargs: dict, optional
-        :param ppn: Number of processes to run per node. Required if policies is not provided, defaults to None
-        :type ppn: int, optional
-        :param nprocs: Total number of processes. Required if policies is not provided. Ignored if policies is a list, defaults to None
-        :type nprocs: int, optional
-        :param hide_stderr: If True, suppress standard error from the launched processes, defaults to False
-        :type hide_stderr: bool, optional
-        :param port: Master port for NCCL backend communication, defaults to 29500
-        :type port: int, optional
-        :param policies: List of Policy objects or a single Policy.
-        :type policies: list or Policy, optional
-        :return: A configured and initialized process group for distributed training
-        :rtype: ProcessGroup
-
-        """
-
-        if not ((ppn and nprocs) or policies):
-            raise ValueError("Must provide both ppn and nprocs, or a list of policies.")
-
-        if isinstance(policies, list):
-            if not policies:
-                raise ValueError("Policies list cannot be empty.")
-            nprocs = len(policies)
-
-        try:
-            my_alloc = System()
-            node_list = my_alloc.nodes
-        except Exception as e:
-            print(f"Exception while querying system: {e}", flush=True)
-            raise
-
-        nnodes = len(node_list)
-
-        if policies is None:
-            if ppn <= 0 or nprocs <= 0:
-                raise ValueError("Both ppn and nprocs must be > 0.")
-
-            if nnodes == 0:
-                raise RuntimeError("No nodes found in allocation.")
-
-            if ppn * nnodes < nprocs:
-                raise RuntimeError(f"Cannot allocate {nprocs} processes on {nnodes} nodes with only {ppn} ppn.")
-
-            policy_list = [
-                Policy(placement=Policy.Placement.HOST_NAME, host_name=Node(node).hostname)
-                for node in node_list
-                for _ in range(ppn)
-            ][:nprocs]
-
-        elif isinstance(policies, Policy):
-            if nprocs <= 0:
-                raise ValueError("nprocs must be > 0 when using a single Policy.")
-            policy_list = [policies] * nprocs
-        elif isinstance(policies, list):
-            if len(policies) != nprocs:
-                nprocs = len(policies)
-            policy_list = policies
-        else:
-            raise TypeError("policies must be None, a single Policy, or a list of Policy objects.")
-
-        pg = ProcessGroup(restart=False, pmi=None)
-        pg._nccl_config = TrainingGroupConfig(nprocs=nprocs, ppn=ppn, port=port)
-        master_node = policy_list[0].host_name
-        master_port = str(port)
-        stderr = Popen.DEVNULL if hide_stderr else None
-
-        try:
-            for rank in range(nprocs):
-                node_rank = rank // ppn
-                local_rank = rank % ppn
-                policy = policy_list[rank]
-
-                env = pg.make_ai_training_env(
-                    rank=rank,
-                    local_rank=local_rank,
-                    node_rank=node_rank,
-                    master_addr=master_node,
-                    master_port=master_port,
-                    world_size=nprocs,
-                    local_world_size=ppn,
-                )
-
-                template = ProcessTemplate(
-                    target=training_fn,
-                    args=training_args,
-                    kwargs=training_kwargs,
-                    env=env,
-                    policy=policy,
-                    stderr=stderr,
-                )
-
-                pg.add_process(nproc=1, template=template)
-
-        except Exception as e:
-            print(f"Exception during ProcessTemplate setup: {e}", flush=True)
-            raise
-
-        return pg
-
-    @property
-    def nccl_config(self):
-        return getattr(self, "_nccl_config", None)

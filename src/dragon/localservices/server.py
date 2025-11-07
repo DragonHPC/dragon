@@ -1946,6 +1946,11 @@ class LocalServer:
         lparms = dp.this_process.from_env()
         interval = self.OOM_SLOW_SLEEP_TIME
         total_bytes = psutil.virtual_memory().total
+        def_pool = dmm.MemoryPool.attach_default()
+        def_pool_events = 0
+        def_pool_consecutive_events = 0
+        def_pool_event_min_pct = 100
+
         try:
             bytes_val = lparms.memory_warning_bytes
             if bytes_val == 0:
@@ -1969,6 +1974,11 @@ class LocalServer:
             critical_pct = max(critical_bytes_env, critical_pct_env)
         except:
             critical_pct = 98
+
+        try:
+            warn_def_pool_pct = 100 - lparms.def_pool_warn_pct
+        except:
+            warn_def_pool_pct = 90
 
         log.info(
             "critical_bytes_env=%s critical_pct_env=%s critical_pct=%s"
@@ -2020,6 +2030,37 @@ class LocalServer:
                             ).serialize()
                         )
 
+                def_pool_pct = def_pool.utilization
+
+                if def_pool_pct >= warn_def_pool_pct:
+                    def_pool_event_min_pct = min(def_pool_event_min_pct, def_pool_pct)
+                    def_pool_consecutive_events += 1
+
+                    if (def_pool_consecutive_events % 100)  == 5:
+                        def_pool_events += 1
+                        # if this is the 5th consecutive event mod 100, then warn the user,
+                        # but don't keep warning if it doesn't change. Every 100 iterations
+                        # means several minutes between notifications.
+                        warning_msg = (
+                            "\nDEFAULT POOL FREE SPACE WARNING: Default pool utilization on node %s with hostname %s is at %s%%.\n"
+                            % (parms.this_process.index, self.hostname, def_pool_pct)
+                        )
+                        log.info(warning_msg)
+                        if not suppress_warnings:
+                            self.be_in.send(
+                                dmsg.SHFwdOutput(
+                                    tag=get_new_tag(),
+                                    idx=parms.this_process.index,
+                                    p_uid=parms.this_process.my_puid,
+                                    data=warning_msg,
+                                    fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
+                                    pid=pid,
+                                    hostname=self.hostname,
+                                ).serialize()
+                            )
+                else:
+                    def_pool_consecutive_events = 0
+
                 if mem_utilization > 95:
                     interval = self.OOM_RAPID_SLEEP_TIME
                 else:
@@ -2033,7 +2074,32 @@ class LocalServer:
             tb = traceback.format_exc()
             self._abnormal_termination("LS OOM daemon exception: %s\n%s" % (ex, tb))
 
-        log.info("Exiting")
+        try:
+            if def_pool_events > 0:
+                warning_msg = (
+                    ("\nDEFAULT POOL FREE SPACE WARNING: There were %s events recorded where the\n" + \
+                    "default pool utilization on node %s with hostname %s exceeded %s%%.\n" + \
+                    "You may want to increase the default pool size.\n")
+                    % (def_pool_events, parms.this_process.index, self.hostname, def_pool_event_min_pct)
+                )
+                log.info(warning_msg)
+                if not suppress_warnings:
+                    self.be_in.send(
+                        dmsg.SHFwdOutput(
+                            tag=get_new_tag(),
+                            idx=parms.this_process.index,
+                            p_uid=parms.this_process.my_puid,
+                            data=warning_msg,
+                            fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
+                            pid=pid,
+                            hostname=self.hostname,
+                        ).serialize()
+                    )
+
+            log.info("Exiting")
+        except:
+            pass
+
 
     def update_watch_set(self, connectors, dead_connector):
         changed = False

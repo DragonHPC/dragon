@@ -3402,9 +3402,9 @@ dragon_memory_pool_allocation_exists(dragonMemoryDescr_t * mem_descr, int * flag
     _obtain_manifest_lock(pool);
     err = _lookup_allocation(pool, mem->mfst_record.id, mem);
     _release_manifest_lock(pool);
-    if (err != DRAGON_SUCCESS) {
-        err_return(err, "allocation does not exist");
-    }
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "allocation does not exist");
+
 
     // Allocation found
     *flag = 1;
@@ -3851,8 +3851,8 @@ dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMe
         if (err != DRAGON_SUCCESS) {
             char err_str[100];
             free(mem);
-            snprintf(err_str, 99, "could not find matching id=%lu allocation", id);
-            append_err_return(err, err_str);
+            snprintf(err_str, 99, "The id=%lu for this allocation was not found. It or the pool it is in was most likely destroyed.", id);
+            append_err_return(DRAGON_OBJECT_DESTROYED, err_str);
         }
 
         /* Fill out rest of mem_struct */

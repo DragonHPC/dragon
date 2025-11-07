@@ -27,8 +27,10 @@ sphinx-rtd-theme>=2.0.0
 sphinx-copybutton>=0.5.2
 sphinxcontrib-plantuml>=0.3.0
 sphinx-new-tab-link>=0.7.0
+sphinx-argparse>=0.5.2
 torch>=2.0.0
 wheel>=0.45.1
 kubernetes>=32.0.0
 zarr==2.18.3
 paramiko>=3.5.1
+networkx

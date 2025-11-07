@@ -351,6 +351,7 @@ class MessageTypes(enum.Enum):
     DD_DESTROY_RESPONSE = enum.auto()  #:
     DD_REGISTER_MANAGER = enum.auto()  #:
     DD_REGISTER_MANAGER_RESPONSE = enum.auto()  #:
+    DD_CREATE_MANAGER_RESPONSE = enum.auto()  #:
     DD_REGISTER_CLIENT_ID = enum.auto()  #:
     DD_REGISTER_CLIENT_ID_RESPONSE = enum.auto()  #:
     DD_DESTROY_MANAGER = enum.auto()  #:
@@ -1648,6 +1649,29 @@ class DDRegisterManagerResponse(CapNProtoResponseMsg):
     def managerNodes(self):
         return self._managerNodes
 
+
+class DDCreateManagerResponse(CapNProtoResponseMsg):
+
+    _tc = MessageTypes.DD_CREATE_MANAGER_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo, managerID):
+        super().__init__(tag, ref, err, errInfo)
+        self._managerID = managerID
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["managerID"] = self._managerID
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.managerID = self._managerID
+        return cap_msg
+
+    @property
+    def managerID(self):
+        return self._managerID
 
 class DDRegisterClientID(CapNProtoMsg):
     _tc = MessageTypes.DD_REGISTER_CLIENT_ID

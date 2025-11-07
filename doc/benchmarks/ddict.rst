@@ -3,7 +3,8 @@ Distributed Dictionary Performance
 
 How well does the :py:class:`~dragon.data.DDict` perform? We improve Dragon performance with each release, but
 this is where we are at with Dragon v0.12.1. For the :example_benchmark:`gups_ddict.py`, inspired by the classic
-`GUPS <https://hpcchallenge.org/projectsfiles/hpcc/RandomAccess.html>`_ benchmark, some large number of processes will
+`GUPS (Global Updates Per Second) <http://www.hpcchallenge.org/projectsfiles/hpcc/RandomAccess.html>`_ benchmark, some
+large number of processes will
 put or get a unique set of key/value pairs into or from the :py:class:`~dragon.data.DDict`. The keys are always 128 bytes
 in size in this implementation, but the values vary in length. Figure :numref:`ddict_put_perf` below shows the aggregate
 bandwidth measured across the clients for writing key/value pairs into a :py:class:`~dragon.data.DDict` sharded across

@@ -20,8 +20,13 @@ class GroupError(Exception):
 
 def _check_msg_types(items):
     for _, msg in items:
-        if not isinstance(dmsg.parse(msg), (dmsg.GSChannelCreate, dmsg.GSProcessCreate, dmsg.GSPoolCreate)):
+        resource_msg = dmsg.parse(msg)
+        if not isinstance(resource_msg, (dmsg.GSChannelCreate, dmsg.GSProcessCreate, dmsg.GSPoolCreate)):
             raise GroupError("An invalid message type was provided.")
+        if resource_msg.policy is not None:
+            if not isinstance(resource_msg.policy, Policy):
+                raise GroupError("The policy for resource message %s must a valid Policy or None."%str(resource_msg))
+
 
 
 def cleanup_pmix_resources(guid: int):
@@ -63,6 +68,10 @@ def create(items, policy, user_name="", soft=False, pmix_ddict=None):
 
     # check that we have valid message types on each tuple
     _check_msg_types(items)
+
+    if policy is not None:
+        if not isinstance(policy, Policy):
+            raise GroupError("The policy argument must be a valid Policy or None.")
 
     thread_policy = Policy.thread_policy()
     if all([policy, thread_policy]):
@@ -252,6 +261,10 @@ def create_add_to(identifier, items, policy):
 
     # check that we have valid message types on each tuple
     _check_msg_types(items)
+
+    if policy is not None:
+        if not isinstance(policy, Policy):
+            raise GroupError("The policy argument must be a valid Policy or None.")
 
     thread_policy = Policy.thread_policy()
     if all([policy, thread_policy]):

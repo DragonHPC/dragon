@@ -73,17 +73,17 @@ workload manager specified as '--wlm=pbs+pals'.
 
 DRAGON_BACKEND_MPIEXEC_HELP = """Add mpiexec override commands for Dragon's PBS+PALS launcher. This is used to add overrides
 for the mpiexec commands used to launch the backend processes. The command should be passed as a
-single string. The following special strings are necessary and will be automatically dilled in at
+single string. The following special strings are necessary and will be automatically filled in at
 the time of use by Dragon:
 
 {nodes} = number of nodes, {nodelist} = comma separated list of nodes
 
 Examples
 --------
-Set launcher mpiexec override for Cray-PALS:
+Set launcher mpiexec backend launch override for Cray-PALS:
 $ dragon-config add --backend-mpiexec-override='mpiexec --np {nnodes} --ppn 1 --cpu-bind none --hosts {nodelist} --line-buffer'
 
-Set launcher mpiexec network config override for OpenMPI 5.0.6:
+Set launcher mpiexec backend launch override for OpenMPI 5.0.6:
 $ dragon-config add --backend-mpiexec-override='mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output --host {nodelist}'
 
 These commands are used by default when the dragon launcher detects PBS+PALS.
@@ -118,6 +118,7 @@ TEST_KEYS = {"cray_mpich", "open_mpi", "anl_mpich"}
 
 ROUTING_ENUM = Enum("Routing", {name: auto() for name in ADD_KEYS | TEST_KEYS})
 
+
 _ATBL = {}
 
 
@@ -142,14 +143,26 @@ def config_router(routing_key, routing_table, metadata=None):
     return decorator_route
 
 
-def _update_json_config(config_filename, key, val):
-    """Update the json config file loaded during runtime execution"""
+def _load_config_from_file(config_filename):
+    """Try loading json config into dict. If empty, return empty ddict."""
 
     if os.path.isfile(config_filename):
         with open(config_filename) as config_file:
-            config_dict = json.load(config_file)
+            try:
+                config_dict = json.load(config_file)
+            # If the file is empty or malformed, start fresh
+            except json.decoder.JSONDecodeError:
+                config_dict = {}
     else:
         config_dict = {}
+
+    return config_dict
+
+
+def _update_json_config(config_filename, key, val):
+    """Update the json config file loaded during runtime execution"""
+
+    config_dict = _load_config_from_file(config_filename)
 
     # if key already is in dict, append it into a list
     if key in config_dict:
@@ -168,13 +181,85 @@ def _update_json_config(config_filename, key, val):
         json.dump(config_dict, config_file)
 
 
+def _concat_search_files(base_dir, routing_option):
+    """Single place to find all the files we check the existence of for a given routing option"""
+
+    search_files = []
+
+    if routing_option == ROUTING_ENUM.ofi_include:
+        search_files = [Path("rdma") / "fabric.h"]
+    elif routing_option == ROUTING_ENUM.ucx_include:
+        search_files = [Path("ucp") / "api" / "ucp.h"]
+    elif routing_option == ROUTING_ENUM.cuda_include:
+        search_files = [Path("cuda_runtime_api.h")]
+    elif routing_option == ROUTING_ENUM.hip_include:
+        search_files = [Path("hip") / "hip_runtime_api.h"]
+    elif routing_option == ROUTING_ENUM.ze_include:
+        search_files = [Path("ze_api.h")]
+    elif routing_option == ROUTING_ENUM.mpi_include:
+        search_files = [Path("mpi.h")]
+    elif routing_option == ROUTING_ENUM.pmix_include:
+        search_files = [Path("src/include/pmix_globals.h"), Path("pmix_common.h"), Path("event.h")]
+    elif routing_option == ROUTING_ENUM.ofi_build_lib:
+        search_files = [Path("libfabric.so")]
+    elif routing_option == ROUTING_ENUM.ucx_build_lib:
+        search_files = [Path("libucp.so")]
+    elif routing_option == ROUTING_ENUM.anl_mpich:
+        search_files = [Path("lib/libmpich.so"), Path("lib64/libmpich.so"), Path("include/mpi.h")]
+    elif routing_option == ROUTING_ENUM.cray_mpich:
+        search_files = [Path("lib/libmpich.so"), Path("lib64/libmpich.so"), Path("include/mpi.h")]
+    elif routing_option == ROUTING_ENUM.open_mpi:
+        search_files = [Path("lib/libmpi.so"), Path("lib64/libmpi.so"), Path("include/mpi.h")]
+
+    full_search_paths = []
+    if len(search_files) != 0:
+        full_search_paths = [Path(base_dir) / path for path in search_files]
+    # else:
+    #    full_search_paths = [Path(base_dir)]
+
+    return full_search_paths
+
+
+def _check_filepaths_exist(path, routing_option):
+    """Check that the expected files for a given routing option exist in the path"""
+    search_files = _concat_search_files(path, routing_option)
+    if all(not os.path.isfile(h) for h in search_files):
+        print(
+            f"{', '.join([str(p) for p in search_files])} do(es) not exist. Make sure file paths have been set correctly",
+            flush=True,
+        )
+        sys.exit(1)
+    return search_files
+
+
+def _check_add_filepaths_exist(path, routing_option):
+    """Check that the expected files for a given add option exist in the path"""
+    return _check_filepaths_exist(path, routing_option)
+
+
+def _check_test_filepaths_exist(path, routing_option):
+    """Check that the expected files for a given routing option exist in the path"""
+
+    search_files = _check_filepaths_exist(path, routing_option)
+
+    # Cycle through the paths and get the lib and include directories that actually exist
+    lib_path = None
+    include_path = None
+    for f in search_files:
+        if os.path.isfile(f):
+            full_dir = os.path.dirname(f)
+            if "lib" in os.path.basename(full_dir):
+                lib_path = full_dir
+            elif "include" in os.path.basename(full_dir):
+                include_path = full_dir
+
+    return lib_path, include_path
+
+
 @config_router(ROUTING_ENUM.ofi_include, _ATBL)
 def _ofi_include_route(make_file, config_filename, path, base_dir):
     # sanity check
-    header = path / "rdma" / "fabric.h"
-    if not os.path.isfile(header):
-        print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
+    _check_add_filepaths_exist(path, ROUTING_ENUM.ofi_include)
 
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_OFI_INCLUDE\n")
     make_file.write(f"CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n")
@@ -185,10 +270,7 @@ def _ofi_include_route(make_file, config_filename, path, base_dir):
 @config_router(ROUTING_ENUM.ucx_include, _ATBL)
 def _ucx_include_route(make_file, config_filename, path, base_dir):
     # sanity check
-    header = path / "ucp" / "api" / "ucp.h"
-    if not os.path.isfile(header):
-        print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
+    _check_add_filepaths_exist(path, ROUTING_ENUM.ucx_include)
 
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_UCX_INCLUDE\n")
     make_file.write(f"CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n")
@@ -199,10 +281,7 @@ def _ucx_include_route(make_file, config_filename, path, base_dir):
 @config_router(ROUTING_ENUM.cuda_include, _ATBL)
 def _cuda_include_route(make_file, config_filename, path, base_dir):
     # sanity check
-    header = path / "cuda_runtime_api.h"
-    if not os.path.isfile(header):
-        print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
+    _check_add_filepaths_exist(path, ROUTING_ENUM.cuda_include)
 
     make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/cuda.cpp\n")
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_CUDA_INCLUDE\n")
@@ -214,10 +293,7 @@ def _cuda_include_route(make_file, config_filename, path, base_dir):
 @config_router(ROUTING_ENUM.hip_include, _ATBL)
 def _hip_include_route(make_file, config_filename, path, base_dir):
     # sanity check
-    header = path / "hip" / "hip_runtime_api.h"
-    if not os.path.isfile(header):
-        print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
+    _check_add_filepaths_exist(path, ROUTING_ENUM.hip_include)
 
     make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/hip.cpp\n")
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_HIP_INCLUDE\n")
@@ -229,10 +305,7 @@ def _hip_include_route(make_file, config_filename, path, base_dir):
 @config_router(ROUTING_ENUM.ze_include, _ATBL)
 def _ze_include_route(make_file, config_filename, path, base_dir):
     # sanity check
-    header = path / "ze_api.h"
-    if not os.path.isfile(header):
-        print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
+    _check_add_filepaths_exist(path, ROUTING_ENUM.ze_include)
 
     make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/ze.cpp\n")
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_ZE_INCLUDE\n")
@@ -244,10 +317,7 @@ def _ze_include_route(make_file, config_filename, path, base_dir):
 @config_router(ROUTING_ENUM.mpi_include, _ATBL)
 def _mpi_include_route(make_file, config_filename, path, base_dir):
     # sanity check
-    header = path / "mpi.h"
-    if not os.path.isfile(header):
-        print(f"{header} does not exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
+    _check_add_filepaths_exist(path, ROUTING_ENUM.mpi_include)
 
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_MPI_INCLUDE\n")
     make_file.write(f"CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n")
@@ -258,15 +328,7 @@ def _mpi_include_route(make_file, config_filename, path, base_dir):
 @config_router(ROUTING_ENUM.pmix_include, _ATBL)
 def _pmix_include_route(make_file, config_filename, path, base_dir):
     # sanity check
-    global_header = path / "src/include/pmix_globals.h"
-    common_header = path / "pmix_common.h"
-    event_header = path / "event.h"
-    if not os.path.isfile(global_header) and not os.path.isfile(common_header) and not os.path.isfile(event_header):
-        print(
-            f"{global_header}, {common_header}, nor {event_header} exist, make sure file paths have been set correctly",
-            flush=True,
-        )
-        sys.exit(1)
+    _check_add_filepaths_exist(path, ROUTING_ENUM.pmix_include)
 
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_PMIX_INCLUDE\n")
     make_file.write(f"CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n")
@@ -289,13 +351,25 @@ def _cuda_runtime_lib(make_file, config_filename, path, base_dir):
     _update_json_config(config_filename, ROUTING_ENUM.cuda_runtime_lib.name, str(path))
 
 
+@config_router(ROUTING_ENUM.tcp_runtime, _ATBL)
+def _tcp_runtime_lib(make_file, config_filename, path, base_dir):
+    _update_json_config(config_filename, ROUTING_ENUM.tcp_runtime.name, path)
+
+
+@config_router(ROUTING_ENUM.netconfig_mpiexec_override, _ATBL)
+def _netconfig_mpiexec_override(make_file, config_filename, path, base_dir):
+    _update_json_config(config_filename, ROUTING_ENUM.netconfig_mpiexec_override.name, path)
+
+
+@config_router(ROUTING_ENUM.backend_mpiexec_override, _ATBL)
+def _backend_mpiexec_override(make_file, config_filename, path, base_dir):
+    _update_json_config(config_filename, ROUTING_ENUM.backend_mpiexec_override.name, path)
+
+
 @config_router(ROUTING_ENUM.ofi_build_lib, _ATBL)
 def _ofi_build_lib_route(make_file, config_filename, path, base_dir):
     # sanity check
-    lib = path / "libfabric.so"
-    if not os.path.isfile(lib):
-        print(f"{lib} does not exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
+    _check_add_filepaths_exist(path, ROUTING_ENUM.ofi_build_lib)
 
     make_file.write("CONFIG_OFI_LIBS := \n")
     make_file.write("CONFIG_BACKEND_LIBS := $(CONFIG_BACKEND_LIBS) -L. -lfabric\n")
@@ -307,10 +381,7 @@ def _ofi_build_lib_route(make_file, config_filename, path, base_dir):
 @config_router(ROUTING_ENUM.ucx_build_lib, _ATBL)
 def _ucx_build_lib_route(make_file, config_filename, path, base_dir):
     # sanity check
-    lib = path / "libucp.so"
-    if not os.path.isfile(lib):
-        print(f"{lib} does not exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
+    _check_add_filepaths_exist(path, ROUTING_ENUM.ucx_build_lib)
 
     make_file.write("CONFIG_UCX_LIBS := \n")
     make_file.write("CONFIG_BACKEND_LIBS := $(CONFIG_BACKEND_LIBS) -L. -lucp\n")
@@ -322,25 +393,16 @@ def _ucx_build_lib_route(make_file, config_filename, path, base_dir):
 
 @config_router(ROUTING_ENUM.cray_mpich, _ATBL)
 def _cray_mpich_test_route(make_file, config_filename, path, base_dir):
-    # sanity check
+    # Get our include and lib paths:
     libname = "mpich"
+    lib_path, include_path = _check_test_filepaths_exist(path, ROUTING_ENUM.cray_mpich)
 
-    lib_path = path / "lib"
-    lib = lib_path / f"lib{libname}.so"
-
-    lib64_path = path / "lib64"
-    lib64 = lib64_path / f"lib{libname}.so"
-
-    if not os.path.isfile(lib) and not os.path.isfile(lib64):
-        print(f"{lib} nor {lib64} exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
-
-    if os.path.isfile(lib64):
-        lib_path = lib64_path
-
-    include_path = path / "include"
-    if not os.path.isfile(include_path / "mpi.h"):
-        print(f"{include_path / 'mpi.h'} does not  exist, make sure file paths have been set correctly", flush=True)
+    # Make sure they weren't left empty:
+    if lib_path is None or include_path is None:
+        print(
+            "Could not find both lib and include paths in input Cray MPICH path, make sure file path has been set correctly",
+            flush=True,
+        )
         sys.exit(1)
 
     make_file.write(f"TEST_CRAY_MPICH_FLAGS := -I {include_path} -L {lib_path} -l{libname}\n")
@@ -352,26 +414,18 @@ def _cray_mpich_test_route(make_file, config_filename, path, base_dir):
 
 @config_router(ROUTING_ENUM.open_mpi, _ATBL)
 def _open_mpi_test_route(make_file, config_filename, path, base_dir):
-    # sanity check
+    # Get our include and lib paths:
     libname = "mpi"
+    lib_path, include_path = _check_test_filepaths_exist(path, ROUTING_ENUM.open_mpi)
 
-    lib_path = path / "lib"
-    lib = lib_path / f"lib{libname}.so"
-
-    lib64_path = path / "lib64"
-    lib64 = lib64_path / f"lib{libname}.so"
-
-    if not os.path.isfile(lib) and not os.path.isfile(lib64):
-        print(f"{lib} nor {lib64} exist, make sure file paths have been set correctly", flush=True)
+    # Make sure they weren't left empty:
+    if lib_path is None or include_path is None:
+        print(
+            "Could not find both lib and include paths in input Open MPI path, make sure file path has been set correctly",
+            flush=True,
+        )
         sys.exit(1)
 
-    if os.path.isfile(lib64):
-        lib_path = lib64_path
-
-    include_path = path / "include"
-    if not os.path.isfile(include_path / "mpi.h"):
-        print(f"{include_path / 'mpi.h'} does not  exist, make sure file paths have been set correctly", flush=True)
-        return
     make_file.write(f"TEST_OPEN_MPI_FLAGS := -I {include_path} -L {lib_path} -l{libname}\n")
 
     # Make sure the runtime lib is in the json config file
@@ -381,25 +435,16 @@ def _open_mpi_test_route(make_file, config_filename, path, base_dir):
 
 @config_router(ROUTING_ENUM.anl_mpich, _ATBL)
 def _anl_mpich_test_route(make_file, config_filename, path, base_dir):
-    # sanity check
+    # Get our include and lib paths:
     libname = "mpich"
+    lib_path, include_path = _check_test_filepaths_exist(path, ROUTING_ENUM.anl_mpich)
 
-    lib_path = path / "lib"
-    lib = lib_path / f"lib{libname}.so"
-
-    lib64_path = path / "lib64"
-    lib64 = lib64_path / f"lib{libname}.so"
-
-    if not os.path.isfile(lib) and not os.path.isfile(lib64):
-        print(f"{lib} nor {lib64} exist, make sure file paths have been set correctly", flush=True)
-        sys.exit(1)
-
-    if os.path.isfile(lib64):
-        lib_path = lib64_path
-
-    include_path = path / "include"
-    if not os.path.isfile(include_path / "mpi.h"):
-        print(f"{include_path / 'mpi.h'} does not  exist, make sure file paths have been set correctly", flush=True)
+    # Make sure they weren't left empty:
+    if lib_path is None or include_path is None:
+        print(
+            "Could not find both lib and include paths in input ANL MPICH path, make sure file path has been set correctly",
+            flush=True,
+        )
         sys.exit(1)
 
     make_file.write(f"TEST_ANL_MPICH_FLAGS := -I {include_path} -L {lib_path} -l{libname}\n")
@@ -506,6 +551,9 @@ def _configure_parser():
     )
 
     parser.add_argument("-c", "--clean", help="Clean out all config information.", action="store_true")
+    parser.add_argument(
+        "--config-file", help="Point configuration to a custom config file. Largely intended for testing"
+    )
     parser.add_argument("-s", "--serialize", help=SERIALIZE_HELP, action="store_true")
     parser.add_argument("-g", "--get", help=GET_KV_HELP)
 
@@ -597,7 +645,7 @@ def _handle_subparsers(args, base_dir, config_filename, makefile_filename):
     """Manages any things that is provides via the add subparser"""
 
     args_dict = vars(args)
-    defined_keys = [k for k, v in args_dict.items() if v not in [None, False, True] and k in ADD_KEYS | TEST_KEYS]
+    defined_keys = [k for k, v in args_dict.items() if v is not None and k in ADD_KEYS | TEST_KEYS]
 
     if len(defined_keys) != 0:
         if base_dir == "":
@@ -608,12 +656,7 @@ def _handle_subparsers(args, base_dir, config_filename, makefile_filename):
             print("failed to update environment: unable to find environment file(s)", flush=True)
 
         # Put together the json struct we'll use through the runtime while executing
-        if os.path.isfile(config_filename):
-            with open(config_filename) as config_file:
-                config_dict = json.load(config_file)
-        else:
-            config_dict = {}
-
+        config_dict = _load_config_from_file(config_filename)
         new_env = {k: args_dict[k] for k in defined_keys}
         config_dict.update(new_env)
 
@@ -626,12 +669,10 @@ def _handle_subparsers(args, base_dir, config_filename, makefile_filename):
                     paths = [paths]
 
                 for dpath in paths:
-                    path = Path(dpath)
-
                     # Some of the keys in the config dict may not have routings.
                     try:
                         routing_key = ROUTING_ENUM[key]
-                        _ATBL[routing_key][0](make_file, config_filename, path, base_dir)
+                        _ATBL[routing_key][0](make_file, config_filename, dpath, base_dir)
                     except KeyError:
                         pass
 
@@ -640,34 +681,14 @@ def dragon_config():
     try:
         from ..infrastructure.facts import CONFIG_FILE_PATH
 
-        if CONFIG_FILE_PATH.exists():
-            with open(CONFIG_FILE_PATH) as config_file:
-                config_dict = json.load(config_file)
-
-            return config_dict
-
+        config_dict = _load_config_from_file(CONFIG_FILE_PATH)
     except Exception:
         pass
 
-    return {}
+    return config_dict
 
 
-def main():
-    # get args
-    parser = _configure_parser()
-    args = parser.parse_args()
-
-    # If link line options were requested, print them and exit
-    if args.explicit_compiler_options:
-        print_compile_and_link_lines()
-        parser.exit()
-    elif args.linker_options:
-        print_linker_options()
-        parser.exit()
-    elif args.compiler_options:
-        print_compiler_options()
-        parser.exit()
-
+def _get_config_filenames():
     # set base dir and other paths. It may seem silly to have a complicated
     # try/except here, but we have to be able to run config before we build dragon
     # and you can't import facts.py until dragon is built. It's an annoying catch 22
@@ -701,55 +722,95 @@ def main():
         config_filename = ""
         makefile_filename = ""
 
+    return makefile_filename, config_filename, base_dir, config_dir
+
+
+def _serialize_config(config_filename):
+    """Serialize all key-value pairs currently in the configuration file"""
+
+    if config_filename == "":
+        print("failed to serialize environment: unable to find environment file", flush=True)
+        sys.exit()
+
+    config_dict = _load_config_from_file(config_filename)
+
+    if len(config_dict) != 0:
+        ser_config = ""
+        the_first_one = True
+        for key in config_dict:
+            if the_first_one:
+                ser_config += f"{key}={config_dict[key]}"
+                the_first_one = False
+            else:
+                ser_config += f":{key}={config_dict[key]}"
+        print(ser_config, flush=True)
+    else:
+        print("no environment configuration available", flush=True)
+
+
+def _get_config(config_filename, key):
+    """Get value for given key from config file and print to stdout"""
+    if config_filename == "":
+        print("", flush=True)
+
+    config_dict = _load_config_from_file(config_filename)
+    if len(config_dict) != 0:
+        try:
+            ser_config = f"{config_dict[key]}"
+            print(ser_config, flush=True)
+        except KeyError:
+            print("", flush=True)
+    else:
+        print("", flush=True)
+
+
+def _clean_config(config_filename, makefile_filename):
+    """Remove config files from disk"""
+    if config_filename == "" or makefile_filename == "":
+        print("failed to clean environment: unable to find environment file(s)", flush=True)
+        sys.exit()
+
+    try:
+        os.remove(config_filename)
+        os.remove(makefile_filename)
+    except Exception:
+        pass
+
+
+def main():
+    # get args
+    parser = _configure_parser()
+    args = parser.parse_args()
+
+    # If link line options were requested, print them and exit
+    if args.explicit_compiler_options:
+        print_compile_and_link_lines()
+        parser.exit()
+    elif args.linker_options:
+        print_linker_options()
+        parser.exit()
+    elif args.compiler_options:
+        print_compiler_options()
+        parser.exit()
+
+    # Get filenames
+    makefile_filename, config_filename, base_dir, config_dir = _get_config_filenames()
+
+    # If we were given a config file on the command line, override it. This should really only be used for testing.
+    if args.config_file:
+        config_filename = args.config_file
+
     # handle serialize command before updating anything
     if args.serialize:
-        if config_filename == "":
-            print("failed to serialize environment: unable to find environment file", flush=True)
-            sys.exit()
+        _serialize_config(config_filename)
 
-        if os.path.isfile(config_filename):
-            with open(config_filename) as config_file:
-                config_dict = json.load(config_file)
-
-            ser_config = ""
-            the_first_one = True
-            for key in config_dict:
-                if the_first_one:
-                    ser_config += f"{key}={config_dict[key]}"
-                    the_first_one = False
-                else:
-                    ser_config += f":{key}={config_dict[key]}"
-            print(ser_config, flush=True)
-        else:
-            print("no environment configuration available", flush=True)
-
+    # Do just a single get
     if args.get:
-        if config_filename == "":
-            print("", flush=True)
-
-        if os.path.isfile(config_filename):
-            with open(config_filename) as config_file:
-                config_dict = json.load(config_file)
-
-            try:
-                ser_config = f"{config_dict[args.get]}"
-                print(ser_config, flush=True)
-            except KeyError:
-                print("", flush=True)
-        else:
-            print("", flush=True)
+        _get_config(config_filename, args.get)
 
     # handle 'clean' command (do this first, so clean+set acts as a reset)
     if args.clean:
-        if config_filename == "" or makefile_filename == "":
-            print("failed to clean environment: unable to find environment file(s)", flush=True)
-            sys.exit()
-
-        try:
-            os.remove(config_filename)
-            os.remove(makefile_filename)
-        except Exception:
-            pass
+        _clean_config(config_filename, makefile_filename)
 
     # handle the slew of 'add' and test subparsers
     _handle_subparsers(args, base_dir, config_filename, makefile_filename)

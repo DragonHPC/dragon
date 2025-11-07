@@ -85,6 +85,7 @@ class GlobalContext(object):
         self.channel_table = dict()  # key = c_uid, value = ChannelContext
         self.pool_table = dict()  # key = m_uid, value = PoolContext
         self.node_table = dict()  # key = h_uid, value = NodeContext
+        self.node_idx_to_huid = dict() # key = ls_index, value = h_uid
         self.group_table = dict()  # key = g_uid, value = GroupContext
 
         self.process_names = dict()  # key = name, value = p_uid
@@ -310,11 +311,11 @@ class GlobalContext(object):
             self.circ_index = (self.circ_index + 1) % len(self.shep_inputs)
         else:
             assert isinstance(msg.layout, ResourceLayout)
-            assert msg.layout.h_uid in self.node_table.keys()
+            assert msg.layout.h_uid in self.node_table
             index = self.node_table[msg.layout.h_uid].ls_index
 
         # Get huid for ProcessDescriptor
-        huid = [huid for huid, node in self.node_table.items() if node.ls_index == index][0]
+        huid = self.node_idx_to_huid[index]
 
         log.debug("choose shepherd %d (huid %d) for %s", index, huid, msg)
         return index, huid
@@ -645,6 +646,7 @@ class GlobalContext(object):
         # remain the same during the runtime's life
         ctx.g_idx = self.sh_pings_recvd
         self.node_table[ctx.h_uid] = ctx
+        self.node_idx_to_huid[ctx.ls_index] = ctx.h_uid
         self.node_names[ctx.name] = ctx.h_uid
 
         self._node_logger.info("Added node %s, g_idx=%s, h_uid=%s", ctx.name, ctx.g_idx, ctx.h_uid)

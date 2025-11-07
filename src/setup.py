@@ -1,7 +1,4 @@
 import os
-from distutils import log
-from distutils.command.clean import clean as _clean
-from distutils.dir_util import remove_tree
 from functools import partial
 from pathlib import Path
 from sysconfig import get_config_var
@@ -167,24 +164,9 @@ class build_py(_build_py):
         return modules
 
 
-class clean(_clean):
-    def run(self):
-        super().run()
-
-        # Clean up any in-place extensions
-        ext_suffix = get_config_var("EXT_SUFFIX")
-        for ext_file in Path("dragon").glob(f"**/*{ext_suffix}"):
-            log.info(f"removing '{ext_file}'")
-            if not self.dry_run:
-                ext_file.unlink()
-
-        # Clean __pycache__ directories
-        for directory in Path("dragon").glob("**/__pycache__"):
-            remove_tree(str(directory), dry_run=self.dry_run)
-
-
 setup(
-    cmdclass={"build": build, "build_py": build_py, "clean": clean},
+    # cmdclass={"build": build, "build_py": build_py, "clean": clean},
+    cmdclass={"build": build, "build_py": build_py},
     options={"build_py": {"compile": 1}, "build_ext": {"inplace": 1}},
     name="dragonhpc",
     version=os.environ.get("DRAGON_VERSION", "latest"),
@@ -203,5 +185,6 @@ setup(
         "pycapnp>=2.0.0,<2.2.0",
         "paramiko>=3.5.1",
         "flask-jwt-extended>=4.7.1",
+        "networkx",
     ],
 )

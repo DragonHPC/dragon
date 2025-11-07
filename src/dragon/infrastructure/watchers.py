@@ -11,7 +11,7 @@ class CriticalPopen(subprocess.Popen):
 
     def __init__(self, *args, notify_channel: Channel = None, notify_msg: InfraMsg = None, name: str = "", **kwargs):
 
-        super().__init__(*args, **kwargs)
+        handle = super().__init__(*args, **kwargs)
         if notify_channel is None:
             raise RuntimeError("notify_channel must be provided")
         self._notify_channel = notify_channel
@@ -30,6 +30,8 @@ class CriticalPopen(subprocess.Popen):
             self.log.info("critical watcher service thread started")
         except Exception as ex:
             self._send_notification(f"critical watcher starting thread exception: {ex}")
+
+        return handle
 
     def _send_notification(self, msg: str = None):
         self.log.debug(f"Sending {self._notify_msg} with {msg}")

@@ -74,84 +74,96 @@ class ChannelContext:
             Second element the tag if message issued, None otherwise
             Third element The newly constructed context object if issued, None otherwise
         """
-
-        if msg.user_name in server.channel_names:
-            LOG.info(f"channel {msg.user_name} already created")
-            if send_msg:
-                existing_ctx = server.channel_table[server.channel_names[msg.user_name]]
-                rm = dmsg.GSChannelCreateResponse(
-                    tag=server.tag_inc(),
-                    ref=msg.tag,
-                    err=dmsg.GSChannelCreateResponse.Errors.ALREADY,
-                    desc=existing_ctx.descriptor,
-                )
-                reply_channel.send(rm.serialize())
-            return False, None, None
-
         try:
-            if node_override is not None:
-                which_node = node_override
-            else:
-                which_node = server.choose_channel_node(msg)
-        except ValueError:
-            # the requested pool to create the channel on does not exist
-            # and we need to log this
-            errmsg = (
-                f"Error creating channel. Either m_uid {msg.m_uid} does not exist (it is neither a predefined pool nor a user defined pool)\n"
-                + f"or the Policy did not specify a node on which to create the channel."
-            )
-            LOG.info(errmsg)
-            if send_msg:
-                rm = dmsg.GSChannelCreateResponse(
-                    tag=server.tag_inc(), ref=msg.tag, err=dmsg.GSChannelCreateResponse.Errors.FAIL, err_info=errmsg
+
+            if msg.user_name in server.channel_names:
+                LOG.info(f"channel {msg.user_name} already created")
+                if send_msg:
+                    existing_ctx = server.channel_table[server.channel_names[msg.user_name]]
+                    rm = dmsg.GSChannelCreateResponse(
+                        tag=server.tag_inc(),
+                        ref=msg.tag,
+                        err=dmsg.GSChannelCreateResponse.Errors.ALREADY,
+                        desc=existing_ctx.descriptor,
+                    )
+                    reply_channel.send(rm.serialize())
+                return False, None, None
+
+            try:
+                if node_override is not None:
+                    which_node = node_override
+                else:
+                    which_node = server.choose_channel_node(msg)
+            except ValueError:
+                # the requested pool to create the channel on does not exist
+                # and we need to log this
+                errmsg = (
+                    f"Error creating channel. Either m_uid {msg.m_uid} does not exist (it is neither a predefined pool nor a user defined pool)\n"
+                    + f"or the Policy did not specify a node on which to create the channel."
                 )
-                reply_channel.send(rm.serialize())
-            return False, None, None
+                LOG.info(errmsg)
+                if send_msg:
+                    rm = dmsg.GSChannelCreateResponse(
+                        tag=server.tag_inc(), ref=msg.tag, err=dmsg.GSChannelCreateResponse.Errors.FAIL, err_info=errmsg
+                    )
+                    reply_channel.send(rm.serialize())
+                return False, None, None
 
-        # check if the m_uid is ok
-        if not (dfacts.is_pre_defined_pool(msg.m_uid) or msg.m_uid in server.pool_table):
-            errmsg = f"m_uid {msg.m_uid} unknown"
-            LOG.info(errmsg)
+            # check if the m_uid is ok
+            if not (dfacts.is_pre_defined_pool(msg.m_uid) or msg.m_uid in server.pool_table):
+                errmsg = f"m_uid {msg.m_uid} unknown"
+                LOG.info(errmsg)
+                if send_msg:
+                    rm = dmsg.GSChannelCreateResponse(
+                        tag=server.tag_inc(), ref=msg.tag, err=dmsg.GSChannelCreateResponse.Errors.FAIL, err_info=errmsg
+                    )
+                    reply_channel.send(rm.serialize())
+                return False, None, None
+
+            this_cuid, auto_name = server.new_cuid_and_default_name()
+
+            if not msg.user_name:
+                msg.user_name = auto_name
+
+            outbound_tag = server.tag_inc()
+
+            context = cls(server, msg, reply_channel, this_cuid, which_node)
+            server.channel_names[msg.user_name] = this_cuid
+            server.channel_table[this_cuid] = context
+
+            # send request to local services, remember pending process.
+            shep_create_msg = context._mk_sh_channel_create(outbound_tag)
             if send_msg:
-                rm = dmsg.GSChannelCreateResponse(
-                    tag=server.tag_inc(), ref=msg.tag, err=dmsg.GSChannelCreateResponse.Errors.FAIL, err_info=errmsg
+                LOG.debug(f"shep_inputs: {server.shep_inputs}")
+                shep_hdl = server.shep_inputs[which_node]
+                LOG.debug(
+                    f"sending {shep_create_msg} with muid {shep_create_msg.m_uid} to shep via {shep_hdl} on node {which_node}"
                 )
-                reply_channel.send(rm.serialize())
-            return False, None, None
 
-        this_cuid, auto_name = server.new_cuid_and_default_name()
+                # In cases where we are sending a large amount of
+                # messages, such as with the GSGroupCreate handler,
+                # we can fill the GS Input Queue with responses and
+                # basically cause the GS / TA / LS to be unable to
+                # send/receive any messages. To prevent this, we'll
+                # enqueue pending sends and interleave sending and
+                # receiving messages to allow us to process responses
+                # on the input queue.
 
-        if not msg.user_name:
-            msg.user_name = auto_name
+                server.pending_sends.put((shep_hdl, shep_create_msg.serialize()))
+                LOG.debug(f"request {context} to shep")
 
-        outbound_tag = server.tag_inc()
+            return True, outbound_tag, context
 
-        context = cls(server, msg, reply_channel, this_cuid, which_node)
-        server.channel_names[msg.user_name] = this_cuid
-        server.channel_table[this_cuid] = context
-
-        # send request to local services, remember pending process.
-        shep_create_msg = context._mk_sh_channel_create(outbound_tag)
-        if send_msg:
-            LOG.debug(f"shep_inputs: {server.shep_inputs}")
-            shep_hdl = server.shep_inputs[which_node]
-            LOG.debug(
-                f"sending {shep_create_msg} with muid {shep_create_msg.m_uid} to shep via {shep_hdl} on node {which_node}"
+        except Exception as ex:
+            response = dmsg.GSChannelCreateResponse(
+                tag=server.tag_inc(),
+                ref=msg.tag,
+                err=dmsg.GSChannelCreateResponse.Errors.FAIL,
+                desc=None,
             )
 
-            # In cases where we are sending a large amount of
-            # messages, such as with the GSGroupCreate handler,
-            # we can fill the GS Input Queue with responses and
-            # basically cause the GS / TA / LS to be unable to
-            # send/receive any messages. To prevent this, we'll
-            # enqueue pending sends and interleave sending and
-            # receiving messages to allow us to process responses
-            # on the input queue.
+            reply_channel.send(response.serialize())
 
-            server.pending_sends.put((shep_hdl, shep_create_msg.serialize()))
-            LOG.debug(f"request {context} to shep")
-
-        return True, outbound_tag, context
 
     def complete_construction(self, msg):
         """Completes channel construction, waiting on message from shep

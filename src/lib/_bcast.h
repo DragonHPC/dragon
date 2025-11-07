@@ -24,6 +24,10 @@
 #define DRAGON_BCAST_DEFAULT_TRACK_PROCS 128
 #define DRAGON_BCAST_DEFAULT_ITERS_CHECK_PROCS 100000UL
 #define DRAGON_BCAST_BACKOFF_ITERS_CHECK_PROCS 999999999UL
+#define MAX_SLICE_ITERS 1000
+#define SLICE_BACKOFF_FACTOR 2
+#define SLICE_NS_START 1
+#define NANOS_PER_SEC 1000000000
 
 /* attributes and header info embedded into a BCast object NOTE: This must match
 the pointers assigned in _map_header and _init_header of bcast.c */

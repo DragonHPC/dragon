@@ -194,7 +194,7 @@ _register_gateway(const dragonChannel_t* ch, dragonList_t** gateways)
             append_err_return(err, "failed to create ulist for gateway channels");
     }
 
-    err = dragon_ulist_additem(gateways, ch);
+    err = dragon_ulist_additem(gateways, ch, true);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to insert item into gateway channels list");
 
@@ -207,7 +207,7 @@ _unregister_gateway(const dragonChannel_t* ch, dragonList_t **gateways)
     if (*gateways == NULL)
         err_return(DRAGON_CHANNEL_NO_GATEWAYS, "no gateways have been registered");
 
-    dragonError_t err = dragon_ulist_delitem(gateways, ch);
+    dragonError_t err = dragon_ulist_delitem(gateways, ch, true);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "failed to delete item from gateway channels list");
 
@@ -309,10 +309,10 @@ _is_cuid_a_gateway(dragonC_UID_t c_uid, bool* is_gw)
         no_err_return(DRAGON_SUCCESS);
     }
 
-    size_t size = dragon_ulist_get_size(dg_gateways);
+    size_t size = dragon_ulist_get_size(dg_gateways, true);
 
     for (size_t k = 0; k < size; k++) {
-        err = dragon_ulist_get_current_advance(dg_gateways, (void**)&channel);
+        err = dragon_ulist_get_current_advance(dg_gateways, (void**)&channel, true);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not advance and get with gateway channel iterator.");
 
@@ -2198,7 +2198,7 @@ _get_gw_idx(const dragonChannelDescr_t *ch, dragonChannelOpType_t op_type, int *
      * \___________________/  \___________________/  \___________________/  \___________________/
      *         nic 0                  nic 1                  nic 2                  nic 3
      */
-    size_t num_gws = dragon_ulist_get_size(dg_gateways);
+    size_t num_gws = dragon_ulist_get_size(dg_gateways, true);
 
     if (num_gws == 1) {
         *gw_idx = 0;
@@ -2257,7 +2257,7 @@ _get_gateway(const dragonChannelDescr_t *ch_descr, dragonChannelOpType_t op_type
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not get a gateway index.");
 
-        err = dragon_ulist_get_by_idx(dg_gateways, gw_idx, (void **) gw_channel);
+        err = dragon_ulist_get_by_idx(dg_gateways, gw_idx, (void **) gw_channel, true);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not get gateway channel.");
     } else {

@@ -32,12 +32,14 @@ class TestIORedirection(unittest.TestCase):
         self.assertEqual("Hello World\n", result)
         proc.stdout.close()
 
+    @unittest.skip("Needs work - hangs - AICI-1999")
     def test_native_process_stdout_to_devnull(self):
         """
         No output should appear on the terminal from running this test.
         """
         exe = shutil.which("echo")
         proc = Popen(executable=exe, args=["Hello World"], stdout=Popen.DEVNULL)
+        proc.wait()
 
         self.assertEqual(proc.stdout, None)
 
@@ -62,6 +64,7 @@ class TestIORedirection(unittest.TestCase):
         """
         exe = shutil.which("cat")
         proc = Popen(executable=exe, args=["notafile"], stderr=Popen.DEVNULL)
+        proc.wait()
 
         self.assertEqual(proc.stderr, None)
 

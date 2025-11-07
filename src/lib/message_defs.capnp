@@ -85,6 +85,10 @@ struct DDRegisterManagerResponseDef {
     poolSdesc @4: Text;
 }
 
+struct DDCreateManagerResponseDef {
+    managerID @0: UInt64;
+}
+
 struct DDRandomManagerDef {
     respFLI @0: Text;
 }
@@ -494,5 +498,6 @@ struct MessageDef {
         ddValuesResponse @81: DDValuesResponseDef;
         ddItemsResponse @82: DDItemsResponseDef;
         pmIxFenceMsg @83: PMIxFenceMsgDef;
+        ddCreateManagerResponse @84: DDCreateManagerResponseDef;
     }
 }

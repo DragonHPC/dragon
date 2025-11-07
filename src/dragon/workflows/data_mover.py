@@ -10,7 +10,12 @@ from dragon.native.event import Event
 from dragon.native.machine import current
 from dragon.telemetry import Telemetry
 
-import cupy as cp
+# allow docs to build even if CuPy is not present
+try:
+    import cupy as cp
+except:
+    print("WARNING: failed to import CuPy!")
+    cp = None
 import numpy as np
 import queue
 import os
