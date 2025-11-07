@@ -18,7 +18,7 @@ jobs:
     steps:
     - name: Run Pull Request Grabber and notify Slack
       run: |
-        module swap PrgEnv-cray PrgEnv-gnu
+        # module swap PrgEnv-cray PrgEnv-gnu
         module load cray-python
         python3 -m venv _env
         . _env/bin/activate

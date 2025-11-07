@@ -1,0 +1,14 @@
+6 4
+begin components
+UP "User Process"
+GS "Global Services"
+end;
+rtext@ UP "process.query()";
+UP GS "PROCESS_QUERY"+
+UP GS "p_uid, target(p_uid | user_name)";
+ltext@ GS "success";
+GS UP "PROCESS_INFO"+
+GS UP "ProcessInfo";
+ltext@ GS "fail: names not found";
+GS UP "FAIL_PROCESS_UNKNOWN"+
+GS UP "None";
