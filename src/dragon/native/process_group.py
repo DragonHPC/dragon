@@ -2625,6 +2625,33 @@ class ProcessGroup:
         else:
             raise TypeError("policies must be None, a single Policy, or a list of Policy objects.")
 
+        # Infer ppn from policies if not explicitly provided
+        if ppn is None and policies is not None:
+            # Count processes per host by analyzing the policy list
+            from collections import Counter
+            host_counts = Counter(policy.host_name for policy in policy_list)
+            if host_counts:
+                # Use the maximum processes per node as ppn
+                # This handles both uniform and non-uniform distributions
+                ppn = max(host_counts.values())
+            else:
+                # Fallback: assume single node if no host info
+                ppn = nprocs
+
+        # Build a mapping from rank to (node_rank, local_rank) when using policies
+        if policies is not None:
+            # Track host assignment for accurate node_rank and local_rank calculation
+            host_to_ranks = {}
+            rank_to_node_info = {}
+            for rank, policy in enumerate(policy_list):
+                host = policy.host_name
+                if host not in host_to_ranks:
+                    host_to_ranks[host] = []
+                local_rank = len(host_to_ranks[host])
+                node_rank = list(host_to_ranks.keys()).index(host)
+                host_to_ranks[host].append(rank)
+                rank_to_node_info[rank] = (node_rank, local_rank)
+
         pg = ProcessGroup(restart=False, pmi=None)
         pg._nccl_config = TrainingGroupConfig(nprocs=nprocs, ppn=ppn, port=port)
         master_node = policy_list[0].host_name
@@ -2633,8 +2660,13 @@ class ProcessGroup:
 
         try:
             for rank in range(nprocs):
-                node_rank = rank // ppn
-                local_rank = rank % ppn
+                # Use accurate node_rank and local_rank when policies provided
+                if policies is not None and rank in rank_to_node_info:
+                    node_rank, local_rank = rank_to_node_info[rank]
+                else:
+                    # Fallback to simple calculation when ppn/nprocs used
+                    node_rank = rank // ppn
+                    local_rank = rank % ppn
                 policy = policy_list[rank]
 
                 env = pg.make_ai_training_env(
