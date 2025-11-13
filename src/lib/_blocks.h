@@ -43,11 +43,11 @@ typedef struct dragonBlocksStats_st {
 typedef struct dragonBlocks_st {
     void* space;
     uint64_t num_slots;
-    uint64_t* current;
+    _Atomic(uint64_t) * current;
     uint64_t* free_space_head;
     uint64_t value_len;
-    uint64_t* num_used;
-    uint64_t* num_inited;
+    _Atomic(uint64_t) * num_used;
+    _Atomic(uint64_t) * num_inited;
     uint64_t* armor1;
     uint64_t* armor2;
     uint64_t* slots;

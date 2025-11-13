@@ -148,7 +148,7 @@ _bcast_map_obj(void* obj_ptr, dragonBCastHeader_t* header)
     ptr += sizeof(dragonULInt);
     header->num_triggered = (atomic_uint *) ptr;
     ptr += sizeof(dragonULInt);
-    header->triggering = (uint32_t *) ptr;
+    header->triggering = (_Atomic(uint32_t) *) ptr;
     ptr += sizeof(dragonULInt);
     header->shutting_down = (atomic_uint *) ptr;
     ptr += sizeof(dragonULInt);
@@ -281,7 +281,7 @@ _bcast_descr_from_id(const dragonULInt id, dragonBCastDescr_t * bd)
 static dragonError_t
 _bcast_wait_on_triggering(dragonBCast_t * handle, timespec_t * end_time)
 {
-    uint32_t * triggering_ptr = handle->header.triggering;
+    _Atomic(uint32_t) *triggering_ptr = handle->header.triggering;
     timespec_t now_time = {0,0};
 
     /* check_timeout_when_0 is used below when there is a timeout and we spin wait. No need to check it
@@ -2074,7 +2074,7 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
         }
     }
 
-    uint32_t * triggering_ptr = handle->header.triggering;
+    _Atomic(uint32_t) * triggering_ptr = handle->header.triggering;
     volatile atomic_uint * num_triggered_ptr = handle->header.num_triggered;
 
     size_t num_waiting = atomic_load(handle->header.num_waiting);
@@ -2114,7 +2114,7 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
     size_t num_spinners = 0;
     /* We make a local copy of current_spinner_count because the spin_list_count
        will change in the object as spinners wake up */
-    size_t current_spinner_count = (atomic_uint)*handle->header.spin_list_count;
+    size_t current_spinner_count = (size_t)*handle->header.spin_list_count;
     int idx = 0;
     atomic_uint expected = 0UL;
 

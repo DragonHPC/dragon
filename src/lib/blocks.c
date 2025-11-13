@@ -165,7 +165,7 @@ dragonError_t dragon_blocks_alloc(dragonBlocks_t* blocks, const void* value, uin
     uint64_t idx;
 
     if (*blocks->num_used == blocks->num_slots) {
-        snprintf(err_msg, 199, "We have run out of space in the blocks structure.\nThere are %lu blocks and all of them are in use.", blocks->num_slots);
+        snprintf(err_msg, 199, "We have run out of space in the blocks structure.\nThere are %llu blocks and all of them are in use.", blocks->num_slots);
         err_return(DRAGON_OUT_OF_SPACE, err_msg);
     }
 

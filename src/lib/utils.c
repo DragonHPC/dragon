@@ -388,7 +388,11 @@ dragon_set_procname(char * name)
 {
     if (name == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The name argument cannot be NULL.");
+#ifndef __APPLE__
     prctl(PR_SET_NAME, (unsigned long)name, 0uL, 0uL, 0uL);
+#else
+    pthread_setname_np(name);
+#endif //__APPLE__
     no_err_return(DRAGON_SUCCESS);
 }
 
