@@ -350,13 +350,13 @@ def survey_dev_shm():
     """
 
     my_id = os.getuid()
-    with os.scandir("/dev/shm") as it:
-        # during a certain shutdown race condition, FileNotFoundError may be raised.
-        try:
+    try:
+        with os.scandir("/dev/shm") as it:
+            # during a certain shutdown race condition, FileNotFoundError may be raised.
             rv = {entry.name for entry in it if entry.stat().st_uid == my_id}
             return rv
-        except FileNotFoundError:
-            pass
+    except FileNotFoundError:
+        pass
 
 
 def compare_dev_shm(previous):

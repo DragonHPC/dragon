@@ -175,10 +175,11 @@ release:
 # Repair the wheel to use manylinux tag before copying it to release and remove the un-tagged version
 	@if [ "$(OS)" != "Darwin" ]; then \
 		auditwheel repair -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-linux_*.whl; \
+		rm -rf $(abspath release/dragon)/dragonhpc*-linux_*whl; \
 	else \
-		delocate-wheel -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-macosx_*.whl; \
+		DYLD_LIBRARY_PATH=lib delocate-wheel -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-macosx_*.whl; \
+		rm -rf $(abspath release/dragon)/dragonhpc*-macosx_*whl; \
 	fi
-	rm -rf $(abspath release/dragon)/dragonhpc*-linux_*whl
 	mv release/dragon release/dragon-$(DRAGON_VERSION)
 	cd release && tar -czvf dragon-$(DRAGON_VERSION)-$(GITHASH).tar.gz dragon-$(DRAGON_VERSION)
 	cd release && rm -rf dragon-$(DRAGON_VERSION)
