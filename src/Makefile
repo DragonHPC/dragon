@@ -67,6 +67,7 @@ EXTERNAL := ../external/capnproto
 CY_FILES := dragon/pydragon_rc.pyx \
             dragon/return_codes.pxd
 
+OS = $(shell uname -s)
 
 .PHONY: all
 all: build
@@ -172,7 +173,11 @@ release:
 	cp ../src/dragon/telemetry/imports/*.yaml  release/dragon/examples/dragon_telemetry
 	cp ../src/dragon/telemetry/imports/*.json  release/dragon/examples/dragon_telemetry
 # Repair the wheel to use manylinux tag before copying it to release and remove the un-tagged version
-	auditwheel repair -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-linux_*.whl
+	@if [ "$(OS)" != "Darwin" ]; then \
+		auditwheel repair -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-linux_*.whl; \
+	else \
+		delocate-wheel -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-macosx_*.whl; \
+	fi
 	rm -rf $(abspath release/dragon)/dragonhpc*-linux_*whl
 	mv release/dragon release/dragon-$(DRAGON_VERSION)
 	cd release && tar -czvf dragon-$(DRAGON_VERSION)-$(GITHASH).tar.gz dragon-$(DRAGON_VERSION)

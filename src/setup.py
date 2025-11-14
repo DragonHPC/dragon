@@ -1,6 +1,7 @@
 import os
 from functools import partial
 from pathlib import Path
+import platform
 from sysconfig import get_config_var
 
 from setuptools import Extension, find_packages, setup
@@ -12,7 +13,7 @@ from dragon.cli import entry_points
 
 
 ROOTDIR = str(Path(__file__).parent)
-
+LIBRARIES = ["dragon"] + ["rt"] if platform.system() != "Darwin" else []
 
 def make_relative_rpath_args(path):
     """Construct platform-appropriate RPATH to support binary
@@ -30,7 +31,7 @@ DragonExtension = partial(
         f"{ROOTDIR}/lib/event",
     ],
     library_dirs=[f"{ROOTDIR}/lib"],
-    libraries=["dragon", "rt"],
+    libraries=LIBRARIES,
     extra_link_args=make_relative_rpath_args("lib"),
 )
 
@@ -82,7 +83,7 @@ class build(_build):
 
         _cythonize = partial(
             cythonize,
-            nthreads=int(os.environ.get("DRAGON_BUILD_NTHREADS", os.cpu_count())),
+            nthreads=int(os.environ.get("DRAGON_BUILD_NTHREADS", os.cpu_count() if platform.system() != "Darwin" else 0)),
             show_all_warnings=True,
             compiler_directives={"language_level": "3", "boundscheck": False},
             build_dir=self.build_temp,
