@@ -13,7 +13,7 @@ from dragon.cli import entry_points
 
 
 ROOTDIR = str(Path(__file__).parent)
-LIBRARIES = ["dragon"] + ["rt"] if platform.system() != "Darwin" else []
+LIBRARIES = ["dragon"] + (["rt"] if platform.system() != "Darwin" else [])
 
 def make_relative_rpath_args(path):
     """Construct platform-appropriate RPATH to support binary
