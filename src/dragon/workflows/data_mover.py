@@ -1,3 +1,5 @@
+"""Classes for efficiently moving data between a host and devices"""
+
 from dragon.managed_memory import (
     MemoryPool,
     MemoryAlloc,

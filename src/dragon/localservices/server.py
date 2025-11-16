@@ -165,6 +165,9 @@ class InputConnector:
 
     def forward(self):
         try:
+            if self._closed:
+                return False
+
             data = None
             while self._conn.poll(timeout=0):
                 data = self._conn.recv()
@@ -262,6 +265,9 @@ class OutputConnector:
         self._fwd_stdout = False
 
     def _sendit(self, block):
+        if self._closed:
+            return
+
         if len(block) > 0:
             self._writtenTo = True
 
@@ -604,6 +610,7 @@ class LocalServer:
         self.new_procs = queue.SimpleQueue()  # outbound PopenProps of newly started processes
         self.new_channel_input_monitors = queue.SimpleQueue()
         self.exited_channel_output_monitors = queue.SimpleQueue()
+        self.exited_channel_input_monitors = queue.SimpleQueue()
         self.hostname = hostname
         self.cuid_to_input_connector = {}
         self.node_index = parms.this_process.index
@@ -768,6 +775,10 @@ class LocalServer:
         log = logging.getLogger("LS.cleanup")
 
         log.info("start")
+
+        # clean outstanding connectors
+        self._output_connector_cleanup()
+        self._input_connector_cleanup()
 
         # clean outstanding processes
         self._clean_procs()
@@ -1864,6 +1875,7 @@ class LocalServer:
                 with self.apt_lock:
                     try:
                         proc = self.apt[died_pid]
+
                         try:
                             proc.props.stderr_connector.flush()
                         except Exception as ex:
@@ -1932,6 +1944,8 @@ class LocalServer:
                         self.exited_channel_output_monitors.put(proc.props.stdout_connector)
                     if proc.props.stderr_connector is not None:
                         self.exited_channel_output_monitors.put(proc.props.stderr_connector)
+                    if proc.props.stdin_connector is not None:
+                        self.exited_channel_input_monitors.put(proc.props.stdin_connector)
                 except OSError:
                     pass
             else:
@@ -2173,6 +2187,34 @@ class LocalServer:
 
         log.info("exiting")
 
+    class WatchingSelector(selectors.DefaultSelector):
+        """Enhanced DefaultSelector to register stdout/stderr of PopenProps
+
+        Automates registering the file handles with the selector base class
+        and maps it to an OutputConnector object to handle the logic for
+        forwarding data where it needs to go.
+        """
+
+        def add_proc_streams(self, server, proc: PopenProps):
+            # carried data is (ProcessProps, closure to make SHFwdOutput, whether stderr or not)
+            try:
+                self.register(proc.stdout, selectors.EVENT_READ, data=proc.props.stdout_connector)
+            except ValueError:  # file handle could be closed or None: a race, so must catch
+                pass
+            except KeyError as ke:  # already registered
+                self.unregister(proc.stdout)
+                # log.warning("ke=%s, proc.stdout=%s, new props=%s" % (ke, proc.stdout, proc.props))
+                self.register(proc.stdout, selectors.EVENT_READ, data=proc.props.stdout_connector)
+
+            try:
+                self.register(proc.stderr, selectors.EVENT_READ, data=proc.props.stderr_connector)
+            except ValueError:
+                pass
+            except KeyError as ke:
+                self.unregister(proc.stderr)
+                # log.warning("ke=%s, proc.stderr=%s, new props=%s" % (ke, proc.stderr, proc.props))
+                self.register(proc.stderr, selectors.EVENT_READ, data=proc.props.stderr_connector)
+
     def watch_output(self):
         """Thread monitors outbound std* activity from processes we started.
 
@@ -2185,35 +2227,7 @@ class LocalServer:
 
         log.info("starting")
 
-        class WatchingSelector(selectors.DefaultSelector):
-            """Enhanced DefaultSelector to register stdout/stderr of PopenProps
-
-            Automates registering the file handles with the selector base class
-            and maps it to an OutputConnector object to handle the logic for
-            forwarding data where it needs to go.
-            """
-
-            def add_proc_streams(self, server, proc: PopenProps):
-                # carried data is (ProcessProps, closure to make SHFwdOutput, whether stderr or not)
-                try:
-                    self.register(proc.stdout, selectors.EVENT_READ, data=proc.props.stdout_connector)
-                except ValueError:  # file handle could be closed or None: a race, so must catch
-                    pass
-                except KeyError as ke:  # already registered
-                    self.unregister(proc.stdout)
-                    # log.warning("ke=%s, proc.stdout=%s, new props=%s" % (ke, proc.stdout, proc.props))
-                    self.register(proc.stdout, selectors.EVENT_READ, data=proc.props.stdout_connector)
-
-                try:
-                    self.register(proc.stderr, selectors.EVENT_READ, data=proc.props.stderr_connector)
-                except ValueError:
-                    pass
-                except KeyError as ke:
-                    self.unregister(proc.stderr)
-                    # log.warning("ke=%s, proc.stderr=%s, new props=%s" % (ke, proc.stderr, proc.props))
-                    self.register(proc.stderr, selectors.EVENT_READ, data=proc.props.stderr_connector)
-
-        stream_sel = WatchingSelector()
+        stream_sel = LocalServer.WatchingSelector()
 
         while not self.check_shutdown():
             work = stream_sel.select(timeout=self.SHUTDOWN_RESP_TIMEOUT)
@@ -2266,19 +2280,37 @@ class LocalServer:
             except queue.Empty:
                 pass
 
-            try:
-                while True:
-                    exited_proc_connector = self.exited_channel_output_monitors.get_nowait()
-                    try:
-                        stream_sel.unregister(exited_proc_connector.file_obj)
-                    except:
-                        pass
-                    try:
-                        exited_proc_connector.close()
-                    except:
-                        pass
-            except queue.Empty:
-                pass
+            self._output_connector_cleanup(stream_sel)
+            self._input_connector_cleanup()
 
         stream_sel.close()
         log.info("exit")
+
+    def _input_connector_cleanup(self):
+        try:
+            while True:
+                exited_proc_connector = self.exited_channel_input_monitors.get_nowait()
+                try:
+                    exited_proc_connector.close()
+                except:
+                    pass
+        except queue.Empty:
+            pass
+
+    def _output_connector_cleanup(self, stream_sel=None):
+
+        try:
+            while True:
+                exited_proc_connector = self.exited_channel_output_monitors.get_nowait()
+                try:
+                    stream_sel.unregister(exited_proc_connector.file_obj)
+                except:
+                    pass
+                try:
+                    exited_proc_connector.close()
+                except:
+                    pass
+        except queue.Empty:
+            pass
+
+

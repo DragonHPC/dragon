@@ -1,3 +1,5 @@
+"""Graph-based distributed scheduling for functions, executables, and parallel applications"""
+
 import io
 import logging
 import networkx as nx
@@ -85,12 +87,8 @@ CompiledResultWrapper = namedtuple(
     "CompiledResultWrapper",
     ["tuid", "result_dict", "stdout_dict", "stderr_dict"],
 )
-AsyncWrapper = namedtuple(
-    "AsyncWrapper", ["async_result", "async_stdout", "async_stderr"]
-)
-ManagerException = namedtuple(
-    "ManagerException", ["tuid", "exception", "traceback", "err_message"]
-)
+AsyncWrapper = namedtuple("AsyncWrapper", ["async_result", "async_stdout", "async_stderr"])
+ManagerException = namedtuple("ManagerException", ["tuid", "exception", "traceback", "err_message"])
 DepSat = namedtuple("DepSat", ["tuid", "compiled_tuid", "input_tuples"])
 DepOutputIdxs = namedtuple("DepOutputIdxs", ["result_idx", "stdout_idx", "stderr_idx"])
 HostInfo = namedtuple("HostInfo", ["tuid", "hostname"])
@@ -231,9 +229,7 @@ class TaskCore:
         if len(self.dep_queues) > 0:
             compiled_tuid = self.compiled_tuid
 
-            for q, tuid, output_idxs in zip(
-                self.dep_queues, self.dep_tuids, self.dep_output_idxs
-            ):
+            for q, tuid, output_idxs in zip(self.dep_queues, self.dep_tuids, self.dep_output_idxs):
                 input_tuples = []
 
                 if output_idxs is not None:
@@ -335,9 +331,7 @@ class Task:
         except:
             pass
 
-    def _depends_on(
-        self, task, compiled_task, output_idxs: Optional[dict] = None
-    ) -> None:
+    def _depends_on(self, task, compiled_task, output_idxs: Optional[dict] = None) -> None:
         """
         Sets a dependency for this task, which will be blocked until the completion of ``task``.
 
@@ -417,10 +411,7 @@ class Task:
                 # if the current access type is READ and this new one is WRITE,
                 # then update the access type to WRITE
                 _, current_access_type = accesses_this_dict[channel]
-                if (
-                    current_access_type == AccessType.READ
-                    and access_type == AccessType.WRITE
-                ):
+                if current_access_type == AccessType.READ and access_type == AccessType.WRITE:
                     accesses_this_dict[channel] = (self, access_type)
             except:
                 # no access type has been set yet, so we do that now
@@ -486,15 +477,9 @@ class Task:
         # create AsyncDicts to hold the returned output from the task
         async_dicts = compiled_task.ret_q_handler._async_dicts
         async_dicts[compiled_task.core.compiled_tuid] = AsyncWrapper(
-            AsyncDict(
-                compiled_task._batch, AsyncType.RESULT, compiled_task=compiled_task
-            ),
-            AsyncDict(
-                compiled_task._batch, AsyncType.STDOUT, compiled_task=compiled_task
-            ),
-            AsyncDict(
-                compiled_task._batch, AsyncType.STDERR, compiled_task=compiled_task
-            ),
+            AsyncDict(compiled_task._batch, AsyncType.RESULT, compiled_task=compiled_task),
+            AsyncDict(compiled_task._batch, AsyncType.STDOUT, compiled_task=compiled_task),
+            AsyncDict(compiled_task._batch, AsyncType.STDERR, compiled_task=compiled_task),
         )
 
         compiled_task._started = True
@@ -516,10 +501,7 @@ class Task:
         compiled_task = self._compiled_task
         num_work_chunks = len(compiled_task.work_chunks)
 
-        while (
-            compiled_task.num_managers_complete < num_work_chunks
-            and compiled_task.exception is None
-        ):
+        while compiled_task.num_managers_complete < num_work_chunks and compiled_task.exception is None:
             time_so_far = time.time() - start
             try:
                 compiled_task.ret_q_handler._handle_next_ret(timeout - time_so_far)
@@ -580,14 +562,10 @@ class Task:
         The handle has type AsyncDict.
         """
         if self.num_subtasks > 1:
-            raise RuntimeError(
-                "result does not apply to compiled tasks with more than one subtask"
-            )
+            raise RuntimeError("result does not apply to compiled tasks with more than one subtask")
 
         if self._result is None:
-            self._result = AsyncDict(
-                self._batch, AsyncType.RESULT, compiled_task=None, subtask=self
-            )
+            self._result = AsyncDict(self._batch, AsyncType.RESULT, compiled_task=None, subtask=self)
 
         return self._result
 
@@ -599,14 +577,10 @@ class Task:
         The handle has type AsyncDict.
         """
         if self.num_subtasks > 1:
-            raise RuntimeError(
-                "stdout does not apply to compiled tasks with more than one subtask"
-            )
+            raise RuntimeError("stdout does not apply to compiled tasks with more than one subtask")
 
         if self._stdout is None:
-            self._stdout = AsyncDict(
-                self._batch, AsyncType.STDOUT, compiled_task=None, subtask=self
-            )
+            self._stdout = AsyncDict(self._batch, AsyncType.STDOUT, compiled_task=None, subtask=self)
 
         return self._stdout
 
@@ -618,14 +592,10 @@ class Task:
         The handle has type AsyncDict.
         """
         if self.num_subtasks > 1:
-            raise RuntimeError(
-                "stderr does not apply to compiled tasks with more than one subtask"
-            )
+            raise RuntimeError("stderr does not apply to compiled tasks with more than one subtask")
 
         if self._stderr is None:
-            self._stderr = AsyncDict(
-                self._batch, AsyncType.STDERR, compiled_task=None, subtask=self
-            )
+            self._stderr = AsyncDict(self._batch, AsyncType.STDERR, compiled_task=None, subtask=self)
 
         return self._stderr
 
@@ -717,9 +687,7 @@ class AsyncDict:
         :rtype: Any
         """
         if self._compiled_task is None:
-            async_result, async_stdout, async_stderr = self._async_dicts[
-                self._subtask.core.compiled_tuid
-            ]
+            async_result, async_stdout, async_stderr = self._async_dicts[self._subtask.core.compiled_tuid]
             # TODO: use match statement once we deprecate support for python 3.9
             """
             match self._async_type:
@@ -765,9 +733,7 @@ class AsyncDict:
                 # so in that case we can just manually set val here
                 val = ""
             else:
-                raise RuntimeError(
-                    f"no return value found for task: {self._subtask.core._get_id_str()}"
-                )
+                raise RuntimeError(f"no return value found for task: {self._subtask.core._get_id_str()}")
 
         if isinstance(val, tuple):
             # this is a (result, tb, raised) tuple, so check if there was an exception
@@ -957,9 +923,7 @@ class JobCore(TaskCore):
 
         for hostname in self.hostname_list:
             nprocs_this_template, template = self.process_templates[template_idx]
-            template.policy = Policy(
-                placement=Policy.Placement.HOST_NAME, host_name=hostname
-            )
+            template.policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=hostname)
 
             template.stdout = Popen.PIPE
 
@@ -1505,9 +1469,7 @@ class Manager:
                     template_idx_to_new_args[template_idx].append((new_arg, arg_idx))
 
                 # for each template, update the current arguments with the new ones
-                for template_idx, nprocs_and_template in enumerate(
-                    task_core.process_templates
-                ):
+                for template_idx, nprocs_and_template in enumerate(task_core.process_templates):
                     _, process_template = nprocs_and_template
                     new_args_list = template_idx_to_new_args[template_idx]
                     args_list = list(process_template.args)
@@ -1566,9 +1528,7 @@ class Manager:
             work._ready_task_cores[tuid] = task_core
             del work._blocked_task_cores[tuid]
 
-            self.log.debug(
-                f"number of remaining tasks to be started={len(work._blocked_task_cores)}"
-            )
+            self.log.debug(f"number of remaining tasks to be started={len(work._blocked_task_cores)}")
 
     def _handle_host_info(self, host_info: HostInfo) -> None:
         """
@@ -1583,9 +1543,7 @@ class Manager:
         :return: Returns None.
         :rtype: None
         """
-        self.log.debug(
-            f"received hostname={host_info.hostname} for task with {host_info.tuid}"
-        )
+        self.log.debug(f"received hostname={host_info.hostname} for task with {host_info.tuid}")
 
         num_procs, job_done_q, hostname_list = self.job_hostname_lists[host_info.tuid]
         hostname_list.append(host_info.hostname)
@@ -1619,9 +1577,7 @@ class Manager:
             # each manager should receive this message only once per (non-primary)
             # batch instance, so return an exception back to the client
             e = RuntimeError("cannot register client more than once")
-            me = ManagerException(
-                None, e, _get_traceback(), f"client {client_id} is already registered"
-            )
+            me = ManagerException(None, e, _get_traceback(), f"client {client_id} is already registered")
             ret_q.put(me)
         else:
             self.log.debug(f"registering client {client_id}")
@@ -1731,9 +1687,7 @@ class Manager:
         try:
             self._handle_join_called(join_called)
         except Exception as e:
-            self._handle_manager_exception(
-                e, "manager got exception when handling join-called message"
-            )
+            self._handle_manager_exception(e, "manager got exception when handling join-called message")
 
     def _add_to_async_queue(self, result_wrapper: Optional[ResultWrapper]):
         self._async_queue.put(result_wrapper)
@@ -1826,9 +1780,7 @@ class Manager:
         self.log.debug(f"+     {task_core._get_id_str()}")
         if isinstance(task_core, JobCore):
             num_procs, _, hostname_list = self.job_hostname_lists[task_core.tuid]
-            self.log.debug(
-                f"+     --> {len(hostname_list)} out of {num_procs} hosts reserved: {hostname_list}"
-            )
+            self.log.debug(f"+     --> {len(hostname_list)} out of {num_procs} hosts reserved: {hostname_list}")
 
     def _dump_debug_state(self) -> None:
         """
@@ -1870,17 +1822,13 @@ class Manager:
 
                     if len(work._ready_task_cores) > 0:
                         self.log.debug(divider)
-                        self.log.debug(
-                            f"| ready tasks for compiled_tuid={compiled_tuid}"
-                        )
+                        self.log.debug(f"| ready tasks for compiled_tuid={compiled_tuid}")
                         for _, task_core in work._ready_task_cores.items():
                             self._log_task_debug_info(task_core)
 
                     if len(work._blocked_task_cores) > 0:
                         self.log.debug(divider)
-                        self.log.debug(
-                            f"| blocked tasks for compiled_tuid={compiled_tuid}"
-                        )
+                        self.log.debug(f"| blocked tasks for compiled_tuid={compiled_tuid}")
                         for _, task_core in work._blocked_task_cores.items():
                             self._log_task_debug_info(task_core)
         else:
@@ -1936,15 +1884,9 @@ class Manager:
             except queue.Empty:
                 pass
             except Exception as e:
-                self._handle_manager_exception(
-                    e, "failed to get item from async results queue"
-                )
+                self._handle_manager_exception(e, "failed to get item from async results queue")
 
-            if (
-                self.join_called
-                and len(self.active_clients) == 0
-                and len(self.work_backlog) == 0
-            ):
+            if self.join_called and len(self.active_clients) == 0 and len(self.work_backlog) == 0:
                 break
 
             try:
@@ -2289,9 +2231,7 @@ class MakeTask:
 
         self._preprocess_val = False
 
-        import_and_calltime_intersection = self._ptd_arg_set.union(
-            self._ptd_kwarg_set
-        ).intersection(ptd_import_arg_set)
+        import_and_calltime_intersection = self._ptd_arg_set.union(self._ptd_kwarg_set).intersection(ptd_import_arg_set)
 
         if len(import_and_calltime_intersection) > 0:
             raise RuntimeError(
@@ -2568,14 +2508,10 @@ class MakeTask:
                 target = _resolve_val(exe["target"])
                 if task_type == TaskType.FUNC:
                     if not isinstance(target, Callable):
-                        raise RuntimeError(
-                            f"function target must be a callable: {target=}"
-                        )
+                        raise RuntimeError(f"function target must be a callable: {target=}")
                 else:
                     if not isinstance(target, str) and not isinstance(target, Path):
-                        raise RuntimeError(
-                            f"process or job target must be a str or Path: {target=}"
-                        )
+                        raise RuntimeError(f"process or job target must be a str or Path: {target=}")
             except KeyError:
                 raise RuntimeError("failed to resolve target for task")
 
@@ -2615,9 +2551,7 @@ class MakeTask:
                 env = None
 
             if task_type != TaskType.FUNC:
-                pt = ProcessTemplate(
-                    target=target, args=args, kwargs=kwargs, cwd=cwd, env=env
-                )
+                pt = ProcessTemplate(target=target, args=args, kwargs=kwargs, cwd=cwd, env=env)
                 pt_list.append((nprocs, pt))
 
         # create Task from task_type and pt_list
@@ -2643,9 +2577,7 @@ class MakeTask:
                 timeout=_get_timeout_val(timeout_dict),
             )
         else:
-            raise RuntimeError(
-                f"invalid task type: {task_type}\n==> valid types: function, process, job"
-            )
+            raise RuntimeError(f"invalid task type: {task_type}\n==> valid types: function, process, job")
 
         # set up reads and writes
         for read in self._reads:
@@ -2908,6 +2840,8 @@ class BatchFile:
 # TODO: need to be able to pickle and unpickle Batch objects and send them
 # to managers and workers to enable recursive function calls
 class Batch:
+    """Graph-based distributed scheduling for functions, executables, and parallel applications"""
+
     def __init__(
         self,
         num_workers: int = 0,
@@ -2915,21 +2849,68 @@ class Batch:
         disable_background_batching: bool = False,
     ) -> None:
         """
-        Initializes a batch.
+        Create a Batch instance for orchestrating functions, executables, and parallel applications
+        with data dependencies with a directed acyclic graph (DAG).
 
         :param num_workers: Number of workers for this batch. Defaults to multiprocessing.cpu_count().
         :type num_workers: int
         :param disable_telem: Indicates if telemetry should be disabled for this Batch instance. Defaults to False.
         :type disable_telem: bool
 
+        .. highlight:: python
+        .. code-block:: python
+
+            # Generate the powers of a matrix and write them to disk
+            from dragon.workflows.batch import Batch
+            from pathlib import Path
+
+            import numpy as np
+
+            def gpu_matmul(m, base_dir, i):
+                # do GPU work with matrix m and data from {base_dir}/file_{i}
+                return matrix
+
+            # A base directory, and files in it, will be used for communication of results
+            batch = Batch(background_batching=False)
+            base_dir = Path("/some/path/to/base_dir")
+
+            # Knowledge of reads and writes to files will also be used by the Batch service
+            # to determine data dependencies and how to parallelize tasks
+            get_read = lambda i: batch.read(base_dir, Path(f"file_{i}"))
+            get_write = lambda i: batch.write(base_dir, Path(f"file_{i+1}"))
+
+            a = np.array([j for j in range(100)])
+            m = np.vander(a)
+
+            # batch.function will create a task with specified arguments and reads/writes to the file system
+            get_task = lambda i: batch.function(gpu_matmul, m, base_dir, i, reads=[get_read(i)], writes=[get_write(i)], timeout=30)
+
+            # Package up the list of tasks into a single compiled task and create the DAG (done by batch.compile),
+            # and then submit the compiled task to the Batch service (done by matrix_powers_task.start)
+            serial_task_list = [get_task(i) for i in range(1000)]
+            matrix_powers_task = batch.compile(serial_task_list)
+            matrix_powers_task.start()
+
+            # Wait for the compiled task to complete
+            matrix_powers_task.wait()
+
+            # If there was an exception while running the task, it will be raised when get() is called
+            for task in serial_task_list:
+                try:
+                    print(f"result={task.result.get()}")
+                    # print(f"stdout={task.stdout.get()}")
+                    # print(f"stderr={task.stderr.get()}")
+                except Exception as e:
+                    print(f"gpu_matmul failed with the following exception: {e}")
+
+            batch.close()
+            batch.join()
+
+
         :return: Returns None.
         :rtype: None
         """
-        if (
-            not isinstance(num_workers, int)
-            or num_workers <= 0
-            or num_workers > cpu_count()
-        ):
+        if not isinstance(num_workers, int) or num_workers <= 0 or num_workers > cpu_count():
             num_workers = cpu_count()
 
         self.num_workers = num_workers
@@ -2954,9 +2935,7 @@ class Batch:
 
         self._set_unique_attrs(self.manager_qs)
         # NOTE: self.log is set in _set_unique_addrs
-        self.log.debug(
-            f"creating new Batch object with {num_workers} workers and {self.num_managers} managers"
-        )
+        self.log.debug(f"creating new Batch object with {num_workers} workers and {self.num_managers} managers")
 
         self._setup_managers()
 
@@ -3025,9 +3004,7 @@ class Batch:
 
             self.grp.add_process(
                 nproc=1,
-                template=ProcessTemplate(
-                    target=_bootstrap_manager, args=(manager.work_q,)
-                ),
+                template=ProcessTemplate(target=_bootstrap_manager, args=(manager.work_q,)),
             )
 
         self.log.debug(f"initializing and starting the process group of managers")
@@ -3381,17 +3358,13 @@ class Batch:
         """
         # check that tasks_to_compile is a non-empty list of tasks
         if not isinstance(tasks_to_compile, list):
-            raise RuntimeError(
-                f"tasks_to_compile must be a list of tasks: {tasks_to_compile=}"
-            )
+            raise RuntimeError(f"tasks_to_compile must be a list of tasks: {tasks_to_compile=}")
         else:
             num_tasks = len(tasks_to_compile)
             if num_tasks == 0:
                 raise RuntimeError("cannot compile an empty list of tasks")
             elif not isinstance(tasks_to_compile[0], Task):
-                raise RuntimeError(
-                    f"tasks_to_compile must be a list of tasks: {tasks_to_compile[0]=}"
-                )
+                raise RuntimeError(f"tasks_to_compile must be a list of tasks: {tasks_to_compile[0]=}")
 
         task_core = TaskCore(self.client_id, name, None)
         compiled_task = Task(task_core, self, compiled=True)
@@ -3462,9 +3435,7 @@ class Batch:
 
                     partitions = new_partitions
                 except:
-                    raise RuntimeError(
-                        "failure occurred while trying to bisect dependency graph"
-                    )
+                    raise RuntimeError("failure occurred while trying to bisect dependency graph")
         else:
             task_core_set = {task.core for task in tasks_to_compile}
             partitions = [task_core_set]
@@ -3506,9 +3477,7 @@ class Batch:
 
         return compiled_task
 
-    def import_func(
-        self, ptd_file: str, *real_import_args, **real_import_kwargs
-    ) -> MakeTask:
+    def import_func(self, ptd_file: str, *real_import_args, **real_import_kwargs) -> MakeTask:
         """
         Loads the PTD dict and creates a ``MakeTask`` object for the parameterized task group
         specified by the PTD file and import arguments (``real_import_args`` and ``real_import_kwargs``).

@@ -66,9 +66,9 @@ Tutorials
             <h3>Distributed PyTorch</h3>
             <p>Train with PyTorch across many GPUs</p>
         </a>
-        <a href="uses/workflow.html" class="tile_item">
-            <h3>Workflows</h3>
-            <p>Develop a workflow that puts it all together</p>
+        <a href="uses/ddict_checkpoint.html" class="tile_item">
+            <h3>Resiliency with DDict Checkpointing</h3>
+            <p>Track application state to enable fault tolerance and recovery</p>
         </a>
     </div>
     <div class="tiles">
@@ -88,9 +88,9 @@ Tutorials
             <h3>Telemetry with Grafana</h3>
             <p>Visualize and analyze system and custom metrics</p>
         </a>
-        <a href="uses/debugging.html" class="tile_item">
-            <h3>Debugging</h3>
-            <p>Best practies for debugging</p>
+        <a href="uses/workflow.html" class="tile_item">
+            <h3>Workflows</h3>
+            <p>Develop a workflow that puts it all together</p>
         </a>
     </div>
 
@@ -102,9 +102,9 @@ Tutorials
     uses/orchestrate_procs.rst
     uses/orchestrate_mpi.rst
     uses/distributed_training.rst
-    uses/workflow.rst
+    uses/ddict_checkpoint.rst
     uses/multinode.rst
     uses/jupyter.rst
     uses/gpus.rst
     uses/grafana.rst
-    uses/debugging.rst
+    uses/workflow.rst

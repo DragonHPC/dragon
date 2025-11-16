@@ -924,6 +924,7 @@ class KeysOp(DictOp):
         t = threading.Thread(
             target=self.manager._send_dmsg_and_keys,
             args=(resp_msg, connection, keys, True, True),
+            daemon=True
         )
         t.start()
         self.manager._threads.append(t)
@@ -962,6 +963,7 @@ class ValuesOp(DictOp):
                 True,
                 self.manager._read_only,
             ),
+            daemon=True
         )
         t.start()
         self.manager._threads.append(t)
@@ -993,6 +995,7 @@ class ItemsOp(DictOp):
         t = threading.Thread(
             target=self.manager._send_dmsg_and_items,
             args=(resp_msg, connection, items, True),
+            daemon=True
         )
         t.start()
         self.manager._threads.append(t)
@@ -2438,6 +2441,7 @@ class Manager:
                 msg,
                 recvh,
             ),
+            daemon=True
         )
         t.start()
         self._threads.append(t)
@@ -3179,6 +3183,7 @@ class Manager:
             t = threading.Thread(
                 target=self._bput_batch,
                 args=(msg, recvh),
+                daemon=True
             )
             t.start()
             self._threads.append(t)

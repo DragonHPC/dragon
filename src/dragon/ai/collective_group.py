@@ -1,3 +1,5 @@
+"""Tools for creating a :py:class:`~dragon.native.process_group.ProcessGroup` for NCCL-like applications"""
+
 import os
 
 from ..infrastructure.policy import Policy
@@ -135,22 +137,22 @@ def CollectiveGroup(
         pg.close()
 
 
-        :param training_fn: The target function to run on each distributed process.
-        :type training_fn: callable
-        :param training_args: Positional arguments to pass to training_fn, defaults to None
-        :type training_args: tuple, optional
-        :param training_kwargs: Keyword arguments to pass to training_fn, defaults to None
-        :type training_kwargs: dict, optional
-        :param nprocs: (Not yet implemented) Total number of processes. Required if policies is not provided. Ignored if policies is a list, defaults to None
-        :type nprocs: int, optional
-        :param hide_stderr: If True, suppress standard error from the launched processes, defaults to False
-        :type hide_stderr: bool, optional
-        :param port: Master port for NCCL backend communication, defaults to 29500
-        :type port: int, optional
-        :param policies: List of Policy objects, one per process.
-        :type policies: list, optional
-        :return: A configured and initialized process group for distributed training
-        :rtype: ProcessGroup
+    :param training_fn: The target function to run on each distributed process.
+    :type training_fn: callable
+    :param training_args: Positional arguments to pass to training_fn, defaults to None
+    :type training_args: tuple, optional
+    :param training_kwargs: Keyword arguments to pass to training_fn, defaults to None
+    :type training_kwargs: dict, optional
+    :param nprocs: (Not yet implemented) Total number of processes. Required if policies is not provided. Ignored if policies is a list, defaults to None
+    :type nprocs: int, optional
+    :param hide_stderr: If True, suppress standard error from the launched processes, defaults to False
+    :type hide_stderr: bool, optional
+    :param port: Master port for NCCL backend communication, defaults to 29500
+    :type port: int, optional
+    :param policies: List of Policy objects, one per process.
+    :type policies: list, optional
+    :return: A configured and initialized process group for distributed training
+    :rtype: ProcessGroup
 
     """
     # TODO
