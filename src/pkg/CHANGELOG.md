@@ -1,5 +1,54 @@
 # Changelog
 
+## [0.13] - 2025-11-05
+
+### Changed
+
+    [AICI-1924] - Documentation updates
+    [AICI-1932] - Rework PMIx nspace to use dragon util uuid+umap functions
+    [AICI-1960] - Update run_gups_scale.sh to use --benchit
+    [AICI-1965] - Update release scale tests
+    [AICI-1755] - Remove distutils from entire codebase
+    [AICI-1822] - Test/benchmark MVAPICH performance with PMIx server
+    [AICI-1931] - DDict Persister ABC and Subclass Cleanup
+    [AICI-1957] - Remove Futex from BCast for Mac OS Support
+
+### Added
+
+    [AICI-1923] - TCP backend for HSTA
+    [AICI-1939] - Integrate Batch under dragon workflows
+    [AICI-1948] - Write dragon-config tests
+    [AICI-1955] - Add usage pages to docs for dragon and dragon-config
+    [AICI-1996] - Add a default memory pool tracker that emits warnings if it is getting full
+
+### Fixed
+
+    [AICI-1938] - Policy evaluator has asserts in it that cause silent GS failures
+    [AICI-1961] - /dragon/.dragon-config.mk: No such file or directory when running multi-node tests
+    [AICI-1962] - Fix PMIx teardown in LS
+    [AICI-1966] - Inconsistency in training group creation
+    [AICI-1991] - Executable launch without arguments fails in to_str_iter()
+
+## [0.12.3] - 2025-10-06
+
+### Added
+
+    [AICI-1903] - Managed memory support for GPU buffers
+    [AICI-1925] - Benchmark for checkpoint persistence test
+    [AICI-1927] - Document "which PMI do I use?" for MPI app launch
+    [AICI-1937] - dragon-cleanup tests added
+    [AICI-1936] - dragon-cleanup of telemetry processes added
+    [AICI-1831] - Make SSH launch testing part of merge to develop checklist
+
+### Fixed
+
+    [AICI-1933] - Make it possible to re-run a process group with a PMIx backend
+    [AICI-1959] - Fix utf8 decoding bug in local services
+    [AICI-1908] - Make src/dragon/lib symbolic link as part of Makefile build
+    [AICI-1926] - Address DDict documentation inconsistencies
+    [AICI-1935] - Fix erroneous hostlist error raise during WLM launch
+
+
 ## [0.12.2] - 2025-09-11
 
 ### Changed

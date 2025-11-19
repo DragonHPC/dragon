@@ -27,7 +27,6 @@ from ..infrastructure.facts import ARG_IMMEDIATE_LIMIT, PMIBackend
 from ..infrastructure.process_desc import ProcessOptions
 from ..infrastructure.messages import PIPE as MSG_PIPE, STDOUT as MSG_STDOUT, DEVNULL as MSG_DEVNULL
 from ..infrastructure.policy import Policy
-from ..globalservices.policy_eval import PolicyEvaluator
 from ..utils import b64decode, b64encode
 
 LOG = logging.getLogger(__file__)

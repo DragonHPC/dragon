@@ -18,13 +18,14 @@ CC = gcc
 #CFLAGS = -O0 -g -fPIC -Wall
 CFLAGS = -O3 -fomit-frame-pointer -fPIC -Wall
 CXX = g++
-CPPFLAGS = -I ../include -I $(DEFAULT_PMIX_INCLUDE) -DDRAGON_DEBUG $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
+CPPFLAGS = -I ../include -I ./gpu -I $(DEFAULT_PMIX_INCLUDE) -DDRAGON_DEBUG $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
 CXXFLAGS = $(CFLAGS) $(CPPFLAGS) -std=c++14
 
 LIBRARIES := libdragon.so libpmod.so $(wildcard libdfabric_*.so)
 
 libdragon_HEADERS := $(wildcard *.h) \
                      $(wildcard gpu/*.hpp) \
+                     $(wildcard gpu/*.h) \
                      $(filter-out ../include/dragon/return_codes_map.h,$(wildcard ../include/dragon/*.h)) \
                      ../include/dragon/return_codes_map.h \
 					 ../include/dragon/message_tcs.h

@@ -924,6 +924,7 @@ class KeysOp(DictOp):
         t = threading.Thread(
             target=self.manager._send_dmsg_and_keys,
             args=(resp_msg, connection, keys, True, True),
+            daemon=True
         )
         t.start()
         self.manager._threads.append(t)
@@ -962,6 +963,7 @@ class ValuesOp(DictOp):
                 True,
                 self.manager._read_only,
             ),
+            daemon=True
         )
         t.start()
         self.manager._threads.append(t)
@@ -993,6 +995,7 @@ class ItemsOp(DictOp):
         t = threading.Thread(
             target=self.manager._send_dmsg_and_items,
             args=(resp_msg, connection, items, True),
+            daemon=True
         )
         t.start()
         self.manager._threads.append(t)
@@ -1783,6 +1786,7 @@ class Manager:
 
         self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
 
+
     def __setstate__(self, args):
         # unpickle manager and check the metadata match the previous manager
         (wait_for_keys, wait_for_writers, working_set_size, persist_freq, self._working_set) = args
@@ -1854,8 +1858,11 @@ class Manager:
     def _free_resources(self):
 
         try:
+            # Wait a short amount of time for threads to join, but we are going down so don't
+            # wait forever.
             for t in self._threads:
-                t.join()
+                t.join(timeout=5)
+
             # destroy all client maps
             for i in self._buffered_client_connections_map:
                 self._buffered_client_connections_map[i].detach()
@@ -2134,7 +2141,6 @@ class Manager:
                 errInfo=err_str,
                 err=err_code,
             )
-            log.debug("sent DDRegisterManager")
         else:
             msg = dmsg.DDRegisterManager(
                 self._tag_inc(),
@@ -2149,27 +2155,50 @@ class Manager:
 
         connection = fli.FLInterface.attach(b64decode(serialized_return_orc))
         self._send_msg(msg, connection)
+        log.debug("sent DDRegisterManager")
         connection.detach()
         log.debug("about to receive response DDRegisterManagerResponse")
-        resp_msg = self._recv_msg(set([msg.tag]))
-        if resp_msg.err != DragonError.SUCCESS:
-            raise Exception(
-                f"Failed to register manager with orchestrator. Return code: {get_rc_string(resp_msg.err)}, {resp_msg.errInfo}"
-            )
-        self._managers = resp_msg.managers
-        log.debug("The number of managers is %s", len(self._managers))
-        self._serialized_manager_nodes = resp_msg.managerNodes
-        for serialized_node in self._serialized_manager_nodes:
-            self._manager_hostnames.append(cloudpickle.loads(b64decode(serialized_node)).hostname)
-        for i in range(len(self._managers)):
-            if i != self._manager_id:
-                self._manager_flis[i] = fli.FLInterface.attach(b64decode(self._managers[i]))
+        err = DragonError.SUCCESS
+        errInfo = ""
 
-            self._next_client_id = self._manager_id * MAX_NUM_CLIENTS_PER_MANAGER + 1
-            self._serving = True
-            self._bytes_for_dict = self._pool.free_space
-            self._registered = True
+        try:
+            resp_msg = self._recv_msg(set([msg.tag]))
+            if resp_msg.err != DragonError.SUCCESS:
+                err = resp_msg.err
+                raise Exception(
+                    f"Failed to register manager with orchestrator. Return code: {get_rc_string(resp_msg.err)}, {resp_msg.errInfo}"
+                )
+
+            self._managers = resp_msg.managers
+            log.debug("The number of managers is %s", len(self._managers))
             self._serialized_manager_nodes = resp_msg.managerNodes
+            for serialized_node in self._serialized_manager_nodes:
+                self._manager_hostnames.append(cloudpickle.loads(b64decode(serialized_node)).hostname)
+            for i in range(len(self._managers)):
+                if i != self._manager_id:
+                    self._manager_flis[i] = fli.FLInterface.attach(b64decode(self._managers[i]))
+
+                self._next_client_id = self._manager_id * MAX_NUM_CLIENTS_PER_MANAGER + 1
+                self._serving = True
+                self._bytes_for_dict = self._pool.free_space
+                self._registered = True
+                self._serialized_manager_nodes = resp_msg.managerNodes
+        except Exception as ex:
+            tb = traceback.format_exc()
+            if err == DragonError.SUCCESS:
+                err = DragonError.FAILURE
+            errInfo = "Caught exception while completing manager creation: %s\n %s" % (ex, tb)
+        finally:
+            # send manager ready message to orchestrator before raising exception
+            self._manager_ready(serialized_return_orc, msg.tag, err, errInfo)
+
+
+    def _manager_ready(self, serialized_return_orc, ref, err, errInfo):
+        msg = dmsg.DDCreateManagerResponse(self._tag_inc(), ref=ref, err=err, errInfo=errInfo, managerID=self._manager_id)
+        connection = fli.FLInterface.attach(b64decode(serialized_return_orc))
+        self._send_msg(msg, connection)
+        log.debug("sent DDCreateManagerResponse")
+        connection.detach()
 
     def _register_client(self, client_id: int, respFLI: str, bufferedRespFLI: str):
         self._client_connections_map[client_id] = fli.FLInterface.attach(b64decode(respFLI))
@@ -2412,6 +2441,7 @@ class Manager:
                 msg,
                 recvh,
             ),
+            daemon=True
         )
         t.start()
         self._threads.append(t)
@@ -2847,6 +2877,7 @@ class Manager:
                     self._recover_mem(client_key_mem, val_list, recvh)
                     log.info("Streamed data now recovered. Sending put response to indicate failure.")
                     return
+
             resp_msg = dmsg.DDBPutResponse(
                 self._tag_inc(),
                 ref=msg.tag,
@@ -2855,6 +2886,27 @@ class Manager:
                 numPuts=self._num_bput[msg.clientID],
                 managerID=self._manager_id,
             )
+
+        except EOFError as ex:
+            log.info(
+                "Manager %s with PUID=%s could not process broadcast bput request. %s",
+                self._manager_id,
+                self._puid,
+                ex,
+            )
+            resp_msg = dmsg.DDBPutResponse(
+                self._tag_inc(),
+                ref=msg.tag,
+                err=DragonError.EOT,
+                errInfo="",
+                numPuts=self._num_bput[msg.clientID],
+                managerID=self._manager_id,
+            )
+            # recover from the error by freeing memory and cleaning recvh.
+            log.info("About to recover memory")
+            self._recover_mem(client_key_mem, val_list, recvh)
+            log.info("Streamed data now recovered. Sending bput response to indicate failure.")
+            return
 
         except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
             log.info(
@@ -2867,6 +2919,27 @@ class Manager:
                 self._tag_inc(),
                 ref=msg.tag,
                 err=DragonError.MEMORY_POOL_FULL,
+                errInfo="",
+                numPuts=self._num_bput[msg.clientID],
+                managerID=self._manager_id,
+            )
+            # recover from the error by freeing memory and cleaning recvh.
+            log.info("About to recover memory")
+            self._recover_mem(client_key_mem, val_list, recvh)
+            log.info("Streamed data now recovered. Sending bput response to indicate failure.")
+            return
+
+        except fli.DragonFLIObjectDestroyed as ex:
+            log.info(
+                "Manager %s with PUID=%s could not process broadcast bput request. %s",
+                self._manager_id,
+                self._puid,
+                ex,
+            )
+            resp_msg = dmsg.DDBPutResponse(
+                self._tag_inc(),
+                ref=msg.tag,
+                err=DragonError.OBJECT_DESTROYED,
                 errInfo="",
                 numPuts=self._num_bput[msg.clientID],
                 managerID=self._manager_id,
@@ -2896,12 +2969,22 @@ class Manager:
 
         finally:
             try:
-                recvh.close()
+                try:
+                    recvh.close()
+                except:
+                    pass
+
                 # close send handles of the two child managers and detach the FLIs
                 for sendh in manager_send_handles.values():
-                    sendh.close()
+                    try:
+                        sendh.close()
+                    except:
+                        pass
                 for connection in manager_connections.values():
-                    connection.detach()
+                    try:
+                        connection.detach()
+                    except:
+                        pass
                 for stream in manager_streams.values():
                     self._release_strm_channel(stream)
             except Exception as ex:
@@ -3034,6 +3117,24 @@ class Manager:
                 self._send_msg(resp_msg, connection)
                 connection.detach()
 
+            except fli.DragonFLIObjectDestroyed as ex:
+                log.info("Manager %s with PUID %s could not process bput request. %s", self._manager_id, self._puid, ex)
+                # recover from the error by freeing memory and cleaning recvh.
+                log.info("About to recover memory")
+                self._recover_mem(client_key_mem, val_list, recvh)
+                log.info("Streamed data now recovered. Sending put response to indicate failure.")
+                resp_msg = dmsg.DDBPutResponse(
+                    self._tag_inc(),
+                    ref=msg.tag,
+                    err=DragonError.OBJECT_DESTROYED,
+                    errInfo="",
+                    numPuts=1,
+                    managerID=self._manager_id,
+                )
+                connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+                self._send_msg(resp_msg, connection)
+                connection.detach()
+
             except DDictCheckpointSyncError as ex:
                 log.info("Manager %s with PUID %s could not process bput request. %s", self._manager_id, self._puid, ex)
                 errInfo = f"The requested bput operation for checkpoint id {msg.chkptID} was older than the working set range of {self._working_set.range}"
@@ -3082,6 +3183,7 @@ class Manager:
             t = threading.Thread(
                 target=self._bput_batch,
                 args=(msg, recvh),
+                daemon=True
             )
             t.start()
             self._threads.append(t)

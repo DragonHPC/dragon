@@ -24,6 +24,8 @@ class DragonCleanup:
 
     DRAGON_FE_PROCESS_REGEX = r"/dragon$"
     DRAGON_BE_PROCESS_REGEX = r"/dragon-backend$"
+    DRAGON_LS_PROCESS_REGEX = r"/dragon-localservices$"
+    DRAGON_OVERLAY_PROCESS_REGEX = r"dragon.cli"
 
     NVIDIA_CUDA_MPS_REGEX = r"/nvidia-cuda-mps$"
 
@@ -107,7 +109,7 @@ class DragonCleanup:
                         "mpiexec" not in cmdline,
                     ]
                 )
-            except ZombieProcess:
+            except (NoSuchProcess, ZombieProcess):
                 pass
 
     @staticmethod
@@ -120,15 +122,22 @@ class DragonCleanup:
         try:
             if expression.search(process.cmdline()[1]):
                 return True
+            if expression.search(process.cmdline()[2]):
+                return True
             return False
         except (IndexError, NoSuchProcess):
             return False
 
     def _kill_process_tree(self, process_list):
         for process in process_list:
-            children = process.children()
-            if children:
-                self._kill_process_tree(children)
+            try:
+                children = process.children()
+
+                if children:
+                    self._kill_process_tree(children)
+
+            except NoSuchProcess:
+                pass
 
             if self.dry_run:
                 print(
@@ -158,19 +167,37 @@ class DragonCleanup:
         print("Looking for and killing Dragon launcher processes and their child processes.", flush=True)
 
         dragon_regex = DragonCleanup.DRAGON_FE_PROCESS_REGEX if self.is_fe else DragonCleanup.DRAGON_BE_PROCESS_REGEX
-        dragon_launcher = "dragon" if self.is_fe else "dragon-backend"
 
         filter_proc = partial(
             DragonCleanup._find_dragon_launcher_process,
             expression=re.compile(dragon_regex),
         )
+        filter_proc_ls = partial(
+            DragonCleanup._find_dragon_launcher_process,
+            expression=re.compile(DragonCleanup.DRAGON_LS_PROCESS_REGEX),
+        )
+        filter_proc_overlay = partial(
+            DragonCleanup._find_dragon_launcher_process,
+            expression=re.compile(DragonCleanup.DRAGON_OVERLAY_PROCESS_REGEX),
+        )
 
         dragon_processes = list(filter(filter_proc, self.user_processes))
+
+        dragon_ls_processes = list(filter(filter_proc_ls, self.user_processes))
+        dragon_processes.extend(dragon_ls_processes)
+
+        dragon_overlay_processes = list(filter(filter_proc_overlay, self.user_processes))
+        dragon_processes.extend(dragon_overlay_processes)
+
         for process in dragon_processes:
-            print(
-                f"Found {dragon_launcher} with pid {process.pid}. Attempting to cleanup it's process tree.", flush=True
-            )
-            self._kill_process_tree([process])
+            try:
+                print(
+                    f"Found {process.exe()} with pid {process.pid}. Attempting to cleanup it's process tree.",
+                    flush=True,
+                )
+                self._kill_process_tree([process])
+            except NoSuchProcess:
+                pass
         else:
             print("There are no Dragon PIDS to kill", flush=True)
 

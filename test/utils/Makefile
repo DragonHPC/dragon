@@ -4,7 +4,7 @@ CFLAGS ?= -fPIC -Wall -Ofast -fomit-frame-pointer
 ifeq ($(DRAGON_INCLUDE_DIR),)
     DRAGON_INCLUDE = $(shell dragon-config -o)
 else
-	DRAGON_INCLUDE = -I $(DRAGON_INCLUDE_DIR)
+	DRAGON_INCLUDE = -I $(DRAGON_INCLUDE_DIR) -I $(DRAGON_LIB_DIR)/gpu
 endif
 
 ifeq ($(DRAGON_LIB_DIR),)
@@ -16,7 +16,7 @@ endif
 INCLUDE = $(DRAGON_INCLUDE)
 LIBS = $(DRAGON_LINK)
 
-BIN_FILES = lock_bench test_attach test_heap test_mem test_threaded_lock umap_test ulist_test test_log test_serialized_uid test_blocks
+BIN_FILES = lock_bench test_attach test_heap test_mem test_threaded_lock umap_test ulist_test test_log test_serialized_uid test_blocks test_gpu_mem
 
 %.c.o: %.c
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@ -fopenmp
@@ -39,6 +39,9 @@ test_heap: test_heap.c.o
 
 test_mem: test_mem.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_mem $< $(LIBS) -lrt -ldl
+
+test_gpu_mem: test_gpu_mem.c.o
+	$(CC) $(INCLUDE) $(CFLAGS) -o test_gpu_mem $< $(LIBS) -lrt -ldl
 
 umap_test: umap.c
 	$(CC) $(INCLUDE) $(CFLAGS) -o umap_test $< $(LIBS)  -fopenmp -ldl

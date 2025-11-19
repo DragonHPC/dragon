@@ -43,6 +43,7 @@ Home
     * :ref:`getting-started`
     * :ref:`uses`
     * :ref:`DragonAPI`
+    * :ref:`command-line-interface`
     * :ref:`developer-guide`
 
 
@@ -65,6 +66,7 @@ write familiar code, making it easy to scale from a laptop to a supercomputer.
    start.rst
    uses.rst
    ref.rst
+   cli.rst
    devguide.rst
    benchmarks.rst
    faq.rst

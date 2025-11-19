@@ -30,10 +30,14 @@ typedef enum dragonDDictReqType_st {
     DRAGON_DDICT_NO_OP,
     DRAGON_DDICT_GET_REQ,
     DRAGON_DDICT_PUT_REQ,
+    DRAGON_DDICT_BATCH_PUT_REQ,
+    DRAGON_DDICT_B_PUT_BATCH_REQ,
+    DRAGON_DDICT_B_PUT_REQ,
     DRAGON_DDICT_CONTAINS_REQ,
     DRAGON_DDICT_POP_REQ,
     DRAGON_DDICT_LENGTH_REQ,
-    DRAGON_DDICT_CONNECT_MANAGER_REQ
+    DRAGON_DDICT_CONNECT_MANAGER_REQ,
+    DRAGON_DDICT_FINALIZED
 } dragonDDictReqType_t;
 
 class dragonDDict_t {
@@ -73,6 +77,24 @@ class dragonDDict_t {
     std::vector<uint64_t> local_managers;
 
     dragonULInt dd_uid; // UID for umap storage
+
+    // batch put
+    bool batch_put_started;
+    bool batch_persist;
+    std::set<uint64_t> batch_put_msg_tags;
+    std::unordered_map<uint64_t, uint64_t> num_batch_puts;
+    std::unordered_map<uint64_t, dragonChannelDescr_t*> batch_put_stream_channels;
+    std::unordered_map<uint64_t, dragonFLISendHandleDescr_t*> opened_send_handles;
+
+    // bput (broadcast put) with batch
+    dragonChannelDescr_t bput_strm;
+    bool has_bput_root_manager_sendh;
+    dragonFLISendHandleDescr_t bput_root_manager_sendh;
+    dragonChannelDescr_t bput_resp_strm;
+    dragonFLIDescr_t bput_respFLI;
+    std::string bput_respFLIStr;
+    uint64_t bput_tag;
+    uint64_t num_bputs;
 };
 
 // can be a class

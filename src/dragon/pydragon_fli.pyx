@@ -83,6 +83,15 @@ class DragonFLIEOT(DragonFLIError, EOFError, queue.Empty):
     """
     pass
 
+class DragonFLIObjectDestroyed(DragonFLIError):
+    """
+    This exception can surface when an object is destroyed that was in use
+    by an FLI. It typically means some resource (a channel perhaps) has been
+    destroyed that the FLI relied upon which may happen when tearing something
+    down without an orderly teardown.
+    """
+    pass
+
 class DragonFLIFull(DragonFLIError, queue.Full):
     """
     The DragonFLIFull Exception is used to indicate that the queue is
@@ -211,6 +220,9 @@ cdef class FLISendH:
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Timed out while opening send handle.")
 
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The send handle could not be opened. Object destroyed.")
+
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not open send handle stream.")
 
@@ -244,6 +256,9 @@ cdef class FLISendH:
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Timed out while closing send handle.")
+
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The send handle could not be closed. Object destroyed.")
 
         if derr == DRAGON_CHANNEL_FULL:
             raise DragonFLIFull(derr, "The FLI is full.")
@@ -290,6 +305,9 @@ cdef class FLISendH:
         if derr == DRAGON_EOT:
             raise DragonFLIEOT(derr, "Receiver Ended Streaming")
 
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The data could not be sent. Object destroyed.")
+
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while sending bytes.")
 
@@ -329,6 +347,9 @@ cdef class FLISendH:
         if derr == DRAGON_EOT:
             raise DragonFLIEOT(derr, "Receiver Ended Streaming")
 
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The data could not be sent. Object destroyed.")
+
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while sending memory.")
 
@@ -355,6 +376,9 @@ cdef class FLISendH:
         with nogil:
             derr = dragon_fli_create_writable_fd(&self._sendh, &fdes, buffered, chunk_size, user_arg, time_ptr)
 
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The file descriptor could not be opened. Object destroyed.")
+
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while creating writable file descriptor.")
 
@@ -379,6 +403,9 @@ cdef class FLISendH:
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while finalizing the writable file descriptor.")
+
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The file descriptor could not be finalized. Object destroyed.")
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not finalize writable file descriptor")
@@ -472,6 +499,9 @@ cdef class FLIRecvH:
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while opening receive handle.")
 
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The receive handle could not be opened. Object destroyed.")
+
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not open receive handle stream")
 
@@ -515,6 +545,9 @@ cdef class FLIRecvH:
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while closing receive handle.")
+
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The receive handle could not be closed. Object destroyed.")
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not close receive handle stream")
@@ -582,22 +615,25 @@ cdef class FLIRecvH:
         with nogil:
             derr = dragon_fli_recv_bytes_into(&self._recvh, max_bytes, &num_bytes, &c_data[0], &arg, time_ptr)
 
-        if not free_mem:
-            derr = dragon_fli_set_free_flag(&self._recvh)
-            if derr != DRAGON_SUCCESS:
-                raise DragonFLIError(derr, "Error setting free memory flag in FLI receive handle")
-
         if derr == DRAGON_DYNHEAP_REQUESTED_SIZE_TOO_LARGE or derr == DRAGON_MEMORY_POOL_FULL:
             raise DragonFLIOutOfMemoryError(derr, "Could not receive message because out of memory in Dragon Memory Pool. Message was discarded.")
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while receiving bytes into.")
 
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The data could not be received. Object destroyed.")
+
         if derr == DRAGON_EOT:
             raise DragonFLIEOT(derr, "End of Transmission")
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not receive into bytes buffer")
+
+        if not free_mem:
+            derr = dragon_fli_set_free_flag(&self._recvh)
+            if derr != DRAGON_SUCCESS:
+                raise DragonFLIError(derr, "Error setting free memory flag in FLI receive handle")
 
         # Landing pad should be populated, just return arg
         return arg
@@ -634,13 +670,11 @@ cdef class FLIRecvH:
         with nogil:
             derr = dragon_fli_recv_bytes(&self._recvh, max_bytes, &num_bytes, &c_data, &arg, time_ptr)
 
-        if not free_mem:
-            derr = dragon_fli_set_free_flag(&self._recvh)
-            if derr != DRAGON_SUCCESS:
-                raise DragonFLIError(derr, "Error setting free memory flag in FLI receive handle")
-
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while receiving bytes.")
+
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The data could not be received. Object destroyed.")
 
         if derr == DRAGON_DYNHEAP_REQUESTED_SIZE_TOO_LARGE or derr == DRAGON_MEMORY_POOL_FULL:
             raise DragonFLIOutOfMemoryError(derr, "Could not receive message because out of memory in Dragon Memory Pool. Message was discarded.")
@@ -652,6 +686,12 @@ cdef class FLIRecvH:
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Error receiving FLI data")
+
+        if not free_mem:
+            derr = dragon_fli_set_free_flag(&self._recvh)
+            if derr != DRAGON_SUCCESS:
+                raise DragonFLIError(derr, "Error setting free memory flag in FLI receive handle")
+
 
         # Convert to a memoryview
         py_view = PyMemoryView_FromMemory(<char *>c_data, num_bytes, BUF_WRITE)
@@ -689,6 +729,9 @@ cdef class FLIRecvH:
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while receiving memory.")
 
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The data could not be received. Object destroyed.")
+
         if derr == DRAGON_EOT:
             raise DragonFLIEOT(derr, "End of Transmission")
 
@@ -722,6 +765,9 @@ cdef class FLIRecvH:
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while creating readable file descriptor.")
 
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The file descriptor could not be created. Object destroyed.")
+
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not open readable file descriptor")
 
@@ -743,6 +789,9 @@ cdef class FLIRecvH:
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while finalizing the readable file descriptor.")
+
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The file descriptor could not be created. Object destroyed.")
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not finalize readable file descriptor")
@@ -791,6 +840,9 @@ cdef class FLInterface:
             mpool = &pool._pool_hdl
 
         derr = dragon_fli_attach(&_serial, mpool, &self._adapter)
+
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "The FLI could not be attached. Object destroyed.")
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Could not attach to FLI adapter")
@@ -884,6 +936,9 @@ cdef class FLInterface:
         with nogil:
             derr = dragon_fli_destroy(&self._adapter)
 
+        if derr == DRAGON_OBJECT_DESTROYED:
+            return
+
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Failed to destroy FLInterface")
 
@@ -904,6 +959,9 @@ cdef class FLInterface:
 
         if derr == DRAGON_TIMEOUT:
             raise DragonFLITimeoutError(derr, "Time out while getting the number of available streams.")
+
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise DragonFLIObjectDestroyed(derr, "Could not get available streams. Object destroyed.")
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Failed to get the available streams")
@@ -943,6 +1001,9 @@ cdef class FLInterface:
         cdef dragonError_t derr
 
         derr = dragon_fli_detach(&self._adapter)
+
+        if derr == DRAGON_OBJECT_DESTROYED:
+            return
 
         if derr != DRAGON_SUCCESS:
             raise DragonFLIError(derr, "Failed to detach from FLI adapter")
@@ -1120,6 +1181,9 @@ cdef class PickleReadAdapter:
 
             if derr == DRAGON_TIMEOUT:
                 raise DragonFLITimeoutError(derr, "Time out while receiving bytes.")
+
+            if derr == DRAGON_OBJECT_DESTROYED:
+                raise DragonFLIObjectDestroyed(derr, "The data could not be received. Object destroyed.")
 
             if derr == DRAGON_EOT:
                 raise DragonFLIEOT(derr, "End of Transmission")

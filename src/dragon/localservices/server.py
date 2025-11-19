@@ -28,9 +28,9 @@ from ..infrastructure import parameters as dp
 ## This is defined only if the build used PMIx.
 ## If it didn't passing shouldn't cause issue
 try:
-    from ..dpmix import DragonPMIxServer
+    from ..dpmix import DragonPMIxJob
 except ImportError:
-    DragonPMIxServer = None
+    DragonPMIxJob = None
 
 from ..dlogging import util as dlog
 from ..dlogging.util import DragonLoggingServices as dls
@@ -102,22 +102,29 @@ class PopenProps(subprocess.Popen):
 
 
 class PMIxGroupResources:
-    def __init__(self, ls_ch, ret_ch, buffered_resp_ch):
+    def __init__(self, ls_ch=None, ret_ch=None, buffered_resp_ch=None):
+        self._pmix_server_up = False
+
         self.ls_ch = ls_ch
         self.ret_ch = ret_ch
         self.buffered_resp_ch = buffered_resp_ch
-        self._server = None
+        self._job = None
         self._job_destroyed = False
 
     @property
-    def server(self):
-        return self._server
+    def job(self):
+        return self._job
 
-    @server.setter
-    def server(self, server: DragonPMIxServer):
-        self._server = server
+    @job.setter
+    def job(self, job: DragonPMIxJob):
+        self._job = job
 
     def destroy_job(self):
+        try:
+            self._job.finalize_job()
+        except Exception as e:
+            raise RuntimeError("Unable to cleanup PMIx jobs: %s", e)
+
         try:
             self.ls_ch.destroy()
         except Exception:
@@ -133,15 +140,10 @@ class PMIxGroupResources:
         except Exception:
             pass
 
-        try:
-            self._server.finalize_job()
-        except Exception as e:
-            raise RuntimeError("Unable to cleanup PMIx jobs: %s", e)
-
         self._job_destroyed = True
 
     def destroy_server(self):
-        self._server.finalize_server()
+        self._job.finalize_server()
 
 
 class TerminationException(Exception):
@@ -163,6 +165,9 @@ class InputConnector:
 
     def forward(self):
         try:
+            if self._closed:
+                return False
+
             data = None
             while self._conn.poll(timeout=0):
                 data = self._conn.recv()
@@ -260,6 +265,9 @@ class OutputConnector:
         self._fwd_stdout = False
 
     def _sendit(self, block):
+        if self._closed:
+            return
+
         if len(block) > 0:
             self._writtenTo = True
 
@@ -346,7 +354,10 @@ class OutputConnector:
         if not io_data:  # at EOF because we just selected
             return True  # To indicate EOF
 
-        str_data = io_data.decode()
+        try:
+            str_data = io_data.decode()
+        except:
+            str_data = str(io_data)
 
         # This is temporary and code to ignore warnings coming from capnproto. The
         # capnproto library has been modified to not send the following warning.
@@ -599,13 +610,14 @@ class LocalServer:
         self.new_procs = queue.SimpleQueue()  # outbound PopenProps of newly started processes
         self.new_channel_input_monitors = queue.SimpleQueue()
         self.exited_channel_output_monitors = queue.SimpleQueue()
+        self.exited_channel_input_monitors = queue.SimpleQueue()
         self.hostname = hostname
         self.cuid_to_input_connector = {}
         self.node_index = parms.this_process.index
         self.local_cuids = AvailableLocalCUIDS(self.node_index)
         self.local_muids = AvailableLocalMUIDS(self.node_index)
         self.local_channels = dict()
-        self.group_resources = dict()
+        self.pmix_group_resources = dict()
         self.def_muid = dfacts.default_pool_muid_from_index(self.node_index)
 
         if channels is None:
@@ -763,6 +775,10 @@ class LocalServer:
         log = logging.getLogger("LS.cleanup")
 
         log.info("start")
+
+        # clean outstanding connectors
+        self._output_connector_cleanup()
+        self._input_connector_cleanup()
 
         # clean outstanding processes
         self._clean_procs()
@@ -927,13 +943,12 @@ class LocalServer:
         log.info("Main loop has exited. Now cleaning up local channels, pools, and other resources")
 
         # If we created a pmix server, clean it up now
-        if bool(self.group_resources):
-            for guid, pmix_server in self.group_resources.items():
-                if isinstance(pmix_server, DragonPMIxServer):
-                    if pmix_server.server.is_server_host():
-                        log.info("Destroying PMIx server associated with guid %s", guid)
-                        pmix_server.destroy_server()
-                        del pmix_server
+        if bool(self.pmix_group_resources):
+            for guid, pmix_group_resources in self.pmix_group_resources.items():
+                if isinstance(pmix_group_resources, PMIxGroupResources):
+                    log.info("Destroying PMIx server associated with guid %s", guid)
+                    pmix_group_resources.destroy_server()
+                    break
 
         for proc in self.apt.values():
             self.cleanup_local_channels_pools(proc)
@@ -1269,9 +1284,10 @@ class LocalServer:
                     pmix_ranklist,
                 )
 
-                if not bool(self.group_resources):
-                    self.group_resources["server_created"] = False
-                self.group_resources[msg.guid] = PMIxGroupResources(
+                # If we haven't created a PMIx server, we'll need to stand up a dictionary
+                if not bool(self.pmix_group_resources):
+                    self.pmix_group_resources["server_created"] = False
+                self.pmix_group_resources[msg.guid] = PMIxGroupResources(
                     self.make_local_channel(), self.make_local_channel(), self.make_local_channel()
                 )
 
@@ -1284,19 +1300,19 @@ class LocalServer:
                     log.debug("PMIx DDict: No local manager found for this server")
 
                 log.debug("Starting PMIx server")
-                if DragonPMIxServer is None:
+                if DragonPMIxJob is None:
                     failed = True
                     err_info = "A PMIx backend has been requested for an MPI process group, but this Dragon library was not built with PMIx support"
                     raise AttributeError(err_info)
                 else:
-                    self.group_resources[msg.guid].server = DragonPMIxServer(
+                    self.pmix_group_resources[msg.guid].job = DragonPMIxJob(
                         msg.guid,
-                        self.group_resources["server_created"],
+                        self.pmix_group_resources["server_created"],
                         msg.pmi_group_info.pmix_desc,
                         local_mgr_desc,
-                        self.group_resources[msg.guid].ls_ch.serialize(),
-                        self.group_resources[msg.guid].ret_ch.serialize(),
-                        self.group_resources[msg.guid].buffered_resp_ch.serialize(),
+                        self.pmix_group_resources[msg.guid].ls_ch.serialize(),
+                        self.pmix_group_resources[msg.guid].ret_ch.serialize(),
+                        self.pmix_group_resources[msg.guid].buffered_resp_ch.serialize(),
                         my_node_id,
                         pmix_ranklist,
                         ppns,
@@ -1304,11 +1320,10 @@ class LocalServer:
                         pmix_hostlist,
                     )
 
-                    if self.group_resources[msg.guid].server.is_server_host():
-                        self.group_resources["server_created"] = True
+                    if not self.pmix_group_resources["server_created"]:
+                        self.pmix_group_resources["server_created"] = True
         # In case PMI stuff isn't happening
-        except AttributeError as e:
-            log.debug("Error starting PMIx server: %s", e)
+        except AttributeError:
             pass
 
         responses = []
@@ -1491,9 +1506,9 @@ class LocalServer:
                         pass
 
                 elif pmi_group_info.backend == dfacts.PMIBackend.PMIX:
-                    log.info(f"Establishing parameters for PMIx launch of MPI app")
+                    log.info("Establishing parameters for PMIx launch of MPI app")
                     try:
-                        the_env = self.group_resources[guid].server.get_client_env(the_env, msg.pmi_info.lrank)
+                        the_env = self.pmix_group_resources[guid].job.get_client_env(the_env, msg.pmi_info.lrank)
                     except AttributeError:
                         resp_msg = fail("A PMIx backend was requested, but no PMIx server was found.")
                         return resp_msg
@@ -1791,9 +1806,7 @@ class LocalServer:
         success, fail = mk_response_pairs(dmsg.LSDestroyPMIxResponse, msg.tag)
         log.debug("Cleaning up PMIx resources for guid %s", msg.guid)
         try:
-            self.group_resources[msg.guid].destroy_job()
-            if not self.group_resources[msg.guid].server.is_server_host():
-                del self.group_resources[msg.guid]
+            self.pmix_group_resources[msg.guid].destroy_job()
             resp_msg = success(guid=msg.guid)
             log.debug("Successfully destroyed PMIx resources for guid %s", msg.guid)
         except KeyError:
@@ -1862,6 +1875,7 @@ class LocalServer:
                 with self.apt_lock:
                     try:
                         proc = self.apt[died_pid]
+
                         try:
                             proc.props.stderr_connector.flush()
                         except Exception as ex:
@@ -1930,6 +1944,8 @@ class LocalServer:
                         self.exited_channel_output_monitors.put(proc.props.stdout_connector)
                     if proc.props.stderr_connector is not None:
                         self.exited_channel_output_monitors.put(proc.props.stderr_connector)
+                    if proc.props.stdin_connector is not None:
+                        self.exited_channel_input_monitors.put(proc.props.stdin_connector)
                 except OSError:
                     pass
             else:
@@ -1944,6 +1960,11 @@ class LocalServer:
         lparms = dp.this_process.from_env()
         interval = self.OOM_SLOW_SLEEP_TIME
         total_bytes = psutil.virtual_memory().total
+        def_pool = dmm.MemoryPool.attach_default()
+        def_pool_events = 0
+        def_pool_consecutive_events = 0
+        def_pool_event_min_pct = 100
+
         try:
             bytes_val = lparms.memory_warning_bytes
             if bytes_val == 0:
@@ -1967,6 +1988,11 @@ class LocalServer:
             critical_pct = max(critical_bytes_env, critical_pct_env)
         except:
             critical_pct = 98
+
+        try:
+            warn_def_pool_pct = 100 - lparms.def_pool_warn_pct
+        except:
+            warn_def_pool_pct = 90
 
         log.info(
             "critical_bytes_env=%s critical_pct_env=%s critical_pct=%s"
@@ -2018,6 +2044,37 @@ class LocalServer:
                             ).serialize()
                         )
 
+                def_pool_pct = def_pool.utilization
+
+                if def_pool_pct >= warn_def_pool_pct:
+                    def_pool_event_min_pct = min(def_pool_event_min_pct, def_pool_pct)
+                    def_pool_consecutive_events += 1
+
+                    if (def_pool_consecutive_events % 100)  == 5:
+                        def_pool_events += 1
+                        # if this is the 5th consecutive event mod 100, then warn the user,
+                        # but don't keep warning if it doesn't change. Every 100 iterations
+                        # means several minutes between notifications.
+                        warning_msg = (
+                            "\nDEFAULT POOL FREE SPACE WARNING: Default pool utilization on node %s with hostname %s is at %s%%.\n"
+                            % (parms.this_process.index, self.hostname, def_pool_pct)
+                        )
+                        log.info(warning_msg)
+                        if not suppress_warnings:
+                            self.be_in.send(
+                                dmsg.SHFwdOutput(
+                                    tag=get_new_tag(),
+                                    idx=parms.this_process.index,
+                                    p_uid=parms.this_process.my_puid,
+                                    data=warning_msg,
+                                    fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
+                                    pid=pid,
+                                    hostname=self.hostname,
+                                ).serialize()
+                            )
+                else:
+                    def_pool_consecutive_events = 0
+
                 if mem_utilization > 95:
                     interval = self.OOM_RAPID_SLEEP_TIME
                 else:
@@ -2031,7 +2088,32 @@ class LocalServer:
             tb = traceback.format_exc()
             self._abnormal_termination("LS OOM daemon exception: %s\n%s" % (ex, tb))
 
-        log.info("Exiting")
+        try:
+            if def_pool_events > 0:
+                warning_msg = (
+                    ("\nDEFAULT POOL FREE SPACE WARNING: There were %s events recorded where the\n" + \
+                    "default pool utilization on node %s with hostname %s exceeded %s%%.\n" + \
+                    "You may want to increase the default pool size.\n")
+                    % (def_pool_events, parms.this_process.index, self.hostname, def_pool_event_min_pct)
+                )
+                log.info(warning_msg)
+                if not suppress_warnings:
+                    self.be_in.send(
+                        dmsg.SHFwdOutput(
+                            tag=get_new_tag(),
+                            idx=parms.this_process.index,
+                            p_uid=parms.this_process.my_puid,
+                            data=warning_msg,
+                            fd_num=dmsg.SHFwdOutput.FDNum.STDERR.value,
+                            pid=pid,
+                            hostname=self.hostname,
+                        ).serialize()
+                    )
+
+            log.info("Exiting")
+        except:
+            pass
+
 
     def update_watch_set(self, connectors, dead_connector):
         changed = False
@@ -2105,6 +2187,34 @@ class LocalServer:
 
         log.info("exiting")
 
+    class WatchingSelector(selectors.DefaultSelector):
+        """Enhanced DefaultSelector to register stdout/stderr of PopenProps
+
+        Automates registering the file handles with the selector base class
+        and maps it to an OutputConnector object to handle the logic for
+        forwarding data where it needs to go.
+        """
+
+        def add_proc_streams(self, server, proc: PopenProps):
+            # carried data is (ProcessProps, closure to make SHFwdOutput, whether stderr or not)
+            try:
+                self.register(proc.stdout, selectors.EVENT_READ, data=proc.props.stdout_connector)
+            except ValueError:  # file handle could be closed or None: a race, so must catch
+                pass
+            except KeyError as ke:  # already registered
+                self.unregister(proc.stdout)
+                # log.warning("ke=%s, proc.stdout=%s, new props=%s" % (ke, proc.stdout, proc.props))
+                self.register(proc.stdout, selectors.EVENT_READ, data=proc.props.stdout_connector)
+
+            try:
+                self.register(proc.stderr, selectors.EVENT_READ, data=proc.props.stderr_connector)
+            except ValueError:
+                pass
+            except KeyError as ke:
+                self.unregister(proc.stderr)
+                # log.warning("ke=%s, proc.stderr=%s, new props=%s" % (ke, proc.stderr, proc.props))
+                self.register(proc.stderr, selectors.EVENT_READ, data=proc.props.stderr_connector)
+
     def watch_output(self):
         """Thread monitors outbound std* activity from processes we started.
 
@@ -2117,35 +2227,7 @@ class LocalServer:
 
         log.info("starting")
 
-        class WatchingSelector(selectors.DefaultSelector):
-            """Enhanced DefaultSelector to register stdout/stderr of PopenProps
-
-            Automates registering the file handles with the selector base class
-            and maps it to an OutputConnector object to handle the logic for
-            forwarding data where it needs to go.
-            """
-
-            def add_proc_streams(self, server, proc: PopenProps):
-                # carried data is (ProcessProps, closure to make SHFwdOutput, whether stderr or not)
-                try:
-                    self.register(proc.stdout, selectors.EVENT_READ, data=proc.props.stdout_connector)
-                except ValueError:  # file handle could be closed or None: a race, so must catch
-                    pass
-                except KeyError as ke:  # already registered
-                    self.unregister(proc.stdout)
-                    # log.warning("ke=%s, proc.stdout=%s, new props=%s" % (ke, proc.stdout, proc.props))
-                    self.register(proc.stdout, selectors.EVENT_READ, data=proc.props.stdout_connector)
-
-                try:
-                    self.register(proc.stderr, selectors.EVENT_READ, data=proc.props.stderr_connector)
-                except ValueError:
-                    pass
-                except KeyError as ke:
-                    self.unregister(proc.stderr)
-                    # log.warning("ke=%s, proc.stderr=%s, new props=%s" % (ke, proc.stderr, proc.props))
-                    self.register(proc.stderr, selectors.EVENT_READ, data=proc.props.stderr_connector)
-
-        stream_sel = WatchingSelector()
+        stream_sel = LocalServer.WatchingSelector()
 
         while not self.check_shutdown():
             work = stream_sel.select(timeout=self.SHUTDOWN_RESP_TIMEOUT)
@@ -2198,19 +2280,37 @@ class LocalServer:
             except queue.Empty:
                 pass
 
-            try:
-                while True:
-                    exited_proc_connector = self.exited_channel_output_monitors.get_nowait()
-                    try:
-                        stream_sel.unregister(exited_proc_connector.file_obj)
-                    except:
-                        pass
-                    try:
-                        exited_proc_connector.close()
-                    except:
-                        pass
-            except queue.Empty:
-                pass
+            self._output_connector_cleanup(stream_sel)
+            self._input_connector_cleanup()
 
         stream_sel.close()
         log.info("exit")
+
+    def _input_connector_cleanup(self):
+        try:
+            while True:
+                exited_proc_connector = self.exited_channel_input_monitors.get_nowait()
+                try:
+                    exited_proc_connector.close()
+                except:
+                    pass
+        except queue.Empty:
+            pass
+
+    def _output_connector_cleanup(self, stream_sel=None):
+
+        try:
+            while True:
+                exited_proc_connector = self.exited_channel_output_monitors.get_nowait()
+                try:
+                    stream_sel.unregister(exited_proc_connector.file_obj)
+                except:
+                    pass
+                try:
+                    exited_proc_connector.close()
+                except:
+                    pass
+        except queue.Empty:
+            pass
+
+

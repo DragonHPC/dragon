@@ -22,6 +22,7 @@
 
 #include "../_ctest_utils.h"
 
+
 /* for starting threads */
 typedef struct thread_arg_st {
     dragonBCastDescr_t* bd;
@@ -195,7 +196,6 @@ thread_start(void * ptr)
 int
 main(int argc, char* argv[])
 {
-
     int tests_passed = 0;
     int tests_attempted = 0;
     dragonMemoryPoolDescr_t pool;
@@ -210,14 +210,14 @@ main(int argc, char* argv[])
 
     dragonBCastDescr_t bd, bd2;
     dragonBCastSerial_t bd_ser;
-
     dragonError_t err;
+    int status;
 
     // create in memory pool
     err = dragon_bcast_create(&pool, 128, 10, NULL, &bd);
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
-    // destroy from memory pool
+    // destroy the bcast object
     err = dragon_bcast_destroy(&bd);
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
@@ -236,7 +236,7 @@ main(int argc, char* argv[])
     else
         tests_passed++;
 
-    void* ptr = malloc(sz);
+    void* ptr = calloc(1, sz);
 
     err = dragon_bcast_create_at(ptr, sz, 256, 10, NULL, &bd);
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
@@ -254,7 +254,6 @@ main(int argc, char* argv[])
 
     /***************** Idle Wait Test ********************/
 
-    int status;
     int k;
 
     for (k=0;k<idle_waiters_count;k++) {
@@ -407,6 +406,7 @@ main(int argc, char* argv[])
         }
         tests_attempted += 1;
     }
+
     /******************* End Adaptive Wait Test *****************/
 
     /***************** Spin+Idle Wait Test ********************/
@@ -918,7 +918,7 @@ main(int argc, char* argv[])
     else
         tests_passed++;
 
-    ptr = malloc(sz);
+    ptr = calloc(1, sz);
 
     pthread_attr_t attr;
     pthread_t threads[idle_waiters_count];
@@ -931,7 +931,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     for (k=0;k<idle_waiters_count;k++) {
-        arg = malloc(sizeof(thread_arg_t));
+        arg = calloc(1, sizeof(thread_arg_t));
         arg->bd = &bd;
         arg->expected_payload_sz = 256;
         arg->timeout = NULL;

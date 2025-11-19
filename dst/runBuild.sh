@@ -20,6 +20,7 @@ source ~/.bashrc
 # conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
 
 conda activate _dev
+conda remove -y zstd || true
 conda remove -y libstdcxx || true
 conda remove -y libstdcxx-ng || true
 python3 --version
@@ -41,7 +42,7 @@ python3 -m dragon.cli dragon-config add --ofi-include=$PWD/ofi/include/ \
                                         --ucx-include=$PWD/ucx/include \
                                         --ucx-build-lib=$PWD/ucx/lib \
                                         --ucx-runtime-lib=$PWD/ucx/lib \
-                                        --pmix-include=/usr/include,/usr/include/pmi
+                                        --cuda-include=$PWD/cuda/include
 cat ${DRAGON_BASE_DIR}/dragon/.dragon-config.mk
 
 # Build (dev mode)
@@ -50,8 +51,12 @@ make -C src build
 # Run unit tests
 make -C test test
 
+conda install -c conda-forge cupy-core
+
 # Build docs (requires dev build)
 # make -C doc -j ${DRAGON_BUILD_NTHREADS} dist
+
+conda remove -y cupy-core || true
 
 # Build release
 rm -fr src/dist && make -C src release

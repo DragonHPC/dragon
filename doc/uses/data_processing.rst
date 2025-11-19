@@ -87,6 +87,8 @@ Depending on the nature of the processing it may be much better to use a iterato
             with open(self.filenames[self.idx], mode='r') as f:
                 data_to_process = f.read()
             self.idx += 1
+            if self.idx >= len(self.filenames):
+                raise StopIteration
             return data_to_process
 
 
@@ -99,7 +101,7 @@ Depending on the nature of the processing it may be much better to use a iterato
         num_cores = cpu_count() // 2  # all cores across all nodes, but let's not count hyperthreads
 
         with Pool(num_cores) as p:
-            processed_data = p.imap(process_data, dr, chunk_size=4)
+            processed_data = p.imap(process_data, dr, chunksize=4)
 
 
 The nice thing about this style of code is it makes few assumptions about the type of system you are running on, in
@@ -221,6 +223,8 @@ data closer to new and existing processes is to use the in-memory distributed di
         # peek at data from one file
         print(the_ddict[files_to_process[2]], flush=True)
 
+        the_ddict.destroy()
+
 
 Streaming Data Processing Pipeline
 ==================================
@@ -265,7 +269,7 @@ giving different amounts of CPU cores to the two processing phases.
             if data:
                 return data_to_process
             else:
-                raise(StopIteration)
+                raise StopIteration
 
 
     if __name__ == '__main__':
@@ -293,7 +297,13 @@ giving different amounts of CPU cores to the two processing phases.
 
 
 The implementation uses :py:class:`Pool.imap() <dragon.mpbridge.pool.DragonPool.imap>` to pull work through an iterator
-class `StreamDataReader`. As blocks of data come in through the socket, they are fed to a pool of
+class (`StreamDataReader`). As blocks of data come in through the socket, they are fed to a pool of of processes that
+could perform some transform of each block in the `generate_data` function. This pools feeds another iterable,
+returned by :py:class:`Pool.imap() <dragon.mpbridge.pool.DragonPool.imap>`, that is used as input to another pool.
+This second pool performs further computation on the data in the `process_data` function. Finally, the primary
+process managing the pools can track the output from the second pool. All phases of this pipeline are running
+concurrently, which gives a scalable and performant pattern for programming asynchronous, distributed processing
+workflows!
 
 Related Cookbook Examples
 =========================

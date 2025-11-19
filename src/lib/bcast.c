@@ -1,5 +1,4 @@
 #include <stdlib.h>
-#include <linux/futex.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
 #include <sys/wait.h>
@@ -7,20 +6,89 @@
 #include <pthread.h>
 #include <sched.h>
 #include <signal.h>
+#include <time.h>
+#include <sys/mman.h>
+#include <stdbool.h>
+#include <unistd.h>
+
 #include "err.h"
 #include "hostid.h"
 #include "_bcast.h"
 #include "_utils.h"
 
-#include <sys/mman.h>
-#include <stdbool.h>
-#include <unistd.h>
+/* dragon globals */
+DRAGON_GLOBAL_MAP(bcast);
+
+_Thread_local pid_t my_pid = 0;
+static timespec_t min_time_slice = {0, 56000};
+static long __detected_num_cores = -1;
+static unsigned long nanos_per_second = NANOS_PER_SEC;
+
+static long
+_num_cores() {
+    if (__detected_num_cores < 0)
+        __detected_num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+
+    if (__detected_num_cores < 0) {
+        perror("sysconf: number of cores could not be detected in bcast");
+        return 1; // default to one core if could not be detected.
+    }
+
+    return __detected_num_cores;
+}
+
+static int
+_core_factor() {
+    int factor = _num_cores() / 12;
+
+    if (factor <= 0)
+        return 1;
+
+    return factor;
+}
+
+static void
+_setpid() {
+    my_pid = getpid();
+}
+
+static int
+_getpid() {
+    if (my_pid == 0)
+        my_pid = getpid();
+
+    return my_pid;
+}
+
+static void
+_sleep_handler(int signum) {
+    // Do nothing. But this must be installed for nanosleepers to wake up.
+}
+
+static void
+_install_signal_handler(struct sigaction* old_sig_action) {
+    // Save the current SIGCONT handler
+    sigaction(SIGCONT, NULL, old_sig_action);
+
+    // Install our signal handler
+    struct sigaction sa = {0};
+    sa.sa_handler = _sleep_handler;
+    sigemptyset(&sa.sa_mask);
+    sigaction(SIGCONT, &sa, NULL);
+}
+
+static void _uninstall_signal_handler(bool handler_installed, struct sigaction* old_sig_action) {
+    // Restore the current SIGCONT handler
+    if (handler_installed)
+        sigaction(SIGCONT, old_sig_action, NULL);
+}
 
 // enabling this can prevent core dumps when underlying memory is deleted
 // but enabling it incurs an extra cost
 // #define CHECK_POINTER
 
-bool is_pointer_valid(void *p) {
+static bool
+_is_pointer_valid(void *p) {
     /* get the page size */
     size_t page_size = sysconf(_SC_PAGESIZE);
     /* find the address of the page that contains p */
@@ -29,18 +97,6 @@ bool is_pointer_valid(void *p) {
     int ret = msync(base, page_size, MS_ASYNC) != -1;
 
     return ret ? ret : errno != ENOMEM;
-}
-
-/* dragon globals */
-DRAGON_GLOBAL_MAP(bcast);
-
-static pid_t my_pid = 0;
-
-static pid_t _getpid() {
-    if (my_pid == 0)
-        my_pid = getpid();
-
-    return my_pid;
 }
 
 static dragonError_t
@@ -170,6 +226,8 @@ _bcast_init_obj(void* obj_ptr, size_t alloc_sz, size_t max_payload_sz, size_t ma
         err_return(DRAGON_INVALID_ARGUMENT, err_str);
     }
 
+    _num_cores(); // Call it once to get it initialized if not already. Avoids doing it first time in loop.
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -180,6 +238,8 @@ _bcast_attach_obj(void* obj_ptr, dragonBCastHeader_t* header)
     header->spin_list = ((void*)header->lock) + *(header->lock_sz);
     header->proc_list = (void*)header->spin_list + (*(header->spin_list_sz)) * sizeof(dragonULInt);
     header->payload_area = (void*)header->proc_list + (*(header->proc_max)) * sizeof(pid_t);
+
+    _num_cores(); // Call it once to get it initialized if not already. Avoids doing it first time in loop.
 }
 
 /* obtain a channel structure from a given channel descriptor */
@@ -229,16 +289,15 @@ _bcast_wait_on_triggering(dragonBCast_t * handle, timespec_t * end_time)
     size_t check_timeout_when_0 = 1;
 
     while (atomic_load(triggering_ptr) != 0) {
-        PAUSE();
         if (end_time != NULL) {
             if (check_timeout_when_0 == 0) {
                 clock_gettime(CLOCK_MONOTONIC, &now_time);
-                if (dragon_timespec_le(end_time, &now_time)) {
+                if (dragon_timespec_le(end_time, &now_time))
                     err_return(DRAGON_TIMEOUT, "Timeout while waiting for previous triggering");
-                }
             }
             check_timeout_when_0 = (check_timeout_when_0 + 1) % 100;
         }
+        sched_yield();
     }
 
     no_err_return(DRAGON_SUCCESS);
@@ -255,6 +314,7 @@ _trigger_completion(dragonBCast_t * handle)
     /* setting triggering to 0 means we are no longer in the process of triggering so
        waiters will wait that were paused while triggering. Using atomic store for the
        final store will insure all earlier ones are flushed too. */
+
     *handle->header.allowable_count = 0;
     *handle->header.num_to_trigger = 0;
     *handle->header.state = 0;
@@ -264,36 +324,41 @@ _trigger_completion(dragonBCast_t * handle)
         dragon_unlock(&handle->lock);
 }
 
-static int _register_pid(dragonBCast_t * handle)
+static int
+_register_pid(dragonBCast_t * handle)
 {
     pid_t expected;
 
     pid_t my_pid = _getpid();
 
     int k;
-    if (*handle->header.proc_num < *handle->header.proc_max)
+    if (atomic_fetch_add(handle->header.proc_num, 1L) < *handle->header.proc_max)
         for (k=0; k<*handle->header.proc_max; k++) {
             expected = 0;
             if (atomic_compare_exchange_strong(&(handle->header.proc_list[k]), &expected, my_pid)) {
-                atomic_fetch_add(handle->header.proc_num, 1L);
                 return k;
             }
         }
 
+    atomic_fetch_add(handle->header.proc_num, -1L);
     return -1; /* indicates pid not stored. */
 }
 
 /* Use only under a lock. */
-static void _erase_pid(dragonBCast_t * handle, int idx)
+static void
+_erase_pid(dragonBCast_t * handle, int idx)
 {
+    pid_t expected = _getpid();
+
     if (idx < 0)
         return; /* The idx is -1 if there is no room. */
 
-    handle->header.proc_list[idx] = 0;
-    atomic_fetch_add(handle->header.proc_num, -1L);
+    if (atomic_compare_exchange_strong(&handle->header.proc_list[idx], &expected, 0))
+        atomic_fetch_add(handle->header.proc_num, -1L);
 }
 
-static dragonError_t _check_pids(dragonBCast_t * handle)
+static dragonError_t
+_check_pids(dragonBCast_t * handle)
 {
     char msg[200];
     int num_procs = *handle->header.proc_num;
@@ -333,12 +398,72 @@ static dragonError_t _check_pids(dragonBCast_t * handle)
     no_err_return(DRAGON_SUCCESS);
 }
 
+static int
+_wake_sleepers(dragonBCast_t * handle, int num_to_wake)
+{
+    int sleepers = 0;
+    int k;
+    int rc;
+    for (k=0;k<*handle->header.proc_max; k++) {
+        if (handle->header.proc_list[k] != 0) {
+            /* Any signal, including SIGCONT, will wake up a sleeping proc. */
+            rc = kill(handle->header.proc_list[k], SIGCONT);
+            if (rc == 0)
+                sleepers += 1;
+        }
+
+        if (sleepers == num_to_wake)
+            break;
+    }
+
+    return sleepers;
+}
+
+static timespec_t
+next_time_slice(int* slice_count, timespec_t* current_slice, int num_waiting, timespec_t* remaining_time) {
+    if (dragon_timespec_le(remaining_time, current_slice))
+        return *remaining_time;
+
+    timespec_t return_val = {0,0};
+
+    unsigned long nanos = current_slice->tv_sec * nanos_per_second + current_slice->tv_nsec;
+
+    *slice_count += 1;
+
+    int core_factor = _core_factor();
+    if (*slice_count >= MAX_SLICE_ITERS) {
+        *slice_count = 0;
+        nanos = nanos * SLICE_BACKOFF_FACTOR;
+        current_slice->tv_sec = nanos / nanos_per_second;
+        current_slice->tv_nsec = nanos % nanos_per_second;
+    }
+
+    int factor = core_factor / num_waiting;
+    if (factor == 0)
+        factor = 1;
+
+    // Adjust next slice by waiting factor which factors in the number of CPU cores.
+    nanos = nanos / factor;
+
+    if (nanos > nanos_per_second)
+        nanos = nanos_per_second;
+
+    nanos += num_waiting * 17;
+
+    return_val.tv_sec = nanos / nanos_per_second;
+    return_val.tv_nsec = nanos % nanos_per_second;
+
+    return return_val;
+}
+
 static dragonError_t
 _idle_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time, dragonReleaseFun release_fun, void* release_arg, dragonULInt* already_waiter)
 {
     timespec_t now_time;
-    timespec_t * remaining_timeout = NULL;
-    timespec_t remaining_time = {0,0};
+    struct sigaction old_sig_action;
+    bool handler_installed = false;
+    timespec_t remaining_time = {LONG_MAX,0};
+    timespec_t * remaining_timeout = &remaining_time;
     void* shutting_down_ptr = (void*)handle->header.shutting_down;
     dragonULInt my_num_waiting;
 
@@ -378,14 +503,14 @@ _idle_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
     } else
         my_num_waiting = *already_waiter;
 
-    /* futex wait for triggering to become 1 */
-    uint32_t * triggering_ptr = handle->header.triggering;
-
-    long frc = 0;
+    int rc = 0;
     dragonUUID local_uuid;
     dragon_copy_uuid(local_uuid, *handle->header.id);
 
     bool waiting = true;
+    timespec_t slice = {0, SLICE_NS_START};
+    timespec_t sleepy_time = {0,0};
+    int slice_count = 0;
 
     /* the while loop below is needed to handle the spurious wakeup from the futex wait. */
     while (waiting) {
@@ -405,7 +530,6 @@ _idle_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
 
         if (waiting) {
             if (end_time != NULL) {
-                remaining_timeout = &remaining_time;
                 clock_gettime(CLOCK_MONOTONIC, &now_time);
                 if (dragon_timespec_le(end_time, &now_time)) {
                     atomic_fetch_add(handle->header.num_waiting, -1L);
@@ -415,86 +539,79 @@ _idle_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
                        they asked for when using a synchronized bcast and using a timeout. */
                     if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting == *(handle->header.sync_num))
                         dragon_lock(&handle->lock);
+                    _uninstall_signal_handler(handler_installed, &old_sig_action);
                     err_return(DRAGON_TIMEOUT, "Timeout while idle waiting on BCast");
                 }
                 dragon_timespec_diff(remaining_timeout, end_time, &now_time);
             }
 
-            *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_3;
+            int num_waiting = atomic_load(handle->header.num_waiting);
 
-            if (*triggering_ptr == 1)
-                *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_6;
-
-            if (*triggering_ptr == 0)
-                *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_7;
+            sleepy_time = next_time_slice(&slice_count, &slice, num_waiting, remaining_timeout);
 
             int pid_idx = _register_pid(handle);
-            frc = syscall(SYS_futex, triggering_ptr, FUTEX_WAIT, 0, remaining_timeout, NULL, 0);
+
+            if (!dragon_timespec_le(&sleepy_time, &min_time_slice)) {
+                timespec_t less_overhead_of_call;
+                dragon_timespec_diff(&less_overhead_of_call, &sleepy_time, &min_time_slice);
+
+                if (!handler_installed) {
+                    _install_signal_handler(&old_sig_action);
+                    handler_installed = true;
+                }
+                rc = nanosleep(&less_overhead_of_call, NULL);
+
+            } else {
+                sched_yield();
+                PAUSE();
+            }
 
             if (dragon_compare_uuid(local_uuid, *handle->header.id)) {
                 // not the same uuid. That means this process woke up from another
                 // process' bcast. This is a possibility, but would be a HUGE
                 // coincidence. In this case we do not do anything more and we leave.
+                _uninstall_signal_handler(handler_installed, &old_sig_action);
                 err_return(DRAGON_INVALID_OPERATION, "This process woke up from a bcast and found itself inside another bcast.");
             }
 
-            _erase_pid(handle, pid_idx);
-            *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_8;
-
 #ifdef CHECK_POINTER
-            if (!is_pointer_valid(handle->header.shutting_down))
+            if (!_is_pointer_valid(handle->header.shutting_down)) {
                 /* The memory on which this bcast was allocated has been freed while
                     it waited. Get out now! */
                 no_err_return(DRAGON_SUCCESS);
+            }
 #endif
 
             if (handle->header.shutting_down != shutting_down_ptr) {
                 /* This is an indication that the bcast object was deallocated while
-                   this process was sleeping. */
+                this process was sleeping. */
+                _uninstall_signal_handler(handler_installed, &old_sig_action);
                 err_return(DRAGON_BCAST_HANDLE_ERROR, "The BCast handle shutdown pointer was corrupted. The BCast or the object it was in was likely deallocated while it slept.");
             }
 
-            if (atomic_load(handle->header.shutting_down))
-                /* When shutting down the bcast_wait function calling this
-                   will check shutting_down too and will decrement num_waiting
-                   and return. This happens when destroy is called while waiters
-                   are waiting. */
-                no_err_return(DRAGON_SUCCESS);
+            _erase_pid(handle, pid_idx);
 
-            if (frc == -1 && errno == ETIMEDOUT) {
-                /* This check below is a verification that the handle has not
-                   been overwritten (likely because the bcast was deleted while
-                   waiting). If it were overwritten, then returning immediately is
-                   all we can do. */
-                if (handle->header.num_waiting == num_waiting_ptr) {
-                    atomic_fetch_add(handle->header.num_waiting, -1L);
-                    /* If we timed out waiting for a triggerer and it is a synchronized BCast and we released
-                       the lock, then we need to acquire it again. There may be a window here where we might
-                       have allowed a trigger to proceed at same time as timing out. If so, they get what
-                       they asked for when using a synchronized bcast and using a timeout. */
-                    if (*(handle->header.sync_type) == DRAGON_SYNC && my_num_waiting == *(handle->header.sync_num))
-                        dragon_lock(&handle->lock);
-                    err_return(DRAGON_TIMEOUT, "Timeout while idle waiting on BCast");
-                } else {
-                    err_return(DRAGON_BCAST_HANDLE_ERROR, "The BCast handle was corrupted.");
-                }
+            if (atomic_load(handle->header.shutting_down)) {
+                /* When shutting down the bcast_wait function calling this
+                will check shutting_down too and will decrement num_waiting
+                and return. This happens when destroy is called while waiters
+                are waiting. */
+                _uninstall_signal_handler(handler_installed, &old_sig_action);
+                no_err_return(DRAGON_SUCCESS);
             }
 
-            /* The spurious wakeup or the interruption from a signal could have woken this process.
-            This can happen for no apparent reason and is true of all mutex-like operations.
-            The check below checks for the possible spurious wakeup and signals. If that was not
-            the reason for the wakeup, then an error is returned. If it was a spurious wakeup, then the
-            loop will iterate again, we'll try again, and if the BCast object is still not
-            triggering, we'll wait again. */
-            if (frc == -1 && errno != EAGAIN && errno != EINTR) {
+            /* If the condition below is satisfied, the an error occurred that was not a timeout but some other error. */
+            if (rc == -1 && errno != EINTR) {
                 char err_str[200];
                 atomic_fetch_add(handle->header.num_waiting, -1L);
-                snprintf(err_str, 199, "futex call returned an error %ld with ERRNO=%d and ERRNO msg=%s", frc, errno, strerror(errno));
-                err_return(DRAGON_BCAST_FUTEX_CALL_ERROR, err_str);
+                snprintf(err_str, 199, "sleep call returned an error %d with ERRNO=%d and ERRNO msg=%s", rc, errno, strerror(errno));
+                _uninstall_signal_handler(handler_installed, &old_sig_action);
+                err_return(DRAGON_BCAST_IDLE_WAIT_CALL_ERROR, err_str);
             }
         }
     }
 
+    _uninstall_signal_handler(handler_installed, &old_sig_action);
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -644,6 +761,7 @@ _bcast_notify_callback(void * ptr)
     void * payload_ptr = NULL;
     size_t payload_sz = 0;
     timespec_t* timer = NULL;
+
     if (arg->timer_is_null == false)
         timer = &arg->timer;
 
@@ -667,6 +785,7 @@ _bcast_notify_signal(void * ptr)
 {
     dragonBCastSignalArg_t * arg = (dragonBCastSignalArg_t*) ptr;
     timespec_t* timer = NULL;
+
     if (arg->timer_is_null == false)
         timer = &arg->timer;
 
@@ -873,7 +992,7 @@ dragon_bcast_create_at(void* loc, size_t alloc_sz, size_t max_payload_sz, size_t
     err = _bcast_init_obj(handle->obj_ptr, alloc_sz, max_payload_sz, max_spinsig_num, attr, &handle->header);
 
     if (err != DRAGON_SUCCESS) {
-        append_err_return(err, "The allocated size is too small.");
+        append_err_noreturn("The allocated size is too small.");
         goto _bcast_create_at_rollback_chkpnt;
     }
     /* instantiate the dragon lock */
@@ -1242,7 +1361,6 @@ dragon_bcast_destroy(dragonBCastDescr_t* bd)
 
 
     timespec_t timeout;
-    uint32_t * triggering_ptr = handle->header.triggering;
     timeout.tv_nsec = 0;
     timeout.tv_sec = DRAGON_BCAST_DESTROY_TIMEOUT_SEC;
     timespec_t end_time;
@@ -1250,13 +1368,18 @@ dragon_bcast_destroy(dragonBCastDescr_t* bd)
     clock_gettime(CLOCK_MONOTONIC, &now_time);
     err = dragon_timespec_add(&end_time, &now_time, &timeout);
     atomic_store(handle->header.shutting_down, 1UL);
+    int check_pids_iters = 0;
 
     while (atomic_load(handle->header.num_waiting) > 0 && dragon_timespec_le(&now_time, &end_time)) {
-        /* We must repeat the syscall here as long as there are waiters because a
-           waiter may not reach the futex wait before this is called in extreme cases. */
-        syscall(SYS_futex, triggering_ptr, FUTEX_WAKE, INT_MAX, NULL, NULL, 0);
-        PAUSE();
-        clock_gettime(CLOCK_MONOTONIC, &now_time);
+        /* We must repeat the loop here as long as there are waiters */
+        if (check_pids_iters == 100) {
+            _wake_sleepers(handle, INT_MAX);
+            _check_pids(handle);
+            check_pids_iters = 0;
+            sched_yield();
+            clock_gettime(CLOCK_MONOTONIC, &now_time);
+        }
+        check_pids_iters += 1;
     }
 
     /* tear down the lock */
@@ -1538,6 +1661,9 @@ dragon_bcast_wait(dragonBCastDescr_t* bd, dragonWaitMode_t wait_mode, const time
         append_err_return(err, "Invalid BCast descriptor.");
     }
 
+    /* Set the process id for this wait. */
+    _setpid();
+
     void* num_waiting_ptr = (void*)handle->header.num_waiting;
     timespec_t end_time = {0,0};
     timespec_t* end_time_ptr = NULL;
@@ -1565,9 +1691,7 @@ dragon_bcast_wait(dragonBCastDescr_t* bd, dragonWaitMode_t wait_mode, const time
         append_err_return(err, "Timeout or unexpected error while waiting for triggering to complete.");
     }
 
-    //This is a temporary work-around.
-    //if (wait_mode == DRAGON_SPIN_WAIT || wait_mode == DRAGON_ADAPTIVE_WAIT) {
-    if (wait_mode == DRAGON_SPIN_WAIT) {
+    if (wait_mode == DRAGON_SPIN_WAIT || wait_mode == DRAGON_ADAPTIVE_WAIT) {
         err = _spin_wait(handle, num_waiting_ptr, end_time_ptr, release_fun, release_arg, &wait_mode);
         if (err == DRAGON_TIMEOUT)
             append_err_return(err, "Timed out while waiting on bcast.");
@@ -1585,7 +1709,7 @@ dragon_bcast_wait(dragonBCastDescr_t* bd, dragonWaitMode_t wait_mode, const time
     }
 
 #ifdef CHECK_POINTER
-    if (!is_pointer_valid(handle->header.shutting_down))
+    if (!_is_pointer_valid(handle->header.shutting_down))
         /* The memory on which this bcast was allocated has been freed while
             it waited. Get out now! */
         no_err_return(DRAGON_SUCCESS);
@@ -1955,11 +2079,7 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
 
     size_t num_waiting = atomic_load(handle->header.num_waiting);
 
-    if (num_waiting == 1)
-        *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_1;
-
     if (num_waiting == 0) {
-        *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_2;
 
         if (*(handle->header.sync_type) == DRAGON_SYNC) {
             dragon_unlock(&handle->lock);
@@ -2020,36 +2140,22 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
             // Get out, now!
             err_return(DRAGON_OBJECT_DESTROYED, "The object was destroyed");
 
-        if (num_to_wake > 0) {
-            long num_woke = 0;
-            if (num_to_wake == 1)
-                *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_4;
+        iters += 1;
 
-            /* While the name of the variable is num_woke, extensive testing has shown that
-               occasionally (less than 0.1% of the time) the value is not correct and so is
-               ignored in this code. It can be examined as a return code if the value is -1
-               but is not needed here. */
-            num_woke = syscall(SYS_futex, triggering_ptr, FUTEX_WAKE, num_to_wake, NULL, NULL, 0);
+        if (iters == when_to_check_procs) {
+            _wake_sleepers(handle, num_to_wake); // Cannot rely on return value.
+            iters = 0;
+            if (when_to_check_procs < DRAGON_BCAST_BACKOFF_ITERS_CHECK_PROCS)
+                when_to_check_procs += when_to_check_procs;
 
-            if (num_woke == 1)
-                *handle->header.state = *handle->header.state | DRAGON_BCAST_DEBUG_5;
-
-            iters += 1;
-
-            if ((num_woke == 0) && (atomic_load(handle->header.num_waiting) > 0UL) && (iters == when_to_check_procs)) {
-                iters = 0;
-                if (when_to_check_procs < DRAGON_BCAST_BACKOFF_ITERS_CHECK_PROCS)
-                    when_to_check_procs += when_to_check_procs;
-
-                err = _check_pids(handle);
-                if (err != DRAGON_SUCCESS) {
-                    err_msg = dragon_getlasterrstr();
-                    if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
-                        dragon_unlock(&handle->lock);
-                    err_noreturn(err_msg);
-                    free(err_msg);
-                    append_err_return(err, "Could not complete trigger due to waiters having died while waiting.");
-                }
+            err = _check_pids(handle);
+            if (err != DRAGON_SUCCESS) {
+                err_msg = dragon_getlasterrstr();
+                if (*(handle->header.sync_type) == DRAGON_NO_SYNC)
+                    dragon_unlock(&handle->lock);
+                err_noreturn(err_msg);
+                free(err_msg);
+                append_err_return(err, "Could not complete trigger due to waiters having died while waiting.");
             }
         }
 
@@ -2065,8 +2171,6 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
             }
             check_timeout_when_0 = (check_timeout_when_0 + 1) % 100;
         }
-
-        PAUSE();
     }
 
     _trigger_completion(handle);

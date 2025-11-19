@@ -64,46 +64,58 @@ class PoolContext:
                 Third element The newly constructed context object if issued, None otherwise
         """
 
-        if msg.user_name in server.pool_names:
-            LOG.info(f"pool name {msg.user_name} in use")
-            existing_ctx = server.pool_table[server.pool_names[msg.user_name]]
+        try:
+
+            if msg.user_name in server.pool_names:
+                LOG.info(f"pool name {msg.user_name} in use")
+                existing_ctx = server.pool_table[server.pool_names[msg.user_name]]
+                rm = dmsg.GSPoolCreateResponse(
+                    tag=server.tag_inc(),
+                    ref=msg.tag,
+                    err=dmsg.GSPoolCreateResponse.Errors.ALREADY,
+                    desc=existing_ctx.descriptor,
+                )
+                reply_channel.send(rm.serialize())
+                return False, None, None
+
+            this_muid, auto_name = server.new_muid_and_default_name()
+
+            if not msg.user_name:
+                msg.user_name = auto_name
+
+            which_node = server.choose_pool_node(msg)
+
+            context = cls(server, msg, reply_channel, this_muid, which_node)
+
+            server.pool_names[msg.user_name] = this_muid
+            server.pool_table[this_muid] = context
+
+            shep_hdl = server.shep_inputs[which_node]
+
+            outbound_tag = server.tag_inc()
+            shep_create_msg = context._mk_sh_pool_create(outbound_tag)
+
+            # In cases where we are sending a large amount of
+            # messages, such as with the GSGroupCreate handler,
+            # we can fill the GS Input Queue with responses and
+            # basically cause the GS / TA / LS to be unable to
+            # send/receive any messages. To prevent this, we'll
+            # enqueue pending sends and interleave sending and
+            # receiving messages to allow us to process responses
+            # on the input queue.
+
+            server.pending_sends.put((shep_hdl, shep_create_msg.serialize()))
+            return True, outbound_tag, context
+
+        except Exception as ex:
             rm = dmsg.GSPoolCreateResponse(
                 tag=server.tag_inc(),
                 ref=msg.tag,
-                err=dmsg.GSPoolCreateResponse.Errors.ALREADY,
-                desc=existing_ctx.descriptor,
+                err=dmsg.GSPoolCreateResponse.Errors.FAIL,
+                err_info=str(ex),
             )
+
             reply_channel.send(rm.serialize())
-            return False, None, None
-
-        this_muid, auto_name = server.new_muid_and_default_name()
-
-        if not msg.user_name:
-            msg.user_name = auto_name
-
-        which_node = server.choose_pool_node(msg)
-
-        context = cls(server, msg, reply_channel, this_muid, which_node)
-
-        server.pool_names[msg.user_name] = this_muid
-        server.pool_table[this_muid] = context
-
-        shep_hdl = server.shep_inputs[which_node]
-
-        outbound_tag = server.tag_inc()
-        shep_create_msg = context._mk_sh_pool_create(outbound_tag)
-
-        # In cases where we are sending a large amount of
-        # messages, such as with the GSGroupCreate handler,
-        # we can fill the GS Input Queue with responses and
-        # basically cause the GS / TA / LS to be unable to
-        # send/receive any messages. To prevent this, we'll
-        # enqueue pending sends and interleave sending and
-        # receiving messages to allow us to process responses
-        # on the input queue.
-
-        server.pending_sends.put((shep_hdl, shep_create_msg.serialize()))
-        return True, outbound_tag, context
 
     def complete_construction(self, msg):
         """Completes construction of a PoolContext

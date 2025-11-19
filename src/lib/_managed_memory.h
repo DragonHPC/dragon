@@ -5,6 +5,7 @@
 #include "_blocks.h"
 #include "err.h"
 #include "umap.h"
+#include "gpu_c_api.h"
 #include <dragon/managed_memory.h>
 
 
@@ -26,6 +27,7 @@ extern "C" {
 #define DRAGON_MEMORY_MAX_ERRSTR_REC_LEN 4096
 #define DRAGON_MEMORY_DATA_IDX_MEM_ORDER memory_order_acq_rel
 #define DRAGON_MEMORY_MANIFEST_SPIN_WAITERS 132
+#define DRAGON_MEMORY_MAX_IPC_HANDLE_SIZE 64
 
 /*
   Minimum size to create a pool (32KB).  Arbitrarily chosen, can be modified at a later date.
@@ -61,11 +63,22 @@ typedef struct dragonMemoryPoolHeader_st {
     dragonULInt * growth_type;
     dragonUInt  * mode;
     dragonULInt * npre_allocs;
+    dragonULInt * gpu_device_id;
+    dragonULInt * ipc_handle_size;
+    /* This is more than the standard 8 bytes of data.
+       It is used to store the serialized IPC handle
+       for the GPU-backed memory pool. The size is set
+       to a fixed size at the moment but may in the future
+       depend on the GPU vendor.
+    */
+    void * serialized_ipc_handle;
+    // variable size below
     void * manifest_bcast_space;
     void * heap;
     dragonULInt * pre_allocs;
     char * filenames;
     void * manifest_table;
+
 } dragonMemoryPoolHeader_t;
 
 /* This is for remote memory pool's only. The fields
@@ -96,6 +109,9 @@ typedef struct dragonMemoryPool_st {
     size_t manifest_requested_size; // the max number of manifest records
     bool runtime_is_local;
     void * local_dptr; // Data blob pointer, if == NULL then this pool is non-local.
+    // TODO cpw: consider mallocing space for this and also adding it to the serialized descriptor. This might be necessary for HSTA to do remote puts and gets.
+    dragonULInt gpu_device_id; // The GPU device ID for this pool
+    void * data_ipc_handle; // IPC handle for the data blob if it's on a GPU
     void * mptr; // Manifest blob pointer
     dragonMemoryPoolHeap_t heap;
     dragonMemoryPoolHeader_t header;

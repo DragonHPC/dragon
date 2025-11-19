@@ -2,7 +2,7 @@ import os
 import unittest
 import dragon
 from dragon.native.process import Popen
-from dragon.data.ddict.ddict import DDict
+from dragon.data.ddict.ddict import DDict, PosixCheckpointPersister
 from dragon.native.machine import System, Node
 from dragon.infrastructure.policy import Policy
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
@@ -91,6 +91,11 @@ class intKeyPickler:
 
 
 class TestDDictCPP(unittest.TestCase):
+
+    def tearDown(cls):
+        for p in pathlib.Path(".").glob("*.ddict"):
+            os.remove(p)
+
     def test_serialize(self):
         exe = "cpp_ddict"
         ddict = DDict(2, 1, 3000000)
@@ -318,7 +323,7 @@ class TestDDictCPP(unittest.TestCase):
         )
 
         proc.wait()
-        self.assertEqual(proc.returncode, 0, "C client exited with non-zero exit code")
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
 
         self.assertTrue("hello" in ddict2)
         self.assertTrue("hello" in ddict3)
@@ -440,6 +445,210 @@ class TestDDictCPP(unittest.TestCase):
             self.assertEqual(expected_keys, received_keys)
 
         ddict.destroy()
+
+    def test_freeze(self):
+        exe = "cpp_ddict"
+        d = DDict(2, 1, 3000000, trace=True)
+        ser_ddict = d.serialize()
+        proc = Popen(
+            executable=str(test_dir / exe),
+            args=[ser_ddict, "test_freeze"],
+            env=ENV,
+        )
+        proc.wait()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+        d.destroy()
+
+    def test_batch_put(self):
+        exe = "cpp_ddict"
+        d = DDict(2, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        ser_ddict = d.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_batch_put"], env=ENV)
+        proc.wait()
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_bput_bget(self):
+        exe = "cpp_ddict"
+        num_managers = 2
+        d = DDict(num_managers, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        ser_ddict = d.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_bput_bget", num_managers], env=ENV)
+        proc.wait()
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_bput_batch(self):
+        exe = "cpp_ddict"
+        num_managers = 12
+        d = DDict(num_managers, 1, 1500000 * num_managers, wait_for_keys=True, working_set_size=4, trace=True)
+        ser_ddict = d.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_bput_batch", num_managers], env=ENV)
+        proc.wait()
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_bput_multiple_batch(self):
+        exe = "cpp_ddict"
+        num_managers = 12
+        d = DDict(num_managers, 1, 1500000 * num_managers, wait_for_keys=True, working_set_size=4, trace=True)
+        ser_ddict = d.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_bput_multiple_batch", num_managers], env=ENV)
+        proc.wait()
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_advance(self):
+        NUM_MANAGERS = 1
+        working_set_size = 2
+        persist_freq = 2
+        persist_count = 2
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=working_set_size,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=persist_freq,
+            persist_count=persist_count,
+            persister_class=PosixCheckpointPersister,
+        )
+        ser_ddict = d.serialize()
+        exe = "cpp_ddict"
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_write_chkpts_to_disk"], env=ENV)
+        proc.wait()
+        restore_name = d.get_name()
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+        chkpt_restore = 0
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            persist_freq=persist_freq,
+            name=restore_name,
+            restore_from=chkpt_restore,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        ser_ddict = dd_restore.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_advance"], env=ENV)
+        proc.wait()
+        dd_restore.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_persist_restore(self):
+        NUM_MANAGERS = 1
+        working_set_size = 2
+        persist_freq = 8
+        persist_count = -1
+        exe = "cpp_ddict"
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=working_set_size,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=persist_freq,
+            persist_count=persist_count,
+            persister_class=PosixCheckpointPersister,
+        )
+        ser_ddict = d.serialize()
+
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_persist"], env=ENV)
+        proc.wait()
+        restore_name = d.get_name()
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+        chkpt_restore = 4
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            persist_freq=2,
+            name=restore_name,
+            restore_from=chkpt_restore,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        self.assertEqual(dd_restore.persisted_ids(), [0, 2, 4])
+        ser_ddict = dd_restore.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_restore"], env=ENV)
+        proc.wait()
+        dd_restore.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_persisted_ids(self):
+        exe = "cpp_ddict"
+        NUM_MANAGERS = 1
+        working_set_size = 2
+        persist_freq = 2
+        persist_count = -1
+        d = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            working_set_size=working_set_size,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=persist_freq,
+            persist_count=persist_count,
+            persister_class=PosixCheckpointPersister,
+        )
+        ser_ddict = d.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_no_persisted_ids"], env=ENV)
+        proc.wait()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+        # persists 0, 2, 4
+        for i in range(7):
+            d["hello"] = "world"
+            d.checkpoint()
+
+        restore_name = d.get_name()
+
+        d.destroy()
+
+        dd_restore = DDict(
+            NUM_MANAGERS,
+            1,
+            1500000 * NUM_MANAGERS,
+            trace=True,
+            persist_path=".",
+            persist_freq=2,
+            name=restore_name,
+            restore_from=0,
+            read_only=True,
+            persister_class=PosixCheckpointPersister,
+        )
+        ser_ddict = dd_restore.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_persisted_ids_0_2_4"], env=ENV)
+        proc.wait()
+        dd_restore.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_local_size(self):
+        exe = "cpp_ddict"
+        ddict = DDict(2, 1, 3000000, trace=True)
+        ser_ddict = ddict.serialize()
+        ddict["hello"] = "world"
+        ddict["dragon"] = "runtime"
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_local_size"], env=ENV)
+        proc.wait()
+        ddict.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
 
 
 if __name__ == "__main__":

@@ -16,11 +16,6 @@
 #define BILL 1000000000L
 #define MILL 1000000L
 
-/* These two constants used below to choose type of waiting */
-#define IDLE_WAIT 1
-#define SPIN_WAIT 2
-
-
 #define FAILED 1
 #define SUCCESS 0
 
@@ -56,7 +51,7 @@ payload_ok(char payload[], size_t payload_sz)
 }
 
 int
-proc_idle_waiter(dragonMemoryPoolDescr_t* pd, dragonBCastDescr_t* bd, dragonChannelSendh_t* sendh, size_t expected_payload_sz, const timespec_t* timeout, int iterations)
+proc_waiter(dragonWaitMode_t wait_mode, dragonMemoryPoolDescr_t* pd, dragonBCastDescr_t* bd, dragonChannelSendh_t* sendh, size_t expected_payload_sz, const timespec_t* timeout, int iterations)
 {
 
     double total_time = 0;
@@ -70,7 +65,7 @@ proc_idle_waiter(dragonMemoryPoolDescr_t* pd, dragonBCastDescr_t* bd, dragonChan
         size_t payload_sz;
 
         clock_gettime(CLOCK_MONOTONIC, &t1);
-        err = dragon_bcast_wait(bd, DRAGON_IDLE_WAIT, timeout, (void**)&payload, &payload_sz, NULL, NULL);
+        err = dragon_bcast_wait(bd, wait_mode, timeout, (void**)&payload, &payload_sz, NULL, NULL);
         clock_gettime(CLOCK_MONOTONIC, &t2);
 
         double etime   = 1e-9 * (double)(BILL * (t2.tv_sec - t1.tv_sec) + (t2.tv_nsec - t1.tv_nsec));
@@ -90,97 +85,6 @@ proc_idle_waiter(dragonMemoryPoolDescr_t* pd, dragonBCastDescr_t* bd, dragonChan
 
         if (payload_sz != expected_payload_sz) {
             printf("Payload size in idle waiter did not match expected payload size.\n");
-            printf("expected=%lu and actual=%lu\n", expected_payload_sz, payload_sz);
-            return FAILED;
-        }
-
-        //if (!payload_ok(payload, payload_sz)) {
-        //    printf("Error on payload verification\n");
-        //    return FAILED;
-        //}
-
-        if (err == DRAGON_SUCCESS && payload_sz > 0)
-            free(payload);
-    }
-
-    /* Allocate managed memory as buffer space for both send and receive */
-    dragonMemoryDescr_t msg_buf;
-    err = dragon_memory_alloc(&msg_buf, pd, sizeof(double));
-    if (err != DRAGON_SUCCESS) {
-        char * errstr = dragon_getlasterrstr();
-        printf("Failed to allocate message buffer from pool.  Got EC=%i\nERRSTR = \n%s\n",err, errstr);
-        return FAILED;
-    }
-
-    /* Get a pointer to that memory and fill up a message payload */
-    double * msg_ptr;
-    err = dragon_memory_get_pointer(&msg_buf, (void *)&msg_ptr);
-
-    if (err != DRAGON_SUCCESS) {
-        char * errstr = dragon_getlasterrstr();
-        printf("Failed to get pointer to message buffer.  Got EC=%i\nERRSTR = \n%s\n",err, errstr);
-        return FAILED;
-    }
-
-    *msg_ptr = total_time;
-
-    /* Create a message using that memory */
-    err = dragon_channel_message_init(&msg, &msg_buf, NULL);
-
-    if (err != DRAGON_SUCCESS) {
-        char * errstr = dragon_getlasterrstr();
-        printf("Failed to init message. Got EC=%i\nERRSTR = \n%s\n", err, errstr);
-        return FAILED;
-    }
-
-    err = dragon_chsend_send_msg(sendh, &msg, NULL, NULL);
-
-    if (err != DRAGON_SUCCESS) {
-        char * errstr = dragon_getlasterrstr();
-        printf("Failed to send message. Got EC=%i\nERRSTR = \n%s\n", err, errstr);
-        return FAILED;
-    }
-
-    err = dragon_channel_message_destroy(&msg, false);
-
-    if (err != DRAGON_SUCCESS) {
-        char * errstr = dragon_getlasterrstr();
-        printf("Failed to destroy message. Got EC=%i\nERRSTR = \n%s\n", err, errstr);
-        return FAILED;
-    }
-
-    return SUCCESS;
-}
-
-int
-proc_spin_waiter(dragonMemoryPoolDescr_t* pd, dragonBCastDescr_t* bd, dragonChannelSendh_t* sendh, size_t expected_payload_sz, const timespec_t* timeout, int iterations)
-{
-
-    double total_time = 0;
-    timespec_t t1, t2;
-    dragonMessage_t msg;
-    dragonError_t err;
-
-    for (int k=0; k<iterations; k++) {
-        dragonError_t err;
-        char* payload;
-        size_t payload_sz;
-
-        clock_gettime(CLOCK_MONOTONIC, &t1);
-        err = dragon_bcast_wait(bd, DRAGON_SPIN_WAIT, timeout, (void**)&payload, &payload_sz, NULL, NULL);
-        clock_gettime(CLOCK_MONOTONIC, &t2);
-
-        double etime   = 1e-9 * (double)(BILL * (t2.tv_sec - t1.tv_sec) + (t2.tv_nsec - t1.tv_nsec));
-        total_time += etime;
-
-        if (err != DRAGON_SUCCESS) {
-            printf("Error on dragon_bcast_wait with EC=%s\n", dragon_get_rc_string(err));
-            printf("%s\n", dragon_getlasterrstr());
-            return err;
-        }
-
-        if (payload_sz != expected_payload_sz) {
-            printf("Payload size in spin waiter did not match expected payload size.\n");
             printf("expected=%lu and actual=%lu\n", expected_payload_sz, payload_sz);
             return FAILED;
         }
@@ -285,18 +189,23 @@ create_pool(dragonMemoryPoolDescr_t* mpool)
 void
 check_result(dragonError_t err, dragonError_t expected_err, int* tests_passed, int* tests_attempted)
 {
-    (*tests_attempted)++;
+    if (tests_attempted != NULL)
+        (*tests_attempted)++;
 
     if (err != expected_err) {
-        printf("Test %d Failed with error code %s\n", *tests_attempted, dragon_get_rc_string(err));
+        if (tests_attempted != NULL)
+            printf("Test %d Failed with error code %s\n", *tests_attempted, dragon_get_rc_string(err));
+        else
+            printf("Test failed with error code %s\n", dragon_get_rc_string(err));
         printf("%s\n", dragon_getlasterrstr());
     }
     else
-        (*tests_passed)++;
+        if (tests_passed != NULL)
+            (*tests_passed)++;
 }
 
 dragonError_t
-run_test_trigger_all(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDescr_t* bd, dragonChannelSendh_t* sendh, dragonChannelRecvh_t* recvh, int* tests_passed, int* tests_attempted)
+run_test_trigger_all(dragonWaitMode_t wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDescr_t* bd, dragonChannelSendh_t* sendh, dragonChannelRecvh_t* recvh, int* tests_passed, int* tests_attempted)
 {
     timespec_t t1, t2;
     char payload[max_payload_sz];
@@ -319,14 +228,10 @@ run_test_trigger_all(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDe
 
 
             /* fork the right number of waiters */
-            for (k=0;k<waiters_count;k++) {
-                if (fork()==0) {
-                    if (wait_mode == IDLE_WAIT)
-                        exit(proc_idle_waiter(pool, bd, sendh, payload_sz, NULL, num_iterations));
-                    else
-                        exit(proc_spin_waiter(pool, bd, sendh, payload_sz, NULL, num_iterations));
-                }
-            }
+            for (k=0;k<waiters_count;k++)
+                if (fork()==0)
+                    exit(proc_waiter(wait_mode, pool, bd, sendh, payload_sz, NULL, num_iterations));
+
 
             /* Call trigger_all the correct number of times for the waiters to complete. When
                doing this, make sure each time trigger_all is called that all the waiters
@@ -341,10 +246,6 @@ run_test_trigger_all(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDe
                     err = dragon_bcast_num_waiting(bd, &count);
                     check_result(err, DRAGON_SUCCESS, tests_passed, tests_attempted);
                 }
-
-                /* Pause here to let idle waiters get to their futex. */
-                if (wait_mode == IDLE_WAIT)
-                    usleep(100000);
 
                 clock_gettime(CLOCK_MONOTONIC, &t1);
                 err = dragon_bcast_trigger_all(bd, NULL, &payload, payload_sz);
@@ -424,18 +325,13 @@ run_test_trigger_all(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDe
 
             avg_wait_time = (total_wait_time / (num_iterations * waiters_count)) * MILL;
 
-            /* We subtract one tenth of a second because the trigger was delayed
-            by one tenth of a second above (usleep) to get all idle waiters to
-            use the futex */
-
-            if (wait_mode == IDLE_WAIT)
-                avg_wait_time = avg_wait_time - MILL/10;
-
             char* wait_str;
-            if (wait_mode == IDLE_WAIT)
+            if (wait_mode == DRAGON_IDLE_WAIT)
                 wait_str = "Idle Wait";
-            else
+            else if (wait_mode == DRAGON_SPIN_WAIT)
                 wait_str = "Spin Wait";
+            else
+                wait_str = "Adpt Wait";
 
             double avg_trigger_time = (total_time / num_iterations) * MILL;
 
@@ -448,7 +344,7 @@ run_test_trigger_all(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDe
 }
 
 dragonError_t
-run_test_trigger_one(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDescr_t* bd, dragonChannelSendh_t* sendh, dragonChannelRecvh_t* recvh, int* tests_passed, int* tests_attempted)
+run_test_trigger_one(dragonWaitMode_t wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDescr_t* bd, dragonChannelSendh_t* sendh, dragonChannelRecvh_t* recvh, int* tests_passed, int* tests_attempted, bool printit)
 {
     timespec_t t1, t2;
     char payload[max_payload_sz];
@@ -469,14 +365,9 @@ run_test_trigger_one(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDe
             int count;
 
             /* fork the right number of waiters */
-            for (k=0;k<waiters_count;k++) {
-                if (fork()==0) {
-                    if (wait_mode == IDLE_WAIT)
-                        exit(proc_idle_waiter(pool, bd, sendh, payload_sz, NULL, num_iterations));
-                    else
-                        exit(proc_spin_waiter(pool, bd, sendh, payload_sz, NULL, num_iterations));
-                }
-            }
+            for (k=0;k<waiters_count;k++)
+                if (fork()==0)
+                    exit(proc_waiter(wait_mode, pool, bd, sendh, payload_sz, NULL, num_iterations));
 
             /* Call trigger_all the correct number of times for the waiters to complete. When
                doing this, make sure each time trigger_all is called that all the waiters
@@ -519,7 +410,7 @@ run_test_trigger_one(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDe
             }
 
             if (count != waiters_count) {
-                printf("We did not get all processes exiting succefully.\n");
+                printf("We did not get all processes exiting successfully.\n");
                 return FAILED;
             }
 
@@ -569,13 +460,17 @@ run_test_trigger_one(int wait_mode, dragonMemoryPoolDescr_t* pool, dragonBCastDe
             double avg_wait_time = (total_wait_time / (num_iterations * waiters_count)) * MILL;
 
             char* wait_str;
-            if (wait_mode == IDLE_WAIT)
+            if (wait_mode == DRAGON_IDLE_WAIT)
                 wait_str = "Idle Wait";
-            else
+            else if (wait_mode == DRAGON_SPIN_WAIT)
                 wait_str = "Spin Wait";
+            else
+                wait_str = "Adpt Wait";
+
             double avg_trigger_time = (total_time / num_triggers) * MILL;
 
-            printf("%s  %13d   %18d   %21.6f   %24.6f\n", wait_str, waiters_count, payload_sz, avg_wait_time, avg_trigger_time);
+            if (printit)
+                printf("%s  %13d   %18d   %21.6f   %24.6f\n", wait_str, waiters_count, payload_sz, avg_wait_time, avg_trigger_time);
         }
     }
 
@@ -622,6 +517,9 @@ main(int argc, char* argv[])
     // create in memory pool
     err = dragon_bcast_create(&pool, max_payload_sz, 60, NULL, &bd);
 
+    // warmup run.
+    err = run_test_trigger_one(DRAGON_IDLE_WAIT, &pool, &bd, &sendh, &recvh, NULL, NULL, false);
+
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     printf("BCast Performance Test\n");
@@ -636,11 +534,15 @@ main(int argc, char* argv[])
     printf("Operation  Num Processes   Payload Sz (bytes)   Avg Wait Time (usecs)   Avg Trigger Time (usecs)\n");
     printf("*********  *************   ******************   *********************   ************************\n");
 
-    err = run_test_trigger_all(IDLE_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted);
+    err = run_test_trigger_all(DRAGON_IDLE_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted);
 
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
-    err = run_test_trigger_all(SPIN_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted);
+    err = run_test_trigger_all(DRAGON_ADAPTIVE_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted);
+
+    check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+
+    err = run_test_trigger_all(DRAGON_SPIN_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted);
 
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
@@ -648,11 +550,15 @@ main(int argc, char* argv[])
     printf("Operation  Num Processes   Payload Sz (bytes)   Avg Wait Time (usecs)   Avg Trigger Time (usecs)\n");
     printf("*********  *************   ******************   *********************   ************************\n");
 
-    err = run_test_trigger_one(IDLE_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted);
+    err = run_test_trigger_one(DRAGON_IDLE_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted, true);
 
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
-    err = run_test_trigger_one(SPIN_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted);
+    err = run_test_trigger_one(DRAGON_ADAPTIVE_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted, true);
+
+    check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+
+    err = run_test_trigger_one(DRAGON_SPIN_WAIT, &pool, &bd, &sendh, &recvh, &tests_passed, &tests_attempted, true);
 
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 

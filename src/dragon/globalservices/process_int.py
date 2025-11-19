@@ -154,13 +154,28 @@ class ProcessContext:
             stderr_msg = self.stderr_context.shchannelcreate_msg
         else:
             stderr_msg = None
+
+        # hooks for launching the head process with a profiler
+        # example for NVIDIA profiler would be
+        # export _DRAGON_GS_HEAD_PROC_PREAMBLE_EXE= "nsys"
+        # export _DRAGON_GS_HEAD_PROC_PREAMBLE_ARGS= "profile"
+        if self.request.head_proc and the_env.get("_DRAGON_GS_HEAD_PROC_PREAMBLE_EXE") is not None:
+            temp_exe = the_env.get("_DRAGON_GS_HEAD_PROC_PREAMBLE_EXE")
+        else:
+            temp_exe = self.request.exe
+
+        if self.request.head_proc and the_env.get("_DRAGON_GS_HEAD_PROC_PREAMBLE_ARGS") is not None:
+            temp_args = the_env.get("_DRAGON_GS_HEAD_PROC_PREAMBLE_ARGS") + [self.request.exe] + self.request.args
+        else:
+            temp_args = self.request.args
+
         return dmsg.SHProcessCreate(
             tag=the_tag,
             p_uid=dfacts.GS_PUID,
             r_c_uid=dfacts.GS_INPUT_CUID,
             t_p_uid=self.descriptor.p_uid,
-            exe=self.request.exe,
-            args=self.request.args,
+            exe=temp_exe,
+            args=temp_args,
             rundir=self.request.rundir,
             env=the_env,
             stdin=self.request.stdin,
@@ -208,66 +223,78 @@ class ProcessContext:
                 Third element: The newly constructed context object if issued, None otherwise
         :rtype: tuple
         """
-        if msg.user_name in server.process_names:
-            LOG.info(f"process name {msg.user_name} in use")
-            existing_ctx = server.process_table[server.process_names[msg.user_name]]
-            if send_msg:
-                rm = dmsg.GSProcessCreateResponse(
-                    tag=server.tag_inc(),
-                    ref=msg.tag,
-                    err=dmsg.GSProcessCreateResponse.Errors.ALREADY,
-                    desc=existing_ctx.descriptor,
-                )
-                reply_channel.send(rm.serialize())
-            return False, "already", existing_ctx
+        try:
+            if msg.user_name in server.process_names:
+                LOG.info(f"process name {msg.user_name} in use")
+                existing_ctx = server.process_table[server.process_names[msg.user_name]]
+                if send_msg:
+                    rm = dmsg.GSProcessCreateResponse(
+                        tag=server.tag_inc(),
+                        ref=msg.tag,
+                        err=dmsg.GSProcessCreateResponse.Errors.ALREADY,
+                        desc=existing_ctx.descriptor,
+                    )
+                    reply_channel.send(rm.serialize())
+                return False, "already", existing_ctx
 
-        this_puid, auto_name = server.new_puid_and_default_name()
+            this_puid, auto_name = server.new_puid_and_default_name()
 
-        if msg.head_proc:
-            LOG.info(f"head puid is {this_puid}")
-            server.head_puid.add(this_puid)
-            server._state = server.RunState.HAS_HEAD
+            if msg.head_proc:
+                LOG.info(f"head puid is {this_puid}")
+                server.head_puid.add(this_puid)
+                server._state = server.RunState.HAS_HEAD
 
-        if not msg.user_name:
-            msg.user_name = auto_name
+            if not msg.user_name:
+                msg.user_name = auto_name
 
-        # If a policy was passed through but has not been evaluated into a layout, do so now
-        if msg.layout is None and msg.policy is not None:
-            msg.layout = server.process_policy_evaluator.evaluate([msg.policy])[0]
+            # If a policy was passed through but has not been evaluated into a layout, do so now
+            if msg.layout is None and msg.policy is not None:
+                msg.layout = server.process_policy_evaluator.evaluate([msg.policy])[0]
 
-        # Update the resiliency flag if the launcher requested it
-        if not server.resilient_groups:
-            server.resilient_groups = msg.resilient
+            # Update the resiliency flag if the launcher requested it
+            if not server.resilient_groups:
+                server.resilient_groups = msg.resilient
 
-        if msg.policy is not None:
-            assert isinstance(msg.policy, Policy)
-            msg.policy = Policy.merge(Policy.global_policy(), msg.policy)
-        else:
-            msg.policy = Policy.global_policy()
+            if msg.policy is not None:
+                msg.policy = Policy.merge(Policy.global_policy(), msg.policy)
+            else:
+                msg.policy = Policy.global_policy()
 
-        which_node, node_huid = server.choose_shepherd(msg)
+            which_node, node_huid = server.choose_shepherd(msg)
 
-        context = cls(
-            server=server, request=msg, reply_channel=reply_channel, p_uid=this_puid, node=which_node, h_uid=node_huid
-        )
-        server.process_names[msg.user_name] = this_puid
-        server.process_table[this_puid] = context
+            context = cls(
+                server=server, request=msg, reply_channel=reply_channel, p_uid=this_puid, node=which_node, h_uid=node_huid
+            )
+            server.process_names[msg.user_name] = this_puid
+            server.process_table[this_puid] = context
 
-        if belongs_to_group:
-            context.belongs_to_group = belongs_to_group
-            if addition:
-                context.group_addition = addition
+            if belongs_to_group:
+                context.belongs_to_group = belongs_to_group
+                if addition:
+                    context.group_addition = addition
 
-        outbound_tag = None
+            outbound_tag = None
 
-        context.gs_ret_channel_context = None
-        outbound_tag, context.shprocesscreate_msg = context.send_start(send_msg)
+            context.gs_ret_channel_context = None
+            outbound_tag, context.shprocesscreate_msg = context.send_start(send_msg)
 
-        # if it does not belong to a group issue a pending completion now
-        if not belongs_to_group:
-            server.pending[outbound_tag] = context.complete_construction
+            # if it does not belong to a group issue a pending completion now
+            if not belongs_to_group:
+                server.pending[outbound_tag] = context.complete_construction
 
-        return True, outbound_tag, context
+            return True, outbound_tag, context
+
+        except Exception as ex:
+            import traceback
+            rm = dmsg.GSProcessCreateResponse(
+                tag=server.tag_inc(),
+                ref=msg.tag,
+                err=dmsg.GSProcessCreateResponse.Errors.FAIL,
+                err_info=str(ex),
+            )
+            print(f"Got exception {traceback.format_exc()}")
+
+            reply_channel.send(rm.serialize())
 
     def send_start(self, send_msg):
         outbound_tag = self.server.tag_inc()

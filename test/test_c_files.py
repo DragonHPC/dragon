@@ -32,6 +32,10 @@ if __name__ == "__main__":
         for t in tests:
             fname = os.path.splitext(os.path.basename(t))[0]
             print(f"Testing {fname} ...... ", end="", flush=True)
+            
+            if fname == "test_gpu_mem":
+                # test_gpu_mem requires gpus to run
+                continue
 
             tests_run += 1
             # If any of these fail do we want to skip to the next test or halt testing entirely?

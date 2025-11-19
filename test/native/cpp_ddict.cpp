@@ -7,7 +7,7 @@
 
 using namespace dragon;
 
-static timespec_t TIMEOUT = {0,500000000}; // Timeouts will be 0.5 second by default
+static timespec_t TIMEOUT = {0,5000000000}; // Timeouts will be 5 second by default
 
 dragonError_t test_serialize(const char * ddict_ser) {
     DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
@@ -306,6 +306,199 @@ dragonError_t test_keys_read_from_py(const char * ddict_ser) {
     return DRAGON_SUCCESS;
 }
 
+dragonError_t test_freeze(const char * ddict_ser) {
+    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    assert(!dd.is_frozen());
+    dd.freeze();
+    assert(dd.is_frozen());
+    dd.unfreeze();
+    assert(!dd.is_frozen());
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_batch_put(const char * ddict_ser) {
+    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+
+    SerializableInt key1(1024);
+    SerializableInt key2(9876);
+    SerializableInt key3(2048);
+    SerializableInt val(0);
+
+    dd.start_batch_put(false);
+    dd[key1] = val;
+    dd[key2] = val;
+    dd[key3] = val;
+    dd.end_batch_put();
+
+    SerializableInt received_val = dd[key1];
+    assert(received_val.getVal() == val.getVal());
+    received_val = dd[key2];
+    assert(received_val.getVal() == val.getVal());
+    received_val = dd[key3];
+    assert(received_val.getVal() == val.getVal());
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_bput_bget(const char * ddict_ser, uint64_t num_managers) {
+    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+
+    SerializableInt key1(1024);
+    SerializableInt key2(9876);
+    SerializableInt key3(2048);
+    SerializableInt val(1);
+
+    dd.bput(key1, val);
+    dd.bput(key2, val);
+    dd.bput(key3, val);
+
+    for (uint64_t i=0 ; i<num_managers ; i++) {
+        DDict<SerializableInt, SerializableInt> dselect = dd.manager(i);
+        SerializableInt received_val = dselect.bget(key1);
+        assert(received_val.getVal() == val.getVal());
+        received_val = dselect.bget(key2);
+        assert(received_val.getVal() == val.getVal());
+        received_val = dselect.bget(key3);
+        assert(received_val.getVal() == val.getVal());
+    }
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_bput_batch(const char * ddict_ser, uint64_t num_managers) {
+    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+
+    SerializableInt key1(1024);
+    SerializableInt key2(9876);
+    SerializableInt key3(2048);
+    SerializableInt val(0);
+
+    dd.start_batch_put(false);
+    dd.bput(key1, val);
+    dd.bput(key2, val);
+    dd.bput(key3, val);
+    dd.end_batch_put();
+
+    for (uint64_t i=0 ; i<num_managers ; i++) {
+        DDict<SerializableInt, SerializableInt> dselect = dd.manager(i);
+        SerializableInt received_val = dselect[key1];
+        assert(received_val.getVal() == val.getVal());
+        received_val = dselect[key2];
+        assert(received_val.getVal() == val.getVal());
+        received_val = dselect[key3];
+        assert(received_val.getVal() == val.getVal());
+    }
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_bput_multiple_batch(const char * ddict_ser, uint64_t num_managers) {
+    uint64_t num_batches = 10;
+    uint64_t num_keys = 5;
+    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+
+
+    for (uint64_t i_batch=0 ; i_batch<num_batches ; i_batch++) {
+        dd.start_batch_put(false);
+        for (size_t i=0 ; i<num_keys ; i++) {
+            std::string s = "dragon_" + std::to_string(i_batch) + "_" + std::to_string(i);
+            SerializableString key(s);
+            SerializableInt val(i_batch*10+i);
+            dd.bput(key, val);
+        }
+        dd.end_batch_put();
+    }
+
+    for (uint64_t i=0 ; i<num_managers ; i++) {
+        DDict<SerializableString, SerializableInt> dselect = dd.manager(i);
+        for(uint64_t j_batch=0 ; j_batch<num_batches ; j_batch++) {
+            for (uint64_t j=0 ; j<num_keys ; j++) {
+                std::string s = "dragon_" + std::to_string(j_batch) + "_" + std::to_string(j);
+                SerializableString key(s);
+                SerializableInt val(j_batch*10+j);
+                SerializableInt received_val = dselect.bget(key);
+                assert(received_val.getVal() == val.getVal());
+            }
+        }
+    }
+
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_write_chkpts_to_disk(const char * ddict_ser) {
+    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("dragon");
+    for (int i=0 ; i<5 ; i++) {
+        SerializableInt val(i);
+        dd[key] = val;
+        dd.checkpoint();
+    }
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_advance(const char * ddict_ser) {
+    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("dragon");
+    for (uint64_t i=0 ; i<3 ; i+=2) {
+        uint64_t chkptID = dd.checkpoint_id();
+        assert(chkptID == i);
+        SerializableInt val = dd[key];
+        assert(val.getVal() == i);
+        if (i != 2)
+            dd.advance();
+    }
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_persist(const char * ddict_ser) {
+    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("dragon");
+    for (uint64_t i=0 ; i<5 ; i++) {
+        if (i % 2 ==0) { // persist chkpt 0, 2, 4
+            SerializableInt val(i);
+            dd[key] = val;
+            dd.persist();
+        }
+        dd.checkpoint();
+    }
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_restore(const char * ddict_ser) {
+    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("dragon");
+    for (uint64_t i=4 ; i>0 ; i-=2) {
+        dd.restore(i);
+        assert(dd.checkpoint_id() == i);
+        SerializableInt val = dd[key];
+        assert(val.getVal() == i);
+    }
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_persisted_ids_0_2_4(const char * ddict_ser) {
+    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    std::vector<uint64_t> ids = dd.persisted_ids();
+    assert(ids.size() == 3);
+    assert(ids[0] == 0);
+    assert(ids[1] == 2);
+    assert(ids[2] == 4);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_no_persisted_ids(const char * ddict_ser) {
+    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    std::vector<uint64_t> ids = dd.persisted_ids();
+    assert(ids.size() == 0);
+    return DRAGON_SUCCESS;
+}
+
+// // add this to the multi-node c, cpp test as well
+dragonError_t test_local_size(const char * ddict_ser) {
+    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    assert(dd.local_size() == 2);
+    return DRAGON_SUCCESS;
+}
+
 int main(int argc, char* argv[]) {
     char* ddict_descr = argv[1];
     std::string test = argv[2];
@@ -380,6 +573,36 @@ int main(int argc, char* argv[]) {
             err = test_read_np_arr(ddict_descr);
         } else if (test.compare("test_keys_read_from_py") == 0){
             err = test_keys_read_from_py(ddict_descr);
+        } else if (test.compare("test_freeze") == 0){
+            err = test_freeze(ddict_descr);
+        } else if (test.compare("test_batch_put") == 0){
+            err = test_batch_put(ddict_descr);
+        } else if (test.compare("test_bput_bget") == 0){
+            char *tmpptr;
+            uint64_t num_managers = strtoul(argv[3], &tmpptr, 10);
+            err = test_bput_bget(ddict_descr, num_managers);
+        } else if (test.compare("test_bput_batch") == 0){
+            char *tmpptr;
+            uint64_t num_managers = strtoul(argv[3], &tmpptr, 10);
+            err = test_bput_batch(ddict_descr, num_managers);
+        } else if (test.compare("test_bput_multiple_batch") == 0){
+            char *tmpptr;
+            uint64_t num_managers = strtoul(argv[3], &tmpptr, 10);
+            err = test_bput_multiple_batch(ddict_descr, num_managers);
+        } else if (test.compare("test_write_chkpts_to_disk") == 0){
+            err = test_write_chkpts_to_disk(ddict_descr);
+        } else if (test.compare("test_advance") == 0){
+            err = test_advance(ddict_descr);
+        } else if (test.compare("test_persist") == 0){
+            err = test_persist(ddict_descr);
+        } else if (test.compare("test_restore") == 0){
+            err = test_restore(ddict_descr);
+        } else if (test.compare("test_persisted_ids_0_2_4") == 0){
+            err = test_persisted_ids_0_2_4(ddict_descr);
+        } else if (test.compare("test_no_persisted_ids") == 0){
+            err = test_no_persisted_ids(ddict_descr);
+        } else if (test.compare("test_local_size") == 0){
+            err = test_local_size(ddict_descr);
         } else {
             return DRAGON_NOT_IMPLEMENTED;
         }

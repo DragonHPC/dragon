@@ -24,8 +24,7 @@ LOGBASE = "launcher_multi_be"
 def main(transport_test_env: bool = False):
 
     from argparse import ArgumentParser
-    from distutils.util import strtobool
-    from dragon.utils import set_procname
+    from dragon.utils import set_procname, strtobool
     from dragon import _patch_multiprocessing
 
     _patch_multiprocessing()

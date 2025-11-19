@@ -111,6 +111,7 @@ class Orchestrator:
             self._manager_connections = [None for _ in range(self._num_managers)]
             self._serialized_manager_flis = ["" for _ in range(self._num_managers)]
             self._serialized_manager_return_flis = [None for _ in range(self._num_managers)]
+            self._manager_ready_msg_tag = [None for _ in range(self._num_managers)]
             self._serialized_manager_pool = [None for _ in range(self._num_managers)]
 
             self._tag = 0
@@ -132,6 +133,7 @@ class Orchestrator:
 
         # bring up all managers first. Use SH_RETURN as message channel for response messages.
         self._num_managers_created = 0
+        self._num_managers_ready = 0
         self._serving_connector = self._main_connector
 
         # start serving the request sent to main channel
@@ -506,6 +508,25 @@ class Orchestrator:
                     connection = fli.FLInterface.attach(b64decode(m))
                     self._send_msg(resp_msg, connection)
                     connection.detach()
+
+        except Exception as ex:
+            tb = traceback.format_exc()
+            err_str = f"There was an exception while registering managers: {ex} \n Traceback: {tb}"
+            log.debug(err_str)
+            self._return_create_failure(DragonError.FAILURE, err_str)
+            raise RuntimeError(err_str)
+
+    @dutil.route(dmsg.DDCreateManagerResponse, _DTBL)
+    def manager_ready(self, msg: dmsg.DDCreateManagerResponse) -> None:
+        try:
+            self._num_managers_ready += 1
+            self._manager_ready_msg_tag[msg.managerID] = msg.tag
+            if msg.err != DragonError.SUCCESS:
+                self._err_code = msg.err
+                self._err_str = msg.errInfo
+
+            if self._num_managers_ready == self._num_managers:
+
                 # send DD create response to client
                 resp_msg = dmsg.DDCreateResponse(
                     self._tag_inc(), ref=self._create_req_msg_tag, err=self._err_code, errInfo=self._err_str
@@ -520,9 +541,10 @@ class Orchestrator:
                 else:
                     # failed to create dictionary - stop serving and free all resources
                     self._serving = False
+
         except Exception as ex:
             tb = traceback.format_exc()
-            err_str = f"There was an exception while registering managers: {ex} \n Traceback: {tb}"
+            err_str = f"There was an exception while waiting for manager {msg.managerID} readiness: {ex} \n Traceback: {tb}"
             log.debug(err_str)
             self._return_create_failure(DragonError.FAILURE, err_str)
             raise RuntimeError(err_str)

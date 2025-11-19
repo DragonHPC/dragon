@@ -32,12 +32,15 @@ OOM_WARNING_PCT_VAR = "MEMORY_WARNING_PCT"
 OOM_WARNING_BYTES_VAR = "MEMORY_WARNING_BYTES"
 OOM_CRITICAL_PCT_VAR = "MEMORY_CRITICAL_PCT"
 OOM_CRITICAL_BYTES_VAR = "MEMORY_CRITICAL_BYTES"
+OOM_DEFAULT_POOL_WARN_PCT_VAR = "DEF_POOL_WARN_PCT"
 QUIET_VAR = "WARNINGS_OFF"
 
 OOM_DEFAULT_WARN_PCT = 10
 OOM_DEFAULT_WARN_BYTES = 6 * 1024 * 1024 * 1024  # 6GB
 OOM_DEFAULT_CRITICAL_PCT = 2
 OOM_DEFAULT_CRITICAL_BYTES = 600 * 1024 * 1024  # 600MB
+OOM_DEFAULT_POOL_WARN_PCT = 10
+
 
 # For environment variable passing, this set is the list of dragon parameters
 # in capital letters.
@@ -79,6 +82,7 @@ env_vars = frozenset(
         OOM_WARNING_BYTES_VAR,
         OOM_CRITICAL_PCT_VAR,
         OOM_CRITICAL_BYTES_VAR,
+        OOM_DEFAULT_POOL_WARN_PCT_VAR,
         QUIET_VAR,
     }
 )
@@ -569,8 +573,8 @@ FOUR_GB = 2**32
 SIXTEEN_GB = 2**34
 
 # decision constant for argument delivery
-# TODO: tune this - 64K is probably too big. check size of e.g. pool worker Process call.
-ARG_IMMEDIATE_LIMIT = 2**16  # 64K
+# TODO: tune this - 128K is probably too big. check size of e.g. pool worker Process call.
+ARG_IMMEDIATE_LIMIT = 2**17  # 128K
 
 # environment variable name to use to pass in
 # some pickled pre-made test channels to gs
@@ -680,6 +684,32 @@ class TransportAgentOptions(enum.Enum):
             raise ValueError()
 
 
+@enum.unique
+class HighSpeedTransportBackends(str, enum.Enum):
+    """Enumerated list of supported high-speed transport backends"""
+
+    UCX = "ucx"
+    OFI = "ofi"
+
+    def __str__(self):
+        return self.value
+
+    @staticmethod
+    def from_str(s):
+        """Obtain enum value from HighSpeedTransportBackends string
+
+        :param s: string representation of enumerated HighSpeedTransportBackends
+        :type s: str
+        :returns: name of the available high-speed transport backend
+        :rtype: HighSpeedTransportBackends
+        :raises: ValueError
+        """
+        try:
+            return HighSpeedTransportBackends(s)
+        except KeyError:
+            raise ValueError()
+
+
 TRANSPORT_AGENT_ALIASES = {
     # NOTE Cannot use dragon.cli.console_script_args() as it would cause a
     # NOTE circular import.
@@ -720,32 +750,6 @@ class PMIBackend(str, enum.Enum):
     def from_str(s):
         try:
             return PMIBackend(s)
-        except KeyError:
-            raise ValueError()
-
-
-@enum.unique
-class TransportAgentOptions(enum.Enum):
-    """Enumerated list of supported transport agents"""
-
-    HSTA = "hsta"
-    TCP = "tcp"
-    DRAGON_CONFIG = "configured"
-
-    def __str__(self):
-        return self.value
-
-    @staticmethod
-    def from_str(s):
-        """Obtain enum value from TransportAgentOptions string
-
-        :param s: string representation of enumerated TransportAgentOptions
-        :type s: str
-        :return: name of an available transport agent
-        :rtype: TransportAgentOptions
-        """
-        try:
-            return TransportAgentOptions(s)
         except KeyError:
             raise ValueError()
 

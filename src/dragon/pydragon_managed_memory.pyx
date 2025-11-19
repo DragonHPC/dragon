@@ -3,6 +3,7 @@ import dragon.dtypes as dtypes
 import enum
 import sys
 import math
+from libc.stdint cimport intptr_t
 
 
 ################################
@@ -50,6 +51,7 @@ class PoolType(enum.Enum):
     """TBD """
     SHM = DRAGON_MEMORY_TYPE_SHM
     FILE = DRAGON_MEMORY_TYPE_FILE
+    GPU = DRAGON_MEMORY_TYPE_GPU
     PRIVATE = DRAGON_MEMORY_TYPE_PRIVATE
 
 
@@ -79,7 +81,7 @@ cdef class MemoryPoolAttr:
 
     cdef dragonMemoryPoolAttr_t _mattr
 
-    def __init__(self, pre_alloc_blocks=None):
+    def __init__(self, pre_alloc_blocks=None, gpu_memory=False):
         cdef dragonError_t derr
 
         if pre_alloc_blocks is not None:
@@ -97,6 +99,11 @@ cdef class MemoryPoolAttr:
             self._mattr.pre_allocs = <size_t *>malloc(sizeof(size_t) * self._mattr.npre_allocs)
             for i in range(self._mattr.npre_allocs):
                 self._mattr.pre_allocs[i] = pre_alloc_blocks[i]
+
+        # Below is support for initializing the memory pool attributes to use GPU memory.
+        if gpu_memory:
+            self._mattr.mem_type = DRAGON_MEMORY_TYPE_GPU
+
 
     def __del__(self):
         cdef dragonError_t derr
@@ -181,6 +188,25 @@ cdef class MemoryAlloc:
             raise DragonMemoryError(derr, "Could not check memory allocations")
 
         return result
+
+    def get_int_ptr(self):
+        """
+        Get the pointer to the underlying memory
+
+        :return: Pointer to the memory
+        :raises: DragonMemoryError
+        """
+        cdef:
+            dragonError_t derr
+            void * ptr
+
+        derr = dragon_memory_get_pointer(&self._mem_descr, &ptr)
+        if derr != DRAGON_SUCCESS:
+            raise DragonMemoryError(derr, "Could not get memory pointer")
+
+        intptr = <intptr_t>ptr
+
+        return intptr
 
     def get_memview(self):
         """
@@ -346,7 +372,7 @@ cdef class MemoryAlloc:
         else:
             raise ValueError('The timeout must be a float or int')
 
-        err = dragon_memory_copy(&self._mem_descr, &to_mem, &pool._pool_hdl, time_ptr)
+        err = dragon_memory_copy_to_pool(&self._mem_descr, &to_mem, &pool._pool_hdl, time_ptr)
         if err != DRAGON_SUCCESS:
             raise DragonMemoryError(err, "Could not copy memory.")
 
@@ -499,7 +525,7 @@ cdef class MemoryPool:
             dragon_memory_pool_serial_free(&self._pool_ser)
 
 
-    def __init__(self, size, str fname, uid, pre_alloc_blocks=None, min_block_size=None, max_allocations=None):
+    def __init__(self, size, str fname, uid, pre_alloc_blocks=None, min_block_size=None, max_allocations=None, gpu_memory=False):
         """
         Create a new memory pool and return a MemoryPool object.
 
@@ -566,6 +592,10 @@ cdef class MemoryPool:
             self._mattr.pre_allocs = <size_t *>malloc(sizeof(size_t) * self._mattr.npre_allocs)
             for i in range(self._mattr.npre_allocs):
                 self._mattr.pre_allocs[i] = pre_alloc_blocks[i]
+
+        # Below is support for initializing the memory pool attributes to use GPU memory.
+        if gpu_memory:
+            self._mattr.mem_type = DRAGON_MEMORY_TYPE_GPU
 
         derr = dragon_memory_pool_create(&self._pool_hdl, size,
                                          fname.encode('utf-8'), uid, &self._mattr)
@@ -669,7 +699,7 @@ cdef class MemoryPool:
         return mpool
 
     @classmethod
-    def make_process_local(cls, str name, size, min_block_size=None, pre_allocs=None, timeout=None):
+    def make_process_local(cls, str name, size, min_block_size=None, pre_allocs=None, timeout=None, gpu_memory=False):
         """
         Create a process local pool which is a pool that exists for the
         lifetime of the current process. The pool may be shared with other
@@ -739,7 +769,7 @@ cdef class MemoryPool:
         else:
             raise ValueError('make_process_local timeout must be a float or int')
 
-        if min_block_size is not None or pre_allocs is not None:
+        if min_block_size is not None or pre_allocs is not None or gpu_memory:
             attr_ptr = &attrs
             err = dragon_memory_attr_init(attr_ptr)
             if err != DRAGON_SUCCESS:
@@ -756,6 +786,9 @@ cdef class MemoryPool:
                         pre[i] = pre_allocs[i]
 
                     attr_ptr.pre_allocs = pre
+
+            if gpu_memory:
+                attr_ptr.mem_type = DRAGON_MEMORY_TYPE_GPU
 
         num_bytes = size
 

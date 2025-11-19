@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS ?= -fPIC -Wall -Ofast -fomit-frame-pointer
-
+# CFLAGS = -O0 -g -fPIC -Wall
 ifeq ($(DRAGON_INCLUDE_DIR),)
     DRAGON_INCLUDE = $(shell dragon-config -o)
 else

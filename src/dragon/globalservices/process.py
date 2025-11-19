@@ -6,7 +6,6 @@ import enum
 import sys
 import threading
 import atexit
-from distutils.util import strtobool
 from typing import List, Tuple, Dict
 
 from .. import channels as dch
@@ -21,7 +20,7 @@ from ..infrastructure.parameters import this_process
 from ..infrastructure import process_desc as pdesc
 from ..infrastructure import facts as dfacts
 from ..infrastructure import connection as dconn
-from ..utils import B64
+from ..utils import B64, strtobool
 from ..infrastructure.policy import Policy
 import os
 import json
@@ -468,6 +467,10 @@ def create(
     :return: ProcessDescriptor object
     """
     global _capture_stdout_conn, _capture_stderr_conn, _capture_stdout_chan, _capture_stderr_chan
+
+    if policy is not None:
+        if not isinstance(policy, Policy):
+            raise ProcessError("The policy argument must be a valid Policy or None.")
 
     thread_policy = Policy.thread_policy()
     if all([policy, thread_policy]):

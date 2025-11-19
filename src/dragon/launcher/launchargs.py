@@ -188,7 +188,7 @@ def parse_hosts(hostlist, hostfile):
 
     if hostlist is None and hostfile is None:
         raise argparse.ArgumentError(
-            hostlist, "When using WLM SSH, hostlist, hostfile, or existing network configuration is required."
+            hostlist, "When using Drun or SSH, hostlist, hostfile, or existing network configuration is required."
         )
     else:
         # parse the hostfile if its set

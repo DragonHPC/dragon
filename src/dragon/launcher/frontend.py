@@ -7,12 +7,10 @@ import threading
 import signal
 import subprocess
 from enum import Enum
-from shlex import quote
 from functools import total_ordering
-from pathlib import Path
 from typing import Optional, List
 
-from ..utils import B64, host_id, set_host_id
+from ..utils import B64, host_id
 from ..channels import Channel, ChannelError, ChannelEmpty, register_gateways_from_env, discard_gateways
 from ..managed_memory import MemoryPool, DragonPoolError, DragonMemoryError
 from ..transport.overlay import start_overlay_network
@@ -22,7 +20,7 @@ from ..dlogging.util import DragonLoggingServices as dls
 from ..dlogging.util import _get_dragon_log_device_level, LOGGING_OUTPUT_DEVICE_DRAGON_FILE
 from ..dlogging.logger import DragonLogger, DragonLoggingError
 
-from ..infrastructure.util import route, get_external_ip_addr, rt_uid_from_ip_addrs
+from ..infrastructure.util import route, rt_uid_from_ip_addrs, get_external_ip_addr
 from ..infrastructure.parameters import POLICY_INFRASTRUCTURE, this_process
 from ..infrastructure.connection import Connection, ConnectionOptions
 from ..infrastructure.node_desc import NodeDescriptor
@@ -33,7 +31,6 @@ from . import util as dlutil
 from .network_config import NetworkConfig
 from .launchargs import parse_hosts
 from .wlm import WLM, wlm_cls_dict
-from .wlm.ssh import SSHSubprocessPopen
 from .wlm.k8s import KubernetesNetworkConfig
 
 LAUNCHER_FAIL_EXIT = 1
@@ -143,56 +140,7 @@ class LauncherFrontEnd:
         self.frontend_port = args_map.get("frontend_port", dfacts.DEFAULT_FRONTEND_PORT)
         self.port = args_map.get("port", dfacts.DEFAULT_TRANSPORT_PORT)
         self._config_from_file = args_map.get("network_config", None)
-        self.transport = args_map.get("transport")
-
-        # if we weren't able to build HSTA (presumably because the env was not
-        # configured for it when building), then fall back on the TCP agent
-        fabric_backend, fabric_lib = get_fabric_backend()
-        if self.transport is dfacts.TransportAgentOptions.DRAGON_CONFIG:
-            if fabric_backend is None:
-                print(
-                    """
-By default Dragon looks for a configuration file to determine which transport
-agent implementation to use. However, no such configuration file was found.
-Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
-to determine the best way to configure the transport agent for your
-compute environment. In the meantime, Dragon will use the TCP transport agent
-for network communication. To eliminate this message and continue to use
-the TCP transport agent, run:
-
-    dragon-config add --tcp-runtime
-"""
-                )
-
-                self.transport = dfacts.TransportAgentOptions.TCP
-            else:
-                if fabric_backend == dfacts.TransportAgentOptions.TCP.value:
-                    self.transport = dfacts.TransportAgentOptions.TCP
-                else:
-                    self.transport = dfacts.TransportAgentOptions.HSTA
-
-        if self.transport is dfacts.TransportAgentOptions.HSTA:
-            # First check that there is an HSTA binary
-            if not dfacts.HSTA_BINARY.is_file():
-                self.transport = dfacts.TransportAgentOptions.TCP
-                print(
-                    f"HSTA binary ({dfacts.HSTA_BINARY}) not available, falling back on TCP transport agent", flush=True
-                )
-
-            # If there is an HSTA binary, make sure we can find a backend configuration file less we break in the middle
-            # of bringing up HSTA
-            else:
-                if fabric_lib is None:
-                    self.transport = dfacts.TransportAgentOptions.TCP
-                    print(
-                        """
-Dragon was unable to find a high-speed network backend configuration.
-Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
-to determine the best way to configure the high-speed network backend to your
-compute environment (e.g., ofi or ucx). In the meantime, we will use the
-lower performing TCP transport agent for backend network communication.
-"""
-                    )
+        self.transport = self._determine_transport_backend(args_map.get("transport"))
 
         # If using SSH, confirm we have enough info do that:
         self._wlm = args_map.get("wlm", None)
@@ -204,15 +152,15 @@ lower performing TCP transport agent for backend network communication.
         if self._wlm is None:
             self._wlm = dlutil.detect_wlm()
 
+        # If using SSH, confirm we have enough info do that:
+        if self._wlm in (WLM.SSH, WLM.DRUN) and self._config_from_file is None:
+            self.hostlist = parse_hosts(self.hostlist, self.hostfile)
+
         # Get an instance of the workload manager helper class
         self.wlm_cls = wlm_cls_dict.get(WLM.from_str(self._wlm), None)
         if not self.wlm_cls:
             raise RuntimeError(f"Unsupported workload manager specified: {self._wlm}")
         self.wlm_obj = self.wlm_cls(self.network_prefix, self.port, self.hostlist)
-
-        # If using SSH, confirm we have enough info do that:
-        if self._wlm in (WLM.SSH, WLM.DRUN) and self._config_from_file is None:
-            self.hostlist = parse_hosts(self.hostlist, self.hostfile)
 
         # Handle some sanity checks on the resilient mode
 
@@ -264,6 +212,62 @@ lower performing TCP transport agent for backend network communication.
         log.debug("doing __exit__ cleanup")
         self._cleanup()
         log.debug("exiting frontend via __exit__")
+
+    @staticmethod
+    def _determine_transport_backend(args_transport, config_file=None):
+        # Get any arg from the args_map
+        transport = args_transport
+
+        # if we weren't able to build HSTA (presumably because the env was not
+        # configured for it when building), then fall back on the TCP agent
+        fabric_backend, fabric_lib = get_fabric_backend(config_file=config_file)
+        if transport is dfacts.TransportAgentOptions.DRAGON_CONFIG:
+            if fabric_backend is None:
+                print(
+                    """
+By default Dragon looks for a configuration file to determine which transport
+agent implementation to use. However, no such configuration file was found.
+Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
+to determine the best way to configure the transport agent for your
+compute environment. In the meantime, Dragon will use the TCP transport agent
+for network communication. To eliminate this message and continue to use
+the TCP transport agent, run:
+
+    dragon-config add --tcp-runtime
+"""
+                )
+
+                transport = dfacts.TransportAgentOptions.TCP
+            else:
+                if fabric_backend == dfacts.TransportAgentOptions.TCP.value:
+                    transport = dfacts.TransportAgentOptions.TCP
+                else:
+                    transport = dfacts.TransportAgentOptions.HSTA
+
+        if transport is dfacts.TransportAgentOptions.HSTA:
+            # First check that there is an HSTA binary
+            if not dfacts.HSTA_BINARY.is_file():
+                transport = dfacts.TransportAgentOptions.TCP
+                print(
+                    f"HSTA binary ({dfacts.HSTA_BINARY}) not available, falling back on TCP transport agent", flush=True
+                )
+
+            # If there is an HSTA binary, make sure we can find a backend configuration file less we break in the middle
+            # of bringing up HSTA
+            else:
+                if fabric_lib is None:
+                    transport = dfacts.TransportAgentOptions.TCP
+                    print(
+                        """
+Dragon was unable to find a high-speed network backend configuration.
+Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
+to determine the best way to configure the high-speed network backend to your
+compute environment (e.g., ofi or ucx). In the meantime, we will use the
+lower performing TCP transport agent for backend network communication.
+"""
+                    )
+
+        return transport
 
     def _kill_backend(self):
         """Simple function for transmitting SIGKILL to backend with helpful message"""
@@ -1051,7 +1055,7 @@ Performance may be suboptimal."""
             log.debug(f"network config: {self.net_conf}")
             # this will raise an OSError when the frontend is run on a compute node w/o external access
             try:
-                fe_ext_ip_addr = os.getenv("DRAGON_FE_EXTERNAL_IP_ADDR", fe_ip_addr.split(":")[0])
+                fe_ext_ip_addr = os.getenv("DRAGON_FE_EXTERNAL_IP_ADDR", get_external_ip_addr())
             except OSError:
                 fe_ext_ip_addr = None
 
@@ -1165,7 +1169,9 @@ Performance may be suboptimal."""
                 be_job_config_str = be_job_config_str.replace("{{temp_fe_sdesc}}", encoded_inbound_str)
 
                 # Replace the placeholder for the dragon log with the actual value
-                be_job_config_str = be_job_config_str.replace("{{temp_log_value}}", os.environ["DRAGON_LOG_DEVICE_ACTOR_FILE"])
+                be_job_config_str = be_job_config_str.replace(
+                    "{{temp_log_value}}", os.environ["DRAGON_LOG_DEVICE_ACTOR_FILE"]
+                )
 
                 # Do the same for the gateway channel env variable
                 be_job_config_str = be_job_config_str.replace(

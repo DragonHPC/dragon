@@ -9,7 +9,8 @@ from typing import Optional
 class DRunWLM(BaseWLM):
 
     def __init__(self, network_prefix, port, hostlist):
-        super().__init__("drun", network_prefix, port, len(hostlist))
+        nhosts = len(hostlist) if hostlist is not None else 0
+        super().__init__("drun", network_prefix, port, nhosts)
         self.hostlist = hostlist
 
     @classmethod
@@ -34,6 +35,9 @@ class DRunWLM(BaseWLM):
         raise RuntimeError("DRunNetworkConfig does not implement _get_wlm_launch_be_args")
 
     def _launch_network_config_helper(self) -> subprocess.Popen:
+        if not self.hostlist:
+            raise RuntimeError("DRunWLM requires a non-empty hostlist.")
+
         network_config_helper_cmd = self.NETWORK_CFG_HELPER_LAUNCH_CMD
         self.LOGGER.debug(f"Launching config with: {network_config_helper_cmd=}")
         return DragonRunPopen(

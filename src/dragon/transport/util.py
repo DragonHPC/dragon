@@ -14,41 +14,54 @@ hsta_config_dict = {"fabric_ep_addrs_available": False}
 first_time_using_hsta_for_config = True
 
 
-def get_fabric_backend():
-    config_file_path = dfacts.CONFIG_FILE_PATH
+def get_fabric_backend(config_file=None):
+    if config_file is None:
+        config_file = dfacts.CONFIG_FILE_PATH
+    else:
+        try:
+            config_file = Path(config_file)
+        except Exception:
+            raise ValueError("config_file must be a valid path string")
 
-    if config_file_path.exists():
-        with open(config_file_path) as config_file:
-            config_dict = json.load(config_file)
+    if config_file.exists():
+        with open(config_file) as config_file:
+            # Put in try block in case it's a malformed json or just empty as we do in unittests
+            try:
+                config_dict = json.load(config_file)
+            except json.decoder.JSONDecodeError:
+                config_dict = {}
 
-        # Get all the runtimes
-        backends = [(key.split("_")[0], config_dict[key]) for key in config_dict.keys() if "runtime" in key]
+        # Make sure none of the keys have hyphens in them. argparse should lead to them
+        # being replaced with underscores, and their presence tells us they have a stale config
+        # file that needs to be updated. Otherwise if it's a runtime, add it to a new dict
+        backend_runtimes = {}
+        for key, val in config_dict.items():
+            if "-" in key:
+                raise ValueError(
+                    f"Config file {config_file} appears to be out of date. Please run `dragon-config -c` and generate a new one"
+                )
 
-        # If there's more than 1 runtime, do some selection work
-        if len(backends) > 1:
-            backend_names, _ = zip(*backends)
+            if "runtime" in key:
+                backend_name = key.split("_")[0]
+                backend_runtimes[backend_name] = val
 
-            # if tcp is included, always use it
-            if "tcp" in backend_names:
-                return "tcp", None
-
-            # otherwise return the first that's not TCP
-            else:
-                for backend_name, backend_lib in backends:
-                    # Handle list of paths
-                    if isinstance(backend_lib, list):
-                        backend_lib = ":".join(backend_lib)
-                    if "tcp" not in backend_name:
-                        return backend_name, backend_lib
-
-        # If there's only one, return it
-        else:
-            name, lib = backends[0]
+        # To prioritize a high speed network, search for one of the high speed backends first
+        for backend_name, backend_lib in backend_runtimes.items():
             # Handle list of paths
-            if isinstance(lib, list):
-                lib = ":".join(lib)
-            return name, lib
+            if backend_name in set(dfacts.HighSpeedTransportBackends):
+                # if the runtime is a list, join it with ':'
+                if isinstance(backend_lib, list):
+                    backend_lib = ":".join(backend_lib)
+                return backend_name, backend_lib
 
+        # If there isn't a high speed backend available, use TCP intentionally, if told
+        try:
+            if backend_runtimes["tcp"] is True:
+                return "tcp", None
+        except KeyError:
+            pass
+
+    # If we got here, we don't have a config or an appropriately defined backend. The caller will do as they wish.
     return None, None
 
 
@@ -60,7 +73,7 @@ def create_hsta_env(nic_idx):
     env = dict(os.environ)
 
     # set the debugging flag
-    logging_enabled = (log.getEffectiveLevel() == logging.DEBUG)
+    logging_enabled = log.getEffectiveLevel() == logging.DEBUG
     if logging_enabled:
         env["DRAGON_HSTA_DEBUG"] = "1"
     else:
@@ -147,7 +160,7 @@ def create_hsta_env(nic_idx):
 
     # TODO: maybe set UCX_NET_DEVICES as well
 
-    is_k8s = (os.getenv("KUBERNETES_SERVICE_HOST") and os.getenv("KUBERNETES_SERVICE_PORT")) != None
+    is_k8s = (os.getenv("KUBERNETES_SERVICE_HOST") and os.getenv("KUBERNETES_SERVICE_PORT")) is not None
     if is_k8s:
         env["DRAGON_HSTA_UCX_NO_MEM_REGISTER"] = "1"
 

@@ -17,6 +17,8 @@
 #include <dragon/channels.h>
 #include <dragon/utils.h>
 
+dragonGPUBackend_t gpu_backend_type = DRAGON_GPU_BACKEND_CUDA;
+void *dragon_gpu_handle = NULL;
 /* Define numa API functions to allow dlopen of said libraries */
 static int _numa_pointers_set = 0;
 
@@ -364,22 +366,23 @@ _determine_pool_allocation_size(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_
         append_err_return(err, "Could not get the bcast_size for the manifest.");
 
     /* For the fixed header size we take the size of the structure but subtract
-       off the size of five fields: the manifest_bcast_space, the heap,
-       the pre_allocs, the filenames, and the manifest_table. All fields
+       off the size of six fields: the manifest_bcast_space, the heap,
+       the pre_allocs, the filenames, the manifest_table, and the serialized_ipc_handle. All fields
        within the header are 8 byte fields so it will have the same size
        as pointers to each value in the dragonMemoryPoolHeader_t
        structure. */
-
-    size_t fixed_header_size = sizeof(dragonMemoryPoolHeader_t) - 5*sizeof(void*);
+    size_t fixed_header_size = sizeof(dragonMemoryPoolHeader_t) - 6*sizeof(void*);
 
     attr->manifest_allocated_size =
         lock_size +
         bcast_size +
         fixed_header_size +
         manifest_heap_size +
+        attr->ipc_handle_size +
         attr->npre_allocs * sizeof(size_t) +
         (attr->n_segments + 1) * DRAGON_MEMORY_MAX_FILE_NAME_LENGTH +
         blocks_size;
+
 
     attr->data_min_block_size = 1UL << min_block_power;
     attr->allocatable_data_size = 1UL << max_block_power;
@@ -406,6 +409,10 @@ _unlink_data_file(const char * file, dragonMemoryPoolAttr_t * attr)
     }
     else if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
         ierr = shm_unlink(file);
+    }
+    else if (attr->mem_type == DRAGON_MEMORY_TYPE_GPU) {
+        // The lifecycle is controlled by LS or some other owner process that will exist for the duration of the pools life. Therefore, processes that no longer need to access the pool
+        ierr = 0;
     }
     else {
         err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE, "invalid memory type");
@@ -452,24 +459,38 @@ _open_map_manifest_shm(dragonMemoryPool_t * pool, const char * mfile, size_t fil
 static dragonError_t
 _open_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPoolAttr_t * attr)
 {
-    if (attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE) {
-        pool->dfd = open(dfile, O_RDWR, 0);
+    if (attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE || attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
+        if (attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE) {
+            pool->dfd = open(dfile, O_RDWR, 0);
+        }
+        else if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
+            pool->dfd = shm_open(dfile, O_RDWR, 0);
+        }
+        if (pool->dfd == -1)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to shm_open() data file");
+
+        pool->local_dptr = mmap(NULL, attr->total_data_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool->dfd, 0);
+        if (pool->local_dptr == MAP_FAILED)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() data file");
     }
-    else if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
-        pool->dfd = shm_open(dfile, O_RDWR, 0);
+    else if (attr->mem_type == DRAGON_MEMORY_TYPE_GPU) {
+
+        dragonError_t derr;
+
+        derr = dragon_gpu_setup(gpu_backend_type, (int) attr->gpu_device_id, &dragon_gpu_handle);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
+
+        derr = dragon_gpu_attach(dragon_gpu_handle, pool->data_ipc_handle, &pool->local_dptr);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to allocate device memory for data");
     }
     else {
         err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE, "invalid memory type");
     }
 
-    if (pool->dfd == -1)
-        err_return(DRAGON_MEMORY_ERRNO, "failed to shm_open() data file");
-
-    pool->local_dptr = mmap(NULL, attr->total_data_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool->dfd, 0);
-    if (pool->local_dptr == MAP_FAILED)
-        err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() data file");
-
     no_err_return(DRAGON_SUCCESS);
+
 }
 
 static dragonError_t
@@ -500,43 +521,71 @@ _create_map_manifest_shm(dragonMemoryPool_t * pool, const char * mfile, dragonMe
 static dragonError_t
 _create_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPoolAttr_t * attr)
 {
-    /* create the data file and map it in */
-    if (attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE) {
-        pool->dfd = open(dfile, O_RDWR | O_CREAT | O_EXCL, attr->mode);
+    if (attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE || attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
+        /* create the data file and map it in */
+        if (attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE) {
+            pool->dfd = open(dfile, O_RDWR | O_CREAT | O_EXCL, attr->mode);
+        }
+        else if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
+            pool->dfd = shm_open(dfile, O_RDWR | O_CREAT | O_EXCL, attr->mode);
+        }
+
+        if (pool->mfd == -1)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to open and create data file (file exist?)");
+
+        int ierr = ftruncate(pool->dfd, attr->total_data_size);
+        if (ierr == -1) {
+            _unlink_data_file(dfile, attr);
+            err_return(DRAGON_MEMORY_ERRNO, "failed to ftruncate() data file");
+        }
+
+        pool->local_dptr = mmap(NULL, attr->total_data_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool->dfd, 0);
+        if (pool->local_dptr == MAP_FAILED) {
+            _unlink_data_file(dfile, attr);
+            err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() data file");
+        }
+
+        if (_numa_pointers_set) {
+            if (numa_available_p() != -1) {
+                struct bitmask *mask = numa_allocate_nodemask_p();
+                numa_bitmask_setall_p(mask);
+                numa_interleave_memory_p(pool->local_dptr, attr->total_data_size, mask);
+                numa_free_nodemask_p(mask);
+            }
+        }
+
+        // TODO cpw: Is this the right thing to do here when I won't have an IPC handle?
+        pool->data_ipc_handle = NULL;
     }
-    else if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM) {
-        pool->dfd = shm_open(dfile, O_RDWR | O_CREAT | O_EXCL, attr->mode);
+    else if (attr->mem_type == DRAGON_MEMORY_TYPE_GPU) {
+
+        // TODO cpw: Not sure what pool->dfd should be since we're not using file backed memory here
+
+        if (dfile != NULL)
+            err_return(DRAGON_INVALID_ARGUMENT, "data file name must be NULL for device memory allocation");
+
+        dragonError_t derr;
+
+        derr = dragon_gpu_setup(gpu_backend_type, (int) attr->gpu_device_id, &dragon_gpu_handle);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
+
+        derr = dragon_gpu_mem_alloc(dragon_gpu_handle, &pool->local_dptr, attr->total_data_size);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to allocate device memory for data");
+
+        derr = dragon_gpu_get_ipc_handle(dragon_gpu_handle , pool->local_dptr, &pool->data_ipc_handle);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to get ipc handle for device memory");
     }
     else {
         err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE, "invalid memory type");
     }
 
-    if (pool->mfd == -1)
-        err_return(DRAGON_MEMORY_ERRNO, "failed to open and create data file (file exist?)");
-
-    int ierr = ftruncate(pool->dfd, attr->total_data_size);
-    if (ierr == -1) {
-        _unlink_data_file(dfile, attr);
-        err_return(DRAGON_MEMORY_ERRNO, "failed to ftruncate() data file");
-    }
-
-    pool->local_dptr = mmap(NULL, attr->total_data_size, PROT_READ | PROT_WRITE, MAP_SHARED, pool->dfd, 0);
-    if (pool->local_dptr == MAP_FAILED) {
-        _unlink_data_file(dfile, attr);
-        err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() data file");
-    }
-
-    if (_numa_pointers_set) {
-        if (numa_available_p() != -1) {
-            struct bitmask *mask = numa_allocate_nodemask_p();
-            numa_bitmask_setall_p(mask);
-            numa_interleave_memory_p(pool->local_dptr, attr->total_data_size, mask);
-            numa_free_nodemask_p(mask);
-        }
-    }
-
     no_err_return(DRAGON_SUCCESS);
 }
+
+
 
 static dragonError_t
 _unmap_manifest_shm(dragonMemoryPool_t * pool)
@@ -557,20 +606,59 @@ _unmap_manifest_shm(dragonMemoryPool_t * pool)
     return DRAGON_SUCCESS;
 }
 
+
+static dragonError_t
+_free_gpu_data(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
+{
+
+    if (pool->local_dptr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "cannot free NULL data pointer");
+
+    //The process that created the pool is the one that needs to free it. So if LS (or some other orchestrating process) is going to own these objects then it will be the only one that can call dragon_memory_pool_destroy. But, both dragon_memory_pool_destroy and dragon_memory_pool_detach call unmap data so we need to break that out or we need to make sure that here there is a way to determine who the owner is.
+    dragonError_t derr;
+    derr = dragon_gpu_mem_free(dragon_gpu_handle, pool->local_dptr);
+    if (derr != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to free GPU memory pool");
+
+    return DRAGON_SUCCESS;
+}
+
 static dragonError_t
 _unmap_data(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
 {
     if (pool->local_dptr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "cannot munmp() NULL data pointer");
 
-    int ierr = munmap(pool->local_dptr, attr->total_data_size);
-    if (ierr == -1)
-        err_return(DRAGON_MEMORY_ERRNO, "failed to munmap() data file");
+    if (attr->mem_type == DRAGON_MEMORY_TYPE_SHM || attr->mem_type == DRAGON_MEMORY_TYPE_HUGEPAGE) {
 
-    ierr = close(pool->dfd);
-    if (ierr == -1)
-        err_return(DRAGON_MEMORY_ERRNO, "failed to close data file descriptor");
+        int ierr = munmap(pool->local_dptr, attr->total_data_size);
+        if (ierr == -1)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to munmap() data file");
 
+        ierr = close(pool->dfd);
+        if (ierr == -1)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to close data file descriptor");
+
+    }
+    else if (attr->mem_type == DRAGON_MEMORY_TYPE_GPU) {
+
+        dragonError_t derr;
+
+        //derr = dragon_gpu_detach(dragon_gpu_handle, pool->local_dptr);
+        //if (derr != DRAGON_SUCCESS)
+        //    err_return(DRAGON_MEMORY_ERRNO, "failed to detach device memory");
+
+        derr = dragon_gpu_free_ipc_handle(dragon_gpu_handle, &pool->data_ipc_handle);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to free GPU IPC handle");
+
+        derr = dragon_gpu_cleanup(&dragon_gpu_handle);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to free device memory");
+    }
+    else {
+        err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE, "invalid memory type");
+    }
     /* Because this is used during error recovery, don't use no_err_return.
        It would reset the backtrace string and we want the original problem. */
     return DRAGON_SUCCESS;
@@ -636,30 +724,38 @@ _alloc_pool(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryPoolA
     /* create the data file and map it in */
     bool fallback_dev_shm = false;
     char *mount_dir = NULL;
+    if( attr->mem_type != DRAGON_MEMORY_TYPE_GPU) {
+        if (dragon_get_hugepage_mount(&mount_dir) == DRAGON_SUCCESS ) {
+            nchars = snprintf(
+                dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "%s/%s%s_part%i",
+                mount_dir, DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0
+            );
 
-    if (dragon_get_hugepage_mount(&mount_dir) == DRAGON_SUCCESS) {
-        nchars = snprintf(
-            dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "%s/%s%s_part%i",
-            mount_dir, DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0
-        );
-
-        attr->mem_type = DRAGON_MEMORY_TYPE_HUGEPAGE;
-        err = _create_map_data(pool, dfile, attr);
-        if (err == DRAGON_MEMORY_ERRNO) {
+            attr->mem_type = DRAGON_MEMORY_TYPE_HUGEPAGE;
+            err = _create_map_data(pool, dfile, attr);
+            if (err == DRAGON_MEMORY_ERRNO) {
+                fallback_dev_shm = true;
+            }
+        }
+        else  {
             fallback_dev_shm = true;
+        }
+
+        /* mmapping a hugepage-backed buffer didn't work, so try /dev/shm */
+        if (fallback_dev_shm) {
+            nchars = snprintf(dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "/%s%s_part%i",
+                            DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0);
+
+            attr->mem_type = DRAGON_MEMORY_TYPE_SHM;
+            err = _create_map_data(pool, dfile, attr);
         }
     }
     else {
-        fallback_dev_shm = true;
-    }
-
-    /* mmapping a hugepage-backed buffer didn't work, so try /dev/shm */
-    if (fallback_dev_shm) {
+        // mem_type is GPU
         nchars = snprintf(dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "/%s%s_part%i",
                           DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0);
 
-        attr->mem_type = DRAGON_MEMORY_TYPE_SHM;
-        err = _create_map_data(pool, dfile, attr);
+        err = _create_map_data(pool, NULL, attr);
     }
 
     /* if we can't allocate memory using either hugepages or /dev/shm, then declare defeat */
@@ -701,6 +797,9 @@ _free_pool(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
        By definition this should always work, so return SUCCESS no matter what. */
 
     _unmap_manifest_shm(pool);
+    if (attr->mem_type == DRAGON_MEMORY_TYPE_GPU) {
+        _free_gpu_data(pool, attr);
+    }
     _unmap_data(pool, attr);
     _unlink_manifest_file(attr->mname);
 
@@ -1031,7 +1130,20 @@ _map_manifest_header(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t* attr)
     pool->header.growth_type             = &hptr[13];
     pool->header.mode                    = (dragonUInt *)&hptr[14];
     pool->header.npre_allocs             = &hptr[15];
-    pool->header.manifest_bcast_space    = (void*) &hptr[16];
+    pool->header.gpu_device_id           = &hptr[16];
+    pool->header.ipc_handle_size         = &hptr[17];
+
+    if (attr != NULL)
+        *pool->header.ipc_handle_size = attr->ipc_handle_size;
+
+    pool->header.serialized_ipc_handle   = (void*) &hptr[18];
+    pool->header.manifest_bcast_space    = (void*) pool->header.serialized_ipc_handle + *(pool->header.ipc_handle_size);
+
+
+    if (*pool->header.mem_type == DRAGON_MEMORY_TYPE_GPU)
+    {
+        pool->data_ipc_handle = (void*) &hptr[18];
+    }
 
     pool->header.heap                    = (void*) pool->header.manifest_bcast_space + bcast_size;
 
@@ -1100,6 +1212,10 @@ _initialize_manifest_header(dragonMemoryPool_t * pool, dragonM_UID_t m_uid, drag
     *(pool->header.growth_type)             = (dragonULInt)attr->growth_type;
     *(pool->header.mode)                    = (dragonUInt)attr->mode;
     *(pool->header.npre_allocs)             = (dragonULInt)attr->npre_allocs;
+    *(pool->header.gpu_device_id)           = (dragonULInt)attr->gpu_device_id;
+    *(pool->header.ipc_handle_size)         = (dragonULInt)attr->ipc_handle_size;
+    if(pool->data_ipc_handle != NULL)
+        memcpy(pool->header.serialized_ipc_handle, pool->data_ipc_handle, attr->ipc_handle_size);
 
     for (int i = 0; i < attr->npre_allocs; i ++) {
         pool->header.pre_allocs[i] = attr->pre_allocs[i];
@@ -1148,6 +1264,8 @@ _attrs_from_header(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
     attr->growth_type             = *(pool->header.growth_type);
     attr->mode                    = *(pool->header.mode);
     attr->npre_allocs             = *(pool->header.npre_allocs);
+    attr->gpu_device_id           = *(pool->header.gpu_device_id);
+    attr->ipc_handle_size         = *(pool->header.ipc_handle_size);
     attr->pre_allocs              = malloc(sizeof(size_t) * attr->npre_allocs);
     if (attr->pre_allocs == NULL)
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate space for pre-allocated block list");
@@ -1170,6 +1288,9 @@ _validate_attr(const dragonMemoryPoolAttr_t * attr)
     if (attr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The attr argument was NULL as provided to the _validate_attr function.");
 
+    if (attr->mem_type == DRAGON_MEMORY_TYPE_GPU)
+        ((dragonMemoryPoolAttr_t *)attr)->ipc_handle_size = DRAGON_MEMORY_MAX_IPC_HANDLE_SIZE;
+
     if (attr->segment_size < attr->data_min_block_size)
         err_return(DRAGON_INVALID_ARGUMENT, "The segment size must be at least as big as the minimum block size.");
 
@@ -1191,6 +1312,8 @@ _copy_attr_nonames(dragonMemoryPoolAttr_t * new_attr, const dragonMemoryPoolAttr
     new_attr->n_segments              = attr->n_segments;
     new_attr->lock_type               = attr->lock_type;
     new_attr->mem_type                = attr->mem_type;
+    new_attr->gpu_device_id           = attr->gpu_device_id;
+    new_attr->ipc_handle_size         = attr->ipc_handle_size;
     new_attr->growth_type             = attr->growth_type;
     new_attr->mode                    = attr->mode;
     new_attr->npre_allocs             = attr->npre_allocs;
@@ -1252,6 +1375,7 @@ dragon_memory_set_debug_flag(int the_flag) {
     debug_flag = the_flag;
 }
 
+
 /* --------------------------------------------------------------------------------
     BEGIN USER API
    ----------------------------------------------------------------------------- */
@@ -1290,6 +1414,8 @@ dragon_memory_attr_init(dragonMemoryPoolAttr_t * attr)
     attr->mem_type                   = DRAGON_MEMORY_DEFAULT_MEM_TYPE;
     attr->growth_type                = DRAGON_MEMORY_DEFAULT_GROWTH_TYPE;
     attr->mode                       = DRAGON_MEMORY_DEFAULT_MODE;
+    attr->gpu_device_id              = 0;
+    attr->ipc_handle_size            = 0; // read-only
     attr->npre_allocs                = 0;
     attr->pre_allocs                 = NULL;
     attr->mname                      = NULL;
@@ -2784,9 +2910,30 @@ dragon_memory_detach(dragonMemoryDescr_t * mem_descr)
     /* @MCB TODO: Assert the mem_descr->_original is set to 0? This would prevent detach calls on original allocations
     */
 
+    dragonMemoryPoolDescr_t pool_descr;
+    dragonError_t err = dragon_memory_get_pool(mem_descr, &pool_descr);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get memory pool descriptor copying from.");
+
+    dragonMemoryPool_t * pool;
+    err = _pool_from_descr(&pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    if (*pool->header.mem_type == DRAGON_MEMORY_TYPE_GPU)
+    {
+        err = dragon_gpu_detach( dragon_gpu_handle, pool->local_dptr);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "failed to detach from GPU memory");
+
+        err = dragon_gpu_cleanup(&dragon_gpu_handle);
+        if (err != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to free device memory");
+    }
+
     /* Retrieve memory from descriptor, then free local memory struct. */
     dragonMemory_t * mem;
-    dragonError_t err = _mem_from_descr(mem_descr, &mem);
+    err = _mem_from_descr(mem_descr, &mem);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "invalid memory descriptor");
 
@@ -3255,9 +3402,9 @@ dragon_memory_pool_allocation_exists(dragonMemoryDescr_t * mem_descr, int * flag
     _obtain_manifest_lock(pool);
     err = _lookup_allocation(pool, mem->mfst_record.id, mem);
     _release_manifest_lock(pool);
-    if (err != DRAGON_SUCCESS) {
-        err_return(err, "allocation does not exist");
-    }
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "allocation does not exist");
+
 
     // Allocation found
     *flag = 1;
@@ -3704,8 +3851,8 @@ dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMe
         if (err != DRAGON_SUCCESS) {
             char err_str[100];
             free(mem);
-            snprintf(err_str, 99, "could not find matching id=%lu allocation", id);
-            append_err_return(err, err_str);
+            snprintf(err_str, 99, "The id=%lu for this allocation was not found. It or the pool it is in was most likely destroyed.", id);
+            append_err_return(DRAGON_OBJECT_DESTROYED, err_str);
         }
 
         /* Fill out rest of mem_struct */
@@ -4030,33 +4177,28 @@ dragon_memory_is(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr
 }
 
 /**
- * @brief Check for equal contents
+ * @brief Copy a specific size of data between memory allocations
  *
- * Check that two memory allocations have equal contents.
+ * Copy between memory allocations. The size to copy is provided.
  *
- * @param mem_descr1 One memory allocation.
- * @param mem_descr2 Other memory allocation.
- *
- * @param result is true if equal and false otherwise.
+ * @param from_mem Memory allocation to copy data from.
+ * @param to_mem Memory allocation to copy data to.
+ * @param size Number of bytes to copy from from_mem to to_mem.
  *
  * @returns DRAGON_SUCCESS or another dragonError_t return code.
 */
 
 dragonError_t
-dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout)
+dragon_memory_copy_size(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, size_t size)
 {
     dragonError_t err;
-    size_t size;
+    size_t size_to;
     void* from_ptr;
     void* to_ptr;
 
-    err = dragon_memory_get_size(from_mem, &size);
+    err = dragon_memory_get_size(to_mem, &size_to);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get size of memory.");
-
-    err = dragon_memory_alloc_blocking(to_mem, to_pool, size, timeout);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not allocate new memory.");
 
     err = dragon_memory_get_pointer(from_mem, &from_ptr);
     if (err != DRAGON_SUCCESS)
@@ -4066,8 +4208,124 @@ dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, d
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get to memory pointer.");
 
-    if (size > 0 && to_ptr != NULL && from_ptr != NULL)
-        memcpy(to_ptr, from_ptr, size);
+    if (size <= size_to && to_ptr != NULL && from_ptr != NULL)
+    {
+        dragonMemoryPoolDescr_t pool_descr_to, pool_descr_from;
+        err = dragon_memory_get_pool(from_mem, &pool_descr_from);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get memory pool descriptor copying from.");
+        err = dragon_memory_get_pool(to_mem, &pool_descr_to);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get memory pool descriptor copying from.");
+
+        dragonMemoryPoolAttr_t attr_to, attr_from;
+        err = dragon_memory_get_attr(&pool_descr_from, &attr_from);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get to memory attributes for pool copying from.");
+        err = dragon_memory_get_attr(&pool_descr_to, &attr_to);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get to memory attributes for pool copying to.");
+
+        //logic for choosing correct type of copy
+        if(attr_from.mem_type == DRAGON_MEMORY_TYPE_GPU && attr_to.mem_type == DRAGON_MEMORY_TYPE_GPU)
+        {
+            // D2D
+            err = dragon_gpu_copy(dragon_gpu_handle, to_ptr, from_ptr, size, DRAGON_GPU_D2D);
+        }
+        else if(attr_from.mem_type == DRAGON_MEMORY_TYPE_GPU && attr_to.mem_type != DRAGON_MEMORY_TYPE_GPU)
+        {
+            // D2H
+            err = dragon_gpu_copy(dragon_gpu_handle, to_ptr, from_ptr, size, DRAGON_GPU_D2H);
+        }
+        else if(attr_from.mem_type != DRAGON_MEMORY_TYPE_GPU && attr_to.mem_type == DRAGON_MEMORY_TYPE_GPU)
+        {
+            // H2D
+            err = dragon_gpu_copy(dragon_gpu_handle, to_ptr, from_ptr, size, DRAGON_GPU_H2D);
+        }
+        else
+        {
+            memcpy(to_ptr, from_ptr, size);
+        }
+
+        if (err != DRAGON_SUCCESS)
+        {
+            append_err_return(err, "Could not copy between Device memory and Host/Device memory.");
+        }
+
+        err = dragon_memory_attr_destroy(&attr_from);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not destroy memory attributes for pool copying from.");
+        err = dragon_memory_attr_destroy(&attr_to);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not destroy memory attributes for pool copying to.");
+    }
+    else
+    {
+        char err_str[256];
+        snprintf(err_str, 255, "The from memory size is larger than the to memory size or the pointers are NULL. size_from: %zu, size_to: %zu, from_ptr: %p, to_ptr: %p\n", size, size_to, from_ptr, to_ptr);
+        err_return(DRAGON_MEMORY_ERRNO, err_str);
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Copy an entire memory allocation to another memory allocation
+ *
+ * Copy between memory allocations.
+ *
+ * @param from_mem Memory allocation to copy data from.
+ * @param to_mem Memory allocation to copy data to.
+ *
+ * @returns DRAGON_SUCCESS or another dragonError_t return code.
+*/
+dragonError_t
+dragon_memory_copy(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem)
+{
+    dragonError_t err;
+    size_t size_from;
+
+    err = dragon_memory_get_size(from_mem, &size_from);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get size of memory.");
+
+    err = dragon_memory_copy_size(from_mem, to_mem, size_from);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not copy from_mem to to_mem that was created");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Copy an entire memory allocation to another memory allocation
+ *
+ * Copy between memory allocations.
+ *
+ * @param from_mem Memory allocation to copy data from.
+ * @param to_pool Memory pool to copy data to.
+ * @param timeout is the timeout to use when waiting for memory to become available.
+ *
+ * @param to_mem Memory allocation from to_pool that data is copied to.
+ *
+ * @returns DRAGON_SUCCESS or another dragonError_t return code.
+*/
+dragonError_t
+dragon_memory_copy_to_pool(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_mem, dragonMemoryPoolDescr_t* to_pool, const timespec_t* timeout)
+{
+    dragonError_t err;
+    size_t size;
+
+    err = dragon_memory_get_size(from_mem, &size);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get size of memory.");
+
+    err = dragon_memory_alloc_blocking(to_mem, to_pool, size, timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not allocate new memory.");
+
+    err = dragon_memory_copy_size(from_mem, to_mem, size);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not copy from_mem to to_mem that was created");
 
     no_err_return(DRAGON_SUCCESS);
 }

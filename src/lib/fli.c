@@ -1069,8 +1069,8 @@ static dragonError_t _empty_the_channel(dragonChannelDescr_t* channel, bool* fou
 
             if ((arg == FLI_EOT) || free_mem) {
                 err = dragon_memory_free(&mem);
-                if (err != DRAGON_CHANNEL_EMPTY)
-                    append_err_return(err, "There was an error free memory in while emptying the channel.");
+                if (err != DRAGON_SUCCESS)
+                    append_err_return(err, "There was an error freeing memory while emptying the channel.");
             }
 
             if (num_read == max)

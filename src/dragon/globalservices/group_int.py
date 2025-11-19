@@ -368,198 +368,208 @@ class GroupContext:
         :return: True if there is a pending continuation, False otherwise
         :rtype: bool
         """
-        if msg.user_name in server.group_names:
-            LOG.info(f"group name {msg.user_name} in use")
-            existing_ctx = server.group_table[server.group_names[msg.user_name]]
-            rm = dmsg.GSGroupCreateResponse(tag=server.tag_inc(), ref=msg.tag, desc=existing_ctx.descriptor)
-            reply_channel.send(rm.serialize())
-            return False
+        try:
+            if msg.user_name in server.group_names:
+                LOG.info(f"group name {msg.user_name} in use")
+                existing_ctx = server.group_table[server.group_names[msg.user_name]]
+                rm = dmsg.GSGroupCreateResponse(tag=server.tag_inc(), ref=msg.tag, desc=existing_ctx.descriptor)
+                reply_channel.send(rm.serialize())
+                return False
 
-        this_guid, auto_name = server.new_guid_and_default_name()
+            this_guid, auto_name = server.new_guid_and_default_name()
 
-        if not msg.user_name:
-            msg.user_name = auto_name
+            if not msg.user_name:
+                msg.user_name = auto_name
 
-        if msg.policy is not None:
-            assert isinstance(msg.policy, Policy)
-            group_policy = Policy.merge(Policy.global_policy(), msg.policy)
-        else:
-            group_policy = Policy.global_policy()
-
-        policies = []
-        for replicas, serialized_msg in msg.items:
-            resource_msg = dmsg.parse(serialized_msg)
-            cls._check_resource_msg_type(resource_msg)
-
-            policy = resource_msg.policy
-
-            if policy is not None:
-                assert isinstance(policy, Policy)
-                policies.extend([Policy.merge(group_policy, policy)] * replicas)
+            if msg.policy is not None:
+                group_policy = Policy.merge(Policy.global_policy(), msg.policy)
             else:
-                policies.extend([group_policy] * replicas)
+                group_policy = Policy.global_policy()
 
-        LOG.debug("group_policy=%s", group_policy)
-        LOG.debug("policies=%s", policies)
+            policies = []
+            for replicas, serialized_msg in msg.items:
+                resource_msg = dmsg.parse(serialized_msg)
+                cls._check_resource_msg_type(resource_msg)
 
-        # Gather our node list and evaluate the policies against it
-        layout_list = server.process_policy_evaluator.evaluate(policies=policies)
+                policy = resource_msg.policy
 
-        pmi_job_helper = None
-        if PMIJobHelper.is_pmi_required(msg.items):
-            # Setup PMI Helper
-            pmi_job_helper = PMIJobHelper(msg.items, layout_list, server.node_table)
-            pmi_job_iter = iter(pmi_job_helper)
+                if policy is not None:
+                    policies.extend([Policy.merge(group_policy, policy)] * replicas)
+                else:
+                    policies.extend([group_policy] * replicas)
 
-        group_context = cls(
-            server=server,
-            request=msg,
-            reply_channel=reply_channel,
-            g_uid=this_guid,
-            policy=group_policy,
-            pmi_job_helper=pmi_job_helper,
-        )
+            LOG.debug("group_policy=%s", group_policy)
+            LOG.debug("policies=%s", policies)
 
-        server.group_names[msg.user_name] = this_guid
-        server.group_table[this_guid] = group_context
-        server.group_resource_count[
-            this_guid
-        ] = []  # list of items corresponding to the multiplicity of each list in server.group_resource_list
+            # Gather our node list and evaluate the policies against it
+            layout_list = server.process_policy_evaluator.evaluate(policies=policies)
 
-        # Maps a given node (local services instance) to a list of
-        # ProcessContexts that are to be created on that instance
-        ls_proccontext_map: Dict[int, List[ProcessContext]] = defaultdict(list)
+            pmi_job_helper = None
+            if PMIJobHelper.is_pmi_required(msg.items):
+                # Setup PMI Helper
+                pmi_job_helper = PMIJobHelper(msg.items, layout_list, server.node_table)
+                pmi_job_iter = iter(pmi_job_helper)
 
-        # msg.items is a list of tuples of the form (count:int, create_msg: dragon.infrastructure.messages.Message)
-        layout_index = 0
-        for tuple_idx, item in enumerate(msg.items):
-            count, res_msg = item
-            resource_msg = dmsg.parse(res_msg)
+            group_context = cls(
+                server=server,
+                request=msg,
+                reply_channel=reply_channel,
+                g_uid=this_guid,
+                policy=group_policy,
+                pmi_job_helper=pmi_job_helper,
+            )
 
-            if count > 0:
-                # initialize a new list
-                group_context.descriptor.sets.append([])
-                # add a new entry to server.group_resource_count[this_guid] list
-                server.group_resource_count[this_guid].append(int(count))
-                for item_idx in range(count):
-                    item_layout = layout_list[layout_index]
-                    item_policy = policies[layout_index]
-                    layout_index += 1
+            server.group_names[msg.user_name] = this_guid
+            server.group_table[this_guid] = group_context
+            server.group_resource_count[
+                this_guid
+            ] = []  # list of items corresponding to the multiplicity of each list in server.group_resource_list
 
-                    # we need a unique copy of the msg for each member
-                    resource_copy = copy.deepcopy(resource_msg)
-                    resource_copy.tag = das.next_tag()
+            # Maps a given node (local services instance) to a list of
+            # ProcessContexts that are to be created on that instance
+            ls_proccontext_map: Dict[int, List[ProcessContext]] = defaultdict(list)
 
-                    # create a unique name for this resource based on the tuple user_name
-                    if resource_copy.user_name:
-                        resource_copy.user_name = f"{resource_copy.user_name}.{this_guid}.{tuple_idx}.{item_idx}"
+            # msg.items is a list of tuples of the form (count:int, create_msg: dragon.infrastructure.messages.Message)
+            layout_index = 0
+            for tuple_idx, item in enumerate(msg.items):
+                count, res_msg = item
+                resource_msg = dmsg.parse(res_msg)
 
-                    # update the layout to place the process correctly
-                    resource_copy.layout = item_layout
-                    resource_copy.policy = item_policy
+                if count > 0:
+                    # initialize a new list
+                    group_context.descriptor.sets.append([])
+                    # add a new entry to server.group_resource_count[this_guid] list
+                    server.group_resource_count[this_guid].append(int(count))
+                    for item_idx in range(count):
+                        item_layout = layout_list[layout_index]
+                        item_policy = policies[layout_index]
+                        layout_index += 1
 
-                    # add a new resource into this list
-                    group_context.descriptor.sets[tuple_idx] += [group_desc.GroupDescriptor.GroupMember()]
+                        # we need a unique copy of the msg for each member
+                        resource_copy = copy.deepcopy(resource_msg)
+                        resource_copy.tag = das.next_tag()
 
-                    # this is where we're actually starting the creation of the group members
-                    if isinstance(resource_msg, dmsg.GSProcessCreate):
-                        if resource_msg.pmi is not None:
-                            # The PMIJobHelper generates the pmi_info structure
-                            # from the layout_map and list of group items.
-                            resource_copy.pmi = True
-                            resource_copy._pmi_info = next(pmi_job_iter)
-                            if int(os.environ.get("PMI_DEBUG", 0)):
-                                LOG.info("%s", resource_copy._pmi_info)
+                        # create a unique name for this resource based on the tuple user_name
+                        if resource_copy.user_name:
+                            resource_copy.user_name = f"{resource_copy.user_name}.{this_guid}.{tuple_idx}.{item_idx}"
 
-                        success, outbound_tag, proc_context = ProcessContext.construct(
-                            server, resource_copy, reply_channel, send_msg=False, belongs_to_group=True
-                        )
+                        # update the layout to place the process correctly
+                        resource_copy.layout = item_layout
+                        resource_copy.policy = item_policy
 
-                        server.resource_to_group_map[proc_context.descriptor.p_uid] = (this_guid, (tuple_idx, item_idx))
+                        # add a new resource into this list
+                        group_context.descriptor.sets[tuple_idx] += [group_desc.GroupDescriptor.GroupMember()]
 
-                        if success and outbound_tag and proc_context:
-                            ls_proccontext_map[proc_context.node].append(proc_context)
-                            server.pending[outbound_tag] = group_context.complete_construction
-                            server.group_to_pending_resource_map[(outbound_tag, this_guid)] = proc_context
+                        # this is where we're actually starting the creation of the group members
+                        if isinstance(resource_msg, dmsg.GSProcessCreate):
+                            if resource_msg.pmi is not None:
+                                # The PMIJobHelper generates the pmi_info structure
+                                # from the layout_map and list of group items.
+                                resource_copy.pmi = True
+                                resource_copy._pmi_info = next(pmi_job_iter)
+                                if int(os.environ.get("PMI_DEBUG", 0)):
+                                    LOG.info("%s", resource_copy._pmi_info)
 
-                            # Update the group with the corresponding GroupMember
-                            member = group_context._generate_member(this_guid, proc_context)
-                            group_context._update_group_member(
-                                this_guid, member, tuple_idx, item_idx, related_to_create=False
+                            success, outbound_tag, proc_context = ProcessContext.construct(
+                                server, resource_copy, reply_channel, send_msg=False, belongs_to_group=True
                             )
-                        else:
-                            if proc_context and outbound_tag == "already":  # the process was already created
-                                LOG.debug(f"The process {proc_context.descriptor.p_uid} was already created.")
-                                member = {
-                                    "state": proc_context.descriptor.state,
-                                    "uid": proc_context.descriptor.p_uid,
-                                    "placement": proc_context.descriptor.node,
-                                    "error_code": dmsg.GSProcessCreateResponse.Errors.ALREADY,
-                                    "desc": proc_context.descriptor,
-                                }
-                                # Update the group with the corresponding GroupMember
-                                group_context._update_group_member(this_guid, member, tuple_idx, item_idx)
-                            elif proc_context and not outbound_tag:
-                                # this is the case where we needed to make inf channels and
-                                # there is a pending request related to the process channels
-                                # and we don't need to do anything for now. When the channel related pending will
-                                # be cleared, a group pending construct_completion will be issued from process_int
-                                continue
 
-                            else:  # there was a failure
-                                # in this case, outbound_tag contains the error message
-                                LOG.debug(
-                                    f"There was a failure in the process {proc_context.descriptor.p_uid} creation: {outbound_tag}"
+                            server.resource_to_group_map[proc_context.descriptor.p_uid] = (this_guid, (tuple_idx, item_idx))
+
+                            if success and outbound_tag and proc_context:
+                                ls_proccontext_map[proc_context.node].append(proc_context)
+                                server.pending[outbound_tag] = group_context.complete_construction
+                                server.group_to_pending_resource_map[(outbound_tag, this_guid)] = proc_context
+
+                                # Update the group with the corresponding GroupMember
+                                member = group_context._generate_member(this_guid, proc_context)
+                                group_context._update_group_member(
+                                    this_guid, member, tuple_idx, item_idx, related_to_create=False
                                 )
-                                member = group_context._generate_member(this_guid, proc_context, outbound_tag)
-                                # Update the group with the corresponding GroupMember
-                                group_context._update_group_member(this_guid, member, tuple_idx, item_idx)
+                            else:
+                                if proc_context and outbound_tag == "already":  # the process was already created
+                                    LOG.debug(f"The process {proc_context.descriptor.p_uid} was already created.")
+                                    member = {
+                                        "state": proc_context.descriptor.state,
+                                        "uid": proc_context.descriptor.p_uid,
+                                        "placement": proc_context.descriptor.node,
+                                        "error_code": dmsg.GSProcessCreateResponse.Errors.ALREADY,
+                                        "desc": proc_context.descriptor,
+                                    }
+                                    # Update the group with the corresponding GroupMember
+                                    group_context._update_group_member(this_guid, member, tuple_idx, item_idx)
+                                elif proc_context and not outbound_tag:
+                                    # this is the case where we needed to make inf channels and
+                                    # there is a pending request related to the process channels
+                                    # and we don't need to do anything for now. When the channel related pending will
+                                    # be cleared, a group pending construct_completion will be issued from process_int
+                                    continue
 
-                    elif isinstance(resource_msg, dmsg.GSChannelCreate):
-                        raise NotImplementedError
-                        # ChannelContext.construct(server, msg, reply_channel,
-                        #                          belongs_to_group=True)
-                    elif isinstance(resource_msg, dmsg.GSPoolCreate):
-                        raise NotImplementedError
-                        # PoolContext.construct(server, msg, reply_channel,
-                        #                       belongs_to_group=True)
-                    else:
-                        raise GroupError(f"Unknown msg type {resource_msg} for a Group member.")
-            else:
-                raise GroupError("The Group should include at least one member in each subgroup.")
+                                else:  # there was a failure
+                                    # in this case, outbound_tag contains the error message
+                                    LOG.debug(
+                                        f"There was a failure in the process {proc_context.descriptor.p_uid} creation: {outbound_tag}"
+                                    )
+                                    member = group_context._generate_member(this_guid, proc_context, outbound_tag)
+                                    # Update the group with the corresponding GroupMember
+                                    group_context._update_group_member(this_guid, member, tuple_idx, item_idx)
 
-        # If PMI is required, we need to send these common PMI options.
-        # By sending them as part of the SHMultiProcessCreate message,
-        # we limit the duplication of these common vaules in each embedded
-        # SHProcessCreate message, reducing the overall message size.
-        pmi_group_info: dmsg.PMIGroupInfo = None
-        if pmi_job_helper:
-            pmi_group_info: dmsg.PMIGroupInfo = dmsg.PMIGroupInfo(
-                backend=pmi_job_helper.backend,
-                job_id=pmi_job_helper.job_id,
-                nnodes=pmi_job_helper.pmi_nnodes,
-                nranks=pmi_job_helper.nranks,
-                nid_map=pmi_job_helper.nid_map,
-                host_map=pmi_job_helper.host_map,
-                control_port=pmi_job_helper.control_port,
-                pmix_desc=msg.pmix_desc,
-            )
-            LOG.debug("PMIGroupInfo: %s", pmi_group_info)
+                        elif isinstance(resource_msg, dmsg.GSChannelCreate):
+                            raise NotImplementedError
+                            # ChannelContext.construct(server, msg, reply_channel,
+                            #                          belongs_to_group=True)
+                        elif isinstance(resource_msg, dmsg.GSPoolCreate):
+                            raise NotImplementedError
+                            # PoolContext.construct(server, msg, reply_channel,
+                            #                       belongs_to_group=True)
+                        else:
+                            raise GroupError(f"Unknown msg type {resource_msg} for a Group member.")
+                else:
+                    raise GroupError("The Group should include at least one member in each subgroup.")
 
-        for node, contexts in ls_proccontext_map.items():
-            procs = [context.shprocesscreate_msg for context in contexts]
-            shep_req = dmsg.SHMultiProcessCreate(
+            # If PMI is required, we need to send these common PMI options.
+            # By sending them as part of the SHMultiProcessCreate message,
+            # we limit the duplication of these common vaules in each embedded
+            # SHProcessCreate message, reducing the overall message size.
+            pmi_group_info: dmsg.PMIGroupInfo = None
+            if pmi_job_helper:
+                pmi_group_info: dmsg.PMIGroupInfo = dmsg.PMIGroupInfo(
+                    backend=pmi_job_helper.backend,
+                    job_id=pmi_job_helper.job_id,
+                    nnodes=pmi_job_helper.pmi_nnodes,
+                    nranks=pmi_job_helper.nranks,
+                    nid_map=pmi_job_helper.nid_map,
+                    host_map=pmi_job_helper.host_map,
+                    control_port=pmi_job_helper.control_port,
+                    pmix_desc=msg.pmix_desc,
+                )
+                LOG.debug("PMIGroupInfo: %s", pmi_group_info)
+
+            for node, contexts in ls_proccontext_map.items():
+                procs = [context.shprocesscreate_msg for context in contexts]
+                shep_req = dmsg.SHMultiProcessCreate(
+                    tag=server.tag_inc(),
+                    r_c_uid=dfacts.GS_INPUT_CUID,
+                    pmi_group_info=pmi_group_info,
+                    procs=procs,
+                    guid=this_guid,
+                )
+                shep_hdl = server.shep_inputs[node]
+                server.pending_sends.put((shep_hdl, shep_req.serialize()))
+                LOG.debug(f"request %s to shep %d", shep_req, node)
+
+            return True
+
+        except Exception as ex:
+            rm = dmsg.GSGroupCreateResponse(
                 tag=server.tag_inc(),
-                r_c_uid=dfacts.GS_INPUT_CUID,
-                pmi_group_info=pmi_group_info,
-                procs=procs,
-                guid=this_guid,
+                ref=msg.tag,
+                desc=None,
+                err=dmsg.GSGroupCreateResponse.Errors.FAIL,
+                err_info=str(ex),
             )
-            shep_hdl = server.shep_inputs[node]
-            server.pending_sends.put((shep_hdl, shep_req.serialize()))
-            LOG.debug(f"request %s to shep %d", shep_req, node)
 
-        return True
+            reply_channel.send(rm.serialize())
 
     def _construction_helper(self, msg):
         # get the resource context corresponding to this response message
@@ -664,101 +674,106 @@ class GroupContext:
         :rtype: bool
         """
 
-        if len(msg.items) == 0 or msg.items is None:
-            raise GroupError("There should be at least one member to add to the group.")
+        try:
+            if len(msg.items) == 0 or msg.items is None:
+                raise GroupError("There should be at least one member to add to the group.")
 
-        target_uid, found, errmsg = server.resolve_guid(msg.user_name, msg.g_uid)
-        gsgar = dmsg.GSGroupAddToResponse
+            target_uid, found, errmsg = server.resolve_guid(msg.user_name, msg.g_uid)
+            gsgar = dmsg.GSGroupAddToResponse
 
-        succeeded = False
+            succeeded = False
 
-        if not found:
-            rm = gsgar(tag=server.tag_inc(), ref=msg.tag, err=gsgar.Errors.UNKNOWN, err_info=errmsg)
-            reply_channel.send(rm.serialize())
-            LOG.debug(f"unknown group of resources: response to {msg}: {rm}")
-            return succeeded
-        else:
-            groupctx = server.group_table[target_uid]
-            groupdesc = groupctx.descriptor
-            gds = group_desc.GroupDescriptor.State
-
-            if gds.DEAD == groupdesc.state:
-                rm = gsgar(tag=server.tag_inc(), ref=msg.tag, err=gsgar.Errors.DEAD)
+            if not found:
+                rm = gsgar(tag=server.tag_inc(), ref=msg.tag, err=gsgar.Errors.UNKNOWN, err_info=errmsg)
                 reply_channel.send(rm.serialize())
-                LOG.debug(f"group dead, response to {msg}: {rm}")
+                LOG.debug(f"unknown group of resources: response to {msg}: {rm}")
                 return succeeded
+            else:
+                groupctx = server.group_table[target_uid]
+                groupdesc = groupctx.descriptor
+                gds = group_desc.GroupDescriptor.State
 
-            # this is a highly unlikely case to happen
-            # because the user must have received a create response back
-            # before requesting adding to this group, which means that the
-            # state of the group is not pending anymore
-            # so, what we really want here is to log this is happening and move on
-            elif gds.PENDING == groupdesc.state:
-                rm = gsgar(
-                    tag=server.tag_inc(),
-                    ref=msg.tag,
-                    err=gsgar.Errors.PENDING,
-                    err_info=f"group {target_uid} is pending",
-                )
-                reply_channel.send(rm.serialize())
-                LOG.debug(
-                    f"group pending while add_to request -- this should not be happening, response to {msg}: {rm}"
-                )
-                return succeeded
-            elif gds.ACTIVE == groupdesc.state:
-                # update the group's state to PENDING as long as the addTo is pending
-                groupdesc.state = gds.PENDING
+                if gds.DEAD == groupdesc.state:
+                    rm = gsgar(tag=server.tag_inc(), ref=msg.tag, err=gsgar.Errors.DEAD)
+                    reply_channel.send(rm.serialize())
+                    LOG.debug(f"group dead, response to {msg}: {rm}")
+                    return succeeded
 
-                groupctx.request = msg
-                groupctx.reply_channel = reply_channel
-                existing_lists = len(groupdesc.sets)
+                # this is a highly unlikely case to happen
+                # because the user must have received a create response back
+                # before requesting adding to this group, which means that the
+                # state of the group is not pending anymore
+                # so, what we really want here is to log this is happening and move on
+                elif gds.PENDING == groupdesc.state:
+                    rm = gsgar(
+                        tag=server.tag_inc(),
+                        ref=msg.tag,
+                        err=gsgar.Errors.PENDING,
+                        err_info=f"group {target_uid} is pending",
+                    )
+                    reply_channel.send(rm.serialize())
+                    LOG.debug(
+                        f"group pending while add_to request -- this should not be happening, response to {msg}: {rm}"
+                    )
+                    return succeeded
+                elif gds.ACTIVE == groupdesc.state:
+                    # update the group's state to PENDING as long as the addTo is pending
+                    groupdesc.state = gds.PENDING
 
-                failed_ids = []  # keep potential resources that were not found or were dead
-                for i, identifier in enumerate(msg.items):
-                    if isinstance(identifier, str):
-                        p_uid, found, errmsg = server.resolve_puid(name=identifier)
-                    else:
-                        p_uid, found, errmsg = server.resolve_puid(p_uid=int(identifier))
+                    groupctx.request = msg
+                    groupctx.reply_channel = reply_channel
+                    existing_lists = len(groupdesc.sets)
 
-                    if not found:
-                        failed_ids.append(identifier)
-                    else:
-                        # create a single list in groupdesc.sets for each resource we add
-                        lst_idx = i + existing_lists
-                        item_idx = 0  # each list will have a single item
-                        groupdesc.sets.append([])
+                    failed_ids = []  # keep potential resources that were not found or were dead
+                    for i, identifier in enumerate(msg.items):
+                        if isinstance(identifier, str):
+                            p_uid, found, errmsg = server.resolve_puid(name=identifier)
+                        else:
+                            p_uid, found, errmsg = server.resolve_puid(p_uid=int(identifier))
 
-                        pctx = server.process_table[p_uid]
-                        pdesc = pctx.descriptor
-                        pds = process_desc.ProcessDescriptor.State
-                        if pdesc.state == pds.DEAD:
+                        if not found:
                             failed_ids.append(identifier)
                         else:
-                            # add each item to a single list in the groupdesc.sets list
-                            groupdesc.sets[lst_idx] += [group_desc.GroupDescriptor.GroupMember()]
-                            server.resource_to_group_map[p_uid] = (target_uid, (lst_idx, item_idx))
-                            member = groupctx._generate_member(target_uid, pctx)
-                            groupctx._update_group_member(
-                                target_uid, member, lst_idx, item_idx, related_to_create=False
-                            )
+                            # create a single list in groupdesc.sets for each resource we add
+                            lst_idx = i + existing_lists
+                            item_idx = 0  # each list will have a single item
+                            groupdesc.sets.append([])
 
-                # if any of the items to be added were not found or were dead
-                # we return a FAIL response message to the client
-                if failed_ids:
-                    errmsg = f"The items {failed_ids} were not found or already dead."
-                    response = gsgar(tag=server.tag_inc(), ref=msg.tag, err=gsgar.Errors.FAIL, err_info=errmsg)
+                            pctx = server.process_table[p_uid]
+                            pdesc = pctx.descriptor
+                            pds = process_desc.ProcessDescriptor.State
+                            if pdesc.state == pds.DEAD:
+                                failed_ids.append(identifier)
+                            else:
+                                # add each item to a single list in the groupdesc.sets list
+                                groupdesc.sets[lst_idx] += [group_desc.GroupDescriptor.GroupMember()]
+                                server.resource_to_group_map[p_uid] = (target_uid, (lst_idx, item_idx))
+                                member = groupctx._generate_member(target_uid, pctx)
+                                groupctx._update_group_member(
+                                    target_uid, member, lst_idx, item_idx, related_to_create=False
+                                )
+
+                    # if any of the items to be added were not found or were dead
+                    # we return a FAIL response message to the client
+                    if failed_ids:
+                        errmsg = f"The items {failed_ids} were not found or already dead."
+                        response = gsgar(tag=server.tag_inc(), ref=msg.tag, err=gsgar.Errors.FAIL, err_info=errmsg)
+                    else:
+                        response = gsgar(tag=server.tag_inc(), ref=msg.tag, err=gsgar.Errors.SUCCESS, desc=groupdesc)
+                        succeeded = True
+
+                    groupdesc.state = gds.ACTIVE
+                    reply_channel.send(response.serialize())
+                    LOG.debug(f"addition response sent, tag {response.tag} ref {response.ref} pending cleared")
+
+                    return succeeded
+
                 else:
-                    response = gsgar(tag=server.tag_inc(), ref=msg.tag, err=gsgar.Errors.SUCCESS, desc=groupdesc)
-                    succeeded = True
+                    raise NotImplementedError("close case")
+        except Exception as ex:
+            response = gsgar(tag=server.tag_inc(), ref=msg.tag, err=gsgar.Errors.FAIL, err_info=str(ex))
+            reply_channel.send(response.serialize())
 
-                groupdesc.state = gds.ACTIVE
-                reply_channel.send(response.serialize())
-                LOG.debug(f"addition response sent, tag {response.tag} ref {response.ref} pending cleared")
-
-                return succeeded
-
-            else:
-                raise NotImplementedError("close case")
 
     @staticmethod
     def create_add(server, msg, reply_channel):
@@ -777,176 +792,180 @@ class GroupContext:
         :rtype: bool
         """
 
-        target_uid, found, errmsg = server.resolve_guid(msg.user_name, msg.g_uid)
-        gsgacr = dmsg.GSGroupCreateAddToResponse
+        try:
+            target_uid, found, errmsg = server.resolve_guid(msg.user_name, msg.g_uid)
+            gsgacr = dmsg.GSGroupCreateAddToResponse
 
-        if not found:
-            rm = gsgacr(tag=server.tag_inc(), ref=msg.tag, err=gsgacr.Errors.UNKNOWN, err_info=errmsg)
-            reply_channel.send(rm.serialize())
-            LOG.debug(f"unknown group of resources: response to {msg}: {rm}")
-            return False
-        else:
-            groupctx = server.group_table[target_uid]
-            groupdesc = groupctx.descriptor
-            gds = group_desc.GroupDescriptor.State
-
-            if gds.DEAD == groupdesc.state:
-                rm = gsgacr(tag=server.tag_inc(), ref=msg.tag, err=gsgacr.Errors.DEAD)
+            if not found:
+                rm = gsgacr(tag=server.tag_inc(), ref=msg.tag, err=gsgacr.Errors.UNKNOWN, err_info=errmsg)
                 reply_channel.send(rm.serialize())
-                LOG.debug(f"group dead, response to {msg}: {rm}")
+                LOG.debug(f"unknown group of resources: response to {msg}: {rm}")
                 return False
-
-            # this is a highly unlikely case to happen
-            # because the user must have received a create response back
-            # before requesting adding to this group, which means that the
-            # state of the group is not pending anymore
-            # so, what we really want here is to log this is happening and move on
-            elif gds.PENDING == groupdesc.state:
-                rm = gsgacr(
-                    tag=server.tag_inc(),
-                    ref=msg.tag,
-                    err=gsgacr.Errors.PENDING,
-                    err_info=f"group {target_uid} is pending",
-                )
-                reply_channel.send(rm.serialize())
-                LOG.debug(
-                    f"group pending while create_add request -- this should not be happening, response to {msg}: {rm}"
-                )
-                return False
-            elif gds.ACTIVE == groupdesc.state:
-                # update the group's state to PENDING as long as the addTo is pending
-                groupdesc.state = gds.PENDING
-
-                groupctx.request = msg
-                groupctx.reply_channel = reply_channel
-
-                if msg.policy:
-                    assert isinstance(msg.policy, Policy)
-                    policy = Policy.merge(Policy.global_policy(), msg.policy)
-                else:
-                    policy = groupdesc.policy
-
-                # Policy Evaluator wants a list of policies, one for each member
-                total_members = sum([n for n, _ in msg.items])
-                policies = [policy] * total_members
-
-                # Gather our node list and evaluate the policies against it
-                layout_list = server.process_policy_evaluator.evaluate(policies=policies)
-                if int(os.environ.get("PMI_DEBUG", 0)):
-                    LOG.debug("layout_list=%s", layout_list)
-
-                # we need the number of existing lists in the group
-                existing_lists = len(groupdesc.sets)
-
-                # Maps a given node (local services instance) to a list of
-                # ProcessContexts that are to be created on that instance
-                ls_proccontext_map: Dict[int, List[ProcessContext]] = defaultdict(list)
-
-                # msg.items is a list of tuples of the form (count:int, create_msg: dragon.infrastructure.messages.Message)
-                layout_index = 0
-                for tuple_idx, item in enumerate(msg.items):
-                    count, res_msg = item
-                    resource_msg = dmsg.parse(res_msg)
-
-                    LOG.debug(f"Creating msg {resource_msg}")
-                    if count > 0:
-                        # initialize a new list
-                        groupdesc.sets.append([])
-                        # add a new entry to server.group_resource_count[target_uid] list
-                        server.group_resource_count[target_uid].append(int(count))
-                        for item_idx in range(count):
-                            item_layout = layout_list[layout_index]
-                            layout_index += 1
-
-                            # we need a unique copy of the msg for each member
-                            resource_copy = copy.deepcopy(resource_msg)
-                            resource_copy.tag = das.next_tag()
-
-                            # create a unique name for this resource based on the tuple user_name
-                            if resource_copy.user_name:
-                                resource_copy.user_name = (
-                                    f"{resource_copy.user_name}.{target_uid}.{tuple_idx+existing_lists}.{item_idx}"
-                                )
-
-                            # update the layout to place the process correctly
-                            resource_copy.layout = item_layout
-
-                            # add a new resource into this list
-                            groupdesc.sets[tuple_idx + existing_lists] += [group_desc.GroupDescriptor.GroupMember()]
-
-                            # this is where we're actually starting the creation of the group members
-                            if isinstance(resource_msg, dmsg.GSProcessCreate):
-                                success, outbound_tag, proc_context = ProcessContext.construct(
-                                    server,
-                                    resource_copy,
-                                    reply_channel,
-                                    send_msg=False,
-                                    belongs_to_group=True,
-                                    addition=True,
-                                )
-
-                                server.resource_to_group_map[proc_context.descriptor.p_uid] = (
-                                    target_uid,
-                                    (tuple_idx + existing_lists, item_idx),
-                                )
-
-                                if success and outbound_tag and proc_context:
-                                    ls_proccontext_map[proc_context.node].append(proc_context)
-                                    server.pending[outbound_tag] = groupctx.complete_addition
-                                    server.group_to_pending_resource_map[(outbound_tag, target_uid)] = proc_context
-                                else:
-                                    if proc_context and outbound_tag == "already":  # the process was already created
-                                        member = {
-                                            "state": proc_context.descriptor.state,
-                                            "uid": proc_context.descriptor.p_uid,
-                                            "placement": proc_context.descriptor.node,
-                                            "error_code": dmsg.GSProcessCreateResponse.Errors.ALREADY,
-                                            "desc": proc_context.descriptor,
-                                        }
-                                        # Update the group with the corresponding GroupMember
-                                        groupctx._update_group_member(
-                                            target_uid, member, tuple_idx + existing_lists, item_idx
-                                        )
-                                    elif proc_context and not outbound_tag:
-                                        # this is the case where we needed to make inf channels and
-                                        # there is a pending request related to the process channels
-                                        # and we don't need to do anything for now. When the channel related pending will
-                                        # be cleared, a group pending construct_completion will be issued from process_int
-                                        continue
-                                    else:  # there was a failure
-                                        LOG.debug(
-                                            f"There was a failure in the process {proc_context.descriptor.p_uid} creation: {outbound_tag}"
-                                        )
-                                        member = groupctx._generate_member(target_uid, proc_context, outbound_tag)
-                                        # Update the group with the corresponding GroupMember
-                                        groupctx._update_group_member(
-                                            target_uid, member, tuple_idx + existing_lists, item_idx
-                                        )
-
-                            elif isinstance(resource_msg, dmsg.GSChannelCreate):
-                                raise NotImplementedError
-                                # ChannelContext.construct(server, msg, reply_channel,
-                                #                          belongs_to_group=True)
-                            elif isinstance(resource_msg, dmsg.GSPoolCreate):
-                                raise NotImplementedError
-                                # PoolContext.construct(server, msg, reply_channel,
-                                #                       belongs_to_group=True)
-                            else:
-                                raise GroupError(f"Unknown msg type {resource_msg} for a Group member.")
-                    else:
-                        raise GroupError("The Group should include at least one member in each subgroup.")
-
-                for node, contexts in ls_proccontext_map.items():
-                    procs = [context.shprocesscreate_msg for context in contexts]
-                    shep_req = dmsg.SHMultiProcessCreate(
-                        tag=server.tag_inc(), r_c_uid=dfacts.GS_INPUT_CUID, procs=procs
-                    )
-                    shep_hdl = server.shep_inputs[node]
-                    server.pending_sends.put((shep_hdl, shep_req.serialize()))
-                    LOG.debug(f"request %s to shep %d", shep_req, node)
-
             else:
-                raise NotImplementedError("close case")
+                groupctx = server.group_table[target_uid]
+                groupdesc = groupctx.descriptor
+                gds = group_desc.GroupDescriptor.State
+
+                if gds.DEAD == groupdesc.state:
+                    rm = gsgacr(tag=server.tag_inc(), ref=msg.tag, err=gsgacr.Errors.DEAD)
+                    reply_channel.send(rm.serialize())
+                    LOG.debug(f"group dead, response to {msg}: {rm}")
+                    return False
+
+                # this is a highly unlikely case to happen
+                # because the user must have received a create response back
+                # before requesting adding to this group, which means that the
+                # state of the group is not pending anymore
+                # so, what we really want here is to log this is happening and move on
+                elif gds.PENDING == groupdesc.state:
+                    rm = gsgacr(
+                        tag=server.tag_inc(),
+                        ref=msg.tag,
+                        err=gsgacr.Errors.PENDING,
+                        err_info=f"group {target_uid} is pending",
+                    )
+                    reply_channel.send(rm.serialize())
+                    LOG.debug(
+                        f"group pending while create_add request -- this should not be happening, response to {msg}: {rm}"
+                    )
+                    return False
+                elif gds.ACTIVE == groupdesc.state:
+                    # update the group's state to PENDING as long as the addTo is pending
+                    groupdesc.state = gds.PENDING
+
+                    groupctx.request = msg
+                    groupctx.reply_channel = reply_channel
+
+                    if msg.policy:
+                        policy = Policy.merge(Policy.global_policy(), msg.policy)
+                    else:
+                        policy = groupdesc.policy
+
+                    # Policy Evaluator wants a list of policies, one for each member
+                    total_members = sum([n for n, _ in msg.items])
+                    policies = [policy] * total_members
+
+                    # Gather our node list and evaluate the policies against it
+                    layout_list = server.process_policy_evaluator.evaluate(policies=policies)
+                    if int(os.environ.get("PMI_DEBUG", 0)):
+                        LOG.debug("layout_list=%s", layout_list)
+
+                    # we need the number of existing lists in the group
+                    existing_lists = len(groupdesc.sets)
+
+                    # Maps a given node (local services instance) to a list of
+                    # ProcessContexts that are to be created on that instance
+                    ls_proccontext_map: Dict[int, List[ProcessContext]] = defaultdict(list)
+
+                    # msg.items is a list of tuples of the form (count:int, create_msg: dragon.infrastructure.messages.Message)
+                    layout_index = 0
+                    for tuple_idx, item in enumerate(msg.items):
+                        count, res_msg = item
+                        resource_msg = dmsg.parse(res_msg)
+
+                        LOG.debug(f"Creating msg {resource_msg}")
+                        if count > 0:
+                            # initialize a new list
+                            groupdesc.sets.append([])
+                            # add a new entry to server.group_resource_count[target_uid] list
+                            server.group_resource_count[target_uid].append(int(count))
+                            for item_idx in range(count):
+                                item_layout = layout_list[layout_index]
+                                layout_index += 1
+
+                                # we need a unique copy of the msg for each member
+                                resource_copy = copy.deepcopy(resource_msg)
+                                resource_copy.tag = das.next_tag()
+
+                                # create a unique name for this resource based on the tuple user_name
+                                if resource_copy.user_name:
+                                    resource_copy.user_name = (
+                                        f"{resource_copy.user_name}.{target_uid}.{tuple_idx+existing_lists}.{item_idx}"
+                                    )
+
+                                # update the layout to place the process correctly
+                                resource_copy.layout = item_layout
+
+                                # add a new resource into this list
+                                groupdesc.sets[tuple_idx + existing_lists] += [group_desc.GroupDescriptor.GroupMember()]
+
+                                # this is where we're actually starting the creation of the group members
+                                if isinstance(resource_msg, dmsg.GSProcessCreate):
+                                    success, outbound_tag, proc_context = ProcessContext.construct(
+                                        server,
+                                        resource_copy,
+                                        reply_channel,
+                                        send_msg=False,
+                                        belongs_to_group=True,
+                                        addition=True,
+                                    )
+
+                                    server.resource_to_group_map[proc_context.descriptor.p_uid] = (
+                                        target_uid,
+                                        (tuple_idx + existing_lists, item_idx),
+                                    )
+
+                                    if success and outbound_tag and proc_context:
+                                        ls_proccontext_map[proc_context.node].append(proc_context)
+                                        server.pending[outbound_tag] = groupctx.complete_addition
+                                        server.group_to_pending_resource_map[(outbound_tag, target_uid)] = proc_context
+                                    else:
+                                        if proc_context and outbound_tag == "already":  # the process was already created
+                                            member = {
+                                                "state": proc_context.descriptor.state,
+                                                "uid": proc_context.descriptor.p_uid,
+                                                "placement": proc_context.descriptor.node,
+                                                "error_code": dmsg.GSProcessCreateResponse.Errors.ALREADY,
+                                                "desc": proc_context.descriptor,
+                                            }
+                                            # Update the group with the corresponding GroupMember
+                                            groupctx._update_group_member(
+                                                target_uid, member, tuple_idx + existing_lists, item_idx
+                                            )
+                                        elif proc_context and not outbound_tag:
+                                            # this is the case where we needed to make inf channels and
+                                            # there is a pending request related to the process channels
+                                            # and we don't need to do anything for now. When the channel related pending will
+                                            # be cleared, a group pending construct_completion will be issued from process_int
+                                            continue
+                                        else:  # there was a failure
+                                            LOG.debug(
+                                                f"There was a failure in the process {proc_context.descriptor.p_uid} creation: {outbound_tag}"
+                                            )
+                                            member = groupctx._generate_member(target_uid, proc_context, outbound_tag)
+                                            # Update the group with the corresponding GroupMember
+                                            groupctx._update_group_member(
+                                                target_uid, member, tuple_idx + existing_lists, item_idx
+                                            )
+
+                                elif isinstance(resource_msg, dmsg.GSChannelCreate):
+                                    raise NotImplementedError
+                                    # ChannelContext.construct(server, msg, reply_channel,
+                                    #                          belongs_to_group=True)
+                                elif isinstance(resource_msg, dmsg.GSPoolCreate):
+                                    raise NotImplementedError
+                                    # PoolContext.construct(server, msg, reply_channel,
+                                    #                       belongs_to_group=True)
+                                else:
+                                    raise GroupError(f"Unknown msg type {resource_msg} for a Group member.")
+                        else:
+                            raise GroupError("The Group should include at least one member in each subgroup.")
+
+                    for node, contexts in ls_proccontext_map.items():
+                        procs = [context.shprocesscreate_msg for context in contexts]
+                        shep_req = dmsg.SHMultiProcessCreate(
+                            tag=server.tag_inc(), r_c_uid=dfacts.GS_INPUT_CUID, procs=procs
+                        )
+                        shep_hdl = server.shep_inputs[node]
+                        server.pending_sends.put((shep_hdl, shep_req.serialize()))
+                        LOG.debug(f"request %s to shep %d", shep_req, node)
+
+                else:
+                    raise NotImplementedError("close case")
+
+        except Exception as ex:
+            rm = gsgacr(tag=server.tag_inc(), ref=msg.tag, err=gsgacr.Errors.FAIL, err_info=str(ex))
+            reply_channel.send(rm.serialize())
 
     def complete_addition(self, msg):
         """Completes the addition of new resources to a managed group.

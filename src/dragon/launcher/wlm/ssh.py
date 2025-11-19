@@ -218,8 +218,8 @@ class SSHSubprocessPopen:
 class SSHWLM(BaseWLM):
 
     def __init__(self, network_prefix, port, hostlist):
-
-        super().__init__("ssh", network_prefix, port, len(hostlist))
+        nhosts = len(hostlist) if hostlist is not None else 0
+        super().__init__("ssh", network_prefix, port, nhosts)
         self.hostlist = hostlist
         self.ENV_VARS = None
 
@@ -239,6 +239,9 @@ class SSHWLM(BaseWLM):
 
     def _launch_network_config_helper(self) -> subprocess.Popen:
         popen_dict = {}
+
+        if not self.hostlist:
+            raise RuntimeError("SSHWLM requires a non-empty hostlist.")
 
         for host in self.hostlist:
             args_map = {"hostname": host}

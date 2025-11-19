@@ -24,8 +24,12 @@ def iterative_execution(exe, pmi, ppn):
     pg1.add_process(nproc=nnodes * ppn + 1, template=ProcessTemplate(target=exe, args=args, cwd=cwd, env=None))
 
     pg1.init()
-    pg1.start()
-    pg1.join()
+
+    for idx in range(4):
+        print(f"  Replay {idx} of PMIx ProcessGroup", flush=True)
+        pg1.start()
+        pg1.join()
+
     pg1.close()
 
     return 0
@@ -67,7 +71,6 @@ def swap_node(exe, pmi, ppn, i):
 
     if nnodes < 2:
         raise RuntimeError("This example requires at least 2 nodes to run")
-
     if i % 2 == 0:
         policies = [
             Policy(placement=Policy.Placement.HOST_NAME, host_name=Node(node_list[nid]).hostname)

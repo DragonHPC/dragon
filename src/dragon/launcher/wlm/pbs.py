@@ -2,11 +2,10 @@ import os
 import re
 import shutil
 import subprocess
-import json
-
 
 from .base import BaseWLM
 from ...infrastructure import facts as dfacts
+from ...infrastructure.config import _load_config_from_file
 
 
 def get_nodefile_node_count(filename) -> int:
@@ -21,7 +20,7 @@ class PBSWLM(BaseWLM):
     MPIEXEC_COMMAND_LINE = "mpiexec --np {nnodes} -ppn 1 -l --line-buffer"
     ENV_PBS_JOB_ID = "PBS_JOBID"
 
-    def __init__(self, network_prefix, port, hostlist):
+    def __init__(self, network_prefix, port, hostlist, config_file=None):
         if not os.environ.get("PBS_NODEFILE"):
             msg = """Requesting a PBS network config outside of PBS job allocation.
 Resubmit as part of a 'qsub' execution"""
@@ -30,14 +29,12 @@ Resubmit as part of a 'qsub' execution"""
         super().__init__("pbs+pals", network_prefix, port, get_nodefile_node_count(os.environ.get("PBS_NODEFILE")))
 
         self.job_id = os.environ.get(self.ENV_PBS_JOB_ID)
-        config_file_path = dfacts.CONFIG_FILE_PATH
 
         mpiexec_override = None
-        if config_file_path.exists():
-            with open(config_file_path) as config_file:
-                config_dict = json.load(config_file)
-
-            # Get all the runtimes
+        if config_file is None:
+            config_file = dfacts.CONFIG_FILE_PATH
+        config_dict = _load_config_from_file(config_file)
+        if len(config_dict) != 0:
             try:
                 mpiexec_override = config_dict["netconfig_mpiexec_override"]
             except KeyError:
@@ -78,7 +75,7 @@ Resubmit as part of a 'qsub' execution"""
 
     def _launch_network_config_helper(self) -> subprocess.Popen:
         mpiexec_launch_args = self.MPIEXEC_ARGS[:]
-        mpiexec_launch_args.extend(self.NETWORK_CFG_HELPER_LAUNCH_CMD) # type: ignore
+        mpiexec_launch_args.extend(self.NETWORK_CFG_HELPER_LAUNCH_CMD)  # type: ignore
 
         self.LOGGER.debug(f"Launching config with: {mpiexec_launch_args=}")
 
@@ -86,15 +83,13 @@ Resubmit as part of a 'qsub' execution"""
             args=mpiexec_launch_args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0, start_new_session=True
         )
 
-    def _get_wlm_launch_be_args(self, args_map, launch_args):
-        config_file_path = dfacts.CONFIG_FILE_PATH
-
+    def _get_wlm_launch_be_args(self, args_map, launch_args, config_file=None):
         mpiexec_override = None
-        if config_file_path.exists():
-            with open(config_file_path) as config_file:
-                config_dict = json.load(config_file)
+        if config_file is None:
+            config_file = dfacts.CONFIG_FILE_PATH
 
-            # Get all the runtimes
+        config_dict = _load_config_from_file(config_file)
+        if len(config_dict) != 0:
             try:
                 mpiexec_override = config_dict["backend_mpiexec_override"]
             except KeyError:

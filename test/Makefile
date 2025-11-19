@@ -39,10 +39,10 @@ DIST_SOURCES := $(wildcard pkg/*) \
 				multi-node/test_queue.py \
 				multi-node/test_value.py \
                 multi-node/test_process_group.py \
-				multi-node/mpi_hello.c \
+				multi-node/mpi_allgather_hello.c \
 				multi-node/c_ddict.c \
                 multi-node/cpp_ddict.cpp \
-				multi-node/test_mpi_hello_world.py \
+				multi-node/test_pmi_backends.py \
 				multi-node/Makefile
 
 DIST_DIR := $(INSTALL_DIR)/dragon_unittests
@@ -61,10 +61,12 @@ TESTS_PYTHON := test_c_files.py \
                 transport/test_lsif.py \
                 test_transport.py \
                 test_integration_shep_gs.py
-# skipped for github runner testing = test_policy.py
+# skipped for github runner testing = test_policy.py test_dragon_cleanup.py
 # test_launcher.py (waiting for fix from Jira AICI-1859)
 
-TESTS_AI := test_distributed_training.py
+TEST_WORKFLOWS = test_workflows
+
+TESTS_AI := test_collective_group.py
 
 TESTS_DRAGON := test_mpbridge.py \
 				test_distdict.py \
@@ -85,7 +87,11 @@ TESTS_CCFUTURES := test_as_completed.py \
 all: test
 
 .PHONY: test
-test: $(TESTS_PYTHON) $(TESTS_DRAGON) $(TESTS_CCFUTURES) $(TESTS_AI)
+test: $(TESTS_PYTHON) $(TESTS_DRAGON) $(TESTS_CCFUTURES) $(TESTS_AI) $(TEST_WORKFLOWS)
+
+.PHONY: $(TEST_WORKFLOWS)
+$(TEST_WORKFLOWS):
+	$(MAKE) -C workflows
 
 .PHONY: $(TESTS_PYTHON)
 $(TESTS_PYTHON):
@@ -124,8 +130,9 @@ CLEAN_COMPONENTS := $(addprefix clean-,$(COMPONENTS))
 
 .PHONY: clean
 clean: $(CLEAN_COMPONENTS)
-	$(RM) *.log
-	$(RM) /dev/shm/*
+	-$(RM) *.log
+	-$(RM) /dev/shm/*
+	$(MAKE) -C workflows clean
 
 .PHONY: $(CLEAN_COMPONENTS)
 $(CLEAN_COMPONENTS): clean-%:

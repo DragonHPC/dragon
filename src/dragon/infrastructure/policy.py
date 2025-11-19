@@ -10,6 +10,8 @@ from .facts import DRAGON_POLICY_CONTEXT_ENV
 
 from typing import Dict
 
+class PolicyError(Exception):
+    pass
 
 @dataclass
 class Policy:

@@ -1,6 +1,6 @@
 import enum
 from dataclasses import dataclass, field, fields
-from ..infrastructure.policy import Policy
+from ..infrastructure.policy import Policy, PolicyError
 from ..infrastructure.node_desc import NodeDescriptor
 import logging
 import warnings
@@ -156,7 +156,9 @@ class PolicyEvaluator:
         """
 
         if p.cpu_affinity:  # List not empty, assume SPECIFIC affinity
-            assert isinstance(p.cpu_affinity, list)
+            if not isinstance(p.cpu_affinity, list):
+                LOG.info("CPU Affinity must be a list. It was %s"%str(p.gpu_affinity))
+                raise PolicyError("The cpu affinity in the policy must be a list.")
             affinity = [x for x in node.cpu_devices if x in p.cpu_affinity]
             return affinity  # This covers both "ANY" and "SPECIFIC" if a specific list is given
         elif node.cpu_devices is not None:
@@ -167,7 +169,10 @@ class PolicyEvaluator:
     def _get_gpu_affinity(self, p: Policy, node: NodeDescriptor) -> list[int]:
 
         if p.gpu_affinity:
-            assert isinstance(p.gpu_affinity, list)
+            if not isinstance(p.gpu_affinity, list):
+                LOG.warning("GPU Affinity must be a list. It was %s"%str(p.gpu_affinity))
+                raise PolicyError("GPU Affinity must be a list. It was %s"%str(p.gpu_affinity))
+
             if node.accelerators is not None:
                 affinity = [x for x in p.gpu_affinity if x in node.accelerators.device_list]
                 return affinity

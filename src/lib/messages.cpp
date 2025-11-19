@@ -2738,6 +2738,746 @@ DDRandomManagerResponseMsg::managerID()
 }
 
 /********************************************************************************************************/
+/* ddict get frozen message */
+
+DDGetFreezeMsg::DDGetFreezeMsg(uint64_t tag, uint64_t clientID) :
+    DragonMsg(DDGetFreezeMsg::TC, tag), mClientID(clientID) {}
+
+void
+DDGetFreezeMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDGetFreezeDef::Builder builder = msg.initDdGetFreeze();
+    builder.setClientID(mClientID);
+}
+
+dragonError_t
+DDGetFreezeMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        DDGetFreezeDef::Reader getFreezeReader = reader.getDdGetFreeze();
+
+        (*msg) = new DDGetFreezeMsg (
+            reader.getTag(),
+            getFreezeReader.getClientID());
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the get frozen message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+uint64_t
+DDGetFreezeMsg::clientID()
+{
+    return mClientID;
+}
+
+/********************************************************************************************************/
+/* ddict get frozen response message */
+
+DDGetFreezeResponseMsg::DDGetFreezeResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, bool frozen):
+    DragonResponseMsg(DDGetFreezeResponseMsg::TC, tag, ref, err, errInfo), mFrozen(frozen) {}
+
+dragonError_t
+DDGetFreezeResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+        DDGetFreezeResponseDef::Reader getFreezeResponseReader = reader.getDdGetFreezeResponse();
+
+        (*msg) = new DDGetFreezeResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr(),
+            getFreezeResponseReader.getFreeze());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the get frozen response message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+bool
+DDGetFreezeResponseMsg::frozen()
+{
+    return mFrozen;
+}
+
+/********************************************************************************************************/
+/* ddict freeze message */
+
+DDFreezeMsg::DDFreezeMsg(uint64_t tag, const char* respFLI) :
+    DragonMsg(DDFreezeMsg::TC, tag), mFLI(respFLI) {}
+
+void
+DDFreezeMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDFreezeDef::Builder builder = msg.initDdFreeze();
+    builder.setRespFLI(mFLI);
+}
+
+dragonError_t
+DDFreezeMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        DDFreezeDef::Reader freezeReader = reader.getDdFreeze();
+
+        (*msg) = new DDFreezeMsg (
+            reader.getTag(),
+            freezeReader.getRespFLI().cStr());
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the freeze message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const char*
+DDFreezeMsg::respFLI()
+{
+    return mFLI.c_str();
+}
+
+/********************************************************************************************************/
+/* ddict freeze response message */
+
+DDFreezeResponseMsg::DDFreezeResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo):
+    DragonResponseMsg(DDFreezeResponseMsg::TC, tag, ref, err, errInfo) {}
+
+
+dragonError_t
+DDFreezeResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+
+        (*msg) = new DDFreezeResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the freeze response message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/********************************************************************************************************/
+/* ddict unfreeze message */
+
+DDUnFreezeMsg::DDUnFreezeMsg(uint64_t tag, const char* respFLI) :
+    DragonMsg(DDUnFreezeMsg::TC, tag), mFLI(respFLI) {}
+
+void
+DDUnFreezeMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDFreezeDef::Builder builder = msg.initDdFreeze();
+    builder.setRespFLI(mFLI);
+}
+
+dragonError_t
+DDUnFreezeMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        DDUnFreezeDef::Reader unFreezeReader = reader.getDdUnFreeze();
+
+        (*msg) = new DDUnFreezeMsg (
+            reader.getTag(),
+            unFreezeReader.getRespFLI().cStr());
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the unfreeze message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const char*
+DDUnFreezeMsg::respFLI()
+{
+    return mFLI.c_str();
+}
+
+/********************************************************************************************************/
+/* ddict unfreeze response message */
+
+DDUnFreezeResponseMsg::DDUnFreezeResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo):
+    DragonResponseMsg(DDUnFreezeResponseMsg::TC, tag, ref, err, errInfo) {}
+
+
+dragonError_t
+DDUnFreezeResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+
+        (*msg) = new DDUnFreezeResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the unfreeze response message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/********************************************************************************************************/
+/* ddict batch put message */
+
+DDBatchPutMsg::DDBatchPutMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID=0, bool persist=true) :
+    DragonMsg(DDBatchPutMsg::TC, tag), mClientID(clientID), mChkptID(chkptID), mPersist(persist) {}
+
+void
+DDBatchPutMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDBatchPutDef::Builder builder = msg.initDdBatchPut();
+    builder.setClientID(mClientID);
+    builder.setChkptID(mChkptID);
+    builder.setPersist(mPersist);
+}
+
+dragonError_t
+DDBatchPutMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        DDBatchPutDef::Reader batchPutReader = reader.getDdBatchPut();
+
+        (*msg) = new DDBatchPutMsg (
+            reader.getTag(),
+            batchPutReader.getClientID(),
+            batchPutReader.getChkptID()),
+            batchPutReader.getPersist();
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDBatchPut message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+uint64_t
+DDBatchPutMsg::clientID()
+{
+    return mClientID;
+}
+
+uint64_t
+DDBatchPutMsg::chkptID()
+{
+    return mChkptID;
+}
+
+bool
+DDBatchPutMsg::persist()
+{
+    return mPersist;
+}
+
+/********************************************************************************************************/
+/* ddict batch put response message */
+
+DDBatchPutResponseMsg::DDBatchPutResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t numPuts, uint64_t managerID):
+    DragonResponseMsg(DDBatchPutResponseMsg::TC, tag, ref, err, errInfo), mNumPuts(numPuts), mManagerID(managerID) {}
+
+dragonError_t
+DDBatchPutResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+        DDBatchPutResponseDef::Reader batchPutResponseReader = reader.getDdBatchPutResponse();
+
+        (*msg) = new DDBatchPutResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr(),
+            batchPutResponseReader.getNumPuts(),
+            batchPutResponseReader.getManagerID());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDBatchPutResponse message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+uint64_t
+DDBatchPutResponseMsg::numPuts()
+{
+    return mNumPuts;
+}
+
+uint64_t
+DDBatchPutResponseMsg::managerID()
+{
+    return mManagerID;
+}
+
+/********************************************************************************************************/
+/* ddict bput message */
+DDBPutMsg::DDBPutMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const char* respFLI, std::vector<uint64_t>& managers, bool batch) :
+    DragonMsg(DDBPutMsg::TC, tag), mClientID(clientID), mChkptID(chkptID), mFLI(respFLI), mManagers(managers), mBatch(batch) {}
+
+void
+DDBPutMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDBPutDef::Builder builder = msg.initDdBPut();
+    builder.setClientID(mClientID);
+    builder.setChkptID(mChkptID);
+    builder.setRespFLI(mFLI);
+    builder.setBatch(mBatch);
+
+    ::capnp::List<uint64_t>::Builder managers = builder.initManagers(mManagers.size());
+    for (size_t k=0 ; k<mManagers.size() ; k++)
+        managers.set(k, mManagers[k]);
+}
+
+uint64_t
+DDBPutMsg::clientID()
+{
+    return mClientID;
+}
+
+uint64_t
+DDBPutMsg::chkptID()
+{
+    return mChkptID;
+}
+
+const char *
+DDBPutMsg::respFLI()
+{
+    return mFLI.c_str();
+}
+
+const std::vector<uint64_t>&
+DDBPutMsg::managers()
+{
+    return mManagers;
+}
+
+bool
+DDBPutMsg::batch()
+{
+    return mBatch;
+}
+
+/********************************************************************************************************/
+/* ddict bput response message */
+
+DDBPutResponseMsg::DDBPutResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t numPuts, uint64_t managerID):
+    DragonResponseMsg(DDBPutResponseMsg::TC, tag, ref, err, errInfo), mNumPuts(numPuts), mManagerID(managerID) {}
+
+dragonError_t
+DDBPutResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+        DDBPutResponseDef::Reader bPutResponseReader = reader.getDdBPutResponse();
+
+        (*msg) = new DDBPutResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr(),
+            bPutResponseReader.getNumPuts(),
+            bPutResponseReader.getManagerID());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDBPutResponse message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+uint64_t
+DDBPutResponseMsg::numPuts()
+{
+    return mNumPuts;
+}
+
+uint64_t
+DDBPutResponseMsg::managerID()
+{
+    return mManagerID;
+}
+
+/********************************************************************************************************/
+/* ddict advance message */
+DDAdvanceMsg::DDAdvanceMsg(uint64_t tag, uint64_t clientID, const char* respFLI) :
+    DragonMsg(DDAdvanceMsg::TC, tag), mClientID(clientID), mFLI(respFLI) {}
+
+void
+DDAdvanceMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDAdvanceDef::Builder builder = msg.initDdAdvance();
+    builder.setClientID(mClientID);
+    builder.setRespFLI(mFLI);
+}
+
+uint64_t
+DDAdvanceMsg::clientID()
+{
+    return mClientID;
+}
+
+const char *
+DDAdvanceMsg::respFLI()
+{
+    return mFLI.c_str();
+}
+
+/********************************************************************************************************/
+/* ddict advance response message */
+
+DDAdvanceResponseMsg::DDAdvanceResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t chkptID):
+    DragonResponseMsg(DDAdvanceResponseMsg::TC, tag, ref, err, errInfo), mChkptID(chkptID) {}
+
+dragonError_t
+DDAdvanceResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+        DDAdvanceResponseDef::Reader advanceResponseReader = reader.getDdAdvanceResponse();
+
+        (*msg) = new DDAdvanceResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr(),
+            advanceResponseReader.getChkptID());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDAdvanceResponse message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+uint64_t
+DDAdvanceResponseMsg::chkptID()
+{
+    return mChkptID;
+}
+
+/********************************************************************************************************/
+/* ddict chkpt avail message */
+DDChkptAvailMsg::DDChkptAvailMsg(uint64_t tag, uint64_t chkptID, const char* respFLI) :
+    DragonMsg(DDChkptAvailMsg::TC, tag), mChkptID(chkptID), mFLI(respFLI) {}
+
+void
+DDChkptAvailMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDChkptAvailDef::Builder builder = msg.initDdChkptAvail();
+    builder.setChkptID(mChkptID);
+    builder.setRespFLI(mFLI);
+}
+
+uint64_t
+DDChkptAvailMsg::chkptID()
+{
+    return mChkptID;
+}
+
+const char *
+DDChkptAvailMsg::respFLI()
+{
+    return mFLI.c_str();
+}
+
+/********************************************************************************************************/
+/* ddict chkpt avail response message */
+
+DDChkptAvailResponseMsg::DDChkptAvailResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, bool available, uint64_t managerID):
+    DragonResponseMsg(DDChkptAvailResponseMsg::TC, tag, ref, err, errInfo), mAvailable(available), mManagerID(managerID) {}
+
+dragonError_t
+DDChkptAvailResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+        DDChkptAvailResponseDef::Reader chkptAvailResponseReader = reader.getDdChkptAvailResponse();
+
+        (*msg) = new DDChkptAvailResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr(),
+            chkptAvailResponseReader.getAvailable(),
+            chkptAvailResponseReader.getManagerID());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDChkptAvailResponse message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+bool
+DDChkptAvailResponseMsg::available()
+{
+    return mAvailable;
+}
+
+uint64_t
+DDChkptAvailResponseMsg::managerID()
+{
+    return mManagerID;
+}
+
+/********************************************************************************************************/
+/* ddict persist message */
+DDPersistMsg::DDPersistMsg(uint64_t tag, uint64_t chkptID, const char* respFLI) :
+    DragonMsg(DDPersistMsg::TC, tag), mChkptID(chkptID), mFLI(respFLI) {}
+
+void
+DDPersistMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDPersistDef::Builder builder = msg.initDdPersist();
+    builder.setChkptID(mChkptID);
+    builder.setRespFLI(mFLI);
+}
+
+uint64_t
+DDPersistMsg::chkptID()
+{
+    return mChkptID;
+}
+
+const char *
+DDPersistMsg::respFLI()
+{
+    return mFLI.c_str();
+}
+
+/********************************************************************************************************/
+/* ddict persist response message */
+
+DDPersistResponseMsg::DDPersistResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo):
+    DragonResponseMsg(DDPersistResponseMsg::TC, tag, ref, err, errInfo) {}
+
+dragonError_t
+DDPersistResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+
+        (*msg) = new DDPersistResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDPersistResponse message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/********************************************************************************************************/
+/* ddict persisted chkpt avail message */
+DDPersistedChkptAvailMsg::DDPersistedChkptAvailMsg(uint64_t tag, uint64_t chkptID, const char* respFLI) :
+    DragonMsg(DDPersistedChkptAvailMsg::TC, tag), mChkptID(chkptID), mFLI(respFLI) {}
+
+void
+DDPersistedChkptAvailMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDPersistedChkptAvailDef::Builder builder = msg.initDdPersistedChkptAvail();
+    builder.setChkptID(mChkptID);
+    builder.setRespFLI(mFLI);
+}
+
+uint64_t
+DDPersistedChkptAvailMsg::chkptID()
+{
+    return mChkptID;
+}
+
+const char *
+DDPersistedChkptAvailMsg::respFLI()
+{
+    return mFLI.c_str();
+}
+
+/********************************************************************************************************/
+/* ddict persisted chkpt avail response message */
+
+DDPersistedChkptAvailResponseMsg::DDPersistedChkptAvailResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, bool available, uint64_t managerID):
+    DragonResponseMsg(DDPersistedChkptAvailResponseMsg::TC, tag, ref, err, errInfo), mAvailable(available), mManagerID(managerID) {}
+
+dragonError_t
+DDPersistedChkptAvailResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+        DDPersistedChkptAvailResponseDef::Reader persistedChkptAvailResponseReader = reader.getDdPersistedChkptAvailResponse();
+
+        (*msg) = new DDPersistedChkptAvailResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr(),
+            persistedChkptAvailResponseReader.getAvailable(),
+            persistedChkptAvailResponseReader.getManagerID());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDPersistedChkptAvailResponse message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+bool
+DDPersistedChkptAvailResponseMsg::available()
+{
+    return mAvailable;
+}
+
+uint64_t
+DDPersistedChkptAvailResponseMsg::managerID()
+{
+    return mManagerID;
+}
+
+/********************************************************************************************************/
+/* ddict restore message */
+DDRestoreMsg::DDRestoreMsg(uint64_t tag, uint64_t chkptID, uint64_t clientID, const char* respFLI) :
+    DragonMsg(DDRestoreMsg::TC, tag), mChkptID(chkptID), mClientID(clientID), mFLI(respFLI) {}
+
+void
+DDRestoreMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDRestoreDef::Builder builder = msg.initDdRestore();
+    builder.setChkptID(mChkptID);
+    builder.setClientID(mClientID);
+    builder.setRespFLI(mFLI);
+}
+
+uint64_t
+DDRestoreMsg::chkptID()
+{
+    return mChkptID;
+}
+
+uint64_t
+DDRestoreMsg::clientID()
+{
+    return mClientID;
+}
+
+const char *
+DDRestoreMsg::respFLI()
+{
+    return mFLI.c_str();
+}
+
+/********************************************************************************************************/
+/* ddict restore response message */
+
+DDRestoreResponseMsg::DDRestoreResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo):
+    DragonResponseMsg(DDRestoreResponseMsg::TC, tag, ref, err, errInfo) {}
+
+dragonError_t
+DDRestoreResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+
+        (*msg) = new DDRestoreResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDRestoreResponse message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/********************************************************************************************************/
+/* ddict persist chkpts message */
+DDPersistChkptsMsg::DDPersistChkptsMsg(uint64_t tag, uint64_t clientID, const char* respFLI) :
+    DragonMsg(DDPersistChkptsMsg::TC, tag), mClientID(clientID), mFLI(respFLI) {}
+
+void
+DDPersistChkptsMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    DDPersistChkptsDef::Builder builder = msg.initDdPersistChkpts();
+    builder.setClientID(mClientID);
+    builder.setRespFLI(mFLI);
+}
+
+uint64_t
+DDPersistChkptsMsg::clientID()
+{
+    return mClientID;
+}
+
+const char *
+DDPersistChkptsMsg::respFLI()
+{
+    return mFLI.c_str();
+}
+
+/********************************************************************************************************/
+/* ddict persist chkpts response message */
+
+DDPersistChkptsResponseMsg::DDPersistChkptsResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo):
+    DragonResponseMsg(DDPersistChkptsResponseMsg::TC, tag, ref, err, errInfo) {}
+
+dragonError_t
+DDPersistChkptsResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+        DDPersistChkptsResponseDef::Reader persistChkptsResponseReader = reader.getDdPersistChkptsResponse();
+
+        DDPersistChkptsResponseMsg * resp_msg;
+        resp_msg = new DDPersistChkptsResponseMsg (
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr());
+
+        auto persisted_chkpts = persistChkptsResponseReader.getChkptIDs();
+        for (auto chkpt: persisted_chkpts)
+            resp_msg->mChkptIDs.push_back(chkpt);
+
+        *msg = resp_msg;
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDPersistChkptsResponse message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const std::vector<uint64_t>&
+DDPersistChkptsResponseMsg::chkptIDs()
+{
+    return mChkptIDs;
+}
+
+/********************************************************************************************************/
 /* PMIx message used to store data in the dictionary during a PMIx Fence operation */
 
 PMIxFenceMsg::PMIxFenceMsg(uint64_t tag, size_t ndata, const char* data):

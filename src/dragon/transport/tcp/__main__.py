@@ -311,12 +311,11 @@ async def tcp_transport_agent(
 
 def main(args=None):
     import argparse
-    from distutils.util import strtobool
 
     from ...dlogging.util import DragonLoggingServices, setup_BE_logging
     from ...infrastructure.facts import PROCNAME_OVERLAY_TA, PROCNAME_TCP_TA, PROCNAME_OOB_TA
     from ...infrastructure.util import range_expr
-    from ...utils import set_procname
+    from ...utils import set_procname, strtobool
 
     parser = argparse.ArgumentParser(description="Runs Dragon TCP socket transport agent (TSTA)")
 

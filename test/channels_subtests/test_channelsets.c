@@ -60,7 +60,7 @@ dragonError_t create_pool(dragonMemoryPoolDescr_t* mpool) {
     return DRAGON_SUCCESS;
 }
 
-dragonError_t create_channels(dragonMemoryPoolDescr_t* mpool, dragonChannelDescr_t channel[], int arr_size, int capacity) {
+dragonError_t create_channels(dragonMemoryPoolDescr_t* mpool, dragonChannelDescr_t channel[], int arr_size, int capacity, int start_cuid) {
     int k;
 
     /* Create a Channel attributes structure so we can tune the Channel */
@@ -76,7 +76,7 @@ dragonError_t create_channels(dragonMemoryPoolDescr_t* mpool, dragonChannelDescr
         //printf("Channel capacity set to %li\n", cattr.capacity);
 
         /* Create the Channel in the memory pool */
-        err = dragon_channel_create(&channel[k], k, mpool, &cattr);
+        err = dragon_channel_create(&channel[k], k+start_cuid, mpool, &cattr);
         if (err != DRAGON_SUCCESS)
             err_fail(err, "Failed to create a channel");
     }
@@ -151,7 +151,7 @@ proc_receiver(dragonChannelDescr_t* channel, dragonMemoryPoolDescr_t* pool)
 }
 
 int
-proc_sender(dragonChannelDescr_t* channel, dragonMemoryPoolDescr_t* pool)
+proc_sender(dragonChannelDescr_t* channel, dragonMemoryPoolDescr_t* pool, int id)
 {
     dragonChannelSendh_t sendh;
     dragonError_t err;
@@ -180,49 +180,13 @@ proc_sender(dragonChannelDescr_t* channel, dragonMemoryPoolDescr_t* pool)
     sleep(1);
 
     err = dragon_chsend_send_msg(&sendh, &msg, DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP, NULL);
-    if (err != DRAGON_SUCCESS)
-        err_fail(err, "Failed to send message");
+    if (err != DRAGON_SUCCESS) {
+        char err_msg[200];
+        snprintf(err_msg, 199, "Failed to send message from client %d\n", id);
+        err_fail(err, err_msg);
+    }
 
     dragon_chsend_close(&sendh);
-
-    return DRAGON_SUCCESS;
-}
-
-int
-proc_sync_sender(dragonChannelDescr_t* channels[], dragonMemoryPoolDescr_t* pool)
-{
-    dragonChannelSendh_t sendh;
-    dragonError_t err;
-    dragonMessage_t msg;
-    dragonMemoryDescr_t mem_desc;
-    char* msg_data;
-
-    for (int k=0;k<NUM_CHANNELS;k++) {
-        err = dragon_memory_alloc(&mem_desc, pool, MSG_SIZE);
-        if (err != DRAGON_SUCCESS)
-            err_fail(err, "Failed to allocate message buffer from pool");
-
-        /* Get a pointer to that memory and fill up a message payload */
-        err = dragon_memory_get_pointer(&mem_desc, (void *)&msg_data);
-        for (int i = 0; i < MSG_SIZE; i++) {
-            msg_data[i] = i;
-        }
-
-        err = dragon_channel_message_init(&msg, &mem_desc, NULL);
-        if (err != DRAGON_SUCCESS)
-            err_fail(err, "Failed to create message");
-
-        err = create_open_send_handle(channels[k], &sendh);
-        if (err != DRAGON_SUCCESS)
-            return err;
-
-        // printf("Now sending message with idx=%d\n", k);
-        err = dragon_chsend_send_msg(&sendh, &msg, DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP, NULL);
-        if (err != DRAGON_SUCCESS)
-            err_fail(err, "Failed to send message");
-
-        dragon_chsend_close(&sendh);
-    }
 
     return DRAGON_SUCCESS;
 }
@@ -362,7 +326,7 @@ int main() {
     err = create_pool(&pool);
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
-    err = create_channels(&pool, channels, NUM_CHANNELS, CHANNEL_POLLIN_CAPACITY);
+    err = create_channels(&pool, channels, NUM_CHANNELS, CHANNEL_POLLIN_CAPACITY, 0);
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     err = dragon_channelset_create(channel_ptrs, NUM_CHANNELS, DRAGON_CHANNEL_POLLIN, &pool, NULL, &channel_set);
@@ -393,7 +357,7 @@ int main() {
     /* Testing mainline functionality */
 
     if (fork()==0) {
-        return proc_sender(&channels[3], &pool);
+        return proc_sender(&channels[3], &pool, 3);
     }
 
     err = dragon_channelset_poll(&channel_set, DRAGON_IDLE_WAIT, NULL, NULL, NULL, &event);
@@ -414,7 +378,7 @@ int main() {
         printf("The channel event channel index was %d and should have been 3 in poll test.\n", event->channel_idx);
     }
 
-    wait(&status);
+    while (wait(&status) < 0);
     check_result(status, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     err = create_open_recv_handle(channel_ptrs[3], &recvh, NULL);
@@ -435,7 +399,7 @@ int main() {
     free(event);
 
     if (fork()==0) {
-        return proc_sender(&channels[0], &pool);
+        return proc_sender(&channels[0], &pool, 0);
     }
 
     err = dragon_channelset_poll(&channel_set, DRAGON_IDLE_WAIT, NULL, NULL, NULL, &event);
@@ -456,7 +420,7 @@ int main() {
         printf("The channel event channel index was %d and should have been 0 in poll test.\n", event->channel_idx);
     }
 
-    wait(&status);
+    while (wait(&status) < 0);
     check_result(status, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     /* Calling reset is unnecessary, but done here to test it */
@@ -482,7 +446,7 @@ int main() {
     free(event);
 
     if (fork()==0) {
-        return proc_sender(&channels[4], &pool);
+        return proc_sender(&channels[4], &pool, 4);
     }
 
     err = dragon_channelset_poll(&channel_set, DRAGON_SPIN_WAIT, NULL, NULL, NULL, &event);
@@ -503,7 +467,7 @@ int main() {
         printf("The channel event channel index was %d and should have been 4 in poll test.\n", event->channel_idx);
     }
 
-    wait(&status);
+    while (wait(&status) < 0);
     check_result(status, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     err = create_open_recv_handle(channel_ptrs[4], &recvh, NULL);
@@ -529,7 +493,7 @@ int main() {
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     if (fork()==0) {
-        return proc_sender(&channels[2], &pool);
+        return proc_sender(&channels[2], &pool, 2);
     }
 
     int count = 0;
@@ -543,6 +507,8 @@ int main() {
         tests_attempted += 1;
     }
 
+    while (wait(&status) < 0);
+
     /* Test the signal handler */
 
     signal(SIGUSR1, signal_handler);
@@ -552,7 +518,7 @@ int main() {
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     if (fork()==0) {
-        return proc_sender(&channels[1], &pool);
+        return proc_sender(&channels[1], &pool, 1);
     }
 
     count = 0;
@@ -565,6 +531,8 @@ int main() {
         printf("Error: Signal handler did not finish\n");
         tests_attempted += 1;
     }
+
+    while (wait(&status) < 0);
 
     err = dragon_channelset_destroy(&channel_set);
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
@@ -584,16 +552,16 @@ int main() {
     err = dragon_channelset_create(channel_ptrs, NUM_CHANNELS, DRAGON_CHANNEL_POLLIN, &pool, &attrs, &channel_set);
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
-    if (fork()==0) {
-        return proc_sync_sender(channel_ptrs, &pool);
-    }
-
     for (int k=0;k<NUM_CHANNELS;k++) {
         // printf("synchronized polling channelset\n");
+        if (fork()==0) {
+            return proc_sender(&channels[k], &pool, k+10);
+        }
 
         /* In practice, polling should be done in a hot loop to allow all channels in the channelset
            to continue to allow messages to be sent to them (in the case of POLLIN). The poll
            will block when no message is available on any of the channels. */
+
         err = dragon_channelset_poll(&channel_set, DRAGON_SPIN_WAIT, NULL, NULL, NULL, &event);
         check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
@@ -628,9 +596,10 @@ int main() {
 
         err = dragon_chrecv_close(&recvh);
         check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
+
+        while (wait(&status) < 0);
     }
 
-    wait(&status);
     check_result(status, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     err = dragon_channelset_destroy(&channel_set);
@@ -643,16 +612,16 @@ int main() {
 
     /* Now test ChannelSet POLLOUT support */
 
-    err = create_channels(&pool, channels, NUM_CHANNELS, CHANNEL_POLLOUT_CAPACITY);
+    err = create_channels(&pool, channels, NUM_CHANNELS, CHANNEL_POLLOUT_CAPACITY, NUM_CHANNELS);
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     for (int k=0;k<NUM_CHANNELS;k++)
         if (fork()==0) {
-            return proc_sender(channel_ptrs[k], &pool);
+            return proc_sender(channel_ptrs[k], &pool, k+20);
         }
 
     for (int k=0;k<NUM_CHANNELS;k++)
-        wait(&status);
+        while (wait(&status) < 0);
 
     /* Below the event mask is set to POLLIN when it should be POLLOUT so we
        can test the set_event_mask below */

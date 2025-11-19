@@ -77,7 +77,7 @@ And now the Dragon python code is the same except the data generation function
 launches its own :py:class:`~dragon.native.process_group.ProcessGroup`, requesting Dragon set up an MPI-friendly
 environment for a system with Cray PMI via the `pmi=PMIBackend.CRAY` kwarg. If the system is instead setup to use
 PMIX for intializing an MPI application, set `pmi=PMIBackend.PMIX`
-(see also :py:class:`~dragon.infrastructure.facts.PMIBackend`).
+(see :py:class:`~dragon.infrastructure.facts.PMIBackend` and :ref:`pmi_backend_explainer`).
 
 .. code-block:: python
     :linenos:
@@ -258,6 +258,83 @@ of `my_mpi4py.py` looks like this:
 
         pg.join()
         pg.close()
+
+.. _pmi_backend_explainer:
+
+Which PMI backend should I use?
+===============================
+
+Historically speaking, when launching an MPI application, a user specified how they wanted
+an MPI job to execute (ie: ranks per node, what nodes to use, affinities, etc.) via command
+line options to a job launcher (eg: mpiexec, srun, aprun, etc.). A PMI library
+operated behind the scenes, taking that job specification and making it ingestible for an
+MPI library.
+
+With Dragon, all the specification that would normally go to the job launcher is instead
+programatically defined via the :py:class:`~dragon.native.process_group.ProcessGroup` and
+:py:class:`~dragon.infrastructure.policy.Policy` APIs. The MPI library still expects a separate
+PMI library to translate that info though. Dragon provides that translation via one of
+its PMI backends.
+
+Dragon provides two separate backends: :py:class:`~dragon.infrastructure.facts.PMIBackend.CRAY`
+and :py:class:`~dragon.infrastructure.facts.PMIBackend.PMIX`. Typically, a
+user doesn't worry about knowing which PMI library their MPI library is
+using, as the MPI library will take care of that for the user, unbeknownst to them.
+Consequently, you may be left wondering: how do I make this work?
+
+In simplest terms, if your MPI application is linked against Cray MPICH,
+you'll use `PMIBackend.CRAY`. If it's linked against any other MPI library
+(eg: Open MPI, MVAPICH, MPICH), you'll use `PMIBackend.PMIX`.
+
+To flesh that out further, `PMIBackend.CRAY` is using the Cray PALS library.
+For older versions of Cray MPICH that still use Cray PMI, this backend will not
+be compatible.
+
+Regarding `PMIBackend.PMIX`, you'll need to be sure your MPI library is built
+with PMIx support. Some MPI libraries are built assuming PMI1 or PMI2 support
+rather than the newer PMIx. Below are some of the tips and tricks
+we've come across for making sure the MPI library uses PMIx:
+
+Open MPI
+--------
+
+As of `Open MPI`_ 5.0.8, we find PMIx support is enabled by default with no special
+instructions necessary at build time.
+
+.. _Open MPI: https://www.open-mpi.org/
+
+MPICH and MVAPICH
+-----------------
+
+With `MPICH`_ 4.3.1 and `MVAPICH`_ 4.1, we found the following configure will build
+both libraries in a way that's compatible with Dragon's PMIx backend:
+
+.. code-block:: bash
+   :linenos:
+   :caption: **Configuring MPICH to use PMIx and be Dragon compatible**
+
+    # Change /usr to match location of your PMIx include and lib directories
+    ./configure --with-pm=no --with-pmi=pmix --with-pmix=/usr
+
+.. _MPICH: https://www.mpich.org/
+.. _MVAPICH: https://mvapich.cse.ohio-state.edu/
+
+Intel MPI
+---------
+
+For `Intel MPI`_, we have found that after downloading the binaries from Intel,
+we only need to set the following environment variables in a way that's
+consistent with your environment:
+
+.. _Intel MPI: https://www.intel.com/content/www/us/en/developer/tools/oneapi/mpi-library.html
+
+.. code-block:: bash
+   :linenos:
+   :caption: **Setting Intel MPI environemnt variables to work with PMIx**
+
+    export I_MPI_PMI_LIBRARY=/usr/lib64/libpmix.so # Adjust to location of your system's libpmix.so
+    export I_MPI_PMI=pmix
+
 
 
 Related Cookbook Examples

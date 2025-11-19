@@ -16,6 +16,8 @@
 #include <dlfcn.h>
 
 #include <src/include/pmix_globals.h>
+#include "umap.h"
+#include "ulist.h"
 #include "_ddict.h"
 #include "_pmix.h"
 
@@ -24,8 +26,7 @@ static pmix_list_t pubdata;  // Data provided in lookup functions by the server
 
 #define SERVER_NSPACE_PREFIX "server-nspace-"
 #define CLIENT_NSPACE_PREFIX "client-nspace-"
-
-static int server_initd = 0UL;
+#define DRAGON_PMIX_UMAP_SEED 2212
 
 /*****************************************************************/
 /*                                                               */
@@ -109,29 +110,38 @@ typedef struct dragonPMIxProcess_st {
 } dragonPMIxProcess_t;
 
 typedef struct dragonPMIxJob_st {
-    char *tmpdir, *hostname, *nsdir;
-    char *server_nspace, *client_nspace;
-    uid_t uid;
-    gid_t gid;
+    bool job_captain, holding_ddict_attach;
     int node_rank;  // node rank this server is executing on. Equivalent to nid in places
-    bool job_captain, server_host;
-    size_t ppn;
-    size_t nprocs;
-    size_t nnodes;
-    uint64_t pmix_ptrs_initd;
+    int ppn;
+    int nprocs;
+    int nnodes;
     dragonG_UID_t guid;
-    dragonChannelDescr_t ch_in, ch_out;
-    dragonFLIDescr_t fli_in, fli_out;
-    dragonDDictDescr_t ddict;
+    char *nsdir;
+    char *client_nspace;
+    char *ddict_sdesc;
     dragonPMIxNode_t *nodes;
     dragonPMIxProcess_t *procs;
-    struct dragonPMIxJob_st *head, *next;
+    dragonDDictDescr_t *ddict;
 } dragonPMIxJob_t;
 
+typedef struct dragonPMIxServer_st {
+    int node_rank;  // node rank this server is executing on. Equivalent to nid in places
+    uint32_t sess_id;
+    uid_t uid;
+    gid_t gid;
+    uint64_t initialized;
+    char *tmpdir, *hostname;
+    char *server_nspace;
+} dragonPMIxServer_t;
 
 
-static dragonPMIxJob_t *job_list = NULL;
-dragonPMIxJob_t *_dragon_get_job_from_nspace(char *nspace);
+
+static dragonPMIxServer_t *dpmix_server = NULL;
+static dragonMap_t *job_map = NULL;
+static dragonList_t *guid_map_keys = NULL;
+
+static dragonError_t
+_dragon_get_job_from_nspace(char *nspace, dragonPMIxJob_t **d_job);
 
 void
 setup_cbfunc(pmix_status_t status, pmix_info_t info[], size_t ninfo,
@@ -564,9 +574,9 @@ setup_cbfunc(pmix_status_t status, pmix_info_t info[], size_t ninfo,
 
     dragonPMIxCBData_t *state = (dragonPMIxCBData_t *) provided_cbdata;
 
-    dragonPMIxJob_t *d_job = _dragon_get_job_from_nspace(state->nspace);
-    if (d_job == NULL) {
-        fprintf(stderr, "Failed to access PMIx server for namespace %s\n", state->nspace); fflush(stderr);
+    dragonPMIxJob_t *d_job;
+    dragonError_t derr = _dragon_get_job_from_nspace(state->nspace, &d_job);
+    if (derr != DRAGON_SUCCESS) {
         cbfunc(PMIX_ERROR, cbdata);
     }
     size_t i;
@@ -616,10 +626,10 @@ _ddict_allgather(void *arg)
 
     // Put my data into the dictionary:
     derr = _dragon_pmix_put_fence_msg(ddict, allgather_key, req->fence_ndata, req->fence_data);
+    free(allgather_key);
     if (derr != DRAGON_SUCCESS) {
         goto leave_thread;
     }
-    free(allgather_key);
 
     // Now loop through getting data from all of my friends
     for (int i = 0; i < req->nnodes; i++) {
@@ -645,11 +655,12 @@ _ddict_allgather(void *arg)
         }
     }
 
+    // Checkpoint the dictionary
+    dragon_ddict_checkpoint(ddict);
+
     pmix_modex_cbfunc_t cbfunc = (pmix_modex_cbfunc_t) req->cbfunc;
     cbfunc(PMIX_SUCCESS, req->fence_data, req->fence_ndata, req->cbdata, _dragon_pmix_free_fence_request, req);
 
-    // Checkpoint the dictionary
-    dragon_ddict_checkpoint(ddict);
 
 leave_thread:
     return NULL;
@@ -671,7 +682,7 @@ _dragon_pmix_init_fence_request(dragonPMIxJob_t *d_job,
         return NULL;
 
 
-    req->ddict = &d_job->ddict;
+    req->ddict = d_job->ddict;
     req->id = NULL;
     req->node_list = NULL;
     req->fence_data = NULL;
@@ -780,8 +791,12 @@ fence_handler(
     void *cbdata)
 {
 
-    // Get a server ref
-    dragonPMIxJob_t *d_job = _dragon_get_job_from_nspace((char*) procs[0].nspace);
+    // Get a job ref
+    dragonPMIxJob_t *d_job;
+    dragonError_t derr = _dragon_get_job_from_nspace((char*) procs[0].nspace, &d_job);
+    if (derr != DRAGON_SUCCESS) {
+        return PMIX_ERROR;
+    }
 
     // We only support PMIX_COLLECT_DATA
     for (size_t i = 0; i < ninfo; i++) {
@@ -794,7 +809,7 @@ fence_handler(
     }
 
     // Prepare the data request going to LS and send it off
-    dragonError_t derr = _dragon_pmix_ddict_allgather(d_job, (pmix_proc_t*) procs, nprocs, data, ndata, cbfunc, cbdata);
+    derr = _dragon_pmix_ddict_allgather(d_job, (pmix_proc_t*) procs, nprocs, data, ndata, cbfunc, cbdata);
     if (derr != DRAGON_SUCCESS) {
         return PMIX_ERROR;
     }
@@ -893,181 +908,10 @@ _add_local_peers(dragonPMIxJob_t *d_job,
     return 0;
 }
 
-
 dragonError_t
-_get_pmix_tmpdir(dragonPMIxJob_t *d_job, char *client_tmp, char *server_tmp)
-{
-    struct stat buf;
-
-    /* define and pass a personal tmpdir to protect the system */
-    if (server_initd == 1UL) {
-        asprintf(&d_job->tmpdir, "%s", d_job->head->tmpdir);
-    } else {
-        if (0 > asprintf(&d_job->tmpdir, "%s/pmix.%lu/%s", server_tmp, (long unsigned) d_job->uid, d_job->hostname)) {
-            exit(1);
-        }
-    }
-
-    if (0 > asprintf(&d_job->nsdir, "%s/pmix.%lu/%s/%s.%lu", client_tmp, (long unsigned) d_job->uid, d_job->hostname,
-                     "nsdir-job", d_job->guid)) {
-        exit(1);
-    }
-
-    /* create the directory */
-    if (0 != stat(d_job->tmpdir, &buf)) {
-        _mkdir(d_job->tmpdir);
-        if (0 != stat(d_job->tmpdir, &buf))
-            err_return(DRAGON_FAILURE, "Unable to create PMIx tmp directory");
-    }
-
-    if (0 != stat(d_job->nsdir, &buf)) {
-        _mkdir(d_job->nsdir);
-        // Check it exists now
-        if (0 != stat(d_job->nsdir, &buf))
-            err_return(DRAGON_FAILURE, "Unable to create PMIx namespace directory");
-    }
-
-    no_err_return(DRAGON_SUCCESS);
-
-}
-
-dragonError_t
-_dragon_init_pmix_server_struct(dragonPMIxJob_t *d_job,
-                                dragonG_UID_t guid,
-                                int node_rank,
-                                int nhosts,
-                                int nprocs,
-                                int *proc_ranks,
-                                int *ppn,
-                                int *node_ranks,
-                                char **hosts,
-                                char *client_tmpdir,
-                                char *server_tmpdir)
-{
-
-    d_job->tmpdir = NULL;
-    d_job->nsdir = NULL;
-    d_job->server_host = false;
-
-    dragonError_t derr = _dragon_pmix_set_fn_ptrs();
-    if (derr != DRAGON_SUCCESS)
-        append_err_return(derr, "Unable to access PMIx function pointers");
-
-    d_job->uid = getuid();
-    d_job->gid = getgid();
-
-    // Fill the hostname
-    char hostname[HOST_NAME_MAX];
-    if (gethostname(hostname, sizeof(hostname)) == -1) {
-        err_return(DRAGON_FAILURE, "Unable to use gethostname() to get PMIx server hostname");
-    }
-    asprintf(&(d_job->hostname), "%s", hostname);
-
-    // Fill the tmp dir
-    derr = _get_pmix_tmpdir(d_job, client_tmpdir, server_tmpdir);
-    if (derr != DRAGON_SUCCESS)
-        append_err_return(derr, "Unable to create/obtain PMIx tmp directory");
-
-
-    // Give some name to the server namespace
-    // If server is already initialized, use the head's namespace
-    if (server_initd == 1UL) {
-        asprintf(&(d_job->server_nspace), "%s", d_job->head->server_nspace);
-    } else {
-        asprintf(&(d_job->server_nspace), "%s%lu", SERVER_NSPACE_PREFIX, guid);
-    }
-
-    asprintf(&(d_job->client_nspace), "%s%lu", CLIENT_NSPACE_PREFIX, guid);
-
-    // Fill the node and process structures:
-    d_job->node_rank = node_rank;
-    d_job->nnodes = (size_t) nhosts;
-    d_job->nprocs = (size_t) nprocs;
-
-    d_job->nodes = malloc(d_job->nnodes * sizeof(dragonPMIxNode_t));
-    if (d_job->nodes == NULL)
-        append_err_return(DRAGON_FAILURE, "Unable to allocate space for PMIx nodes structure");
-
-    d_job->procs = malloc(d_job->nprocs * sizeof(dragonPMIxProcess_t));
-    if (d_job->procs == NULL)
-        append_err_return(DRAGON_FAILURE, "Unable to allocate space for PMIx procs structure");
-
-
-    // The node ranks come in sorted, so the first value becomes the caption
-    d_job->job_captain = false;
-    if (d_job->node_rank == node_ranks[0]) {
-        d_job->job_captain = true;
-    }
-
-    // Get the max node id:
-    int max_nid = 0;
-    for (size_t nid = 0; nid < d_job->nnodes; nid++) {
-        if (node_ranks[nid] > max_nid) {
-            max_nid = node_ranks[nid];
-        }
-    }
-
-    // Track the node index (not necessary starting at 0) to a 0-based subscript
-    int *node_map = malloc(max_nid * sizeof(int));
-    if (node_map == NULL)
-        append_err_return(DRAGON_FAILURE, "Unable to allocate space for node map during PMIx server/job construction");
-
-    // Initialize the nodes structure
-    for (size_t node_count = 0; node_count < d_job->nnodes; node_count++) {
-        d_job->nodes[node_count].nid = node_ranks[node_count];
-        d_job->nodes[node_count].ppn = ppn[node_count];
-
-        if (d_job->nodes[node_count].nid == d_job->node_rank) {
-            d_job->ppn = d_job->nodes[node_count].ppn;
-        }
-        d_job->nodes[node_count].hostname = strdup(hosts[node_count]);
-
-        // Set stuff up to fill in the ranks array when we process the ranks structure
-        d_job->nodes[node_count].ranks = malloc(sizeof(int) * d_job->nodes[node_count].ppn);
-        if (d_job->nodes[node_count].ranks == NULL)
-            append_err_return(DRAGON_FAILURE, "Unable to allocate space for ranks inside the PMIx nodes structure");
-
-        node_map[d_job->nodes[node_count].nid] = node_count;
-
-    }
-
-    // initialize the ranks structure
-    int *lrank_count = calloc(max_nid, sizeof(int));
-    if (lrank_count == NULL)
-        append_err_return(DRAGON_FAILURE, "Unable to allocate space for local rank counter during PMIx procs structure");
-
-    for (size_t proc = 0; proc < nprocs; proc++) {
-        d_job->procs[proc].rank = proc;
-        d_job->procs[proc].nid = proc_ranks[proc];
-        d_job->procs[proc].lrank = lrank_count[d_job->procs[proc].nid];
-
-        // Fill in the ranks structure for the approriate node
-        d_job->nodes[node_map[d_job->procs[proc].nid]].ranks[d_job->procs[proc].lrank] = d_job->procs[proc].rank;
-        lrank_count[d_job->procs[proc].nid]++;
-
-        // TODO: Hook the below up with dragon logging
-        // fprintf(stderr, "rank %d | nid %d | ppn %d | lrank %d | host %s\n",
-        //         d_job->procs[proc].rank,
-        //         d_job->procs[proc].nid,
-        //         d_job->nodes[node_map[d_job->procs[proc].nid]].ppn,
-        //         d_job->procs[proc].lrank,
-        //         d_job->nodes[node_map[d_job->procs[proc].nid]].hostname);fflush(stderr);
-
-
-    }
-    free(lrank_count);
-    free(node_map);
-
-    no_err_return(DRAGON_SUCCESS);
-
-}
-
-
-dragonError_t
-_dragon_pmix_load_info(dragonPMIxJob_t *d_job,
-                       int node_rank,
-                       pmix_info_t **info,
-                       size_t *ninfo)
+_dragon_pmix_configure_server_nspace(dragonPMIxServer_t *d_server,
+                                     pmix_info_t **info,
+                                     size_t *ninfo)
 {
 
     int nitems = 4;
@@ -1076,17 +920,17 @@ _dragon_pmix_load_info(dragonPMIxJob_t *d_job,
 
     linfo = PMIx_Info_create_p(nitems);
 
-    PMIx_Info_load_p(&linfo[lninfo], PMIX_SERVER_TMPDIR, d_job->tmpdir, PMIX_STRING);
+    PMIx_Info_load_p(&linfo[lninfo], PMIX_SERVER_TMPDIR, d_server->tmpdir, PMIX_STRING);
     lninfo++;
 
-    PMIx_Info_load_p(&linfo[lninfo], PMIX_HOSTNAME, d_job->hostname, PMIX_STRING);
+    PMIx_Info_load_p(&linfo[lninfo], PMIX_HOSTNAME, d_server->hostname, PMIX_STRING);
     lninfo++;
 
-    PMIx_Info_load_p(&linfo[lninfo], PMIX_SERVER_NSPACE, d_job->server_nspace, PMIX_STRING);
+    PMIx_Info_load_p(&linfo[lninfo], PMIX_SERVER_NSPACE, d_server->server_nspace, PMIX_STRING);
     lninfo++;
 
     // Create a node rank based off hostname
-    PMIx_Info_load_p(&linfo[lninfo], PMIX_SERVER_RANK, &d_job->node_rank, PMIX_PROC_RANK);
+    PMIx_Info_load_p(&linfo[lninfo], PMIX_SERVER_RANK, &d_server->node_rank, PMIX_PROC_RANK);
     lninfo++;
 
     *info = linfo;
@@ -1225,7 +1069,7 @@ _add_ppn(dragonPMIxJob_t *d_job,
 
 
 dragonError_t
-_dragon_initialize_application_server(dragonPMIxJob_t *d_job)
+_dragon_pmix_initialize_application_server(dragonPMIxJob_t *d_job)
 {
     dragonError_t derr;
     size_t ninfo = 2;
@@ -1297,7 +1141,7 @@ _dragon_initialize_application_server(dragonPMIxJob_t *d_job)
     // Put my data into the dictionary via a persistent put:
     char *local_info_key = LOCAL_INFO_KEY_DEF;
     bool persist = true;
-    derr = _dragon_pmix_write_to_ddict(&d_job->ddict, persist, local_info_key, encoded, strlen(encoded) * sizeof(char));
+    derr = _dragon_pmix_write_to_ddict(d_job->ddict, persist, local_info_key, encoded, strlen(encoded) * sizeof(char));
     if (derr != DRAGON_SUCCESS) {
         append_err_return(derr, "Unable to do a persistent put of PMIx local app into PMIx ddict");
     }
@@ -1316,7 +1160,7 @@ _dragon_initialize_application_server(dragonPMIxJob_t *d_job)
 #define RANK_SPOTS 5 // # of attributes for each per-rank collection
 #define HOST_SPOTS 8 // # of attributes for each host/node
 dragonError_t
-_configure_nspace(dragonPMIxJob_t *d_job)
+_dragon_pmix_configure_client_nspace(dragonPMIxJob_t *d_job, dragonPMIxServer_t *d_server)
 {
 
     // Parameters to be used later
@@ -1375,11 +1219,10 @@ _configure_nspace(dragonPMIxJob_t *d_job)
     spot++;
 
     // Session ID will be tied to the server head GUID
-    uint32_t sess_id = (uint32_t) d_job->head->guid;
-    PMIx_Info_load_p(spot, PMIX_SESSION_ID, &sess_id, PMIX_UINT32);
+    PMIx_Info_load_p(spot, PMIX_SESSION_ID, &d_server->sess_id, PMIX_UINT32);
     spot++;
 
-    PMIx_Info_load_p(spot, PMIX_TMPDIR, d_job->tmpdir, PMIX_STRING);
+    PMIx_Info_load_p(spot, PMIX_TMPDIR, d_server->tmpdir, PMIX_STRING);
     spot++;
 
     PMIx_Info_load_p(spot, PMIX_NSDIR, d_job->nsdir, PMIX_STRING);
@@ -1465,7 +1308,7 @@ _configure_nspace(dragonPMIxJob_t *d_job)
         // Allocate extra stuff if this node is my own
         if ((int) d_job->node_rank == (int) d_job->nodes[host_rank].nid) {
 
-            PMIx_Info_load_p(iter, PMIX_TMPDIR, d_job->tmpdir, PMIX_STRING);
+            PMIx_Info_load_p(iter, PMIX_TMPDIR, d_server->tmpdir, PMIX_STRING);
             iter++;
 
             PMIx_Info_load_p(iter, PMIX_NSDIR, d_job->nsdir, PMIX_STRING);
@@ -1520,10 +1363,10 @@ _configure_nspace(dragonPMIxJob_t *d_job)
 
 
 dragonError_t
-_dragon_configure_local_support(dragonPMIxJob_t *d_job)
+_dragon_pmix_configure_local_support(dragonPMIxJob_t *d_job)
 {
 
-    dragonDDictDescr_t *ddict = &d_job->ddict;
+    dragonDDictDescr_t *ddict = d_job->ddict;
     dragonError_t derr;
     pmix_info_t *info;
     size_t ninfo;
@@ -1533,21 +1376,19 @@ _dragon_configure_local_support(dragonPMIxJob_t *d_job)
     char *tmp, *b64_data;
     size_t data_len;
     derr = _dragon_pmix_read_from_ddict(ddict, local_info_key, &tmp, &data_len);
+    if (derr != DRAGON_SUCCESS) {
+        append_err_return(DRAGON_FAILURE, "Unable to read data from dict for PMIx local app support");
+    }
 
     // Make sure there's a null terminator at end of data
     b64_data = malloc((data_len + 1) * sizeof(char));
     if (b64_data == NULL)
         append_err_return(DRAGON_FAILURE, "Failed to allocate b64 space for packing PMIx local app support data into ddict");
-
     memcpy(b64_data, tmp, data_len);
     b64_data[data_len] = '\0';
     free(tmp);
 
-    if (derr != DRAGON_SUCCESS) {
-        append_err_return(DRAGON_FAILURE, "Unable to read data from dict for PMIx local app support");
-    }
-
-    // Get the data from the json byte array
+    // Get the data from the buffer
     char *input;
     size_t inputlen;
     pmix_data_buffer_t pbuf = {0};
@@ -1596,10 +1437,11 @@ _dragon_configure_local_support(dragonPMIxJob_t *d_job)
     // fprintf(stderr, "server info %d: %s\n", 0, (char*) info[0].value.data.string); fflush(stderr);
     // fprintf(stderr, "server info %d: %s\n", 1, (char*) info[1].value.data.string); fflush(stderr);
     if (PMIX_SUCCESS != (rc = PMIx_server_setup_local_support_p(d_job->client_nspace, info,
-                              ninfo, opcbfunc, state))) {
+                                                                ninfo, opcbfunc, state))) {
         PMIx_server_finalize_p();
         append_err_return(DRAGON_FAILURE, "Could not setup local server support for PMIx");
     }
+
     PMIX_WAIT_FOR_COMPLETION(state->active);
     _dragon_pmix_cbdata_deconstructor(state);
 
@@ -1607,165 +1449,475 @@ _dragon_configure_local_support(dragonPMIxJob_t *d_job)
     no_err_return(DRAGON_SUCCESS);
 }
 
-dragonPMIxJob_t *
-_dragon_get_job_ref(dragonG_UID_t guid)
+static dragonError_t
+_dragon_get_job_ref(dragonG_UID_t guid, dragonPMIxJob_t **d_job)
 {
 
-    dragonPMIxJob_t *d_job = job_list->head;
-    while (d_job != NULL) {
-        if (guid == d_job->guid) {
-            break;
+    dragonError_t err = dragon_umap_getitem(&job_map, (uint64_t) guid, (void**) d_job);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Failed to find item in Dragon PMIx job umap.");
 
-        }
-        d_job = d_job->next;
-    }
-    return d_job;
+    no_err_return(DRAGON_SUCCESS);
 }
 
-dragonPMIxJob_t *
-_dragon_get_job_from_nspace(char *nspace)
+static dragonError_t
+_dragon_get_job_from_nspace(char *nspace, dragonPMIxJob_t **d_job)
 {
 
     // Extract the guid from the nspace
     dragonG_UID_t guid = (dragonG_UID_t) strtoull(&nspace[strlen(CLIENT_NSPACE_PREFIX)], NULL, 10);
-    return _dragon_get_job_ref(guid);
+    if ((uint64_t) guid == 0UL)
+        append_err_return(DRAGON_FAILURE, "Failed to extract GUID from PMIx client nspace");
 
-}
+    dragonError_t derr = _dragon_get_job_ref(guid, d_job);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to get PMIx job reference from nspace");
 
-dragonPMIxJob_t *
-_dragon_create_server_ref(dragonG_UID_t guid)
-{
+    no_err_return(DRAGON_SUCCESS);
 
-    dragonPMIxJob_t *d_job = malloc(sizeof(dragonPMIxJob_t));
-    if (d_job == NULL)
-        return NULL;
-
-    d_job->next = NULL;
-    d_job->guid = guid;
-
-    // If job_list is NULL then this is our first attempt to do any of this, create a server and
-    // point our static reference to it:
-    if (job_list == NULL) {
-        d_job->head = d_job;
-        job_list = d_job;
-    }
-
-    // If job_list isn't NULL, we need to append it to the end of the list
-    else {
-        d_job->head = job_list->head;
-
-        dragonPMIxJob_t *last = job_list->head;
-        while (last->next != NULL) {
-            last = last->next;
-        }
-        last->next = d_job;
-    }
-
-    return d_job;
 }
 
 dragonError_t
-dragon_initialize_pmix_server(dragonG_UID_t guid,
-                              char *pmix_sdesc,
-                              char *local_mgr_sdesc,
-                              dragonChannelSerial_t out_to_ls,
-                              dragonChannelSerial_t in_from_ls,
-                              dragonChannelSerial_t buffered_from_ls,
-                              int node_rank,
-                              int nhosts,
-                              int nprocs,
-                              int *proc_ranks,
-                              int *ppn,
-                              int *node_ranks,
-                              char **hosts,
-                              char *client_tmpdir,
-                              char *server_tmpdir)
+_dragon_pmix_create_job_ref(dragonPMIxJob_t **d_job, dragonG_UID_t guid)
+{
+
+    dragonPMIxJob_t *l_job = malloc(sizeof(dragonPMIxJob_t));
+    if (l_job == NULL)
+        append_err_return(DRAGON_FAILURE, "Unable to allocate space for new PMIx job structuure");
+
+    l_job->guid = guid;
+
+    // If job_map is NULL then this is our first attempt to do any of this, allocate the space
+    // for it
+    dragonError_t err;
+    if (job_map == NULL) {
+        job_map = (dragonMap_t*) malloc(sizeof(dragonMap_t));
+        if (job_map == NULL)
+            err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate umap for PMIx job structures.");
+
+        err = dragon_umap_create(&job_map, DRAGON_PMIX_UMAP_SEED);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to create umap for PMIx job structures.");
+    }
+
+    if (guid_map_keys == NULL) {
+        guid_map_keys = (dragonList_t*) malloc(sizeof(dragonList_t));
+        if (guid_map_keys == NULL)
+            err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate umap for PMIx job structures.");
+
+        err = dragon_ulist_create(&guid_map_keys);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to create ulist for PMIx guid tracking.");
+    }
+
+    *d_job = l_job;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+_dragon_pmix_create_server_tmpdir(dragonPMIxServer_t *d_server, char *server_tmp)
+{
+    struct stat buf;
+
+    // Construct path
+    if (0 > asprintf(&d_server->tmpdir, "%s/pmix.%lu/%s", server_tmp, (long unsigned) d_server->uid, d_server->hostname)) {
+        exit(1);
+    }
+
+    /* create the directory */
+    if (0 != stat(d_server->tmpdir, &buf)) {
+        _mkdir(d_server->tmpdir);
+        if (0 != stat(d_server->tmpdir, &buf))
+            err_return(DRAGON_FAILURE, "Unable to create PMIx tmp directory");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+
+dragonError_t
+_dragon_pmix_create_job_nsdir(dragonPMIxJob_t *d_job, char *client_tmp, char *hostname, uid_t uid)
+{
+    struct stat buf;
+
+    // Construct path
+    if (0 > asprintf(&d_job->nsdir, "%s/pmix.%lu/%s/%s.%lu", client_tmp, (long unsigned) uid, hostname,
+                     "nsdir-job", d_job->guid)) {
+        exit(1);
+    }
+
+    /* create the directory */
+    if (0 != stat(d_job->nsdir, &buf)) {
+        _mkdir(d_job->nsdir);
+            // Check it exists now
+        if (0 != stat(d_job->nsdir, &buf))
+            err_return(DRAGON_FAILURE, "Unable to create PMIx namespace directory");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+
+}
+
+
+dragonError_t
+_dragon_pmix_initialize_server(dragonPMIxServer_t **d_server,
+                               dragonG_UID_t guid,
+                               int node_rank,
+                               char *server_tmpdir)
+
+{
+    dragonPMIxServer_t *l_server = *d_server;
+
+    // Make sure we're not already initialized
+    if (l_server != NULL) {
+        if (l_server->initialized == 1UL) {
+            no_err_return(DRAGON_SUCCESS);
+        }
+        else {
+            append_err_return(DRAGON_NOT_FOUND, "Dragon PMIx server in an undefined state");
+        }
+    }
+
+    l_server = malloc(sizeof(dragonPMIxServer_t));
+    l_server->initialized = 0UL;
+
+    l_server->node_rank = node_rank;
+    l_server->uid = getuid();
+    l_server->gid = getgid();
+
+    // uint32_t for ID-ing the server session
+    l_server->sess_id = (uint32_t) ((guid & 0xFFFFFFFF00000000UL) >> 32);
+
+    // Fill the hostname
+    char hostname[HOST_NAME_MAX];
+    if (gethostname(hostname, sizeof(hostname)) == -1) {
+        err_return(DRAGON_FAILURE, "Unable to use gethostname() to get PMIx server hostname");
+    }
+    asprintf(&(l_server->hostname), "%s", hostname);
+
+    // Give some name to the server namespace
+    asprintf(&(l_server->server_nspace), "%s%lu", SERVER_NSPACE_PREFIX, (long unsigned) l_server->uid);
+
+    // Create tmp directory for server
+    dragonError_t derr = _dragon_pmix_create_server_tmpdir(l_server, server_tmpdir);
+
+    // Actually start the PMIx server now
+    pmix_info_t *info = NULL;
+    size_t ninfo;
+
+    derr = _dragon_pmix_configure_server_nspace(l_server, &info, &ninfo);
+    if (derr != DRAGON_SUCCESS) {
+        append_err_return(derr, "Failed to load server info into PMIx server namespace");
+    }
+
+    pmix_status_t rc = PMIx_server_init_p(&dragon_pmix_cback_module, info, ninfo);
+    if (rc != PMIX_SUCCESS) {
+        append_err_return(DRAGON_FAILURE, "PMIx_server_init failed");
+    }
+    PMIx_Info_free_p(info, ninfo);
+    l_server->initialized = 1UL;
+
+    *d_server = l_server;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+
+static dragonError_t
+_find_already_attached_ddict(char* pmix_sdesc, dragonDDictDescr_t **ddict)
+{
+
+    dragonPMIxJob_t *d_job = NULL;;
+    dragonError_t derr;
+    *ddict = NULL;
+    bool locking = false;
+
+    // We store the keys to the umap in the guid ulist. We'll use that to
+    // traverse the jobs in the umap
+    derr = dragon_ulist_lock(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to lock Dragon PMIx guid ulist while searching for ddict state");
+
+
+    size_t nguids = dragon_ulist_get_size(&guid_map_keys, locking);
+    for (size_t gidx = 0; gidx < nguids; gidx++) {
+
+        dragonG_UID_t *guid;
+        derr = dragon_ulist_get_by_idx(&guid_map_keys, (int) gidx, (void**) &guid, locking);
+        if (derr != DRAGON_SUCCESS) {
+            dragon_ulist_unlock(&guid_map_keys);
+            append_err_return(derr, "Failed to get GUID from PMIx job guid list");
+        }
+
+        if (guid != NULL) {
+            derr = dragon_umap_getitem(&job_map, (uint64_t) *guid, (void**) &d_job);
+            if (derr != DRAGON_SUCCESS) {
+                dragon_ulist_unlock(&guid_map_keys);
+                append_err_return(derr, "Failed to get PMIx job from job umap during ddict search");
+            }
+
+            if (d_job->holding_ddict_attach && d_job->ddict_sdesc != NULL) {
+                if (strcmp(pmix_sdesc, d_job->ddict_sdesc) == 0) {
+                    *ddict = d_job->ddict;
+                    dragon_ulist_unlock(&guid_map_keys);
+                    no_err_return(DRAGON_SUCCESS);
+                }
+            }
+        }
+    }
+    derr = dragon_ulist_unlock(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to unlock Dragon PMIx guid ulist while searching for ddict state");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+_dragon_pmix_initialize_job_struct(dragonPMIxJob_t **d_job,
+                                   dragonPMIxServer_t *d_server,
+                                   char *ddict_sdesc,
+                                   char *local_mgr_sdesc,
+                                   dragonChannelSerial_t out_to_ls,
+                                   dragonChannelSerial_t in_from_ls,
+                                   dragonChannelSerial_t buffered_from_ls,
+                                   dragonG_UID_t guid,
+                                   int nhosts,
+                                   int nprocs,
+                                   int *proc_ranks,
+                                   int *ppn,
+                                   int *node_ranks,
+                                   char **hosts,
+                                   char *client_tmpdir)
+{
+
+    dragonError_t derr = _dragon_pmix_create_job_ref(d_job, guid);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Unable to create PMIx job structure");
+
+    dragonPMIxJob_t *l_job = *d_job;
+    l_job->nsdir = NULL;
+    l_job->ddict_sdesc = NULL;
+
+    // Create the nspace tmpdir
+    derr = _dragon_pmix_create_job_nsdir(l_job, client_tmpdir, d_server->hostname, d_server->uid);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Unable to crate PMIx tmpdir for client apps");
+
+    asprintf(&(l_job->client_nspace), "%s%lu", CLIENT_NSPACE_PREFIX, guid);
+
+    // Check to see if we have already seen this dictionary. If we have, then we are necessarily attached
+    // to it because the ProcessGroup manager creates 1 dictionary for its lifetime. If we're seeing
+    // the dict a second time it necessarily is from the same manager and is just a re-execution
+    // of the process templates tied to that particular manager.
+    derr = _find_already_attached_ddict(ddict_sdesc, &l_job->ddict);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Error occurred while searching umap for PMIx dictionary");
+
+    // We could have gotten a success but just not found the ddict. If so, it's NULL
+    if (l_job->ddict == NULL) {
+        timespec_t *timeout = NULL;
+        l_job->ddict = malloc(sizeof(dragonDDictDescr_t));
+        if (l_job->ddict == NULL)
+            append_err_return(DRAGON_FAILURE, "Unable to allocate space for PMIx ddict_sdesc");
+        derr = _dragon_ddict_attach(ddict_sdesc,
+                                    l_job->ddict,
+                                    timeout,
+                                    &out_to_ls,
+                                    &in_from_ls,
+                                    &buffered_from_ls,
+                                    local_mgr_sdesc,
+                                    false);
+
+        if (derr != DRAGON_SUCCESS)
+            append_err_return(derr, "Unable to attach to dictionary");
+
+        // Store the reference to the serialized descriptor for future comparisons.
+        l_job->ddict_sdesc = strdup(ddict_sdesc);
+
+        l_job->holding_ddict_attach = true;
+    }
+    else {
+        l_job->holding_ddict_attach = false;
+    }
+
+    // Fill the node and process structures:
+    l_job->node_rank = d_server->node_rank;
+    l_job->nnodes = (size_t) nhosts;
+    l_job->nprocs = (size_t) nprocs;
+
+    l_job->nodes = malloc(l_job->nnodes * sizeof(dragonPMIxNode_t));
+    if (l_job->nodes == NULL)
+        append_err_return(DRAGON_FAILURE, "Unable to allocate space for PMIx nodes structure");
+
+    l_job->procs = malloc(l_job->nprocs * sizeof(dragonPMIxProcess_t));
+    if (l_job->procs == NULL)
+        append_err_return(DRAGON_FAILURE, "Unable to allocate space for PMIx procs structure");
+
+    // The node ranks come in sorted, so the first value becomes the caption
+    l_job->job_captain = false;
+    if (l_job->node_rank == node_ranks[0]) {
+        l_job->job_captain = true;
+    }
+
+    // Get the max node id:
+    int max_nid = 0;
+    for (size_t nid = 0; nid < l_job->nnodes; nid++) {
+        if (node_ranks[nid] > max_nid) {
+            max_nid = node_ranks[nid];
+        }
+    }
+
+    // Since we're using this only for allocating pointer space, add 1 to account for 0-based indexing
+    max_nid++;
+
+    // Track the node index
+    int *node_map = malloc(max_nid * sizeof(int));
+    if (node_map == NULL)
+        append_err_return(DRAGON_FAILURE, "Unable to allocate space for node map during PMIx server/job construction");
+
+    // Initialize the nodes structure
+    for (size_t node_count = 0; node_count < l_job->nnodes; node_count++) {
+        l_job->nodes[node_count].nid = node_ranks[node_count];
+        l_job->nodes[node_count].ppn = ppn[node_count];
+
+        if (l_job->nodes[node_count].nid == l_job->node_rank) {
+            l_job->ppn = l_job->nodes[node_count].ppn;
+        }
+        l_job->nodes[node_count].hostname = strdup(hosts[node_count]);
+
+            // Set stuff up to fill in the ranks array when we process the ranks structure
+        l_job->nodes[node_count].ranks = malloc(sizeof(int) * l_job->nodes[node_count].ppn);
+        if (l_job->nodes[node_count].ranks == NULL)
+            append_err_return(DRAGON_FAILURE, "Unable to allocate space for ranks inside the PMIx nodes structure");
+
+        node_map[l_job->nodes[node_count].nid] = node_count;
+
+    }
+    // initialize the ranks structure
+    int *lrank_count = calloc(max_nid, sizeof(int));
+    if (lrank_count == NULL)
+        append_err_return(DRAGON_FAILURE, "Unable to allocate space for local rank counter during PMIx procs structure");
+
+    for (size_t proc = 0; proc < nprocs; proc++) {
+        l_job->procs[proc].rank = proc;
+        l_job->procs[proc].nid = proc_ranks[proc];
+        l_job->procs[proc].lrank = lrank_count[l_job->procs[proc].nid];
+
+        // Fill in the ranks structure for the approriate node
+        l_job->nodes[node_map[l_job->procs[proc].nid]].ranks[l_job->procs[proc].lrank] = l_job->procs[proc].rank;
+        lrank_count[l_job->procs[proc].nid]++;
+
+        // TODO: Hook the below up with dragon logging
+        // fprintf(stderr, "rank %d | nid %d | ppn %d | lrank %d | host %s\n",
+        //         l_job->procs[proc].rank,
+        //         l_job->procs[proc].nid,
+        //         l_job->nodes[node_map[l_job->procs[proc].nid]].ppn,
+        //         l_job->procs[proc].lrank,
+        //         l_job->nodes[node_map[l_job->procs[proc].nid]].hostname);fflush(stderr);
+
+
+    }
+    free(lrank_count);
+    free(node_map);
+
+    // Add it to the umap
+    derr = dragon_umap_additem(&job_map, (uint64_t) l_job->guid, (void*) l_job);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to insert item into Dragon PMIx umap.");
+
+    // And add the guid to our list of known keys. This is needed to let us
+    // find what ddict we may already be attached which exists inside the job_map
+    // data structures.
+    dragonG_UID_t* l_guid = malloc(sizeof(dragonG_UID_t));
+    if (l_guid == NULL)
+        append_err_return(DRAGON_INTERNAL_MALLOC_FAIL, "unable to allocate space to store PMIx guid in ulist");
+
+    *l_guid = l_job->guid;
+    derr = dragon_ulist_additem(&guid_map_keys, (void*) l_guid, true);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to insert guid into Dragon PMIx ulist.");
+
+
+    no_err_return(DRAGON_SUCCESS);
+
+}
+
+
+dragonError_t
+dragon_pmix_initialize_job(dragonG_UID_t guid,
+                           char *ddict_sdesc,
+                           char *local_mgr_sdesc,
+                           dragonChannelSerial_t out_to_ls,
+                           dragonChannelSerial_t in_from_ls,
+                           dragonChannelSerial_t buffered_from_ls,
+                           int node_rank,
+                           int nhosts,
+                           int nprocs,
+                           int *proc_ranks,
+                           int *ppn,
+                           int *node_ranks,
+                           char **hosts,
+                           char *client_tmpdir,
+                           char *server_tmpdir)
 {
 
     dragonError_t derr;
-    pmix_status_t rc;
 
-    // Get ourselves a server to reference
-    dragonPMIxJob_t *d_job = _dragon_create_server_ref(guid);
-    if (d_job == NULL)
-        append_err_return(DRAGON_FAILURE, "Failed to allocate space for PMIx job structure");
-
-    // dlopen all the pmix function pointers we need
-    derr = _dragon_init_pmix_server_struct(d_job,
-                                           guid,
-                                           node_rank,
-                                           nhosts,
-                                           nprocs,
-                                           proc_ranks,
-                                           ppn,
-                                           node_ranks,
-                                           hosts,
-                                           client_tmpdir,
-                                           server_tmpdir);
-    if (derr != DRAGON_SUCCESS) {
-        append_err_return(derr, "Failed to initialize dragon struct for PMIx server");
-    }
-
-    // Attach to the ddict
-    timespec_t *timeout = NULL;
-    derr = _dragon_ddict_attach(pmix_sdesc,
-                                &d_job->ddict,
-                                timeout,
-                                &out_to_ls,
-                                &in_from_ls,
-                                &buffered_from_ls,
-                                local_mgr_sdesc);
+    // Make sure we have libmpix beforeqpmix anything
+    derr = _dragon_pmix_set_fn_ptrs();
     if (derr != DRAGON_SUCCESS)
-        append_err_return(derr, "Unable to attach to dictionary");
+        append_err_return(derr, "Unable to access PMIx function pointers");
 
-    pmix_info_t *info = NULL;
-    size_t ninfo;
-    /* setup the server library */
-    if (server_initd == 0UL) {
+    // If the server hasn't been created for this runtime instance, make sure it is
+    derr = _dragon_pmix_initialize_server(&dpmix_server,
+                                          guid,
+                                          node_rank,
+                                          server_tmpdir);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(DRAGON_FAILURE, "Unable to initialize dragonPMIxServer_t data structure");
 
-        derr = _dragon_pmix_load_info(d_job, node_rank, &info, &ninfo);
-        if (derr != DRAGON_SUCCESS) {
-            append_err_return(derr, "Failed to load server info into PMIx server namespace");
-        }
+    // Get ourselves a job structure to use
+    dragonPMIxJob_t *d_job;
+    derr = _dragon_pmix_initialize_job_struct(&d_job,
+                                              dpmix_server,
+                                              ddict_sdesc,
+                                              local_mgr_sdesc,
+                                              out_to_ls,
+                                              in_from_ls,
+                                              buffered_from_ls,
+                                              guid,
+                                              nhosts,
+                                              nprocs,
+                                              proc_ranks,
+                                              ppn,
+                                              node_ranks,
+                                              hosts,
+                                              client_tmpdir);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(DRAGON_FAILURE, "Failed to initialize dragonPMIxJob_t data structure");
 
-        rc = PMIx_server_init_p(&dragon_pmix_cback_module, info, ninfo);
-        if (rc != PMIX_SUCCESS) {
-            append_err_return(DRAGON_FAILURE, "PMIx_server_init failed");
-        }
-        PMIx_Info_free_p(info, ninfo);
-        server_initd = 1UL;
-        d_job->server_host = true;  // This can be removed once a unique server struct is created.
-        // It merely serves to make sure we don't drop the server ref during cleanup of jobs
-
-    }
-
-    /* register the errhandler */
-    if (PMIX_SUCCESS != (rc = PMIx_Register_event_handler_p(NULL, 0, NULL, 0, errhandler, errhandler_reg_callbk, NULL))) {
-        append_err_return(DRAGON_FAILURE, "PMIx_Register_event_handler failed with error");
-    }
 
     // Configure job's namespace
-    info = NULL;
-    derr = _configure_nspace(d_job);
+    derr = _dragon_pmix_configure_client_nspace(d_job, dpmix_server);
     if (derr != DRAGON_SUCCESS) {
         append_err_return(derr, "PMIx: Failed to configure client namespace");
     }
 
     // If I'm the job captain initialize the application server
     if (d_job->job_captain) {
-        derr = _dragon_initialize_application_server(d_job);
+        derr = _dragon_pmix_initialize_application_server(d_job);
         if (derr != DRAGON_SUCCESS) {
             append_err_return(derr, "Failed to initialize the PMIx application server on node rank 0");
         }
     }
 
     // Set up local app support before forking
-    derr = _dragon_configure_local_support(d_job);
+    derr = _dragon_pmix_configure_local_support(d_job);
     if (derr != DRAGON_SUCCESS)
         append_err_return(derr, "Unable to configure PMIx local support as defined by node rank 0");
-    // Go ahead and cache the nprocs to the base_rank counter
-    no_err_return(DRAGON_SUCCESS);
 
+    no_err_return(DRAGON_SUCCESS);
 }
 
 
@@ -1781,7 +1933,16 @@ dragon_pmix_get_client_env(dragonG_UID_t guid,
     pmix_proc_t proc;
 
     // Get our server ref
-    dragonPMIxJob_t *d_job = _dragon_get_job_ref(guid);
+    dragonPMIxJob_t *d_job = NULL;
+    dragonError_t derr = _dragon_get_job_ref(guid, &d_job);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to get PMIx job reference while generating client environment");
+
+    if (d_job == NULL) {
+        append_err_return(DRAGON_FAILURE, "Failed to find PMIx job structure for given GUID");
+    }
+
+
     PMIx_Load_nspace_p(proc.nspace, d_job->client_nspace);
 
     // Get the rank given the local rank. Start by finding our node in the array:
@@ -1802,8 +1963,7 @@ dragon_pmix_get_client_env(dragonG_UID_t guid,
         append_err_return(DRAGON_FAILURE, "Local rank exceeds the number of processes per node for this node");
     }
 
-    //x.rank = rank + _base_rank - d_job->nprocs;// _base_rank is incremented when we configure the namespace. So, we subtract that bit off.
-    proc.rank = mynode->ranks[lrank]; // + _base_rank - d_job->nprocs;
+    proc.rank = mynode->ranks[lrank];
     if (PMIX_SUCCESS != (rc = PMIx_server_setup_fork_p(&proc, env))) { // n
         PMIx_server_finalize_p();
         append_err_return(DRAGON_FAILURE, "PMIx server fork setup failed");
@@ -1820,7 +1980,7 @@ dragon_pmix_get_client_env(dragonG_UID_t guid,
         append_err_return(DRAGON_FAILURE, "Unable to allocate space for PMIx callback data");
 
     if (PMIX_SUCCESS
-            != (rc = PMIx_server_register_client_p(&proc, d_job->uid, d_job->gid, NULL, opcbfunc, d_x))) {
+            != (rc = PMIx_server_register_client_p(&proc, dpmix_server->uid, dpmix_server->gid, NULL, opcbfunc, d_x))) {
         PMIx_server_finalize_p();
         append_err_return(DRAGON_FAILURE, "PMIx server failed to register client");
     }
@@ -1834,48 +1994,35 @@ dragon_pmix_get_client_env(dragonG_UID_t guid,
 
 }
 
-bool
-dragon_pmix_is_server_host(dragonG_UID_t guid)
-{
-
-    dragonPMIxJob_t *d_job = _dragon_get_job_ref(guid);
-    return d_job->server_host;
-
-}
 
 dragonError_t
 dragon_pmix_finalize_server()
 {
 
-    // Find the job that hosted the server
-    dragonPMIxJob_t *d_job = job_list->head;
-    while (d_job != NULL) {
-        if (d_job->server_host) {
-            break;
-        }
-        d_job = d_job->next;
-    }
+    // Free the server
+    dragonPMIxServer_t *d_server = dpmix_server;
+
+    pmix_status_t rc;
+    free(d_server->server_nspace);
+    free(d_server->tmpdir);
+    free(d_server->hostname);
 
     /* finalize the server library */
-    pmix_status_t rc;
-    free(d_job->server_nspace);
-    free(d_job->tmpdir);
-
     if (PMIX_SUCCESS != (rc = PMIx_server_finalize_p())) {
         append_err_return(DRAGON_FAILURE, "Unable to finalize PMIx server");
     }
+    free(d_server);
 
+    // Destroy the umap and ulists
+    dragonError_t derr = dragon_umap_destroy(&job_map);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to destroy Dragon PMIx job umap during server finalize");
+    free(job_map);
 
-    // Since we're avoiding putting locks around use of the d_job list, free the full
-    // linked list now.
-    d_job = job_list->head;
-    dragonPMIxJob_t *free_job;
-    while (d_job != NULL) {
-        free_job = d_job;
-        d_job = d_job->next;
-        free(free_job);
-        free_job = NULL;
-    }
+    derr = dragon_ulist_destroy(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to destroy Dragon PMIx guid ulist during server finalize");
+    free(guid_map_keys);
 
     return DRAGON_SUCCESS;
 }
@@ -1885,19 +2032,19 @@ dragonError_t
 dragon_pmix_finalize_job(dragonG_UID_t guid)
 {
 
-    dragonPMIxJob_t *d_job = _dragon_get_job_ref(guid);
+    dragonPMIxJob_t *d_job = NULL;
+    dragonError_t derr = _dragon_get_job_ref(guid, &d_job);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to get PMIx job reference while generating client environment");
+
+    if (d_job == NULL) {
+        append_err_return(DRAGON_FAILURE, "Failed to find PMIx job structure for given GUID");
+    }
 
     PMIx_Deregister_event_handler_p(0, NULL, NULL);
 
-    // The server nspace is re-used for the lifetime of the server. Don't free the reference copy
-    if (!d_job->server_host) {
-        free(d_job->server_nspace);
-        free(d_job->tmpdir);
-    }
-
     free(d_job->client_nspace);
     free(d_job->nsdir);
-    free(d_job->hostname);
 
     for (int32_t nidx = 0; nidx < d_job->nnodes; nidx++) {
         free(d_job->nodes[nidx].ranks);
@@ -1906,8 +2053,60 @@ dragon_pmix_finalize_job(dragonG_UID_t guid)
 
     free(d_job->nodes);
     free(d_job->procs);
+    if (d_job->holding_ddict_attach) {
+        dragon_ddict_detach(d_job->ddict);
+        d_job->holding_ddict_attach = false;
+        free(d_job->ddict);
+        d_job->ddict = NULL;
 
-    return DRAGON_SUCCESS;
+        free(d_job->ddict_sdesc);
+        d_job->ddict_sdesc = NULL;
+    }
+
+    derr = dragon_umap_delitem(&job_map, (uint64_t) guid);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to delete Dragon PMIx job from umap during job's finalize");
+
+    // Delete the guid from the list
+    bool locking = false;
+    derr = dragon_ulist_lock(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to lock Dragon PMIx guid ulist during job's finalize");
+
+    size_t nguids = dragon_ulist_get_size(&guid_map_keys, locking);
+    for (size_t gidx = 0; gidx < nguids; gidx++) {
+
+        dragonG_UID_t *l_guid;
+        derr = dragon_ulist_get_by_idx(&guid_map_keys, (int) gidx, (void**) &l_guid, locking);
+        if (derr != DRAGON_SUCCESS) {
+            dragon_ulist_unlock(&guid_map_keys);
+            append_err_return(derr, "Failed to get GUID from PMIx job guid list");
+        }
+
+        if (l_guid != NULL) {
+            if ((uint64_t) *l_guid == (uint64_t) guid) {
+                derr = dragon_ulist_delitem(&guid_map_keys, (void*) l_guid, locking);
+                if (derr != DRAGON_SUCCESS) {
+                    dragon_ulist_unlock(&guid_map_keys);
+                    append_err_return(derr, "Failed to delete GUID from PMIx job guid list during finalize");
+                }
+
+                free(l_guid);
+                l_guid = NULL;
+                break;
+            }
+        }
+    }
+    derr = dragon_ulist_unlock(&guid_map_keys);
+    if (derr != DRAGON_SUCCESS)
+        append_err_return(derr, "Failed to unlock Dragon PMIx guid ulist during job's finalize");
+
+
+
+    free(d_job);
+
+
+    no_err_return(DRAGON_SUCCESS);
 }
 
 #endif  // HAVE_PMIX_INCLUDE

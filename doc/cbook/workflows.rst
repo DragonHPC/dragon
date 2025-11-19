@@ -8,3 +8,4 @@ Workflows with Dragon
     dragon_mpi_workflow.rst
     dragon_parsl_mpi_app.rst
     dragon_joblib.rst
+    batch.rst

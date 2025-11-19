@@ -449,10 +449,7 @@ def to_str_iter(seq):
     >>> list(_to_str_iter(pathlib.Path('/hello')))
     ['/hello']
     >>> list(_to_str_iter(None))
-    Traceback (most recent call last):
-    File "<stdin>", line 1, in <module>
-    File "<stdin>", line 30, in _to_str_iter
-    TypeError: 'NoneType' object is not iterable
+    ['']
     >>> list(_to_str_iter(0))
     Traceback (most recent call last):
     File "<stdin>", line 1, in <module>
@@ -464,7 +461,8 @@ def to_str_iter(seq):
     File "<stdin>", line 7, in _to_str_iter
     TypeError: 'bool' object is not iterable
     """
-    if isinstance(seq, (str, bytes, os.PathLike)):
+
+    if isinstance(seq, (str, bytes, os.PathLike, type(None))):
         yield to_str(seq)
     else:
         yield from map(to_str, seq)
@@ -494,9 +492,7 @@ def range_expr(
         args = list(map(int, filter(None, m.groups())))
         if len(args) == 1:
             # Singular value specified
-            args.append(
-                args[0] + 1,
-            )
+            args.append(args[0] + 1)
         else:
             # Add one to stop value, to make the range inclusive
             args[1] += 1

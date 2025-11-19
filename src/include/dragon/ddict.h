@@ -686,7 +686,148 @@ dragon_ddict_local_managers(const dragonDDictDescr_t * dd_descr, uint64_t ** loc
  **/
  dragonError_t
  dragon_ddict_clone(const dragonDDictDescr_t * dd_descr, const char ** serialized_ddicts, const size_t num_serialized_ddicts);
- /** Other Dictionary operations will follow. **/
+
+  /**
+ * @brief Calling this retrieve the frozen state of the dictionary.
+ *
+ * @param dd_descr is a valid DDict descriptor that has previously been created or attached.
+ *
+ * @param frozen is a pointer to the frozen state of the dictionary.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ **/
+dragonError_t
+dragon_ddict_is_frozen(const dragonDDictDescr_t * dd_descr, bool * frozen);
+
+/**
+* @brief Calling this freeze the dictionary.
+*
+* @param dd_descr is a valid DDict descriptor that has previously been created or attached.
+*
+* @param frozen is a pointer to the frozen state of the dictionary.
+*
+* @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_ddict_freeze(const dragonDDictDescr_t * dd_descr);
+
+/**
+* @brief Calling this unfreeze the dictionary.
+*
+* @param dd_descr is a valid DDict descriptor that has previously been created or attached.
+*
+* @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_ddict_unfreeze(const dragonDDictDescr_t * dd_descr);
+
+
+/**
+ * @brief This indicates the start of the batch put.
+ *
+ * @param dd_descr is a serialized descriptor of the dictionary.
+ *
+ * @param persist specifies the type of keys to be written in the batch. Set to true to write
+ * persistent key, false for non-persistent key.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ **/
+dragonError_t
+dragon_ddict_start_batch_put(const dragonDDictDescr_t * dd_descr, bool persist);
+
+/**
+* @brief This indicates the end of the batch put.
+*
+* @param dd_descr is a serialized descriptor of the dictionary.
+*
+* @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_ddict_end_batch_put(const dragonDDictDescr_t * dd_descr);
+
+/**
+* @brief Calling this to perform broadcast put on the key and value.
+*
+* @param dd_descr is a serialized descriptor of the dictionary.
+*
+* @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_ddict_bput(const dragonDDictRequestDescr_t* req_descr);
+
+ /**
+* @brief Calling this to perform broadcast get on the value.
+*
+* @param dd_descr is a serialized descriptor of the dictionary.
+*
+* @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_ddict_bget(const dragonDDictRequestDescr_t* req_descr);
+
+ /**
+* @brief Calling this to advance the persisted checkpoint.
+*
+* @param dd_descr is a serialized descriptor of the dictionary.
+*
+* @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_ddict_advance(const dragonDDictDescr_t * dd_descr);
+
+ /**
+* @brief Calling this to persist current checkpoint to disk.
+*
+* @param dd_descr is a serialized descriptor of the dictionary.
+*
+* @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_ddict_persist(const dragonDDictDescr_t * dd_descr);
+
+/**
+* @brief Calling this to restore the checkpoint.
+*
+* @param dd_descr is a serialized descriptor of the dictionary.
+*
+* @param chkpt_id is the ID of the checkpoint to restore.
+*
+* @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_ddict_restore(const dragonDDictDescr_t * dd_descr, uint64_t chkpt_id);
+
+/**
+* @brief Calling this to get a list of available persisted checkpoint IDs.
+*
+* @param dd_descr is a serialized descriptor of the dictionary.
+*
+* @param persisted_ids is an array of available persisted checkpoint IDs.
+*
+* @param num_persisted_ids is a pointer holds the number of persisted checkpoint IDs.
+*
+* @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+**/
+dragonError_t
+dragon_ddict_persisted_ids(const dragonDDictDescr_t * dd_descr, uint64_t ** persisted_ids, size_t * num_persisted_ids);
+
+/**
+ * @brief Calling this retrieves the number of keys in the distributed dictionary.
+ *
+ * @param dd_descr is a serialized descriptor of the dictionary.
+ *
+ * @param local_length is a pointer to an uint64_t that will hold the number of local
+ * keys up return from the function call when DRAGON_SUCCESS is returned as the return
+ * code. Otherwise, the field will not be initialized.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ **/
+dragonError_t
+dragon_ddict_local_length(const dragonDDictDescr_t * dd_descr, uint64_t* local_length);
+
+
+
+/** Other Dictionary operations will follow. **/
 
 /** @} */ // end of ddict_ops group.
 
