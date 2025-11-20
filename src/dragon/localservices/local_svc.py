@@ -125,13 +125,13 @@ def mk_inf_resources(node_index):
     try:
         inf_muid = dfacts.infrastructure_pool_muid_from_index(node_index)
         ips = dparms.this_process.inf_seg_sz
-        ipn = "%s_%s_" % (_user, os.getpid()) + dfacts.INFRASTRUCTURE_POOL_SUFFIX
+        ipn = f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(dfacts.INFRASTRUCTURE_POOL_SUFFIX)[-3:]}" # "%s_%s_" % (_user, os.getpid()) + dfacts.INFRASTRUCTURE_POOL_SUFFIX
         log.info("inf pool: %s size %s" % (ipn, ips))
         inf_pool = dmm.MemoryPool(ips, ipn, inf_muid)
 
         def_muid = dfacts.default_pool_muid_from_index(node_index)
         dps = dparms.this_process.default_seg_sz
-        dpn = "%s_%s_" % (_user, os.getpid()) + dfacts.DEFAULT_POOL_SUFFIX
+        dpn = f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(dfacts.DEFAULT_POOL_SUFFIX)[-3:]}" # "%s_%s_" % (_user, os.getpid()) + dfacts.DEFAULT_POOL_SUFFIX
         log.info("def pool: %s size %s" % (dpn, dps))
 
         # PJM TODO: how pre-allocated blocks are done here is temporary.  We also need a better way
