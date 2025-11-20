@@ -165,27 +165,28 @@ class build_py(_build_py):
         return modules
 
 
-setup(
-    # cmdclass={"build": build, "build_py": build_py, "clean": clean},
-    cmdclass={"build": build, "build_py": build_py},
-    options={"build_py": {"compile": 1}, "build_ext": {"inplace": 1}},
-    name="dragonhpc",
-    version=os.environ.get("DRAGON_VERSION", "latest"),
-    packages=find_packages(),
-    package_data={"dragon": ["lib/libdragon.so", "lib/libpmod.so"]},
-    ext_modules=extensions,
-    entry_points=entry_points,
-    python_requires=">=3.10",
-    install_requires=[
-        "cloudpickle>=3.0.0",
-        "gunicorn>=22.0.0",
-        "flask>=3.0.3",
-        "pyyaml>=6.0.2",
-        "requests>=2.32.2",
-        "psutil>=5.9.0",
-        "pycapnp>=2.0.0,<2.2.0",
-        "paramiko>=3.5.1",
-        "flask-jwt-extended>=4.7.1",
-        "networkx",
-    ],
-)
+if __name__ == "__main__":
+    setup(
+        # cmdclass={"build": build, "build_py": build_py, "clean": clean},
+        cmdclass={"build": build, "build_py": build_py},
+        options={"build_py": {"compile": 1}, "build_ext": {"inplace": 1}},
+        name="dragonhpc",
+        version=os.environ.get("DRAGON_VERSION", "latest"),
+        packages=find_packages(),
+        package_data={"dragon": ["lib/libdragon.so", "lib/libpmod.so"]},
+        ext_modules=extensions,
+        entry_points=entry_points,
+        python_requires=">=3.10",
+        install_requires=[
+            "cloudpickle>=3.0.0",
+            "gunicorn>=22.0.0",
+            "flask>=3.0.3",
+            "pyyaml>=6.0.2",
+            "requests>=2.32.2",
+            "psutil>=5.9.0",
+            "pycapnp>=2.0.0,<2.2.0",
+            "paramiko>=3.5.1",
+            "flask-jwt-extended>=4.7.1",
+            "networkx",
+        ],
+    )
