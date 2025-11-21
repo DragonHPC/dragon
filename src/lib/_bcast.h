@@ -35,7 +35,7 @@ the pointers assigned in _map_header and _init_header of bcast.c */
 typedef struct dragonBCastHeader_st {
     volatile atomic_uint * num_waiting;
     volatile atomic_uint * num_triggered;
-    uint32_t * triggering;
+    _Atomic(uint32_t) * triggering;
     volatile atomic_uint * shutting_down; // set to 1 when shutting down.
     volatile atomic_int * allowable_count;
     volatile atomic_int * num_to_trigger;
@@ -54,7 +54,7 @@ typedef struct dragonBCastHeader_st {
     atomic_uint * lock_type;
     atomic_uint * lock;
     volatile atomic_uint * spin_list;
-    pid_t * proc_list;
+    _Atomic(pid_t) * proc_list;
     void * payload_area;
 } dragonBCastHeader_t;
 

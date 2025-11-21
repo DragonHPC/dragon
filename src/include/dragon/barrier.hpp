@@ -121,7 +121,7 @@ class Barrier {
     dragonChannelDescr_t mBarrierChannel;
     std::string mSerBarrierChannel;
     action_func mAction;
-    size_t mParties;
+    uint64_t mParties;
 
 };
 

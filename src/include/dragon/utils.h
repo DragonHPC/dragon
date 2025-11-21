@@ -4,7 +4,12 @@
 #include <stdint.h>
 #include <time.h>
 #include <stdbool.h>
+#ifndef __APPLE__
 #include <sys/prctl.h>
+#else
+#include <pthread.h>
+#include <sys/types.h>
+#endif //  __APPLE__
 #include <dragon/return_codes.h>
 #include <dragon/global_types.h>
 

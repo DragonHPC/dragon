@@ -46,8 +46,8 @@ typedef struct dragonChannelHeader_st {
     bool* bounded;
     dragonULInt* initial_sem_value;
     dragonULInt* max_spinners;
-    dragonULInt* available_msgs;
-    dragonULInt* available_blocks;
+    _Atomic(dragonULInt) * available_msgs;
+    _Atomic(dragonULInt) * available_blocks;
     dragonULInt* max_event_bcasts;
     dragonULInt* num_event_bcasts;
     dragonULInt* next_bcast_token;

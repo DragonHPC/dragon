@@ -142,11 +142,20 @@ $(CLEAN_COMPONENTS): clean-%:
 .PHONY: dist
 dist: $(DIST_TARGETS)
 
+OS = $(shell uname -s)
+ifneq ("$(OS)","Darwin")
+	INSTALL_FLAG = "-D"
+else
+	INSTALL_FLAG =
+endif
+
 $(addprefix $(DIST_DIR)/,$(notdir $(filter pkg/%,$(DIST_SOURCES)))): $(DIST_DIR)/%:
-	$(INSTALL) -m $(INSTALL_MODE) -D pkg/$* $@
+	@if [ "$(OS)" == "Darwin" ]; then $(INSTALL) -d $(DIST_DIR)/$(basename $*); fi
+	$(INSTALL) -m $(INSTALL_MODE) $(INSTALL_FLAG) pkg/$* $@
 
 $(addprefix $(DIST_DIR)/,$(filter-out pkg/%,$(DIST_SOURCES))): $(DIST_DIR)/%:
-	$(INSTALL) -m $(INSTALL_MODE) -D $* $@
+	@if [ "$(OS)" == "Darwin" ]; then $(INSTALL) -d $(DIST_DIR)/$(basename $*); fi
+	$(INSTALL) -m $(INSTALL_MODE) $(INSTALL_FLAG) $* $@
 
 .PHONY: distclean
 distclean:

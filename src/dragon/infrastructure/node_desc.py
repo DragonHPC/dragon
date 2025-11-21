@@ -154,7 +154,11 @@ class NodeDescriptor:
             host_id = get_host_id()
 
         if cpu_devices is None:
-            cpu_devices = list(os.sched_getaffinity(0))
+            try:
+                cpu_devices = list(os.sched_getaffinity(0))
+            except AttributeError:
+                # Not all unix systems are supported by sched_getaffinity
+                cpu_devices = list(range(os.cpu_count()))
 
         if accelerators is None:
             accelerators = find_accelerators()

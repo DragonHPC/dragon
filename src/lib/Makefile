@@ -59,10 +59,15 @@ message_defs.capnp.o:
 
 $(libdragon_OBJECTS): $(libdragon_SOURCES) $(libdragon_HEADERS)
 
-LDLIBS += -lstdc++ -lrt -ldl
+LDLIBS += -lstdc++ -ldl
 
+OS = $(shell uname -s)
 libdragon.so: $(libdragon_OBJECTS)
-	$(CC) -L . -L ${VIRTUAL_ENV}/lib -L ${VIRTUAL_ENV}/lib64 -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS)
+	@if [ "$(OS)" != "Darwin" ]; then \
+		$(CC) -L . -L ${VIRTUAL_ENV}/lib -L ${VIRTUAL_ENV}/lib64 -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS) -lrt; \
+	else \
+		$(CC) -L . -L ${VIRTUAL_ENV}/lib -shared -o $@ $^ -lcapnp -lkj $(LDLIBS); \
+	fi
 
 libpmod.so: libdragon.so
 	ln -sf libdragon.so libpmod.so

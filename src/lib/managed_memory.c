@@ -1,4 +1,6 @@
+#ifndef __APPLE__
 #include <numa.h>
+#endif //__APPLE__
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>

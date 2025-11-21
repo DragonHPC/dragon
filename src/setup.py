@@ -1,6 +1,7 @@
 import os
 from functools import partial
 from pathlib import Path
+import platform
 from sysconfig import get_config_var
 
 from setuptools import Extension, find_packages, setup
@@ -12,7 +13,7 @@ from dragon.cli import entry_points
 
 
 ROOTDIR = str(Path(__file__).parent)
-
+LIBRARIES = ["dragon"] + (["rt"] if platform.system() != "Darwin" else [])
 
 def make_relative_rpath_args(path):
     """Construct platform-appropriate RPATH to support binary
@@ -30,7 +31,7 @@ DragonExtension = partial(
         f"{ROOTDIR}/lib/event",
     ],
     library_dirs=[f"{ROOTDIR}/lib"],
-    libraries=["dragon", "rt"],
+    libraries=LIBRARIES,
     extra_link_args=make_relative_rpath_args("lib"),
 )
 
@@ -82,7 +83,7 @@ class build(_build):
 
         _cythonize = partial(
             cythonize,
-            nthreads=int(os.environ.get("DRAGON_BUILD_NTHREADS", os.cpu_count())),
+            nthreads=int(os.environ.get("DRAGON_BUILD_NTHREADS", os.cpu_count() if platform.system() != "Darwin" else 0)),
             show_all_warnings=True,
             compiler_directives={"language_level": "3", "boundscheck": False},
             build_dir=self.build_temp,
@@ -164,27 +165,28 @@ class build_py(_build_py):
         return modules
 
 
-setup(
-    # cmdclass={"build": build, "build_py": build_py, "clean": clean},
-    cmdclass={"build": build, "build_py": build_py},
-    options={"build_py": {"compile": 1}, "build_ext": {"inplace": 1}},
-    name="dragonhpc",
-    version=os.environ.get("DRAGON_VERSION", "latest"),
-    packages=find_packages(),
-    package_data={"dragon": ["lib/libdragon.so", "lib/libpmod.so"]},
-    ext_modules=extensions,
-    entry_points=entry_points,
-    python_requires=">=3.10",
-    install_requires=[
-        "cloudpickle>=3.0.0",
-        "gunicorn>=22.0.0",
-        "flask>=3.0.3",
-        "pyyaml>=6.0.2",
-        "requests>=2.32.2",
-        "psutil>=5.9.0",
-        "pycapnp>=2.0.0,<2.2.0",
-        "paramiko>=3.5.1",
-        "flask-jwt-extended>=4.7.1",
-        "networkx",
-    ],
-)
+if __name__ == "__main__":
+    setup(
+        # cmdclass={"build": build, "build_py": build_py, "clean": clean},
+        cmdclass={"build": build, "build_py": build_py},
+        options={"build_py": {"compile": 1}, "build_ext": {"inplace": 1}},
+        name="dragonhpc",
+        version=os.environ.get("DRAGON_VERSION", "latest"),
+        packages=find_packages(),
+        package_data={"dragon": ["lib/libdragon.so", "lib/libpmod.so"]},
+        ext_modules=extensions,
+        entry_points=entry_points,
+        python_requires=">=3.10",
+        install_requires=[
+            "cloudpickle>=3.0.0",
+            "gunicorn>=22.0.0",
+            "flask>=3.0.3",
+            "pyyaml>=6.0.2",
+            "requests>=2.32.2",
+            "psutil>=5.9.0",
+            "pycapnp>=2.0.0,<2.2.0",
+            "paramiko>=3.5.1",
+            "flask-jwt-extended>=4.7.1",
+            "networkx",
+        ],
+    )
