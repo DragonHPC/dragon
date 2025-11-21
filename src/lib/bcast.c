@@ -620,7 +620,7 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
 {
     int idx = 0;
     bool found = false;
-    atomic_uint expected = 0UL;
+    unsigned int expected = 0UL;
     timespec_t now_time;
 
     /* increment the num_waiting atomically and get our value. We lock here if it is not a
@@ -2116,7 +2116,7 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
        will change in the object as spinners wake up */
     size_t current_spinner_count = (size_t)*handle->header.spin_list_count;
     int idx = 0;
-    atomic_uint expected = 0UL;
+    unsigned int expected = 0UL;
 
     while ((num_spinners < current_spinner_count) && (idx < *(handle->header.spin_list_sz)) && (num_spinners < num_to_trigger)) {
         expected = 1UL;
@@ -2332,7 +2332,7 @@ dragon_bcast_state(dragonBCastDescr_t* bd) {
     if (err != DRAGON_SUCCESS)
         return NULL;
 
-    snprintf(state_str, 999, "BCast State:\n   num_waiting %d\n   num_triggered %d\n   triggering %d\n   state %lx\n   shutting_down %d\n   allowable_count %d\n   num_to_trigger %d\n   payload_sz %d\n   sync_type %d\n   sync_num %d\n",
+    snprintf(state_str, 999, "BCast State:\n   num_waiting %d\n   num_triggered %d\n   triggering %d\n   state %llx\n   shutting_down %d\n   allowable_count %d\n   num_to_trigger %d\n   payload_sz %d\n   sync_type %d\n   sync_num %d\n",
                             *handle->header.num_waiting,
                             *handle->header.num_triggered,
                             *handle->header.triggering,

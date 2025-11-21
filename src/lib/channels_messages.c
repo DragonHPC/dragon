@@ -1631,7 +1631,7 @@ dragon_channel_gatewaymessage_transport_check_send_cmplt(dragonGatewayMessage_t 
             /* The completion interaction with the client timed out. We'll gather some more information. */
             /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
             char err_str[200];
-            snprintf(err_str, 199, "ERROR: GATEWAY SEND MSG COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
+            snprintf(err_str, 199, "ERROR: GATEWAY SEND MSG COMPLETION ERROR (EC=%s) Client PID=%llu and PUID(if available)=%llu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
             fprintf(stderr, "%s\n", err_str);
         }
     }
@@ -1744,7 +1744,7 @@ dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, c
         double end_time = dragon_get_current_time_as_double();
         double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
         double diff = end_time-start_time;
-        snprintf(err_str, 199, "The completion of the send gateway message, for process GW_PID=%lu, PID=%lu and GW_PUID(if available)=%lu,PUID=%lu , timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, _getpid(), *gmsg->_header.client_puid, _get_my_puid(),diff);
+        snprintf(err_str, 199, "The completion of the send gateway message, for process GW_PID=%llu, PID=%llu and GW_PUID(if available)=%llu,PUID=%llu , timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, _getpid(), *gmsg->_header.client_puid, _get_my_puid(),diff);
         dragon_channel_gatewaymessage_detach(gmsg);
         err_noreturn(saved_err_msg);
         free(saved_err_msg);
@@ -1962,7 +1962,7 @@ dragon_channel_gatewaymessage_transport_check_get_cmplt(dragonGatewayMessage_t *
             /* The completion interaction with the client timed out. We'll gather some more information. */
             /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
             char err_str[200];
-            snprintf(err_str, 199, "ERROR: GATEWAY GET MSG COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
+            snprintf(err_str, 199, "ERROR: GATEWAY GET MSG COMPLETION ERROR (EC=%s) Client PID=%llu and PUID(if available)=%llu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
             fprintf(stderr, "%s\n", err_str);
             if (bcast_state != NULL) {
                 fprintf(stderr, "%s\n", bcast_state);
@@ -2142,7 +2142,7 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
         double end_time = dragon_get_current_time_as_double();
         double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
         double diff = end_time-start_time;
-        snprintf(err_str, 199, "The completion of the get gateway message, for process PID=%lu and PUID(if available)=%lu, timed out in the transport  on path %d with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, called_path, diff);
+        snprintf(err_str, 199, "The completion of the get gateway message, for process PID=%llu and PUID(if available)=%llu, timed out in the transport  on path %d with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, called_path, diff);
         dragon_channel_gatewaymessage_detach(gmsg);
         err_noreturn(saved_err_msg);
         free(saved_err_msg);
@@ -2251,7 +2251,7 @@ dragon_channel_gatewaymessage_transport_check_event_cmplt(dragonGatewayMessage_t
             /* The completion interaction with the client timed out. We'll gather some more information. */
             /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
             char err_str[200];
-            snprintf(err_str, 199, "ERROR: GATEWAY EVENT COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
+            snprintf(err_str, 199, "ERROR: GATEWAY EVENT COMPLETION ERROR (EC=%s) Client PID=%llu and PUID(if available)=%llu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
             fprintf(stderr, "%s\n", err_str);
         }
     }
@@ -2357,7 +2357,7 @@ dragon_channel_gatewaymessage_client_event_cmplt(dragonGatewayMessage_t * gmsg, 
         double end_time = dragon_get_current_time_as_double();
         double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
         double diff = end_time-start_time;
-        snprintf(err_str, 199, "The completion of the event gateway message, for process PID=%lu and PUID(if available)=%lu, timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, diff);
+        snprintf(err_str, 199, "The completion of the event gateway message, for process PID=%llu and PUID(if available)=%llu, timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, diff);
         dragon_channel_gatewaymessage_detach(gmsg);
         err_noreturn(saved_err_msg);
         free(saved_err_msg);
