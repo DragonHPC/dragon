@@ -36,14 +36,14 @@ python3 -m pip install --timeout=240 -r src/requirements.txt
 python3 -m pip install --upgrade setuptools
 
 # Configure HSTA for libfabric
-python3 -m dragon.cli dragon-config add --ofi-include=$PWD/ofi/include/ \
-                                        --ofi-build-lib=/usr/lib64/ \
-                                        --ofi-runtime-lib=/usr/lib64/ \
-                                        --ucx-include=$PWD/ucx/include \
-                                        --ucx-build-lib=$PWD/ucx/lib \
-                                        --ucx-runtime-lib=$PWD/ucx/lib \
-                                        --cuda-include=$PWD/cuda/include
-cat ${DRAGON_BASE_DIR}/dragon/.dragon-config.mk
+# python3 -m dragon.cli dragon-config add --ofi-include=$PWD/ofi/include/ \
+#                                         --ofi-build-lib=/usr/lib64/ \
+#                                         --ofi-runtime-lib=/usr/lib64/ \
+#                                         --ucx-include=$PWD/ucx/include \
+#                                         --ucx-build-lib=$PWD/ucx/lib \
+#                                         --ucx-runtime-lib=$PWD/ucx/lib \
+#                                         --cuda-include=$PWD/cuda/include
+# cat ${DRAGON_BASE_DIR}/dragon/.dragon-config.mk
 
 # Build (dev mode)
 make -C src build
