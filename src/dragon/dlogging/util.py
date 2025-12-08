@@ -514,7 +514,7 @@ def _get_logging_mpool(node_index: int):
     """
     _user = os.environ.get("USER", str(os.getuid()))
     lps = int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ)
-    lpn = f"{_user}_{os.getpid()}_{dfacts.LOGGING_POOL_SUFFIX}"
+    lpn = f"D{_user[-3:]}{str(os.getpid())[-3:]}{str(dfacts.LOGGING_POOL_SUFFIX)[-3:]}"  # lpn = f"{_user}_{os.getpid()}_{dfacts.LOGGING_POOL_SUFFIX}"
     lp_muid = dfacts.logging_pool_muid_from_index(node_index)
     logging_mpool = MemoryPool(lps, lpn, lp_muid, None)
     return logging_mpool

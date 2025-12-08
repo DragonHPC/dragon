@@ -1086,7 +1086,7 @@ Performance may be suboptimal."""
 
             self.fe_mpool = MemoryPool(
                 int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ),
-                f"{os.getuid()}_{os.getpid()}_{fe_host_id}" + dfacts.DEFAULT_POOL_SUFFIX,
+                f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(fe_host_id)[-3:]}{str(dfacts.DEFAULT_POOL_SUFFIX)[-3:]}",  # f"{os.getuid()}_{os.getpid()}_{fe_host_id}" + dfacts.DEFAULT_POOL_SUFFIX,
                 dfacts.FE_OVERLAY_TRANSPORT_AGENT_MUID,
             )
             pool_ser_bytes = self.fe_mpool.serialize()

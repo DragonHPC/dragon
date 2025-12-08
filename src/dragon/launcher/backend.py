@@ -619,7 +619,7 @@ class LauncherBackEnd:
             # Create my memory pool
             self.be_mpool = MemoryPool(
                 int(dfacts.DEFAULT_BE_OVERLAY_TRANSPORT_SEG_SZ),
-                f"{os.getuid()}_{os.getpid()}_{self.host_id}" + dfacts.DEFAULT_POOL_SUFFIX,
+                f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(self.host_id)[-3:]}{str(dfacts.DEFAULT_POOL_SUFFIX)[-3:]}",  # f"{os.getuid()}_{os.getpid()}_{self.host_id}" + dfacts.DEFAULT_POOL_SUFFIX,
                 dfacts.be_pool_muid_from_hostid(self.host_id),
             )
             puid, mpool_fname = MemoryPool.serialized_uid_fname(self.be_mpool.serialize())
