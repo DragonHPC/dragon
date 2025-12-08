@@ -2,6 +2,8 @@
   <img src="https://dragonhpc.github.io/dragon/doc/_build/html/_images/dragon_logo.png" alt="Dragon Logo" width="569" height="164">
 </p>
 
+[![build-and-test](https://github.com/DragonHPC/dragon/actions/workflows/test-build.yml/badge.svg?branch=runner-build)](https://github.com/DragonHPC/dragon/actions/workflows/test-build.yml)
+
 Dragon is a composable runtime that lets users create scalable, complex, and resilient HPC and AI applications and workflows through standard Python interfaces. Dragon provides capabilities to address many of the challenges around programmability, memory management, transparency, and efficiency on distributed systems. Built by a team with decades of experience developing software for Cray supercomputers, Dragon lets you write familiar code, making it easy to scale from a laptop to a supercomputer.
 
 <p align="center">
