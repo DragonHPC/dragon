@@ -14,9 +14,9 @@ numpy>=2.0.2
 numcodecs>=0.13.1,<0.16.0
 parameterized>=0.9.0
 parsl>=2024.9.23
+patchelf>=0.18.1.0a1
 psutil>=6.0.0
 pycapnp>=2.0.0,<2.2.0
-pynvml>=12.0.0
 PyYAML>=6.0.2
 requests>=2.32.3
 setuptools>=75.6.0
@@ -34,3 +34,4 @@ kubernetes>=32.0.0
 zarr==2.18.3
 paramiko>=3.5.1
 networkx
+nvidia-ml-py

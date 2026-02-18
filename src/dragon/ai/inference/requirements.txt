@@ -1,0 +1,14 @@
+torch
+torchvision
+torchaudio
+transformers
+accelerate
+pandas
+flask
+gunicorn
+pycapnp
+ipykernel
+argparse
+python-dotenv
+nvidia-ml-py
+openpyxl

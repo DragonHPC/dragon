@@ -1,0 +1,58 @@
+#################################
+# These are required args.
+#################################
+required:
+  model_name: meta-llama/Llama-3.1-8B # Type: (string). Definition: Primary HuggingFace LLM name or local filepath.
+  hf_token: <insert>  # Type: (string). Definition: HuggingFace token to access any closed model/LLM.
+  tp_size: 1 # Type: (int). Definition: Number of devices to split the model across GPUs using tensor-parallelism.
+  flask_secret_key: <insert> # Type: (string). Definition: Arbitrary unique secret key for the flask app.
+
+
+#################################
+# All args below are optional
+#################################
+hardware:
+  num_nodes: -1 # Type: (int). Default: '-1' to automatically infer number of available Nodes in your allocation. Definition: Manually subset nodes with your cluster allocation.
+  num_gpus: -1 # Type: (int). Default: '-1' to automatically infer number of available GPUs in your allocation. Definition: Manually subset GPUs with your cluster allocation.
+  num_inf_wrkrs_per_cpu: 4 # Type: (int). Definition: Load balancing feature that defines the number of GPU inference workers assigned to each CPU worker head.
+
+
+llm:
+  dtype: bfloat16 # Type: (string). Default: 'half'. Other options ['half', 'float32', 'float16', 'int8', 'bfloat16']. Definition: Desired model precision data-type. More info: https://deepspeed.readthedocs.io/en/latest/inference-init.html
+  max_tokens: 100 # Type: (int). Definition: Maximum number of tokens that the inferencing engine can work with. More info: https://deepspeed.readthedocs.io/en/latest/inference-init.html
+  padding_side: left # Type: (string). Default: 'left'. Other options ['right']. Definition: The side of which the model should have padding applied. More info: https://huggingface.co/docs/transformers/en/main_classes/tokenizer
+  truncation_side: left # Type: (string). Default: 'left'. Other options ['right']. Definition: The side of which the model should have truncation applied. More info: https://huggingface.co/docs/transformers/en/main_classes/tokenizer
+  top_k: 50 # Type: (int). Definition: The number of highest probability vocabulary tokens to keep for top-k flitering. More info: https://huggingface.co/docs/transformers/en/main_classes/text_generation
+  top_p: 0.95 # Type: (float). Definition: If set to float<1, only the smallest set of most probable tokens that add up to top_p or higher are kept for generation. More info: https://huggingface.co/docs/transformers/en/main_classes/text_generation
+  system_prompt: # Type: (list of string). Definition: The instructions you want to pass to the LLM to guide response behavior.
+    - You are a concise and knowledgeable assistant.
+    - Provide accurate answers using clear language.
+    - Do not provide tabular information.
+    - End your response with the token <END>.
+
+
+input_batching:
+  # Master setting. If toggled to False, de-activates feature. All other fine-tune settings are disregarded.
+  toggle_on: True # Default: True. Type: (bool). Other options ['False']. Definition: If true, enables multiple-input batching. If false, performs single-input inference.
+  type: dynamic # Default: dynamic. Other options ['dynamic', pre-batch]. Definition: If dynamic, inputs are automatically batched for you. If pre-batch, inputs need to be pre-batched and sent to the query function.
+  # Fine-Tune settings
+  input_batch_wait_seconds: 0.1 # Type: (float). Definition: Wait at least 'n' seconds to batch all inputs within that time.
+  max_batch_limit: 60 # Type: (int). Definition: Limits the maximum number of inputs batched into a single LLM inference call. Note: This criteria only triggers if inputs received in a current 'input_batch_wait_seconds' delta, exceed that max input limit set.
+
+
+guardrails:
+  # Master setting. If toggled to False, de-activates feature. All other fine-tune settings are disregarded.
+  toggle_on: True # Default: True. Type: (bool). Other options ['False']. Definition: If true, enables the pre-processing guardrails module. If false, disables it.
+  # Fine-Tune settings
+  prompt_guard_model: meta-llama/Prompt-Guard-86M # Default: 'meta-llama/Prompt-Guard-86M'. Type: (string). Definition: GenAI Model for calculating jailbreak score. More info: https://huggingface.co/meta-llama/Prompt-Guard-86M
+  prompt_guard_sensitivity: 0.5 # Type: (float). Range [0 to 1]. Default: '0.5'. Definition: Defines threshold to categorize jailbreak score as malicious or not.
+
+
+dynamic_inf_wrkr:
+  # Master setting. If toggled to False, de-activates feature. All other fine-tune settings are disregarded.
+  toggle_on: True # Default: True. Type: (bool). Other options ['False']. Definition: If true, enables dynamic spin-up and spin-down of GPU workers for energy optimization. If false, disables it.
+  # Fine-Tune settings
+  min_active_inf_wrkrs_per_cpu: 1 # Type: (int). [0,node-max] Definition: The minimum number of active inference-workers per cpu-worker head.
+  spin_down_threshold_seconds: 3600 # Type: (int). Definition: (seconds). Number of idle time seconds to wait before spinning down inference-worker.
+  spin_up_threshold_seconds: 3 # Type: (int). Definition: Rolling window (seconds) to assess prompt concurrency for spinning up inference-worker.
+  spin_up_prompt_threshold: 5 # Type: (int). Definition: Frequency of prompt concurrency to be received in the last 'spin_up_threshold_seconds' delta, to spin up new inference-worker.

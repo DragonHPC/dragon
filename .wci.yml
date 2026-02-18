@@ -11,8 +11,8 @@ description: Dragon is a composable runtime that lets users create scalable, com
 language: Python # will attempt to fetch GitHub repository main language if not provided
 
 release: # will attempt to fetch latest release from GitHub repository if not provided
-  version: 0.13
-  date: 2025-11-06 # format: YYYY-MM-DD
+  version: 0.13.1
+  date: 2026-02-17 # format: YYYY-MM-DD
   url: https://pypi.org/project/dragonhpc/
 
 documentation: # nothing will be used if not provided
