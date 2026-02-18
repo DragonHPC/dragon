@@ -1,0 +1,37 @@
+[build-system]
+requires = [
+    "setuptools",
+    "Cython~=3.0a"
+]
+build-backend = "setuptools.build_meta:__legacy__"
+
+[project]
+name = "dragonhpc"
+authors = [
+    {name="Dragon Team", email="dragonhpc@hpe.com"}
+]
+license = {file="pkg/LICENSE.md"}
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux"
+]
+description = "Dragon is a composable distributed run-time for managing dynamic processes, memory, and data at scale through high-performance communication objects."
+readme = "pkg/README.md"
+dynamic = [
+    "version",
+    "requires-python",
+    "dependencies",
+    "entry-points",
+    "scripts"
+]
+
+
+[project.urls]
+Homepage = "http://dragonhpc.org/portal/index.html"
+Documentation = "https://dragonhpc.github.io/dragon/doc/_build/html/index.html"
+Repository = "https://github.com/DragonHPC/dragon"
+
+[tool.black]
+line-length = 120
+force-exclude = "return_codes_map_maker.py" # Black formatter wants to insert spaces where they're undesirable

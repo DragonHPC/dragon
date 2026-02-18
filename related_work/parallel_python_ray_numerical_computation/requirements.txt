@@ -1,0 +1,4 @@
+numpy
+psutil
+ray
+scipy
