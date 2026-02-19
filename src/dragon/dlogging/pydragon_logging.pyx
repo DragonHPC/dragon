@@ -1,6 +1,5 @@
 from dragon.dtypes_inc cimport *
 from dragon.managed_memory cimport *
-
 from libc.string cimport strcpy, strlen
 from libcpp cimport bool
 
@@ -83,7 +82,7 @@ cdef class DragonLogger:
     def __cinit__(self):
         self._is_serialized = C_FALSE
 
-    def __init__(self, MemoryPool mpool, lattrs=None, uid=0, mode=DRAGON_LOGGING_FIRST):
+    def __init__(self, MemoryPool mpool, lattrs=None, uid=0, mode=DRAGON_LOGGING_LOSSLESS):
         """Create a DragonLogger instance for send/recv of infrastructure logs
 
         Args:
@@ -223,18 +222,19 @@ cdef class DragonLogger:
         cdef:
             dragonError_t derr
             dragonLogPriority_t c_priority
-            char * c_str
+            bytes msg_bytes = msg.encode('utf-8')
+            char* msg_c_str
+            void* log_ptr
+            size_t log_len
 
-        # Using 'with nogil:' means cython won't allow unsafe use of temp python strings or coercions
-        #  so this is a workaround
-        py_str = msg.encode('utf-8')
-        c_str = <char *>malloc(strlen(py_str)+1)
-        strcpy(c_str, py_str)
+        msg_c_str = msg_bytes
+        log_ptr = <void*> msg_c_str
+
         c_priority = <dragonLogPriority_t> priority
-        with nogil:
-            derr = dragon_logging_put(&self._logger, c_priority, c_str)
+        log_len = len(msg_bytes)
 
-        free(c_str) # release temp c string
+        with nogil:
+            derr = dragon_logging_put(&self._logger, c_priority, log_ptr, log_len)
 
         if derr != DRAGON_SUCCESS:
             raise DragonLoggingError(derr, "Couldn't put message into Logger")
@@ -251,15 +251,16 @@ cdef class DragonLogger:
             dragonLogPriority_t c_priority
             timespec_t timer
             timespec_t * time_ptr = NULL
-            void * msg_out
-            char * msg_str
+            void* log
+            size_t log_len
+            char * msg_out
 
         if timeout is not None:
             time_ptr = _compute_timeout(timeout, NULL, &timer)
 
         c_priority = <dragonLogPriority_t> priority
         with nogil:
-            derr = dragon_logging_get(&self._logger, c_priority, &msg_out, time_ptr)
+            derr = dragon_logging_get(&self._logger, c_priority, &log, &log_len, time_ptr)
 
         # Return NULL
         if derr == DRAGON_LOGGING_LOW_PRIORITY_MSG:
@@ -271,14 +272,12 @@ cdef class DragonLogger:
 
             raise DragonLoggingError(derr, "Could not retrieve message")
 
-        msg_str = <char*>msg_out # Convert to char
-        msg_str += sizeof(dragonLogPriority_t) # Skip priority value header
-
         # Turn into a python string
-        msg_len = len(msg_str)
-        encoded_obj = msg_str[:msg_len]
-        free(msg_out)
-        return encoded_obj.decode("utf-8")
+        cdef char* byte_ptr = <char*> log
+        log_bytes = byte_ptr[:log_len]
+        msg = log_bytes.decode('utf-8')
+        free(log)
+        return msg
 
     def num_logs(self):
         """Get number of logs in queue

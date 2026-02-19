@@ -32,6 +32,12 @@ extern "C" {
 #define DRAGON_CHANNEL_DEFAULT_MAX_EVENT_BCASTS 8
 #define DRAGON_CHANNEL_DEFAULT_MAX_GW_ENV_NAME_LENGTH 200
 
+/* These FLAGS are used in the internal flags structure to
+   keep track of some shared state in the channel. */
+#define DRAGON_CHANNEL_FLAGS_NONE 0
+#define DRAGON_CHANNEL_FLAGS_HSTA_CLEANUP_REQUESTED 1
+
+
 /* attributes and header info embedded into a Channel */
 /* NOTE: This must match the pointers assigned
    in _map_header of channels.c */
@@ -42,12 +48,13 @@ typedef struct dragonChannelHeader_st {
     dragonULInt* lock_type;
     dragonULInt* oflag;
     dragonULInt* fc_type;
+    dragonULInt* flags;
     bool* semaphore;
     bool* bounded;
     dragonULInt* initial_sem_value;
     dragonULInt* max_spinners;
-    dragonULInt* available_msgs;
-    dragonULInt* available_blocks;
+    _Atomic(dragonULInt)* available_msgs;
+    _Atomic(dragonULInt)* available_blocks;
     dragonULInt* max_event_bcasts;
     dragonULInt* num_event_bcasts;
     dragonULInt* next_bcast_token;

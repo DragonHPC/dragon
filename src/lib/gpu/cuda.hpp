@@ -42,6 +42,12 @@ public:
     dragonError_t
     memset(void *addr, int val, size_t num_bytes) override;
 
+    dragonError_t
+    host_register(void *addr, size_t size) override;
+
+    dragonError_t
+    host_unregister(void *addr) override;
+
     std::string
     get_errstr(const char *event, int cuda_rc) override;
 };

@@ -10,7 +10,9 @@
 
 #define SERFILE "a.out"
 
+#ifndef __APPLE__
 #pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
+#endif
 
 static size_t VALUE_LENGTH = 10; // length of each value
 static timespec_t TIMEOUT = {0,50000000000}; // Timeouts will be 5 second by default
@@ -1578,7 +1580,7 @@ dragonError_t test_local_manager(const char * ddict_ser, const char * local_mana
 
     char local_manager_id_str[256];
     // convert to string for string comparison
-    sprintf(local_manager_id_str, "%ld", local_manager_id);
+    sprintf(local_manager_id_str, "%" PRIu64, local_manager_id);
     assert(strcmp(local_manager_id_str, local_manager) == 0);
 
     // Detach from the dictionary
@@ -1605,7 +1607,7 @@ dragonError_t test_main_manager(const char * ddict_ser, const char* main_manager
 
     char main_manager_id_str[256];
     // convert to string for string comparison
-    sprintf(main_manager_id_str, "%ld", main_manager_id);
+    sprintf(main_manager_id_str, "%" PRIu64, main_manager_id);
     assert(strcmp(main_manager_id_str, main_manager) == 0);
 
     // Detach from the dictionary
@@ -2156,7 +2158,7 @@ dragonError_t test_empty_managers(const char * ddict_ser) {
         err_fail(err, "Could not get empty managers");
 
     for (size_t i=0 ; i<num_empty_managers ; i++) {
-        fprintf(stderr, "empty manager: %ld\n", ids[i]);
+        fprintf(stderr, "empty manager: %" PRIu64 "\n", ids[i]);
         fflush(stderr);
     }
 
@@ -2185,7 +2187,7 @@ dragonError_t test_local_managers(const char * ddict_ser) {
 
     fprintf(stderr, "local managers: \n");
     for(size_t i=0 ; i<num_local_managers ; i++){
-        fprintf(stderr, "%ld\n", local_manager_ids[i]);
+        fprintf(stderr, "%" PRIu64 "\n", local_manager_ids[i]);
         fflush(stderr);
     }
 
@@ -2495,7 +2497,7 @@ dragonError_t test_bput_batch(const char * ddict_ser, uint64_t num_managers) {
         // each manager should have all keys
         for (uint64_t j=0 ; j<num_keys ; j++) {
             char key[200];
-            snprintf(key, 199, "dragon%lu", j);
+            snprintf(key, 199, "dragon%" PRIu64, j);
             err = _bget_read_mem(&ddict, key, vals, num_vals);
             if (err != DRAGON_SUCCESS)
                 err_fail(err, "Caught err in bget request");
@@ -2587,9 +2589,9 @@ dragonError_t test_bput_multiple_batch(const char * ddict_ser, uint64_t num_mana
         if (err != DRAGON_SUCCESS)
             err_fail(err, "Could not start batch put");
 
-        for (size_t i=0 ; i<num_keys ; i++) {
+        for (uint64_t i=0 ; i<num_keys ; i++) {
             char key[200];
-            snprintf(key, 199, "dragon_%lu_%lu", i_batch, i);
+            snprintf(key, 199, "dragon_%" PRIu64 "_%" PRIu64, i_batch, i);
             err = _bput(&ddict, key, vals, num_vals);
             if (err != DRAGON_SUCCESS)
                 err_fail(err, "Could not perform bput op.");
@@ -2609,7 +2611,7 @@ dragonError_t test_bput_multiple_batch(const char * ddict_ser, uint64_t num_mana
         for(uint64_t j_batch=0 ; j_batch<num_batches ; j_batch++) {
             for (uint64_t j=0 ; j<num_keys ; j++) {
                 char key[200];
-                snprintf(key, 199, "dragon_%lu_%lu", j_batch, j);
+                snprintf(key, 199, "dragon_%" PRIu64 "_%" PRIu64, j_batch, j);
                 err = _bget_read_mem(&ddict, key, vals, num_vals);
                 if (err != DRAGON_SUCCESS)
                     err_fail(err, "Caught err in bget request");
@@ -2716,10 +2718,10 @@ dragonError_t test_persist(const char * ddict_ser) {
 
     char key[] = "dragon";
     for (uint64_t i=0 ; i<5 ; i++) {
+        err = _put(&ddict, false, key, vals, num_vals);
+        if (err != DRAGON_SUCCESS)
+            err_fail(err, "Failed to put key.");
         if (i % 2 == 0) { // persist chkpt 0, 2, 4
-            err = _put(&ddict, false, key, vals, num_vals);
-            if (err != DRAGON_SUCCESS)
-                err_fail(err, "Failed to put key.");
             err = dragon_ddict_persist(&ddict);
             if (err != DRAGON_SUCCESS)
                 err_fail(err, "Failed to persist checkpoint.");

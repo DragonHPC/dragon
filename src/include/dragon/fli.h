@@ -114,6 +114,11 @@ typedef struct dragonFLIAttr_st {
      it is deposited off-node as well before the send handle close
      completes. The default is false. */
 
+    dragonULInt debug;
+
+    /*!< This is a debug constant which has internal use only. If set by a
+    user it is ignored. */
+
 } dragonFLISendAttr_t;
 
 /**

@@ -1,4 +1,3 @@
-#define _GNU_SOURCE
 #ifdef HAVE_PMIX_INCLUDE
 
 #include <dirent.h>

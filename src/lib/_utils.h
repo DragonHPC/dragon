@@ -25,6 +25,18 @@ rep_nop(void)
 #define PAUSE()
 #endif
 
+#ifdef __APPLE__
+#  define LU "%llu"
+#  define LX "%llx"
+#  define LD "%lld"
+#  define X "%lx"
+#else
+#  define LU "%lu"
+#  define LX "%lx"
+#  define LD "%ld"
+#  define X "%x"
+#endif
+
 void
 _set_thread_local_mode_channels(bool set_thread_local);
 

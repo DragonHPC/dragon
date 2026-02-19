@@ -32,7 +32,6 @@ class TestIORedirection(unittest.TestCase):
         self.assertEqual("Hello World\n", result)
         proc.stdout.close()
 
-    @unittest.skip("Needs work - hangs - AICI-1999")
     def test_native_process_stdout_to_devnull(self):
         """
         No output should appear on the terminal from running this test.
@@ -55,7 +54,7 @@ class TestIORedirection(unittest.TestCase):
         except EOFError:
             pass
 
-        self.assertEqual("/usr/bin/cat: notafile: No such file or directory\n", result)
+        self.assertIn("No such file or directory", result)
         proc.stderr.close()
 
     def test_native_process_stderr_to_devnull(self):
@@ -68,6 +67,7 @@ class TestIORedirection(unittest.TestCase):
 
         self.assertEqual(proc.stderr, None)
 
+    @unittest.skip("Needs work - hangs - AICI-1999")
     def test_native_process_stdin(self):
         exe = shutil.which("cat")
         proc = Popen(executable=exe, args=["-"], stdin=Popen.PIPE, stdout=Popen.PIPE)
@@ -99,7 +99,7 @@ class TestIORedirection(unittest.TestCase):
         except EOFError:
             pass
 
-        self.assertEqual("/usr/bin/cat: notafile: No such file or directory\n", result)
+        self.assertIn("No such file or directory", result)
         proc.stdout.close()
 
 

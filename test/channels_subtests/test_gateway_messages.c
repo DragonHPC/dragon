@@ -132,7 +132,7 @@ check_send_gateway_message_structure(dragonGatewayMessage_t * gmsg, dragonChanne
     }
 
     if (gmsg->target_hostid != dragon_host_id()) {
-        printf("Validation of GatewayMessage hostid failed (got %lu, expected %lu)\n", gmsg->target_hostid,
+        printf("Validation of GatewayMessage hostid failed (got %" PRIu64 ", expected %" PRIu64 ")\n", gmsg->target_hostid,
                dragon_host_id());
         return FAILED;
     }
@@ -159,12 +159,12 @@ check_send_gateway_message_structure(dragonGatewayMessage_t * gmsg, dragonChanne
     }
 
     if (mattr.clientid != clientid) {
-        printf("Validation of GatewayMessage clientid failed (got %lu, expected %lu)\n", mattr.clientid, clientid);
+        printf("Validation of GatewayMessage clientid failed (got %" PRIu64 ", expected %" PRIu64 ")\n", mattr.clientid, clientid);
         return FAILED;
     }
 
     if (mattr.hints != msg_hints) {
-        printf("Validation of GatewayMessage msg_hints failed (got %lu, expected %lu)\n", mattr.hints, msg_hints);
+        printf("Validation of GatewayMessage msg_hints failed (got %" PRIu64 ", expected %" PRIu64 ")\n", mattr.hints, msg_hints);
         return FAILED;
     }
 

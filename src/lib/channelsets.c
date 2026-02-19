@@ -194,6 +194,7 @@ dragonError_t
 dragon_channelset_create(dragonChannelDescr_t * descr_list[], int num_channels, const short event_mask, dragonMemoryPoolDescr_t * pool, dragonChannelSetAttrs_t * attrs, dragonChannelSetDescr_t * chset_descr)
 {
     dragonError_t err;
+    char* err_msg;
 
     if (descr_list == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid channel descriptor list. It must be non-null.");
@@ -290,7 +291,9 @@ dragon_channelset_create(dragonChannelDescr_t * descr_list[], int num_channels, 
     no_err_return(DRAGON_SUCCESS);
 
 chset_create_cleanup_3:
+    err_msg = dragon_getrawerrstr();
     dragon_bcast_destroy(&newchset->bcast);
+    dragon_replace_errstr(err_msg);
 
 chset_create_cleanup_2:
     free(newchset->channels);

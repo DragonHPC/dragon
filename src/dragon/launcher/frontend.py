@@ -114,7 +114,7 @@ class LauncherFrontEnd:
 
     def __init__(self, args_map, sigint_trigger=None):
         log = logging.getLogger(dls.LA_FE).getChild("LauncherFrontEnd init")
-        log.info(f"start in pid {os.getpid()}, pgid {os.getpgid(0)}")
+        log.info("start in pid %s, pgid %s", os.getpid(), os.getpgid(0))
 
         # Discover whether the transport service test mode is being requested
         # or not.
@@ -303,17 +303,28 @@ lower performing TCP transport agent for backend network communication.
                 raise TimeoutError
             log.info("got GSTeardown out")
 
-            while True:
-                msg = dlutil.get_with_timeout(self.conn_in, timeout=self._sigint_timeout)
+            try:
+                while True:
+                    try:
+                        msg = dlutil.get_with_timeout(self.conn_in, timeout=self._sigint_timeout)
 
-                if isinstance(msg, dmsg.BEHalted):
-                    log.debug("Breaking due to BEHalted")
-                    break
-                elif type(msg) in LauncherFrontEnd._DTBL:
-                    self._DTBL[type(msg)][0](self, msg=msg)
-                else:
-                    log.debug("raising runtime error due to unknown message")
-                    raise RuntimeError
+                        if isinstance(msg, dmsg.BEHalted):
+                            log.debug("Breaking due to BEHalted")
+                            break
+                        elif type(msg) in LauncherFrontEnd._DTBL:
+                            log.debug("routing message of type %s", type(msg))
+                            self._DTBL[type(msg)][0](self, msg=msg)
+                        else:
+                            log.debug("raising runtime error due to unknown message")
+                            raise RuntimeError
+                    except Exception as e:
+                        if str(e) == "Abnormal exit detected":
+                            log.debug("continuing after receiving abnormal exit detected")
+                            continue
+                        log.debug("exception during abnormal takedown: %s", e)
+                        raise e
+            finally:
+                log.debug("Exiting abnormal backend takedown loop")
 
     def _wait_on_wlm_proc_exit(self, timeout=30):
         """Short function for doing a wait on wlm subprocess. Allows for easier mocking"""
@@ -330,12 +341,13 @@ lower performing TCP transport agent for backend network communication.
         if not sigint:
             self._abnormal_termination.set()
         else:
-            log.debug(f"executing abnormal cleanup due to SIGINT rather than AbnormalTermination: {self._STATE}")
+            log.debug("executing abnormal cleanup due to SIGINT rather than AbnormalTermination: %s", self._STATE)
 
         # Set an alarm just in case
         try:
             self._takedown_abnormal_backend(sigint=sigint)
-        except (subprocess.TimeoutExpired, RuntimeError, TimeoutError):
+        except (subprocess.TimeoutExpired, RuntimeError, TimeoutError) as e:
+            log.debug("teardown failed with exception %s, proceeding to kill backend", e)
             pass
 
         try:
@@ -350,8 +362,8 @@ lower performing TCP transport agent for backend network communication.
             else:
                 if self._wlm is not WLM.K8S:
                     self._wait_on_wlm_proc_exit(timeout=self._sigint_timeout)
-        except (subprocess.TimeoutExpired, RuntimeError, TimeoutError):
-            log.debug("forcibly kill wlm proc")
+        except (subprocess.TimeoutExpired, RuntimeError, TimeoutError) as e:
+            log.debug("forcibly kill wlm proc due to exception %s", e)
             self._kill_backend()
 
         self._close_comm_overlaynet(abnormal=True)
@@ -379,7 +391,7 @@ lower performing TCP transport agent for backend network communication.
 
         # If we're here due to an abnormal termination, we need
         # to make a good faith effort to teardown the backend
-        log.debug(f"current state: {self._STATE}")
+        log.debug("current state: %s", self._STATE)
         if FrontendState.LAUNCHER_DOWN > self._STATE > FrontendState.STARTUP:
             log.debug("Attemping to take down backend before killing it all off")
             self._cleanup_abnormal_state(sigint=sigint)
@@ -410,7 +422,7 @@ lower performing TCP transport agent for backend network communication.
         log.info("Channel tree initializing...")
         ping_back = dlutil.get_with_blocking(self.local_inout)
         assert isinstance(ping_back, dmsg.OverlayPingLA)
-        log.debug(f"recvd msg type {type(ping_back)}")
+        log.debug("recvd msg type %s", type(ping_back))
         self._STATE = FrontendState.OVERLAY_UP
 
     def _close_overlay(self, abnormal=False):
@@ -430,7 +442,7 @@ lower performing TCP transport agent for backend network communication.
                 except TimeoutError:
                     log.debug("timeout on recv dmsg.OverlayHalted")
                 else:
-                    log.debug(f"received {overlay_halted} from local TCP agent")
+                    log.debug("received %s from local TCP agent", overlay_halted)
                     assert isinstance(overlay_halted, dmsg.OverlayHalted)
 
             except (AttributeError, ConnectionError):
@@ -447,8 +459,11 @@ lower performing TCP transport agent for backend network communication.
 
     def _close_threads(self, abnormal=False):
         log = logging.getLogger(dls.LA_FE).getChild("close_threads")
+        log.debug("entering _close_threads abnormal=%s", abnormal)
+
         halt_overlay_msg = dmsg.HaltOverlay(tag=dlutil.next_tag())
         halt_logging_msg = dmsg.HaltLoggingInfra(tag=dlutil.next_tag())
+
         if self.recv_overlaynet_thread is not None:
             if self.recv_overlaynet_thread.is_alive():
                 if abnormal:
@@ -474,6 +489,7 @@ lower performing TCP transport agent for backend network communication.
                     self.send_msg_to_overlaynet("A", halt_overlay_msg)
                 self.send_overlaynet_thread.join()
         log.info("send_overlaynet_thread joined")
+
         if self.recv_logs_from_overlaynet_thread is not None:
             if self.recv_logs_from_overlaynet_thread.is_alive():
                 # Send it a message to make sure it can get out
@@ -604,7 +620,7 @@ lower performing TCP transport agent for backend network communication.
         if self._STATE.value in LauncherFrontEnd._STBL:
             self._STBL[self._STATE.value][0](self)
         else:
-            log.warning(f"SIGINT detected in {self._STATE} and no routing exists for it")
+            log.warning("SIGINT detected in %s and no routing exists for it", self._STATE)
 
     def _sighup_handler(self, *args):
         log = logging.getLogger("_sighup_handler")
@@ -613,15 +629,27 @@ lower performing TCP transport agent for backend network communication.
         self._sigint_count = 2
 
         print("Frontend detected SIGHUP or SIGTERM from WLM. Attempting to clean up...", flush=True)
-        log.debug("caught sighup or sigterm on frontend")
-        self._set_quick_teardown()
+        log.debug("caught sighup on frontend")
+
+        # Commented out the below call to self._set_quick_teardown() as part of AICI-1963. Calling
+        # _set_quick_teardown reduces the _sigint_timeout from a full 5 seconds to .01 seconds.
+        # Effectively, this means that the FE launcher will try to 'gracefully' shutdown for 0.01
+        # seconds, and then start shooting threads in the head. By allowing the full 5 seconds, the
+        # backends are allowed to communicate with the frontend and proceed through their shutdown
+        # sequence. If things are not gracefully shutdown after 5 seconds, the FE launcher will again
+        # start shooting threads. Or, at least that's the theory. Leaving this commented out for now
+        # to see if it resolves issues seen in AICI-1963 or if further changes are needed.
+
+        # self._set_quick_teardown()
 
         if self._STATE.value in LauncherFrontEnd._STBL:
             self._STBL[self._STATE.value][0](self)
         else:
-            log.warning(f"SIGHUP or SIGTERM detected in {self._STATE} and no routing exists for it")
+            log.warning("SIGHUP or SIGTERM detected in %s and no routing exists for it", self._STATE)
 
     def _sigterm_handler(self, *args):
+        log = logging.getLogger("_sigterm_handler")
+        log.debug("caught sigterm on frontend")
         self._dragon_cleanup_bumpy_exit()
 
     @route(FrontendState.NET_CONFIG.value, _STBL)
@@ -732,7 +760,7 @@ lower performing TCP transport agent for backend network communication.
             # After attaching, get the cuid and compare it against the set
             # of already seen cuids. Throw an exception if already seen.
             # Delete the set after this loop.
-            log.debug(f"received descriptor: {be_up.be_ch_desc} and host_id: {be_up.host_id}")
+            log.debug("received descriptor: %s and host_id: %s", be_up.be_ch_desc, be_up.host_id)
             for key, node_desc in net_conf.items():
                 if str(be_up.host_id) == str(node_desc.host_id):
                     forwarding[key] = NodeDescriptor(
@@ -772,7 +800,10 @@ lower performing TCP transport agent for backend network communication.
             # If we haven't grabbed enough nodes, do so and make sure they're active
             if fe_node_index < this_process.overlay_fanout and net_conf[str(idx)].state is NodeDescriptor.State.ACTIVE:
                 log.debug(
-                    f"constructing FENodeIdxBE for {net_conf[str(idx)]} (idx = {idx} | fe_node_index = {fe_node_index})"
+                    "constructing FENodeIdxBE for %s (idx = %s | fe_node_index = %s)",
+                    net_conf[str(idx)],
+                    idx,
+                    fe_node_index,
                 )
                 try:
                     be_sdesc = B64.from_str(forwarding[str(idx)].overlay_cd)
@@ -783,14 +814,14 @@ lower performing TCP transport agent for backend network communication.
 
                     # Update the node index to the one we're talking to
                     fe_node_idx_msg.node_index = fe_node_index
-                    log.debug(f"sending {fe_node_idx_msg.uncompressed_serialize()}")
+                    log.debug("sending %s", fe_node_idx_msg.uncompressed_serialize())
                     conn_out.send(fe_node_idx_msg.serialize())
 
                     conn_outs[fe_node_index] = conn_out
                     fe_node_index = fe_node_index + 1
 
                 except ChannelError as ex:
-                    log.fatal(f"could not connect to BE channel with host_id {be_up.host_id}")
+                    log.fatal("could not connect to BE channel with host_id %s", be_up.host_id)
                     raise RuntimeError("Connection with BE failed") from ex
 
         log.info("sent all FENodeIdxBE msgs")
@@ -809,7 +840,7 @@ lower performing TCP transport agent for backend network communication.
         for index, node in self.net_conf.items():
             for host_id in host_ids:
                 if node.host_id == host_id:
-                    log.debug(f"setting node index {index}, host_id {host_id} hostname {node.host_name} to down")
+                    log.debug("setting node index %s, host_id %s hostname %s to down", index, host_id, node.host_name)
                     node.state = NodeDescriptor.State.DOWN
 
     def _define_node_pools(self, net_conf: dict):
@@ -824,7 +855,7 @@ lower performing TCP transport agent for backend network communication.
         # Work out logic for our node counts:
         nnodes = len(net_conf) - 1  # Remove the frontend from consideration
         all_avail_nodes = nnodes
-        log.debug(f"requested {self.nnodes} and got {nnodes}")
+        log.debug("requested %s and got %s", self.nnodes, nnodes)
         if self.nnodes > 0:
             if self.nnodes > nnodes:
                 log.exception("too many nodes requested")
@@ -847,7 +878,7 @@ lower performing TCP transport agent for backend network communication.
                     raise RuntimeError(msg)
             else:
                 self.n_idle = all_avail_nodes - self.nnodes
-            log.debug(f"Executing resilient mode with {self.n_idle} idle nodes")
+            log.debug("Executing resilient mode with %s idle nodes", self.n_idle)
 
         # Make sure the number of active/idle nodes matches what's been requested
         n_active = len(
@@ -857,7 +888,7 @@ lower performing TCP transport agent for backend network communication.
         n_down = len(
             [node for index, node in net_conf.items() if index != "f" and node.state is NodeDescriptor.State.DOWN]
         )
-        log.debug(f"currently have {n_active} active nodes against {n_down} down and {self.n_idle} idle")
+        log.debug("currently have %s active nodes against %s down and %s idle", n_active, n_down, self.n_idle)
         if n_active != self.nnodes or n_down != 0:
             current_active = 0
             for index, node in net_conf.items():
@@ -870,7 +901,7 @@ lower performing TCP transport agent for backend network communication.
                 elif node.state != NodeDescriptor.State.DOWN:
                     node.state = NodeDescriptor.State.IDLE
 
-            log.debug(f"Updated active list has {current_active} active nodes")
+            log.debug("Updated active list has %s active nodes", current_active)
             # Make sure the number of active nodes is not 0
             if current_active == 0:
                 raise RuntimeError("No available backend hardware resources to use")
@@ -894,7 +925,7 @@ Performance may be suboptimal."""
             prim_set = False
             for node in net_conf.values():
                 if node.state is NodeDescriptor.State.ACTIVE and not prim_set:
-                    log.debug(f"node {node} is now primary")
+                    log.debug("node %s is now primary", node)
                     node.is_primary = True
                     prim_set = True
                 elif node.is_primary and prim_set:
@@ -954,7 +985,7 @@ Performance may be suboptimal."""
 
             if self._config_from_file is not None:
                 try:
-                    log.debug(f"Acquiring network config from file {self._config_from_file}")
+                    log.debug("Acquiring network config from file %s", self._config_from_file)
                     self.net = NetworkConfig.from_file(self._config_from_file)
                 except Exception:
                     raise RuntimeError("Unable to acquire backend network configuration from input file.")
@@ -1052,7 +1083,7 @@ Performance may be suboptimal."""
 
             if fe_ip_addr != conf_ip:
                 self.net_conf["f"].ip_addrs.insert(0, fe_ip_addr)  # Ensure it's first given logic used below.
-            log.debug(f"network config: {self.net_conf}")
+            log.debug("network config: %s", self.net_conf)
             # this will raise an OSError when the frontend is run on a compute node w/o external access
             try:
                 fe_ext_ip_addr = os.getenv("DRAGON_FE_EXTERNAL_IP_ADDR", get_external_ip_addr())
@@ -1086,12 +1117,12 @@ Performance may be suboptimal."""
 
             self.fe_mpool = MemoryPool(
                 int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ),
-                f"{os.getuid()}_{os.getpid()}_{fe_host_id}" + dfacts.DEFAULT_POOL_SUFFIX,
+                f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(fe_host_id)[-3:]}{str(dfacts.DEFAULT_POOL_SUFFIX)[-3:]}",
                 dfacts.FE_OVERLAY_TRANSPORT_AGENT_MUID,
             )
             pool_ser_bytes = self.fe_mpool.serialize()
             puid, mpool_fname = MemoryPool.serialized_uid_fname(pool_ser_bytes)
-            log.debug(f"fe_mpool has uid {puid} and file {mpool_fname}")
+            log.debug("fe_mpool has uid %s and file %s", puid, mpool_fname)
             pool_ser_str = B64.bytes_to_str(pool_ser_bytes)
             os.environ["DRAGON_DEFAULT_PD"] = pool_ser_str
 
@@ -1123,7 +1154,7 @@ Performance may be suboptimal."""
             self.gw_ch = Channel(self.fe_mpool, gw_cuid)
             self.dragon_logger = DragonLogger(self.fe_mpool)
         except (ChannelError, DragonPoolError, DragonLoggingError, DragonMemoryError) as init_err:
-            log.fatal(f"could not create resources: {init_err}")
+            log.fatal("could not create resources: %s", init_err)
             raise RuntimeError("overlay transport resource creation failed") from init_err
 
         log.info("Memory pools and channels created")
@@ -1212,7 +1243,7 @@ Performance may be suboptimal."""
 
             except Exception as e:
                 log.fatal("FE failed to stand up BE")
-                log.debug(f"error: {e}")
+                log.debug("error: %s", e)
                 raise RuntimeError("Backend launch failed from launcher frontend") from e
 
             # Wait for all the BE to stand up
@@ -1257,7 +1288,7 @@ Performance may be suboptimal."""
                 host_id=fe_host_id,
                 port=fe_port,
             )
-            log.debug(f"network config: {self.net_conf}")
+            log.debug("network config: %s", self.net_conf)
             fe_ip_addr = f"{fe_ip_addr}:{fe_port}"  # it includes the port now, similar to other types of launch
 
             try:
@@ -1286,9 +1317,9 @@ Performance may be suboptimal."""
             self.net_conf, fe_host_id, fe_ip_addr
         )
 
-        log.debug(f"ip_addrs={ip_addrs}, host_ids={host_ids}, hostnames={hostnames}")
-        log.debug(f"Found {min_nics_per_node} NICs per node.")
-        log.debug(f"standing up tcp agent with gw: {encoded_ser_gw_str}")
+        log.debug("ip_addrs=%s, host_ids=%s, hostnames=%s", ip_addrs, host_ids, hostnames)
+        log.debug("Found %s NICs per node.", min_nics_per_node)
+        log.debug("standing up tcp agent with gw: %s", encoded_ser_gw_str)
 
         self._STATE = FrontendState.OVERLAY_STARTING
 
@@ -1319,7 +1350,7 @@ Performance may be suboptimal."""
         # Start the backend
         log.debug("standing up backend")
         # we need to send to backend only the ip_addr and host_id of the frontend
-        log.debug(f"fe_ip_addr={fe_ip_addr}, fe_host_id={fe_host_id}")
+        log.debug("fe_ip_addr=%s, fe_host_id=%s", fe_ip_addr, fe_host_id)
 
         # Send/recv data with my OverlayNet FE server
         send_overlaynet_args = (self.la_fe_stdout,)
@@ -1344,7 +1375,7 @@ Performance may be suboptimal."""
             # About to actually launch backend
             log.debug("about to launch backend")
             # we need to send to backend only the ip_addr and host_id of the frontend
-            log.debug(f"fe_ip_addr={fe_ip_addr}, fe_host_id={fe_host_id}")
+            log.debug("fe_ip_addr=%s, fe_host_id=%s", fe_ip_addr, fe_host_id)
 
             self._STATE = FrontendState.STARTUP
 
@@ -1363,7 +1394,7 @@ Performance may be suboptimal."""
                 )  # TODO: again skipping 0th ip addr is fragile needs fix!
             except Exception as e:
                 log.fatal("FE failed to stand up BE")
-                log.debug(f"error: {e!r}")
+                log.debug("error: %s", repr(e))
                 raise RuntimeError("Backend launch failed from launcher frontend") from e
 
             log.debug("LA BE started on each compute node")
@@ -1381,14 +1412,14 @@ Performance may be suboptimal."""
         # Construct the number of backend connections based on
         # the hierarchical bcast info and send FENodeIdxBE to those
         # nodes
-        log.info(f"received {self.nnodes} BEIsUp msgs")
+        log.info("received %s BEIsUp msgs", self.nnodes)
         self.conn_outs = self.construct_bcast_tree(self.net_conf, conn_policy, be_ups, encoded_inbound_str)
         del be_ups
 
         chs_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
         for ch_up in chs_up:
             assert isinstance(ch_up, dmsg.SHChannelsUp), "la_fe received invalid channel up"
-        log.info(f"received {self.nnodes} SHChannelsUP msgs")
+        log.info("received %s SHChannelsUP msgs", self.nnodes)
 
         # Replace dynamically discovered IP addresses with those specified in network config.
         for ch_up in chs_up:
@@ -1438,16 +1469,16 @@ Performance may be suboptimal."""
             transport=str(self.transport),
             fe_ext_ip_addr=fe_ext_ip_addr,
         )
-        log.debug(f"la_fe la_channels.nodes_desc: {la_ch_info.nodes_desc}")
-        log.debug(f"la_fe la_channels.gs_cd: {la_ch_info.gs_cd}")
-        log.debug(f"la_fe la_channels.transport: {la_ch_info.transport}")
+        log.debug("la_fe la_channels.nodes_desc: %s", la_ch_info.nodes_desc)
+        log.debug("la_fe la_channels.gs_cd: %s", la_ch_info.gs_cd)
+        log.debug("la_fe la_channels.transport: %s", la_ch_info.transport)
         self.la_fe_stdout.send("A", la_ch_info.serialize())
         log.info("sent LACHannelsInfo to overlaynet fe")
 
         self.tas_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
         for ta_up in self.tas_up:
             assert isinstance(ta_up, dmsg.TAUp), "la_fe received invalid channel up"
-        log.info(f"received {self.nnodes} TAUp messages")
+        log.info("received %s TAUp messages", self.nnodes)
 
         if self._sigint_trigger == 6:
             signal.raise_signal(signal.SIGINT)
@@ -1508,7 +1539,7 @@ Performance may be suboptimal."""
             node_idx_to_channels_map = dict((msg.idx, msg.test_channels) for msg in self.tas_up)
             start_msg = dlutil.mk_shproc_start_msg(logbase=dls.LA_FE, stdin_str=str(node_idx_to_channels_map))
             self.la_fe_stdout.send("A", start_msg.serialize())
-            log.info(f"broadcast the program to start to all shepherds with message={start_msg}")
+            log.info("broadcast the program to start to all shepherds with message=%s", start_msg)
         else:
             # Send GS user proc start msg
             log.info("Prepping launch of user application")
@@ -1538,16 +1569,16 @@ Performance may be suboptimal."""
 
             if hasattr(msg, "r_c_uid"):
                 msg.r_c_uid = dfacts.launcher_cuid_from_index(self.node_idx)
-            self.msg_log.info(f"received {type(msg)}")
+            self.msg_log.info("run_msg_server received %s", type(msg))
 
             try:
                 if type(msg) in LauncherFrontEnd._DTBL:
                     self._DTBL[type(msg)][0](self, msg=msg)
                 else:
                     # TODO: Make sure handling abnormal termniation works this way
-                    self.msg_log.warning(f"unexpected msg type: {repr(msg)}")
+                    self.msg_log.warning("unexpected msg type: %s", repr(msg))
             except LauncherImmediateExit:
-                self.msg_log.debug(f"completing a sys.exit({LAUNCHER_FAIL_EXIT})")
+                self.msg_log.debug("completing a sys.exit(%s)", LAUNCHER_FAIL_EXIT)
                 sys.exit(LAUNCHER_FAIL_EXIT)
             except SigIntImmediateExit:
                 self.msg_log.debug("completing an exit due to SIGINT")
@@ -1607,21 +1638,25 @@ Performance may be suboptimal."""
                 self.msg_log.info("m7.1 transmitted SHHaltTA msg to BE")
         else:
             self.msg_log.debug(
-                f"gs_head_exit: {self._gs_head_exit_received} | gs_proc_create_resp: {self._gs_process_create_resp_received}"
+                "gs_head_exit: %s | gs_proc_create_resp: %s",
+                self._gs_head_exit_received,
+                self._gs_process_create_resp_received,
             )
 
     @route(dmsg.SHFwdOutput, _DTBL)
     def handle_sh_fwd_output(self, msg: dmsg.SHFwdOutput):
         msg_out = self.build_stdmsg(msg, self.args_map, msg.fd_num == dmsg.SHFwdOutput.FDNum.STDOUT.value)
-        self.msg_log.debug(f"{msg}")
+        self.msg_log.debug("%s", msg)
         print(msg_out, end="", flush=True)
 
     @route(dmsg.LAExit, _DTBL)
     def handle_la_exit(self, msg: dmsg.LAExit):
         self.msg_log.debug("Received LAExit message. Will break out of message loop")
         if msg.sigint:
+            self.msg_log.debug("Exiting due to receipt of SIGINT")
             raise SigIntImmediateExit("Exiting due to receipt of SIGINT")
         else:
+            self.msg_log.debug("Exiting due to reception of %s", type(msg))
             raise LauncherImmediateExit(f"Exiting due to reception of {type(msg)}")
 
     @route(dmsg.ExceptionlessAbort, _DTBL)
@@ -1642,19 +1677,19 @@ Performance may be suboptimal."""
             self.msg_log.info("The GSProcessCreateResponse was received in the launcher front end")
             self.probe_teardown()
         elif dmsg.GSProcessCreateResponse.Errors.FAIL == msg.err:
-            self.msg_log.warning(f"Unable to start the head process {msg.err_info}")
+            self.msg_log.warning("Unable to start the head process %s", msg.err_info)
             self._cleanup_abnormal_state(sigint=False)
 
     @route(dmsg.SHProcessCreateResponse, _DTBL)
     def handle_sh_proc_create_response(self, msg: dmsg.SHProcessCreateResponse):
         self._proc_create_resps += 1
-        self.msg_log.info(f"Got {self._proc_create_resps} SHProcessCreateResponse messages")
+        self.msg_log.info("Got %s SHProcessCreateResponse messages", self._proc_create_resps)
         self.probe_teardown()
 
     @route(dmsg.SHProcessExit, _DTBL)
     def handle_sh_proc_exit(self, msg: dmsg.SHProcessExit):
         self._proc_exits += 1
-        self.msg_log.info(f"Got {self._proc_exits} SHProcessExit messages")
+        self.msg_log.info("Got %s SHProcessExit messages", self._proc_exits)
         self.probe_teardown()
 
     @route(dmsg.GSHalted, _DTBL)
@@ -1665,12 +1700,15 @@ Performance may be suboptimal."""
         # m7.1 Send SHHaltTA to All BEs
         sh_halt_ta = dmsg.SHHaltTA(tag=dlutil.next_tag())
 
-        if self._STATE != FrontendState.ABNORMAL_TEARDOWN:
-            self.la_fe_stdout.send("A", sh_halt_ta.serialize())
-            self.msg_log.info(f"m7.1 transmitted SHHaltTA msg to BE via threads: {self._STATE}")
-        else:
-            self._overlay_bcast(sh_halt_ta)
-            self.msg_log.info("m7.1 transmitted SHHaltTA msg to BE directly")
+        try:
+            if self._STATE != FrontendState.ABNORMAL_TEARDOWN:
+                self.la_fe_stdout.send("A", sh_halt_ta.serialize())
+                self.msg_log.info("m7.1 transmitted SHHaltTA msg to BE via threads: %s", self._STATE)
+            else:
+                self._overlay_bcast(sh_halt_ta)
+                self.msg_log.info("m7.1 transmitted SHHaltTA msg to BE directly")
+        except Exception as e:
+            self.msg_log.warning(f"Exception sending SHHaltTA %s", e)
 
     @route(dmsg.TAHalted, _DTBL)
     def handle_ta_halted(self, msg: dmsg.TAHalted):
@@ -1683,9 +1721,12 @@ Performance may be suboptimal."""
                 # m11.1 Send SHTeardown to all BE's
                 self.la_fe_stdout.send("A", sh_teardown.serialize())
                 self.msg_log.info("m11.1 la_fe transmitted SHTeardown msg to BE via threads")
-            else:
+
+            try:
                 self._overlay_bcast(sh_teardown)
                 self.msg_log.info("m11.1 la_fe transmitted SHTeardown msg to BE directly")
+            except Exception:
+                pass
 
             # Handle one of my sigint test cases
             try:
@@ -1747,7 +1788,7 @@ Performance may be suboptimal."""
                     pass
 
         except Exception as ex:  # pylint: disable=broad-except
-            log.warning(f"Caught exception {ex} in logging thread")
+            log.warning("Caught exception %s in logging thread", ex)
         log.info("exiting recv log msg thread")
 
     def send_msg_to_overlaynet(self, target, msg):
@@ -1792,17 +1833,17 @@ Performance may be suboptimal."""
                 if target == "P":
                     # node index 0 is the primary node
                     self.conn_outs[0].send(fe_msg.serialize())
-                    log.info(f"target = {target} -- msg = {fe_msg.__class__}")
+                    log.info("target = %s -- msg = %s", target, fe_msg.__class__)
                 else:
                     self._overlay_bcast(fe_msg)
-                    log.info(f"sent {fe_msg.__class__} down OverlayNet tree")
+                    log.info("sent %s down OverlayNet tree", fe_msg.__class__)
 
                 if isinstance(fe_msg, dmsg.BEHalted):
                     log.info("overlaynet send thread got halt msg")
                     self._shutdown.set()
                     break
         except Exception as err:
-            log.exception(f"overlaynet sending thread failure: {err}")
+            log.exception("overlaynet sending thread failure: %s", err)
 
         # Let the OverlayNet receiving thread know we're gone, and it can exit
         self._shutdown.set()
@@ -1843,7 +1884,7 @@ Performance may be suboptimal."""
 
                     # Update the network configuration to reflect the down state of whatever node
                     # we got this error from
-                    log.debug(f"Abort found from backend node: {be_msg.host_id}")
+                    log.debug("Abort found from backend node: %s", be_msg.host_id)
                     if isinstance(be_msg.host_id, int):
                         set_down = [be_msg.host_id]
                     else:
@@ -1869,7 +1910,7 @@ Performance may be suboptimal."""
                     log.info("overlaynet recv thread got halt msg")
                     break
                 else:
-                    log.info(f"Got {be_msg.__class__} in the front end monitor and forwarding to launcher front end.")
+                    log.info("Got %s in the front end monitor and forwarding to launcher front end.", be_msg.__class__)
                     la_fe_stdin.send(be_msg.serialize())
 
             # Let the OverlayNet sending thread know we're gone
@@ -1882,7 +1923,7 @@ Performance may be suboptimal."""
 
             log.info("Overlaynet recv thread exiting.")
         except Exception as err:
-            log.exception(f"Overlaynet recving thread failure. Exiting: {err}")
+            log.exception("Overlaynet recving thread failure. Exiting: %s", err)
             la_fe_stdin.send(dmsg.AbnormalTermination(tag=dlutil.next_tag()).serialize())
             log.debug("send abnormal term from except block")
             raise

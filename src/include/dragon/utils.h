@@ -4,7 +4,12 @@
 #include <stdint.h>
 #include <time.h>
 #include <stdbool.h>
+#ifndef __APPLE__
 #include <sys/prctl.h>
+#else
+#include <pthread.h>
+#include <sys/types.h>
+#endif //  __APPLE__
 #include <dragon/return_codes.h>
 #include <dragon/global_types.h>
 
@@ -93,6 +98,10 @@ dragon_sec_to_nsec(uint64_t sec);
 
 dragonULInt
 dragon_get_my_puid();
+
+int dragon_get_cpu_count();
+
+void dragon_set_my_core_affinity(char* core_affinities);
 
 dragonError_t
 dragon_set_env_var_as_ulint(char* env_key, dragonULInt val);

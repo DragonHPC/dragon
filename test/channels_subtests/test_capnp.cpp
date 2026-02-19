@@ -17,6 +17,6 @@ int main(int argc, char* argv[]) {
     msg.setTag(4);
     DDRegisterClientDef::Builder rc = msg.initDdRegisterClient();
     rc.setRespFLI("Hello World!");
-    capnp::writePackedMessageToFd(1, message);
+    capnp::writeMessageToFd(1, message);
     return 0;
 }

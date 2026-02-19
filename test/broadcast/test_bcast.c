@@ -270,7 +270,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count >= 0 && count < idle_waiters_count) {
-        sleep(0.01);
+        usleep(10);
         dragon_bcast_num_waiting(&bd, &count); // don't check error code here. Leads to non-deterministic test case count.
     }
 
@@ -302,7 +302,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count >= 0 && count < spin_waiters_count) {
-        sleep(0.01);
+        usleep(10);
         dragon_bcast_num_waiting(&bd, &count); // don't check error code here. Leads to non-deterministic test case count.
     }
 
@@ -331,7 +331,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count >= 0 && count < waiters_count*2) {
-        sleep(0.01);
+        usleep(10);
         dragon_bcast_num_waiting(&bd, &count); // don't check error code here. Leads to non-deterministic test case count.
     }
 
@@ -361,7 +361,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count >= 0 && count < adaptive_waiters_count) {
-        sleep(0.1);
+        usleep(10);
         dragon_bcast_num_waiting(&bd, &count); // don't check error code here. Leads to non-deterministic test case count.
     }
 
@@ -390,7 +390,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count >= 0 && count < waiters_count*2) {
-        sleep(0.1);
+        usleep(10);
         dragon_bcast_num_waiting(&bd, &count); // don't check error code here. Leads to non-deterministic test case count.
     }
 
@@ -427,7 +427,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count >= 0 && count < idle_waiters_count+spin_waiters_count) {
-        sleep(0.01);
+        usleep(10);
         dragon_bcast_num_waiting(&bd, &count); // don't check error code here. Leads to non-deterministic test case count.
     }
 
@@ -470,14 +470,14 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count >= 0 && count < idle_waiters_count+spin_waiters_count) {
-        sleep(0.01);
+        usleep(10);
         dragon_bcast_num_waiting(&bd, &count); // don't check error code here. Leads to non-deterministic test case count.
     }
 
     for (k=0;k<idle_waiters_count+spin_waiters_count;k++) {
-        sleep(0.1);
+        usleep(10);
         err = dragon_bcast_trigger_one(&bd, NULL, payload, 512);
-        sleep(0.1);
+        usleep(10);
         check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
     }
 
@@ -522,14 +522,14 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count >= 0 && count < idle_waiters_count+spin_waiters_count) {
-        sleep(0.01);
+        usleep(10);
         dragon_bcast_num_waiting(&bd, &count); // don't check error code here. Leads to non-deterministic test case count.
     }
 
     for (k=0;k<idle_waiters_count+spin_waiters_count;k++) {
-        sleep(0.1);
+        usleep(10);
         err = dragon_bcast_trigger_one(&bd, NULL, payload, 512);
-        sleep(0.1);
+        usleep(10);
         check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
     }
 
@@ -944,7 +944,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count < idle_waiters_count) {
-        sleep(0.01);
+        usleep(10);
         err = dragon_bcast_num_waiting(&bd, &count);
         if (err != DRAGON_SUCCESS)
             printf("ERROR: Could not get num waiting in main().\n");
@@ -954,7 +954,7 @@ main(int argc, char* argv[])
     check_result(err, DRAGON_SUCCESS, &tests_passed, &tests_attempted);
 
     while (count > 0) {
-        sleep(0.01);
+        usleep(10);
         dragon_bcast_num_waiting(&bd, &count); // don't check error code here. Leads to non-deterministic test case count.
     }
 

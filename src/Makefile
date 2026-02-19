@@ -71,9 +71,10 @@ CY_FILES := dragon/pydragon_rc.pyx \
 .PHONY: all
 all: build
 
+OS = $(shell uname -s)
 
 .PHONY: build
-build: $(EXTERNAL) $(LIBRARIES) $(CYFILES) $(BINARIES) install-pythondeps
+build: $(EXTERNAL) $(LIBRARIES) $(CYFILES) dragon-popen $(BINARIES) install-pythondeps
 	# Build cython code
 	$(PYTHON) setup.py build $(SETUP_PY_BUILD_FLAGS)
 	# Build cli entry points
@@ -90,6 +91,10 @@ $(EXTERNAL):
 .PHONY: lib
 lib:
 	$(MAKE) -C lib
+
+.PHONY: dragon-popen
+dragon-popen: lib/libdragon.so
+	$(MAKE) -C dragon/localservices
 
 .PHONY: include
 include:
@@ -116,6 +121,7 @@ clean:
 	$(PYTHON) setup.py clean --all
 	$(RM) -r build *.egg-info
 	$(RM) $(LIBRARIES) $(BINARIES) $(CY_FILES)
+	$(MAKE) -C dragon/localservices clean
 	$(MAKE) -C lib clean
 	$(MAKE) -C include clean
 
@@ -125,10 +131,14 @@ dist: build
 	$(MAKE) -C include dist
 	$(PYTHON) setup.py clean --all
 	$(PYTHON) setup.py build $(SETUP_PY_BUILD_FLAGS)
-# Prepare to files to be included in the distribution.
-# This code copies the message_defs.capnp file into the wheel file
-# which is needed for the captain proto support.
+# Prepare the files to be included in the distribution.
+# This code copies necessary files including the dragon-popen,
+# message_defs.capnp, and other files into the wheel file
+# which are needed by dragon at run-time and/or to support
+# compiling C/C++ code that uses the dragon C/C++ API.
 	rm -rf build/dragon_wheel
+	mkdir -p build/dragon_wheel/dragon/localservices
+	cp -f dragon/localservices/dragon-popen build/dragon_wheel/dragon/localservices/
 	mkdir -p build/dragon_wheel/dragon/infrastructure
 	cp -f lib/message_defs.capnp build/dragon_wheel/dragon/infrastructure/
 	mkdir -p build/dragon_wheel/dragon/lib
@@ -172,8 +182,14 @@ release:
 	cp ../src/dragon/telemetry/imports/*.yaml  release/dragon/examples/dragon_telemetry
 	cp ../src/dragon/telemetry/imports/*.json  release/dragon/examples/dragon_telemetry
 # Repair the wheel to use manylinux tag before copying it to release and remove the un-tagged version
-	auditwheel repair -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-linux_*.whl
-	rm -rf $(abspath release/dragon)/dragonhpc*-linux_*whl
+	@if [ "$(OS)" != "Darwin" ]; then \
+		patchelf --version; \
+		auditwheel repair -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-linux_*.whl; \
+		rm -rf $(abspath release/dragon)/dragonhpc*-linux_*whl; \
+	else \
+		DYLD_LIBRARY_PATH=lib delocate-wheel -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-macosx_*.whl; \
+		rm -rf $(abspath release/dragon)/dragonhpc*-macosx_*whl; \
+	fi
 	mv release/dragon release/dragon-$(DRAGON_VERSION)
 	cd release && tar -czvf dragon-$(DRAGON_VERSION)-$(GITHASH).tar.gz dragon-$(DRAGON_VERSION)
 	cd release && rm -rf dragon-$(DRAGON_VERSION)

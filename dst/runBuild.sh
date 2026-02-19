@@ -17,8 +17,8 @@ cc --version
 source ~/.bashrc
 conda activate _dev
 conda remove -y zstd || true
-conda remove -y libstdcxx || true
-conda remove -y libstdcxx-ng || true
+conda install -y libstdcxx libstdcxx-ng || true
+conda remove -y libstdcxx libstdcxx-ng || true
 python3 --version
 which python3
 

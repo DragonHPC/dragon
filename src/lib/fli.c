@@ -1854,6 +1854,7 @@ dragon_fli_send_attr_init(dragonFLISendAttr_t* attrs) {
     attrs->allow_strm_term = false;
     attrs->turbo_mode = false;
     attrs->flush = false;
+    attrs->debug = 0UL;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -1882,6 +1883,7 @@ dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandle
     bool allow_strm_term = attrs->allow_strm_term;
     bool turbo_mode = attrs->turbo_mode;
     bool flush = attrs->flush;
+    dragonULInt debug = attrs->debug;
 
     if (adapter == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
@@ -1931,6 +1933,7 @@ dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandle
     sendh_obj->tid = 0;
     sendh_obj->strm_type = FLI_EXTERNAL_STRM_CHANNEL;
     sendh_obj->flush = flush;
+    sendh_obj->debug = debug;
 
     if (sendh_obj->buffered_send) {
         /* The main channel send handle was opened when the fli was created. This is necessary
@@ -2013,6 +2016,11 @@ dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandle
                 append_err_return(err, "Could not deposit stream channel into main channel.");
         }
     }
+
+    /* This is wrong to do this here. Attributes should be supplied when the channel send handle
+       is created. But this saves having to set this on multiple paths so we'll internally cheat
+       and do it here since it does not affect user code. This is done only for internal debugging. */
+    sendh_obj->chan_sendh._attrs.debug = debug;
 
     err = _add_umap_fli_sendh_entry(send_handle, sendh_obj);
     if (err != DRAGON_SUCCESS)

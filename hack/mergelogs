@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 import glob
 import ciso8601
@@ -19,7 +19,14 @@ class PQNode:
         return hash(self._ts)
 
     def __lt__(self,other):
-        return self._ts < other._ts
+        try:
+            return self._ts < other._ts
+        except TypeError:
+            if isinstance(self._ts, datetime.date):
+                return False
+
+            return True
+
 
     def set_next(self):
         try:
@@ -52,7 +59,7 @@ def main():
         try:
             nodes.append(PQNode(filename))
         except EOFError:
-            pass 
+            pass
 
     heapq.heapify(nodes)
 

@@ -1,5 +1,7 @@
 import os
 import subprocess
+import time
+import socket
 from ... import channels as dch
 from ... import managed_memory as dmm
 from ...globalservices.channel import create, release_refcnt
@@ -11,12 +13,14 @@ from ...infrastructure import messages as dmsg
 from ...infrastructure import parameters as dparms
 from ...infrastructure import util as dutil
 from ...launcher import util as dlutil
+from ...dlogging import util as dlogutil
+from ...dlogging.logger import DragonLogger
 from ...utils import B64
-
+from ...infrastructure.parameters import this_process
 
 class OutOfBand:
 
-    def __init__(self, log_sdesc=None):
+    def __init__(self, log_sdesc=None, timeout=5, oob_ssh_tunnel_override=None):
         self.connecting_ta = False
         self.accepting_ta = True
         self.ta_started = False
@@ -25,6 +29,8 @@ class OutOfBand:
         self.port = None
         self.channels = []
         self.log_sdesc = log_sdesc
+        self.timeout = timeout
+        self.oob_ssh_tunnel_override = oob_ssh_tunnel_override
 
     # TODO: need to guarantee that this is channel local
     def new_local_channel(self, capacity=128):
@@ -52,6 +58,7 @@ class OutOfBand:
         # save port
         self.port = port
 
+        print(f"Starting OOB transport agents on port {port}", flush=True)
         # create tcp agents input and output channels
         output_ch = self.new_local_channel()
         input_ch = self.new_local_channel()
@@ -70,6 +77,9 @@ class OutOfBand:
             f"--ch-in-sdesc={B64.bytes_to_str(input_ch.serialize())}",
             f"--ch-out-sdesc={B64.bytes_to_str(output_ch.serialize())}",
         ]
+
+        dragon_logger = DragonLogger(mpool=dmm.MemoryPool.attach(B64.from_str(this_process.default_pd).decode()))
+        self.log_sdesc = B64(dragon_logger.serialize())
 
         if self.log_sdesc != None:
             args.append(f"--log-sdesc={self.log_sdesc}")
@@ -90,22 +100,38 @@ class OutOfBand:
         subprocess.Popen(args, env=env)
 
     def connect(self, fe_ext_ip_addr, head_node_ip_addr, port):
+        print(f"Connecting to OOB transport agents on port {port} with {fe_ext_ip_addr} and {head_node_ip_addr}", flush=True)
         self.connecting_ta = True
         if not self.ta_started:
-            tunnel_args = [
-                "ssh",
-                "-J",
-                f"{fe_ext_ip_addr}",
-                "-N",
-                "-L",
-                f"{port}:localhost:{port}",
-                "-f",
-                f"{head_node_ip_addr}",
-                ">",
-                "/dev/null",
-                "2>&1",
-            ]
-            self.tunnel_proc = subprocess.Popen(tunnel_args)
+            if self.oob_ssh_tunnel_override is not None:
+                tunnel_args = self.oob_ssh_tunnel_override.format(fe_ext_ip_addr=fe_ext_ip_addr, head_node_ip_addr=head_node_ip_addr, port=port).split()
+            else:
+                tunnel_args = [
+                    "ssh",
+                    "-J",
+                    f"{fe_ext_ip_addr}",
+                    "-o",
+                    "ExitOnForwardFailure=yes",
+                    "-N",
+                    "-L",
+                    f"{port}:localhost:{port}",
+                    "-f",
+                    f"{head_node_ip_addr}",
+                ]
+
+            self.tunnel_proc = subprocess.Popen(tunnel_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            start = time.time()
+            while time.time() - start < self.timeout:
+                try:
+                    s = socket.create_connection(("localhost", int(port)), timeout=1)
+                    s.close()
+                    break
+                except Exception:
+                    time.sleep(0.2)
+            else:
+                raise RuntimeError("ssh tunnel failed to establish")
+
             self.start_oob_transport(fe_ext_ip_addr=fe_ext_ip_addr, head_node_ip_addr=head_node_ip_addr, port=port)
             self.ta_started = True
 

@@ -398,7 +398,7 @@ class LauncherFrontEnd:
             # Create my memory pool
             self.fe_mpool = MemoryPool(
                 int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ),
-                f"{os.getuid()}_{os.getpid()}_{self.host_id}_{dfacts.DEFAULT_POOL_SUFFIX}",
+                f"{os.getuid()}_{os.getpid()}_{self.host_id}_{dfacts.DEFAULT_POOL_SUFFIX}"[:28],
                 dfacts.FE_OVERLAY_TRANSPORT_AGENT_MUID,
             )
 

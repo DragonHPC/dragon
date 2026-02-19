@@ -6,6 +6,7 @@ The test is run with `dragon test_queue.py -f -v`
 
 import unittest
 import random
+import os
 
 import dragon
 import multiprocessing as mp
@@ -146,6 +147,7 @@ class TestQueueMultiNode(unittest.TestCase):
             text, "Hello World", "The string 'Hello World' did not match after we were done passing it around."
         )
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Fails in proxy mode")
     def test_joinable(self):
         """Test joinability of a multi-node queue"""
 

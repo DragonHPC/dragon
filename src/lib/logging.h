@@ -78,26 +78,21 @@ dragon_logging_destroy(dragonLoggingDescr_t * logger, bool destroy_pool);
 dragonError_t
 dragon_logging_attach(const dragonLoggingSerial_t * log_ser, dragonLoggingDescr_t * logger, dragonMemoryPoolDescr_t *pool_descr);
 
-// Init attributes to defaults
 dragonError_t
 dragon_logging_attr_init(dragonLoggingAttr_t * lattr);
 
-// Insert a message of a given priority
 dragonError_t
-dragon_logging_put(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, char * msg);
+dragon_logging_put(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, void* log, size_t log_len);
 
-// Retrieve a message of at least a given priority (later could be bitwise OR flags, e.g. DEBUG | ERROR)
-// Optional timeout parameter to allow for indefinite blocking on the consumer side
-// TODO: How do we want to return the message out?  As a preformatted string?  In a struct?
 dragonError_t
-dragon_logging_get(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, void ** msg_out, timespec_t * timeout);
+dragon_logging_get(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, void ** log, size_t* log_len, timespec_t * timeout);
+
+dragonError_t
+dragon_logging_get_priority(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, dragonLogPriority_t *actual_priority, void ** log, size_t* log_len, timespec_t * timeout);
 
 // Should later have a FILE * argument to print to arbitrary locations.  Current just stdout
 dragonError_t
 dragon_logging_print(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, timespec_t * timeout);
-
-dragonError_t
-dragon_logging_get_str(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, char ** out_str, timespec_t * timeout);
 
 dragonError_t
 dragon_logging_count(const dragonLoggingDescr_t * logger, uint64_t * count);

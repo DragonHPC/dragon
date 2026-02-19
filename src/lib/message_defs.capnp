@@ -207,6 +207,12 @@ struct DDManagerStatsResponseDef {
     data @0: Text;
 }
 
+struct DDSyncDef {
+    respFLI @0: Text;
+    timeout @1: UInt64;
+    broadcast @2: Bool;
+}
+
 struct DDIteratorDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
@@ -499,5 +505,6 @@ struct MessageDef {
         ddItemsResponse @82: DDItemsResponseDef;
         pmIxFenceMsg @83: PMIxFenceMsgDef;
         ddCreateManagerResponse @84: DDCreateManagerResponseDef;
+        ddSync @85: DDSyncDef;
     }
 }

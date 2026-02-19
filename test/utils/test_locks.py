@@ -3,6 +3,7 @@
 import time
 import unittest
 import mmap
+import platform
 import multiprocessing as mp
 from multiprocessing import shared_memory as shm
 from multiprocessing import Array
@@ -100,7 +101,9 @@ class LockTest(unittest.TestCase):
         self.hdl.lock()
         self.hdl.unlock()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Test not applicable on macOS")
     @parameterized.expand([["2Thread", 2], ["4Thread", 4]])
+    @unittest.skipIf(platform.system() == "Darwin", "Test not applicable on macOS")
     def test_lock_count(self, name: str, maxprocs: int) -> None:
         self.hdl = DragonLock.init(self.lock_type, self.memobj)
         self.hdl.lock()
@@ -122,7 +125,9 @@ class LockTest(unittest.TestCase):
 
         self.assertEqual(maxprocs * iters, tdata[0])
 
+    @unittest.skipIf(platform.system() == "Darwin", "Test not applicable on macOS")
     @parameterized.expand([["1Thread", 1], ["2Thread", 2], ["4Thread", 4]])
+    @unittest.skipIf(platform.system() == "Darwin", "Test not applicable on macOS")
     def test_multi_lock(self, name: str, maxprocs: int) -> None:
         self.hdl = DragonLock.init(self.lock_type, self.memobj)
         self.hdl.lock()
@@ -166,7 +171,9 @@ class LockTest(unittest.TestCase):
         if res != 0:
             raise RuntimeError(f"Process {procid} got lock when it should not have")
 
+    @unittest.skipIf(platform.system() == "Darwin", "Test not applicable on macOS")
     @parameterized.expand([["1Thread", 1], ["2Thread", 2], ["4Thread", 4]])
+    @unittest.skipIf(platform.system() == "Darwin", "Test not applicable on macOS")
     def test_multi_try_lock(self, name: str, maxprocs: int) -> None:
         self.hdl = DragonLock.init(self.lock_type, self.memobj)
         self.hdl.lock()

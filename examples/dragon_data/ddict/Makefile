@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS ?= -fPIC -Wall -Ofast -fomit-frame-pointer
+CFLAGS ?= -fPIC -Wall -O3 -ffast-math -fomit-frame-pointer
 #CFLAGS ?= -g -O0 -DDRAGON_DEBUG -Wall
 
 ifeq ($(VIRTUAL_ENV),)

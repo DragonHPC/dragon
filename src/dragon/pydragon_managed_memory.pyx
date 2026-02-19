@@ -51,6 +51,7 @@ class PoolType(enum.Enum):
     """TBD """
     SHM = DRAGON_MEMORY_TYPE_SHM
     FILE = DRAGON_MEMORY_TYPE_FILE
+    HUGEPAGE = DRAGON_MEMORY_TYPE_HUGEPAGE
     GPU = DRAGON_MEMORY_TYPE_GPU
     PRIVATE = DRAGON_MEMORY_TYPE_PRIVATE
 
@@ -72,44 +73,6 @@ DRAGON_MEMORY_DEFAULT_TIMEOUT = 300
 # * fix the exception classes following what we did in Channels
 # * carry through all of the available Pool attributes
 # * tidy up the enum above and anywhere else
-
-cdef class MemoryPoolAttr:
-    """
-    Cython wrapper for managed memory attributes
-    Currently unused
-    """
-
-    cdef dragonMemoryPoolAttr_t _mattr
-
-    def __init__(self, pre_alloc_blocks=None, gpu_memory=False):
-        cdef dragonError_t derr
-
-        if pre_alloc_blocks is not None:
-            if not isinstance(pre_alloc_blocks, list):
-                raise RuntimeError(f"MemoryAttr Error: pre_alloc_blocks must be a list of ints")
-            if not all(isinstance(item, int) for item in pre_alloc_blocks):
-                raise RuntimeError(f"MemoryAttr Error: pre_alloc_blocks must be a list of ints")
-
-        derr = dragon_memory_attr_init(&self._mattr)
-        if derr != DRAGON_SUCCESS:
-            raise RuntimeError(f"MemoryAttr Error: Unable to initialize memory attribute. Dragon Error Code: ({dragon_get_rc_string(derr)})")
-
-        if pre_alloc_blocks is not None:
-            self._mattr.npre_allocs = len(pre_alloc_blocks)
-            self._mattr.pre_allocs = <size_t *>malloc(sizeof(size_t) * self._mattr.npre_allocs)
-            for i in range(self._mattr.npre_allocs):
-                self._mattr.pre_allocs[i] = pre_alloc_blocks[i]
-
-        # Below is support for initializing the memory pool attributes to use GPU memory.
-        if gpu_memory:
-            self._mattr.mem_type = DRAGON_MEMORY_TYPE_GPU
-
-
-    def __del__(self):
-        cdef dragonError_t derr
-
-        derr = dragon_memory_attr_destroy(&self._mattr)
-
 
 cdef class MemoryAlloc:
     """
@@ -525,7 +488,7 @@ cdef class MemoryPool:
             dragon_memory_pool_serial_free(&self._pool_ser)
 
 
-    def __init__(self, size, str fname, uid, pre_alloc_blocks=None, min_block_size=None, max_allocations=None, gpu_memory=False):
+    def __init__(self, size, str fname, uid, pre_alloc_blocks=None, min_block_size=None, max_allocations=None, gpu_memory=False, numa_node=-1):
         """
         Create a new memory pool and return a MemoryPool object.
 
@@ -597,6 +560,12 @@ cdef class MemoryPool:
         if gpu_memory:
             self._mattr.mem_type = DRAGON_MEMORY_TYPE_GPU
 
+        if numa_node >= 0:
+            if not isinstance(numa_node, int):
+                raise RuntimeError('MemoryAttr Error: numa_node must be an int')
+
+            self._mattr.numa_node = numa_node
+
         derr = dragon_memory_pool_create(&self._pool_hdl, size,
                                          fname.encode('utf-8'), uid, &self._mattr)
         # This is purely temporary and gets copied internally on the pool_create call, free it here
@@ -661,6 +630,7 @@ cdef class MemoryPool:
         _ser.data = <uint8_t*>&cdata[0]
 
         derr = dragon_memory_pool_attach(&mpool._pool_hdl, &_ser)
+
         if derr != DRAGON_SUCCESS:
             raise DragonPoolAttachFail(derr, "Could not attach to serialized pool")
 
@@ -890,6 +860,34 @@ cdef class MemoryPool:
         err = dragon_register_process_local_pool(&self._pool_hdl, time_ptr)
         if err != DRAGON_SUCCESS:
             DragonPoolAttachFail(err, "Could not register pool")
+
+    def process_local_register_with_gpu(self):
+        """
+        Register a pool to use GPU memory.
+
+        :param gpu_id: The GPU identifier to use for allocations from this pool.
+
+        :raises: DragonMemoryError if there was an error.
+        """
+        cdef:
+            dragonError_t err
+
+        err = dragon_memory_pool_process_local_register_with_gpu(&self._pool_hdl)
+        if err != DRAGON_SUCCESS:
+            raise DragonMemoryError(err, "Could not register pool with GPU")
+
+    def process_local_unregister_with_gpu(self):
+        """
+        Deregister a pool from using GPU memory.
+
+        :raises: DragonMemoryError if there was an error.
+        """
+        cdef:
+            dragonError_t err
+
+        err = dragon_memory_pool_process_local_unregister_with_gpu(&self._pool_hdl)
+        if err != DRAGON_SUCCESS:
+            raise DragonMemoryError(err, "Could not deregister pool from GPU")
 
     def destroy(self):
         """

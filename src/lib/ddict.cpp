@@ -776,7 +776,7 @@ dragonError_t _end_bput_with_batch(dragonDDict_t * dd) {
 
         if (bputResponseMsg->numPuts() != dd->num_bputs) {
             char msg[200];
-            snprintf(msg, 199, "Failed to store all keys in manager %lu in the distributed dictionary. Expected number of keys to be written: %lu, number of successful writes: %lu", bputResponseMsg->managerID(), dd->num_bputs, bputResponseMsg->numPuts());
+            snprintf(msg, 199, "Failed to store all keys in manager %" PRIu64 " in the distributed dictionary. Expected number of keys to be written: %" PRIu64 ", number of successful writes: %" PRIu64 "", bputResponseMsg->managerID(), dd->num_bputs, bputResponseMsg->numPuts());
             err_return(DRAGON_FAILURE, msg);
         }
 
@@ -889,7 +889,7 @@ dragonError_t _chkpt_avail(dragonDDict_t * dd, uint64_t chkpt_id) {
 
         if (!chkptAvailResponseMsg->available()) {
             char msg[200];
-            snprintf(msg, 199, "Unable to access checkpoint %lu from manager %lu. The checkpoint is not available.", chkpt_id, chkptAvailResponseMsg->managerID());
+            snprintf(msg, 199, "Unable to access checkpoint %" PRIu64 " from manager %" PRIu64 ". The checkpoint is not available.", chkpt_id, chkptAvailResponseMsg->managerID());
             err_return(DRAGON_INVALID_OPERATION, msg);
         }
 
@@ -945,7 +945,7 @@ dragonError_t _persisted_chkpt_avail(dragonDDict_t * dd, uint64_t chkpt_id) {
 
         if (!persistedChkptAvailResponseMsg->available()) {
             char msg[200];
-            snprintf(msg, 199, "Unable to access persisted checkpoint %lu from manager %lu. The checkpoint is not available.", chkpt_id, persistedChkptAvailResponseMsg->managerID());
+            snprintf(msg, 199, "Unable to access persisted checkpoint %" PRIu64 " from manager %" PRIu64 ". The checkpoint is not available.", chkpt_id, persistedChkptAvailResponseMsg->managerID());
             err_return(DRAGON_INVALID_OPERATION, msg);
         }
 
@@ -1575,7 +1575,7 @@ dragonError_t dragon_ddict_finalize_request(const dragonDDictRequestDescr_t * re
 
                 if (bputResponseMsg->numPuts() != 1) {
                     char msg[200];
-                    snprintf(msg, 199, "Failed to store all keys in manager %lu in the distributed dictionary. Expected number of keys to be written: 1, number of successful writes: %lu", bputResponseMsg->managerID(), bputResponseMsg->numPuts());
+                    snprintf(msg, 199, "Failed to store all keys in manager %" PRIu64 " in the distributed dictionary. Expected number of keys to be written: 1, number of successful writes: %" PRIu64 "", bputResponseMsg->managerID(), bputResponseMsg->numPuts());
                     err_return(DRAGON_FAILURE, msg);
                 }
 

@@ -1,5 +1,5 @@
 CC ?= gcc
-CFLAGS ?= -fPIC -Wall -Ofast -fomit-frame-pointer
+CFLAGS ?= -fPIC -Wall -O3 -ffast-math -fomit-frame-pointer
 INCLUDE = -I $(DRAGON_INCLUDE_DIR)
 LIBS = -L $(DRAGON_LIB_DIR)
 

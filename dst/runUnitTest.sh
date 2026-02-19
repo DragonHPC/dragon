@@ -28,7 +28,7 @@ python3 -m pip install --timeout=120  \
     cryptography \
     "numpy<1.27" \
     parameterized \
-    scipy \
+    "scipy<1.17.0" \
     wheel \
     pyyaml
 

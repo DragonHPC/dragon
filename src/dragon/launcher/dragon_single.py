@@ -114,6 +114,41 @@ def shutdown_monitor(la_in):
     raise TimeoutError()
 
 
+def send_log_msgs_to_py_logger(my_dragon_logger: dlog.DragonLogger, level: int, logging_shutdown: threading.Event):
+    """This thread forwards any log messages received by the DragonLogger channel to
+    the single node python logger.
+
+    Args:
+        my_dragon_logger (DragonLogger): DragonLogger instance to read messages from
+        level (int): minimum log priority of messages to forward
+        logging_shutdown (threading.Event): event to signal shutdown of logging thread
+    """
+    try:
+        log = logging.getLogger("send_log_msgs_to_py_logger")
+        try:
+            # Set timeout to None which allows better interaction with the GIL
+            while not logging_shutdown.is_set():
+                try:
+                    serialized_msg = my_dragon_logger.get(level, timeout=None)
+                    msg = dmsg.parse(serialized_msg)
+                    if isinstance(msg, dmsg.HaltLoggingInfra):
+                        break
+                    elif isinstance(msg, dmsg.LoggingMsgList):
+                        for record in msg.records:
+                            log = logging.getLogger(record.name)
+                            log.log(record.level, record.msg, extra=record.get_logging_dict())
+                    elif isinstance(msg, dmsg.LoggingMsg):
+                        log = logging.getLogger(msg.name)
+                        log.log(msg.level, msg.msg, extra=msg.get_logging_dict())
+                except Exception as ex:
+                    log.debug("logging thread exception %s", ex)
+            log.debug("exiting send logs loop")
+        except Exception as ex:  # pylint: disable=broad-except
+            log.warning(f"Caught exception {ex} in logging thread")
+    finally:
+        log.debug("exiting send logs thread")
+
+
 def main():
     arg_map = launchargs.get_args()
 
@@ -141,6 +176,21 @@ def main():
     ls_thread = threading.Thread(name="local services", target=ls_start, args=(ls_args,), daemon=True)
 
     shm_status = dutil.survey_dev_shm()
+
+    logging_shutdown = threading.Event()
+    level_name = arg_map["log_device_level_map"].get("DRAGON_LOG_DEVICE_STDERR", logging.INFO)
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    dragon_logger = dlog.setup_dragon_logging(node_index=0)
+    send_log_msgs_to_py_logger_thread_args = (dragon_logger, level, logging_shutdown)
+    send_log_msgs_to_py_logger_thread = threading.Thread(
+        name="Logging Monitor",
+        target=send_log_msgs_to_py_logger,
+        args=send_log_msgs_to_py_logger_thread_args,
+        daemon=False,
+    )
+    send_log_msgs_to_py_logger_thread.start()
+    serialized_logger_sdesc = du.B64.bytes_to_str(dragon_logger.serialize())
+    os.environ[dfacts.DRAGON_LOGGER_SDESC] = serialized_logger_sdesc
 
     try:  # ls startup
         ls_thread.start()
@@ -216,6 +266,14 @@ def main():
     except TimeoutError:
         log.warning("infrastructure thread hang")
         print("warning: infrastructure thread hang")
+
+    try:
+        logging_shutdown.set()
+        dragon_logger.put(dmsg.HaltLoggingInfra(tag=dlutil.next_tag()).serialize())
+        send_log_msgs_to_py_logger_thread.join()
+    except Exception as ex:
+        print(f"Exception during logging thread shutdown: {ex}", flush=True)
+        log.warning("Exception during logging thread shutdown: %s", ex)
 
     dutil.compare_dev_shm(shm_status)
 

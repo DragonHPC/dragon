@@ -320,7 +320,7 @@ class GSProcessBaseClass(unittest.TestCase):
 
         desc = create_result[0]
 
-        self.channel_c_uid = desc.m_uid
+        self.channel_c_uid = desc.c_uid
 
         return desc
 

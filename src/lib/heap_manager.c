@@ -240,7 +240,7 @@ static dragonError_t _dragon_heap_malloc(dragonDynHeap_t* heap, const size_t siz
         // Then this request cannot be satisfied, ever given the preallocated blocks
         // in the heap.
         char err_str[200];
-        snprintf(err_str, 199, "Will never be able to satisfy dragon_heap_malloc request of size %lu. This may be because of static pre-allocations. The biggest block allowed is %lu", size, heap->biggest_block);
+        snprintf(err_str, 199, "Will never be able to satisfy dragon_heap_malloc request of size %lu. This may be because of static pre-allocations. The biggest block allowed is %" PRIu64 "", size, heap->biggest_block);
         err_return(DRAGON_DYNHEAP_REQUESTED_SIZE_TOO_LARGE, err_str);
     }
 
@@ -450,7 +450,7 @@ dragonError_t dragon_heap_init(void* ptr, dragonDynHeap_t* heap, const size_t ma
     dragon_bitset_init(ptr, &heap->preallocated, num_segments);
     ptr += bitset_size;
 
-    uint64_t waiter_size;
+    size_t waiter_size;
     dragon_bcast_size(0, DRAGON_HEAP_SPIN_WAITERS, NULL, &waiter_size);
 
     heap->waiters = malloc(sizeof(dragonBCastDescr_t)*heap->num_block_sizes);
@@ -526,7 +526,7 @@ dragonError_t dragon_heap_init(void* ptr, dragonDynHeap_t* heap, const size_t ma
     }
 
     uint64_t block_size = 1UL << min_block_size_power;
-    uint64_t bit_idx;
+    size_t bit_idx;
 
     for (k=0; k<heap->num_block_sizes; k++) {
 
@@ -786,7 +786,7 @@ dragonError_t dragon_heap_free(dragonDynHeap_t* heap, void* offset, size_t size)
         dragon_unlock(&(heap->dlock));
         err_noreturn(err_str);
         free(err_str);
-        snprintf(info, 199, "The pointer/offset %lu with size %lu could not be freed.", (uint64_t)offset, size);
+        snprintf(info, 199, "The pointer/offset %" PRIu64 " with size %lu could not be freed.", (uint64_t)offset, size);
         append_err_return(err, info);
     }
 
@@ -875,12 +875,12 @@ dragonError_t dragon_heap_dump_to_fd(FILE* fd, const char* title, dragonDynHeap_
     fprintf(fd, "* %s\n",title);
     fprintf(fd, "*****************************************************************************************\n");
 
-    fprintf(fd, "*  Number of Segments: %lu (0x%lx)\n", heap->num_segments,heap->num_segments);
-    fprintf(fd, "*  Segment Size: %lu (0x%lx)\n",heap->segment_size, heap->segment_size);
-    fprintf(fd, "*  Number of Block Sizes: %lu\n", heap->num_block_sizes);
-    fprintf(fd, "*  Total Size of Heap: %lu\n", heap->total_size);
+    fprintf(fd, "*  Number of Segments: %" PRIu64 " (0x%" PRIu64 "x)\n", heap->num_segments,heap->num_segments);
+    fprintf(fd, "*  Segment Size: %" PRIu64 " (0x%" PRIu64 "x)\n",heap->segment_size, heap->segment_size);
+    fprintf(fd, "*  Number of Block Sizes: %" PRIu64 "\n", heap->num_block_sizes);
+    fprintf(fd, "*  Total Size of Heap: %" PRIu64 "\n", heap->total_size);
 
-    fprintf(fd, "*  Biggest Possible Block in Heap: %lu\n", heap->biggest_block);
+    fprintf(fd, "*  Biggest Possible Block in Heap: %" PRIu64 "\n", heap->biggest_block);
     fprintf(fd, "*  Number of Processes Waiting for Allocations: %u\n", *heap->num_waiting);
     fprintf(fd, "*  --------------------------------------------------------------------------------------\n");
     fprintf(fd, "*   Free Blocks:\n");

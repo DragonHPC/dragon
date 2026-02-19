@@ -33,26 +33,36 @@ class DataMover(ABC):
         self,
         stop_event: Event,
         device_pool: MemoryPool,
+        input_queue: Queue = None,
+        output_queue: Queue = None,
     ):
         self.device_pool = device_pool
         self.stop_event = stop_event
-        self.input_queue = None
-        self.output_queue = None
+        self.input_queue = input_queue
+        self.output_queue = output_queue
         self.construct_input_output_queues()
 
     def run(self):
         """Main loop for the data mover process"""
+        self._local_process_init()
         while not self.stop_event.is_set():
             try:
-                data = self.input_queue.get(timeout=1)
+                data = self.input_queue.get(timeout=0.1)
                 moved_repr = self._move_data(data)
                 self.output_queue.put(moved_repr)
             except (TimeoutError, queue.Empty):
                 continue
+        self._local_process_cleanup()
 
     def get_input_output_queues(self):
         """Returns the input and output queues"""
         return self.input_queue, self.output_queue
+
+    def _local_process_init(self):
+        pass
+
+    def _local_process_cleanup(self):
+        pass
 
     @abstractmethod
     def _move_data(self, host_data):
@@ -123,11 +133,20 @@ class NumPyDataMover(DataMover):
     :param pool_size: The size of the host memory pool to use for staging the numpy arrays before copying to the GPU.
     """
 
-    def __init__(self, pool_size, *args, **kwargs):
+    def __init__(self, pool_size, pool=None, numa_node=-1, *args, **kwargs):
 
-        uid = 1044 + os.getpid()  # what should this be in general?
-        self._mpool = MemoryPool(pool_size, "numpy_data_mover_host_mpool_" + str(os.getpid()), uid)
+        if pool is not None:
+            self._mpool = pool
+        else:
+            uid = 1044 + os.getpid()  # what should this be in general?
+            self._mpool = MemoryPool(pool_size, "D_np_dm_host_" + str(os.getpid()), uid, numa_node=numa_node)
         super().__init__(*args, **kwargs)
+
+    def _local_process_init(self):
+        self._mpool.process_local_register_with_gpu()
+
+    def _local_process_cleanup(self):
+        self._mpool.process_local_unregister_with_gpu()
 
     def _move_data(self, data):
         """Moves data from host to device. Expects data to be a tuple of (metadata, numpy array), where metadata is a tuple of (shape, dtype). Returns a tuple of (metadata, GPU serialized memory descriptor)."""
@@ -167,8 +186,10 @@ class NumPyDataMover(DataMover):
 
     def construct_input_output_queues(self):
         """Constructs the special input and output queues."""
-        self.input_queue = NumPyInputQueue()
-        self.output_queue = OutputQueue(self.reconstruct)
+        if self.input_queue is None:
+            self.input_queue = NumPyInputQueue(maxsize=200)
+        if self.output_queue is None:
+            self.output_queue = OutputQueue(self.reconstruct, maxsize=200)
 
     def cleanup(self):
         """Cleans up the host memory pool that is used to stage the data for memcpying to the GPU."""
@@ -225,17 +246,30 @@ class NumPyOptimizedDataMover(NumPyDataMover):
 
     def construct_input_output_queues(self):
         """Constructs the special input and output queues."""
-        super().construct_input_output_queues()
-        self.input_queue = NumPyOptimizedInputQueue(self._mpool)
+        if self.input_queue is not None:
+            super().construct_input_output_queues()
+        else:
+            super().construct_input_output_queues()
+            self.input_queue = NumPyOptimizedInputQueue(self._mpool)
 
 
 class CuPyOptimizedDataMover(DataMover):
     """Data mover for moving arrays from GPU to host and reconstructing them as numpy arrays on the host. This version uses relies on the data residing in the buffer that it was originally allocated in. This works for operations like in-place FFTs on complex data-types. Compared to CuPyDataMover, this version avoids an extra memcpy by the kernel process."""
 
-    def __init__(self, pool_size, *args, **kwargs):
-        uid = 1045 + os.getpid()
-        self._mpool = MemoryPool(pool_size, "cupy_optimized_offload_data_mover_host_mpool_" + str(os.getpid()), uid)
+    def __init__(self, pool_size, pool=None, numa_node=-1, *args, **kwargs):
+
+        if pool is not None:
+            self._mpool = pool
+        else:
+            uid = 1045 + os.getpid()
+            self._mpool = MemoryPool(pool_size, "D_cp_opt_dm_host_" + str(os.getpid()), uid, numa_node=numa_node)
         super().__init__(*args, **kwargs)
+
+    def _local_process_init(self):
+        self._mpool.process_local_register_with_gpu()
+
+    def _local_process_cleanup(self):
+        self._mpool.process_local_unregister_with_gpu()
 
     def _move_data(self, data):
         """Moves data from GPU to host. Expects data to be a tuple of (metadata, numpy array), where metadata is a tuple of (shape, dtype). Returns a tuple of (metadata, GPU serialized memory descriptor)."""
@@ -270,8 +304,10 @@ class CuPyOptimizedDataMover(DataMover):
 
     def construct_input_output_queues(self):
         """Constructs the special input and output queues. A regular queue can be utilized as the serialized GPU memory descriptor is all that is given to the data mover."""
-        self.input_queue = Queue()
-        self.output_queue = OutputQueue(self.reconstruct)
+        if self.input_queue is None:
+            self.input_queue = Queue(maxsize=200)
+        if self.output_queue is None:
+            self.output_queue = OutputQueue(self.reconstruct, maxsize=200)
 
     def cleanup(self):
         """Cleans up the host memory pool that is used to stage the data for memcpying from the GPU."""
@@ -318,10 +354,19 @@ class CuPyInputQueue(Queue):
 class CuPyDataMover(DataMover):
     """Data mover for moving arrays GPU to host and reconstructing them as CuPy arrays on the host."""
 
-    def __init__(self, pool_size, *args, **kwargs):
-        uid = 1046 + os.getpid()
-        self._mpool = MemoryPool(pool_size, "cupy_offload_data_mover_host_mpool_" + str(os.getpid()), uid)
+    def __init__(self, pool_size, pool=None, numa_node=-1, *args, **kwargs):
+        if pool is not None:
+            self._mpool = pool
+        else:
+            uid = 1046 + os.getpid()
+            self._mpool = MemoryPool(pool_size, "D_cp_dm_host_" + str(os.getpid()), uid, numa_node=numa_node)
         super().__init__(*args, **kwargs)
+
+    def _local_process_init(self):
+        self._mpool.process_local_register_with_gpu()
+
+    def _local_process_cleanup(self):
+        self._mpool.process_local_unregister_with_gpu()
 
     def _move_data(self, data):
         """Moves data from the GPU to the host.
@@ -367,8 +412,8 @@ class CuPyDataMover(DataMover):
 
     def construct_input_output_queues(self):
         """Constructs the special input and output queues."""
-        self.input_queue = CuPyInputQueue(self.device_pool)
-        self.output_queue = OutputQueue(self.reconstruct)
+        self.input_queue = CuPyInputQueue(self.device_pool, maxsize=200)
+        self.output_queue = OutputQueue(self.reconstruct, maxsize=200)
 
     def cleanup(self):
         """Cleans up the host memory pool that is used to stage the data for memcpying from the GPU."""
@@ -535,6 +580,8 @@ class DataMovers:
         self._num_workers = num_workers
         self._device_pool_size = device_pool_size
         self._manager_queue = Queue()
+        self._input_queue = None
+        self._output_queue = None
         self._tuning_collection_delay = tuning_collection_delay
         self._manager_proc = Process(target=self._manager, policy=manager_policy)
 
@@ -543,7 +590,7 @@ class DataMovers:
         if self._device_pool_size is not None:
             self._device_pool = MemoryPool(
                 self._device_pool_size,
-                "data_movers_gpu_mpool_" + f"{self._data_mover_class.__name__}" + str(os.getpid()),
+                "D_gpu_dm_" + f"{self._data_mover_class.__name__}" + str(os.getpid()),
                 uid,
                 gpu_memory=True,
             )
@@ -611,7 +658,9 @@ class DataMovers:
         """Returns the input and output queues."""
         if not self._manager_proc.is_alive:
             raise RuntimeError("Data movers are not running. Please start them before getting the queues.")
-        return self._manager_queue.get()
+        if self._input_queue is None and self._output_queue is None:
+            self._input_queue, self._output_queue = self._manager_queue.get()
+        return self._input_queue, self._output_queue
 
     def start(self):
         """Start the data movers."""

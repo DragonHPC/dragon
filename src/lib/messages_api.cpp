@@ -85,7 +85,9 @@ const char* dragon_msg_tc_name(uint64_t tc)
     if (tcMap.count(tc_enum) == 0) {
         std::stringstream err_str;
         err_str << "Typecode " << tc << " is not a valid message type.";
-        return err_str.str().c_str();
+        char* err_msg = (char*)malloc(err_str.str().size()+1);
+        strcpy(err_msg, err_str.str().c_str());
+        return err_msg;
     }
 
     return tcMap.at(tc_enum).c_str();

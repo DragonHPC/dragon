@@ -125,18 +125,33 @@ def mk_inf_resources(node_index):
     try:
         inf_muid = dfacts.infrastructure_pool_muid_from_index(node_index)
         ips = dparms.this_process.inf_seg_sz
-        ipn = "%s_%s_" % (_user, os.getpid()) + dfacts.INFRASTRUCTURE_POOL_SUFFIX
+        # These two loops are solely needed when testing and re-creating the pools in rapid succession because the
+        # OS needs a moment to clean up shared memory and sometimes we come back to create again too fast and it has
+        # not yet been cleaned up and reports FILE EXISTS. This should never happen in normal production.
+        for i in range(10):
+            try:
+                ipn = f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(dfacts.INFRASTRUCTURE_POOL_SUFFIX)}{i}"
+                inf_pool = dmm.MemoryPool(ips, ipn, inf_muid)
+                break
+            except:
+                pass
         log.info("inf pool: %s size %s" % (ipn, ips))
-        inf_pool = dmm.MemoryPool(ips, ipn, inf_muid)
+
 
         def_muid = dfacts.default_pool_muid_from_index(node_index)
         dps = dparms.this_process.default_seg_sz
-        dpn = "%s_%s_" % (_user, os.getpid()) + dfacts.DEFAULT_POOL_SUFFIX
+        for i in range(10):
+            try:
+                dpn = f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(dfacts.DEFAULT_POOL_SUFFIX)}{i}"
+                def_pool = dmm.MemoryPool(dps, dpn, def_muid, pre_alloc_blocks=[8, 8, 8, 8, 8, 8, 8, 8, 0, 0, 0, 0, 8])
+                break
+            except:
+                pass
         log.info("def pool: %s size %s" % (dpn, dps))
 
         # PJM TODO: how pre-allocated blocks are done here is temporary.  We also need a better way
         # to manage Pool attributes as there are many more we will expose.
-        def_pool = dmm.MemoryPool(dps, dpn, def_muid, pre_alloc_blocks=[8, 8, 8, 8, 8, 8, 8, 8, 0, 0, 0, 0, 8])
+
         start_pools = {inf_muid: inf_pool, def_muid: def_pool}
         dparms.this_process.inf_pd = dutils.B64.bytes_to_str(inf_pool.serialize())
         dparms.this_process.default_pd = dutils.B64.bytes_to_str(def_pool.serialize())
@@ -350,6 +365,7 @@ def multinode(
 
         dparms.this_process.index = node_index
         os.environ.update(dparms.this_process.env())
+        os.environ[dfacts.DRAGON_LOGGER_SDESC] = str(logger_sdesc)
 
         if is_primary:
             gs_cd = dparms.this_process.gs_cd
@@ -528,7 +544,8 @@ def multinode(
                 error_str = f"Unable to bring up Dragon global services: {gs_stderr.decode()}"
                 la_input.send(dmsg.AbnormalTermination(tag=get_new_tag(), err_info=error_str).serialize())
                 raise RuntimeError(error_str)
-            assert isinstance(gs_ping_ls, dmsg.GSPingSH), "ls expected GSPingSH"
+            if not isinstance(gs_ping_ls, dmsg.GSPingSH):
+                assert False, f"ls expected GSPingSH, received {type(gs_ping_ls)}"
             log.info("ls received GSPingSH from gs - m10")
 
             # Send response to GS

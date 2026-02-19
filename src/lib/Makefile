@@ -16,9 +16,9 @@ endif
 
 CC = gcc
 #CFLAGS = -O0 -g -fPIC -Wall
-CFLAGS = -O3 -fomit-frame-pointer -fPIC -Wall
+CFLAGS = -O3 -ffast-math -fomit-frame-pointer -fPIC -Wall
 CXX = g++
-CPPFLAGS = -I ../include -I ./gpu -I $(DEFAULT_PMIX_INCLUDE) -DDRAGON_DEBUG $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
+CPPFLAGS = -I ../include -I ./gpu -I $(DEFAULT_PMIX_INCLUDE) -DDRAGON_DEBUG -D_GNU_SOURCE $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
 CXXFLAGS = $(CFLAGS) $(CPPFLAGS) -std=c++14
 
 LIBRARIES := libdragon.so libpmod.so $(wildcard libdfabric_*.so)
@@ -59,10 +59,16 @@ message_defs.capnp.o:
 
 $(libdragon_OBJECTS): $(libdragon_SOURCES) $(libdragon_HEADERS)
 
-LDLIBS += -lstdc++ -lrt -ldl
+LDLIBS += -lstdc++ -ldl
+
+OS = $(shell uname -s)
 
 libdragon.so: $(libdragon_OBJECTS)
-	$(CC) -L . -L ${VIRTUAL_ENV}/lib -L ${VIRTUAL_ENV}/lib64 -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS)
+	@if [ "$(OS)" != "Darwin" ]; then \
+		$(CC) -L . -L ${VIRTUAL_ENV}/lib -L ${VIRTUAL_ENV}/lib64 -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS) -lrt; \
+	else \
+		$(CC) -L . -L ${VIRTUAL_ENV}/lib -shared -o $@ $^ -lcapnp -lkj $(LDLIBS); \
+	fi
 
 libpmod.so: libdragon.so
 	ln -sf libdragon.so libpmod.so

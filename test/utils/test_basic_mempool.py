@@ -10,7 +10,6 @@ from dragon.managed_memory import (
     MemoryPool,
     MemoryAlloc,
     MemoryAllocations,
-    MemoryPoolAttr,
     DragonPoolError,
     DragonPoolAttachFail,
     DragonPoolCreateFail,
@@ -108,7 +107,7 @@ class MemPoolCreateTest(unittest.TestCase):
         (uid, fname) = MemoryPool.serialized_uid_fname(pool_ser)
         try:
             self.assertEqual(uid, DEFAULT_UID)
-            self.assertEqual(fname, "/_dragon_mpool_test_manifest")
+            self.assertEqual(fname, "/Dmpool_testM")
         finally:
             mpool.destroy()
 
@@ -217,13 +216,11 @@ class MemPoolCreateTest(unittest.TestCase):
 
     def test_create_max_name(self):
         size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
-        # Expect shm_open() to limit names to _POSIX_PATH_MAX, which is
-        # typically 256 bytes. Recall that names are prefixed with `"/" +
-        # DRAGON_MEMORY_DEFAULT_FILE_PREFIX` (e.g., `"_dragon_"`) and suffixed
-        # with `"_manifest."`, see _alloc_pool_shm(). This implies the longest
-        # possible name given to `MemoryPool.create()` is 236 bytes, after being
-        # UTF-8 encoded and accounting for the terminating `\0` byte.
-        name = "a" * 236
+        # Mac OS X is limited to 32 character names including
+        # the null-terminator. So 31 characters. 2 chars are
+        # added by dragon. So base name must be 28 or less.
+        # For now we use the same size for POSIX.
+        name = "a" * 28
         mpool = MemoryPool(size, name, 1, None)
         self.assertIsInstance(mpool, MemoryPool)
         mpool.destroy()
@@ -241,14 +238,14 @@ class MemPoolCreateTest(unittest.TestCase):
             _ = MemoryPool(size, name, 1, None)
 
     def test_create_random_name(self):
-        name = "".join(random.choices(string.ascii_letters + string.digits, k=random.randint(1, 236)))
+        name = "".join(random.choices(string.ascii_letters + string.digits, k=random.randint(1, 28)))
         size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
         mpool = MemoryPool(size, name, 1, None)
         self.assertIsInstance(mpool, MemoryPool)
         mpool.destroy()
 
     def test_create_random(self):
-        name = "".join(random.choices(string.ascii_letters + string.digits, k=random.randint(1, 236)))
+        name = "".join(random.choices(string.ascii_letters + string.digits, k=random.randint(1, 28)))
         size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
         uid = random.randint(0, 2**64)
         mpool = MemoryPool(size, name, uid, None)

@@ -90,6 +90,12 @@ dragon_gpu_copy(void *dragon_gpu_handle, void *dst_addr, const void *src_addr, s
 dragonError_t
 dragon_gpu_memset(void *dragon_gpu_handle, void *addr, int val, size_t num_bytes);
 
+dragonError_t
+dragon_gpu_host_register(void *dragon_gpu_handle, void *addr, size_t size);
+
+dragonError_t
+dragon_gpu_host_unregister(void *dragon_gpu_handle, void *addr);
+
 void
 dragon_gpu_get_errstr(void *dragon_gpu_handle, const char *event, int rc, char *errstr, int strlen);
 

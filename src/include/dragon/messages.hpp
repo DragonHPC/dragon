@@ -1216,7 +1216,6 @@ class DDIteratorMsg: public DragonMsg {
 
     private:
     uint64_t mClientID;
-    uint64_t chkptID = 0;
 };
 
 class DDIteratorResponseMsg: public DragonResponseMsg {

@@ -57,7 +57,7 @@ main(int argc, char * argv[])
     }
     printf("Could not create pool second time. Error code was %s\n", dragon_get_rc_string(derr));
 
-    printf("POOL SERIALIZE %lu\n",pool_descr._idx);
+    printf("POOL SERIALIZE %" PRIu64 "\n",pool_descr._idx);
     fflush(stdout);
     dragonMemoryPoolSerial_t pool_ser;
     derr = dragon_memory_pool_serialize(&pool_ser, &pool_descr);

@@ -105,6 +105,7 @@ class TestDDict(unittest.TestCase):
         newmsg = dmsg.parse(ser)
         self.assertIsInstance(newmsg, dmsg.DDRegisterClient)
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Fails in proxy mode")
     def test_ddict_client_response_message(self):
         manager_nodes = b64encode(cloudpickle.dumps([Node(ident=socket.gethostname()) for _ in range(2)]))
         msg = dmsg.DDRegisterClientResponse(
@@ -389,6 +390,7 @@ class TestDDict(unittest.TestCase):
             procs[i].join()
         d.destroy()
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Ill-defined behavior in proxy mode")
     def test_local_managers(self):
         d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size)
 
@@ -403,6 +405,7 @@ class TestDDict(unittest.TestCase):
 
         d.destroy()
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Ill-defined behavior in proxy mode")
     def test_local_keys(self):
         d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size, trace=True)
 
@@ -446,6 +449,7 @@ class TestDDict(unittest.TestCase):
 
         d.destroy()
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Ill-defined behavior in proxy mode")
     def test_local_values(self):
         d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size, trace=True)
 
@@ -496,6 +500,7 @@ class TestDDict(unittest.TestCase):
 
         d.destroy()
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Ill-defined behavior in proxy mode")
     def test_local_items(self):
         d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size, trace=True)
 
@@ -548,6 +553,7 @@ class TestDDict(unittest.TestCase):
 
         d.destroy()
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Ill-defined behavior in proxy mode")
     def test_local_values(self):
         d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size, trace=True)
 

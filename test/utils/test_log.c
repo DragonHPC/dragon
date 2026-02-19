@@ -16,6 +16,7 @@ int main(int argc, char **argv)
     dragonM_UID_t m_uid = 1;
     dragonC_UID_t l_uid = 90210;
     char * fname = util_salt_filename("test_log");
+    void * result = NULL;
 
     printf("Pool Create\n");
     dragonError_t derr = dragon_memory_pool_create(&mpool, mem_size, fname, m_uid, NULL);
@@ -41,23 +42,36 @@ int main(int argc, char **argv)
     // e.g. dragon_logging_get(&logger, LOG_DEBUG | LOG_ERROR, NULL);
     */
 
+    char log_msg[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    size_t log_len;
+
     // Test putting in different priority messages
-    derr = dragon_logging_put(&logger, DG_DEBUG, "A");
+    derr = dragon_logging_put(&logger, DG_DEBUG, log_msg, strlen(log_msg));
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Failed to put test message A", jmp_destroy_pool);
-    printf("Inserted message A\n");
+    printf("Inserted message ABCDEFGHIJKLMNOPQRSTUVWXYZ\n");
 
-    derr = dragon_logging_put(&logger, DG_INFO, "B");
+    derr = dragon_logging_get(&logger, DG_DEBUG, &result, &log_len, NULL);
+    printf("%s and length is %ld and strlen is %ld\n", (char *)result, log_len, strlen(result));
+    free(result);
+    result = NULL;
+
+    derr = dragon_logging_put(&logger, DG_DEBUG, "ABCDE", 5);
+    if (derr != DRAGON_SUCCESS)
+        main_err_fail(derr, "Failed to put test message A", jmp_destroy_pool);
+    printf("Inserted message ABCDE\n");
+
+    derr = dragon_logging_put(&logger, DG_INFO, "B", 1);
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Failed to put test message B", jmp_destroy_pool);
     printf("Inserted message B\n");
 
-    derr = dragon_logging_put(&logger, DG_WARNING, "C");
+    derr = dragon_logging_put(&logger, DG_WARNING, "C", 1);
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Failed to put test message C", jmp_destroy_pool);
     printf("Inserted message C\n");
 
-    derr = dragon_logging_put(&logger, DG_ERROR, "D");
+    derr = dragon_logging_put(&logger, DG_ERROR, "D", 1);
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Failed to put test message D", jmp_destroy_pool);
     printf("Inserted message D\n");
@@ -74,13 +88,13 @@ int main(int argc, char **argv)
     }
 
     // Test only retrieving certain levels
-    derr = dragon_logging_put(&logger, DG_INFO, "E");
+    derr = dragon_logging_put(&logger, DG_INFO, "E", 1);
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Failed to put test message E", jmp_destroy_pool);
-    derr = dragon_logging_put(&logger, DG_WARNING, "F");
+    derr = dragon_logging_put(&logger, DG_WARNING, "F", 1);
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Failed to put test message F", jmp_destroy_pool);
-    derr = dragon_logging_put(&logger, DG_ERROR, "G");
+    derr = dragon_logging_put(&logger, DG_ERROR, "G", 1);
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Failed to put test message G", jmp_destroy_pool);
 
@@ -92,39 +106,23 @@ int main(int argc, char **argv)
     if (derr != DRAGON_SUCCESS)
         main_err_fail(derr, "Failed to get test message (priority 2, second)", jmp_destroy_pool);
 
-    #define A_STRING "A string!"
-    derr = dragon_logging_put(&logger, DG_DEBUG, A_STRING);
-    if (derr != DRAGON_SUCCESS)
-        main_err_fail(derr, "Failed to put test message 'A string!'", jmp_destroy_pool);
-
-    // Test grabbing the string back
-    char * out_str = NULL;
-    derr = dragon_logging_get_str(&logger, DG_DEBUG, &out_str, NULL);
-    if (derr != DRAGON_SUCCESS)
-        main_err_fail(derr, "Failed to retrieve stringified message", jmp_destroy_pool);
-
-    if (strcmp(A_STRING, out_str) != 0) {
-        printf("Expected %s but got %s\n", A_STRING, out_str);
-        jmp_fail("get_str check failed", jmp_destroy_pool);
-    }
-
-    // get_str locally allocates the string to free the internal logging memory, release user-side
-    free(out_str);
-
     // Test timeout
-    void * msg_out;
+    void * msg_out = NULL;
+    size_t msg_len;
     timespec_t timeout = {1, 0};
     printf("Waiting one second with an empty log queue...\n");
-    derr = dragon_logging_get(&logger, DG_DEBUG, &msg_out, &timeout);
+    derr = dragon_logging_get(&logger, DG_DEBUG, &msg_out, &msg_len, &timeout);
     if (derr == DRAGON_SUCCESS)
         jmp_fail("Expected error code on timeout, got success", jmp_destroy_pool);
+    if (msg_out != NULL)
+        jmp_fail("Expected NULL msg_out on timeout", jmp_destroy_pool);
 
     // Test log overflow
     printf("Testing log overflow...\n");
     for (int i = 0; i < (NMSGS + 1); i++) {
         char buf[4];
         sprintf(buf, "%d", i);
-        derr = dragon_logging_put(&logger, DG_DEBUG, buf);
+        derr = dragon_logging_put(&logger, DG_DEBUG, buf, strlen(buf));
         // Assert the log drops messages on full
         if (derr == DRAGON_CHANNEL_FULL) {
             if (i == 100)
@@ -139,26 +137,6 @@ int main(int argc, char **argv)
             printf("Failed at index %d!\n", i);
             main_err_fail(derr, "Failed to insert message in log overflow", jmp_destroy_pool);
         }
-    }
-
-    char * tmp;
-    derr = dragon_logging_get_str(&logger, DG_DEBUG, &tmp, NULL);
-    if (derr != DRAGON_SUCCESS)
-        main_err_fail(derr, "Couldn't retrieve first message after filling log channel", jmp_destroy_pool);
-
-    if (strcmp("0", tmp) != 0) {
-        printf("First log after overflow should be '0', got: %s\n", tmp);
-        jmp_fail("get_str check failed", jmp_destroy_pool);
-    }
-    free(tmp);
-
-    for (int i = 1; i < (NMSGS); i++) {
-        derr = dragon_logging_get_str(&logger, DG_DEBUG, &tmp, NULL);
-        if (derr != DRAGON_SUCCESS) {
-            printf("Failed at retrieving index %d\n", i);
-            main_err_fail(derr, "Couldn't retrieve message string", jmp_destroy_pool);
-        }
-        free(tmp);
     }
 
     /* Iterate over an empty channel a bajillion times with blocking mode enabled to test for memory leaks
@@ -180,6 +158,7 @@ int main(int argc, char **argv)
 
     /* Use this as a cleanup GOTO so we don't need to manually delete SHM files */
     printf("All tests passed\n");
+
 jmp_destroy_pool:
     printf("Goto Destroy\n");
     derr = dragon_memory_pool_destroy(&mpool);

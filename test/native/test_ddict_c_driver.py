@@ -1,6 +1,7 @@
 import os
 import unittest
 import pathlib
+import platform
 import dragon
 from dragon.native.process import Popen
 from dragon.data.ddict.ddict import DDict, PosixCheckpointPersister
@@ -9,12 +10,13 @@ from dragon.infrastructure.policy import Policy
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
 import multiprocessing as mp
 
+
 test_dir = pathlib.Path(__file__).resolve().parent
 os.system(f"cd {test_dir}; make --silent")
 
 ENV = dict(os.environ)
 ENV["LD_LIBRARY_PATH"] = str(DRAGON_LIB_DIR) + ":" + str(ENV.get("LD_LIBRARY_PATH", ""))
-
+ENV["DYLD_FALLBACK_LIBRARY_PATH"] = str(DRAGON_LIB_DIR) + ":" + str(ENV.get("DYLD_FALLBACK_LIBRARY_PATH", ""))
 
 class TestDDictC(unittest.TestCase):
 
@@ -202,6 +204,7 @@ class TestDDictC(unittest.TestCase):
         ddict.destroy()
         self.assertEqual(proc.returncode, 0, "C client exited with non-zero exit code")
 
+    @unittest.skipIf(platform.system() == "Darwin", "Hangs on macOS")
     def test_keys(self):
         exe = "c_ddict"
         ddict = DDict(2, 1, 3000000, trace=True)

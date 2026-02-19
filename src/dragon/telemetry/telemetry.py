@@ -104,7 +104,7 @@ class Telemetry:
                 self.formatted_data["dps"] = [{"metric": data_name, "value": ts_data, "tags": {tagk: tagv}}]
 
             api_resp = requests.post(self.metrics_url, json=self.formatted_data)
-
+            
     def finalize(self) -> None:
         """Finalize shuts down the telemetry service if it was started. It can be called when the user is done with telemetry. If it is not called the user will have to Ctrl-C from the terminal to shutdown the telemetry service."""
         # if telemetry_level is 0 then the telemetry infrastructure wasn't started

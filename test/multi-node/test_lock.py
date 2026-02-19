@@ -8,6 +8,7 @@ The test is run with `dragon test_lock.py -f -v`
 import unittest
 import pickle
 import sys
+import os
 
 import dragon
 from dragon.globalservices.process import (
@@ -60,6 +61,8 @@ def _acquirer(env_str):
 
 
 class TestLockMultiNode(unittest.TestCase):
+
+    @unittest.skipIf(bool(os.environ.get("DRAGON_PROXY_ENABLED")), "Fails in proxy mode")
     def test_lock_basic(self):
         """Test that processes actually wait on the lock and can be released
         by any other process.

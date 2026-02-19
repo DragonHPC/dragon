@@ -18,6 +18,7 @@ char * dragon_getlasterrstr();
 char * dragon_getrawerrstr();
 void dragon_setrawerrstr(char* err_str);
 void dragon_enable_errstr(bool enable_errstr);
+void dragon_replace_errstr(char* new_str);
 
 
 #define DRAGON_MAX_ERRSTR_REC_LEN 4096
@@ -34,43 +35,43 @@ void dragon_enable_errstr(bool enable_errstr);
 
 #define err_return(err, str) ({\
     if (dg_enable_errstr) {\
-        char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "  %s: %s() (line %i) :: %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err)) + 1));\
-        sprintf(head, "  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
+        int size = snprintf(NULL, 0, "  %s: %s() (line %i) :: %s\n    %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err), str) + 1;\
+        char * head = (char*) malloc(sizeof(char) * size);\
+        snprintf(head, size, "  %s: %s() (line %i) :: %s\n    %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err), str);\
         _set_errstr(head);\
         free(head);\
-        _append_errstr((char*)str);\
     }\
     return err;\
 })
 
 #define err_noreturn(str) ({\
     if (dg_enable_errstr) {\
-        char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__) + 1));\
-        sprintf(head, "  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
+        int size = snprintf(NULL, 0, "  %s: %s() (line %i) :: %s\n    %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err), str) + 1;\
+        char * head = (char*) malloc(sizeof(char) * size);\
+        snprintf(head, size, "  %s: %s() (line %i) :: %s\n     %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err), str);\
         _set_errstr(head);\
         free(head);\
-        _append_errstr((char*)str);\
     }\
 })
 
 #define append_err_return(err, str) ({\
     if (dg_enable_errstr) {\
-        char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__) + 1));\
-        sprintf(head, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
+        int size = snprintf(NULL, 0, "  %s: %s() (line %i) :: %s\n    %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err), str) + 1;\
+        char * head = (char*) malloc(sizeof(char) * size);\
+        snprintf(head, size, "  %s: %s() (line %i) :: %s\n    %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err), str);\
         _append_errstr(head);\
         free(head);\
-        _append_errstr((char*)str);\
     }\
     return err;\
 })
 
 #define append_err_noreturn(str) ({\
     if (dg_enable_errstr) {\
-        char * head = (char*) malloc(sizeof(char) * (snprintf(NULL, 0, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__) + 1));\
-        sprintf(head, "\n  %s: %s() (line %i) :: ", __FILE__, __func__, __LINE__);\
+        int size = snprintf(NULL, 0, "  %s: %s() (line %i) :: %s\n    %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err), str) + 1;\
+        char * head = (char*) malloc(sizeof(char) * size);\
+        snprintf(head, size, "  %s: %s() (line %i) :: %s\n    %s", __FILE__, __func__, __LINE__, dragon_get_rc_string(err), str);\
         _append_errstr(head);\
         free(head);\
-        _append_errstr((char*)str);\
     }\
 })
 #else

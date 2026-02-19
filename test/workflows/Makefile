@@ -1,5 +1,17 @@
+ifeq ($(LD_LIBRARY_PATH),)
+    export LD_LIBRARY_PATH := $(abspath ../../src/lib)
+else
+    export LD_LIBRARY_PATH := $(abspath ../../src/lib):$(LD_LIBRARY_PATH)
+endif
+
+ifeq ($(DYLD_LIBRARY_PATH),)
+    export DYLD_LIBRARY_PATH := $(abspath ../../src/lib)
+else
+    export DYLD_LIBRARY_PATH := $(abspath ../../src/lib):$(DYLD_LIBRARY_PATH)
+endif
+
 CC=gcc
-DRAGON=dragon
+DRAGON=DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon
 
 CFLAGS  = -g  -pedantic -Wall -I ${CRAY_MPICH_DIR}/include -L ${CRAY_MPICH_DIR}/lib
 LD_FLAGS = -lm -L ${CRAY_MPICH_DIR}/lib -lmpich

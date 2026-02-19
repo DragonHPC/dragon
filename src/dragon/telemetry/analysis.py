@@ -186,6 +186,16 @@ class AnalysisClient:
         :type exclude_hostnames: list of strings, optional
         """
         runtime_reboot(huids=exclude_huids, hostnames=exclude_hostnames)
+    
+    def db_dump(self) -> None:
+        """Requests the telemetry server to dump all telemetry data from the telemetry database files on each node."""
+
+        if self._request_conn is None:
+            raise RuntimeError("Unable to make a request without first connecting to the server.")
+        start_time = int(time.time())
+        temp_request = {"type": "dump", "start_time": start_time, "metrics": None}
+        data = self._send_recv_req(temp_request)
+        return data
 
 
 class AnalysisServer:

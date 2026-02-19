@@ -77,6 +77,7 @@ def start_transport_agent(
     # fabric libraries
     lib_dir = os.path.join(os.path.dirname(__file__), "../lib")
     _env["LD_LIBRARY_PATH"] = lib_dir + ":" + str(_env.get("LD_LIBRARY_PATH", ""))
+    _env["DYLD_FALLBACK_LIBRARY_PATH"] = lib_dir + ":" + str(_env.get("DYLD_FALLBACK_LIBRARY_PATH", ""))
 
     if gateway_channels is not None:
         for i, ch in enumerate(gateway_channels):

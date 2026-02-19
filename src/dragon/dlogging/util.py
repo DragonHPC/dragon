@@ -11,7 +11,7 @@ import argparse
 import dragon.infrastructure.facts as dfacts
 import dragon.infrastructure.messages as dmsg
 from dragon.utils import B64
-from dragon.managed_memory import MemoryPool
+from dragon.managed_memory import MemoryPool, DragonPoolCreateFail
 from dragon.dlogging.logger import DragonLogger, DragonLoggingError
 
 # This is random and exists to conform to the messaging infrastructure.
@@ -44,9 +44,13 @@ LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING = {
 }
 
 # Default formatting for logging
-default_single_fmt = "%(asctime)-15s %(levelname)-8s %(name)s :: %(message)s"
-default_FE_fmt = "%(asctime)-15s %(levelname)-8s %(service)s:%(name)s (%(hostname)s) :: %(message)s"
-default_services_fmt = "%(time)-15s %(levelname)-8s %(service)s:%(name)s (%(hostname)s) :: %(message)s"
+default_single_fmt = "%(asctime)-15s %(levelname)-8s %(name)s %(threadName)s (%(thread)d) :: %(message)s"
+default_FE_fmt = (
+    "%(asctime)-15s %(levelname)-8s %(service)s:%(name)s (%(hostname)s) %(threadName)s (%(thread)d) :: %(message)s"
+)
+default_services_fmt = (
+    "%(time)-15s %(levelname)-8s %(service)s:%(name)s (%(hostname)s) %(threadName)s (%(thread)d) :: %(message)s"
+)
 
 
 class LoggingValue(argparse.Action):
@@ -247,12 +251,11 @@ class DragonLoggingHandler(logging.StreamHandler):
             err: DragonLoggingError if message could not be emitted into logging channel
         """
         try:
-            self.format(record)
             msg = dmsg.LoggingMsg(
                 tag=next_tag(),
                 name=record.name,
-                msg=record.msg,
-                time=record.asctime,
+                msg=record.getMessage(),
+                time=record.created,
                 func=record.funcName,
                 hostname=self.hostname,
                 ip_address=self.ip_address,
@@ -316,7 +319,7 @@ def _configure_console_logging(level, fmt=None):
     console.setLevel(level)
 
     if fmt is None:
-        formatter = logging.Formatter("%(name)-12s: %(levelname)-8s %(message)s")
+        formatter = logging.Formatter("%(name)-12s: %(levelname)-8s %(message)s %(threadName)s (%(thread)d)")
     else:
         formatter = logging.Formatter(fmt)
 
@@ -514,9 +517,18 @@ def _get_logging_mpool(node_index: int):
     """
     _user = os.environ.get("USER", str(os.getuid()))
     lps = int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ)
-    lpn = f"{_user}_{os.getpid()}_{dfacts.LOGGING_POOL_SUFFIX}"
+    lpn = f"D{_user[-3:]}{str(os.getpid())[-3:]}{str(dfacts.LOGGING_POOL_SUFFIX)[-3:]}"
     lp_muid = dfacts.logging_pool_muid_from_index(node_index)
-    logging_mpool = MemoryPool(lps, lpn, lp_muid, None)
+    # In some tests, the previous logging pool has not quite been released (by the OS)
+    # before the next test starts. This just tries a different name if that happens
+    # in our tests. When running dragon the logging pool should always end with "_0"
+    # outside our tests.
+    for i in range(10):
+        try:
+            logging_mpool = MemoryPool(lps, lpn + "_" + str(i), lp_muid, None)
+            break
+        except DragonPoolCreateFail:
+            pass
     return logging_mpool
 
 
@@ -584,6 +596,7 @@ def setup_BE_logging(
     ip_address: str = None,
     port: str = None,
     fname: str = None,
+    load_sdesc_from_environ: bool = True,
 ) -> Tuple[int, str]:
     """Configure backend logging for requested backend service
 
@@ -608,6 +621,11 @@ def setup_BE_logging(
     """
     full_fn = ""
     log_level = 0
+
+    if load_sdesc_from_environ and not any([logger_sdesc, mpool]):
+        logger_sdesc = os.environ.get(dfacts.DRAGON_LOGGER_SDESC, None)
+        if logger_sdesc is not None:
+            logger_sdesc = B64.from_str(logger_sdesc)
 
     # Make sure there isn't a duplicate handler already attached to this root instance
     _clear_root_log_handlers()
@@ -654,9 +672,6 @@ def setup_BE_logging(
             handler = DragonLoggingHandler(
                 logger_sdesc, mpool=mpool, hostname=hostname, ip_address=ip_address, port=port, service=service
             )
-
-            # Give it a formatter with asctime so time gets populated in the log record
-            handler.setFormatter(logging.Formatter(fmt=default_single_fmt + "%(funcName)s"))
 
             # The intent of this next block is to prevent sending DEBUG or higher log
             # messages over the MRNet connection if those log messages will be logged

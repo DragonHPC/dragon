@@ -49,7 +49,12 @@ def main():
                     val = next_val
                     next_val += 1
                 line_to_write = f"    {tc} = {val}"
-                map_line = "    {" + f'{tc}, "{tc}"' + "}"
+                if tc == "DRAGON_MSG":
+                    tc_mapped = f"The messsage typecode is not a valid message type."
+                else:
+                    tc_mapped = tc
+
+                map_line = "    {" + f'{tc}, "{tc_mapped}"' + "}"
 
     if len(line_to_write) > 0:
         enum_file.write(f"{line_to_write}\n")

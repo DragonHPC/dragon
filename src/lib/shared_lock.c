@@ -86,7 +86,7 @@ _dragon_node_try_lock(dragonFIFOLock_t * dlock, int * locked)
         desired = now_serve + 1UL;
 
         atomic_bool success = atomic_compare_exchange_strong_explicit(ticket_counter,
-                                                                      &now_serve, desired,
+                                                                      (uint_fast64_t*)&now_serve, desired,
                                                                       DRAGON_LOCK_MEM_ORDER,
                                                                       DRAGON_LOCK_MEM_ORDER_FAIL);
         if (success == true) {
@@ -849,7 +849,7 @@ dragon_fifo_try_lock(dragonFIFOLock_t * dlock, int *locked)
 
             atomic_bool success;
             success = atomic_compare_exchange_strong_explicit(dlock->ticket_counter,
-                                                              &now_serve, desired,
+                                                              (uint_fast64_t*)&now_serve, desired,
                                                               DRAGON_LOCK_MEM_ORDER,
                                                               DRAGON_LOCK_MEM_ORDER_FAIL);
             if (success == true) {
@@ -909,7 +909,7 @@ dragon_fifolite_try_lock(dragonFIFOLiteLock_t * dlock, int *locked)
 
         atomic_bool success;
         success = atomic_compare_exchange_strong_explicit(dlock->ticket_counter,
-                                                          &now_serve, desired,
+                                                          (uint_fast64_t*)&now_serve, desired,
                                                           DRAGON_LOCK_MEM_ORDER,
                                                           DRAGON_LOCK_MEM_ORDER_FAIL);
         if (success == true) {

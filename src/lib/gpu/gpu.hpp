@@ -32,6 +32,8 @@ public:
     virtual dragonError_t copy(void *dst_addr, const void *src_addr, size_t size, dragonGPUMemcpyType_t memcpy_type) = 0;
     virtual dragonError_t memset(void *addr, int val, size_t num_bytes) = 0;
     virtual std::string get_errstr(const char *event, int rc) = 0;
+    virtual dragonError_t host_register(void *addr, size_t size) = 0;
+    virtual dragonError_t host_unregister(void *addr) = 0;
 };
 
 struct dragonGPUHandle_t {

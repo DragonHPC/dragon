@@ -98,63 +98,11 @@ class ChannelRemoteOperationNotSupported(ChannelError):
 class ChannelDestroyed(ChannelError, dtypes.DragonObjectDestroyed, EOFError):
     pass
 
-class ChannelSetError(Exception):
-    def __init__(self, msg, lib_err=None, lib_msg=None, lib_err_str=None):
-        self._msg = msg
-        self._lib_err = lib_err
-        cdef char * errstr
-        if lib_err is not None and lib_msg is None and lib_err_str is None:
-            errstr = dragon_getlasterrstr()
-            self._lib_msg = errstr[:].decode('utf-8')
-            free(errstr)
-            rcstr = dragon_get_rc_string(lib_err)
-            self._lib_err_str = rcstr[:].decode('utf-8')
-        else:
-            self._lib_err = lib_err
-            self._lib_msg = lib_msg
-            self._lib_err_str = lib_err_str
-
-    def __str__(self):
-        if self._lib_err is None:
-            return f'ChannelSet Error: {self._msg}'
-
-        return f'ChannelSet Library Error: {self._msg} | Dragon Msg: {self._lib_msg} | Dragon Error Code: {self._lib_err_str}'
-
-    @property
-    def lib_err(self):
-        return self._lib_err
-
-    def __repr__(self):
-        return f'{self.__class__}({self._msg!r}, {self._lib_err!r}, {self._lib_msg!r}, {self._lib_err_str!r})'
+class ChannelSetError(dtypes.DragonException):
+    pass
 
 class ChannelSetTimeout(ChannelSetError, TimeoutError):
-    def __init__(self, msg, lib_err=None, lib_msg=None, lib_err_str=None):
-        self._msg = msg
-        self._lib_err = lib_err
-        cdef char * errstr
-        if lib_err is not None and lib_msg is None and lib_err_str is None:
-            errstr = dragon_getlasterrstr()
-            self._lib_msg = errstr[:].decode('utf-8')
-            free(errstr)
-            rcstr = dragon_get_rc_string(lib_err)
-            self._lib_err_str = rcstr[:].decode('utf-8')
-        else:
-            self._lib_err = lib_err
-            self._lib_msg = lib_msg
-            self._lib_err_str = lib_err_str
-
-    def __str__(self):
-        if self._lib_err is None:
-            return f'ChannelSet Error: {self._msg}'
-
-        return f'ChannelSet Library Error: {self._msg} | Dragon Msg: {self._lib_msg} | Dragon Error Code: {self._lib_err_str}'
-
-    @property
-    def lib_err(self):
-        return self._lib_err
-
-    def __repr__(self):
-        return f'{self.__class__}({self._msg!r}, {self._lib_err!r}, {self._lib_msg!r}, {self._lib_err_str!r})'
+    pass
 
 
 def register_gateways_from_env():
@@ -207,7 +155,7 @@ cdef class Message:
             dragonMessageAttr_t attrs
 
         msg = Message()
-        derr = dragon_channel_message_attr_init(&attrs);
+        derr = dragon_channel_message_attr_init(&attrs)
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Could not create default message attributes", derr)
 
@@ -262,7 +210,7 @@ cdef class Message:
             timespec_t timer
             dragonMessageAttr_t attrs
 
-        derr = dragon_channel_message_attr_init(&attrs);
+        derr = dragon_channel_message_attr_init(&attrs)
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Could not create default message attributes", derr)
 
@@ -476,6 +424,7 @@ cpdef enum EventType:
     SEMAPHORE_V = DRAGON_SEMAPHORE_V
     SEMAPHORE_Z = DRAGON_SEMAPHORE_Z
     SEMAPHORE_PEEK = DRAGON_SEMAPHORE_PEEK
+    CHANNEL_CLEANUP = DRAGON_CHANNEL_CLEANUP
 
 cpdef enum FlowControl:
     NO_FLOW_CONTROL = DRAGON_CHANNEL_FC_NONE
@@ -504,7 +453,7 @@ cdef class ChannelSendH:
         timespec_t default_val
 
 
-    def __init__(self, Channel ch, return_mode=dtypes.WHEN_BUFFERED, wait_mode=dtypes.DEFAULT_WAIT_MODE, timeout=None):
+    def __init__(self, Channel ch, return_mode=dtypes.WHEN_BUFFERED, wait_mode=dtypes.DEFAULT_WAIT_MODE, timeout=None, debug=0):
         cdef:
             dragonError_t derr
             dragonChannelSendAttr_t attrs
@@ -518,6 +467,7 @@ cdef class ChannelSendH:
 
         attrs.return_mode = return_mode.value
         attrs.wait_mode = wait_mode.value
+        attrs.debug = debug
         default_val = DRAGON_CHANNEL_BLOCKING_NOTIMEOUT
         _compute_timeout(timeout, &default_val, &attrs.default_timeout)
 
@@ -1358,7 +1308,7 @@ cdef class Channel:
             raise ChannelValueError("There was a problem with the value returned.", err)
 
         if err != DRAGON_SUCCESS:
-            raise ChannelError("Unexpected Error while polling channel.", err)
+            raise ChannelError(f"Unexpected Error while polling channel with event mask {event_mask}.", err)
 
         if poll_result is not None:
             poll_result.value = result
@@ -2191,13 +2141,66 @@ cdef class Peer2PeerReadingChannelFile:
         self._cursor = 0
 
     def check_header(self):
-        if self._opened != 1:
-            raise ChannelError("Adapter not opened for reading")
+        cdef:
+            dragonError_t derr
+            dragonMemoryDescr_t mem_descr
+            dragonMemoryPoolDescr_t pool_descr
+            int exists
+            size_t block_size
+            char* block_ptr
+            dragonULInt cuid
+            uint64_t mid
+            uint64_t muid
 
-        if <void *>self._current_block == NULL:
-            self._get_new_block()
+        try:
+            if self._opened != 1:
+                raise ChannelError("Adapter not opened for reading")
 
-        return _ConnMsgHeader_parse(&self._current_block[self._cursor], self._current_block_size)
+            if <void *>self._current_block == NULL:
+                self._get_new_block()
+
+            return _ConnMsgHeader_parse(&self._current_block[self._cursor], self._current_block_size)
+        except:
+            cuid = self._recvh._ch._idx
+
+            derr = dragon_channel_message_get_mem(&self._current_message, &mem_descr)
+            if derr != DRAGON_SUCCESS:
+                raise ChannelError("Could not get memory descriptor from message", derr)
+
+            derr = dragon_memory_pool_allocation_exists(&mem_descr, &exists)
+            if derr != DRAGON_SUCCESS:
+                raise ChannelError("Attempt to check header on allocation that does not exist.", derr)
+
+            if (exists == 0):
+                raise ChannelError("Attempt to check header on allocation that does not exist.", DRAGON_FAILURE)
+
+            derr = dragon_memory_get_pool(&mem_descr, &pool_descr)
+            if derr != DRAGON_SUCCESS:
+                raise ChannelError("Could not get pool id.", derr)
+
+            derr = dragon_memory_pool_muid(&pool_descr, &muid)
+            if derr != DRAGON_SUCCESS:
+                raise ChannelError("Could not get pool muid from pool descriptor", derr)
+
+            derr = dragon_memory_id(&mem_descr, &mid)
+            if derr != DRAGON_SUCCESS:
+                raise ChannelError("Could not get manifest id from message memory descriptor", derr)
+
+            derr = dragon_memory_get_pointer(&mem_descr, <void **>&block_ptr)
+            if derr != DRAGON_SUCCESS:
+                raise ChannelError("Could not get pointer from message memory descriptor", derr)
+
+            derr = dragon_memory_get_size(&mem_descr, &block_size)
+            if derr != DRAGON_SUCCESS:
+                raise ChannelError("Could not get size from message memory descriptor", derr)
+
+            if (block_size != self._current_block_size) or (self._cursor >= self._current_block_size):
+                raise ChannelError(f"Either the block size {block_size} does not match the current block size of {self._current_block_size} or cursor ({self._cursor}) is too big.", DRAGON_FAILURE)
+
+            mview = PyMemoryView_FromMemory(block_ptr, block_size, BUF_WRITE)
+
+            raise ChannelError(f"While the memory allocation was valid, the header was not. Pool {muid=} and Channel {cuid=}, Manifest ID {mid=}, {block_size=}, and {self._cursor=}. Block:{mview.tobytes()}", DRAGON_FAILURE)
+
 
     def advance_raw_header(self, size_t msglen):
         self._cursor += _ConnMsgHeader_raw_hdr_size(msglen)

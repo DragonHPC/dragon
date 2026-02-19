@@ -9,7 +9,7 @@ endif
 
 CC = gcc
 CXX = g++
-CFLAGS = -Ofast -fomit-frame-pointer -Wall
+CFLAGS = -O3 -ffast-math -fomit-frame-pointer -Wall
 
 ifeq ($(DRAGON_INCLUDE_DIR),)
     DRAGON_INCLUDE = $(shell dragon-config -o)
@@ -198,3 +198,10 @@ clean: $(CLEAN_COMPONENTS)
 	$(RM) *.log
 	$(RM) -f *.o c_ddict cpp_ddict $(MPI_HELLO_OMPI) $(MPI_HELLO_CRAY) $(MPI_HELLO_MPICH)
 	$(RM) -f /dev/shm/*
+
+.PHONY: print_test_list
+print_test_list:
+	@for test in $(TESTS_DRAGON_MULTI_NODE); do \
+		echo "$$test"; \
+	done
+	@echo ""

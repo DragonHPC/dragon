@@ -461,6 +461,7 @@ def hugepages_cleanup(careful_restart_cleanup=0, dry_run=False):
     # via an alias don't lead to ModuleNotFound errors when we're doing a dev
     # build from scratch
     from dragon.utils import get_hugepage_mount
+    from dragon.infrastructure.facts import DEFAULT_DICT_POOL_NAME_BASE
 
     hugepage_fs_mount = get_hugepage_mount()
 
@@ -475,7 +476,7 @@ def hugepages_cleanup(careful_restart_cleanup=0, dry_run=False):
         for file_name in os.listdir(hugepage_fs_mount):
             file_path = os.path.join(hugepage_fs_mount, file_name)
             if careful_restart_cleanup == 1:
-                if "dict_pool" in file_name:
+                if file_name.startswith(DEFAULT_DICT_POOL_NAME_BASE):
                     print(f"leaving {file_name}", flush=True)
                     continue
 

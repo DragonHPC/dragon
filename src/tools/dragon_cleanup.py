@@ -14,6 +14,7 @@ from typing import Dict
 from psutil import Process, process_iter, TimeoutExpired, ZombieProcess, NoSuchProcess
 
 from dragon.infrastructure.config import hugepages_cleanup
+from dragon.infrastructure.facts import DEFAULT_DICT_POOL_NAME_BASE
 
 import logging
 
@@ -33,7 +34,7 @@ class DragonCleanup:
     GUNICORN_LOG_FILES = "*_gunicorn.log"
     DDICT_ORCHESTRATOR_FILES = "*ddict_orc*"
 
-    DDICT_DEV_SHM_POOLS = "*dict_pool*"
+    DDICT_DEV_SHM_POOLS = DEFAULT_DICT_POOL_NAME_BASE + "*"
 
     TMP_DIR = "/tmp"
     DEV_SHM_DIR = "/dev/shm"

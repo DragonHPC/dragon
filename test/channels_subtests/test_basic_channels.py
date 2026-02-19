@@ -3,6 +3,7 @@
 import time
 import unittest
 import os
+import platform
 import multiprocessing as mp
 import dragon.infrastructure.parameters as dparms
 from dragon.utils import B64
@@ -193,7 +194,7 @@ class ChannelCreateTest(unittest.TestCase):
         cls.mpool.destroy()
 
     def test_pool_create_destroy(self):
-        pool = pool_name = "pydragon_pool_test"
+        pool_name = f"pydragon_pool_test_{os.getpid()}"
         pool_size = 1073741824  # 1GB
         pool_uid = 42
         mpool = MemoryPool(pool_size, pool_name, pool_uid)
@@ -494,7 +495,7 @@ class ChannelCreateTest(unittest.TestCase):
 
         (pool_uid, pool_fname) = Channel.serialized_pool_uid_fname(ch_ser)
         self.assertEqual(pool_uid, 1, "Pool IDs don't match, expected 1")
-        self.assertEqual(pool_fname, "/_dragon_" + self.pool_name + "_manifest")
+        self.assertEqual(pool_fname, "/D" + self.pool_name + "M")
 
         ch.destroy()
 
@@ -1100,12 +1101,13 @@ class MessageTest(unittest.TestCase):
         with self.assertRaises(OverflowError):
             Message.create_alloc(self.mpool, -1)
 
+    @unittest.skipIf(platform.system() == "Darwin", "Test not applicable on macOS")
     def test_memview(self):
         msg = Message.create_alloc(self.mpool, 512)
         mview = msg.bytes_memview()
         mview[0:5] = b"Hello"
         self.assertEqual(b"Hello", mview[0:5])
-        msg.destroy()
+        msg.destroy(free_mem=True)
         # Assert our memory is dead
         self.assertNotEqual(b"Hello", mview[0:5])
 
@@ -1136,7 +1138,7 @@ class ChannelSetTests(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        pool_name = f"pydragon_channelset_test_{os.getpid()}"
+        pool_name = f"pydragon_chset_test_{os.getpid()}"
         pool_size = 1073741824  # 1GB
         pool_uid = 1
         cls.mpool = MemoryPool(pool_size, pool_name, pool_uid)
@@ -1167,10 +1169,10 @@ class ChannelSetTests(unittest.TestCase):
         self.assertGreater(delta, timeout, "delta should be bigger than timeout")
 
     def test_poll(self):
-        ch_ser = self.channel_list[0].serialize()
+        ch_ser = self.channel_list[1].serialize()
         pool_ser = self.mpool.serialize()
 
-        recvh = self.channel_list[0].recvh()
+        recvh = self.channel_list[1].recvh()
         recvh.open()
 
         # polling on an empty channelset
@@ -1184,7 +1186,7 @@ class ChannelSetTests(unittest.TestCase):
         proc.start()
         # now, the first channel should have a message
         result, revent = self.ch_set.poll()
-        self.assertEqual((result, revent), (self.channel_list[0], EventType.POLLIN))
+        self.assertEqual((result, revent), (self.channel_list[1], EventType.POLLIN))
         self.assertEqual(revent, EventType.POLLIN)
 
         # receive the message to empty the channel

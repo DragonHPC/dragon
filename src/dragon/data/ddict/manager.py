@@ -648,7 +648,11 @@ class BPutBatchOp(BatchPutOp):
         Returns True when it was performed. Batch put is not deferred under any circumstances.
         """
         super()._perform()
-        self.manager._num_bput[self.client_id] += 1
+        try:
+            self.manager._num_bput[self.client_id] += 1
+        except KeyError:
+            pass  # If a KeyError occurs, then the batch was aborted for some reason. Just
+            # finish up and ignore.
         return True
 
 
@@ -922,9 +926,7 @@ class KeysOp(DictOp):
         connection = fli.FLInterface.attach(b64decode(self.respFLI))
 
         t = threading.Thread(
-            target=self.manager._send_dmsg_and_keys,
-            args=(resp_msg, connection, keys, True, True),
-            daemon=True
+            target=self.manager._send_dmsg_and_keys, args=(resp_msg, connection, keys, True, True), daemon=True
         )
         t.start()
         self.manager._threads.append(t)
@@ -946,14 +948,16 @@ class ValuesOp(DictOp):
         values = self.manager._working_set.values(self.chkpt_id)
 
         free_mem = not self.manager._read_only
-        resp_msg = dmsg.DDValuesResponse(self.manager._tag_inc(), ref=self.tag, err=DragonError.SUCCESS, freeMem=free_mem)
+        resp_msg = dmsg.DDValuesResponse(
+            self.manager._tag_inc(), ref=self.tag, err=DragonError.SUCCESS, freeMem=free_mem
+        )
         connection = fli.FLInterface.attach(b64decode(self.respFLI))
 
         # Since this runs in a thread, a client that changes the read_only attribute while iterating over the values of
         # a DDict will not necessarily have the right value of read_only. It is up to a client program to finish any
         # iterations (i.e. closing an iteration - breaking a loop for instance - or completing it) before changing the
         # value of read_only.
-        log.debug(f'In ValuesOp with {self.manager._read_only=}')
+        log.debug(f"In ValuesOp with {self.manager._read_only=}")
         t = threading.Thread(
             target=self.manager._send_dmsg_and_values,
             args=(
@@ -963,7 +967,7 @@ class ValuesOp(DictOp):
                 True,
                 self.manager._read_only,
             ),
-            daemon=True
+            daemon=True,
         )
         t.start()
         self.manager._threads.append(t)
@@ -985,7 +989,9 @@ class ItemsOp(DictOp):
         items = self.manager._working_set.items(self.chkpt_id)
 
         free_mem = not self.manager._read_only
-        resp_msg = dmsg.DDItemsResponse(self.manager._tag_inc(), ref=self.tag, err=DragonError.SUCCESS, freeMem=free_mem)
+        resp_msg = dmsg.DDItemsResponse(
+            self.manager._tag_inc(), ref=self.tag, err=DragonError.SUCCESS, freeMem=free_mem
+        )
         connection = fli.FLInterface.attach(b64decode(self.respFLI))
 
         # Since this runs in a thread, a client that changes the read_only attribute while iterating over the items of
@@ -993,9 +999,7 @@ class ItemsOp(DictOp):
         # iterations (i.e. closing an iteration - breaking a loop for instance - or completing it) before changing the
         # value of read_only.
         t = threading.Thread(
-            target=self.manager._send_dmsg_and_items,
-            args=(resp_msg, connection, items, True),
-            daemon=True
+            target=self.manager._send_dmsg_and_items, args=(resp_msg, connection, items, True), daemon=True
         )
         t.start()
         self.manager._threads.append(t)
@@ -1212,7 +1216,7 @@ class WorkingSet:
         parent._reattach = False
         t = threading.Thread(target=retire_thread_func, args=(parent,))
         t.start()
-        self._manager._threads.append(t)
+        self._manager._persisting_threads.append(t)
 
         child.deleted.clear()
 
@@ -1517,11 +1521,13 @@ class Manager:
             self._persist_count,
             self._persister,
             self._main_streams_per_manager,
+            self._manager_pool_full_thresh,
         ) = args
         self._puid = parameters.this_process.my_puid
         self._trace = trace
         self._manager_id = manager_id
         self._tag = 0
+        self._manager_pool_full_thresh = 100.0 * self._manager_pool_full_thresh
 
         self.iterators = {}
         self._iter_id = 0
@@ -1539,6 +1545,8 @@ class Manager:
         self._registered = False  # True if manager registers with orchestrator successfully
         self._reattach = True  # Used for dictionary synchronization
         self._threads = []
+        self._persisting_threads = []  # threads for persisting checkpoints
+        self._record_persist_time = {}  # record time spent on persisting each checkpoint
         self._deferred_ops_lock = threading.Lock()
 
         # batch put
@@ -1599,10 +1607,11 @@ class Manager:
             return
 
         # Create pool or attach to pool.
-        # The manager attach to existing pool with serialized pool descriptor ser_pool_desc if restart is set
-        # Otherwise, manager create a new pool and attach to it
-        user = os.environ.get("USER", str(os.getuid()))
-        self._pool_name = f"ddict_{self._name}_{self._manager_id}_{os.getpid()}_{self._puid}_{user}"
+        # The manager attaches to existing pool with serialized pool descriptor ser_pool_desc if restart is set
+        # Otherwise, the manager creates a new pool and attach to it
+        self._pool_name = f"{facts.DEFAULT_DICT_POOL_NAME_BASE}{self._name[:10]}_{self._manager_id}{str(self._puid)[:-3]}{str(os.getuid())[:-3]}"[
+            :18
+        ]
         self._traceit("self._pool_name=%s", self._pool_name)
         if self._restart and ser_pool_desc is not None:
             # attach to existing pool
@@ -1617,7 +1626,7 @@ class Manager:
                 log.debug(
                     "caught exception in manager %s while reattaching to memory pool. %s\n %s", self._manager_id, ex, tb
                 )
-                err_code = ex.rc
+                err_code = DragonError.FAILURE
                 err_str = str(ex)
                 self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
                 return
@@ -1690,8 +1699,9 @@ class Manager:
         else:
             # create memory pool if not restart or if pool_desc is None during restart
             try:
-                user = os.environ.get("USER", str(os.getuid()))
-                self._pool_name = f"{facts.DEFAULT_DICT_POOL_NAME_BASE}_{os.getpid()}_{self._puid}_{user}"
+                self._pool_name = f"{facts.DEFAULT_DICT_POOL_NAME_BASE}{self._name[:10]}_{self._manager_id}{str(self._puid)[:-3]}{str(os.getuid())[:-3]}"[
+                    :18
+                ]
                 self._pool = dmem.MemoryPool.make_process_local(name=self._pool_name, size=pool_size)
                 self._pool_size = self._pool.free_space
                 self._pool_sdesc = self._pool.serialize()
@@ -1786,7 +1796,6 @@ class Manager:
 
         self._register_with_orchestrator(serialized_return_orc, err_str=err_str, err_code=err_code)
 
-
     def __setstate__(self, args):
         # unpickle manager and check the metadata match the previous manager
         (wait_for_keys, wait_for_writers, working_set_size, persist_freq, self._working_set) = args
@@ -1861,6 +1870,9 @@ class Manager:
             # Wait a short amount of time for threads to join, but we are going down so don't
             # wait forever.
             for t in self._threads:
+                t.join(timeout=5)
+
+            for t in self._persisting_threads:
                 t.join(timeout=5)
 
             # destroy all client maps
@@ -1987,7 +1999,7 @@ class Manager:
                 strm = None
             else:
                 strm = self._get_strm_channel()
-            with connection.sendh(timeout=self._timeout, stream_channel=strm, turbo_mode=turbo_mode) as sendh:
+            with connection.sendh(timeout=self._timeout, stream_channel=strm, use_main_buffered=(strm is None), turbo_mode=turbo_mode) as sendh:
                 sendh.send_bytes(msg.serialize(), timeout=self._timeout)
             if strm is not None:
                 self._release_strm_channel(strm)
@@ -2007,9 +2019,9 @@ class Manager:
     ) -> None:
 
         if no_copy_read_only:
-            turbo_mode=False # True seems to have no affect here.
+            turbo_mode = False  # True seems to have no affect here.
         else:
-            turbo_mode=False
+            turbo_mode = False
 
         with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=turbo_mode) as sendh:
             sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
@@ -2041,14 +2053,15 @@ class Manager:
         self, resp_msg, connection, values: list, detach: bool = False, no_copy_read_only: bool = False
     ) -> None:
 
-
         if no_copy_read_only:
-            turbo_mode=False # True seems to have no affect here.
+            turbo_mode = False  # True seems to have no affect here.
         else:
-            turbo_mode=False
+            turbo_mode = False
 
         try:
-            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=turbo_mode) as sendh:
+            with connection.sendh(
+                use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=turbo_mode
+            ) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if resp_msg.err == DragonError.SUCCESS:
                     for val_list in values:
@@ -2084,16 +2097,18 @@ class Manager:
             connection.detach()
 
     def _send_dmsg_and_items(
-            self, resp_msg, connection, items: dict, detach: bool = False, no_copy_read_only: bool = False
+        self, resp_msg, connection, items: dict, detach: bool = False, no_copy_read_only: bool = False
     ) -> None:
 
         if no_copy_read_only:
-            turbo_mode=False # True seems to have no affect here.
+            turbo_mode = False  # True seems to have no affect here.
         else:
-            turbo_mode=False
+            turbo_mode = False
 
         try:
-            with connection.sendh(use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=turbo_mode) as sendh:
+            with connection.sendh(
+                use_main_as_stream_channel=True, timeout=self._timeout, turbo_mode=turbo_mode
+            ) as sendh:
                 sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
                 if resp_msg.err == DragonError.SUCCESS:
                     for key in items:
@@ -2102,7 +2117,7 @@ class Manager:
                             transfer_ownership=False,
                             no_copy_read_only=no_copy_read_only,
                             arg=KEY_HINT,
-                            timeout=self._timeout
+                            timeout=self._timeout,
                         )
                         val_list = items[key]
                         for val in val_list:
@@ -2111,7 +2126,7 @@ class Manager:
                                 transfer_ownership=False,
                                 no_copy_read_only=no_copy_read_only,
                                 arg=VALUE_HINT,
-                                timeout=self._timeout
+                                timeout=self._timeout,
                             )
         except EOFError:
             # The receiver ended transmission early so just ignore it.
@@ -2192,9 +2207,10 @@ class Manager:
             # send manager ready message to orchestrator before raising exception
             self._manager_ready(serialized_return_orc, msg.tag, err, errInfo)
 
-
     def _manager_ready(self, serialized_return_orc, ref, err, errInfo):
-        msg = dmsg.DDCreateManagerResponse(self._tag_inc(), ref=ref, err=err, errInfo=errInfo, managerID=self._manager_id)
+        msg = dmsg.DDCreateManagerResponse(
+            self._tag_inc(), ref=ref, err=err, errInfo=errInfo, managerID=self._manager_id
+        )
         connection = fli.FLInterface.attach(b64decode(serialized_return_orc))
         self._send_msg(msg, connection)
         log.debug("sent DDCreateManagerResponse")
@@ -2256,8 +2272,7 @@ class Manager:
                         mem, hint = recvh.recv_mem(timeout=self._timeout)
                         mem_view = mem.get_memview()
                         msg = dmsg.parse(mem_view)
-                        mem.free()
-                        self._traceit("About to process: %s", msg)
+                        self._traceit("About to process: %s with pool utlization %s%.", msg, self._pool.utilization)
 
                         if type(msg) in self._DTBL:
                             self._DTBL[type(msg)][0](self, msg=msg, recvh=recvh)
@@ -2282,11 +2297,18 @@ class Manager:
                             ex,
                             tb,
                         )
+                    finally:
+                        try:
+                            mem.free()
+                        except:
+                            pass
 
         except fli.DragonFLIError as ex:
             tb = traceback.format_exc()
             if ex.rc == DragonError.OBJECT_DESTROYED:
-                log.debug("An error occurred in the manager on the main FLI receive handle. The error may have occurred because you did not destroy the DDict before the Dragon run-time exited.")
+                log.debug(
+                    "An error occurred in the manager on the main FLI receive handle. The error may have occurred because you did not destroy the DDict before the Dragon run-time exited."
+                )
                 log.debug("Here are the error details:")
             log.debug("FLI exception in manager:\n%s\n Traceback:\n%s", ex, tb)
 
@@ -2441,7 +2463,7 @@ class Manager:
                 msg,
                 recvh,
             ),
-            daemon=True
+            daemon=True,
         )
         t.start()
         self._threads.append(t)
@@ -2465,7 +2487,19 @@ class Manager:
             return
 
         try:
-            if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
+            while (
+                self._pool.utilization >= self._manager_pool_full_thresh or self._pool.free_space < RESERVED_POOL_SPACE
+            ) and len(self._persisting_threads) > 0:
+                t = self._persisting_threads.pop(0)
+                self._traceit(
+                    "Manager %s with PUID %s is joining a persisting thread %s", self._manager_id, self._puid, t.name
+                )
+                t.join()
+                self._traceit(
+                    "Manager %s with PUID %s has joined a persisting thread %s", self._manager_id, self._puid, t.name
+                )
+
+            if self._pool.utilization >= self._manager_pool_full_thresh or self._pool.free_space < RESERVED_POOL_SPACE:
                 raise DDictFullError(
                     DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                 )
@@ -2521,7 +2555,29 @@ class Manager:
                     # if there's any get for this key, then process deferred gets
                     self._process_deferred_ops(msg.chkptID)
 
-                    if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
+                    while (
+                        self._pool.utilization >= self._manager_pool_full_thresh
+                        or self._pool.free_space < RESERVED_POOL_SPACE
+                    ) and len(self._persisting_threads) > 0:
+                        t = self._persisting_threads.pop(0)
+                        self._traceit(
+                            "Manager %s with PUID %s is joining a persisting thread %s",
+                            self._manager_id,
+                            self._puid,
+                            t.name,
+                        )
+                        t.join()
+                        self._traceit(
+                            "Manager %s with PUID %s has joined a persisting thread %s",
+                            self._manager_id,
+                            self._puid,
+                            t.name,
+                        )
+
+                    if (
+                        self._pool.utilization >= self._manager_pool_full_thresh
+                        or self._pool.free_space < RESERVED_POOL_SPACE
+                    ):
                         raise DDictFullError(
                             DragonError.MEMORY_POOL_FULL,
                             f"DDict Manager {self._manager_id}: Pool reserve limit exceeded.",
@@ -2649,7 +2705,6 @@ class Manager:
             del self._num_batch_puts[msg.clientID]
             self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
 
-
     def _bput_batch(self, msg: dmsg.DDBPut, recvh):
 
         client_key_mem = None
@@ -2687,7 +2742,20 @@ class Manager:
             return
 
         try:
-            if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
+
+            while (
+                self._pool.utilization >= self._manager_pool_full_thresh or self._pool.free_space < RESERVED_POOL_SPACE
+            ) and len(self._persisting_threads) > 0:
+                t = self._persisting_threads.pop(0)
+                self._traceit(
+                    "Manager %s with PUID %s is joining a persisting thread %s", self._manager_id, self._puid, t.name
+                )
+                t.join()
+                self._traceit(
+                    "Manager %s with PUID %s has joined a persisting thread %s", self._manager_id, self._puid, t.name
+                )
+
+            if self._pool.utilization >= self._manager_pool_full_thresh or self._pool.free_space < RESERVED_POOL_SPACE:
                 raise DDictFullError(
                     DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                 )
@@ -3024,7 +3092,30 @@ class Manager:
 
         try:
             try:
-                if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
+
+                while (
+                    self._pool.utilization >= self._manager_pool_full_thresh
+                    or self._pool.free_space < RESERVED_POOL_SPACE
+                ) and len(self._persisting_threads) > 0:
+                    t = self._persisting_threads.pop(0)
+                    self._traceit(
+                        "Manager %s with PUID %s is joining a persisting thread %s",
+                        self._manager_id,
+                        self._puid,
+                        t.name,
+                    )
+                    t.join()
+                    self._traceit(
+                        "Manager %s with PUID %s has joined a persisting thread %s",
+                        self._manager_id,
+                        self._puid,
+                        t.name,
+                    )
+
+                if (
+                    self._pool.utilization >= self._manager_pool_full_thresh
+                    or self._pool.free_space < RESERVED_POOL_SPACE
+                ):
                     raise DDictFullError(
                         DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                     )
@@ -3180,11 +3271,7 @@ class Manager:
     def bput(self, msg: dmsg.DDBPut, recvh):
         recvh.no_close_on_exit()  # do not close the receive handle immediately while exiting context manager
         if msg.batch:
-            t = threading.Thread(
-                target=self._bput_batch,
-                args=(msg, recvh),
-                daemon=True
-            )
+            t = threading.Thread(target=self._bput_batch, args=(msg, recvh), daemon=True)
             t.start()
             self._threads.append(t)
         else:
@@ -3207,7 +3294,20 @@ class Manager:
         val_list = []
 
         try:
-            if self._pool.utilization >= 90.0 or self._pool.free_space < RESERVED_POOL_SPACE:
+
+            while (
+                self._pool.utilization >= self._manager_pool_full_thresh or self._pool.free_space < RESERVED_POOL_SPACE
+            ) and len(self._persisting_threads) > 0:
+                t = self._persisting_threads.pop(0)
+                self._traceit(
+                    "Manager %s with PUID %s is joining a persisting thread %s", self._manager_id, self._puid, t.name
+                )
+                t.join()
+                self._traceit(
+                    "Manager %s with PUID %s has joined a persisting thread %s", self._manager_id, self._puid, t.name
+                )
+
+            if self._pool.utilization >= self._manager_pool_full_thresh or self._pool.free_space < RESERVED_POOL_SPACE:
                 raise DDictFullError(
                     DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                 )
@@ -3253,7 +3353,9 @@ class Manager:
             log.info("About to recover memory")
             self._recover_mem(client_key_mem, val_list, recvh)
             log.info("Streamed data now recovered. Sending put response to indicate failure.")
-            resp_msg = dmsg.DDPutResponse(self._tag_inc(), ref=msg.tag, err=DragonError.MEMORY_POOL_FULL)
+            resp_msg = dmsg.DDPutResponse(
+                self._tag_inc(), ref=msg.tag, err=DragonError.MEMORY_POOL_FULL, errInfo=str(ex)
+            )
             self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
 
         except DDictCheckpointSyncError as ex:
@@ -3476,6 +3578,37 @@ class Manager:
         clear_op = ClearOp(self, msg.clientID, msg.chkptID, msg.tag, msg.respFLI)
         if not clear_op.perform():
             self._defer(clear_op)
+
+    @dutil.route(dmsg.DDSync, _DTBL)
+    def sync(self, msg: dmsg.DDSync, recvh):
+        try:
+            recvh.close()
+
+            if msg.broadcast:
+                self._send_dmsg_to_children(msg)
+
+            for t in self._threads:
+                t.join(timeout=msg.timeout)
+
+            for t in self._persisting_threads:
+                t.join(timeout=msg.timeout)
+
+            err = DragonError.SUCCESS
+            errInfo = ""
+
+        except Exception as ex:
+            tb = traceback.format_exc()
+            err = DragonError.FAILURE
+            errInfo = f"There was an unexpected exception while syncing in manager {self._manager_id} with PUID {self._puid=}: {ex}\n{tb}"
+            raise RuntimeError(
+                f"There was an unexpected exception while syncing in manager {self._manager_id} with PUID {self._puid=}"
+            )
+
+        finally:
+            resp_msg = dmsg.DDSyncResponse(self._tag_inc(), ref=msg.tag, err=err, errInfo=errInfo)
+            connection = fli.FLInterface.attach(b64decode(msg.respFLI))
+            self._send_msg(resp_msg, connection)
+            connection.detach()
 
     @dutil.route(dmsg.DDManagerStats, _DTBL)
     def get_stats(self, msg: dmsg.DDManagerStats, recvh):

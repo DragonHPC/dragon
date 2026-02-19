@@ -37,15 +37,13 @@ in our documentation. This step can be skipped if has
 already been done and no updates were made in doxygen
 comments.
 
-The website is updated automatically on the hour,
+The website is updated automatically,
 from the master branch,
-by a cronjob so executing *make release* should be
-unnecessary unless you want updates released sooner.
+so executing *make release* should be
+unnecessary unless you want updated releases sooner.
 
 This repository is under GIT control. Source changes
 should be committed to the repository.
-
-The website can be viewed at http://dragon.us.cray.com
 
 
 Editing the Documentation

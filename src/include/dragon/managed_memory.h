@@ -149,6 +149,12 @@ typedef struct dragonMemoryPoolAttr_st {
     /* !< The size of the GPU IPCHandle for GPU backed managed memory.
     Read-only. */
 
+    int numa_node;
+    /* !< The NUMA node on which the memory pool should be preferentially
+     * allocated. A value of -1 indicates no preference. A value of 0 or
+     * greater indicates the specific NUMA node on which the memory pool
+     * should be allocated. */
+
     dragonLockKind_t lock_type;
     /*<! The type of lock to be used on the memory pool. */
 
@@ -304,6 +310,12 @@ dragon_memory_pool_serial_free(dragonMemoryPoolSerial_t * pool_ser);
 
 dragonError_t
 dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemoryPoolSerial_t * pool_ser);
+
+dragonError_t
+dragon_memory_pool_process_local_register_with_gpu(dragonMemoryPoolDescr_t * pool_descr);
+
+dragonError_t
+dragon_memory_pool_process_local_unregister_with_gpu(dragonMemoryPoolDescr_t * pool_descr);
 
 dragonError_t
 dragon_memory_pool_attach_from_env(dragonMemoryPoolDescr_t * pool_descr, const char * env_var);

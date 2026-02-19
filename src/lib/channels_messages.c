@@ -110,22 +110,23 @@ _map_gateway_message_header(dragonGatewayMessage_t * gmsg)
     gmsg->_header.transport_cmplt_timestamp = &gulptr[6];
     gmsg->_header.client_pid = &gulptr[7];
     gmsg->_header.client_puid = &gulptr[8];
-    gmsg->_header.cmplt_bcast_offset = &gulptr[9];
-    gmsg->_header.target_ch_ser_offset = &gulptr[10];
-    gmsg->_header.target_ch_ser_nbytes = &gulptr[11];
-    gmsg->_header.send_payload_cleanup_required = &gulptr[12];
-    gmsg->_header.send_payload_buffered = &gulptr[13];
-    gmsg->_header.send_payload_offset = &gulptr[14];
-    gmsg->_header.send_payload_nbytes = &gulptr[15];
-    gmsg->_header.send_clientid = &gulptr[16];
-    gmsg->_header.send_hints = &gulptr[17];
-    gmsg->_header.send_return_mode = &gulptr[18];
-    gmsg->_header.has_dest_mem_descr = &gulptr[19];
-    gmsg->_header.dest_mem_descr_ser_offset = &gulptr[20];
-    gmsg->_header.dest_mem_descr_ser_nbytes = &gulptr[21];
-    gmsg->_header.op_rc = &gulptr[22];
-    gmsg->_header.event_mask = &gulptr[23];
-    gmsg->_header.sendhid = (dragonUUID *)&gulptr[24];
+    gmsg->_header.debug = &gulptr[9];
+    gmsg->_header.cmplt_bcast_offset = &gulptr[10];
+    gmsg->_header.target_ch_ser_offset = &gulptr[11];
+    gmsg->_header.target_ch_ser_nbytes = &gulptr[12];
+    gmsg->_header.send_payload_cleanup_required = &gulptr[13];
+    gmsg->_header.send_payload_buffered = &gulptr[14];
+    gmsg->_header.send_payload_offset = &gulptr[15];
+    gmsg->_header.send_payload_nbytes = &gulptr[16];
+    gmsg->_header.send_clientid = &gulptr[17];
+    gmsg->_header.send_hints = &gulptr[18];
+    gmsg->_header.send_return_mode = &gulptr[19];
+    gmsg->_header.has_dest_mem_descr = &gulptr[20];
+    gmsg->_header.dest_mem_descr_ser_offset = &gulptr[21];
+    gmsg->_header.dest_mem_descr_ser_nbytes = &gulptr[22];
+    gmsg->_header.op_rc = &gulptr[23];
+    gmsg->_header.event_mask = &gulptr[24];
+    gmsg->_header.sendhid = (dragonUUID *)&gulptr[25];
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -135,7 +136,7 @@ _assign_gateway_message_header_send(dragonGatewayMessage_t * gmsg, dragonULInt t
                                     const struct timespec* deadline, size_t ch_ser_nbytes, dragonULInt payload_cleanup_required,
                                     size_t payload_nbytes, size_t payload_ser_nbytes, size_t dest_mem_ser_nbytes,
                                     dragonChannelSendReturnWhen_t return_mode, const dragonUUID sendhid,
-                                    dragonULInt clientid, dragonULInt send_hints)
+                                    dragonULInt clientid, dragonULInt send_hints, dragonULInt debug)
 {
     *(gmsg->_header.msg_kind) = DRAGON_GATEWAY_MESSAGE_SEND;
     *(gmsg->_header.target_hostid) = target_hostid;
@@ -153,6 +154,7 @@ _assign_gateway_message_header_send(dragonGatewayMessage_t * gmsg, dragonULInt t
     *(gmsg->_header.client_cmplt) = 0UL;
     *(gmsg->_header.client_pid) = _getpid();
     *(gmsg->_header.client_puid) = _get_my_puid();
+    *(gmsg->_header.debug) = debug;
 
     if (payload_nbytes < payload_ser_nbytes)
         *(gmsg->_header.send_payload_buffered) = 1UL;
@@ -218,6 +220,7 @@ _assign_gateway_message_header_get(dragonGatewayMessage_t * gmsg, dragonULInt ta
     *(gmsg->_header.client_cmplt) = 0UL;
     *(gmsg->_header.client_pid) = _getpid();
     *(gmsg->_header.client_puid) = _get_my_puid();
+    *(gmsg->_header.debug) = 0UL; /* TBD: Can be plumbed through later if needed. */
 
     dragonULInt last_offset = DRAGON_CHANNEL_GWHEADER_NULINTS * sizeof(dragonULInt) + sizeof(dragonUUID);
 
@@ -256,6 +259,7 @@ _assign_gateway_message_header_event(dragonGatewayMessage_t * gmsg, dragonULInt 
     *(gmsg->_header.client_cmplt) = 0UL;
     *(gmsg->_header.client_pid) = _getpid();
     *(gmsg->_header.client_puid) = _get_my_puid();
+    *(gmsg->_header.debug) = 0UL; /* TBD: Can be plumbed through later if needed. */
 
     dragonULInt last_offset = DRAGON_CHANNEL_GWHEADER_NULINTS * sizeof(dragonULInt) + sizeof(dragonUUID);
 
@@ -991,7 +995,7 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
 
     err = _assign_gateway_message_header_send(gmsg, target_hostid, deadline, target_ch_ser.len, cleanup_payload_required,
                                               msg_nbytes, msg_ser_nbytes, dest_mem_ser_nbytes, return_mode,
-                                              send_attr->sendhid, mattr.clientid, mattr.hints);
+                                              send_attr->sendhid, mattr.clientid, mattr.hints, send_attr->debug);
 
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Could not assign values into gateway message header.");
@@ -1631,7 +1635,7 @@ dragon_channel_gatewaymessage_transport_check_send_cmplt(dragonGatewayMessage_t 
             /* The completion interaction with the client timed out. We'll gather some more information. */
             /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
             char err_str[200];
-            snprintf(err_str, 199, "ERROR: GATEWAY SEND MSG COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
+            snprintf(err_str, 199, "ERROR: GATEWAY SEND MSG COMPLETION ERROR (EC=%s) Client PID=%" PRIu64 " and PUID(if available)=%" PRIu64 "\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
             fprintf(stderr, "%s\n", err_str);
         }
     }
@@ -1744,7 +1748,7 @@ dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, c
         double end_time = dragon_get_current_time_as_double();
         double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
         double diff = end_time-start_time;
-        snprintf(err_str, 199, "The completion of the send gateway message, for process GW_PID=%lu, PID=%lu and GW_PUID(if available)=%lu,PUID=%lu , timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, _getpid(), *gmsg->_header.client_puid, _get_my_puid(),diff);
+        snprintf(err_str, 199, "The completion of the send gateway message, for process GW_PID=%" PRIu64 ", PID=%" PRIu64 " and GW_PUID(if available)=%" PRIu64 ",PUID=%" PRIu64 " , timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, _getpid(), *gmsg->_header.client_puid, _get_my_puid(),diff);
         dragon_channel_gatewaymessage_detach(gmsg);
         err_noreturn(saved_err_msg);
         free(saved_err_msg);
@@ -1962,7 +1966,7 @@ dragon_channel_gatewaymessage_transport_check_get_cmplt(dragonGatewayMessage_t *
             /* The completion interaction with the client timed out. We'll gather some more information. */
             /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
             char err_str[200];
-            snprintf(err_str, 199, "ERROR: GATEWAY GET MSG COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
+            snprintf(err_str, 199, "ERROR: GATEWAY GET MSG COMPLETION ERROR (EC=%s) Client PID=%" PRIu64 " and PUID(if available)=%" PRIu64 "\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
             fprintf(stderr, "%s\n", err_str);
             if (bcast_state != NULL) {
                 fprintf(stderr, "%s\n", bcast_state);
@@ -2142,7 +2146,7 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
         double end_time = dragon_get_current_time_as_double();
         double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
         double diff = end_time-start_time;
-        snprintf(err_str, 199, "The completion of the get gateway message, for process PID=%lu and PUID(if available)=%lu, timed out in the transport  on path %d with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, called_path, diff);
+        snprintf(err_str, 199, "The completion of the get gateway message, for process PID=%" PRIu64 " and PUID(if available)=%" PRIu64 ", timed out in the transport  on path %d with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, called_path, diff);
         dragon_channel_gatewaymessage_detach(gmsg);
         err_noreturn(saved_err_msg);
         free(saved_err_msg);
@@ -2251,7 +2255,7 @@ dragon_channel_gatewaymessage_transport_check_event_cmplt(dragonGatewayMessage_t
             /* The completion interaction with the client timed out. We'll gather some more information. */
             /* We print to stderr so it is picked up by a monitoring thread and logged in the Dragon logs. */
             char err_str[200];
-            snprintf(err_str, 199, "ERROR: GATEWAY EVENT COMPLETION ERROR (EC=%s) Client PID=%lu and PUID(if available)=%lu\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
+            snprintf(err_str, 199, "ERROR: GATEWAY EVENT COMPLETION ERROR (EC=%s) Client PID=%" PRIu64 " and PUID(if available)=%" PRIu64 "\n", dragon_get_rc_string(err), *gmsg->_header.client_pid, *gmsg->_header.client_puid);
             fprintf(stderr, "%s\n", err_str);
         }
     }
@@ -2357,7 +2361,7 @@ dragon_channel_gatewaymessage_client_event_cmplt(dragonGatewayMessage_t * gmsg, 
         double end_time = dragon_get_current_time_as_double();
         double start_time = *((double*)gmsg->_header.transport_cmplt_timestamp);
         double diff = end_time-start_time;
-        snprintf(err_str, 199, "The completion of the event gateway message, for process PID=%lu and PUID(if available)=%lu, timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, diff);
+        snprintf(err_str, 199, "The completion of the event gateway message, for process PID=%" PRIu64 " and PUID(if available)=%" PRIu64 ", timed out in the transport with a time of %f seconds.", *gmsg->_header.client_pid, *gmsg->_header.client_puid, diff);
         dragon_channel_gatewaymessage_detach(gmsg);
         err_noreturn(saved_err_msg);
         free(saved_err_msg);
@@ -2369,6 +2373,33 @@ dragon_channel_gatewaymessage_client_event_cmplt(dragonGatewayMessage_t * gmsg, 
         append_err_return(derr, "The client event completion could not detach from the gateway message for some reason.");
 
     no_err_return(event_rc);
+}
+
+/**
+ * @brief Get debug value
+ *
+ * This is an internal function for debugging.
+ *
+ * This function is not intended for most Channels users.  It is used internally to support debugging.
+ *
+ * @param gmsg is a pointer to the Gateway Message.
+ *
+ * @param debug is a pointer that will be updated with the debug value.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_gatewaymessage_get_debug(dragonGatewayMessage_t * gmsg, dragonULInt * debug)
+{
+    if (gmsg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The gateway message cannot be NULL");
+
+    if (debug == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The debug pointer cannot be NULL");
+
+    *debug = *gmsg->_header.debug;
+
+    no_err_return(DRAGON_SUCCESS);
 }
 
 /** @} */ // end of group.

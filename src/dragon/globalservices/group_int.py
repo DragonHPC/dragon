@@ -13,7 +13,6 @@ from ..infrastructure.policy import Policy
 from ..infrastructure import util as dutil
 from ..globalservices import api_setup as das
 from .group import GroupError
-from ..data.ddict import DDict
 
 import os
 import logging

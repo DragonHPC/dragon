@@ -428,7 +428,7 @@ class TestDragonContextWait(unittest.TestCase):
     # the same connection object. Check that no service threads are spawned if we wait only on a
     # single object.
     # NOTE: This will break, when we implement a multi-poll on channels - that's the intention.
-    # @unittest.skipIf(platform == "win32" or platform == "darwin", "Works on Linux only")
+    @unittest.skipIf(platform == "win32" or platform == "darwin", "Works on Linux only")
     def test_thread_hoarding(self):
 
         # Create something to wait on

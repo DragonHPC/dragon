@@ -48,6 +48,7 @@ class TestDDictC(unittest.TestCase):
         ddict.destroy()
         self.assertEqual(proc.returncode, 0, "C client exited with non-zero exit code")
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Ill-defined behavior in proxy mode")
     def test_local_managers(self):
         exe = os.path.abspath("c_ddict")
         my_alloc = System()
@@ -66,6 +67,7 @@ class TestDDictC(unittest.TestCase):
 
 
 class TestDDictCPP(unittest.TestCase):
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Ill-defined behavior in proxy mode")
     def test_local_keys(self):
         exe = os.path.abspath("cpp_ddict")
         my_alloc = System()

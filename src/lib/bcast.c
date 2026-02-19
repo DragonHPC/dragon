@@ -87,17 +87,17 @@ static void _uninstall_signal_handler(bool handler_installed, struct sigaction* 
 // but enabling it incurs an extra cost
 // #define CHECK_POINTER
 
-static bool
-_is_pointer_valid(void *p) {
-    /* get the page size */
-    size_t page_size = sysconf(_SC_PAGESIZE);
-    /* find the address of the page that contains p */
-    void *base = (void *)((((size_t)p) / page_size) * page_size);
-    /* call msync, if it returns non-zero, return false */
-    int ret = msync(base, page_size, MS_ASYNC) != -1;
+// static bool
+// _is_pointer_valid(void *p) {
+//     /* get the page size */
+//     size_t page_size = sysconf(_SC_PAGESIZE);
+//     /* find the address of the page that contains p */
+//     void *base = (void *)((((size_t)p) / page_size) * page_size);
+//     /* call msync, if it returns non-zero, return false */
+//     int ret = msync(base, page_size, MS_ASYNC) != -1;
 
-    return ret ? ret : errno != ENOMEM;
-}
+//     return ret ? ret : errno != ENOMEM;
+// }
 
 static dragonError_t
 _bcast_validate_attrs(dragonBCastAttr_t* attrs) {
@@ -148,7 +148,7 @@ _bcast_map_obj(void* obj_ptr, dragonBCastHeader_t* header)
     ptr += sizeof(dragonULInt);
     header->num_triggered = (atomic_uint *) ptr;
     ptr += sizeof(dragonULInt);
-    header->triggering = (uint32_t *) ptr;
+    header->triggering = (_Atomic(uint32_t) *) ptr;
     ptr += sizeof(dragonULInt);
     header->shutting_down = (atomic_uint *) ptr;
     ptr += sizeof(dragonULInt);
@@ -281,7 +281,7 @@ _bcast_descr_from_id(const dragonULInt id, dragonBCastDescr_t * bd)
 static dragonError_t
 _bcast_wait_on_triggering(dragonBCast_t * handle, timespec_t * end_time)
 {
-    uint32_t * triggering_ptr = handle->header.triggering;
+    _Atomic(uint32_t) *triggering_ptr = handle->header.triggering;
     timespec_t now_time = {0,0};
 
     /* check_timeout_when_0 is used below when there is a timeout and we spin wait. No need to check it
@@ -620,7 +620,7 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
 {
     int idx = 0;
     bool found = false;
-    atomic_uint expected = 0UL;
+    unsigned int expected = 0UL;
     timespec_t now_time;
 
     /* increment the num_waiting atomically and get our value. We lock here if it is not a
@@ -1253,8 +1253,11 @@ dragon_bcast_attach(dragonBCastSerial_t* bd_ser, dragonBCastDescr_t* bd)
     if (bd_ser->data == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The serialized BCast descriptor appears to be uninitialized. The data cannot be NULL.");
 
-    if (bd_ser->len <= DRAGON_BCAST_SERIAL_NULINTS*sizeof(dragonULInt))
-        err_return(DRAGON_INVALID_ARGUMENT, "The size of the BCast serialized descriptor is incorrect.");
+    if (bd_ser->len <= DRAGON_BCAST_SERIAL_NULINTS*sizeof(dragonULInt)) {
+        char msg[200];
+        snprintf(msg, 200, "The size of the BCast serialized descriptor is incorrect. It is %lu and should be greater or equal to %lu\n", bd_ser->len, DRAGON_BCAST_SERIAL_NULINTS*sizeof(dragonULInt));
+        err_return(DRAGON_INVALID_ARGUMENT, msg);
+    }
 
     /* pull out the hostid to see if it is a local object or not. */
     dragonULInt * sptr = (dragonULInt *)bd_ser->data;
@@ -1555,10 +1558,19 @@ dragon_bcast_serialize(const dragonBCastDescr_t * bd, dragonBCastSerial_t * bd_s
     /* finally copy in the memory descriptor */
     memcpy(sptr, mem_ser.data, mem_ser.len);
 
+    size_t actual_sz = ((size_t) sptr - (size_t) bd_ser->data) + mem_ser.len;
+
     /* free our serialized memory descriptor after we memcpy */
     err = dragon_memory_serial_free(&mem_ser);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not release serialized memory descriptor after memcpy.");
+
+    if (actual_sz > DRAGON_BCAST_MAX_SERIALIZED_LEN) {
+        char err_msg[200];
+        snprintf(err_msg, 200, "The size of the serialized descriptor was %lu but is limited to %lu in the library.\n"
+                               "    DRAGON_BCAST_MAX_SERIALIZED_LEN needs adjusting.", actual_sz, DRAGON_BCAST_MAX_SERIALIZED_LEN);
+        err_return(DRAGON_FAILURE, err_msg);
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2074,7 +2086,7 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
         }
     }
 
-    uint32_t * triggering_ptr = handle->header.triggering;
+    _Atomic(uint32_t) * triggering_ptr = handle->header.triggering;
     volatile atomic_uint * num_triggered_ptr = handle->header.num_triggered;
 
     size_t num_waiting = atomic_load(handle->header.num_waiting);
@@ -2114,9 +2126,9 @@ dragon_bcast_trigger_some(dragonBCastDescr_t* bd, int num_to_trigger, const time
     size_t num_spinners = 0;
     /* We make a local copy of current_spinner_count because the spin_list_count
        will change in the object as spinners wake up */
-    size_t current_spinner_count = (atomic_uint)*handle->header.spin_list_count;
+    size_t current_spinner_count = (size_t)*handle->header.spin_list_count;
     int idx = 0;
-    atomic_uint expected = 0UL;
+    unsigned int expected = 0UL;
 
     while ((num_spinners < current_spinner_count) && (idx < *(handle->header.spin_list_sz)) && (num_spinners < num_to_trigger)) {
         expected = 1UL;
@@ -2332,7 +2344,7 @@ dragon_bcast_state(dragonBCastDescr_t* bd) {
     if (err != DRAGON_SUCCESS)
         return NULL;
 
-    snprintf(state_str, 999, "BCast State:\n   num_waiting %d\n   num_triggered %d\n   triggering %d\n   state %lx\n   shutting_down %d\n   allowable_count %d\n   num_to_trigger %d\n   payload_sz %d\n   sync_type %d\n   sync_num %d\n",
+    snprintf(state_str, 999, "BCast State:\n   num_waiting %d\n   num_triggered %d\n   triggering %u\n   state %" PRIu64 "x\n   shutting_down %d\n   allowable_count %d\n   num_to_trigger %d\n   payload_sz %d\n   sync_type %d\n   sync_num %d\n",
                             *handle->header.num_waiting,
                             *handle->header.num_triggered,
                             *handle->header.triggering,
@@ -2349,4 +2361,5 @@ dragon_bcast_state(dragonBCastDescr_t* bd) {
     strcpy(ret_str, state_str);
 
     return ret_str;
+
 }

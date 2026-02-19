@@ -6,6 +6,7 @@ import enum
 import os
 import re
 import socket
+import sys
 from typing import Any, Union
 
 
@@ -247,7 +248,11 @@ class PacketType(enum.IntEnum):
 
 class sockaddr_in(ctypes.Structure):
     _fields_ = [
-        ("sin_family", ctypes.c_ushort),  # Always AF_INET
+        *(
+            [("sin_family", ctypes.c_ushort)]
+            if sys.platform == "linux"  # Always AF_INET
+            else [("sin_len", ctypes.c_uint8), ("sin_family", ctypes.c_uint8)]
+        ),
         ("sin_port", ctypes.c_uint16),
         ("sin_addr", ctypes.c_byte * 4),
         ("sin_zero", ctypes.c_byte * 8),  # Ignored
@@ -263,7 +268,11 @@ class sockaddr_in(ctypes.Structure):
 
 class sockaddr_in6(ctypes.Structure):
     _fields_ = [
-        ("sin6_family", ctypes.c_ushort),  # Always AF_INET6
+        *(
+            [("sin6_family", ctypes.c_ushort)]
+            if sys.platform == "linux"  # Always AF_INET6
+            else [("sin6_len", ctypes.c_uint8), ("sin6_family", ctypes.c_uint8)]
+        ),
         ("sin6_port", ctypes.c_uint16),
         ("sin6_flowinfo", ctypes.c_uint32),
         ("sin6_addr", ctypes.c_byte * 16),
@@ -305,14 +314,18 @@ class sockaddr_ll(ctypes.Structure):
 
 class sockaddr(ctypes.Structure):
     _fields_ = [
-        ("sa_family", ctypes.c_ushort),
+        *(
+            [("sa_family", ctypes.c_ushort)]
+            if sys.platform == "linux"
+            else [("sa_len", ctypes.c_uint8), ("sa_family", ctypes.c_uint8)]
+        ),
         ("sa_data", ctypes.c_byte * 14),
     ]
 
     af_type = {
         socket.AF_INET: ctypes.POINTER(sockaddr_in),
         socket.AF_INET6: ctypes.POINTER(sockaddr_in6),
-        socket.AF_PACKET: ctypes.POINTER(sockaddr_ll),
+        getattr(socket, "AF_PACKET", -1): ctypes.POINTER(sockaddr_ll),
     }
 
     def cast(self) -> Union[sockaddr_in, sockaddr_in6, sockaddr_ll]:

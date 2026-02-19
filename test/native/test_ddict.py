@@ -10,6 +10,7 @@ import gc
 import getpass
 import psutil
 import random
+import string
 import subprocess
 import ctypes
 
@@ -901,9 +902,27 @@ def sort_keys_comparator(x, y):
     return x < y
 
 
+def test_sync_proc_func(d, bar, keys):
+
+    for _ in range(9):
+        for k in keys:
+            d[k] = "hello"
+        d.checkpoint()
+        bar.wait()
+
+    d[0] = "hello"
+    d.start_batch_put()
+    for k in keys:
+        d[k] = "hello"
+    d.end_batch_put()
+
+    d.detach()
+
+
+
 class TestDDict(unittest.TestCase):
     def setUp(self):
-        pool_name = f"pydragon_ddict_test_{getpass.getuser()}_{os.getpid()}"
+        pool_name = f"dd{os.getuid()}_{os.getpid()}"
         pool_size = 1073741824  # 1GB
         pool_uid = POOL_MUID
         try:
@@ -1146,8 +1165,14 @@ class TestDDict(unittest.TestCase):
         allocs = def_pool.get_allocations()
         d = DDict(1, 1, 3000000, trace=True)
         d.destroy()
-        after_free_space = def_pool.free_space
-        self.assertEqual(before_free_space - after_free_space, 0)
+        del d
+        done = False
+        for i in range(20):
+            time.sleep(1)
+            after_free_space = def_pool.free_space
+            if after_free_space >= before_free_space:
+                break
+        self.assertLessEqual(before_free_space - after_free_space, 0)
 
     def test_put_get(self):
         d = DDict(2, 1, 3000000, trace=True)
@@ -3819,8 +3844,8 @@ class TestDDictPersist(unittest.TestCase):
         )
 
         for i in range(5):
+            d["hello"] = "world"
             if i%2 == 0:
-                d["hello"] = "world"
                 d.persist()
             d.checkpoint()
 
@@ -3848,7 +3873,7 @@ class TestDDictPersist(unittest.TestCase):
         self.assertEqual(d_restore["hello"], "world")
         self.assertEqual(d_restore.checkpoint_id, 2)
         d_restore.restore(0)
-        self.assertFalse("hello" in d_restore) ## persist and then retire -> persisted chkpt 0 was overwritten as the first chkpt is always persited automatically
+        self.assertTrue("hello" in d_restore)
         self.assertEqual(d_restore.checkpoint_id, 0)
         d_restore.destroy()
 
@@ -4217,6 +4242,44 @@ class TestDDictPersist(unittest.TestCase):
             str(ex.exception),
             "The expected dragon error code DRAGON_NOT_IMPLEMENTED is not presented in the exception.",
         )
+
+    def test_sync(self):
+        d = DDict(
+            2,
+            1,
+            1500000 * 2,
+            trace=True,
+            working_set_size=2,
+            wait_for_keys=True,
+            persist_path="",
+            persist_freq=1,
+            persist_count=2,
+            persister_class=PosixCheckpointPersister,
+        )
+
+        keys = [''.join(random.choices(string.ascii_letters, k=10)) for _ in range(40)]
+
+        pg = ProcessGroup(restart=False)
+        bar = Barrier(parties=4)
+        for i in range(4):
+            pg.add_process(
+                nproc=1,
+                template=ProcessTemplate(
+                    target=test_sync_proc_func,
+                    args=(d, bar, keys[10*i:10*i+10]),
+                )
+            )
+        pg.init()
+        pg.start()
+        pg.join()
+        pg.close()
+
+        d.sync()
+        d.sync_to_newest_checkpoint()
+        self.assertEqual(d.checkpoint_id, 9)
+        for k in keys:
+            self.assertTrue(k in d)
+        d.destroy()
 
 
 class TestDDictDAOSPersist(unittest.TestCase):

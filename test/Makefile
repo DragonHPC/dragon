@@ -1,7 +1,19 @@
 export CC = gcc
 export CXX = g++
-export CFLAGS = -Ofast -fomit-frame-pointer -DDRAGON_DEBUG -Wall
+export CFLAGS = -O3 -ffast-math -fomit-frame-pointer -DDRAGON_DEBUG -Wall
 export PYTHON = $(shell which python3 | awk '{if ($$1 == "") { print "python" } else { print "python3"}}')
+# Following needed for Mac OS. Does not affect Linux.
+ifeq ($(LD_LIBRARY_PATH),)
+    export LD_LIBRARY_PATH := $(abspath ../src/lib)
+else
+    export LD_LIBRARY_PATH := $(abspath ../src/lib):$(LD_LIBRARY_PATH)
+endif
+
+ifeq ($(DYLD_LIBRARY_PATH),)
+    export DYLD_LIBRARY_PATH := $(abspath ../src/lib)
+else
+    export DYLD_LIBRARY_PATH := $(abspath ../src/lib):$(DYLD_LIBRARY_PATH)
+endif
 
 INSTALL ?= install
 INSTALL_DIR ?= ../src/dist
@@ -57,11 +69,11 @@ TESTS_PYTHON := test_c_files.py \
                 test_infrastructure.py \
                 test_globalservices.py \
                 test_policy.py \
-                test_shepherd.py \
+				test_shepherd.py \
                 $(wildcard transport/tcp/test_*.py) \
                 transport/test_lsif.py \
                 test_transport.py \
-                test_integration_shep_gs.py \
+				test_integration_shep_gs.py \
                 test_dragon_cleanup.py
 # test_launcher.py (waiting for fix from Jira AICI-1859)
 
@@ -96,7 +108,16 @@ $(TEST_WORKFLOWS):
 
 .PHONY: $(TESTS_PYTHON)
 $(TESTS_PYTHON):
+	rm -f *.log
 	$(PYTHON) $@ -v -f
+#   This can replace line above if logs are needed for debugging tests.
+# 	$(PYTHON) $@ -v -f || true
+# 	$(PYTHON) -m pip install ciso8601
+# 	$(PYTHON) ../hack/mergelogs > out.txt
+# 	@echo "***************** LOG **********************"
+# 	@cat out.txt
+# 	@echo "*************** END OF LOG **********************"
+# 	rm -f out.txt
 
 .PHONY: $(TESTS_DRAGON)
 $(TESTS_DRAGON):
@@ -111,12 +132,12 @@ tests_multi_node:
 .PHONY: $(TESTS_CCFUTURES)
 $(TESTS_CCFUTURES):
 	@echo "Running ccfutures test"
-	cd ccfutures && dragon -s $@ -v -f
+	cd ccfutures && DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s $@ -v -f
 
 .PHONY: $(TESTS_AI)
 $(TESTS_AI):
 	@echo "Running ai test"
-	cd ai && dragon -s $@ -v -f
+	cd ai && DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s $@ -v -f
 
 BUILD_COMPONENTS := $(addprefix build-,$(COMPONENTS))
 
@@ -142,11 +163,20 @@ $(CLEAN_COMPONENTS): clean-%:
 .PHONY: dist
 dist: $(DIST_TARGETS)
 
+OS = $(shell uname -s)
+ifneq ("$(OS)","Darwin")
+	INSTALL_FLAG = "-D"
+else
+	INSTALL_FLAG =
+endif
+
 $(addprefix $(DIST_DIR)/,$(notdir $(filter pkg/%,$(DIST_SOURCES)))): $(DIST_DIR)/%:
-	$(INSTALL) -m $(INSTALL_MODE) -D pkg/$* $@
+	@if [ "$(OS)" == "Darwin" ]; then $(INSTALL) -d $(DIST_DIR)/$(basename $*); fi
+	$(INSTALL) -m $(INSTALL_MODE) $(INSTALL_FLAG) pkg/$* $@
 
 $(addprefix $(DIST_DIR)/,$(filter-out pkg/%,$(DIST_SOURCES))): $(DIST_DIR)/%:
-	$(INSTALL) -m $(INSTALL_MODE) -D $* $@
+	@if [ "$(OS)" == "Darwin" ]; then $(INSTALL) -d $(DIST_DIR)/$(basename $*); fi
+	$(INSTALL) -m $(INSTALL_MODE) $(INSTALL_FLAG) $* $@
 
 .PHONY: distclean
 distclean:

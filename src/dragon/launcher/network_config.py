@@ -319,7 +319,7 @@ def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF, port
     try:
         node_info = NodeDescriptor.get_local_node_network_conf(args.network_prefix, args.port)
     except RuntimeError:
-        raise RuntimeError("Unable to acquire backend network configuration")
+        raise RuntimeError(f"Unable to acquire backend network configuration with prefix {args.network_prefix}")
 
     # Cache the data locally
     NodeDescriptor.set_cached_local_network_conf(node_info, salt=net_conf_cache_salt)

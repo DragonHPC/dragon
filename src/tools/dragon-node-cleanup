@@ -39,8 +39,8 @@ echo $pids | xargs -r kill -9
 
 echo "Cleaning up /dev/shm of any leftover pools on" $(hostname)
 if [[ $1 -eq 1 ]]; then
-    echo "Avoiding DDict pools named *dict_pool* in backend /dev/shm"
-    find /dev/shm -user $me ! -name "*dict_pool*" -exec rm -f {} \;
+    echo "Avoiding DDict pools named *DD* in backend /dev/shm"
+    find /dev/shm -user $me ! -name "*DD*" -exec rm -f {} \;
 else
     echo "Cleaning up all pools in backend /dev/shm"
     find /dev/shm -user $me -exec rm -f {} \;

@@ -1,5 +1,5 @@
 """
-Run an MPI application with either a Cray PALS or PMIx backend
+Run an MPI application with either a Cray PMI or PMIx backend
 """
 
 import os

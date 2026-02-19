@@ -1,4 +1,5 @@
 import unittest
+from unittest.mock import patch, MagicMock
 import dragon
 import multiprocessing as mp
 import time
@@ -109,6 +110,96 @@ class TestDragonTelemetryDragonServer(unittest.TestCase):
         response = self.return_queue_aggregator.get()
         self.assertFalse(response["result"])
 
+    @patch("dragon.telemetry.dragon_server.subprocess.Popen")
+    def test_db_dump(self, mock_popen):
+        # Mock the process object and its communicate method
+        mock_process = MagicMock()
+        mock_process.communicate.return_value = (b"stdout", b"stderr")
+        mock_process.returncode = 0
+        mock_popen.return_value = mock_process
+
+        # Set necessary config
+        self.ds.telem_cfg = {"dump_node": "test_node", "dump_dir": "/test/dir"}
+        
+        # Call the method
+        result = self.ds.db_dump()
+
+        # Assertions
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(result["message"], "Database dumped successfully.")
+        
+        # Verify rsync command structure
+        args, _ = mock_popen.call_args
+        cmd = args[0]
+        self.assertEqual(cmd[0], "rsync")
+        self.assertEqual(cmd[1], "--mkpath")
+        # Check if destination contains the node and path
+        self.assertIn("test_node:/test/dir/telemetry/", cmd[3])
+
+    @patch("dragon.telemetry.dragon_server.subprocess.Popen")
+    def test_db_dump_failure(self, mock_popen):
+        # Mock the process object for failure
+        mock_process = MagicMock()
+        mock_process.communicate.return_value = (b"", b"rsync error")
+        mock_process.returncode = 1
+        mock_popen.return_value = mock_process
+
+        # Set necessary config
+        self.ds.telem_cfg = {"dump_node": "test_node", "dump_dir": "/test/dir"}
+        
+        # Call the method
+        result = self.ds.db_dump()
+
+        # Assertions
+        self.assertEqual(result["status"], "error")
+        self.assertEqual(result["message"], "rsync error")
+    
+    def test_query_mini_telemetry(self):
+        # Setup DragonServer with mini_telemetry_args
+        mini_args = (["node1"], "merged_db")
+        ds = DragonServer(
+            input_queue=mp.Queue(),
+            return_queue_dict={},
+            shutdown_event=mp.Event(),
+            telemetry_config={},
+            mini_telemetry_args=mini_args
+        )
+
+        # Setup in-memory DB with expected schema for mini telemetry
+        conn = sqlite3.connect(":memory:")
+        cursor = conn.cursor()
+        # Note: table_name column added
+        cursor.execute("CREATE TABLE datapoints (table_name text, metric text, timestamp text, value real, tags json)")
+        
+        # Insert sample data
+        # metric="cpu", timestamp="1000", value=1.0, tags={"host": "node1"}, table_name="node1"
+        cursor.execute(
+            "INSERT INTO datapoints VALUES (?, ?, ?, ?, ?)", 
+            ("node1", "cpu", "1000", 1.0, json.dumps({"host": "node1"}))
+        )
+        conn.commit()
+
+        # Prepare request body
+        # start time is divided by 1000 in query method, so 0 -> 0. Timestamp 1000 > 0.
+        request_body = {
+            "start": "0",
+            "queries": [
+                {
+                    "metric": "cpu",
+                    "filters": [] 
+                }
+            ]
+        }
+
+        # Execute query
+        result = ds.query(request_body, conn, cursor)
+
+        # Assertions
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["metric"], "cpu")
+        # In mini telemetry mode, host tag comes from table_name which is index 1 of the tuple key
+        self.assertEqual(result[0]["tags"]["host"], "node1")
+        self.assertEqual(result[0]["dps"]["1000"], 1.0)
 
 if __name__ == "__main__":
     mp.set_start_method("dragon")

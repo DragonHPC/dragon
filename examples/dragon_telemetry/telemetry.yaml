@@ -9,5 +9,8 @@ default_tmdb_dir: "/tmp"
 delete_tmdb: 1
 default_tmdb_window: 300
 # SSH Tunnel
-# remote_tunnel_node: <node_name> 
+# remote_tunnel_node: <node>
 # remote_tunnel_port: <port>
+# Database Dump & Mini Telemetry
+# dump_node: <node>
+# dump_dir: <path>  # Path should exist on dump_node

@@ -82,16 +82,26 @@ class PopenProps(subprocess.Popen):
                 else:
                     # this might be unnecessary because the environment might always be a dict.
                     os.environ[props.layout.accelevator_env] = ",".join(str(core) for core in props.layout.gpu_core)
-        super().__init__(*args, **kwds)
-        # Assuming this is basically a free call, default the afinity to "everything" just in case
+
         try:
-            os.sched_setaffinity(self.pid, range(os.cpu_count()))
-            if props.layout is not None:
-                if props.layout.cpu_core:
-                    os.sched_setaffinity(self.pid, props.layout.cpu_core)
-        except:
+            cores = ""
+            # This set the core string to the proper value for the dragon-popen which sets the affinity
+            # on itself (once started) and then execvp's to start the actual code. In this way a process sets
+            # its own affinity according to the policy before executing any user code.
+            if props.layout is not None and props.layout.cpu_core:
+                cores = " ".join([str(core) for core in props.layout.cpu_core])
+            else:
+                cores = " ".join([str(core) for core in range(dutils.get_cpu_count())])
+
+        except Exception as ex:
             # TODO: this should be possibly be logged, but it can fail here if the process is short lived enough
             pass
+
+        # args is a tuple where args[0] is really the list of args. Hence the odd looking wrapper_args.
+        wrapper_args = (([dfacts.POPEN_WRAPPER, cores] + args[0]),)
+
+        super().__init__(*wrapper_args, **kwds)
+        # Assuming this is basically a free call, default the afinity to "everything" just in case
 
         # XXX Affinity settings are only inherited by grandchild processes
         # XXX created after this point in time. Any grandchild processes
@@ -322,6 +332,9 @@ class OutputConnector:
         self._proc = proc
 
     def forward(self, data):
+        if "kj/filesystem" in data or ": warning: PWD environment" in data:
+            return
+
         if self._conn is not None:
             while len(data) > 300:
                 chunk = data[:300]
@@ -361,7 +374,7 @@ class OutputConnector:
 
         # This is temporary and code to ignore warnings coming from capnproto. The
         # capnproto library has been modified to not send the following warning.
-        # kj/filesystem-disk-unix.c++:1703: warning: PWD environment variable ...
+        # kj/filesystem-disk-unix.c++:1734: warning: PWD environment variable ...
         # The warning does not show up normally but does in our build pipeline for
         # now until the pycapnp project is updated. So we eliminate it here for now.
         if "kj/" in str_data and ": warning:" in str_data:
@@ -737,7 +750,8 @@ class LocalServer:
             try:
                 pool.destroy()
             except (dmm.DragonMemoryError, dmm.DragonPoolError) as dpe:
-                log.warning("m_uid=%s failed: %s" % (m_uid, dpe))
+                if dpe.lib_err != DragonError.MAP_KEY_NOT_FOUND:
+                    log.warning("m_uid=%s failed: %s" % (m_uid, dpe))
 
     def _clean_procs(self):
         log = logging.getLogger("LS.kill procs")
@@ -791,6 +805,15 @@ class LocalServer:
         # operations (to keep from having memory leaks on pools),
         # but is not necessary when shutting down. So we do not
         # destroy channels here. We just reset the channels dict.
+        # HOWEVER, in tests we want to detach from channels so the
+        # next run of local services is not confused by process-local
+        # stale channel handles. So we detach here to prevent that.
+        for cuid in self.channels:
+            try:
+                self.channels[cuid].detach()
+            except:
+                pass
+
         self.channels = {}
 
         self.clean_pools(self.pools, log)
@@ -1374,6 +1397,8 @@ class LocalServer:
             del req_env["POD_NAME"]
         if "POD_IP" in req_env:
             del req_env["POD_IP"]
+        if dfacts.DRAGON_LOGGER_SDESC in req_env:
+            del req_env[dfacts.DRAGON_LOGGER_SDESC]
 
         the_env = dict(os.environ)
         the_env.update(req_env)
@@ -1477,6 +1502,9 @@ class LocalServer:
 
                 the_env["MPICH_OFI_CXI_PID_BASE"] = str(msg.pmi_info.pid_base)
                 the_env["LD_LIBRARY_PATH"] = str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("LD_LIBRARY_PATH", ""))
+                the_env["DYLD_LIBRARY_PATH"] = (
+                    str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("DYLD_LIBRARY_PATH", ""))
+                )
                 the_env["FI_CXI_RX_MATCH_MODE"] = "hybrid"
 
                 if pmi_group_info.backend == dfacts.PMIBackend.CRAY:
@@ -1521,6 +1549,11 @@ class LocalServer:
                     log.debug("PMIx backend nenv: %s", nenv)
                     for idx, (k, v) in enumerate(the_env.items()):
                         log.debug("Env %s/%s -> %s: %s", idx, nenv, k, v)
+
+            if not dfacts.DRAGON_LIB_DIR in the_env.get("DYLD_LIBRARY_PATH", ""):
+                the_env["DYLD_LIBRARY_PATH"] = (
+                    str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("DYLD_LIBRARY_PATH", ""))
+                )
 
             stdin_connector = InputConnector(stdin_conn)
 
@@ -2050,7 +2083,7 @@ class LocalServer:
                     def_pool_event_min_pct = min(def_pool_event_min_pct, def_pool_pct)
                     def_pool_consecutive_events += 1
 
-                    if (def_pool_consecutive_events % 100)  == 5:
+                    if (def_pool_consecutive_events % 100) == 5:
                         def_pool_events += 1
                         # if this is the 5th consecutive event mod 100, then warn the user,
                         # but don't keep warning if it doesn't change. Every 100 iterations
@@ -2091,11 +2124,10 @@ class LocalServer:
         try:
             if def_pool_events > 0:
                 warning_msg = (
-                    ("\nDEFAULT POOL FREE SPACE WARNING: There were %s events recorded where the\n" + \
-                    "default pool utilization on node %s with hostname %s exceeded %s%%.\n" + \
-                    "You may want to increase the default pool size.\n")
-                    % (def_pool_events, parms.this_process.index, self.hostname, def_pool_event_min_pct)
-                )
+                    "\nDEFAULT POOL FREE SPACE WARNING: There were %s events recorded where the\n"
+                    + "default pool utilization on node %s with hostname %s exceeded %s%%.\n"
+                    + "You may want to increase the default pool size.\n"
+                ) % (def_pool_events, parms.this_process.index, self.hostname, def_pool_event_min_pct)
                 log.info(warning_msg)
                 if not suppress_warnings:
                     self.be_in.send(
@@ -2113,7 +2145,6 @@ class LocalServer:
             log.info("Exiting")
         except:
             pass
-
 
     def update_watch_set(self, connectors, dead_connector):
         changed = False
@@ -2312,5 +2343,3 @@ class LocalServer:
                     pass
         except queue.Empty:
             pass
-
-

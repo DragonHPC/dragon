@@ -1,3 +1,42 @@
+# Dragon 0.13.1 Release Summary
+
+We're excited to announce the release of Dragon v0.13.1, which includes several updates, additions and fixes. Here are the highlights:
+
+### Changed
+
+    - Removed dependence upon the now deprecated pynvml package
+    - Performed validatation of Dragon's proxy functionality & documentation. Create use case documentation.
+    - Managed Memory Pool name lengths are now limited to 31 characters in accordance with Mac OS requirements.
+    - Updated the Dragon inference service to use vLLM 0.13.0
+    - Moved the Dragon inference service into the separate dragon.ai repo and reworked the interface into a proper Python class
+    - Updated an example README file that had outdated information needed to be fixed
+    - General documentation updates and polish before the Supercomputing conference
+    - Add logging of GSPingSH message to help solve intermittent message ordering issue
+
+### Added
+
+    - Enabled Telemetry to dump DB to persistent storage and enable post processing
+    - Added Benchmark for checkpoint persistence test
+    - Created a DDict Checkpointing Example for DDP MNIST
+    - Mac OS single node is now supported. PIP install (PyPI support) is coming at a future date.
+
+### Fixed
+
+    - Fixed the Dragon Logging facility to send and aggregate backend logs to the FrontEnd dragon_* and console logs.
+    - Fixed Dragon Single Node Logging Facility to be able to accept and agregate logs from Dragon managed processes, similar to multi-node logging.
+    - Performed cleanup of send handles on Exit
+    - Modified the exceptional exit path of Dragon to help prevent cases where Dragon backend processes and shared memory allocations aren't properly cleaned up.
+    - Performed HSTA Target Channel Cleanup
+    - Fixed bug in the TCP transport agent that could cause message corruption
+    - Fixed bug in the HSTA transport agent that could cause messages to not be delivered
+    - Fixed unittests to use scipy<1.17.0
+    - Fixed potential buffering issue with the DDict Manager
+    - Made minor documentation updates
+
+### Known Issues
+
+    - We've introduced a minor performance degradation in order to work around an issue in the TCP agent. This minor degradation is planned to be resolved in the next release of Dragon.
+
 # Dragon 0.13 Release Summary
 
 We're excited to announce the release of Dragon v0.13, which includes several updates, additions and fixes. Here are the highlights:

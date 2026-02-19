@@ -45,7 +45,7 @@ dragon_gpu_setup(dragonGPUBackend_t backend_type, int deviceID, void **dragon_gp
         char dbg_filename[256];
         char my_hostname[128];
         gethostname(my_hostname, 128);
-        sprintf(dbg_filename, "dragon_gpu.%s.%d.log", my_hostname, getpid());
+        snprintf(dbg_filename, 256, "dragon_gpu.%s.%d.log", my_hostname, getpid());
         dragon_gpu_log = fopen(dbg_filename, "w");
         if (dragon_gpu_log == nullptr) {
             append_err_return(DRAGON_FAILURE, "failed to open Dragon GPU debug log");
@@ -368,6 +368,36 @@ dragon_gpu_memset(void *dragon_gpu_handle, void *addr, int val, size_t size)
     gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
     gpuh->lock.acquire();
     auto derr = gpuh->dgpu->memset(addr, val, size);
+    gpuh->lock.release();
+    return derr;
+}
+
+dragonError_t
+dragon_gpu_host_register(void *dragon_gpu_handle, void *addr, size_t size)
+{
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_host_register called\n");
+        fflush(dragon_gpu_log);
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
+    gpuh->lock.acquire();
+    auto derr = gpuh->dgpu->host_register(addr, size);
+    gpuh->lock.release();
+    return derr;
+}
+
+dragonError_t
+dragon_gpu_host_unregister(void *dragon_gpu_handle, void *addr)
+{
+    if (dragon_gpu_debug) {
+        fprintf(dragon_gpu_log, "dragon_gpu_host_unregister called\n");
+        fflush(dragon_gpu_log);
+    }
+    dragonGPUHandle_t *gpuh;
+    gpuh = static_cast<dragonGPUHandle_t *>(dragon_gpu_handle);
+    gpuh->lock.acquire();
+    auto derr = gpuh->dgpu->host_unregister(addr);
     gpuh->lock.release();
     return derr;
 }

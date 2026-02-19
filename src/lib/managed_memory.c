@@ -1,4 +1,6 @@
+#ifndef __APPLE__
 #include <numa.h>
+#endif //__APPLE__
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
@@ -21,10 +23,16 @@ dragonGPUBackend_t gpu_backend_type = DRAGON_GPU_BACKEND_CUDA;
 void *dragon_gpu_handle = NULL;
 /* Define numa API functions to allow dlopen of said libraries */
 static int _numa_pointers_set = 0;
+static size_t _max_pool_name_len =
+    DRAGON_MEMORY_MAX_FILE_NAME_LENGTH-
+    strlen(DRAGON_MEMORY_DEFAULT_FILE_PREFIX)-
+    strlen(DRAGON_MEMORY_DEFAULT_MANIFEST_SUFFIX) - 1; // -1 for null-terminator
+
 
 int (*numa_available_p)(void);
 struct bitmask* (*numa_allocate_nodemask_p)(void);
 struct bitmask* (*numa_bitmask_setall_p)(struct bitmask*);
+struct bitmask* (*numa_bitmask_setbit_p)(struct bitmask *, unsigned int);
 void (*numa_interleave_memory_p)(void*, size_t, struct bitmask*);
 void (*numa_free_nodemask_p)(struct bitmask*);
 
@@ -101,6 +109,7 @@ int _set_numa_function_pointers() {
             numa_available_p = dlsym(lib_numa_handle, "numa_available");
             numa_allocate_nodemask_p = dlsym(lib_numa_handle, "numa_allocate_nodemask");
             numa_bitmask_setall_p = dlsym(lib_numa_handle, "numa_bitmask_setall");
+            numa_bitmask_setbit_p = dlsym(lib_numa_handle, "numa_bitmask_setbit");
             numa_interleave_memory_p =dlsym(lib_numa_handle, "numa_interleave_memory");
             numa_free_nodemask_p = dlsym(lib_numa_handle, "numa_free_nodemask");
 
@@ -233,7 +242,7 @@ _mem_from_descr(const dragonMemoryDescr_t * mem_descr, dragonMemory_t ** mem)
 
     if (err != DRAGON_SUCCESS) {
         char err_str[100];
-        snprintf(err_str, 99, "failed to find item in dg_mallocs umap with value %lu", mem_descr->_idx);
+        snprintf(err_str, 99, "failed to find item in dg_mallocs umap with value %" PRIu64 "", mem_descr->_idx);
         append_err_return(err, err_str);
     }
 
@@ -350,7 +359,7 @@ _determine_pool_allocation_size(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_
     */
 
     uint32_t max_block_power, min_block_power;
-    uint64_t manifest_heap_size;
+    size_t manifest_heap_size;
     size_t lock_size;
     size_t bcast_size;
 
@@ -380,7 +389,7 @@ _determine_pool_allocation_size(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_
         manifest_heap_size +
         attr->ipc_handle_size +
         attr->npre_allocs * sizeof(size_t) +
-        (attr->n_segments + 1) * DRAGON_MEMORY_MAX_FILE_NAME_LENGTH +
+        (attr->n_segments + 1) * DRAGON_MEMORY_MAX_POOL_NAME_ENTRY_LENGTH +
         blocks_size;
 
 
@@ -548,7 +557,14 @@ _create_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPool
         if (_numa_pointers_set) {
             if (numa_available_p() != -1) {
                 struct bitmask *mask = numa_allocate_nodemask_p();
-                numa_bitmask_setall_p(mask);
+                if(attr->numa_node >= 0){
+                    // set bitmask for specific NUMA node
+                    numa_bitmask_setbit_p(mask, attr->numa_node);
+                }
+                else
+                {
+                    numa_bitmask_setall_p(mask);
+                }
                 numa_interleave_memory_p(pool->local_dptr, attr->total_data_size, mask);
                 numa_free_nodemask_p(mask);
             }
@@ -672,23 +688,17 @@ _alloc_pool(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryPoolA
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not determine pool allocation size");
 
-
     /* create the file name for the manifest */
-    char * mfile = malloc(sizeof(char) * (DRAGON_MEMORY_MAX_FILE_NAME_LENGTH));
+    char * mfile = malloc(sizeof(char) * 255); // Plenty big so we can don't run out of room.
     if (mfile == NULL)
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate manifest file name string");
 
-    int nchars = snprintf(mfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "/%s%s_manifest",
-                          DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name);
+    int nchars = snprintf(mfile, 255, "/%s%s%s",
+                          DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, DRAGON_MEMORY_DEFAULT_MANIFEST_SUFFIX);
 
     if (nchars == -1) {
         free(mfile);
         err_return(DRAGON_MEMORY_FILENAME_ERROR, "encoding error generating manifest filename");
-    }
-
-    if (nchars > DRAGON_MEMORY_MAX_FILE_NAME_LENGTH) {
-        free(mfile);
-        err_return(DRAGON_MEMORY_FILENAME_ERROR, "The filename for the pool manifest was too long.");
     }
 
     /* create the manifest and map it in */
@@ -698,22 +708,8 @@ _alloc_pool(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryPoolA
         append_err_return(err, "failed to create manifest");
     }
 
-    if (nchars == -1) {
-        _unmap_manifest_shm(pool);
-        _unlink_manifest_file(mfile);
-        free(mfile);
-        err_return(DRAGON_MEMORY_FILENAME_ERROR, "encoding error generating data filename");
-    }
-
-    if (nchars > DRAGON_MEMORY_MAX_FILE_NAME_LENGTH) {
-        _unmap_manifest_shm(pool);
-        _unlink_manifest_file(mfile);
-        free(mfile);
-        err_return(DRAGON_MEMORY_FILENAME_ERROR, "The filename for the pool data segment was too long.");
-    }
-
     /* create the filename for the data file */
-    char * dfile = malloc(sizeof(char) * (DRAGON_MEMORY_MAX_FILE_NAME_LENGTH));
+    char * dfile = malloc(sizeof(char) * 255);
     if (dfile == NULL) {
         _unmap_manifest_shm(pool);
         _unlink_manifest_file(mfile);
@@ -727,8 +723,8 @@ _alloc_pool(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryPoolA
     if( attr->mem_type != DRAGON_MEMORY_TYPE_GPU) {
         if (dragon_get_hugepage_mount(&mount_dir) == DRAGON_SUCCESS ) {
             nchars = snprintf(
-                dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "%s/%s%s_part%i",
-                mount_dir, DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0
+                dfile, 255, "%s/%s%s%s",
+                mount_dir, DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, DRAGON_MEMORY_DEFAULT_DATA_SUFFIX
             );
 
             attr->mem_type = DRAGON_MEMORY_TYPE_HUGEPAGE;
@@ -743,8 +739,8 @@ _alloc_pool(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryPoolA
 
         /* mmapping a hugepage-backed buffer didn't work, so try /dev/shm */
         if (fallback_dev_shm) {
-            nchars = snprintf(dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "/%s%s_part%i",
-                            DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0);
+            nchars = snprintf(dfile, 255, "/%s%s%s",
+                            DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, DRAGON_MEMORY_DEFAULT_DATA_SUFFIX);
 
             attr->mem_type = DRAGON_MEMORY_TYPE_SHM;
             err = _create_map_data(pool, dfile, attr);
@@ -752,8 +748,8 @@ _alloc_pool(dragonMemoryPool_t * pool, const char * base_name, dragonMemoryPoolA
     }
     else {
         // mem_type is GPU
-        nchars = snprintf(dfile, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH, "/%s%s_part%i",
-                          DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, 0);
+        nchars = snprintf(dfile, 255, "/%s%s%s",
+                          DRAGON_MEMORY_DEFAULT_FILE_PREFIX, base_name, DRAGON_MEMORY_DEFAULT_DATA_SUFFIX);
 
         err = _create_map_data(pool, NULL, attr);
     }
@@ -951,8 +947,8 @@ _assign_filenames(dragonMemoryPool_t * pool, char ** names, dragonUInt nnames)
     char * fname_ptr = pool->header.filenames;
 
     for (int i=0; i < nnames; i++) {
-        strncpy(fname_ptr, names[i], DRAGON_MEMORY_MAX_FILE_NAME_LENGTH);
-        fname_ptr += DRAGON_MEMORY_MAX_FILE_NAME_LENGTH;
+        strncpy(fname_ptr, names[i], DRAGON_MEMORY_MAX_POOL_NAME_ENTRY_LENGTH);
+        fname_ptr += DRAGON_MEMORY_MAX_POOL_NAME_ENTRY_LENGTH;
     }
 
     no_err_return(DRAGON_SUCCESS);
@@ -973,7 +969,7 @@ _obtain_filenames(dragonMemoryPool_t * pool, char *** names)
         (*names)[i] = strdup(fname_ptr);
         if (*names[i] == NULL)
             err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not copy data segment filename.");
-        fname_ptr += DRAGON_MEMORY_MAX_FILE_NAME_LENGTH;
+        fname_ptr += DRAGON_MEMORY_MAX_POOL_NAME_ENTRY_LENGTH;
     }
 
     no_err_return(DRAGON_SUCCESS);
@@ -1056,7 +1052,7 @@ _generate_manifest_record(dragonMemory_t * mem, dragonMemoryPool_t * pool,
 
     if (err != DRAGON_SUCCESS) {
         char err_str[100];
-        snprintf(err_str, 99, "Cannot add manifest record type=%lu and id=%lu to pool m_uid=%lu\n", mem->mfst_record.type, mem->mfst_record.id, *pool->header.m_uid);
+        snprintf(err_str, 99, "Cannot add manifest record type=%" PRIu64 " and id=%" PRIu64 " to pool m_uid=%" PRIu64 "\n", mem->mfst_record.type, mem->mfst_record.id, *pool->header.m_uid);
         append_err_return(err, err_str);
     }
 
@@ -1166,11 +1162,11 @@ _map_manifest_header(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t* attr)
 
     if (attr != NULL) {
         pool->header.manifest_table = (void*)pool->header.filenames +
-                        sizeof(char) * (attr->n_segments+1) * DRAGON_MEMORY_MAX_FILE_NAME_LENGTH;
+                        sizeof(char) * (attr->n_segments+1) * DRAGON_MEMORY_MAX_POOL_NAME_ENTRY_LENGTH;
 
     } else {
         pool->header.manifest_table = (void*)pool->header.filenames +
-                        sizeof(char) * (*pool->header.n_segments+1) * DRAGON_MEMORY_MAX_FILE_NAME_LENGTH;
+                        sizeof(char) * (*pool->header.n_segments+1) * DRAGON_MEMORY_MAX_POOL_NAME_ENTRY_LENGTH;
     }
 
     if (attr != NULL) {
@@ -1180,7 +1176,7 @@ _map_manifest_header(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t* attr)
 
         if (actual_size != attr->manifest_allocated_size) {
             char err_str[200];
-            snprintf(err_str, 199, "The managed memory manifest actual size does not match the reserved size. Reserved bytes are %lu and the required bytes are %lu", attr->manifest_allocated_size, actual_size);
+            snprintf(err_str, 199, "The managed memory manifest actual size does not match the reserved size. Reserved bytes are %lu and the required bytes are %" PRIu64 "", attr->manifest_allocated_size, actual_size);
             err_return(DRAGON_FAILURE, err_str);
         }
     }
@@ -1273,7 +1269,7 @@ _attrs_from_header(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
         attr->pre_allocs[i] = pool->header.pre_allocs[i];
     }
 
-    attr->mname = strndup(pool->mname, DRAGON_MEMORY_MAX_FILE_NAME_LENGTH);
+    attr->mname = strndup(pool->mname, DRAGON_MEMORY_MAX_POOL_NAME_ENTRY_LENGTH);
 
     dragonError_t err = _obtain_filenames(pool, &attr->names);
     if (err != DRAGON_SUCCESS)
@@ -1416,6 +1412,7 @@ dragon_memory_attr_init(dragonMemoryPoolAttr_t * attr)
     attr->mode                       = DRAGON_MEMORY_DEFAULT_MODE;
     attr->gpu_device_id              = 0;
     attr->ipc_handle_size            = 0; // read-only
+    attr->numa_node                  = -1;
     attr->npre_allocs                = 0;
     attr->pre_allocs                 = NULL;
     attr->mname                      = NULL;
@@ -1492,7 +1489,7 @@ dragon_memory_get_attr(dragonMemoryPoolDescr_t * pool_descr, dragonMemoryPoolAtt
     attr->max_manifest_entries = stats.max_count;
     attr->max_allocations = stats.num_blocks;
     dragon_memory_pool_get_utilization_pct(pool_descr, &attr->utilization_pct);
-    dragon_memory_pool_get_free_size(pool_descr, &attr->free_space);
+    dragon_memory_pool_get_free_size(pool_descr, (uint64_t*)&attr->free_space);
 
     int num_waiters;
 
@@ -1547,7 +1544,13 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
     pool_descr->_rt_idx = 0UL;
 
     if (base_name == NULL || (strlen(base_name) == 0))
-        err_return(DRAGON_INVALID_ARGUMENT, "invalid base_name");
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid pool base_name. It must be a string of non-zero length.");
+
+    if (strlen(base_name) > _max_pool_name_len) {
+        char err_msg[200];
+        snprintf(err_msg, 200, "Invalid pool base_name. It must be %lu characters or less.", _max_pool_name_len);
+        err_return(DRAGON_INVALID_ARGUMENT, err_msg);
+    }
 
     /* if the attrs are NULL populate a default one */
     dragonMemoryPoolAttr_t  def_attr;
@@ -1811,6 +1814,70 @@ dragon_memory_pool_destroy(dragonMemoryPoolDescr_t * pool_descr)
 }
 
 /**
+ * @brief Register the pool with a GPU from the current process.
+ *
+ * Registers the memory pool with the GPU so that it is pinned and allows
+ * for faster memcpys between the host and a GPU device.
+ * @param pool_descr is a valid pool descriptor for the pool in question.
+ *
+ * @return DRAGON_SUCCESS or an error code.
+
+*/
+dragonError_t
+dragon_memory_pool_process_local_register_with_gpu(dragonMemoryPoolDescr_t * pool_descr)
+{
+    dragonMemoryPool_t * pool;
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    if (pool->local_dptr == NULL) // Not Local
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "Cannot register a non-local pool with a GPU");
+
+    // get a GPU handle and setup a cuda context if it hasn't been done yet
+    err = dragon_gpu_setup(gpu_backend_type, *(pool->header.gpu_device_id), &dragon_gpu_handle);
+    if (err != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
+
+    err = dragon_gpu_host_register(dragon_gpu_handle, pool->local_dptr, *(pool->header.total_data_size));
+    if (err != DRAGON_SUCCESS) {
+        err_return(DRAGON_MEMORY_ERRNO, "failed to register host memory with GPU");
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Unregister the pool with a GPU from the current process.
+ *
+ * Unregisters a memory pool that was previously registered.
+ *
+ * @param pool_descr is a valid pool descriptor for the pool in question.
+ *
+ * @return DRAGON_SUCCESS or an error code.
+*/
+dragonError_t
+dragon_memory_pool_process_local_unregister_with_gpu(dragonMemoryPoolDescr_t * pool_descr)
+{
+    dragonMemoryPool_t * pool;
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    if (pool->local_dptr == NULL) // Not Local
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "Cannot register a non-local pool with a GPU");
+
+    err = dragon_gpu_setup(gpu_backend_type, *(pool->header.gpu_device_id), &dragon_gpu_handle);
+    if (err != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
+
+    err = dragon_gpu_host_unregister(dragon_gpu_handle, pool->local_dptr);
+    if (err != DRAGON_SUCCESS) {
+        err_return(DRAGON_MEMORY_ERRNO, "failed to register host memory with GPU");
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
  * @brief Get the hostid of the host where this pool resides.
  *
  * The hostid of the pool can be used for identifying the location of this pool
@@ -2036,7 +2103,7 @@ dragon_memory_pool_serialize(dragonMemoryPoolSerial_t * pool_ser, const dragonMe
 
     /* Include null terminator */
     size_t mname_len = strlen(pool->mname) + 1;
-    if (mname_len > DRAGON_MEMORY_MAX_FILE_NAME_LENGTH)
+    if (mname_len > DRAGON_MEMORY_MAX_POOL_NAME_ENTRY_LENGTH)
         err_return(DRAGON_MEMORY_FILENAME_ERROR, "manifest filename length exceeds maximum");
 
     /* Store total size of memory blob */
@@ -2088,6 +2155,15 @@ dragon_memory_pool_serialize(dragonMemoryPoolSerial_t * pool_ser, const dragonMe
 
     /* Copy in manifest filename last */
     strncpy((char*)(ptr), pool->mname, mname_len);
+
+    size_t actual_sz = ((size_t) ptr - (size_t) pool_ser->data) + mname_len;
+
+    if (actual_sz > DRAGON_MEMORY_POOL_MAX_SERIALIZED_LEN) {
+        char err_msg[200];
+        snprintf(err_msg, 200, "The size of the serialized descriptor was %lu but is limited to %lu in the library.\n"
+                               "    DRAGON_MEMORY_POOL_MAX_SERIALIZED_LEN needs adjusting.", actual_sz, DRAGON_MEMORY_POOL_MAX_SERIALIZED_LEN);
+        err_return(DRAGON_FAILURE, err_msg);
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2178,7 +2254,7 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
 
     /* Set the filepath for the pool */
     size_t path_len = strlen((char*)ptr);
-    if (path_len > DRAGON_MEMORY_MAX_FILE_NAME_LENGTH-1) {
+    if (path_len > DRAGON_MEMORY_MAX_POOL_NAME_ENTRY_LENGTH-1) {
         free(pool);
         err_return(DRAGON_MEMORY_FILENAME_ERROR, "filepath length too long");
     }
@@ -2234,6 +2310,7 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
 
             append_err_return(err, "failed to open data SHM");
         }
+
 
         /* Free malloc'd attribute struct, does not need to be long-lived */
         dragon_memory_attr_destroy(&mattr);
@@ -2746,21 +2823,20 @@ dragon_memory_serialize(dragonMemorySerial_t * mem_ser, const dragonMemoryDescr_
     /* Size of serialized pool descriptor data
        Make sure to include the size of the size_t for the pool serialized length
     */
-    mem_ser->len += (pool_ser.len + sizeof(size_t));
+    mem_ser->len += pool_ser.len;
 
     /* Size of MemoryManifestRec_t member values */
     mem_ser->len += (DRAGON_MEMORY_MEMSER_NULINTS * (sizeof(dragonULInt)));
 
     /* This allocation is released in dragon_memory_serial_free() */
     mem_ser->data = malloc(mem_ser->len);
-    if ((mem_ser->data == NULL))
+    if (mem_ser->data == NULL)
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "failed to allocated data length");
 
     uint8_t * ptr = mem_ser->data;
 
     /* Store size of serialized pool descriptor first */
     *(size_t*)ptr = pool_ser.len;
-
     ptr += sizeof(size_t);
 
     /* Store the serialized pool descriptor */
@@ -2784,6 +2860,15 @@ dragon_memory_serialize(dragonMemorySerial_t * mem_ser, const dragonMemoryDescr_
     /* bytes is included for remote mem descriptors and verification for
        subsequent clones. */
     *(dragonULInt*)ptr = mem->bytes;
+
+    size_t actual_sz = ((size_t) ptr - (size_t) mem_ser->data) + sizeof(dragonULInt*);
+
+    if (actual_sz > DRAGON_MEMORY_MAX_SERIALIZED_LEN) {
+        char err_msg[200];
+        snprintf(err_msg, 200, "The size of the serialized descriptor was %lu but is limited to %lu in the library.\n"
+                               "    DRAGON_MEMORY_MAX_SERIALIZED_LEN needs adjusting.", actual_sz, DRAGON_MEMORY_MAX_SERIALIZED_LEN);
+        err_return(DRAGON_FAILURE, err_msg);
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -3085,7 +3170,7 @@ dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemory
             free(mem);
             dragon_setrawerrstr(msg);
             free(msg);
-            snprintf(err_str, 399, "Cannot create manifest record.\nThis is frequently caused by too many concurrent allocations in a pool. Pools can be configured\nto allow for more concurrent allocations by specifying the max_allocations attribute when creating the pool.\nThe current max_allocations is set to %lu which requires %lu bytes in shared memory.", pool->manifest_requested_size, *pool->header.manifest_table_size);
+            snprintf(err_str, 399, "Cannot create manifest record.\nThis is frequently caused by too many concurrent allocations in a pool. Pools can be configured\nto allow for more concurrent allocations by specifying the max_allocations attribute when creating the pool.\nThe current max_allocations is set to %lu which requires %" PRIu64 " bytes in shared memory.", pool->manifest_requested_size, *pool->header.manifest_table_size);
             append_err_return(err, err_str);
         }
     }
@@ -3228,7 +3313,7 @@ dragon_memory_alloc_type_blocking(dragonMemoryDescr_t * mem_descr, const dragonM
             free(mem);
             dragon_setrawerrstr(msg);
             free(msg);
-            snprintf(err_str, 399, "Cannot create manifest record.\nThis is frequently caused by too many concurrent allocations in a pool. Pools can be configured\nto allow for more concurrent allocations by specifying the max_allocations attribute when creating the pool.\nThe current max_allocations is set to %lu which requires %lu bytes in shared memory.", pool->manifest_requested_size, *pool->header.manifest_table_size);
+            snprintf(err_str, 399, "Cannot create manifest record.\nThis is frequently caused by too many concurrent allocations in a pool. Pools can be configured\nto allow for more concurrent allocations by specifying the max_allocations attribute when creating the pool.\nThe current max_allocations is set to %lu which requires %" PRIu64 " bytes in shared memory.", pool->manifest_requested_size, *pool->header.manifest_table_size);
             append_err_return(err, err_str);
         }
     }
@@ -3404,7 +3489,6 @@ dragon_memory_pool_allocation_exists(dragonMemoryDescr_t * mem_descr, int * flag
     _release_manifest_lock(pool);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "allocation does not exist");
-
 
     // Allocation found
     *flag = 1;
@@ -3851,7 +3935,7 @@ dragon_memory_get_alloc_memdescr(dragonMemoryDescr_t * mem_descr, const dragonMe
         if (err != DRAGON_SUCCESS) {
             char err_str[100];
             free(mem);
-            snprintf(err_str, 99, "The id=%lu for this allocation was not found. It or the pool it is in was most likely destroyed.", id);
+            snprintf(err_str, 99, "The id=%" PRIu64 " for this allocation was not found. It or the pool it is in was most likely destroyed.", id);
             append_err_return(DRAGON_OBJECT_DESTROYED, err_str);
         }
 

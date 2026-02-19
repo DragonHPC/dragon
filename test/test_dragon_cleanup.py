@@ -4,6 +4,7 @@ import subprocess
 import unittest
 import unittest.mock
 from re import match
+import platform
 
 from textwrap import dedent
 from dragon.tools.dragon_cleanup import DragonCleanup
@@ -35,6 +36,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
         proc.exe.return_value = exe
         return proc
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_dragon_cleanup_class_options(self):
         my_rank = 0
         num_ranks = 1
@@ -84,6 +86,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
         self.assertFalse(dc.is_fe, "is_fe mismatch in DragonCleanup instance")
         self.assertTrue(dc.is_be, "is_be mismatch in DragonCleanup instance")
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_kill_process_tree_terminates_process_and_children(self):
         # Pseudocode:
         # - Create a parent process with two children, each with no children.
@@ -106,6 +109,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
         child2.terminate.assert_called_once()
         child2.wait.assert_called_once()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_kill_process_tree_dry_run(self):
         parent = self.make_mock_process(100, DragonCleanup.MY_USERNAME, ['/usr/bin/dragon'])
         dc = DragonCleanup(dry_run=True)
@@ -113,6 +117,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
         parent.terminate.assert_not_called()
         parent.wait.assert_not_called()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_kill_dragon_process_tree_finds_and_kills_fe(self):
         # Pseudocode:
         # - Patch user_processes to include a process matching FE regex.
@@ -128,6 +133,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
             dc.kill_dragon_process_tree()
             mock_kill.assert_called()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_kill_dragon_process_tree_finds_and_kills_be(self):
         # Pseudocode:
         # - Patch user_processes to include a process matching FE regex.
@@ -143,6 +149,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
             dc.kill_dragon_process_tree()
             mock_kill.assert_called()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_restart_nvidia_cuda_mps_kills_and_restarts(self):
         # Pseudocode:
         # - Patch user_processes to include a process matching NVIDIA_CUDA_MPS_REGEX.
@@ -160,6 +167,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
             proc.wait.assert_called_once()
             mock_run.assert_called_once()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_restart_nvidia_cuda_mps_dry_run(self):
         # Pseudocode:
         # - Patch user_processes to include a process matching NVIDIA_CUDA_MPS_REGEX.
@@ -177,6 +185,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
             proc.wait.assert_not_called()
             mock_run.assert_not_called()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_cleanup_dev_shm_removes_files(self):
         # Pseudocode:
         # - Patch Path.iterdir to return files owned by user.
@@ -191,6 +200,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
             dc.cleanup_dev_shm()
             file1.unlink.assert_called_once()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_cleanup_dev_shm_resilient(self):
         # Pseudocode:
         # - Patch Path.iterdir to return files owned by user.
@@ -207,6 +217,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
             dc.cleanup_dev_shm()
             file1.unlink.assert_not_called()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_cleanup_dev_shm_dry_run(self):
         # Pseudocode:
         # - Patch Path.iterdir to return files owned by user.
@@ -220,6 +231,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
             dc.cleanup_dev_shm()
             file1.unlink.assert_not_called()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_cleanup_tmp_removes_matching_files(self):
         # Pseudocode:
         # - Patch Path.iterdir to return files matching *.db.
@@ -233,6 +245,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
             dc.cleanup_tmp()
             file1.unlink.assert_called_once()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_cleanup_tmp_resilient(self):
         # Pseudocode:
         # - Patch Path.iterdir to return files matching *.db.
@@ -249,6 +262,7 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
             dc.cleanup_tmp()
             file1.unlink.assert_not_called()
 
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_cleanup_tmp_removes_dry_run(self):
         # Pseudocode:
         # - Patch Path.iterdir to return files matching *.db.

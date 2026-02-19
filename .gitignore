@@ -36,6 +36,7 @@ doc/plantuml.jar
 external/external_deps/
 external/capnproto
 external/pycapnp
+src/dragon/localservices/dragon-popen
 src/release
 src/include/capnp
 src/include/kj

@@ -34,8 +34,20 @@ clean:
 .PHONY: dist
 dist: $(DISTFILES)
 
+OS = $(shell uname -s)
+
 $(INSTALL_DIR)/include/%.h: %.h
-	$(INSTALL) -m 644 -D $< $@
+	@if [ "$(OS)" != "Darwin" ]; then \
+		$(INSTALL) -m 644 -D $< $@; \
+	else \
+        $(INSTALL) -d $(INSTALL_DIR)/include/dragon; \
+		$(INSTALL) -m 644 $< $@; \
+	fi
 
 $(INSTALL_DIR)/include/%.hpp: %.hpp
-	$(INSTALL) -m 644 -D $< $@
+	@if [ "$(OS)" != "Darwin" ]; then \
+		$(INSTALL) -m 644 -D $< $@; \
+	else \
+        $(INSTALL) -d $(INSTALL_DIR)/include/dragon; \
+		$(INSTALL) -m 644 $< $@; \
+	fi

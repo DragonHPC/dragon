@@ -43,17 +43,17 @@ typedef struct dragonBlocksStats_st {
 typedef struct dragonBlocks_st {
     void* space;
     uint64_t num_slots;
-    uint64_t* current;
+    _Atomic(uint64_t)* current;
     uint64_t* free_space_head;
     uint64_t value_len;
-    uint64_t* num_used;
-    uint64_t* num_inited;
+    _Atomic(uint64_t)* num_used;
+    _Atomic(uint64_t)* num_inited;
     uint64_t* armor1;
     uint64_t* armor2;
     uint64_t* slots;
 } dragonBlocks_t;
 
-/* Blocks functions */
+/* Blocks API */
 
 /**
  * @brief Compute required size for a Blocks structure.
@@ -65,12 +65,12 @@ typedef struct dragonBlocks_st {
  * @param num_blocks The maximum number of blocks needed in the Blocks structure.
  * @param value_len Each block holds a value and this is the required size for the block not including its
  * identifier.
- * @param size This is a pointer to a uint64 to hold the required size.
+ * @param size This is a pointer to a size_t to hold the required size.
  * @return DRAGON_SUCCESS if called correctly. Otherwise an error code to indicate the problem. You may call
  * dragon_get_rc_string to convert the return code to a printable string and dragon_getlasterrstr to get a
  * traceback that provides more information about the problem.
  */
-dragonError_t dragon_blocks_size(const uint64_t num_blocks, const uint64_t value_len, uint64_t* size);
+dragonError_t dragon_blocks_size(const uint64_t num_blocks, const uint64_t value_len, size_t* size);
 
 /**
  * @brief Initialize a space to be used as a Blocks structure.

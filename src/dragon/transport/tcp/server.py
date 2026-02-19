@@ -97,6 +97,7 @@ class Server(TaskMixin):
                 tb_str = "".join(traceback.format_exception(ex_type, ex_value, ex_tb))
                 resp = ErrorResponse(req.seqno, get_errno(e), f"Error while handling request: {tb_str}")
                 self.transport.write_response(resp, addr)
+                LOGGER.error(f"Error while handling request: {tb_str}")
 
                 # Ignore Exceptions but not BaseExceptions
                 try:
@@ -116,17 +117,21 @@ class Server(TaskMixin):
 
     @handle_request.register
     async def _(self, req: SendRequest, addr: Address) -> None:
-        await asyncio.to_thread(
-            send_msg,
-            req.channel_sd,
-            req.clientid,
-            req.hints,
-            req.payload,
-            req.deadline,
-            getattr(req, "mem_sd", None),
-            copy_on_send=not req._io_event.is_set(),
-            wait_mode=self._wait_mode,
-        )
+        try:
+            await asyncio.to_thread(
+                send_msg,
+                req.channel_sd,
+                req.clientid,
+                req.hints,
+                req.payload,
+                req.deadline,
+                getattr(req, "mem_sd", None),
+                copy_on_send=not req._io_event.is_set(),
+                wait_mode=self._wait_mode,
+            )
+        except Exception as e:
+            LOGGER.error(f"Exception during send_msg: {e}")
+
         if req.return_mode in (SendReturnMode.WHEN_DEPOSITED, SendReturnMode.WHEN_RECEIVED):
             resp = SendResponse(req.seqno)
             self.transport.write_response(resp, addr)

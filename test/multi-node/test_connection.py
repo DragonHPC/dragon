@@ -7,6 +7,7 @@ The test is run with `dragon test_connection.py -f -v`
 
 import numpy as np
 import unittest
+import os
 
 import dragon
 import multiprocessing as mp
@@ -82,8 +83,8 @@ def ring_recv_send(id, bwd_recv, fwd_send, q, ev, sizes):
     bwd_recv.close()
 
 
-# @unittest.skip(f"Fails for larger CPU counts")
 class TestConnectionMultiNode(unittest.TestCase):
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Fails in proxy mode")
     def test_ring_multi_node(self):
         """This test creates 2 processes per cpu. They send increasingly large
         messages in a ring to each other."""

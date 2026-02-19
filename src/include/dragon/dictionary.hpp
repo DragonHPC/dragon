@@ -488,7 +488,6 @@ class DDict {
      */
     std::vector<SerializableKey> keys() {
         dragonError_t err;
-        size_t idx;
         std::vector<SerializableKey> ret_val;
 
         err = dragon_ddict_keys_vec(&mCDict, DDict::client_key_collector, &ret_val);
@@ -679,7 +678,6 @@ class DDict {
      */
     std::vector<SerializableKey> local_keys() {
         dragonError_t err;
-        size_t idx;
         std::vector<SerializableKey> ret_val;
 
         err = dragon_ddict_local_keys_vec(&mCDict, DDict::client_key_collector, &ret_val);

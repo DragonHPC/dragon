@@ -81,6 +81,7 @@ typedef struct dragonFLISendHandle_st {
     bool turbo_mode;
     bool flush;
     bool close_required;
+    dragonULInt debug; /* internal use only debug constant */
     pthread_t tid; /* used to keep track of send or receive file descriptors */
     int pipe[2];
 } dragonFLISendHandle_t;

@@ -3,7 +3,7 @@ from functools import partial, singledispatchmethod
 import logging
 from typing import Optional
 
-from ...channels import GatewayMessage, Channel, ChannelEmpty, ChannelRecvTimeout
+from ...channels import GatewayMessage, Channel, ChannelEmpty, ChannelRecvTimeout, EventType
 from ...dtypes import WaitMode, DEFAULT_WAIT_MODE
 from ...infrastructure.node_desc import NodeDescriptor
 
@@ -28,6 +28,11 @@ from .util import create_msg
 
 
 LOGGER = logging.getLogger("dragon.transport.tcp.client")
+
+
+# Used to ignore channel cleanup events.
+async def noop_coroutine():
+    pass
 
 
 class Client(TaskMixin):
@@ -141,6 +146,12 @@ class Client(TaskMixin):
             raise ValueError(f"Unknown target host ID: {msg.target_hostid}")
         # Create Request from gateway message
         req = create_request(msg)
+        if req is None:
+            # This would have been a channel cleanup request which is
+            # ignored in the Python TCP transport.
+            msg.destroy()
+            return asyncio.create_task(noop_coroutine())
+
         # Send request
         fut = self.transport.write_request(req, to_addr)
         # Handle responses asynchronously. Ordering of responses is
@@ -246,7 +257,7 @@ def create_request(msg: GatewayMessage) -> Request:
         sendhid = UUIDBytesIO.decode(msg.send_payload_message_attr_sendhid)
         clientid = msg.send_payload_message_attr_clientid
         hints = msg.send_payload_message_attr_hints
-        payload = msg.send_payload_message
+        payload = bytes(msg.send_payload_message)
         mem_sd = msg.send_dest_mem_descr_ser
         if mem_sd is None:
             cls = partial(
@@ -270,6 +281,8 @@ def create_request(msg: GatewayMessage) -> Request:
     elif msg.is_get_kind:
         cls = RecvRequest
     elif msg.is_event_kind:
+        if msg.event_mask == EventType.CHANNEL_CLEANUP:
+            return None  # Ignore these events in TCP transport.
         cls = partial(EventRequest, mask=msg.event_mask)
     else:
         raise ValueError("Unknown kind of gateway message")

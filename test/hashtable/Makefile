@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS ?= -fPIC -Wall -Ofast -fomit-frame-pointer
+CFLAGS ?= -fPIC -Wall -O3 -ffast-math -fomit-frame-pointer
 
 ifeq ($(DRAGON_INCLUDE_DIR),)
     DRAGON_INCLUDE = $(shell dragon-config -o)

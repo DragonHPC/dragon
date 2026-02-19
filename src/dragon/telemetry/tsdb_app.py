@@ -28,6 +28,7 @@ class TSDBApp(Flask):
         self.filename = os.path.join(tmdb_directory, "ts_" + user + "_" + os.uname().nodename + ".db")
         self.connection = sqlite3.connect(self.filename)
         self.cursor = self.connection.cursor()
+        self.telemetry_cfg = telemetry_cfg
 
     def get_metrics_from_db(self) -> list:
         """Retrieves distinct metrics from metrics table
@@ -226,7 +227,6 @@ def set_telemetry_shutdown():
     LOG.debug(f"Shutdown request on: {os.uname().nodename}")
     resp = {"shutdown": True}
     return Response(json.dumps(resp), mimetype="application/json"), HTTPStatus.OK
-
 
 if __name__ == "__main__":
     app.run()

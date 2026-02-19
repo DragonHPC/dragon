@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.13.1] - 2026-02-17
+
+### Changed
+
+    [AICI-1958] - The pynvml package is deprecated
+    [AICI-1940] - Validate proxy functionality, validate documentation, create use case doc
+    [AICI-1957] - Remove Futex from BCast for Mac OS Support
+    [AICI-1969] - Update inference service to vLLM 0.13
+    [AICI-1984] - Move the inference service into dragon.ai and rework the top layer into a proper class
+    [AICI-1997] - Shortened allowable managed memory pool name length to 31 to comply with Mac OS requirements.
+    [AICI-2005] - example README file is wrong and needs to be fixed
+    [AICI-2006] - Documentation updates before SC
+    [AICI-2011] - Upgrade to vllm 0.13.0 on k8s
+    [AICI-2012] - Add logging of GSPingSH message to help solve intermittent message ordering issue
+    [AICI-2040] - Fixed bug in the TCP transport agent that could cause corruption in messages
+
+### Added
+
+    [AICI-1909] - Telemetry - DB dump to persistent storage and post processing
+    [AICI-1925] - Benchmark for checkpoint persistence test
+    [AICI-2001] - Validate proxy functionality
+    [AICI-2007] - Create DDict Checkpointing Example for DDP MNIST
+    [AICI-1997] - Single-node Mac OS build and run now supported. PIP install (PyPI support) coming at a future date.
+
+### Fixed
+
+    [AICI-1992] - Rework Dragon Single Node Logging Facility
+    [AICI-1999] - Cleanup of send handles on Exit
+    [AICI-1963] - dragon can drain slurm nodes upon allocation timeout
+    [AICI-2010] - HSTA Target Channel Cleanup
+    [Aici 2040] - cleanup c level dragon logging
+
 ## [0.13] - 2025-11-05
 
 ### Changed

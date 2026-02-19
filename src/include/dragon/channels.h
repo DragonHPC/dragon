@@ -132,8 +132,11 @@ typedef enum dragonChannelEvent_st {
     DRAGON_SEMAPHORE_Z = 17,
         /*!< A Semaphore wait that unblocks when the count of the semaphore drops to 0. */
 
-    DRAGON_SEMAPHORE_PEEK = 18
+    DRAGON_SEMAPHORE_PEEK = 18,
         /*!< Peek at the value of the semaphore. Useful in debugging. */
+
+    DRAGON_CHANNEL_CLEANUP = 19
+        /*!< Internal library use only. */
 
 
 } dragonChannelEvent_t;
@@ -274,6 +277,7 @@ typedef struct dragonChannelSendAttr_st {
     dragonChannelSendReturnWhen_t return_mode; /*!< When to return from a send. */
     timespec_t default_timeout; /*!< Default timeout used when NULL is provided as the timeout override. */
     dragonWaitMode_t wait_mode; /*!< Either IDLE wait or SPIN wait may be specified. */
+    dragonULInt debug; /*!< User provided debug field. Passed along on gateway messages. */
 } dragonChannelSendAttr_t;
 
 /**
@@ -414,6 +418,7 @@ typedef struct dragonGatewayMessageHeader_st {
     dragonULInt* transport_cmplt_timestamp; /*!< Used for reporting after timeout. */
     dragonULInt* client_pid; /*!< Client PID useful in debugging. */
     dragonULInt* client_puid; /*!< non-zero when available. */
+    dragonULInt* debug; /*!< User-provided debug field. */
     dragonULInt* cmplt_bcast_offset; /*!< Offset of the completion bcast */
     dragonULInt* target_ch_ser_offset; /*!< The serialized descriptor of the target channel */
     dragonULInt* target_ch_ser_nbytes; /*!< Number of bytes in target channel serialized descriptor. */
@@ -505,6 +510,9 @@ dragon_channel_attach(const dragonChannelSerial_t* ch_ser, dragonChannelDescr_t*
 
 dragonError_t
 dragon_channel_detach(dragonChannelDescr_t* ch);
+
+dragonError_t
+dragon_channel_notify_on_destroy(dragonChannelDescr_t* ch);
 
 dragonError_t
 dragon_channel_descr_clone(dragonChannelDescr_t * newch_descr, const dragonChannelDescr_t * oldch_descr);
@@ -728,6 +736,9 @@ dragon_channel_gatewaymessage_transport_event_cmplt(dragonGatewayMessage_t* gmsg
 
 dragonError_t
 dragon_channel_gatewaymessage_client_event_cmplt(dragonGatewayMessage_t* gmsg, dragonULInt* event, const dragonWaitMode_t wait_mode);
+
+dragonError_t
+dragon_channel_gatewaymessage_get_debug(dragonGatewayMessage_t * gmsg, dragonULInt * debug);
 
 void
 dragon_gatewaymessage_silence_timeouts();

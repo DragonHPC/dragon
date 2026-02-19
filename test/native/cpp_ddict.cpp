@@ -453,9 +453,9 @@ dragonError_t test_persist(const char * ddict_ser) {
     DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
     SerializableString key("dragon");
     for (uint64_t i=0 ; i<5 ; i++) {
+        SerializableInt val(i);
+        dd[key] = val;
         if (i % 2 ==0) { // persist chkpt 0, 2, 4
-            SerializableInt val(i);
-            dd[key] = val;
             dd.persist();
         }
         dd.checkpoint();

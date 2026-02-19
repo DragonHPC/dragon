@@ -5,6 +5,7 @@ import pathlib
 import socket
 import subprocess
 import time
+import logging
 
 import dragon.infrastructure.messages as dmsg
 import dragon.infrastructure.facts as dfacts
@@ -13,8 +14,14 @@ import dragon.globalservices.api_setup as api_setup
 import dragon.transport.oob as doob
 import dragon.utils as dutils
 
+LOGGER = logging.getLogger("dragon.workflows.runtime")
 
-current_rt_uid = None
+def get_logs(name):
+    global LOGGER
+    log = LOGGER.getChild(name)
+    return log.debug, log.info
+
+_current_rt_uid = None
 already_published = {}
 sdesc_by_system_and_name = {}
 runtime_table = {}
@@ -23,7 +30,7 @@ must_register_teardown = True
 
 
 def proxy_teardown():
-
+    LOGGER.debug("Tearing down runtime proxies")
     global already_published
     for publish_path in already_published:
         os.remove(publish_path)
@@ -33,6 +40,7 @@ def proxy_teardown():
 
 
 def free_port(host, port):
+    LOGGER.debug("Checking if port %d is free on host %s", port, host)
 
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -45,6 +53,7 @@ def free_port(host, port):
 
 
 def get_port(host, start_port, end_port):
+    LOGGER.debug("Getting free port on host %s in range %d-%d", host, start_port, end_port)
 
     for port in range(start_port, end_port + 1):
         if free_port(host, port):
@@ -54,6 +63,7 @@ def get_port(host, start_port, end_port):
 
 
 def get_ip():
+    LOGGER.debug("Getting IP address for host %s", host)
 
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.settimeout(0)
@@ -69,7 +79,7 @@ def get_ip():
 
 
 def get_current_inf_env():
-
+    LOGGER.debug("Getting current infrastructure environment")
     rv = {}
     gs_cd_key = dfacts.env_name("GS_CD")
     gs_ret_cd_key = dfacts.env_name("GS_RET_CD")
@@ -86,7 +96,7 @@ def get_current_inf_env():
 
 
 def set_inf_env(env):
-
+    LOGGER.debug("Setting infrastructure environment")
     gs_cd_key = dfacts.env_name("GS_CD")
     gs_ret_cd_key = dfacts.env_name("GS_RET_CD")
     ls_cd_key = dfacts.env_name("LOCAL_SHEP_CD")
@@ -99,20 +109,21 @@ def set_inf_env(env):
     rt_uid_key = "DRAGON_RT_UID"
     os.environ[rt_uid_key] = env[rt_uid_key]
 
-    global current_rt_uid
-    current_rt_uid = env[rt_uid_key]
+    global _current_rt_uid
+    _current_rt_uid = env[rt_uid_key]
 
     api_setup.connect_to_infrastructure(force=True)
 
 
 @property
 def current_rt_uid():
+    LOGGER.debug("Getting current runtime UID")
 
-    global current_rt_uid
-    if current_rt_uid is None:
+    global _current_rt_uid
+    if _current_rt_uid is None:
         return dutils.get_local_rt_uid()
     else:
-        return current_rt_uid
+        return _current_rt_uid
 
 
 class Proxy:
@@ -122,28 +133,35 @@ class Proxy:
         self._env = json.loads(sdesc.env)
         self._original_env = None
         self._oob_net = oob_net
+        self._debug, self._info = get_logs("Proxy")
 
     def __enter__(self):
         # Reconfigure infrastructure connnections
+        self._debug("Entering Proxy context manager")
         set_inf_env(self._env)
 
     def __exit__(self, exc_type, exc_value, traceback):
+        self._debug("Exiting Proxy context manager")
         # Restore the original infrastructure connections
         set_inf_env(self._original_env)
 
     def enable(self):
+        self._debug("Enabling Proxy")
         self._original_env = get_current_inf_env()
         set_inf_env(self._env)
 
     def disable(self):
+        self._debug("Disabling Proxy")
         set_inf_env(self._original_env)
 
     def get_env(self):
+        self._debug("Getting Proxy environment")
         return self._env
 
 
 def get_sdesc():
 
+    LOGGER.debug("Getting serialized runtime descriptor")
     gs_cd = os.environ[dfacts.env_name(dfacts.GS_CD)]
     gs_ret_cd = os.environ[dfacts.env_name(dfacts.GS_RET_CD)]
     ls_cd = os.environ[dfacts.env_name(dfacts.LOCAL_SHEP_CD)]
@@ -158,16 +176,20 @@ def get_sdesc():
     return sdesc.serialize()
 
 
-def publish(name):
-
+def publish(name, publish_dir=None):
+    LOGGER.debug("Publishing runtime descriptor with name: %s", name)
     sdesc_str = get_sdesc()
 
     global already_published
     if name in already_published:
         return get_sdesc()
 
-    home_dir = pathlib.Path.home()
-    dragon_dir = home_dir / ".dragon"
+    if publish_dir is not None:
+        dragon_dir = publish_dir
+    else:
+        home_dir = pathlib.Path.home()
+        dragon_dir = home_dir / ".dragon"
+
     publish_path = f"{dragon_dir}/{name}"
     pathlib.Path(dragon_dir).mkdir(parents=True, exist_ok=True)
 
@@ -201,8 +223,8 @@ def publish(name):
     return sdesc_str
 
 
-def lookup(system, name, timeout_in=None):
-
+def lookup(system, name, timeout_in=None, publish_dir=None):
+    LOGGER.debug("Looking up runtime descriptor for system: %s, name: %s", system, name)
     global sdesc_by_system_and_name
 
     # if we've already looked up this system/name combination, just grab
@@ -218,9 +240,13 @@ def lookup(system, name, timeout_in=None):
     else:
         timeout = timeout_in
 
-    home_dir = pathlib.Path.home()
-    dragon_dir = home_dir / ".dragon"
+    if publish_dir is not None:
+        dragon_dir = publish_dir
+    else:
+        home_dir = pathlib.Path.home()
+        dragon_dir = home_dir / ".dragon"
     publish_path = f"{dragon_dir}/{name}"
+
 
     while time_so_far < timeout:
         rc = os.system(f"scp {system}:{publish_path} . > /dev/null 2>&1")
@@ -240,16 +266,16 @@ def lookup(system, name, timeout_in=None):
     raise RuntimeError(f"lookup failed: could not obtain serialized descriptor for {system=} and {name=}")
 
 
-def attach(sdesc_str):
-
+def attach(sdesc_str, oob_ssh_tunnel_override=None):
+    LOGGER.debug("Attaching to remote runtime with sdesc: %s", sdesc_str)
     sdesc = dmsg.parse(sdesc_str)
 
     jump_host = sdesc.fe_ext_ip_addr
     compute_node = sdesc.head_node_ip_addr
     tunnel_port = sdesc.oob_port
 
-    oob_net = doob.OutOfBand()
-    oob_net.connect(jump_host, compute_node, str(tunnel_port))
+    oob_net = doob.OutOfBand(oob_ssh_tunnel_override=oob_ssh_tunnel_override)
+    oob_net.connect(jump_host, compute_node, int(tunnel_port))
 
     global must_register_teardown
 

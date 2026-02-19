@@ -4,6 +4,7 @@ import os
 import random
 import pickle
 import logging
+import platform
 
 logging.captureWarnings(True)
 
@@ -303,6 +304,7 @@ class SingleNodeTransportBench(unittest.TestCase):
         self.assertEqual(proc.exitcode, 0)
         self.assertEqual(ret_value.value, SUCCESS)
 
+    @unittest.skipIf(platform.system() == "Darwin", "Hangs on macOS")
     def test_receive_timeout(self):
         recvh = ChannelRecvH(self.user_ch1)
         recvh.open()

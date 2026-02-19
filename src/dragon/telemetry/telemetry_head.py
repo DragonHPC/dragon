@@ -12,8 +12,6 @@ import requests
 import multiprocessing as mp
 import gunicorn
 import gunicorn.app.base
-import dragon.telemetry.aggregator_app as aggregator_app
-from dragon.telemetry.dragon_server import DragonServer
 import logging
 import socket
 from dragon.dlogging.util import setup_BE_logging, DragonLoggingServices as dls
@@ -86,6 +84,7 @@ def aggregator_server(queue_dict: dict, return_queue: object, telemetry_cfg: obj
         return_queue (object): Queue to retrive responses from each node
         telemetry_cfg (object): Telemetry environment config
     """
+    import dragon.telemetry.aggregator_app as aggregator_app
     result_dict = {}
 
     def when_ready(server):
@@ -164,20 +163,24 @@ def _register_with_local_services(serialized_slow_node_channel):
     set_local_kv(key=LS_TAS_KEY, value=serialized_slow_node_channel)
 
 
-def start_server(queue_discovery, slow_node_discovery, return_queue_dict, shutdown_event, telemetry_cfg: object):
+def start_server(queue_discovery, slow_node_discovery, return_queue_dict, shutdown_event, telemetry_cfg: object, mini_telemetry_args: tuple = None):
+    from dragon.telemetry.dragon_server import DragonServer
+    
     ds_queue = Queue()
     hostname = os.uname().nodename
     queue_discovery.put((hostname, ds_queue))
     # if slow_node_service:
-    # TODO: should consider a long timeout here maybe
-    slow_node_channel_sdesc = slow_node_discovery.get()
-    _register_with_local_services(slow_node_channel_sdesc)
+    # TODO: should consider a long timeout here maybe - keep off for mini_telemetry
+    if mini_telemetry_args is None: # We don't have slow node service for mini telemetry 
+        slow_node_channel_sdesc = slow_node_discovery.get()
+        _register_with_local_services(slow_node_channel_sdesc)
 
     ds = DragonServer(
         input_queue=ds_queue,
         return_queue_dict=return_queue_dict,
         shutdown_event=shutdown_event,
         telemetry_config=telemetry_cfg,
+        mini_telemetry_args=mini_telemetry_args,
     )
     ds.telemetry_handler()
 
@@ -218,7 +221,7 @@ def start_telemetry():
     else:
         with open(cfg_path, "r") as file:
             telemetry_cfg = yaml.safe_load(file)
-    args = (queue_discovery, as_discovery, return_queue_dict, shutdown_event, telemetry_cfg)
+    args = (queue_discovery, as_discovery, return_queue_dict, shutdown_event, telemetry_cfg, None) # None since mini_telemetry is not used
     cwd = os.getcwd()
 
     grp = ProcessGroup(restart=False, pmi=None)

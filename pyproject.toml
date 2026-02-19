@@ -10,7 +10,7 @@ name = "dragonhpc"
 authors = [
     {name="Dragon Team", email="dragonhpc@hpe.com"}
 ]
-license = {file="pkg/LICENSE.md"}
+license-files = ["pkg/LICENSE.md"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",

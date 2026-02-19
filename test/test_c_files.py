@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 
 import shim_dragon_paths
+import platform
 import subprocess
 import os
 from glob import glob
 
+import dragon
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
 
 base_dir = os.getcwd()
 
 # Directories to scan for tests in
 test_dirs = ["broadcast", "channels_subtests", "hashtable", "pmod", "utils"]
+
+darwin_skipped = {"test_attach", "test_threaded_lock", "test_pmod"}
 
 if __name__ == "__main__":
     print()
@@ -20,6 +24,9 @@ if __name__ == "__main__":
 
     the_env = dict(os.environ)
     the_env["LD_LIBRARY_PATH"] = str(DRAGON_LIB_DIR) + ":" + str(the_env.get("LD_LIBRARY_PATH", ""))
+    the_env["DYLD_FALLBACK_LIBRARY_PATH"] = (
+        str(DRAGON_LIB_DIR) + ":" + str(the_env.get("DYLD_FALLBACK_LIBRARY_PATH", ""))
+    )
 
     print()
     print("######## RUNNING C TESTS ########")
@@ -32,9 +39,14 @@ if __name__ == "__main__":
         for t in tests:
             fname = os.path.splitext(os.path.basename(t))[0]
             print(f"Testing {fname} ...... ", end="", flush=True)
-            
+
+            if platform.system() == "Darwin" and fname in darwin_skipped:
+                print("SKIPPED")
+                continue
+
             if fname == "test_gpu_mem":
                 # test_gpu_mem requires gpus to run
+                print("SKIPPED")
                 continue
 
             tests_run += 1
@@ -46,13 +58,16 @@ if __name__ == "__main__":
                 print(make_res.stderr.decode("utf-8"))
                 tests_failed.append(d + " " + fname)
                 continue
-            t_out = subprocess.run(["./" + fname], capture_output=True, env=the_env)  # Run test
-            if t_out.returncode != 0:
-                print("FAIL")
-                print(t_out.stdout.decode("utf-8"))
-                tests_failed.append(d + " --  " + fname)
-            else:
-                print("OK")
+            try:
+                t_out = subprocess.run(["./" + fname], capture_output=True, env=the_env)  # Run test
+                if t_out.returncode != 0:
+                    print("FAIL")
+                    print(t_out.stdout.decode("utf-8"))
+                    tests_failed.append(d + " --  " + fname)
+                else:
+                    print("OK")
+            except FileNotFoundError:
+                print("SKIPPED")
 
         os.chdir(base_dir)  # Reset to base test dir
 

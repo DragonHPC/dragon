@@ -1,5 +1,6 @@
 from dragon.dtypes_inc cimport *
 from dragon.return_codes cimport *
+import os
 #import cython
 
 cpdef host_id_from_k8s(str pod_uid):
@@ -205,6 +206,31 @@ cpdef get_hugepage_mount():
         return tmp_bytes.decode('utf-8')
     else:
         return None
+
+cpdef get_cpu_count():
+    cdef:
+        int count
+
+    try:
+        count = dragon_get_cpu_count()
+        if count <= 0:
+            raise RuntimeError('Could not get the number of cpus.')
+    except:
+        raise RuntimeError('There was an exception while calling dragon_get_cpu_count')
+
+    return count
+
+cpdef set_core_affinity(core):
+    cdef:
+        char* core_val
+        bytes core_bytes
+
+    try:
+        core_bytes = str(core).encode('utf-8')
+        core_val = core_bytes
+        dragon_set_my_core_affinity(core_val)
+    except:
+        raise RuntimeError("Unable to set core affinity")
 
 cpdef getlasterrstr():
     cdef:

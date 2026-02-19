@@ -73,7 +73,7 @@ int main(int argc, char *argv[])
     size_t req_bytes;
     req_bytes = dragon_priority_heap_size(capacity, nvals_per_key);
 
-    printf("Require %li bytes for capacity=%li, vals_per_key=%i\n",
+    printf("Require %lu bytes for capacity=%" PRIu64 ", vals_per_key=%i\n",
            req_bytes, capacity, nvals_per_key);
 
     dragonPriorityHeapLongUint_t * myheap_mem = malloc(req_bytes);
@@ -103,9 +103,9 @@ int main(int argc, char *argv[])
 
         for (j = 0; j <= i; j++) {
             printf("H[%i]: ", j);
-            printf("p = %li, ", myheap._harr[(nvals_per_key+1)*j]);
+            printf("p = %" PRIu64 ", ", myheap._harr[(nvals_per_key+1)*j]);
             for (k = 1; k <= nvals_per_key; k++) {
-                printf("v[%i] = %li, ", k-1, myheap._harr[(nvals_per_key+1)*j+k]);
+                printf("v[%i] = %" PRIu64 ", ", k-1, myheap._harr[(nvals_per_key+1)*j+k]);
             }
             printf("\n");
         }
@@ -116,9 +116,9 @@ int main(int argc, char *argv[])
 
         for (j = 0; j < capacity; j++) {
             printf("H[%i]: ", j);
-            printf("p = %li, ", myheap._harr[(nvals_per_key+1)*j]);
+            printf("p = %" PRIu64 ", ", myheap._harr[(nvals_per_key+1)*j]);
             for (k = 1; k <= nvals_per_key; k++) {
-                printf("v[%i] = %li, ", k-1, myheap._harr[(nvals_per_key+1)*j+k]);
+                printf("v[%i] = %" PRIu64 ", ", k-1, myheap._harr[(nvals_per_key+1)*j+k]);
             }
             printf("\n");
         }
@@ -129,9 +129,9 @@ int main(int argc, char *argv[])
             printf("EXTRACT ERR = %i\n",derr);
             return FAILED;
         }
-        printf("Extracted: pri = %li, vals: ", priority);
+        printf("Extracted: pri = %" PRIu64 ", vals: ", priority);
         for (j = 0; j < nvals_per_key; j++) {
-            printf("v[%i] = %li, ", j, vals[j]);
+            printf("v[%i] = %" PRIu64 ", ", j, vals[j]);
         }
         printf("\n");
     }

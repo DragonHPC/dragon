@@ -16,6 +16,8 @@ cudaError_t (*fn_cudaIpcGetMemHandle)(cudaIpcMemHandle_t *ipc_handle, void *addr
 cudaError_t (*fn_cudaIpcOpenMemHandle)(void **addr, cudaIpcMemHandle_t ipc_handle, unsigned int flags);
 cudaError_t (*fn_cudaIpcCloseMemHandle)(void *addr);
 const char* (*fn_cudaGetErrorString)(cudaError_t cuda_rc);
+cudaError_t (*fn_cudaHostRegister)(void *ptr, size_t size, unsigned int flags);
+cudaError_t (*fn_cudaHostUnregister)(void *ptr);
 
 void *
 dragon_gpu_open_cuda_lib()
@@ -82,6 +84,10 @@ dragon_gpu_resolve_cuda_symbols(void *libhandle)
 
     fn_cudaGetErrorString = (const char* (*)(cudaError_t)) dlsym(libhandle, "cudaGetErrorString");
     assert(fn_cudaGetErrorString != nullptr);
+    fn_cudaHostRegister = (cudaError_t (*)(void *, size_t, unsigned int)) dlsym(libhandle, "cudaHostRegister");
+    assert(fn_cudaHostRegister != nullptr);
+    fn_cudaHostUnregister = (cudaError_t (*)(void *)) dlsym(libhandle, "cudaHostUnregister");
+    assert(fn_cudaHostUnregister != nullptr);
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -276,6 +282,26 @@ dragonGPU_cuda::get_errstr(const char *event, int cuda_rc)
     }
 
     return log_str;
+}
+
+dragonError_t
+dragonGPU_cuda::host_register(void *addr, size_t size)
+{
+    auto cuda_rc = fn_cudaHostRegister(addr, size, cudaHostRegisterPortable);
+    if (cuda_rc != cudaSuccess) {
+        append_err_return(DRAGON_FAILURE, this->get_errstr("failed to register host memory", cuda_rc).c_str());
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+dragonGPU_cuda::host_unregister(void *addr)
+{
+    auto cuda_rc = fn_cudaHostUnregister(addr);
+    if (cuda_rc != cudaSuccess) {
+        append_err_return(DRAGON_FAILURE, this->get_errstr("failed to unregister host memory", cuda_rc).c_str());
+    }
+    no_err_return(DRAGON_SUCCESS);
 }
 
 #endif // HAVE_CUDA_INCLUDE

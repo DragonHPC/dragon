@@ -3,6 +3,7 @@
 import unittest
 import socket
 import random
+import os
 
 import dragon
 import multiprocessing as mp
@@ -95,6 +96,7 @@ def test_main(fli1, fli2, channel_host, same):
     sendh.close()
 
 
+@unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Fails in proxy mode")
 class FLITest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

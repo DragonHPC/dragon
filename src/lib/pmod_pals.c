@@ -92,7 +92,7 @@ _pmod_pals_init(pmi_pg_info_t *_pmi_pals_info)
     // assuming no mpmd jobs for now
     _pmi_pals_info->apps_share_node     = 0;
 
-    sprintf(pmod_apid, "__dragon_pmod_app_%lu__", pmod_mparams.sp->job_id);
+    sprintf(pmod_apid, "__dragon_pmod_app_%" PRIu64 "__", pmod_mparams.sp->job_id);
     strncpy(_pmi_pals_info->pg_id, pmod_apid, PMI_PG_ID_SIZE);
 
     for (lrank = 0; lrank < pmod_mparams.sp->ppn; lrank++) {

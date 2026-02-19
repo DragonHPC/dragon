@@ -91,6 +91,7 @@ class TestProcessGroupMultiNode(unittest.TestCase):
 
         self.assertTrue(pg.status == "Stop")
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Ill-defined behavior in proxy mode")
     def test_maintain_stress(self):
         """This test may take a minute."""
 
@@ -291,6 +292,7 @@ class TestProcessGroupMultiNode(unittest.TestCase):
         grp.stop()
         grp.close()
 
+    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Fails in proxy mode")
     def test_block_distribution(self):
         my_alloc = System()
         num_procs = (

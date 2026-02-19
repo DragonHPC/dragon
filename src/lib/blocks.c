@@ -27,11 +27,11 @@ typedef struct dragonBlocksEntry_st {
 void _map_header(dragonBlocks_t* blocks, uint64_t* map) {
     blocks->space = map;
     blocks->num_slots = map[0];
-    blocks->current = &map[1];
+    blocks->current = (_Atomic(uint64_t)*)&map[1];
     blocks->free_space_head = &map[2];
     blocks->value_len = map[3];
-    blocks->num_used = &map[4];
-    blocks->num_inited = &map[5];
+    blocks->num_used = (_Atomic(uint64_t)*)&map[4];
+    blocks->num_inited = (_Atomic(uint64_t)*)&map[5];
     blocks->armor1 = &map[6];
     blocks->armor2 = &map[7];
     blocks->slots = &map[8];
@@ -50,12 +50,14 @@ void _unmap_header(dragonBlocks_t* blocks) {
     blocks->slots = NULL;
 }
 
-dragonError_t dragon_blocks_size(const uint64_t num_blocks, const uint64_t value_len, uint64_t* size) {
-    if (value_len % 8 != 0)
-        err_return(DRAGON_INVALID_ARGUMENT, "The value_len must be a multiple of 8 bytes.");
-
+dragonError_t dragon_blocks_size(const uint64_t num_blocks, const uint64_t value_len, size_t* size) {
     if (size == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The size variable cannot be NULL");
+
+    *size = 0;
+
+    if (value_len % 8 != 0)
+        err_return(DRAGON_INVALID_ARGUMENT, "The value_len must be a multiple of 8 bytes.");
 
     // size of two pointers is subtracted because slots and space are not part of header and comes immediately
     // after it, but is included in data structure for convenience. The rest of the data is all stored
@@ -66,7 +68,7 @@ dragonError_t dragon_blocks_size(const uint64_t num_blocks, const uint64_t value
 }
 
 dragonError_t dragon_blocks_init(void* space, dragonBlocks_t* blocks, const uint64_t num_blocks, const uint64_t value_len) {
-    uint64_t size;
+    size_t size;
     dragonError_t err;
     uint64_t* map;
     uint64_t computed_space;
@@ -164,8 +166,8 @@ dragonError_t dragon_blocks_alloc(dragonBlocks_t* blocks, const void* value, uin
 
     uint64_t idx;
 
-    if (*blocks->num_used == blocks->num_slots) {
-        snprintf(err_msg, 199, "We have run out of space in the blocks structure.\nThere are %lu blocks and all of them are in use.", blocks->num_slots);
+    if (atomic_load(blocks->num_used) == blocks->num_slots) {
+        snprintf(err_msg, 199, "Out of space in the blocks structure.\nThere are %" PRIu64 " blocks and all of them are in use.", blocks->num_slots);
         err_return(DRAGON_OUT_OF_SPACE, err_msg);
     }
 
@@ -220,7 +222,7 @@ dragonError_t dragon_blocks_free(dragonBlocks_t* blocks, uint64_t id) {
         err_return(DRAGON_INVALID_ARGUMENT, "The block being freed is not currently in use.");
 
     if (entry->id != id) {
-        snprintf(err_str, 199, "The block being freed is not owned by this identifier. Owner is %lu and id is %lu,\n", entry->id, id);
+        snprintf(err_str, 199, "The block being freed is not owned by this identifier. Owner is %" PRIu64 " and id is %" PRIu64 ",\n", entry->id, id);
         err_return(DRAGON_INVALID_ARGUMENT, err_str);
     }
 
@@ -407,10 +409,10 @@ dragonError_t dragon_blocks_dump_to_fd(FILE* fd, const char* title, const dragon
         append_err_return(rc, "Unable to dump blocks to file descriptor.");
 
     fprintf(fd, "%s%s\n",indent,title);
-    fprintf(fd, "%sNumber of blocks: %lu\n",indent,stats.num_blocks);
-    fprintf(fd, "%sOccupied Blocks: %lu\n", indent, stats.current_count);
-    fprintf(fd, "%sLifetime Maximum Occupied Blocks: %lu\n", indent, stats.max_count);
-    fprintf(fd, "%sValue length: %lu\n", indent, stats.value_len);
+    fprintf(fd, "%sNumber of blocks: %" PRIu64 "\n",indent,stats.num_blocks);
+    fprintf(fd, "%sOccupied Blocks: %" PRIu64 "\n", indent, stats.current_count);
+    fprintf(fd, "%sLifetime Maximum Occupied Blocks: %" PRIu64 "\n", indent, stats.max_count);
+    fprintf(fd, "%sValue length: %" PRIu64 "\n", indent, stats.value_len);
 
     uint64_t total_space = ((void*)(blocks->slots) - blocks->space) + stats.max_count * (stats.value_len + sizeof(uint64_t));
 

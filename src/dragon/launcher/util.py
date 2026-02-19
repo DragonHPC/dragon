@@ -120,13 +120,15 @@ def queue_monitor(func: Callable, *, log_test_queue=None):
                     log_test_queue.put(msg)
                 else:
                     for record in msg.records:
-                        log = logging.getLogger(record.name)
+                        logger_name = f"{record.hostname}.{record.name}" if record.hostname else record.name
+                        log = logging.getLogger(logger_name)
                         log.log(record.level, record.msg, extra=record.get_logging_dict())
             elif isinstance(msg, dmsg.LoggingMsg):
                 if log_test_queue:
                     log_test_queue.put(msg)
                 else:
-                    log = logging.getLogger(msg.name)
+                    logger_name = f"{msg.hostname}.{msg.name}" if msg.hostname else msg.name
+                    log = logging.getLogger(logger_name)
                     log.log(msg.level, msg.msg, extra=msg.get_logging_dict())
             elif isinstance(msg, dmsg.AbnormalTermination):
                 raise AbnormalTerminationError("Abnormal exit detected")
@@ -164,13 +166,15 @@ def no_error_queue_monitor(func: Callable, *, log_test_queue=None):
                     log_test_queue.put(msg)
                 else:
                     for record in msg.records:
-                        log = logging.getLogger(record.name)
+                        logger_name = f"{record.hostname}.{record.name}" if record.hostname else record.name
+                        log = logging.getLogger(logger_name)
                         log.log(record.level, record.msg, extra=record.get_logging_dict())
             elif isinstance(msg, dmsg.LoggingMsg):
                 if log_test_queue:
                     log_test_queue.put(msg)
                 else:
-                    log = logging.getLogger(msg.name)
+                    logger_name = f"{msg.hostname}.{msg.name}" if msg.hostname else msg.name
+                    log = logging.getLogger(logger_name)
                     log.log(msg.level, msg.msg, extra=msg.get_logging_dict())
             else:
                 return msg
@@ -221,8 +225,8 @@ def get_with_blocking_frontend_server(handle):
             return msg
         else:
             return dmsg.parse(msg)
-    except Exception:
-        raise
+    except Exception as ex:
+        raise RuntimeError("Got an error while trying to handle a message in the frontend launcher.") from ex
 
 
 class LaOverlayNetFEQueue(queue.SimpleQueue):

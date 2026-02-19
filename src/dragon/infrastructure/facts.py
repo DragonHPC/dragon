@@ -246,17 +246,17 @@ REMOTE_LAUNCH_TIMEOUT = 420
 
 # Names
 DEFAULT_PROCESS_NAME_BASE = "dragon_process_"
-DEFAULT_POOL_NAME_BASE = "dragon_pool_"
-DEFAULT_DICT_POOL_NAME_BASE = "dragon_dict_pool_"
+DEFAULT_POOL_NAME_BASE = "D"
+DEFAULT_DICT_POOL_NAME_BASE = "DD"
 DEFAULT_CHANNEL_NAME_BASE = "dragon_channel_"
 DEFAULT_GROUP_NAME_BASE = "dragon_group_"
 
 GS_ERROR_EXIT = -1
 
 # Reserved Shared Memory Segments
-INFRASTRUCTURE_POOL_SUFFIX = "_inf"
-DEFAULT_POOL_SUFFIX = "_def"
-LOGGING_POOL_SUFFIX = "_log"
+INFRASTRUCTURE_POOL_SUFFIX = "inf"
+DEFAULT_POOL_SUFFIX = "def"
+LOGGING_POOL_SUFFIX = "log"
 
 
 # Pre-defined process PUIDs:
@@ -769,8 +769,10 @@ DRAGON_BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../")
 DRAGON_LIB_DIR = os.path.join(DRAGON_BASE_DIR, "lib")
 DRAGON_INCLUDE_DIR = os.path.join(DRAGON_BASE_DIR, "include")
 DRAGON_BIN_DIR = os.path.join(DRAGON_BASE_DIR, "bin")
+DRAGON_LOCAL_SERVICES_DIR = Path(os.path.join(DRAGON_BASE_DIR, "localservices"))
 
 HSTA_BINARY = Path(os.path.join(DRAGON_BIN_DIR, PROCNAME_RDMA_TA))
+POPEN_WRAPPER = Path(DRAGON_LOCAL_SERVICES_DIR, "dragon-popen")
 DRAGON_LIB_SO = os.path.join(DRAGON_LIB_DIR, "libdragon.so")
 
 

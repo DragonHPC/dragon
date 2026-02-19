@@ -1,5 +1,6 @@
+export DYLD_LIBRARY_PATH := ../src/lib:$(DYLD_LIBRARY_PATH)
 CC = gcc
-CFLAGS ?= -fPIC -Wall -Ofast -fomit-frame-pointer
+CFLAGS ?= -fPIC -Wall -O3 -ffast-math -fomit-frame-pointer
 # CFLAGS = -O0 -g -fPIC -Wall
 ifeq ($(DRAGON_INCLUDE_DIR),)
     DRAGON_INCLUDE = $(shell dragon-config -o)

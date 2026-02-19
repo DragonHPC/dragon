@@ -113,7 +113,7 @@ cdef class FLISendH:
         bool _is_open
         object _default_timeout
 
-    def __init__(self, FLInterface adapter, *, Channel stream_channel=None, MemoryPool destination_pool=None, timeout=None, bool allow_strm_term=False, use_main_as_stream_channel=False, use_main_buffered=False, bool turbo_mode=False, bool flush=False):
+    def __init__(self, FLInterface adapter, *, Channel stream_channel=None, MemoryPool destination_pool=None, timeout=None, bool allow_strm_term=False, use_main_as_stream_channel=False, use_main_buffered=False, bool turbo_mode=False, bool flush=False, int debug=0):
         """
         When creating a send handle an application may provide a stream
         channel to be used. If specifying that the main channel is to be
@@ -179,6 +179,8 @@ cdef class FLISendH:
             provided here also becomes the default timeout when used in the context
             manager framework.
 
+        :param debug: Internal use only debugging value. It is ignored if set by a
+            user.
 
         :return: An FLI send handle.
         """
@@ -213,6 +215,7 @@ cdef class FLISendH:
         attrs.allow_strm_term = allow_strm_term
         attrs.turbo_mode = turbo_mode
         attrs.flush = flush
+        attrs.debug = debug
 
         with nogil:
             derr = dragon_fli_open_send_handle(&self._adapter, &self._sendh, c_strm_ch, &attrs, time_ptr)

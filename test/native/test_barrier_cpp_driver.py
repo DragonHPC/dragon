@@ -12,6 +12,7 @@ os.system(f"cd {test_dir}; make --silent")
 
 ENV = dict(os.environ)
 ENV["LD_LIBRARY_PATH"] = str(DRAGON_LIB_DIR) + ":" + str(ENV.get("LD_LIBRARY_PATH", ""))
+ENV["DYLD_FALLBACK_LIBRARY_PATH"] = str(DRAGON_LIB_DIR) + ":" + str(ENV.get("DYLD_FALLBACK_LIBRARY_PATH", ""))
 
 def wait_func(b1):
     b1.wait()

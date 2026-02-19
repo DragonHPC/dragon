@@ -15,6 +15,7 @@ setup_env() {
     else
       package="craydstlib"
     fi
+    pip install --upgrade pip
     pip install ${package} --trusted-host https://arti.hpc.amslabs.hpecorp.net \
       --extra-index-url https://arti.hpc.amslabs.hpecorp.net:443/artifactory/dst-pip-${quality}-local \
       --index-url https://arti.hpc.amslabs.hpecorp.net:443/artifactory/api/pypi/pypi-remote/simple

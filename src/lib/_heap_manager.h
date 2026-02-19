@@ -21,8 +21,7 @@
  * reliance on the OS for services to just the lock for mutually
  * exclusive access, meaning it is multi-processing ready.
  *
- * More information can be found at
- * https://dragon.us.cray.com/html/internal/internal.html
+ * More information can be found at the Dragon documentation page.
  */
 
 #ifndef HAVE_DRAGON_DYN_HEAPMANAGER_H

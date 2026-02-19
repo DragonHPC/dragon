@@ -388,6 +388,8 @@ class MessageTypes(enum.Enum):
     DD_RANDOM_MANAGER_RESPONSE = enum.auto()  #:
     DD_MANAGER_STATS = enum.auto()  #:
     DD_MANAGER_STATS_RESPONSE = enum.auto()  #:
+    DD_SYNC = enum.auto()  #:
+    DD_SYNC_RESPONSE = enum.auto()  #:
     DD_MANAGER_NEWEST_CHKPT_ID = enum.auto()  #:
     DD_MANAGER_NEWEST_CHKPT_ID_RESPONSE = enum.auto()  #:
     DD_EMPTY_MANAGERS = enum.auto()  #:
@@ -455,8 +457,8 @@ PIPE = subprocess.PIPE
 STDOUT = subprocess.STDOUT
 DEVNULL = subprocess.DEVNULL
 
-# 500 years, we'll all be dead
-NO_TIMEOUT_VALUE = 15768000000
+# 292.3 years, the maximum value you can use without causing an OverflowError.
+NO_TIMEOUT_VALUE = 9223372036
 
 
 class AbnormalTerminationError(Exception):
@@ -1673,6 +1675,7 @@ class DDCreateManagerResponse(CapNProtoResponseMsg):
     def managerID(self):
         return self._managerID
 
+
 class DDRegisterClientID(CapNProtoMsg):
     _tc = MessageTypes.DD_REGISTER_CLIENT_ID
 
@@ -2131,6 +2134,57 @@ class DDManagerStatsResponse(CapNProtoResponseMsg):
     @property
     def data(self):
         return self._data
+
+
+class DDSync(CapNProtoMsg):
+
+    _tc = MessageTypes.DD_SYNC
+
+    def __init__(self, tag, respFLI, timeout=None, broadcast=True):
+        super().__init__(tag)
+        self._respFLI = respFLI
+        self._broadcast = broadcast
+        # The timeout conversion is needed for capnproto.
+        if timeout is None:
+            timeout = NO_TIMEOUT_VALUE
+        self._timeout = timeout
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["respFLI"] = self._respFLI
+        rv["broadcast"] = self._broadcast
+        if self._timeout == NO_TIMEOUT_VALUE:
+            rv["timeout"] = None
+        else:
+            rv["timeout"] = self._timeout
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.respFLI = self._respFLI
+        client_msg.broadcast = self._broadcast
+        client_msg.timeout = self._timeout
+        return cap_msg
+
+    @property
+    def respFLI(self):
+        return self._respFLI
+
+    @property
+    def broadcast(self):
+        return self._broadcast
+
+    @property
+    def timeout(self):
+        return self._timeout
+
+
+class DDSyncResponse(CapNProtoResponseMsg):
+    _tc = MessageTypes.DD_SYNC_RESPONSE
+
+    def __init__(self, tag, ref, err, errInfo=""):
+        super().__init__(tag, ref, err, errInfo)
 
 
 class DDManagerNewestChkptID(CapNProtoMsg):

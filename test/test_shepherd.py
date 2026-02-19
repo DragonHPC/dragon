@@ -44,19 +44,26 @@ def run_ls(shep_stdin_queue, shep_stdout_queue, name_addition=""):
 # TODO: pending pool attach lifecycle solution
 ATTACH_POOLS = True
 
-
 class SingleLS(unittest.TestCase):
     DEFAULT_TEST_POOL_SIZE = 2**20
 
     def setUp(self) -> None:
-        self.shep_stdin_rh, self.shep_stdin_wh = mp.Pipe(duplex=False)
-        self.shep_stdout_rh, self.shep_stdout_wh = mp.Pipe(duplex=False)
+        self.test_pool = dmm.MemoryPool(1024**3, "sheptest" + str(os.getpid()), 42)
+        self.shep_stdin = dch.Channel(self.test_pool, 142)
+        self.shep_stdin_rh = dconn.Connection(inbound_initializer=self.shep_stdin)
+        self.shep_stdin_wh = dconn.Connection(outbound_initializer=self.shep_stdin)
+        self.shep_stdout = dch.Channel(self.test_pool, 143)
+        self.shep_stdout_rh = dconn.Connection(inbound_initializer=self.shep_stdout)
+        self.shep_stdout_wh = dconn.Connection(outbound_initializer=self.shep_stdout)
         self.mode = dfacts.SINGLE_MODE
         self.tag = 0
 
     def tearDown(self) -> None:
         self.shep_stdout_rh.close()
         self.shep_stdin_wh.close()
+        self.shep_stdin.destroy()
+        self.shep_stdout.destroy()
+        self.test_pool.destroy()
 
     def next_tag(self):
         tmp = self.tag
@@ -727,4 +734,5 @@ class SingleLS(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    mp.set_start_method("spawn")
     unittest.main()

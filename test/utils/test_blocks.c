@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <stdbool.h>
+#include <inttypes.h>
 
 //#include "../_ctest_utils.h"
 
@@ -10,7 +11,7 @@
 #define FALSE 0
 
 int main(int argc, char* argv[]) {
-    uint64_t size;
+    size_t size;
     dragonError_t err;
     size_t tests_passed = 0;
     size_t tests_attempted = 0;
@@ -68,7 +69,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (value != 42) {
-        printf("Value was not 42. It was %lu\n", value);
+        printf("Value was not 42. It was %" PRIu64 "\n", value);
         tests_passed -= 1;
     }
 
@@ -123,7 +124,7 @@ int main(int argc, char* argv[]) {
         }
 
         if (value != k) {
-            printf("The value was %lu and should have been %d\n", value, k);
+            printf("The value was %" PRIu64 " and should have been %d\n", value, k);
             exit(0);
         }
     }
@@ -168,7 +169,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (count != 10) {
-        printf("Expected a count of 10. Got %lu.\n", count);
+        printf("Expected a count of 10. Got %" PRIu64 ".\n", count);
         tests_passed -= 1;
     }
 
@@ -192,22 +193,22 @@ int main(int argc, char* argv[]) {
     }
 
     if (stats.current_count != 10) {
-        printf("Stats count is not 10. It is %lu.\n", stats.current_count);
+        printf("Stats count is not 10. It is %" PRIu64 ".\n", stats.current_count);
         tests_passed -= 1;
     }
 
     if (stats.num_blocks != 10) {
-        printf("Stats num_blocks is not 10. It is %lu.\n", stats.num_blocks);
+        printf("Stats num_blocks is not 10. It is %" PRIu64 ".\n", stats.num_blocks);
         tests_passed -= 1;
     }
 
     if (stats.current_count != 10) {
-        printf("Stats current_count is not 10. It is %lu.\n", stats.current_count);
+        printf("Stats current_count is not 10. It is %" PRIu64 ".\n", stats.current_count);
         tests_passed -= 1;
     }
 
     if (stats.max_count != 10) {
-        printf("Stats max_count is not 10. It is %lu.\n", stats.max_count);
+        printf("Stats max_count is not 10. It is %" PRIu64 ".\n", stats.max_count);
         tests_passed -= 1;
     }
 
@@ -282,7 +283,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (count != 5) {
-        printf("Expected a count of 5. Got %lu.\n", count);
+        printf("Expected a count of 5. Got %" PRIu64 ".\n", count);
         tests_passed -= 1;
     }
 
@@ -306,7 +307,7 @@ int main(int argc, char* argv[]) {
     }
 
     if (count != 5) {
-        printf("Expected a count of 5. Got %lu.\n", count);
+        printf("Expected a count of 5. Got %" PRIu64 ".\n", count);
         tests_passed -= 1;
     }
 

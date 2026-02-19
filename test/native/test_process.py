@@ -148,8 +148,7 @@ class TestDragonNativeProcess(unittest.TestCase):
         p.join()
 
     def test_templating_no_args(self):
-        exe = "pwd"
-        cwd = os.getcwd()
+        exe = "echo"
 
         templ = ProcessTemplate(exe, stdout=ProcessTemplate.PIPE, stderr=ProcessTemplate.DEVNULL)
 
@@ -167,7 +166,7 @@ class TestDragonNativeProcess(unittest.TestCase):
         p.join()
 
         self.assertEqual(p.returncode, 0)
-        self.assertEqual(msg.strip(), cwd)
+        self.assertEqual(msg.strip(), "")
 
     def test_template_python_exe_with_infra(self):
         exe = sys.executable

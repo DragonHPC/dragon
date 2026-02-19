@@ -63,7 +63,6 @@ _init_channel_handles(dragonLoggingDescr_t * logger)
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not open send handle");
 
-    recv_attr.wait_mode = DRAGON_IDLE_WAIT;
     err = dragon_channel_recvh(&logger->ch, &logger->crecv, &recv_attr);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not create recv handle");
@@ -90,10 +89,6 @@ _get_log(const dragonLoggingDescr_t * logger, const dragonLogPriority_t priority
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to initialize message container");
 
-    // Loop until we find a message of appropriate priority or run out of messages
-    void * msg_ptr;
-    dragonLogPriority_t log_priority = DG_NOTSET;
-
     // If timeout is NULL, channels will set the default_timeout value
     // which is DRAGON_CHANNEL_BLOCKING_NOTIMEOUT.
     err = dragon_chrecv_get_msg_blocking(&logger->crecv, msg, timeout);
@@ -115,13 +110,14 @@ _get_log(const dragonLoggingDescr_t * logger, const dragonLogPriority_t priority
         goto jmp_msg_cleanup;
     }
 
+    void * msg_ptr;
     err = dragon_memory_get_pointer(&mem_descr, &msg_ptr);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Error retrieving memory pointer for log entry");
         goto jmp_msg_cleanup;
     }
 
-    log_priority = *(dragonLogPriority_t*)msg_ptr;
+    dragonLogPriority_t log_priority = *(dragonLogPriority_t*)msg_ptr;
     if (log_priority < priority) {
         // Release message if not valid priority
         err = dragon_channel_message_destroy(msg, true);
@@ -137,6 +133,34 @@ _get_log(const dragonLoggingDescr_t * logger, const dragonLogPriority_t priority
 jmp_msg_cleanup:
     dragon_channel_message_destroy(msg, true);
     no_err_return(err);
+}
+
+
+// Internal function to do pointer arithmetic and extract priority and string from log message
+static dragonError_t
+_unpack_priority_and_log_bytes(void* mem_ptr, size_t mem_size, dragonLogPriority_t *priority, void** log, size_t *log_len)
+{
+    if (mem_ptr == NULL) {
+        err_return(DRAGON_INVALID_ARGUMENT, "mem_ptr cannot be NULL");
+    }
+
+    if (log == NULL) {
+        err_return(DRAGON_INVALID_ARGUMENT, "log cannot be NULL");
+    }
+
+    // optionally assign the priority
+    if (priority != NULL) {
+        *priority = *(dragonLogPriority_t*)mem_ptr;
+    }
+
+    // calculate the log message location and copy it out
+    void* log_ptr = mem_ptr + sizeof(dragonLogPriority_t);
+    *log_len = mem_size - sizeof(dragonLogPriority_t);
+
+    *log = malloc(*log_len);
+    memcpy(*log, log_ptr, *log_len);
+
+    no_err_return(DRAGON_SUCCESS);
 }
 
 dragonError_t
@@ -391,30 +415,33 @@ dragon_logging_detach(dragonLoggingDescr_t * logger)
  * @return DRAGON_SUCCESS or a Dragon Error code on failure
  **/
 dragonError_t
-dragon_logging_put(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, char * log)
+dragon_logging_put(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, void* log, size_t log_len)
 {
     if (logger == NULL)
-        append_err_return(DRAGON_INVALID_ARGUMENT, "Logging descriptor cannot be NULL");
+        err_return(DRAGON_INVALID_ARGUMENT, "Logging descriptor cannot be NULL");
 
     if (log == NULL)
-        append_err_return(DRAGON_INVALID_ARGUMENT, "Message cannot be NULL");
+        err_return(DRAGON_INVALID_ARGUMENT, "Message cannot be NULL");
 
-    int msg_len = strlen(log) + 1;
     dragonMemoryDescr_t msg_buf;
-    dragonError_t err = dragon_memory_alloc(&msg_buf, &logger->mpool, sizeof(dragonLogPriority_t) + msg_len);
+    dragonError_t err = dragon_memory_alloc(&msg_buf, &logger->mpool, sizeof(dragonLogPriority_t) + log_len);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not allocate message");
 
     void * msg_ptr;
-    dragon_memory_get_pointer(&msg_buf, &msg_ptr);
+    err = dragon_memory_get_pointer(&msg_buf, &msg_ptr);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get pointer to memory.");
 
     *(dragonLogPriority_t*)msg_ptr = priority;
     msg_ptr += sizeof(dragonLogPriority_t);
 
-    memcpy(msg_ptr, log, msg_len);
+    memcpy(msg_ptr, log, log_len);
 
     dragonMessage_t msg;
-    dragon_channel_message_init(&msg, &msg_buf, NULL);
+    err = dragon_channel_message_init(&msg, &msg_buf, NULL);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not init message.");
 
     if (logger->mode == DRAGON_LOGGING_LOSSLESS) {
 
@@ -492,7 +519,7 @@ dragon_logging_put(const dragonLoggingDescr_t * logger, dragonLogPriority_t prio
         append_err_return(err, "Could not release memory");
     // TODO: if msg_buf size can fit into the channel block then free the allocation
 
-    return DRAGON_SUCCESS;
+    no_err_return(DRAGON_SUCCESS);
 }
 
 // Make this internal and have separate "log_get" and "log_get_blocking" calls so a thread can sit and wait for an entry to show up if desired?
@@ -513,35 +540,45 @@ dragon_logging_put(const dragonLoggingDescr_t * logger, dragonLogPriority_t prio
  * @return DRAGON_SUCCESS or a Dragon Error code on failure
  **/
 dragonError_t
-dragon_logging_get(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, void ** msg_out, timespec_t * timeout)
+dragon_logging_get(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, void ** log, size_t* log_len, timespec_t * timeout)
 {
 
     dragonMessage_t msg;
-    void * msg_ptr;
+    size_t mem_size;
+    void * mem_ptr;
+
+    if (logger == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "msg_out arg cannot be NULL");
+
+    if (log == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "log arg cannot be NULL");
+
+    if (log_len == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "log_len arg cannot be NULL");
 
     // Message is init'd and cleaned on fail inside _get_log
     dragonError_t err = _get_log(logger, priority, &msg, timeout);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not retrieve log message");
 
-    err = dragon_memory_get_pointer(msg._mem_descr, &msg_ptr);
+    err = dragon_memory_get_pointer(msg._mem_descr, &mem_ptr);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Error retrieving memory for log entry");
 
-    // Temp variables to cast to char for pointer math
-    char * c_msg_ptr = (char*)msg_ptr;
-    char * msg_str = c_msg_ptr + sizeof(dragonLogPriority_t);
-    int msg_len = strlen(msg_str) + sizeof(dragonLogPriority_t) + 1;
-    *msg_out = malloc(msg_len);
-    // Memcpy the payload into a local malloc (to be freed by the user)
-    memcpy(*msg_out, c_msg_ptr, msg_len);
+    err = dragon_memory_get_size(msg._mem_descr, &mem_size);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Error retrieving memory size");
+
+    err = _unpack_priority_and_log_bytes(mem_ptr, mem_size, NULL, log, log_len);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Error getting log from message.");
 
     // Release dragon channel memory holding the message
     err = dragon_channel_message_destroy(&msg, true);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to free log after retrieval");
 
-    return DRAGON_SUCCESS;
+    no_err_return(DRAGON_SUCCESS);
 }
 
 /**
@@ -554,18 +591,29 @@ dragon_logging_get(const dragonLoggingDescr_t * logger, dragonLogPriority_t prio
  *
  * @param logger Handle to the logger
  * @param priority Minimum priority that the next message needs to meet to be returned
- * @param msg_out Pointer to allocate and copy message data into
+ * @param log Pointer to allocate and copy message data into
+ * @param log_len The log's length stored at location pointed to by log_len
  * @param timeout (Optional) How long to wait for the next message
  *
  * @return DRAGON_SUCCESS or a Dragon Error code on failure
  **/
 dragonError_t
-dragon_logging_get_priority(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, void ** msg_out, timespec_t * timeout)
+dragon_logging_get_priority(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, dragonLogPriority_t *actual_priority, void ** log, size_t* log_len, timespec_t * timeout)
 {
 
     dragonMessage_t msg;
-    void * msg_ptr;
+    void * mem_ptr;
+    size_t mem_size;
     dragonError_t err;
+
+    if (logger == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "msg_out arg cannot be NULL");
+
+    if (log == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "log arg cannot be NULL");
+
+    if (log_len == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "log_len arg cannot be NULL");
 
     // Loop until the channel is either empty, fails entirely, or we get a message
     do {
@@ -575,17 +623,17 @@ dragon_logging_get_priority(const dragonLoggingDescr_t * logger, dragonLogPriori
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not retrieve log message");
 
-    err = dragon_memory_get_pointer(msg._mem_descr, &msg_ptr);
+    err = dragon_memory_get_pointer(msg._mem_descr, &mem_ptr);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Error retrieving memory for log entry");
 
-    // Temp variables to cast to char for pointer math
-    char * c_msg_ptr = (char*)msg_ptr;
-    char * msg_str = c_msg_ptr + sizeof(dragonLogPriority_t);
-    int msg_len = strlen(msg_str) + sizeof(dragonLogPriority_t) + 1;
-    *msg_out = malloc(msg_len);
-    // Memcpy the payload into a local malloc (to be freed by the user)
-    memcpy(*msg_out, c_msg_ptr, msg_len);
+    err = dragon_memory_get_size(msg._mem_descr, &mem_size);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Error retrieving memory size");
+
+    err = _unpack_priority_and_log_bytes(mem_ptr, mem_size, actual_priority, log, log_len);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Error getting log");
 
     // Release dragon channel memory holding the message
     err = dragon_channel_message_destroy(&msg, true);
@@ -615,62 +663,24 @@ dragonError_t
 dragon_logging_print(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, timespec_t * timeout)
 {
     // @TODO: Change the signature to include a FILE pointer.  Just spits out to stdout for now.
-    void * msg_ptr;
-    dragonError_t err = dragon_logging_get_priority(logger, priority, &msg_ptr, timeout);
+    void * log;
+    size_t log_len;
+    dragonLogPriority_t log_priority;
+    dragonError_t err = dragon_logging_get_priority(logger, priority, &log_priority, &log, &log_len, timeout);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Failed to retrieve logs");
 
-    dragonLogPriority_t log_priority = *(dragonLogPriority_t*)msg_ptr;
-    char * str_ptr = (char*)(msg_ptr + sizeof(int));
-
     int log_table = _lookup_priority_idx(log_priority);
     // TODO: Replace stdout with whatever file pointer was passed in.  If NULL default to stdout
-    fprintf(stdout, "%s\t| %s\n", dg_log_levels[log_table], str_ptr);
+    fprintf(stdout, "%s\t| ", dg_log_levels[log_table]);
+    fwrite(log, 1, log_len, stdout);
+    fprintf(stdout, "\n");
 
-    // Release allocated msg_ptr
-    free(msg_ptr);
+    // Release allocated log data
+    free(log);
     return DRAGON_SUCCESS;
 }
 
-// Expected that the user be responsible for freeing the string allocation made here
-// TODO: This is probably super convoluted and not particularly necessary
-/**
- * @brief Retrieve the next available message of at least *priority* level and return string
- *
- *  Retrieve the next message of at least *priority*.
- *  Will continue to retrieve messages until *priority* is satisfied or no further logs are available.
- *  Upon success, return string through *out_str*.  User is responsbile for freeing *out_str* when done.
- *  *timeout* can be specified to use blocking behavior, otherwise pass NULL for non-blocking
- *
- * @param logger Handle to the logger
- * @param priority Minimum priority that the next message needs to meet to be returned
- * @param msg_out Pointer to allocate and copy message data into
- * @param timeout (Optional) How long to wait for the next message
- *
- * @return DRAGON_SUCCESS or a Dragon Error code on failure
- **/
-dragonError_t
-dragon_logging_get_str(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, char ** out_str, timespec_t * timeout)
-{
-    void * msg_ptr;
-    dragonError_t err = dragon_logging_get_priority(logger, priority, &msg_ptr, timeout);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not retrieve log");
-
-    char * str_ptr = msg_ptr + sizeof(dragonLogPriority_t); // Skip over the priority value
-
-    // TODO: String safety checks
-    *out_str = (char*)malloc(strlen(str_ptr) + 1);
-    strcpy(*out_str, str_ptr);
-
-    // This is super clunky because we allocate a space in log_get, copy the message over
-    //  then free the message block.  Then we take it here and copy it *again* into a new
-    //  allocation, and then free the allocation from log_get.
-    //  @MCB TODO: This whole logic path needs to be refactored
-    free(msg_ptr);
-
-    return DRAGON_SUCCESS;
-}
 
 dragonError_t
 dragon_logging_count(const dragonLoggingDescr_t * logger, uint64_t * count)

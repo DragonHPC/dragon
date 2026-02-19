@@ -106,13 +106,17 @@ class GSLS(unittest.TestCase):
         self.tag = 0
         self.mode = dfacts.SINGLE_MODE
 
-        self.shep_stdin_rh, self.shep_stdin_wh = multiprocessing.Pipe(duplex=False)
-        self.shep_stdout_rh, self.shep_stdout_wh = multiprocessing.Pipe(duplex=False)
-
-        self.pool_name = "gslsinttest_" + os.environ.get("USER", str(os.getuid())) + str(uuid.uuid4())
+        self.pool_name = ("gslsinttest_" + os.environ.get("USER", str(os.getuid())) + str(uuid.uuid4()))[:28]
         self.pool_size = 2**30
         self.pool_uid = CUSTOM_POOL_MUID
         self.test_pool = dmm.MemoryPool(self.pool_size, self.pool_name, self.pool_uid)
+
+        self.shep_stdin = dch.Channel(self.test_pool, 142)
+        self.shep_stdin_rh = dconn.Connection(inbound_initializer=self.shep_stdin)
+        self.shep_stdin_wh = dconn.Connection(outbound_initializer=self.shep_stdin)
+        self.shep_stdout = dch.Channel(self.test_pool, 143)
+        self.shep_stdout_rh = dconn.Connection(inbound_initializer=self.shep_stdout)
+        self.shep_stdout_wh = dconn.Connection(outbound_initializer=self.shep_stdout)
 
         # need a test pool and test channels to hold the return channel
         # from GS to the test bench.  Picking cuid for these high enough
@@ -233,6 +237,10 @@ class GSLS(unittest.TestCase):
         self.shep_stdout_wh.close()
 
         self.ls_dut.join()
+
+        self.shep_stdin.destroy()
+        self.shep_stdout.destroy()
+
         self.test_pool.destroy()
         dutil.compare_dev_shm(self.starting_shm)
         if self.proc_direct_test_failed:
@@ -650,251 +658,6 @@ def start_multi_ls(shep_stdin_queue, shep_stdout_queue, env_update, name_additio
     finally:
         shep_stdin_queue.close()
         shep_stdout_queue.close()
-
-
-class GSLSMulti(unittest.TestCase):
-    """Global Services / Local Services (Shepherd) Integration tests
-    where GS process talks to two or more LS processes on the same node
-    """
-
-    SLEEPY_HEAD_TIME = 60  # seconds, 60 seconds
-
-    def setUp(self) -> None:
-        self.nls = 3  # number of LS processes
-        self.tag = 0
-        self.mode = dfacts.CRAYHPE_MULTI_MODE
-        self.names = {}  # helper dict that holds all the necessary names for connections for the different LS processes
-
-        for i in range(self.nls):
-            self.names[f"shep_stdin_rh_{i}"], self.names[f"shep_stdin_wh_{i}"] = multiprocessing.Pipe(duplex=False)
-            self.names[f"shep_stdout_rh_{i}"], self.names[f"shep_stdout_wh_{i}"] = multiprocessing.Pipe(duplex=False)
-
-        # need a test pool and test channels to hold the return channel
-        # from GS to the test bench.  Picking cuid for these high enough
-        # that they won't be used in the tests
-        self.pool_name = "gslsinttest_" + os.environ.get("USER", str(os.getuid())) + str(uuid.uuid4())
-        self.pool_size = 2**30
-        self.pool_uid = CUSTOM_POOL_MUID
-        self.test_pool = dmm.MemoryPool(self.pool_size, self.pool_name, self.pool_uid)
-
-        self.gs_return_cuid = 2**64 - CUSTOM_POOL_MUID
-        self.proc_gs_return_chan = dch.Channel(self.test_pool, self.gs_return_cuid)
-        self.proc_gs_return_rh = dconn.Connection(inbound_initializer=self.proc_gs_return_chan)
-
-        self.chatty_teardown = False
-
-        self.gs_cd = None
-
-    def next_tag(self):
-        tmp = self.tag
-        self.tag += 1
-        return tmp
-
-    def start_multi_duts(self):
-        for i in range(self.nls):
-            test_name = f"{i}_{self.__class__.__name__}_{inspect.stack()[1][0].f_code.co_name}"
-            if i == 0:  # primary LS
-                # Make a list of channels to pass thru the environment to GS for testing purposes.
-                test_chan_list = [
-                    (self.gs_return_cuid, self.test_pool.serialize(), self.proc_gs_return_chan.serialize(), False)
-                ]
-                val = pickle.dumps(test_chan_list)
-                env_update = {dfacts.GS_TEST_CH_EV: dutils.B64.bytes_to_str(val), dfacts.GS_LOG_BASE: "gs_" + test_name}
-                start_args = (self.names[f"shep_stdin_rh_{i}"], self.names[f"shep_stdout_wh_{i}"], env_update)
-            else:
-                start_args = (self.names[f"shep_stdin_rh_{i}"], self.names[f"shep_stdout_wh_{i}"], None)
-
-            self.names[f"ls_dut_{i}"] = multiprocessing.Process(
-                target=start_multi_ls, args=start_args, kwargs={"name_addition": test_name}, name=f"local_svc_{i}"
-            )
-            self.names[f"ls_dut_{i}"].start()
-
-        if self.chatty_teardown:
-            print(f"The {self.nls} local services have started", flush=True)
-
-        chs_up = []
-        for i in range(self.nls):
-            if i == 0:
-                self.names[f"shep_stdin_wh_{i}"].send(
-                    dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=True, net_conf_key=str(i)).serialize()
-                )
-            else:
-                self.names[f"shep_stdin_wh_{i}"].send(
-                    dmsg.BENodeIdxSH(tag=self.next_tag(), node_idx=i, primary=False, net_conf_key=str(i)).serialize()
-                )
-
-            ping_be_msg = tsu.get_and_check_type(self.names[f"shep_stdout_rh_{i}"], dmsg.SHPingBE)
-            if self.chatty_teardown:
-                print(f"got SHPingBE for LS {i}", flush=True)
-
-            env2b = dutils.B64.str_to_bytes
-
-            self.names[f"shep_input_chan_{i}"] = dch.Channel.attach(env2b(ping_be_msg.shep_cd))
-            self.names[f"shep_input_wh_{i}"] = dconn.Connection(outbound_initializer=self.names[f"shep_input_chan_{i}"])
-
-            self.names[f"bela_input_chan_{i}"] = dch.Channel.attach(env2b(ping_be_msg.be_cd))
-            self.names[f"bela_input_rh_{i}"] = dconn.Connection(inbound_initializer=self.names[f"bela_input_chan_{i}"])
-
-            if i == 0:
-                self.gs_cd = ping_be_msg.gs_cd
-                self.gs_input_chan = dch.Channel.attach(env2b(ping_be_msg.gs_cd))
-                self.gs_input_wh = dconn.Connection(outbound_initializer=self.gs_input_chan)
-
-                dapi.test_connection_override(
-                    test_gs_input=self.gs_input_wh,
-                    test_gs_return=self.proc_gs_return_rh,
-                    test_gs_return_cuid=self.gs_return_cuid,
-                    test_shep_input=self.names[f"shep_input_wh_{i}"],
-                )
-
-            self.names[f"shep_input_wh_{i}"].send(dmsg.BEPingSH(tag=self.next_tag()).serialize())
-
-            msg = tsu.get_and_check_type(self.names[f"bela_input_rh_{i}"], dmsg.SHChannelsUp)
-            assert isinstance(msg, dmsg.SHChannelsUp)
-            self.assertEqual(dutils.host_id(), msg.node_desc.host_id)
-            if self.chatty_teardown:
-                print(f"got SHChannelsUp from LS {i}", flush=True)
-                print(
-                    f"Info from SHChannelsUp: host_id={msg.node_desc.host_id}, hostname={msg.node_desc.host_name}",
-                    flush=True,
-                )
-
-            chs_up.append(msg)
-
-        nodes_desc = {ch_up.idx: ch_up.node_desc for ch_up in chs_up}
-        la_ch_info = dmsg.LAChannelsInfo(
-            tag=self.next_tag(), nodes_desc=nodes_desc, gs_cd=self.gs_cd, num_gw_channels=0
-        )
-        for i in range(self.nls):
-            # communicate gs_cd to all local services process so that they
-            # can communicate with gs
-            self.names[f"shep_input_wh_{i}"].send(la_ch_info.serialize())
-            if self.chatty_teardown:
-                print(f"sent LACHannelsInfo to LS {i}", flush=True)
-
-            # we need to receive TAUp
-            tsu.get_and_check_type(self.names[f"bela_input_rh_{i}"], dmsg.TAUp)
-            if self.chatty_teardown:
-                print(f"received TAUp from LS {i}")
-                sys.stdout.flush()
-
-        tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSIsUp)
-        if self.chatty_teardown:
-            print("received GSIsUp")
-            sys.stdout.flush()
-
-        self.starting_shm = dutil.survey_dev_shm()
-
-    def tearDown(self) -> None:
-        self.gs_input_wh.send(dmsg.GSTeardown(tag=self.next_tag()).serialize())
-        if self.chatty_teardown:
-            print("sent GSTeardown")
-            sys.stdout.flush()
-
-        tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSHalted)
-        if self.chatty_teardown:
-            print("got GSHalted")
-            sys.stdout.flush()
-
-        self.names["shep_input_wh_0"].send(dmsg.SHHaltTA(tag=self.next_tag()).serialize())
-        if self.chatty_teardown:
-            print("sent SHHaltTA")
-            sys.stdout.flush()
-
-        tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.TAHalted)
-        if self.chatty_teardown:
-            print("got TAHalted")
-            sys.stdout.flush()
-
-        for i in range(self.nls):
-            self.names[f"shep_input_wh_{i}"].send(dmsg.SHTeardown(tag=self.next_tag()).serialize())
-            if self.chatty_teardown:
-                print(f"sent SHTeardown to LS {i}")
-                sys.stdout.flush()
-
-            tsu.get_and_check_type(self.names[f"bela_input_rh_{i}"], dmsg.SHHaltBE)
-            if self.chatty_teardown:
-                print(f"got SHHaltBE from LS {i}")
-                sys.stdout.flush()
-
-        for i in range(self.nls):
-            self.names[f"shep_input_chan_{i}"].detach()
-            self.names[f"bela_input_chan_{i}"].detach()
-
-            self.names[f"shep_stdin_wh_{i}"].send(dmsg.BEHalted(tag=self.next_tag()).serialize())
-            if self.chatty_teardown:
-                print(f"sent BEHalted to LS {i}")
-                sys.stdout.flush()
-
-        self.gs_input_chan.detach()
-        self.proc_gs_return_chan.destroy()
-
-        for i in range(self.nls):
-            self.names[f"shep_stdin_rh_{i}"].close()
-            self.names[f"shep_stdin_wh_{i}"].close()
-            self.names[f"shep_stdout_rh_{i}"].close()
-            self.names[f"shep_stdout_wh_{i}"].close()
-
-        for i in range(self.nls):
-            self.names[f"ls_dut_{i}"].join()
-
-        self.test_pool.destroy()
-        dutil.compare_dev_shm(self.starting_shm)
-
-    def kill_sleepy_head(self):
-        msg = dmsg.GSProcessKill(
-            tag=self.next_tag(),
-            p_uid=dfacts.LAUNCHER_PUID,
-            r_c_uid=dfacts.BASE_BE_CUID,
-            sig=signal.SIGKILL,
-            t_p_uid=self.head_puid,
-        )
-        self.gs_input_wh.send(msg.serialize())
-
-        # Since the backend can still be receiving messages from LS,
-        # discard its SHFwdOutput messages that still may be in the channel
-        # queue
-        msg = tsu.get_and_parse(self.names["bela_input_rh_0"])
-        while isinstance(msg, dmsg.SHFwdOutput):
-            msg = tsu.get_and_parse(self.names["bela_input_rh_0"])
-
-        if isinstance(msg, dmsg.GSProcessKillResponse):
-            tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSHeadExit)
-        else:
-            self.assertIsInstance(msg, dmsg.GSHeadExit)
-            tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSProcessKillResponse)
-
-    def start_sleepy_head(self, timeout):
-        msg = mk_sleep_msg(timeout, self.next_tag(), p_uid=dfacts.LAUNCHER_PUID, r_c_uid=dfacts.BASE_BE_CUID)
-
-        self.gs_input_wh.send(msg.serialize())
-
-        resp = tsu.get_and_check_type(self.names["bela_input_rh_0"], dmsg.GSProcessCreateResponse)
-
-        self.assertEqual(resp.err, dmsg.GSProcessCreateResponse.Errors.SUCCESS)
-
-        self.head_puid = resp.desc.p_uid
-        dparm.this_process.my_puid = self.head_puid
-
-    @unittest.skip("The teardown behavior is incorrect since SHHaltTA is sent to each node, not just primary.")
-    def test_gs_ls_comm(self):
-        self.start_multi_duts()
-        if self.chatty_teardown:
-            print("Everything is set up. Ready to fire up a few processes.", flush=True)
-        self.start_sleepy_head(self.SLEEPY_HEAD_TIME)
-
-        # create processes
-        # GS will assign the creation of 2 processes to each LS
-        # in a cyclic order
-        procs = []
-        for i in range(2 * self.nls):
-            res = dproc.create(exe="/bin/sleep", run_dir="", args=["1"], env={})
-            procs.append(res.p_uid)
-
-        dproc.multi_join(procs, join_all=True)
-
-        self.kill_sleepy_head()
-
 
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")

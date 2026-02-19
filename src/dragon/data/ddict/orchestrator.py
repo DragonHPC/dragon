@@ -19,18 +19,6 @@ import socket
 import cloudpickle
 import random
 import string
-import os
-import sys
-from pathlib import Path
-from posixpath import basename
-import subprocess
-
-try:
-    import pydaos
-
-    DAOS_EXISTS = True
-except:
-    DAOS_EXISTS = False
 
 from ...utils import b64decode, b64encode
 from ...globalservices import channel
@@ -39,12 +27,13 @@ from ...infrastructure import parameters
 from ...infrastructure import util as dutil
 from ...infrastructure import messages as dmsg
 from ...channels import Channel
+from ...native.queue import Queue
 from ...native.process import ProcessTemplate
 from ...native.process_group import ProcessGroup
 from ...native.machine import Node, System
+from ...native.queue import Queue
 from ...infrastructure.policy import Policy
 from .manager import manager_proc
-from .ddict import PosixCheckpointPersister, DAOSCheckpointPersister, NULLCheckpointPersister
 from ... import fli
 from ...rc import DragonError
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
@@ -64,6 +53,7 @@ class Orchestrator:
         n_nodes,
         total_mem,
         trace,
+        bootstrap_queue,
     ):
         try:
             # Use this connection for the managers to respond to the orchestrator
@@ -87,7 +77,7 @@ class Orchestrator:
             self._serialized_main_connector = b64encode(self._main_connector.serialize())
             self._trace = trace
             # Bootstrapping code. This is read by the client that created the dictionary.
-            print(self._serialized_main_connector, flush=True)
+            bootstrap_queue.put(self._main_connector)
 
             self._serving = True
             self._abnormal_termination = False
@@ -203,17 +193,12 @@ class Orchestrator:
         except Exception as e:
             log.debug("Caught error while removing new pickle file. %s", e)
 
-    def _send_msg(self, resp_msg, connection):
+    def _send_msg(self, msg, connection):
         try:
-            if connection.is_buffered:
-                strm = None
-            else:
-                strm = self._stream_channel
-
-            with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
-                sendh.send_bytes(resp_msg.serialize(), timeout=self._timeout)
+            with connection.sendh(use_main_buffered=True, timeout=self._timeout) as sendh:
+                sendh.send_bytes(msg.serialize(), timeout=self._timeout)
                 if self._trace:
-                    log.info("Sent message %s", resp_msg)
+                    log.info("Sent message %s", msg)
 
         except Exception as e:
             tb = traceback.format_exc()
@@ -296,6 +281,7 @@ class Orchestrator:
             self._persist_count,
             self._persister,
             self._streams_per_manager,
+            self._manager_pool_full_thresh,
         ) = args
 
         # the dictionary is restarted with previous manager pool
@@ -358,6 +344,7 @@ class Orchestrator:
             self._persist_count,
             self._persister,
             self._streams_per_manager,
+            self._manager_pool_full_thresh,
         )
 
         # create managers
@@ -651,10 +638,10 @@ class Orchestrator:
         connection.detach()
 
 
-def start(managers_per_node: int, n_nodes: int, total_mem: int, trace: bool):
+def start(managers_per_node: int, n_nodes: int, total_mem: int, trace: bool, bootstrap_queue: Queue) -> None:
     try:
         log.debug("Initing Orchestrator")
-        orc = Orchestrator(managers_per_node, n_nodes, total_mem, trace)
+        orc = Orchestrator(managers_per_node, n_nodes, total_mem, trace, bootstrap_queue)
         orc.run()
     except Exception as ex:
         tb = traceback.format_exc()

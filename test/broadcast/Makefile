@@ -1,6 +1,6 @@
 CC = gcc
-CFLAGS ?= -fPIC -Wall -Ofast -fomit-frame-pointer
-#CFLAGS ?= -g -fPIC -Wall -O0
+CFLAGS ?= -fPIC -Wall -O3 -ffast-math -fomit-frame-pointer
+# CFLAGS ?= -g -fPIC -Wall -O0
 
 ifeq ($(DRAGON_INCLUDE_DIR),)
     DRAGON_INCLUDE = $(shell dragon-config -o)
@@ -27,10 +27,10 @@ default: build
 build: test_bcast perf_bcast
 
 test_bcast: test_bcast.c.o
-	$(CC) $(INCLUDE) $(CFLAGS) -o test_bcast $< $(LIBS) -lrt -pthread -ldl
+	$(CC) $(INCLUDE) $(CFLAGS) -o test_bcast $< $(LIBS) -pthread -ldl
 
 perf_bcast: perf_bcast.c.o
-	$(CC) $(INCLUDE) $(CFLAGS) -o perf_bcast $< $(LIBS) -lrt -pthread -ldl
+	$(CC) $(INCLUDE) $(CFLAGS) -o perf_bcast $< $(LIBS) -pthread -ldl
 
 clean:
 	rm -rf *.o $(BIN_FILES)

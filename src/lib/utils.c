@@ -14,11 +14,149 @@
 #include <math.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <errno.h>
+
+#ifdef __APPLE__
+#include <sys/sysctl.h>
+#include <mach/thread_policy.h>
+#include <mach/mach.h>
+#include <mach/task_info.h>
+#include <mach/thread_act.h>
+#include <mach/mach_init.h>
+#include <mach/task_policy.h>
+
+int dragon_get_cpu_count() {
+  int numcpus;
+  size_t sizeofint = sizeof(numcpus);
+  if (-1 == sysctlbyname("hw.physicalcpu", &numcpus, &sizeofint, NULL, 0))
+    return -1;
+
+  return numcpus;
+}
+
+int dragon_set_my_task_policy(void) {
+    int ret;
+    struct task_category_policy tcatpolicy;
+
+    /* This makes the process run with more priority which
+       is assumed when running a Dragon program. */
+    tcatpolicy.role = TASK_FOREGROUND_APPLICATION;
+
+    if ((ret=task_policy_set(mach_task_self(),
+        TASK_CATEGORY_POLICY, (thread_policy_t)&tcatpolicy,
+        TASK_CATEGORY_POLICY_COUNT)) != KERN_SUCCESS) {
+            fprintf(stderr, "set_my_task_policy() failed.\n");
+            return 0;
+    }
+    return 1;
+}
+
+void dragon_set_my_core_affinity(char* core_affinities) {
+    char *ptr = core_affinities; // Pointer to traverse the string
+    int core = -1;
+    int core_count = 0;
+
+    while (sscanf(ptr, "%d", &core) == 1) {
+        // Advance the pointer past the scanned integer and any whitespace
+        // This is a simple way; more robust parsing might be needed for complex strings
+        char temp_buffer[20]; // Temporary buffer to store the scanned integer as a string
+        snprintf(temp_buffer, 20, "%d", core); // Convert the integer back to a string
+        unsigned long len = strlen(temp_buffer); // Move pointer past the integer
+        if (len == 19) {
+            fprintf(stderr, "The cpu core chosen had more than 19 digits in the number. It is not a valid number.");
+            exit(-1);
+        }
+        ptr += len;
+
+        // Skip any whitespace characters after the integer
+        while (*ptr != '\0' && (*ptr == ' ' || *ptr == '\t' || *ptr == '\n')) {
+            ptr++;
+        }
+
+        core_count += 1;
+    }
+
+    dragon_set_my_task_policy();
+
+    if (core_count != 1)
+        /* On Mac OS there is no way to set affinity to more than one core. If that is desired,
+           then we don't set affinity and it will default to all cores. Also if no affinity supplied
+           then do nothing. */
+        return;
+
+    thread_affinity_policy_data_t policy = { core };
+    thread_policy_set(mach_thread_self(), THREAD_AFFINITY_POLICY, (thread_policy_t)&policy, THREAD_AFFINITY_POLICY_COUNT);
+}
+
+#else
+
+#include <pthread.h>
+#include <sched.h> // For CPU_SET macros
+
+void dragon_set_my_core_affinity(char* core_affinities) {
+
+    pthread_t thread_id = pthread_self(); // Get current thread ID
+    cpu_set_t cpuset;
+    CPU_ZERO(&cpuset); // Initialize the CPU set
+
+    char *ptr = core_affinities; // Pointer to traverse the string
+    int core = -1;
+    int core_count = 0;
+
+    while (sscanf(ptr, "%d", &core) == 1) {
+        // Advance the pointer past the scanned integer and any whitespace
+        // This is a simple way; more robust parsing might be needed for complex strings
+        char temp_buffer[20]; // Temporary buffer to store the scanned integer as a string
+        snprintf(temp_buffer, 20, "%d", core); // Convert the integer back to a string
+        unsigned long len = strlen(temp_buffer); // Move pointer past the integer
+        if (len == 19) {
+            fprintf(stderr, "The cpu core chosen had more than 19 digits in the number. It is not a valid number.");
+            exit(-1);
+        }
+        ptr += len;
+
+        // Skip any whitespace characters after the integer
+        while (*ptr != '\0' && (*ptr == ' ' || *ptr == '\t' || *ptr == '\n')) {
+            ptr++;
+        }
+
+        CPU_SET(core, &cpuset);
+        core_count += 1;
+    }
+
+    if (core_count == 0)
+        for (int core=0;core<dragon_get_cpu_count();core++)
+            CPU_SET(core, &cpuset);
+
+    int rc = pthread_setaffinity_np(thread_id, sizeof(cpu_set_t), &cpuset);
+
+    if (rc != 0) {
+        fprintf(stderr, "Unable to set core affinity for process. rc=%s\n", strerror(rc));
+        fprintf(stderr, "Number of cores was %d.\n", core_count);
+        fflush(stderr);
+    }
+}
+
+int dragon_get_cpu_count() {
+    long num_processors;
+
+    num_processors = sysconf(_SC_NPROCESSORS_ONLN);
+
+    if (num_processors == -1) {
+        perror("sysconf");
+        return 0;
+    }
+
+    return num_processors;
+}
+
+#endif
 
 #define ONE_BILLION 1000000000
 #define ONE_MILLION 1000000
 #define NSEC_PER_SECOND 1000000000
 #define HUGEPAGE_MOUNT_DIR_MAX_LEN 512
+#define BUF_SIZE 1024
 
 bool dg_enable_errstr = true;
 _Thread_local char * errstr = NULL;
@@ -54,10 +192,11 @@ _append_errstr(char * more_errstr)
     if (errstr == NULL) {
         _set_errstr(more_errstr);
     } else {
-        char * new_errstr = malloc(sizeof(char) * (strlen(errstr) +
+        char * new_errstr = malloc(sizeof(char) * (strlen(errstr) + strlen("\n") +
                                         strnlen(more_errstr, DRAGON_MAX_ERRSTR_REC_LEN) + 1));
         if (new_errstr != NULL) {
             strcpy(new_errstr, errstr);
+            strcat(new_errstr, "\n");
             strncat(new_errstr, more_errstr, DRAGON_MAX_ERRSTR_REC_LEN+1);
             free(errstr);
             errstr = new_errstr;
@@ -110,6 +249,18 @@ void
 dragon_setrawerrstr(char* err_str)
 {
     _set_errstr(err_str);
+}
+
+void
+dragon_replace_errstr(char* new_str)
+{
+    if (errstr != NULL)
+        free(errstr);
+
+    if (new_str == NULL)
+        errstr = NULL;
+    else
+        errstr = new_str;
 }
 
 void
@@ -331,6 +482,7 @@ dragon_get_my_puid()
     return local_get_puid;
 }
 
+
 dragonULInt
 dragon_get_env_var_as_ulint(char* env_key)
 {
@@ -354,7 +506,7 @@ dragon_set_env_var_as_ulint(char* env_key, dragonULInt val)
         err_return(DRAGON_INVALID_ARGUMENT, "Cannot set NULL key");
 
     char env_val[200];
-    snprintf(env_val, 199, "%lu", val);
+    snprintf(env_val, 199, "%" PRIu64 "", val);
 
     int rc = setenv(env_key, env_val, 1);
 
@@ -388,7 +540,12 @@ dragon_set_procname(char * name)
 {
     if (name == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The name argument cannot be NULL.");
+
+#ifndef __APPLE__
     prctl(PR_SET_NAME, (unsigned long)name, 0uL, 0uL, 0uL);
+#else
+    pthread_setname_np(name);
+#endif //__APPLE__
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -407,7 +564,7 @@ char* dragon_uuid_to_hex_str(dragonUUID uuid)
     dragonULInt * uuid_word = (dragonULInt *)uuid;
     char val[40];
     char* ret_str;
-    snprintf(val, 39, "%lx%lx", uuid_word[0], uuid_word[1]);
+    snprintf(val, 39, "%" PRIu64 "x%" PRIu64 "x", uuid_word[0], uuid_word[1]);
     ret_str = malloc(strlen(val)+1);
     if (ret_str == NULL)
         return NULL;
@@ -894,8 +1051,7 @@ dragon_check_dir_rw_permissions(char *dir)
 dragonError_t
 dragon_get_hugepage_mount(char **mount_dir_out)
 {
-    const size_t buf_size = 1024;
-    char buf[buf_size];
+    char buf[BUF_SIZE];
     char *maybe_buf = NULL;
     FILE *mounts_file = NULL;
 
@@ -926,7 +1082,7 @@ dragon_get_hugepage_mount(char **mount_dir_out)
         no_err_return(DRAGON_NOT_FOUND);
     }
 
-    while ((maybe_buf = fgets(buf, buf_size, mounts_file))) {
+    while ((maybe_buf = fgets(buf, BUF_SIZE, mounts_file))) {
         if (strstr(buf, "hugetlbfs") != NULL && strstr(buf, "pagesize=2M") != NULL) {
             // get device (not needed)
             char *tmp_tok = strtok(maybe_buf, " ");

@@ -7,6 +7,7 @@ import signal
 from enum import Enum
 from functools import total_ordering
 from time import sleep
+import traceback as tb
 
 
 from ..utils import B64, host_id as get_host_id, host_id_from_k8s, set_host_id
@@ -406,6 +407,10 @@ class LauncherBackEnd:
         log.info("destroying tcp channels")
         self.infra_out.close()
         log.debug("infra out closed")
+        self.infra_logging_out.close()
+        log.debug("infra logging out closed")
+        self.infra_abnormalterm_out.close()
+        log.debug("infra abnormalterm out closed")
         self.infra_in.close()
         log.debug("infra in closed")
 
@@ -458,7 +463,7 @@ class LauncherBackEnd:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 name="local services",
-                notify_channel=self.infra_out,
+                notify_channel=self.infra_abnormalterm_out,
                 notify_msg=dmsg.AbnormalTermination,
             )
         except Exception as ex:
@@ -619,7 +624,7 @@ class LauncherBackEnd:
             # Create my memory pool
             self.be_mpool = MemoryPool(
                 int(dfacts.DEFAULT_BE_OVERLAY_TRANSPORT_SEG_SZ),
-                f"{os.getuid()}_{os.getpid()}_{self.host_id}" + dfacts.DEFAULT_POOL_SUFFIX,
+                f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(self.host_id)[-3:]}{str(dfacts.DEFAULT_POOL_SUFFIX)[-3:]}",
                 dfacts.be_pool_muid_from_hostid(self.host_id),
             )
             puid, mpool_fname = MemoryPool.serialized_uid_fname(self.be_mpool.serialize())
@@ -649,8 +654,28 @@ class LauncherBackEnd:
             # Connect to frontend
             be_outbound = Channel.attach(frontend_sdesc.decode(), mem_pool=self.be_mpool)
             conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2**16)
-            self.infra_out = Connection(outbound_initializer=be_outbound, options=conn_options, policy=conn_policy)
+
+            # There are three places where we can try to send messages to the frontend:
+            # 1) send_messages_to_overlaynet for normal infrastructure messages
+            # 2) send_log_msgs_to_overlaynet for logging infrastructure messages
+            # 3) within CriticalPopen in the case that local services abnormally terminates
+            # To keep everything consistent, we create three connections that all use
+            # the same be_outbound channel
+
+            self.infra_out = Connection(
+                outbound_initializer=be_outbound, options=conn_options, policy=conn_policy
+            )
             self.infra_out.ghost = True
+
+            self.infra_logging_out = Connection(
+                outbound_initializer=be_outbound, options=conn_options, policy=conn_policy
+            )
+            self.infra_logging_out.ghost = True
+
+            self.infra_abnormalterm_out = Connection(
+                outbound_initializer=be_outbound, options=conn_options, policy=conn_policy
+            )
+            self.infra_abnormalterm_out.ghost = True
 
         except (ChannelError, DragonPoolError, DragonMemoryError) as init_err:
             log.fatal("could not create resources")
@@ -685,11 +710,14 @@ class LauncherBackEnd:
         log.debug(f"standing up tcp agent with gw: {encoded_ser_gw_str}, host_ids={host_ids}, and ip_addrs={ip_addrs}")
         self.dragon_logger = setup_dragon_logging(node_index=0)
 
+        serialized_dragon_logger = self.dragon_logger.serialize()
+        log.debug("%s dragon logger sdesc: %s", self.host_id, B64(serialized_dragon_logger))
+
         try:
             self.tree_proc = start_overlay_network(
                 ch_in_sdesc=B64(self.local_ch_out.serialize()),
                 ch_out_sdesc=B64(self.local_ch_in.serialize()),
-                log_sdesc=B64(self.dragon_logger.serialize()),
+                log_sdesc=B64(serialized_dragon_logger),
                 host_ids=host_ids,
                 ip_addrs=ip_addrs,
                 frontend=False,
@@ -967,21 +995,34 @@ class LauncherBackEnd:
             logger_sdesc (B64): Dragon handle used to attach to the logging channel
             level (int): minimum log priority of messages to forward
         """
-        log = logging.getLogger(dls.LA_BE).getChild("forward_logging_to_FE")
         try:
-            # Set timeout to None which allows better interaction with the GIL
-            while not self._logging_shutdown.is_set():
-                try:
-                    serialized_msg = my_dragon_logger.get(level, timeout=None)
-                    if isinstance(serialized_msg, dmsg.HaltLoggingInfra):
-                        break
-                    elif isinstance(serialized_msg, dmsg.LoggingMsg):
-                        self.infra_out.send(serialized_msg)
-                except Exception:
-                    pass
-            log.debug("exiting send logs loop")
-        except Exception as ex:  # pylint: disable=broad-except
-            log.warning(f"Caught exception {ex} in logging thread")
+            log = logging.getLogger(dls.LA_BE).getChild("forward_logging_to_FE")
+            try:
+                log.debug("starting send_log_msgs_to_overlaynet loop")
+                # Set timeout to None which allows better interaction with the GIL
+                while not self._logging_shutdown.is_set():
+                    try:
+                        serialized_msg = my_dragon_logger.get(level, timeout=None)
+                        msg = dmsg.parse(serialized_msg)
+                        log.debug('got log message of type %s - "%s"', type(msg), msg.msg)
+                        if isinstance(msg, dmsg.HaltLoggingInfra):
+                            break
+                        elif isinstance(msg, dmsg.LoggingMsg):
+                            self.infra_logging_out.send(serialized_msg)
+                        else:
+                            log.debug("unknown message of type %s on logging channel - discarding", type(msg))
+                    except Exception as ex:
+                        log.debug(
+                            "caught exception in logging forwarder: %s with traceback: %s",
+                            ex,
+                            tb.format_exc(),
+                        )
+                        pass
+                log.debug("exiting send logs loop")
+            except Exception as ex:  # pylint: disable=broad-except
+                log.warning(f"Caught exception {ex} in logging thread")
+        finally:
+            log.debug("exiting send_log_msgs_to_overlaynet")
 
     def be_channel_monitor(self, la_in, la_be_stdout):
         """This function (running in a thread) monitors the backend channel

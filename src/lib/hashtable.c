@@ -1132,14 +1132,14 @@ dragon_hashtable_dump_to_fd(FILE* fd, const char* title, const dragonHashtable_t
         err_return(DRAGON_HASHTABLE_NULL_POINTER,"The indent is NULL.");
 
     fprintf(fd, "%s%s\n",indent,title);
-    fprintf(fd, "%sNumber of slots: %lu\n",indent,ht->header.num_slots);
-    fprintf(fd, "%sCapacity: %lu\n", indent, stats.capacity);
-    fprintf(fd, "%sFilled slots: %lu\n", indent, *ht->header.num_kvs);
+    fprintf(fd, "%sNumber of slots: %" PRIu64 "\n",indent,ht->header.num_slots);
+    fprintf(fd, "%sCapacity: %" PRIu64 "\n", indent, stats.capacity);
+    fprintf(fd, "%sFilled slots: %" PRIu64 "\n", indent, *ht->header.num_kvs);
     fprintf(fd, "%sLoad Factor: %f\n", indent, stats.load_factor);
-    fprintf(fd, "%sKey length: %lu\n", indent, ht->header.key_len*sizeof(uint64_t));
-    fprintf(fd, "%sValue length: %lu\n", indent, ht->header.value_len*sizeof(uint64_t));
+    fprintf(fd, "%sKey length: %" PRIu64 "\n", indent, ht->header.key_len*sizeof(uint64_t));
+    fprintf(fd, "%sValue length: %" PRIu64 "\n", indent, ht->header.value_len*sizeof(uint64_t));
     fprintf(fd, "%sAverage Chain Length: %f\n", indent, stats.avg_chain_length);
-    fprintf(fd, "%sMaximum Chain Length: %lu\n", indent, stats.max_chain_length);
+    fprintf(fd, "%sMaximum Chain Length: %" PRIu64 "\n", indent, stats.max_chain_length);
 
     dragon_bitset_dump_to_fd(fd, "Allocated Slots", &ht->allocated, indent);
     dragon_bitset_dump_to_fd(fd, "Placeholder Slots", &ht->placeholder, indent);
