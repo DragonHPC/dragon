@@ -8,7 +8,9 @@ from uuid import uuid4
 from dragon.transport.tcp import errno
 from dragon.transport.tcp import messages
 from dragon.transport.tcp import transport
+from dragon.transport.tcp import io as tcp_io
 
+from test_messages import GWMessageStub
 
 def setUpModule():
     """Disable logging while running these tests."""
@@ -32,7 +34,7 @@ class TestMessages:
             channel_sd=b"channel desc",
             return_mode=messages.SendReturnMode.WHEN_BUFFERED,
             sendhid=uuid4(),
-            payload=b"payload",
+            payload=tcp_io.Payload(GWMessageStub(b"payload")),
             clientid=0,
             hints=0,
         )

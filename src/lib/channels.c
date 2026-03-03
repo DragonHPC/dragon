@@ -3578,12 +3578,6 @@ dragon_chsend_close(dragonChannelSendh_t* ch_sh)
     if (ch_sh == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid channel send handle");
 
-    /* make sure the channel from this descriptor is valid */
-    dragonChannel_t* channel;
-    dragonError_t err = _channel_from_descr(&ch_sh->_ch, &channel);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "invalid channel descriptor");
-
     /* check if the channel is actually opened */
     if (ch_sh->_opened == 0)
         err_return(DRAGON_CHANNEL_SEND_NOT_OPENED, "cannot close handle that is not opened");

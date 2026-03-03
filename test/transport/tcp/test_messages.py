@@ -6,6 +6,7 @@ from uuid import uuid4
 
 from dragon.transport.tcp import messages
 from dragon.transport.tcp import transport
+from dragon.transport.tcp import io as tcp_io
 from dragon.transport.tcp.util import seconds_remaining
 
 
@@ -75,6 +76,13 @@ class TransmittableTestCase(unittest.IsolatedAsyncioTestCase):
         data = await self.reader.read()
         self.assertEqual(data, self.data)
 
+class TransmittablePayloadTestCase(TransmittableTestCase):
+
+    async def test_read(self):
+        async with self.drain_and_close_writer() as w:
+            w.write(self.data)
+        req = await messages.read_message(self.reader)
+        self.assertEqual(req.payload, self.msg.payload.data)
 
 class HelloTestCase(TransmittableTestCase):
 
@@ -91,8 +99,23 @@ class Hello6TestCase(TransmittableTestCase):
         cls.msg = messages.Hello6(ip_address("::1"), 8888)
         cls.data = b'\x60\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"\xb8'
 
+class GWMessageStub:
+    # This is needed to emulate the look and feel of a GatewayMessage
+    # for this test case harness.
+    def __init__(self, data):
+        self._data = data
 
-class SendRequestTestCase(TransmittableTestCase):
+    @property
+    def send_payload_message(self):
+        return self._data
+
+    def mark_payload_sent(self):
+        pass
+
+    def destroy(self):
+        pass
+
+class SendRequestTestCase(TransmittablePayloadTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -102,7 +125,7 @@ class SendRequestTestCase(TransmittableTestCase):
             channel_sd=b"channel desc",
             return_mode=messages.SendReturnMode.WHEN_BUFFERED,
             sendhid=uuid4(),
-            payload=b"payload",
+            payload=tcp_io.Payload(GWMessageStub(b"payload")),
             hints=0,
             clientid=0,
         )
@@ -113,7 +136,7 @@ class SendRequestTestCase(TransmittableTestCase):
         )
 
 
-class SendMemoryRequestTestCase(TransmittableTestCase):
+class SendMemoryRequestTestCase(TransmittablePayloadTestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -123,7 +146,7 @@ class SendMemoryRequestTestCase(TransmittableTestCase):
             channel_sd=b"channel desc",
             return_mode=messages.SendReturnMode.WHEN_BUFFERED,
             sendhid=uuid4(),
-            payload=b"payload",
+            payload=tcp_io.Payload(GWMessageStub(b"payload")),
             mem_sd=b"memory desc",
             clientid=0,
             hints=0,

@@ -20,25 +20,7 @@ from dragon.ai.inference.config import (
     DynamicWorkerConfig,
 )
 
-
-class MockTelemetry:
-    """Simple mock for dragon telemetry.
-
-    Tracks add_data calls for test assertions.
-    """
-
-    def __init__(self):
-        self.data = {}
-        self.add_data_calls = []
-
-    def add_data(self, key, value):
-        self.data[key] = value
-        self.add_data_calls.append((key, value))
-
-    def assert_any_call(self, key, value):
-        """Check if add_data was called with specific key-value pair."""
-        if (key, value) not in self.add_data_calls:
-            raise AssertionError(f"add_data was not called with ({key!r}, {value!r})")
+from .mocks import MockTelemetry
 
 
 class TestInferenceWorkerInit(TestCase):

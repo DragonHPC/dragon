@@ -11,7 +11,7 @@ else
 endif
 
 CC=gcc
-DRAGON=DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon
+DRAGON=DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s
 
 CFLAGS  = -g  -pedantic -Wall -I ${CRAY_MPICH_DIR}/include -L ${CRAY_MPICH_DIR}/lib
 LD_FLAGS = -lm -L ${CRAY_MPICH_DIR}/lib -lmpich

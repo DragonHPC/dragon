@@ -311,7 +311,7 @@ lower performing TCP transport agent for backend network communication.
                         if isinstance(msg, dmsg.BEHalted):
                             log.debug("Breaking due to BEHalted")
                             break
-                        elif type(msg) in LauncherFrontEnd._DTBL:
+                        elif type(msg) in self._DTBL:
                             log.debug("routing message of type %s", type(msg))
                             self._DTBL[type(msg)][0](self, msg=msg)
                         else:
@@ -501,6 +501,25 @@ lower performing TCP transport agent for backend network communication.
     def _close_comm_overlaynet(self, abnormal=False):
         log = logging.getLogger(dls.LA_FE).getChild("_close_comm_overlaynet")
 
+        try:
+            while self.conn_in.poll():
+                # Empty the connection first. There may be log messages
+                # in it still after the head process exits. Emptying it
+                # allows the stream transport to exit below if it should
+                # be stuck in a send because the channel was full. Otherwise
+                # if the channel is full, the transport will not cleanly exit.
+                msg = dlutil.get_with_timeout(self.conn_in, timeout=self._sigint_timeout)
+                if type(msg) in LauncherFrontEnd._DTBL:
+                    log.debug("routing message of type %s during cleanup", type(msg))
+                    self._DTBL[type(msg)][0](self, msg=msg)
+                else:
+                    log.info("Message discarded after head process exit: %s", type(msg))
+
+        except Exception:
+            pass
+        finally:
+            self.conn_in.close()
+
         # Close the overlay tree agent
         try:
             log.info("shutting down frontend overlay tree agent")
@@ -512,11 +531,6 @@ lower performing TCP transport agent for backend network communication.
                 self.over_proc.kill()
             else:
                 raise
-
-        try:
-            self.conn_in.close()
-        except Exception:
-            pass
 
         try:
             self.conn_in_bd.close()

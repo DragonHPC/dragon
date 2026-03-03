@@ -308,6 +308,7 @@ cdef extern from "<dragon/channels.h>":
     dragonError_t dragon_channel_create(dragonChannelDescr_t * ch, const dragonC_UID_t c_uid,
                                                dragonMemoryPoolDescr_t * pool_descr, const dragonChannelAttr_t * attr) nogil
     dragonError_t dragon_channel_destroy(dragonChannelDescr_t * ch) nogil
+    dragonError_t dragon_channel_notify_on_destroy(dragonChannelDescr_t* ch) nogil
     dragonError_t dragon_channel_serialize(const dragonChannelDescr_t * ch, dragonChannelSerial_t * ch_ser) nogil
     dragonError_t dragon_channel_serial_free(dragonChannelSerial_t * ch_ser) nogil
     dragonError_t dragon_channel_attach(const dragonChannelSerial_t * ch_ser, dragonChannelDescr_t * ch) nogil

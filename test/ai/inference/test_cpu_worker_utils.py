@@ -22,11 +22,7 @@ from dragon.ai.inference.config import (
     DynamicWorkerConfig,
 )
 
-
-class MockTelemetry:
-    """Simple mock for dragon telemetry (external dependency for metrics)."""
-
-    pass
+from .mocks import MockTelemetry
 
 
 class TestCPUWorkerInit(TestCase):

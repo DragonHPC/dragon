@@ -20,11 +20,19 @@ extern "C" {
 static const int DRAGON_MEMORY_TEMPORARY_TIMEOUT_SECS = DRAGON_MEMORY_TEMPORARY_TIMEOUT_CONST;
 static const timespec_t DRAGON_MEMORY_TEMPORARY_TIMEOUT = {DRAGON_MEMORY_TEMPORARY_TIMEOUT_CONST,0};
 
+/** @defgroup managed_memory_constants Managed Memory Constants
+ *
+ *  The managed memory constants.
+ *  @{
+ */
+
 /**
- * TODO: update this.
  * @brief The type of memory pool.
  *
- * For future use. Currently, the only valid value is DRAGON_MEMORY_TYPE_SHM.
+ * The type of the memory pool. SHM, HUGEPAGE, and GPU
+ * are the types currently support. FILE and PRIVATE are
+ * for possible future use.
+ *
 */
 typedef enum dragonMemoryPoolType_st {
     DRAGON_MEMORY_TYPE_SHM = 0,
@@ -59,6 +67,14 @@ typedef enum dragonMemoryAllocationType_st {
     DRAGON_MEMORY_ALLOC_BOOTSTRAP /* This may be used as a special type for user-specified data.
                                      It makes it possible to retrieve a set of special allocations. */
 } dragonMemoryAllocationType_t;
+
+/** @} */ // end of managed_memory_constants group.
+
+/** @defgroup managed_memory_structs Managed Memory Structures
+ *
+ *  The managed memory structures.
+ *  @{
+ */
 
 /** @brief The attributes of the Dragon Memory Pool.
  *
@@ -282,6 +298,8 @@ typedef struct dragonHeapStatsAllocationItem_st {
     /*!< The number of blocks of this size that are free. */
 
 } dragonHeapStatsAllocationItem_t;
+
+/** @} */ // end of managed_memory_structs group.
 
 dragonError_t
 dragon_memory_attr_init(dragonMemoryPoolAttr_t * attr);

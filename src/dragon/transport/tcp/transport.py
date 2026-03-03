@@ -17,10 +17,9 @@ from .errno import *
 from .messages import *
 from .task import TaskMixin, run_forever
 from .util import unget_nowait
-
+from .io import Payload
 
 LOGGER = logging.getLogger("dragon.transport.tcp.transport")
-
 
 @dataclass(frozen=True)
 class Address:
@@ -147,7 +146,7 @@ class Transport:
         :param resp: `Response` message to send
         :param addr: Recipient `Address`
         """
-        LOGGER.debug(f"Writing response to {addr}: {resp}")
+        LOGGER.debug(f"Writing response to {addr}")
         self._handle_send(resp, addr)
 
     def _handle_send(self, msg: TransportMessage, addr: Address, /) -> None:
@@ -196,7 +195,7 @@ class Transport:
     @_handle_recv.register
     def _(self, resp: Response, addr: Address, /) -> None:
         """Handle a `Response`."""
-        LOGGER.debug(f"Received response from {addr}: {resp}")
+        LOGGER.debug(f"Received response from {addr}")
         try:
             fut = self._responses.pop(resp.seqno)
         except KeyError:
@@ -211,7 +210,7 @@ class Transport:
     @_handle_recv.register
     def _(self, req: Request, addr: Address, /) -> None:
         """ "Handle a `Request."""
-        LOGGER.debug(f"Received request from {addr}: {req}")
+        LOGGER.debug(f"Received request from {addr}")
         # Protect against inadvertant replays by checking the last seqno from
         # each address.
         if req.seqno <= self._last_request[addr]:
@@ -807,7 +806,7 @@ if __name__ == "__main__":
                 channel_sd=b"channel desc",
                 return_mode=choice(list(SendReturnMode)),
                 sendhid=uuid4().bytes,
-                payload=b"payload",
+                payload=Payload(GWMessageStub(b"payload")),
                 mem_sd=b"memory desc",
             )
             fut = transport.write_request(req, to_addr)

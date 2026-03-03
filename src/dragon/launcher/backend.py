@@ -662,9 +662,7 @@ class LauncherBackEnd:
             # To keep everything consistent, we create three connections that all use
             # the same be_outbound channel
 
-            self.infra_out = Connection(
-                outbound_initializer=be_outbound, options=conn_options, policy=conn_policy
-            )
+            self.infra_out = Connection(outbound_initializer=be_outbound, options=conn_options, policy=conn_policy)
             self.infra_out.ghost = True
 
             self.infra_logging_out = Connection(

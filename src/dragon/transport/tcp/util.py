@@ -3,9 +3,9 @@ from collections.abc import Generator
 from contextlib import contextmanager
 import math
 import time
-from typing import Any, Optional, Union
+from typing import Any, Optional, Union, Callable
 
-from ...channels import Channel, ChannelRecvH, ChannelSendH, Message, PollResult
+from ...channels import Channel, ChannelRecvH, ChannelSendH, Message, PollResult, EventType
 from ...managed_memory import MemoryAlloc, MemoryPool
 from ...dtypes import WaitMode, DEFAULT_WAIT_MODE
 
@@ -19,7 +19,7 @@ def unget_nowait(self: Queue, item: Any) -> None:
     incremented.  As a result, do NOT call task_done() for a requeued item.
 
     Raises QueueFull if the queue is at max size and the item cannot be
-    requeued.
+    requeued
     """
     if self.full():
         raise QueueFull
@@ -131,7 +131,7 @@ def attach_channel(sdesc: bytes) -> Generator[Channel, None, None]:
 
 
 @contextmanager
-def open_handle(h: Union[ChannelRecvH, ChannelSendH]) -> Generator[Union[ChannelRecvH, ChannelSendH], None, None]:
+def open_recv_handle(h: Union[ChannelRecvH, ChannelSendH]) -> Generator[Union[ChannelRecvH, ChannelSendH], None, None]:
     h.open()
     try:
         yield h
@@ -145,12 +145,15 @@ def send_msg(
     hints: int,
     payload: bytes,
     deadline: float,
+    sendhid: bytes,
+    get_send_handle: Callable[[Channel, int, WaitMode], ChannelSendH],
     mem_sd: Optional[bytes] = None,
     copy_on_send: bool = False,
     wait_mode: WaitMode = DEFAULT_WAIT_MODE,
 ) -> None:
     # TODO Should we cache attached channels and open handles?
-    with attach_channel(channel_sdesc) as ch, open_handle(ch.sendh(wait_mode=wait_mode)) as h:
+    with attach_channel(channel_sdesc) as ch:
+        h = get_send_handle(ch, sendhid, wait_mode)
         msg = create_msg(payload, clientid, hints, ch, deadline, mem_sd)
         timeout, _ = seconds_remaining(deadline)
 
@@ -163,7 +166,7 @@ def send_msg(
 
 def recv_msg(channel_sdesc: bytes, deadline: float, wait_mode: WaitMode = DEFAULT_WAIT_MODE) -> Message:
     # TODO Should we cache attached channels and open handles?
-    with attach_channel(channel_sdesc) as ch, open_handle(ch.recvh(wait_mode=wait_mode)) as h:
+    with attach_channel(channel_sdesc) as ch, open_recv_handle(ch.recvh(wait_mode=wait_mode)) as h:
         timeout, _ = seconds_remaining(deadline)
         msg = h.recv(timeout=timeout)
         clientid = msg.clientid
@@ -173,10 +176,27 @@ def recv_msg(channel_sdesc: bytes, deadline: float, wait_mode: WaitMode = DEFAUL
         return clientid, hints, py_view
 
 
-def poll_channel(channel_sdesc: bytes, event_mask: int, deadline: float) -> (bool, int):
-    # TODO Should we cache attached channels and open handles?
+def poll_channel(
+    channel_sdesc: bytes, event_mask: int, deadline: float, close_send_handles: Callable[[int], None]
+) -> (bool, int):
+    # First check the event mask and if it is CHANNEL_CLEANUP,
+    # no actual poll operation is done in this case. This type
+    # of event is forwarded from the client.py TCP code to the
+    # server on the same node. In this case, the server is told
+    # it can safely clean up any open send handles since the
+    # underlying channel has been destroyed.
+    if event_mask == EventType.CHANNEL_CLEANUP:
+        cuid = Channel.serialized_uid(channel_sdesc)
+        close_send_handles(cuid)
+        result = PollResult(0, 0)
+        ok = True
+        send_resp = False
+        return send_resp, ok, result
+
+    # else it is a real poll event so do it.
     with attach_channel(channel_sdesc) as ch:
         result = PollResult()
         timeout, _ = seconds_remaining(deadline)
         ok = ch.poll(timeout=timeout, event_mask=event_mask, poll_result=result)
-        return ok, result
+        send_resp = True
+        return send_resp, ok, result

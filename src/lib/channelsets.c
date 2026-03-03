@@ -137,6 +137,12 @@ _set_thread_local_mode_channelsets(bool set_thread_local)
 
 // BEGIN USER API
 
+/** @defgroup channelset_api
+ *  ChannelSet API
+ *  @{
+ */
+
+
 /** @brief Initialize a ChannelSet attributes structure
  *
  *  When overriding default ChannelSet attributes, call this first to initialize the
@@ -695,3 +701,5 @@ dragon_channelset_reset(dragonChannelSetDescr_t* chset_descr)
 
     return DRAGON_SUCCESS;
 }
+
+/** @} */ // end of channelset_api.

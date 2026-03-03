@@ -8,7 +8,7 @@ from ...dtypes import WaitMode, DEFAULT_WAIT_MODE
 from ...infrastructure.node_desc import NodeDescriptor
 
 from .errno import get_errno, DRAGON_TIMEOUT
-from .io import UUIDBytesIO
+from .io import UUIDBytesIO, Payload
 from .messages import (
     ErrorResponse,
     EventRequest,
@@ -71,7 +71,7 @@ class Client(TaskMixin):
 
                     # Try to complete the gateway message with the error
                     try:
-                        msg.complete_error(get_errno(e))
+                        msg.error_complete(get_errno(e))
                     except:
                         LOGGER.exception("Failed to complete gateway message with error")
 
@@ -179,18 +179,27 @@ class Client(TaskMixin):
                 # Inidicate local transport address (i.e., myself)
                 addr = self.transport.addr
             # Handle response and complete the gateway message
-            try:
-                await self.handle_response(resp, addr, msg)
-            except BaseException:
-                LOGGER.exception(f"Error handling response to gateway message: {msg}")
-            finally:
-                # Set the I/O event on the response. Critical for properly
-                # handling RecvResponse messages when the transport does NOT use
-                # write_message() and read_message() to handle message I/O,
-                # e.g., Transport.
-                resp._io_event.set()
+            if msg.is_event_kind and msg.event_mask == EventType.CHANNEL_CLEANUP:
+                # We don't get responses to these channel cleanup events
+                pass
+            else:
+                # For all other's, wait for the response to the request.
+                try:
+                    await self.handle_response(resp, addr, msg)
+                except BaseException:
+                    LOGGER.exception(f"Error handling response to gateway message: {msg}")
+                finally:
+                    # Set the I/O event on the response. Critical for properly
+                    # handling RecvResponse messages when the transport does NOT use
+                    # write_message() and read_message() to handle message I/O,
+                    # e.g., Transport.
+                    resp._io_event.set()
         finally:
-            # Destroy the gateway message
+            # If this is a sendmsg then the destroy call will only complete
+            # if the payload has also been sent (which the msg keeps track of).
+            # Otherwise, it will just return silently. Regardless of message type,
+            # (send, recv, or event) the complete method must be called for the
+            # message to be destroyed. Again, it will be silently ignored if not.
             msg.destroy()
 
     @singledispatchmethod
@@ -205,7 +214,7 @@ class Client(TaskMixin):
             LOGGER.error(f"Request {resp.seqno} errored: {resp.errno}: {resp.text}")
         # Need to complete the message in order to pass back the response's
         # error code.
-        msg.complete_error(resp.errno)
+        msg.error_complete(resp.errno)
 
     @handle_response.register
     async def _(self, resp: SendResponse, addr: Address, msg: GatewayMessage) -> None:
@@ -229,7 +238,7 @@ class Client(TaskMixin):
             )
         except BaseException as e:
             try:
-                msg.complete_error(get_errno(e))
+                msg.error_complete(get_errno(e))
             except:
                 LOGGER.exception("Failed to complete gateway message with error")
             raise e
@@ -257,7 +266,7 @@ def create_request(msg: GatewayMessage) -> Request:
         sendhid = UUIDBytesIO.decode(msg.send_payload_message_attr_sendhid)
         clientid = msg.send_payload_message_attr_clientid
         hints = msg.send_payload_message_attr_hints
-        payload = bytes(msg.send_payload_message)
+        payload = Payload(msg)
         mem_sd = msg.send_dest_mem_descr_ser
         if mem_sd is None:
             cls = partial(
@@ -281,8 +290,6 @@ def create_request(msg: GatewayMessage) -> Request:
     elif msg.is_get_kind:
         cls = RecvRequest
     elif msg.is_event_kind:
-        if msg.event_mask == EventType.CHANNEL_CLEANUP:
-            return None  # Ignore these events in TCP transport.
         cls = partial(EventRequest, mask=msg.event_mask)
     else:
         raise ValueError("Unknown kind of gateway message")

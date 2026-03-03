@@ -207,7 +207,7 @@ class StreamTransportConnectionTestCase(TestMessages, unittest.IsolatedAsyncioTe
                 await transport.close_writer(writer)
 
             req, addr = await self.transport.read_request()
-            self.assertEqual(req, client_req)
+            self.assertEqual(req.payload, client_req.payload.data)
             self.assertEqual(addr, client_addr)
         finally:
             await self.transport.stop()
@@ -241,7 +241,7 @@ class StreamTransportConnectionTestCase(TestMessages, unittest.IsolatedAsyncioTe
             try:
                 await self.transport._open_connection(self.transport.addr)
                 req, addr = await self.transport.read_request()
-                self.assertEqual(req, server_req)
+                self.assertEqual(req.payload, server_req.payload.data)
                 self.assertEqual(addr, server_addr)
             finally:
                 await self.transport.close()

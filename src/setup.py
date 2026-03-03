@@ -192,5 +192,6 @@ if __name__ == "__main__":
             "paramiko>=3.5.1",
             "flask-jwt-extended>=4.7.1",
             "networkx",
+            "setuptools>=75.6.0",
         ],
     )

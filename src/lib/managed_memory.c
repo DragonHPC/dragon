@@ -601,8 +601,6 @@ _create_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPool
     no_err_return(DRAGON_SUCCESS);
 }
 
-
-
 static dragonError_t
 _unmap_manifest_shm(dragonMemoryPool_t * pool)
 {
@@ -621,7 +619,6 @@ _unmap_manifest_shm(dragonMemoryPool_t * pool)
        It would reset the backtrace string and we want the original problem. */
     return DRAGON_SUCCESS;
 }
-
 
 static dragonError_t
 _free_gpu_data(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
@@ -1376,8 +1373,12 @@ dragon_memory_set_debug_flag(int the_flag) {
     BEGIN USER API
    ----------------------------------------------------------------------------- */
 
+/** @defgroup managed_memory_pool_lifecycle Managed Memory Pool Lifecycle Functions
+ *  @{
+ */
+
 /**
- * @brief Initialze memory pool attributes.
+ * @brief Initialize memory pool attributes.
  *
  * Memory pools have attributes that can be specified to customize the behavior
  * and characteristics of the memory pool. Call this method first to initialize
@@ -1809,237 +1810,6 @@ dragon_memory_pool_destroy(dragonMemoryPoolDescr_t * pool_descr)
     /* finally free the base object */
     free(pool->mname);
     free(pool);
-
-    no_err_return(DRAGON_SUCCESS);
-}
-
-/**
- * @brief Register the pool with a GPU from the current process.
- *
- * Registers the memory pool with the GPU so that it is pinned and allows
- * for faster memcpys between the host and a GPU device.
- * @param pool_descr is a valid pool descriptor for the pool in question.
- *
- * @return DRAGON_SUCCESS or an error code.
-
-*/
-dragonError_t
-dragon_memory_pool_process_local_register_with_gpu(dragonMemoryPoolDescr_t * pool_descr)
-{
-    dragonMemoryPool_t * pool;
-    dragonError_t err = _pool_from_descr(pool_descr, &pool);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "invalid pool descriptor");
-
-    if (pool->local_dptr == NULL) // Not Local
-        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "Cannot register a non-local pool with a GPU");
-
-    // get a GPU handle and setup a cuda context if it hasn't been done yet
-    err = dragon_gpu_setup(gpu_backend_type, *(pool->header.gpu_device_id), &dragon_gpu_handle);
-    if (err != DRAGON_SUCCESS)
-        err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
-
-    err = dragon_gpu_host_register(dragon_gpu_handle, pool->local_dptr, *(pool->header.total_data_size));
-    if (err != DRAGON_SUCCESS) {
-        err_return(DRAGON_MEMORY_ERRNO, "failed to register host memory with GPU");
-    }
-    no_err_return(DRAGON_SUCCESS);
-}
-
-/**
- * @brief Unregister the pool with a GPU from the current process.
- *
- * Unregisters a memory pool that was previously registered.
- *
- * @param pool_descr is a valid pool descriptor for the pool in question.
- *
- * @return DRAGON_SUCCESS or an error code.
-*/
-dragonError_t
-dragon_memory_pool_process_local_unregister_with_gpu(dragonMemoryPoolDescr_t * pool_descr)
-{
-    dragonMemoryPool_t * pool;
-    dragonError_t err = _pool_from_descr(pool_descr, &pool);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "invalid pool descriptor");
-
-    if (pool->local_dptr == NULL) // Not Local
-        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "Cannot register a non-local pool with a GPU");
-
-    err = dragon_gpu_setup(gpu_backend_type, *(pool->header.gpu_device_id), &dragon_gpu_handle);
-    if (err != DRAGON_SUCCESS)
-        err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
-
-    err = dragon_gpu_host_unregister(dragon_gpu_handle, pool->local_dptr);
-    if (err != DRAGON_SUCCESS) {
-        err_return(DRAGON_MEMORY_ERRNO, "failed to register host memory with GPU");
-    }
-    no_err_return(DRAGON_SUCCESS);
-}
-
-/**
- * @brief Get the hostid of the host where this pool resides.
- *
- * The hostid of the pool can be used for identifying the location of this pool
- * within the Dragon run-time nodes. It identifies the node where this pool
- * exists.
- *
- * @param pool_descr is a valid pool descriptor for the pool in question.
- * @param hostid is a pointer to the location where the hostid will be copied by this
- * function call.
- *
- * @return DRAGON_SUCCESS or an error code.
- */
-dragonError_t
-dragon_memory_pool_get_hostid(dragonMemoryPoolDescr_t * pool_descr, dragonULInt * hostid)
-{
-    dragonMemoryPool_t * pool;
-    dragonError_t err = _pool_from_descr(pool_descr, &pool);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "invalid pool descriptor");
-
-    if (hostid == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "The host_id pointer cannot be null");
-
-    if (pool->local_dptr != NULL)
-        /* local pool */
-        *hostid = *pool->header.hostid;
-    else
-        *hostid = pool->remote.hostid;
-
-    no_err_return(DRAGON_SUCCESS);
-}
-
-/**
- * @brief Determine if a pool is hosted in the local runtime.
- *
- * @param pool_descr is a valid pool descriptor for the pool in question.
- * @param runtime_is_local is a boolean indicating if the pool is hosted in the local runtime.
- *
- * @return DRAGON_SUCCESS or an error code.
- */
-dragonError_t
-dragon_memory_pool_runtime_is_local(dragonMemoryPoolDescr_t *pool_descr, bool *runtime_is_local)
-{
-    dragonMemoryPool_t *pool = NULL;
-
-    dragonError_t err = _pool_from_descr(pool_descr, &pool);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "invalid pool descriptor");
-
-    *runtime_is_local = pool->runtime_is_local;
-
-    return err;
-}
-
-/**
- * @brief Get the runtime unique id (rt_uid) for a pool.
- *
- * @param pool_descr is a valid pool descriptor for the pool in question.
- * @param rt_uid is the unique value used to identify a runtime. The value is composed
- * of two IP addresses: the internet IP address of the login node of the system hosting
- * the runtime, and the intranet IP address of the head node for the runtime.
- *
- * @return DRAGON_SUCCESS or an error code.
- */
-dragonError_t
-dragon_memory_pool_get_rt_uid(dragonMemoryPoolDescr_t *pool_descr, dragonRT_UID_t *rt_uid)
-{
-    dragonMemoryPool_t *pool = NULL;
-
-    dragonError_t err = _pool_from_descr(pool_descr, &pool);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "invalid pool descriptor");
-
-    if (pool->runtime_is_local) {
-        *rt_uid = dragon_get_local_rt_uid();
-    } else {
-        *rt_uid = pool->remote.rt_uid;
-    }
-
-    no_err_return(DRAGON_SUCCESS);
-}
-
-/**
- * @brief Get meta information about a memory pool.
- *
- * Retrieve memory pool m_uid and optionally the filename of the pool without needing to attach
- * to the pool. If *m_uid* is not NULL it will copy the m_uid of the pool into the space it points
- * to. If *filename* is not NULL it will copy the filename of the pool using :c:func:`strdup()`:.
- * It is up to the caller to free the space *filename* points to in this case.
- *
- * @param m_uid is a pointer to space where the m_uid can be copied or NULL if it is not needed.
- * @param filename is a pointer to a character pointer which will be initialized to point to to the
- * pool's filename unless NULL was provided in which case the filename copy is not performed.
- *
- * @return DRAGON_SUCCESS or error code
- */
-dragonError_t
-dragon_memory_pool_get_uid_fname(const dragonMemoryPoolSerial_t * pool_ser, dragonULInt * m_uid, char ** filename)
-{
-    if (pool_ser == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "pool serializer is NULL");
-
-    if (m_uid != NULL) {
-        *m_uid = *(dragonULInt*)pool_ser->data;
-    }
-
-    if (filename != NULL) {
-        dragonULInt * ptr = (dragonULInt*)pool_ser->data;
-        ptr += 5; // skip id, host_id, runtime ip addrs, mem_type, manifest_len
-        *filename = strdup((char*)ptr);
-    }
-
-    no_err_return(DRAGON_SUCCESS);
-}
-
-/**
- * @brief Discover whether a pool is local or not.
- *
- * Return true if the memory pool is on the current node and false, otherwise.
- * Occassionally, it is necessary to know if a memory pool is local to a node
- * when serialized descriptors are passed around.
- *
- * @return true if is is local and false otherwise.
- */
-bool
-dragon_memory_pool_is_local(dragonMemoryPoolDescr_t * pool_descr)
-{
-    dragonMemoryPool_t * pool;
-    dragonError_t err = _pool_from_descr(pool_descr, &pool);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "invalid pool descriptor");
-
-    /* check if the pool is local */
-    if (pool->local_dptr == NULL)
-        return false;
-
-    return true;
-}
-
-/** @brief Make a copy of a memory pool descriptor.
- *
- * Does a copy from *oldpool_descr* into *newpool_descr* providing a
- * clone of the original.
- *
- * @param newpool_descr is the newly cloned descriptor.
- * @param oldpool_descr is the original pool descriptor.
- *
- * @returns DRAGON_SUCCESS or an error code.
- */
-dragonError_t
-dragon_memory_pool_descr_clone(dragonMemoryPoolDescr_t * newpool_descr, const dragonMemoryPoolDescr_t * oldpool_descr)
-{
-    /* Check that the given descriptor points to a valid pool */
-    dragonMemoryPool_t * pool;
-    dragonError_t err = _pool_from_descr(oldpool_descr, &pool);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "invalid pool descriptor");
-
-    /* update the new one */
-    newpool_descr->_rt_idx = oldpool_descr->_rt_idx;
-    newpool_descr->_idx = oldpool_descr->_idx;
-    newpool_descr->_original = 0;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2531,6 +2301,243 @@ dragon_memory_pool_serial_free(dragonMemoryPoolSerial_t * pool_ser)
     no_err_return(DRAGON_SUCCESS);
 }
 
+/** @} */ // end of group.
+
+/** @defgroup managed_memory_pool_functionality Managed Memory Pool Functionality
+ *  @{
+ */
+
+/**
+ * @brief Register the pool with a GPU from the current process.
+ *
+ * Registers the memory pool with the GPU so that it is pinned and allows
+ * for faster memcpys between the host and a GPU device.
+ * @param pool_descr is a valid pool descriptor for the pool in question.
+ *
+ * @return DRAGON_SUCCESS or an error code.
+
+*/
+dragonError_t
+dragon_memory_pool_process_local_register_with_gpu(dragonMemoryPoolDescr_t * pool_descr)
+{
+    dragonMemoryPool_t * pool;
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    if (pool->local_dptr == NULL) // Not Local
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "Cannot register a non-local pool with a GPU");
+
+    // get a GPU handle and setup a cuda context if it hasn't been done yet
+    err = dragon_gpu_setup(gpu_backend_type, *(pool->header.gpu_device_id), &dragon_gpu_handle);
+    if (err != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
+
+    err = dragon_gpu_host_register(dragon_gpu_handle, pool->local_dptr, *(pool->header.total_data_size));
+    if (err != DRAGON_SUCCESS) {
+        err_return(DRAGON_MEMORY_ERRNO, "failed to register host memory with GPU");
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Unregister the pool with a GPU from the current process.
+ *
+ * Unregisters a memory pool that was previously registered.
+ *
+ * @param pool_descr is a valid pool descriptor for the pool in question.
+ *
+ * @return DRAGON_SUCCESS or an error code.
+*/
+dragonError_t
+dragon_memory_pool_process_local_unregister_with_gpu(dragonMemoryPoolDescr_t * pool_descr)
+{
+    dragonMemoryPool_t * pool;
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    if (pool->local_dptr == NULL) // Not Local
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "Cannot register a non-local pool with a GPU");
+
+    err = dragon_gpu_setup(gpu_backend_type, *(pool->header.gpu_device_id), &dragon_gpu_handle);
+    if (err != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
+
+    err = dragon_gpu_host_unregister(dragon_gpu_handle, pool->local_dptr);
+    if (err != DRAGON_SUCCESS) {
+        err_return(DRAGON_MEMORY_ERRNO, "failed to register host memory with GPU");
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Get the hostid of the host where this pool resides.
+ *
+ * The hostid of the pool can be used for identifying the location of this pool
+ * within the Dragon run-time nodes. It identifies the node where this pool
+ * exists.
+ *
+ * @param pool_descr is a valid pool descriptor for the pool in question.
+ * @param hostid is a pointer to the location where the hostid will be copied by this
+ * function call.
+ *
+ * @return DRAGON_SUCCESS or an error code.
+ */
+dragonError_t
+dragon_memory_pool_get_hostid(dragonMemoryPoolDescr_t * pool_descr, dragonULInt * hostid)
+{
+    dragonMemoryPool_t * pool;
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    if (hostid == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The host_id pointer cannot be null");
+
+    if (pool->local_dptr != NULL)
+        /* local pool */
+        *hostid = *pool->header.hostid;
+    else
+        *hostid = pool->remote.hostid;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Determine if a pool is hosted in the local runtime.
+ *
+ * @param pool_descr is a valid pool descriptor for the pool in question.
+ * @param runtime_is_local is a boolean indicating if the pool is hosted in the local runtime.
+ *
+ * @return DRAGON_SUCCESS or an error code.
+ */
+dragonError_t
+dragon_memory_pool_runtime_is_local(dragonMemoryPoolDescr_t *pool_descr, bool *runtime_is_local)
+{
+    dragonMemoryPool_t *pool = NULL;
+
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    *runtime_is_local = pool->runtime_is_local;
+
+    return err;
+}
+
+/**
+ * @brief Get the runtime unique id (rt_uid) for a pool.
+ *
+ * @param pool_descr is a valid pool descriptor for the pool in question.
+ * @param rt_uid is the unique value used to identify a runtime. The value is composed
+ * of two IP addresses: the internet IP address of the login node of the system hosting
+ * the runtime, and the intranet IP address of the head node for the runtime.
+ *
+ * @return DRAGON_SUCCESS or an error code.
+ */
+dragonError_t
+dragon_memory_pool_get_rt_uid(dragonMemoryPoolDescr_t *pool_descr, dragonRT_UID_t *rt_uid)
+{
+    dragonMemoryPool_t *pool = NULL;
+
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    if (pool->runtime_is_local) {
+        *rt_uid = dragon_get_local_rt_uid();
+    } else {
+        *rt_uid = pool->remote.rt_uid;
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Get meta information about a memory pool.
+ *
+ * Retrieve memory pool m_uid and optionally the filename of the pool without needing to attach
+ * to the pool. If *m_uid* is not NULL it will copy the m_uid of the pool into the space it points
+ * to. If *filename* is not NULL it will copy the filename of the pool using :c:func:`strdup()`:.
+ * It is up to the caller to free the space *filename* points to in this case.
+ *
+ * @param m_uid is a pointer to space where the m_uid can be copied or NULL if it is not needed.
+ * @param filename is a pointer to a character pointer which will be initialized to point to to the
+ * pool's filename unless NULL was provided in which case the filename copy is not performed.
+ *
+ * @return DRAGON_SUCCESS or error code
+ */
+dragonError_t
+dragon_memory_pool_get_uid_fname(const dragonMemoryPoolSerial_t * pool_ser, dragonULInt * m_uid, char ** filename)
+{
+    if (pool_ser == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "pool serializer is NULL");
+
+    if (m_uid != NULL) {
+        *m_uid = *(dragonULInt*)pool_ser->data;
+    }
+
+    if (filename != NULL) {
+        dragonULInt * ptr = (dragonULInt*)pool_ser->data;
+        ptr += 5; // skip id, host_id, runtime ip addrs, mem_type, manifest_len
+        *filename = strdup((char*)ptr);
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Discover whether a pool is local or not.
+ *
+ * Return true if the memory pool is on the current node and false, otherwise.
+ * Occassionally, it is necessary to know if a memory pool is local to a node
+ * when serialized descriptors are passed around.
+ *
+ * @return true if is is local and false otherwise.
+ */
+bool
+dragon_memory_pool_is_local(dragonMemoryPoolDescr_t * pool_descr)
+{
+    dragonMemoryPool_t * pool;
+    dragonError_t err = _pool_from_descr(pool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    /* check if the pool is local */
+    if (pool->local_dptr == NULL)
+        return false;
+
+    return true;
+}
+
+/** @brief Make a copy of a memory pool descriptor.
+ *
+ * Does a copy from *oldpool_descr* into *newpool_descr* providing a
+ * clone of the original.
+ *
+ * @param newpool_descr is the newly cloned descriptor.
+ * @param oldpool_descr is the original pool descriptor.
+ *
+ * @returns DRAGON_SUCCESS or an error code.
+ */
+dragonError_t
+dragon_memory_pool_descr_clone(dragonMemoryPoolDescr_t * newpool_descr, const dragonMemoryPoolDescr_t * oldpool_descr)
+{
+    /* Check that the given descriptor points to a valid pool */
+    dragonMemoryPool_t * pool;
+    dragonError_t err = _pool_from_descr(oldpool_descr, &pool);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid pool descriptor");
+
+    /* update the new one */
+    newpool_descr->_rt_idx = oldpool_descr->_rt_idx;
+    newpool_descr->_idx = oldpool_descr->_idx;
+    newpool_descr->_original = 0;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
 /**
  * @brief Get the muid from a pool.
  *
@@ -2762,6 +2769,12 @@ dragon_memory_pool_get_num_block_sizes(dragonMemoryPoolDescr_t* pool_descr, size
 
     no_err_return(DRAGON_SUCCESS);
 }
+
+/** @} */ // end of managed_memory_pool_functionality.
+
+/** @defgroup managed_memory_alloc_lifetime Managed Memory Allocations Lifetime Management
+ *  @{
+ */
 
 
 /**
@@ -3440,6 +3453,12 @@ dragon_memory_free(dragonMemoryDescr_t * mem_descr)
     mem_descr->_idx = 0UL;
     no_err_return(DRAGON_SUCCESS);
 }
+
+/** @} */ // end of managed_memory_alloc_lifetime.
+
+/** @defgroup managed_memory_alloc_functionality Managed Memory Allocations Functions
+ *  @{
+ */
 
 /**
  * @brief Check whether a memory pool allocation exists
@@ -4439,3 +4458,5 @@ dragon_memory_clear(dragonMemoryDescr_t* mem_descr, size_t start, size_t stop)
 
     no_err_return(DRAGON_SUCCESS);
 }
+
+/** @} */ // end of managed_memory_alloc_functionality.

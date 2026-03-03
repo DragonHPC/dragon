@@ -38,6 +38,9 @@ varbytes_short = Annotated[bytes, VariableBytesIO("!H")]
 varbytes = Annotated[bytes, VariableBytesIO("!Q")]
 """:class:`Bytes <bytes>` object packed into at most (2**64 - 1) variable length bytes."""
 
+payloadbytes = Annotated[Payload, PayloadBytesIO("!Q")]
+""":class:`Bytes <bytes>` object packed into at most (2**64 - 1) variable length bytes."""
+
 vartext = Annotated[str, VariableTextIO("!Q")]
 """:class:`String <str>` object encoded in utf-8 and packed into at most (2**64 - 1) variable length bytes."""
 
@@ -271,7 +274,7 @@ class SendRequest(Request, typeid=b"\x01"):
     of a message that does not affect the payload.
     """
 
-    payload: varbytes
+    payload: payloadbytes
     """Message payload."""
 
 

@@ -6,7 +6,7 @@ from ipaddress import ip_address, IPv4Address, IPv6Address
 from struct import Struct
 from typing import Any, Callable, Optional, Union
 from uuid import UUID, uuid4
-
+from ...channels import GatewayMessage
 
 class FixedBytesIO:
     """Base class that reads and writes fixed size bytes from/to streams."""
@@ -119,6 +119,60 @@ class VariableBytesIO(StructIO):
         """
         super().write(writer, len(data))
         writer.write(data)
+
+class Payload:
+    def __init__(self, msg: GatewayMessage):
+        self._msg = msg
+
+    def __len__(self):
+        return len(self._msg.send_payload_message)
+
+    @property
+    def data(self):
+        return self._msg.send_payload_message
+
+    def __del__(self):
+        # We do these two things here. Marking payload sent because
+        # when del is called we know the payload has been written on the
+        # wire. The message may be destroyed once the enclosing Payload
+        # object is being garbage collected AND the message is marked
+        # as complete having been called. The destroy method checks
+        # internally that complete has been called and does not destroy
+        # the underlying gateway message until complete has been called
+        # too.
+        self._msg.mark_payload_sent()
+        self._msg.destroy()
+
+class PayloadBytesIO(StructIO):
+    """Read and write a variable number of bytes from/to streams from an
+       encapsulated Gateway Message.
+
+    Uses a simple length-based encoding scheme where the total number of bytes
+    to read/write is first read/written from/to a stream. Instances must
+    provide the `Struct` format string for encoding/decoding the number of
+    bytes. The GatewayMessage must be wrapped in a Payload object first.
+
+    :param format: `Struct` format string; restricts the maximum number of bytes which may be read/written
+    """
+    async def read(self, reader: asyncio.StreamReader) -> bytes:
+        """Read variable number of bytes from stream.
+
+        :param reader: Stream to read
+        :return: Bytes read
+        :raises: See `asyncio.StreamReader.readexactly` for possible exceptions
+        """
+        num_bytes = await super().read(reader)
+        data = await reader.readexactly(num_bytes)
+        return data
+
+    def write(self, writer: asyncio.StreamWriter, payload: Payload) -> None:
+        """Write variable number of bytes to stream.
+
+        :param writer: Stream to write
+        :param data: Bytes to write
+        """
+        super().write(writer, len(payload))
+        writer.write(payload.data)
 
 
 class VariableTextIO(CodableIO, VariableBytesIO):

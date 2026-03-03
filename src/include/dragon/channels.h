@@ -30,7 +30,7 @@ extern "C" {
 
 /** @defgroup channels_constants Channels Constants
  *
- *  The channels API constants.
+ *  The channels constants.
  *  @{
  */
 
@@ -137,7 +137,6 @@ typedef enum dragonChannelEvent_st {
 
     DRAGON_CHANNEL_CLEANUP = 19
         /*!< Internal library use only. */
-
 
 } dragonChannelEvent_t;
 

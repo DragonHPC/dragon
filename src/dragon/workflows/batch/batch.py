@@ -944,6 +944,8 @@ class JobCore(TaskCore):
         puids = []
         exit_codes = []
         proc_resources = []
+        stdout = "" # captures output from all batch jobs
+        stderr = ""
 
         for puid, exit_code in grp.inactive_puids:
             puids.append(puid)
@@ -953,9 +955,6 @@ class JobCore(TaskCore):
         for proc_idx in range(self.num_procs):
             conn_stdout = proc_resources[proc_idx].stdout_conn
             conn_stderr = proc_resources[proc_idx].stderr_conn
-
-            stdout = ""
-            stderr = ""
 
             if conn_stdout is not None:
                 try:

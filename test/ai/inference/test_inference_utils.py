@@ -20,12 +20,7 @@ from dragon.ai.inference.config import (
     DynamicWorkerConfig,
 )
 
-
-class MockTelemetry:
-    """Mock for dragon telemetry."""
-
-    def add_data(self, key, value):
-        pass
+from .mocks import MockTelemetry
 
 
 class MockCPUWorker:

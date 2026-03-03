@@ -1174,6 +1174,21 @@ cdef class Channel:
             raise ChannelError("Could not detach channel", derr)
 
 
+    def notify_on_destroy(self):
+        """
+        Notify a transport, via a gateway message, that a channel has been destroyed. This is used
+        internally by transport agents that need to clean up open send handles when a channel is
+        destroyed.
+
+        :return: None
+        """
+        cdef:
+            dragonError_t derr
+
+        derr = dragon_channel_notify_on_destroy(&self._channel)
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Could not enable the notify on destroy attribute of the channel.", derr)
+
     def serialize(self):
         """
         Serialize a channel descriptor for use in storage or communication.
@@ -2810,9 +2825,16 @@ cdef class GatewayMessage:
     """
     cdef:
         dragonGatewayMessage_t _gmsg
+        bool payload_sent
+        bool completion_called
+        bool error_state
+        bool destroyed
 
     def __cinit__(self):
-        pass
+        self.payload_sent = False
+        self.completion_called = False
+        self.error_state = False
+        self.destroyed = False
 
     def destroy(self):
         """
@@ -2820,6 +2842,17 @@ cdef class GatewayMessage:
         """
         cdef:
             dragonError_t err
+
+        if self.destroyed:
+            return
+
+        if self.is_send_kind and not self.payload_sent and not self.error_state:
+            return
+
+        if not self.completion_called and not self.error_state:
+            return
+
+        self.destroyed = True
 
         err = dragon_channel_gatewaymessage_destroy(&self._gmsg)
         if err == DRAGON_MAP_KEY_NOT_FOUND:
@@ -2839,14 +2872,17 @@ cdef class GatewayMessage:
 
         err = dragon_channel_message_get_mem(&self._gmsg.send_payload_message, &mem_descr)
         if err != DRAGON_SUCCESS:
+            self.error_state = True
             raise ChannelError("Could not get memory descriptor from message", err)
 
         err = dragon_memory_get_pointer(&mem_descr, <void **>&ptr)
         if err != DRAGON_SUCCESS:
+            self.error_state = True
             raise ChannelError("Could not get pointer from memory descriptor", err)
 
         err = dragon_memory_get_size(&mem_descr, &nbytes)
         if err != DRAGON_SUCCESS:
+            self.error_state = True
             raise ChannelError("Could not get size memory descriptor", err)
 
         return PyMemoryView_FromMemory(ptr, nbytes, BUF_READ)
@@ -2856,6 +2892,7 @@ cdef class GatewayMessage:
         if self.is_send_kind:
             return self._gmsg.send_payload_message._attr.sendhid[:16]
         else:
+            self.error_state = True
             raise ChannelError('Attempt to get the sendhid of a non-send Gateway message')
 
     @property
@@ -2863,6 +2900,7 @@ cdef class GatewayMessage:
         if self.is_send_kind:
             return self._gmsg.send_payload_message._attr.clientid
         else:
+            self.error_state = True
             raise ChannelError('Attempt to get the clientid of a non-send Gateway message')
 
     @property
@@ -2870,6 +2908,7 @@ cdef class GatewayMessage:
         if self.is_send_kind:
             return self._gmsg.send_payload_message._attr.hints
         else:
+            self.error_state = True
             raise ChannelError('Attempt to get the hints of a non-send Gateway message')
 
     @property
@@ -2984,6 +3023,8 @@ cdef class GatewayMessage:
         cdef:
             dragonError_t err
 
+        self.completion_called = True
+
         if (
             self._gmsg.send_return_mode == DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY
             or self._gmsg.send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED
@@ -2992,12 +3033,15 @@ cdef class GatewayMessage:
             with nogil:
                 err = dragon_channel_gatewaymessage_transport_send_cmplt(&self._gmsg, <dragonError_t>op_err)
             if err != DRAGON_SUCCESS:
+                self.error_state = True
                 raise ChannelError("Could not complete a send operation from a transport agent", err)
 
     def get_complete(self, Message msg_recv, int op_err=<int>DRAGON_SUCCESS):
         cdef:
             dragonError_t err
             dragonMessage_t * _msg_recv
+
+        self.completion_called = True
 
         if msg_recv is None:
             _msg_recv = NULL
@@ -3007,18 +3051,22 @@ cdef class GatewayMessage:
         with nogil:
             err = dragon_channel_gatewaymessage_transport_get_cmplt(&self._gmsg, _msg_recv, <dragonError_t>op_err)
         if err != DRAGON_SUCCESS:
+            self.error_state = True
             raise ChannelError("Could not complete a get operation from a transport agent", err)
 
     def event_complete(self, int poll_result, int op_err=<int>DRAGON_SUCCESS):
         cdef:
             dragonError_t err
 
+        self.completion_called = True
+
         with nogil:
             err = dragon_channel_gatewaymessage_transport_event_cmplt(&self._gmsg, poll_result, <dragonError_t>op_err)
         if err != DRAGON_SUCCESS:
+            self.error_state = True
             raise ChannelError("Could not complete an event operation from a transport agent", err)
 
-    def complete_error(self, int op_err):
+    def error_complete(self, int op_err):
         assert op_err != <int>DRAGON_SUCCESS
         if self.is_send_kind:
             return self.send_complete(op_err)
@@ -3027,7 +3075,11 @@ cdef class GatewayMessage:
         if self.is_event_kind:
             # Note: The specified event mask is ignored
             return self.event_complete(0, op_err)
+        self.error_state = True
         raise ValueError('Unsupported kind of message')
+
+    def mark_payload_sent(self):
+        self.payload_sent = True
 
     @staticmethod
     def silence_transport_timeouts():
