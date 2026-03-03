@@ -1,0 +1,60 @@
+8 12.5
+begin components
+LA "Launcher"
+MRNet "MRNet Server"
+MRNetB "MRNet Backend Server"
+BE "Primary Backend"
+GS "Global Services"
+SH1 "Primary Shepherd"
+UP "User Program"
+MRNetB2 "MRNet Backend Server 2"
+BE2 "Backend 2"
+SH2 "Shepherd 2"
+end;
+ltext@ UP "Exit";
+SH1 GS "a5 SHProcessExit";
+GS BE "GSHeadExit";
+BE MRNetB "GSHeadExit";
+MRNetB MRNet "GSHeadExit";
+MRNet LA "GSHeadExit";
+LA MRNet "GSTeardown";
+MRNet MRNetB "GSTeardown";
+MRNetB BE "GSTeardown";
+BE GS "GSTeardown";
+GS SH1 "GSHalted";
+SH1 BE "GSHalted";
+BE MRNetB "GSHalted";
+MRNetB MRNet "GSHalted";
+MRNet LA "GSHalted";
+LA MRNet "LABroadcast [SHHaltTA]";
+MRNet MRNetB "LABroadcast [SHHaltTA]";
+MRNetB BE "LABroadcast [SHHaltTA]";
+BE SH1 "SHHaltTA";
+ctext@ SH1 "Halt TA Processing...";
+;
+SH1 BE "TAHalted";
+BE MRNetB "TAHalted";
+MRNetB MRNet "TAHalted";
+MRNet LA "TAHalted";
+MRNet MRNetB2 "LABroadcast [SHHaltTA]";
+MRNetB2 BE2 "LABroadcast [SHHaltTA]";
+BE2 SH2 "SHHaltTA";
+ctext@ SH2 "Halt TA Processing...";
+;
+SH2 BE2 "TAHalted";
+BE2 MRNetB2 "TAHalted";
+MRNetB2 MRNet "TAHalted";
+MRNet LA "TAHalted";
+LA MRNet "LABroadcast [SHTeardown]";
+MRNet MRNetB "LABroadcast [SHTeardown]";
+MRNetB BE "LABroadcast [SHTeardown]";
+BE SH1 "SHTeardown";
+MRNet MRNetB2 "LABroadcast [SHTeardown]";
+MRNetB2 BE2 "LABroadcast [SHTeardown]";
+BE2 SH2 "SHTeardown";
+SH1 BE "SHHaltBE";
+SH2 BE2 "SHHaltBE";
+BE SH1 "BEHalted";
+BE2 SH2 "BEHalted";
+ctext@ SH1 "Exit"
+ctext@ SH2 "Exit";

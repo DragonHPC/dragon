@@ -1,0 +1,21 @@
+########################### import-time and call-time arguments specified here ###########################
+
+import_args:
+  - get_prime
+  - plus
+
+# import_kwargs:
+
+args:
+  - i
+
+# kwargs:
+
+######### definition of task executables, resources, dependencies, etc. (in terms of args above) #########
+
+type: function
+
+executables:
+  - target: get_prime
+    args:
+      - i

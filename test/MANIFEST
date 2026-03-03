@@ -1,0 +1,16 @@
+
+
+setup.sh
+    (placeholder) shell script to source to set up paths to run tests.
+
+./support/
+    Some support utilities for testing
+
+./mp_bench/
+    Initial approach at benchmarking standard multiprocessing
+
+./globalservices/
+    Tests for global services
+
+./shepherd/
+    Tests for shepherd

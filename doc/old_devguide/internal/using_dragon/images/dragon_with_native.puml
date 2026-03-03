@@ -1,0 +1,49 @@
+' The Python Multiprocessing use case.
+' 
+
+
+@startuml
+
+' title "Dragon Distributed Architecture with Python Multiprocessing"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+' skinparam linetype ortho
+skinparam linetype polyline
+' skinparam nodesep 10
+' skinparam ranksep 20
+
+
+interface "stdin/stdout/stderr" as posix_std
+
+component "Infrastructure" as INF {
+    portin "Messages API" as imsg_api
+    [Messages] as IMSG
+
+    IMSG -u-> imsg_api
+}
+
+[User Program] as User_Program
+[Dragon Native] as DN
+[Dragon GS Client] as DCAPI
+User_Program --> DN
+User_Program <--> posix_std
+DN --> DCAPI
+
+
+[Shepherd] as SH
+[Global Services] as GS
+[Launcher Backend] as BELA
+
+posix_std <--> SH
+DCAPI --> imsg_api
+
+SH <--> imsg_api
+GS <--> imsg_api
+BELA <--> imsg_api
+
+'in case we want to hide components
+hide $hidden
+@enduml

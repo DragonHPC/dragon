@@ -1,0 +1,55 @@
+{
+    "2": {
+        "state": 4,
+        "h_uid": null,
+        "name": "nid00006",
+        "is_primary": false,
+        "ip_addrs": [
+            "10.128.0.7:6565"
+        ],
+        "host_id": 18446744071562725120,
+        "num_cpus": 0,
+        "physical_mem": 0,
+        "shep_cd": ""
+    },
+    "3": {
+        "state": 4,
+        "h_uid": null,
+        "name": "nid00007",
+        "is_primary": false,
+        "junk-key": false,
+        "ip_addrs": [
+            "10.128.0.8:6565"
+        ],
+        "host_id": 18446744071562725376,
+        "num_cpus": 0,
+        "physical_mem": 0,
+        "shep_cd": ""
+    },
+    "0": {
+        "state": 4,
+        "h_uid": null,
+        "name": "nid00004",
+        "is_primary": false,
+        "ip_addrs": [
+            "10.128.0.5:6565"
+        ],
+        "host_id": 18446744071562724608,
+        "num_cpus": 0,
+        "physical_mem": 0,
+        "shep_cd": ""
+    },
+    "1": {
+        "state": 4,
+        "h_uid": null,
+        "name": "nid00005",
+        "is_primary": false,
+        "ip_addrs": [
+            "10.128.0.6:6565"
+        ],
+        "host_id": 18446744071562724864,
+        "num_cpus": 0,
+        "physical_mem": 0,
+        "shep_cd": ""
+    }
+}

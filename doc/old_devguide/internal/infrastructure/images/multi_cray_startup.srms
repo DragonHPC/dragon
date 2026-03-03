@@ -1,0 +1,156 @@
+9.5 22.8
+begin components
+LA "Launcher Front End"
+OF "TCP Overlay Front End"
+CE "Compute Back End"
+OB "TCP Overlay Back End"
+BE "Launcher Back End"
+LS "Local Services"
+TA "TA"
+GS "Global Services"
+UP "User Program Entry"
+end;
+rtext@ LA "a1 launch network";
+rtext@ LA "configurator";
+LA CE "WLM launch";
+ltext@ CE "a2 print JSON";
+ltext@ CE "network config";
+;
+ltext@ CE "a3 open posix queue";
+ltext@ CE "for exit signal";
+rtext@ LA "a4 consume config";
+rtext@ LA "a5 launch exit signal proc";
+LA CE "WLM launch";
+ltext@ CE "a6 send exit over";
+ltext@ CE "posix queue";
+;
+ltext@ CE "a7 network tools exit";
+rtext@ LA "a8 OS-spawn";
+rtext@ LA " overlay TCP agent";
+;
+LA OF "m1 network config"+
+LA OF "& CTRL channel"+
+LA OF "via CLI";
+;
+OF LA "m2 CTRL channel"+
+OF LA "TAPingSH";
+rtext@ LA "a9 launch backend";
+LA BE "WLM launch";
+ltext@ BE "a10 OS-spawn";
+ltext@ BE "overlay TCP agent";
+;
+BE OB "m3 network config"+
+BE OB "& CTRL channel via CLI"
+;
+;
+OB BE "m4 CTRL channel"+
+OB BE "TAPingSH"
+;
+;
+ltext@ BE "a11 connect to";
+ltext@ BE "frontend channel";
+BE LA "LA channel"+
+BE LA "m5 BEIsUp";
+LA BE "BE channel"+
+LA BE "m6 FENodeIdxBE";
+;
+ltext@ BE "a12 OS spawn";
+ltext@ BE "local services";
+;
+BE LS "stdin queue"+
+BE LS "m7 BENodeIdxSH(node index)";
+ltext@ LS "make shared memory segments";
+ltext@ LS "make default channels";
+ltext@ LS "a13 ping backend";
+LS BE "stdout queue"+
+LS BE "m8 SHPingBE";
+ltext@ BE "recv LS ping";
+ltext@ BE "a14 attach to LS";
+ltext@ BE "channel; ping LS";
+;
+LS BE "LS Channel"+
+BE LS "m9 BEPingSH";
+ltext@ LS "recv be ping";
+ltext@ LS "a15 ping launcher via backend";
+ltext@ LS "report on-node";
+ltext@ LS "channels up";
+LS BE "BE Channel"+
+LS BE "m10.1 SHChannelsUp";
+ltext@ BE "forward channels up";
+BE LA "LA Channel"+
+BE LA "m10.2 SHChannelsUp #N";
+rtext@ LA "a16 gather channels-up";
+LA LS "LAChannelsInfo Broadcast m9.3"
+LA BE " "
+;
+;
+ltext@ LS "a17 startSTA";
+;
+LS TA "stdin queue" +
+LS TA "LAChannelsInfo (see m9.3)";
+LS TA "OS spawn"+
+LS TA "m11 gateways+more";
+ltext@ TA "start locally";
+ltext@ TA "a18 handshake with counterparts";
+ltext@ TA "a19 notify LS up";
+TA LS "LS Channel"+
+TA LS "m12 TAPingSH";
+ltext@ LS "recv TA ping";
+ltext@ LS "a20 notify LA TA up";
+ltext@ LS "via BE";
+LS BE "BE Channel"+
+LS BE "m13.1 TAUp node #N";
+BE LA "LA Channel"+
+BE LA "m13.2 TAUp node #N";
+rtext@ LA "a21 gather TAUp msgs";
+rtext@ LA "a22 start global services";
+rtext@ LA "on one node";
+rtext@ LA "await all-up";
+ltext@ LS "a23 start global services";
+LS GS "OS spawn"+
+LS GS "m14 <parms>";
+ltext@ GS "start";
+LS GS "stdin queue" +
+LS GS "LAChannelsInfo (see m8.3)";
+ltext@ GS "a24 attach to channels";
+ltext@ GS "a25 ping all LS";
+ltext@ LS "pend on message";
+ltext@ LS "from global services";
+;
+GS LS "all LS Channels"+
+GS LS "m15 GSPingSH";
+ltext@ LS "respond to gs ping";
+;
+LS GS "GS Channel"+
+LS GS "m16 SHPingGS #N";
+ltext@ GS "a26 gather all sh pings";
+ltext@ GS "a27 Notify LA all-up";
+GS BE "BE Channel"+
+GS BE "m17.1 GSIsUp";
+BE LA "LA Channel"+
+BE LA "m17.2 GSIsUp";
+rtext@ LA "dragon runtime is up";
+rtext@ LA "a28 start my.py";
+rtext@ LA "to BE with GS head";
+LA BE "BE Channel"+
+LA BE "m18.1 GSProcessCreate my.py, parms";
+BE GS "GS Channel"+
+BE GS "m18.2 GSProcessCreate my.py, parms";
+ltext@ GS "a29 register head process";
+ltext@ GS "a30 start on selected LS";
+GS LS "LS Channel"+
+GS LS "m19 SHProcessCreate my.py, parms";
+ltext@ LS "a31 spawn my.py process";
+ltext@ LS "<protocol with GS>";
+ltext@ UP "started";
+ltext@ UP "a32 example: print('foo')";
+UP LS "stdout"+
+UP LS "m20 'foo'";
+ltext@ LS "a33 package output";
+LS BE "BE Channel"+
+LS BE "m21.1 SHFwdOutput 'foo'";
+BE LA "BE Channel"+
+BE LA "m21.2 SHFwdOutput 'foo'";
+rtext@ LA "a34 recv output";
+rtext@ LA "a35 dedupe and print output";
+ltext@ UP "main process continues...";

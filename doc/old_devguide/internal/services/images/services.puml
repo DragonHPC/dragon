@@ -1,0 +1,133 @@
+' This is the Dragon service architecture diagram. Its purpose is to show the main actors 
+' of the system and their connections through named APIs that are documented elsewhere. 
+' 
+
+@startuml
+
+' title "Dragon Distributed Services"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+' skinparam linetype ortho
+skinparam linetype polyline
+' skinparam nodesep 10
+' skinparam ranksep 20
+
+[User Program] as UP
+[Launcher Backend] as LA
+[Global Services] as GS
+[Shepherd] as SH
+[Local Transport Agent] as TS
+
+frame "Login Node" as LN {
+    [Launcher Frontend] as LAF
+}
+
+frame "Remote host / compute node" {
+    [Remote Transport Agent] as TSR
+    interface "Gateway Channel API" as remote_gw_channel_api 
+    TSR <--> remote_gw_channel_api
+}
+
+interface "HPC Interconnect" as interconnect
+
+package "CMD/CRTL Managed Memory" {
+
+    together {
+        [Shepherd Channel] as SHCHAN
+        [Launcher Channel] as LACHAN
+        [Launcher Backend Channel] as BELACHAN
+        [Global Services Channel] as GSCHAN
+        [Transport Agent Channel] as TSCHAN
+    }
+    
+    interface "Gateway Channel API" as gw_channel_api  
+
+    interface "Channel API" as gs_channel_api  
+    interface "Channel API" as sh_channel_api  
+    interface "Channel API" as ts_channel_api  
+    interface "Channel API" as la_channel_api  
+    interface "Channel API" as bela_channel_api  
+
+    GSCHAN <-u-> gs_channel_api
+    SHCHAN <-u-> sh_channel_api
+    TSCHAN <-u-> ts_channel_api
+    LACHAN <-u-> la_channel_api
+    BELACHAN <-u-> bela_channel_api
+}
+
+package "Dragon Managed Memory" {
+    [Any User Channel] as UCHAN
+
+    interface "Channel API" as u_channel_api
+    interface "Gateway Channel API" as ugw_gw_channel_api
+
+    UCHAN <-u-> u_channel_api
+    UCHAN <--> ugw_gw_channel_api
+}
+
+together {
+    interface "Shepherd Messages" as shepherd_msg_api
+    interface "Transport Agent Messages" as transport_agent_msg_api
+    interface "Global Services Messages" as global_services_msg_api
+    interface "Launcher Messages" as launcher_msg_api
+    interface "Launcher Backend Messages" as bela_msg_api
+}
+
+interface "User Message / Data API" as user_msg_api
+
+' These are the same API
+
+interface "POSIX MQ" as posix_message_queue
+interface "stdout/stdin/stderr" as program_stdout
+interface "MRNet" as mrnet
+
+sh_channel_api <-u-> shepherd_msg_api
+gs_channel_api <-u-> global_services_msg_api
+la_channel_api <-u-> launcher_msg_api
+bela_channel_api <-u-> bela_msg_api
+ts_channel_api <-u-> transport_agent_msg_api
+
+SHCHAN -d-> gw_channel_api
+GSCHAN -d-> gw_channel_api
+LACHAN -d-> gw_channel_api
+BELACHAN -d-> gw_channel_api
+TSCHAN -d-> gw_channel_api
+
+TS <-u-> gw_channel_api
+TS <-u-> ugw_gw_channel_api
+TS <-d-> interconnect
+TS <-- transport_agent_msg_api
+
+TSR <-u-> interconnect
+
+GS <-- global_services_msg_api
+GS --> shepherd_msg_api
+GS --> launcher_msg_api
+
+SH <-- shepherd_msg_api
+SH --> transport_agent_msg_api
+SH --> launcher_msg_api
+SH --> global_services_msg_api
+SH --> bela_msg_api
+SH <-u-> posix_message_queue
+SH <-u-> program_stdout
+
+LA <-u-> posix_message_queue
+LA <-- launcher_msg_api
+LA <-- bela_msg_api
+LA <--> mrnet
+
+LAF <--> mrnet
+
+UP <-u-> program_stdout
+UP <-d-> user_msg_api
+UP --> global_services_msg_api
+u_channel_api <-u-> user_msg_api
+
+
+'in case we want to hide components
+hide $hidden
+@enduml

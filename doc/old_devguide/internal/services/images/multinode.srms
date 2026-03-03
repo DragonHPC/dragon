@@ -1,0 +1,62 @@
+6 8
+begin components
+la "Launcher"
+PoolFE "Application/Pool FE"
+PoolBE "Pool BE"
+shep1 "Shepherd 1"
+shep2 "Shepherd 2"
+end;
+la shep1 "Start via CTI";
+la shep2 "Start via CTI";
+shep1 la "Node Stats and Queue Name";
+shep2 la "Node Stats and Queue Name";
+la shep1 "Start User Program";
+PoolFE shep1 "Request Start Pool Back End";
+shep1 la "Place Pool Back End";
+la shep1 "Start Pool Back End";
+ctext@ PoolBE "Process Started";
+PoolBE PoolFE "BE Queue Name/Started Confirmation";
+PoolBE shep1 "Request Start Worker 0";
+PoolBE shep1 "Request Start Worker 1";
+PoolBE shep1 "Request Start Worker 2";
+PoolBE shep1 "Request Start Worker 3";
+PoolBE shep1 "Request Start Worker 4";
+shep1 la "Place Worker 0";
+la shep1 "Start Worker 0";
+shep1 la "Place Worker 1";
+la shep1 "Start Worker 1";
+shep1 la "Place Worker 2";
+la shep1 "Start Worker 2";
+shep1 la "Place Worker 3";
+la shep2 "Start Worker 3";
+shep1 la "Place Worker 4";
+la shep2 "Start Worker 4";
+shep1 w0 "Start";
+w0 PoolBE "Worker Queue Name/Started Confirmation";
+component w0 "Worker 0"
+shep1 w1 "Start";
+w1 PoolBE "Worker Queue Name/Started Confirmation";
+component w1 "Worker 1"
+shep1 w2 "Start";
+w2 PoolBE "Worker Queue Name/Started Confirmation";
+component w2 "Worker 2"
+shep2 w3 "Start";
+w3 PoolBE "Worker Queue Name/Started Confirmation";
+component w3 "Worker 3"
+shep2 w4 "Start";
+w4 PoolBE "Worker Queue Name/Started Confirmation";
+component w4 "Worker 4"
+PoolFE PoolBE "Do map";
+PoolBE w0 "Do work";
+PoolBE w1 "Do work";
+PoolBE w2 "Do work";
+w0 PoolBE "Work Done Successfully";
+w1 PoolBE "Work Done Successfully";
+w2 PoolBE "Work Done Successfully";
+PoolBE PoolFE "Map Completed Successfully";
+shep1 PoolBE "Worker 0 stdout";
+shep1 PoolBE "Worker 1 stdout";
+shep1 PoolBE "Worker 2 stdout";
+PoolBE PoolFE "Consolidated stdout";
+ctext@ PoolBE "stdout flush timer";
+ctext@ PoolFE "Map completed"

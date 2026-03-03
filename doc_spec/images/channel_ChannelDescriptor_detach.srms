@@ -1,0 +1,14 @@
+6 4
+begin components
+UP "User Process"
+GS "Global Services"
+end;
+rtext@ UP "ChannelDescriptor.detach()";
+UP GS "CHANNEL_DETACH"+
+UP GS "p_uid, c_uid";
+ltext@ GS "success: detached";
+GS UP "CHANNEL_IS_DETACHED"+
+GS UP "c_uid";
+ltext@ GS "fail: no such channel";
+GS UP "FAIL_CHANNEL_UNKNOWN"+
+GS UP "None";

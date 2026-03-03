@@ -1,0 +1,4 @@
+#!/bin/bash
+
+cd $DRAGON_BASE_DIR
+make build -j $DRAGON_BUILD_NTHREADS

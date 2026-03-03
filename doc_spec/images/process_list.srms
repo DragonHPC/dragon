@@ -1,0 +1,11 @@
+6 4
+begin components
+UP "User Process"
+GS "Global Services"
+end;
+rtext@ UP "process.list()";
+UP GS "PROCESS_LIST"+
+UP GS "p_uid";
+ltext@ GS "success";
+GS UP "PROCESS_INFO_LIST"+
+GS UP "[(p_uid, name)]";

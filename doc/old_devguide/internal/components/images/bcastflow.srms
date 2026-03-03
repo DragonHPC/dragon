@@ -1,0 +1,41 @@
+8 8.2
+begin components
+T1 "Trigger T1"
+T2 "Trigger T2"
+T3 "Trigger T3"
+T4 "Trigger T4"
+B "BCast Object"
+W1 "Waiter W1"
+W2 "Waiter W2"
+W3 "Waiter W3"
+W4 "Waiter W4"
+end;
+ctext@ B "(1) T1 Creates BCast Object and serializes in bser";
+T1 T2 "bser";
+T1 T3 "bser";
+T1 T4 "bser";
+T1 W1 "bser";
+T1 W2 "bser";
+T1 W3 "bser";
+T2 W4 "bser (via shared mem or other means...)";
+W1 B "(2) Idle Wait";
+W2 B "Spin Wait";
+W3 B "Idle Wait";
+T3 B "(3) Trigger One with empty payload";
+W4 B "Idle Wait (but will not be waiter until triggering has completed)";
+B W2 "Triggered";
+ctext@ B "W4 is now a waiter";
+ctext@ W2 "complete work";
+T3 B "(4) Trigger All with payload1";
+B W1 "Triggered - payload1";
+B W3 "Triggered - payload1";
+W2 B "(5) Spin Wait (but will not be waiter yet - triggering in progress)";
+B W4 "Triggered - payload1";
+ctext@ B "W2 is now a waiter";
+;
+W3 B "(6) Asynchronously Wait w/callback cb2";
+T4 B "Trigger All with payload2";
+B W3 "(7) Call cb2 with args" +
+B W3 "Asynchronously work (via a thread of W3)";
+B W2 "Triggered - payload2";
+T4 B "(8) Trigger One (rejected, no waiters)";

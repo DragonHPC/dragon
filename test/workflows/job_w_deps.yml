@@ -1,0 +1,55 @@
+########################### import-time and call-time arguments specified here ###########################
+
+import_args:
+  - mpi_job_name
+
+import_kwargs:
+  base_dir: base_dir
+  env: new_env
+  update_input: some_func
+
+args:
+  - input_arg
+
+kwargs:
+  input_file: file_in
+  output_file: file_out
+
+######### definition of task executables, resources, dependencies, etc. (in terms of args above) #########
+
+type: job
+
+executables:
+  - target: ./mpi_job
+    nprocs: 2
+    args:
+      - input_arg
+      - file_in
+      - file_out
+    cwd: base_dir
+    env: new_env
+
+  - target: ./mpi_job
+    args:
+      - some_func:
+        - input_arg
+      - file_in
+      - file_out
+    cwd: base_dir
+    env: new_env
+
+timeout:
+  day: 0
+  hour: 0
+  min: 1
+  sec: 30
+
+name: mpi_job_name
+
+reads:
+  - files:
+    - file_in
+
+writes:
+  - files:
+    - file_out

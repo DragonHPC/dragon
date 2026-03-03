@@ -1,0 +1,73 @@
+#!/bin/bash
+# Running this will clean up all python and dragon processes on the login node and all compute node.
+
+run_backend_cleanup() {
+
+    launcher=''
+    # check if an override exists. if it exists, then use it
+    mpiexec_override=$(dragon-config --get="launcher-mpiexec-override-netconfig")
+    if [ -n "$mpiexec_override" ]; then
+        # get the number of nodes from the PBS_NODEFILE and substitute it in the override
+        nnodes="$(echo $(cat ${PBS_NODEFILE} | wc -l))"
+        launcher=${mpiexec_override/\{nnodes\}/$nnodes}
+        # set nnodes to be empty to conform with the below launch structure
+        nnodes=""
+    elif command -v srun &> /dev/null && [ ! -z "$SLURM_JOB_ID" ]; then
+        launcher="srun --overlap --oversubscribe"
+        nnodes="-N ${SLURM_JOB_NUM_NODES}"
+    elif command -v mpiexec | grep "pals" &> /dev/null; then
+        launcher=mpiexec
+        nnodes="-np $(echo $(cat ${PBS_NODEFILE} | wc -l)) -ppn 1"
+    else
+        echo "Unable to determine job launcher to use for cleanup"
+        return -1
+    fi
+    echo "Will exeute $launcher $nnodes dragon-node-cleanup"
+    $launcher $nnodes dragon-node-cleanup $1 || return 0
+}
+
+run_backend_cleanup $1
+me=`whoami`
+
+
+if [ $# -ne 1 ]; then
+    # Be more careful destroying procs if the frontend has requested this execution
+
+    # Get parent PID to avoid interrupting a process that invokes this script
+    ppid=`ps -p $$ -F --no-header | awk -F ' ' '{print $3}'`
+    if [ $ppid -gt 0 ]; then
+        echo "Omitting shutdown of parent process" $ppid
+    fi
+
+    if [ $# -eq 0 ]; then
+        pids=`ps -U $me -ux | grep dragon | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk -v ppid=$ppid '$2 !~ ppid' | awk -F ' ' '{print $2}'`
+    else
+        pids=`ps -U $me -ux  | grep dragon-infra | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk -v ppid=$ppid '$2 !~ ppid' | awk -F ' ' '{print $2}'`
+    fi
+
+    echo "Here are Dragon PIDS to kill on login node:" $pids
+    echo $pids | xargs -r kill -9
+
+    if [ $# -eq 0 ]; then
+        if [ -n "${_DRAGON_HSTA_TESTING_MODE:+1}" ]; then
+            echo "Avoiding hsta test process"
+            pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /test_hsta.py/' | awk -v ppid=$ppid '$2 !~ ppid' | awk -F ' ' '{print $2}'`
+        else
+            pids=`ps -U $me -ux  | grep python | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk -v ppid=$ppid '$2 !~ ppid' | awk -F ' ' '{print $2}'`
+        fi
+    else
+        pids=`ps -U $me -ux  | grep python | awk '$0 !~ /test_launcher/' | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk -v ppid=$ppid '$2 !~ ppid' | awk -F ' ' '{print $2}'`
+    fi
+
+    echo "Here are the Python PIDS to kill on login node": $pids
+    echo $pids | xargs -r kill -9
+
+    echo "Cleaning up /dev/shm of any leftover pools on login node"
+    find /dev/shm/ -user $me -exec rm -f {} \;
+
+    echo "Cleaning up hugepages of any leftover pools on login node"
+    dragon-hugepages-cleanup
+
+    echo "Cleaning up /tmp of sqlite3 dbs on login node"
+    find /tmp -maxdepth 1 -user $me -name "*.db" -exec rm -f {} \;
+fi

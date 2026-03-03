@@ -1,0 +1,73 @@
+8 12
+begin components
+LA "Launcher"
+SH "Local Services"
+GS "Global Services"
+UP "User Program Entry"
+end;
+rtext@ LA "a1 Start Shepherd";
+LA SH "OS spawn"+
+LA SH "m1 cmd/env parms";
+ltext@ SH "shepherd start";
+ltext@ SH "a2 make shared memory segment";
+ltext@ SH "make default channels";
+ltext@ SH "ping launcher";
+rtext@ LA "wait for ping from shep";
+rtext@ LA "on shep stdout";
+SH LA "stdout"+
+SH LA "m2 SHPingBE";
+ltext@ LA "recv shepherd ping";
+ltext@ LA "a3 attach to shepherd";
+ltext@ LA "channel";
+ltext@ LA "ping shepherd";
+;
+SH LA "SH Channel"+
+LA SH "m3 BEPingSH";
+ltext@ SH "recv launcher ping";
+ltext@ SH "a4 ping launcher via backend";
+ltext@ SH "report on-node";
+ltext@ SH "channels up";
+SH LA "LA Channel"+
+SH LA "m4 SHChannelsUp";
+rtext@ LA "a5 all channels-up";
+
+
+rtext@ LA "a6 await all-up";
+ltext@ SH "a7 start global services";
+SH GS "OS spawn"+
+SH GS "m5 <parms>";
+ltext@ GS "start";
+ltext@ GS "a8 attach to channels";
+ltext@ GS "a9 ping shepherd";
+ltext@ SH "a10 pend on message";
+ltext@ SH "from global services";
+;
+GS SH "SH Channel"+
+GS SH "m6 GSPingSH";
+ltext@ GS "a11 pend on ping from SH";
+ltext@ SH "respond to gs ping";
+;
+SH GS "GS Channel"+
+SH GS "m7 SHPingGS";
+ltext@ GS "a12 Notify LA all-up";
+GS LA "BELA Channel"+
+GS LA "m8 GSIsUp";
+rtext@ LA "dragon runtime is up";
+rtext@ LA "a13 start my.py";
+LA GS "m9 GSProcessCreate my.py, parms";
+ltext@ GS "a14 register head process";
+ltext@ GS "a15 start on shepherd";
+GS SH "SH Channel"+
+GS SH "m10 SHProcessCreate my.py, parms";
+ltext@ SH "a16 spawn my.py process";
+ltext@ SH "<protocol with GS>";
+ltext@ UP "started";
+ltext@ UP "a17 example: print('foo')";
+UP SH "stdout"+
+UP SH "m11 'foo'";
+ltext@ SH "a18 package output";
+SH LA "BELA Channel"+
+SH LA "m12 SHFwdOutput 'foo'";
+rtext@ LA "a19 recv output";
+rtext@ LA "a20 dedupe and print output";
+ltext@ UP "main process continues...";

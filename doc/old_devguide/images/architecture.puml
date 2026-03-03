@@ -1,0 +1,104 @@
+
+@startuml
+
+' title "Dragon MPBridge Architecture"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+skinparam linetype ortho
+' skinparam linetype polyline
+' skinparam nodesep 50
+' skinparam ranksep 50
+
+
+component "Dragon Native (Python)" as DN {
+
+    ' portin "Pipe API" as dpipe_api
+    portin "KeyValue API" as ddict_api
+    portin "Machine API" as dmach_api
+
+    portin "Semaphore API" as dsem_api
+    portin "Lock API" as dlock_api
+    portin "Barrier API" as dbar_api
+    portin "Event API" as dev_api
+    portin "Queue API" as dqueue_api
+
+    ' portin "Logging API" as dlog_api
+
+    ' together {
+        [Semaphore] as SEM
+        [Lock] as LCK
+        [Barrier] as DBAR
+        [Event] as DEV
+        [Queue] as DQ
+    ' }
+
+    [Machine] as DMACH
+    ' [Pipe] as DPIPE
+    [Distributed Dict] as DDICT
+    [PoolWorkers] as DPWORK
+    
+    ' [Logging] as DLOG
+
+    SEM <-- dsem_api
+    LCK <-- dlock_api
+    DBAR <-- dbar_api
+    DEV <-- dev_api
+    DQ <-- dqueue_api
+    ' DPIPE <-- dpipe_api
+    DMACH <-- dmach_api
+    ' DLOG <-- dlog_api
+    DDICT <-- ddict_api
+    DDICT --> DPWORK
+
+}
+
+component "Dragon Client API" as DG {
+    
+    portin "  Channel API  " as dgchan_api
+    portin "  Process API  " as dgproc_api
+    portin "  Setup API  " as dgsetup_api
+    portin "  Shared Memory API  " as dgpool_api
+    portin "  Node API  " as dgmachine_api
+    port "  Infrastructure Messages  " as p1
+
+    [Channel] as DGCHAN
+    [Process] as DGPROC
+    [Pool] as DGPOOL
+    [Infrastructure Request] as INFREQUEST
+    [Node] as DGNODE
+
+    DGNODE <-u- dgmachine_api
+    DGCHAN <-u- dgchan_api
+    DGPROC <-u- dgproc_api
+    DGPOOL <-u- dgpool_api
+    INFREQUEST <-u- dgsetup_api
+    INFREQUEST -d-> p1
+
+    DGCHAN --> INFREQUEST
+    DGNODE --> INFREQUEST
+    DGPROC --> INFREQUEST
+    DGPOOL --> INFREQUEST
+    DGPROC --> DGCHAN
+}
+
+' [c] 
+
+SEM -d-> dgchan_api
+LCK -d-> dgchan_api
+DEV -d-> dgchan_api
+DQ -d-> dgchan_api
+DBAR -d-> dgchan_api
+DMACH -d-> dgmachine_api
+DPWORK -d-> dgproc_api
+DDICT -d-> dgchan_api
+DDICT -d-> dgproc_api
+DDICT -d-> dgpool_api
+
+' c <-- p1
+
+'in case we want to hide components
+hide $hidden
+@enduml

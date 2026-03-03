@@ -1,0 +1,9 @@
+- name: manylinux2014-build
+  os: centos7
+  arch: x86_64
+  image: arti.hpc.amslabs.hpecorp.net/quay-remote/pypa/manylinux2014_x86_64
+  spec_file: fake.spec
+  pre_build: dst/runBuildPrep.py310.sh
+  build: dst/runBuild.sh
+  post_build: dst/runUnitTest.sh
+  container_flags: ["--shm-size=4gb", "--network=host", "--privileged", "--rm"]

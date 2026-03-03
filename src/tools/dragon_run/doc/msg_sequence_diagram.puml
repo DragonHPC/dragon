@@ -1,0 +1,361 @@
+@startuml drun
+participant drun
+participant drfe [
+    DragonRunFE
+    ----
+    main_thread processes
+    messages placed in
+    self.msg_q from the
+    FERemoteExecutor and
+    LocalExecutor
+]
+participant ferex [
+    FERemoteExecutor
+    ----
+    main_thread_msg_proc processes
+    messages placed in self.msg_q
+    from the BackendConnector
+]
+participant febc [
+    FEBackendConnector
+    ----
+    host_recv_thread pulls
+    messages from SSHHost
+    and places them into
+    the msg_q for the run loop
+]
+participant ssh_host_1 [
+    SSHHost
+    ----
+    Responsible for launching
+    the drbe backend process
+    over SSH and sending/rececing
+    messages over stdout/stdin
+]
+
+participant drbe as drbe_app1
+
+participant drbe1 [
+    DragonRunBE
+    ----
+    Thread be_recv_msg_from_stdin_proc
+    places received messages into
+    self.recv_msg_q. Messages to be
+    sent are placed in self.send_msg_q and
+    processed by thread
+    be_send_msg_to_stdout_proc.
+    The main run loop processes received
+    messages and generates appropriate
+    responses.
+]
+
+participant drle1 [
+    LocalExecutor
+    ----
+    Temporary thread used to run user
+    applications locally and forwards
+    its output to DragonRunBE.
+]
+participant userapp as u1
+participant berex1 [
+    BERemoteExecutor
+    ----
+    main_thread_msg_proc processes
+    messages placed in self.msg_q
+    from the BackendConnector
+]
+
+participant bebc1 [
+    BEBackendConnector
+    ----
+    host_recv_thread pulls
+    messages from SSHHost
+    and places them into
+    the msg_q for the run loop
+]
+participant ssh_host_2 [
+    SSHHost
+    ----
+    Responsible for launching
+    the drbe backend process
+    over SSH and sending/rececing
+    messages over stdout/stdin
+]
+participant drbe as drbe_app2
+participant drbe2 [
+    DragonRunBE
+    ----
+    Thread be_recv_msg_from_stdin_proc
+    places received messages into
+    self.recv_msg_q. Messages to be
+    sent are placed in self.send_msg_q and
+    processed by thread
+    be_send_msg_to_stdout_proc.
+    The main run loop processes received
+    messages and generates appropriate
+    responses.
+]
+participant drle2 [
+    LocalExecutor
+    ----
+    Temporary thread used to run user
+    applications locally and forwards
+    its output to DragonRunBE.
+]
+participant userapp as u2
+
+activate drun
+
+drun -> drfe: with DragonRunFE
+activate drfe
+
+drfe -> drfe: ~__enter__()
+activate drfe
+
+drfe -> ferex: Instantiate FERemoteExecutor
+activate ferex
+
+drfe -> ferex: connect()
+activate ferex
+
+loop for 1 to Fanout nodes
+    ferex -> febc: [thread] BackendConnector.run()
+    activate febc
+
+    febc -> febc: connect()
+    activate febc
+    deactivate febc
+
+    febc -> ssh_host_1: Instantiate
+    activate ssh_host_1
+
+    note over ssh_host_1, drbe_app1: Launch Backend Agent
+    ssh_host_1 -> drbe_app1: ssh launch drbe
+    activate drbe_app1
+
+    drbe_app1 -> drbe1: with DragonRunBE
+    activate drbe1
+
+    drbe1 -> drbe1: ~__enter__()
+    activate drbe1
+
+    note over febc, drbe1: Establish connection
+    drbe1 --> ssh_host_1: HELLO_SYN
+    ssh_host_1 --> febc: HELLO_SYN
+
+    febc --> ssh_host_1: HELLO_SYNACK
+    ssh_host_1 --> drbe1: HELLO_SYNACK
+
+    drbe1 --> ssh_host_1: HELLO_ACK
+    ssh_host_1 --> febc: HELLO_ACK
+
+    note over febc, drbe1: Establish tree
+    febc --> drbe1: CREATE_TREE
+
+    drbe1 -> berex1: Instantiate FERemoteExecutor
+    activate berex1
+
+    drbe1 -> berex1: connect()
+    activate berex1
+
+    loop for 1 to Fanout nodes
+        berex1 -> bebc1: [thread] BackendConnector.run()
+        activate bebc1
+
+        bebc1 -> bebc1: connect()
+        activate bebc1
+
+        bebc1 -> ssh_host_2: Instantiate
+        activate ssh_host_2
+
+        note over ssh_host_2, drbe_app2: Launch Backend Agent
+        ssh_host_2 -> drbe_app2: ssh launch drbe
+        activate drbe_app2
+
+        drbe_app2 -> drbe2: with DragonRunBE
+        activate drbe2
+
+        drbe2 -> drbe2: ~__enter__()
+        activate drbe2
+
+        note over bebc1, drbe2: Establish connection
+        drbe2 --> bebc1: HELLO_SYN
+        bebc1 --> drbe2: HELLO_SYNACK
+        drbe2 --> bebc1: HELLO_ACK
+
+        note over bebc1, drbe2: Establish tree
+        bebc1 --> drbe2: CREATE_TREE
+
+        drbe2 --> bebc1: BACKEND_UP
+        bebc1 --> berex1: BACKEND_UP
+    end
+    deactivate bebc1
+
+    berex1 -> drbe1: connect()
+    deactivate berex1
+
+    deactivate drbe1
+
+    drbe1 --> febc: BACKEND_UP
+    febc --> ferex: BACKEND_UP
+end
+deactivate febc
+
+ferex -> drfe: connect()
+deactivate ferex
+
+deactivate drfe
+
+loop as many times
+    note over drun, u2: Run userapp
+
+    drun -> drfe: run_user_app
+    activate drfe
+    drfe --> ferex: RunUserApp(command)
+
+    loop
+        ferex --> febc: RunUserApp(command)
+        febc --> ssh_host_1: RunUserApp(command)
+        ssh_host_1 --> drbe1: RunUserApp(command)
+
+        drbe1 -> drle1: Instantiate
+        activate drle1
+
+        drle1 -> u1: Popen
+        activate u1
+
+        drbe1 --> berex1: RunUserApp(command)
+
+        loop
+            berex1 --> bebc1: RunUserApp(command)
+            bebc1 --> ssh_host_2: RunUserApp(command)
+            ssh_host_2 --> drbe2: RunUserApp(command)
+            drbe2 -> drle2: Instantiate
+            activate drle2
+
+            drle2 -> u2: Popen
+            activate u2
+        end
+    end
+
+    ...
+    u1 -> drle1: STDOUT "Bob"
+    drle1 --> drbe1: FwdStdOutput "Bob", fd=1
+    drbe1 --> ssh_host_1: FwdStdOutput "Bob", fd=1
+    ssh_host_1 --> febc: FwdStdOutput "Bob", fd=1
+    febc --> ferex: FwdStdOutput "Bob", fd=1
+    ferex --> drfe: FwdStdOutput "Bob", fd=1
+
+    u2 -> drle2: STDOUT "Fred"
+    drle2 --> drbe2: FwdStdOutput "Fred", fd=1
+    drbe2 --> ssh_host_2: FwdStdOutput "Fred", fd=1
+    ssh_host_2 --> bebc1: FwdStdOutput "Fred", fd=1
+    bebc1 --> berex1: FwdStdOutput "Fred", fd=1
+    berex1 --> drbe1: FwdStdOutput "Fred", fd=1
+    drbe1 --> ssh_host_1: FwdStdOutput "Fred", fd=1
+    ssh_host_1 --> febc: FwdStdOutput "Fred", fd=1
+    febc --> ferex: FwdStdOutput "Fred", fd=1
+    ferex --> drfe: FwdStdOutput "Fred", fd=1
+
+    u2 -> drle2: STDERR "Wilma"
+    drle2 --> drbe2: FwdStdOutput "Wilma", fd=2
+    drbe2 --> ssh_host_2: FwdStdOutput "Wilma", fd=2
+    ssh_host_2 --> bebc1: FwdStdOutput "Wilma", fd=2
+    bebc1 --> berex1: FwdStdOutput "Wilma", fd=2
+    berex1 --> drbe1: FwdStdOutput "Wilma", fd=2
+    drbe1 --> ssh_host_1: FwdStdOutput "Wilma", fd=2
+    ssh_host_1 --> febc: FwdStdOutput "Wilma", fd=2
+    febc --> ferex: FwdStdOutput "Wilma", fd=2
+    ferex --> drfe: FwdStdOutput "Wilma", fd=2
+
+    u1 -> drle1: STDERR "Lucy"
+    drle1 --> drbe1: FwdStdOutput "Lucy", fd=2
+    drbe1 --> ssh_host_1: FwdStdOutput "Lucy", fd=2
+    ssh_host_1 --> febc: FwdStdOutput "Lucy", fd=2
+    febc --> ferex: FwdStdOutput "Lucy", fd=2
+    ferex --> drfe: FwdStdOutput "Lucy", fd=2
+    ...
+
+    loop
+        u1 -> drle1: App Exit
+        deactivate u1
+
+        drle1 --> drbe1: UserAppExit
+        deactivate drle1
+
+        drbe1 --> ssh_host_1: UserAppExit
+        ssh_host_1 --> febc: UserAppExit
+        febc --> ferex: UserAppExit
+        ferex --> drfe: UserAppExit
+
+    end
+
+    loop
+        u2 -> drle2: App Exit
+        deactivate u2
+
+        drle2 --> drbe2: UserAppExit
+        deactivate drle2
+
+        drbe2 --> ssh_host_2: UserAppExit
+        ssh_host_2 --> bebc1: UserAppExit
+        bebc1 --> berex1: UserAppExit
+        berex1 --> drbe1: UserAppExit
+        drbe1 --> ssh_host_1: UserAppExit
+        ssh_host_1 --> febc: UserAppExit
+        febc --> ferex: UserAppExit
+        ferex --> drfe: UserAppExit
+    end
+end
+drfe -> drun: run_user_app
+deactivate drfe
+
+drfe -> drfe: ~__exit__()
+activate drfe
+
+note over drun, u2: Destroy Tree
+
+drfe -> ferex: disconnect()
+activate ferex
+
+ferex --> ferex: DestroyTree
+
+loop
+ferex --> febc: DestroyTree
+
+febc --> ssh_host_1: DestroyTree
+ssh_host_1 --> drbe1: DestroyTree
+
+drbe1 -> berex1: Disconnect()
+activate berex1
+
+berex1 --> berex1: DestroyTree
+
+loop
+    berex1 --> bebc1: DestroyTree
+    bebc1 --> ssh_host_2: DestroyTree
+    ssh_host_2 --> drbe2: DestroyTree
+
+    drbe2 --> ssh_host_2: TreeDestroyed
+    deactivate drbe2
+    deactivate drbe_app2
+
+    ssh_host_2 --> bebc1: TreeDestroyed
+    bebc1 --> berex1: TreeDestroyed
+
+    bebc1 -> ssh_host_2: disconnect
+end
+
+deactivate ssh_host_2
+
+deactivate bebc1
+deactivate drbe_app1
+
+deactivate berex1
+deactivate berex1
+deactivate ferex
+
+deactivate drfe
+deactivate drfe
+deactivate drun
+@enduml
