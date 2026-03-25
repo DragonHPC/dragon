@@ -1,0 +1,40 @@
+name: test-build
+
+on: [push, pull_request]
+
+jobs:
+
+  build:
+
+    runs-on: macos-26
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Environment
+        run: |
+          bash
+          set -x
+          uname -a
+          git branch 
+          ls -alt
+          sysctl -a | grep machdep.cpu
+          system_profiler SPHardwareDataType | grep " Memory:"
+          ls -alt /usr/bin | grep -i xcode
+          gcc --version
+          sw_vers
+          brew install autoconf automake libtool
+          export DRAGON_BASE_DIR=$PWD/src
+          source .github/workflows/setup
+          source hack/setup
+          source hack/clean_build
+          find / 2>&1 | grep -v denied | grep -e tar.gz$ -e whl$ | grep dragon || true
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: dragon-macos-pkg
+          path: src/dist/dragonhpc*whl
+          # sample path: src/dist/dragonhpc-0.13.1-cp314-cp314-macosx_26_0_arm64.whl
+          # sample runner absolute path: /Users/runner/work/dragon/dragon/src/...

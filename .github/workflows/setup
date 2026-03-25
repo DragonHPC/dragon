@@ -1,0 +1,25 @@
+# Install conda via miniforge and activate an env
+
+mkdir miniforge
+forge_script="https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Darwin-arm64.sh"
+wget $forge_script -O $PWD/miniforge/miniforge.sh
+bash $PWD/miniforge/miniforge.sh -b -u -p $PWD/miniforge
+rm -f $PWD/miniforge/miniforge.sh
+source $PWD/miniforge/bin/activate
+conda init --all
+echo $0
+$(echo $SHELL) --version
+ls -alt ~
+source ~/.bashrc || true
+source ~/.zshrc || true
+grep conda ~/.* || true
+conda create -y -n _env python=3.12
+source ~/.bashrc
+conda activate _env
+conda info --envs
+export PATH=/Users/runner/work/dragon/dragon/miniforge/envs/_env/bin:$PATH
+find /Users/runner/work/dragon/dragon/miniforge | grep -i python3$
+python3 --version
+which python3
+which python
+echo $CONDA_PREFIX

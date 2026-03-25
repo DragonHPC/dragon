@@ -20,3 +20,27 @@ make -C src distclean
 
 echo "Building source code."
 make -C src build
+
+# Run unit tests
+# make -C test test
+pushd test
+python3 test_c_files.py -v -f || true
+python3 test_channels.py -v -f || true
+popd
+
+# Build release
+ls -alt src/dist || true
+rm -fr src/dist && make -C src release
+
+echo "BUILD COMPLETE"
+
+# Tar up the built pkg
+
+ls -alt src/release/
+GITHASH="$(git rev-parse --short HEAD)"
+GITBRANCH="$(git branch --show)"
+PYTHON_VERSION=`python -c 'import sys; version=sys.version_info[:3]; print("{0}.{1}.{2}".format(*version))'`
+PYTHON_MAJOR_VERSION=`python -c 'import sys; print(sys.version_info[0])'`
+PYTHON_MINOR_VERSION=`python -c 'import sys; print(sys.version_info[1])'`
+cp src/release/dragon-${DRAGON_VERSION}-${GITHASH}.tar.gz \
+    src/release/dragon-${DRAGON_VERSION}-py${PYTHON_VERSION}-${GITHASH}.macos.tar.gz || true

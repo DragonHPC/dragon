@@ -3,8 +3,9 @@ name: call-py310-runner-build
 #
 # Call runner-build.yaml for a python 3.10 dst-workflow or diy-workflow build
 #
-  
-on: [push, pull_request]
+
+on: workflow_dispatch
+# on: [push, pull_request]
 
 jobs:
   call-build:
