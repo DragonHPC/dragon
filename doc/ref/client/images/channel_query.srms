@@ -1,0 +1,14 @@
+6 4
+begin components
+UP "User Process"
+GS "Global Services"
+end;
+rtext@ UP "channel.query()";
+UP GS "CHANNEL_QUERY"+
+UP GS "p_uid, target(c_uid | user_name)";
+ltext@ GS "success";
+GS UP "CHANNEL_DESCRIPTOR"+
+GS UP "ChannelDescriptor";
+ltext@ GS "fail: names not found";
+GS UP "FAIL_CHANNEL_UNKNOWN"+
+GS UP "None";

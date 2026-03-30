@@ -1,0 +1,52 @@
+@startuml
+
+title "Dragon Advanced Use Cases"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+skinparam linetype ortho
+' skinparam linetype polyline
+' skinparam nodesep 30
+skinparam ranksep 30
+
+[User library extention\nwith Dragon core] as UPDC
+[User program with \nunmanaged Dragon native] as UN
+
+component "Dragon" {
+
+    portin "Core API" as core_api
+    portin "Unmanaged Native API" as native_api
+
+    [Native\nuser extention] as DNE
+    [GS Client] as DCLIENT
+    [Infrastructure] as DINF
+    [Core] as DCORE
+    [Services] as DSERVICE
+    [Native] as DNATIVE
+    
+    ' DCLIENT <-- client_api
+    ' DINF <-- inf_api
+    DCORE <-- core_api
+    DNATIVE <-- native_api
+    
+    DNE --> DCLIENT
+    DNE --> DCORE
+    DNE --> DNATIVE
+
+    DNATIVE --> DCORE
+    DNATIVE --> DCLIENT
+    DSERVICE --> DINF
+    DSERVICE --> DCORE
+    DCLIENT --> DINF
+    DCLIENT --> DCORE
+    DINF --> DCORE
+}
+
+UPDC -d-> core_api
+UN -d-> native_api
+
+'in case we want to hide components
+hide $hidden
+@enduml

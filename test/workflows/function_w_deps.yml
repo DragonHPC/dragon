@@ -1,0 +1,39 @@
+########################### import-time and call-time arguments specified here ###########################
+
+import_args:
+  - update_dict
+  - next_idx
+
+# import_kwargs:
+
+args:
+  - the_ddict
+  - i
+  - num_items
+
+# kwargs:
+
+######### definition of task executables, resources, dependencies, etc. (in terms of args above) #########
+
+type: function
+
+executables:
+  - target: update_dict
+    args:
+      - the_ddict
+      - i
+      - num_items
+
+reads:
+  - ddict: the_ddict
+    keys:
+      - i
+
+writes:
+  - ddict: the_ddict
+    keys:
+      - next_idx:
+        - i
+        - num_items
+
+name: best_name_ever

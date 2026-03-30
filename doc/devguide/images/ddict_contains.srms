@@ -1,0 +1,15 @@
+8 4
+begin components
+c "User Program"
+m1 "Manager 1"
+m2 "Manager 2"
+end;
+ltext@ c "Client program invokes to check key existence";
+ltext@ c "Then it hashes the key once key";
+ltext@ c "It chooses the manager by computing the remainder of";
+ltext@ c "dividing by the number of managers.";
+;
+c m2 "DDContains(clientID, chkptID) sent to chosen manager main fli.";
+c m2 "Key - not a message";
+c m2 "EOT (low-level fli protocol)";
+m2 c "DDContainsResponse(status=DRAGON_SUCCESS) sent to client's buffered fli";

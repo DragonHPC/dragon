@@ -1,0 +1,12 @@
+#!/bin/bash
+
+save_cwd=$(pwd)
+fg_dir=${1}
+
+cp perf.data ${fg_dir}
+cd ${fg_dir}
+
+perf script | ./stackcollapse-perf.pl > out.perf-folded
+./flamegraph.pl out.perf-folded > ${save_cwd}/perf.svg
+
+rm perf.data
