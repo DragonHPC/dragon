@@ -16,7 +16,7 @@ from telemetry.test_analysis import (
     TestDragonTelemetryDetector,
     TestDragonTelemetryCollectorGroup,
 )
-from telemetry.test_mini_telemetry import TestDragonTelemetryMiniTelemetry, TestMiniTelemetryMerge
+from telemetry.test_offline_telemetry import TestDragonTelemetryOfflineTelemetry, TestOfflineTelemetryMerge
 import telemetry.telemetry_data
 
 

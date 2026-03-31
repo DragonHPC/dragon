@@ -3,19 +3,22 @@
 Graph-based Execution with Batch
 ++++++++++++++++++++++++++++++++
 
-:py:class:`~dragon.workflows.batch.Batch` allows users to group a sequence of tasks (Python
-functions, executables, or parallel jobs) into a single task that the
-user can start and wait on. We will generally refer to this grouping of
-tasks as *compiling* them into a single, compiled task. Users can
-specify dependencies between tasks and :py:class:`~dragon.workflows.batch.Batch` will
-automatically parallelize them via an implicitly inferred directed
-acyclic graph (DAG). The big picture is that :py:class:`~dragon.workflows.batch.Batch`
-allows users to think sequentially while reaping the benefits of a
-parallelized work flow.
+:py:class:`~dragon.workflows.batch.Batch` allows users to submit Python functions, executables, and
+parallel jobs for distributed execution with automatic parallelization. Simply call
+:py:meth:`~dragon.workflows.batch.Batch.function`, :py:meth:`~dragon.workflows.batch.Batch.process`,
+or :py:meth:`~dragon.workflows.batch.Batch.job` to submit tasks, and
+:py:class:`~dragon.workflows.batch.Batch` dispatches them to workers in the background automatically.
+Users specify data dependencies between tasks via :py:meth:`~dragon.workflows.batch.Batch.read` and
+:py:meth:`~dragon.workflows.batch.Batch.write` calls, and :py:class:`~dragon.workflows.batch.Batch`
+infers an implicit directed acyclic graph (DAG) to maximize parallelism. Results are retrieved by
+calling ``.get()`` on a task's handle, which blocks until
+the task completes. Use :py:meth:`~dragon.workflows.batch.Batch.fence` to wait for all currently
+submitted tasks to finish before proceeding, and :py:meth:`~dragon.workflows.batch.Batch.clear_results`
+to free the memory used to hold task results (implicitly calls :py:meth:`~dragon.workflows.batch.Batch.fence`).
 
 Below is a simple example using :py:class:`~dragon.workflows.batch.Batch` to parallelize a list of
-functions. In this example, dependencies actually force the functions to
-execute serially, but it demonstrates the basics of the API.
+functions. In this example, file-based dependencies force the functions to execute in order, but it
+demonstrates the basics of the API.
 
 .. code-block:: python
     :linenos:
@@ -131,8 +134,7 @@ directory.
         sec: 30
 
 
-And here is the same example as above, but done in a more manual way
-without a PTD file or batching tasks in the background.
+And here is the same example as above, but done without a PTD file.
 
 .. code-block:: python
     :linenos:
@@ -146,35 +148,26 @@ without a PTD file or batching tasks in the background.
     import numpy as np
 
     # A base directory, and files in it, will be used for communication of results
-    batch = Batch(disable_background_batching=True)
+    batch = Batch()
     base_dir = Path("/some/path/to/base_dir")
 
-    # Knowledge of reads and writes to files will also be used by the Batch service
-    # to determine data dependencies and how to parallelize tasks
+    # Knowledge of reads and writes to files is used by Batch to infer data dependencies
+    # and automatically parallelize tasks
     get_read = lambda i: batch.read(base_dir, Path(f"file_{i}"))
     get_write = lambda i: batch.write(base_dir, Path(f"file_{i+1}"))
 
     a = np.array([j for j in range(100)])
     m = np.vander(a)
 
-    # batch.function will create a task with specified arguments and reads/writes to the file system
-    get_task = lambda i: batch.function(gpu_matmul, m, base_dir, i, reads=[get_read(i)], writes=[get_write(i)], timeout=30)
+    # Submit tasks directly — Batch dispatches them to workers in the background
+    tasks = [batch.function(gpu_matmul, m, base_dir, i,
+                            reads=[get_read(i)], writes=[get_write(i)], timeout=30)
+             for i in range(1000)]
 
-    # Package up the list of tasks into a single compiled task and create the DAG (done by batch.compile),
-    # and then submit the compiled task to the Batch service (done by matrix_powers_task.start)
-    serial_task_list = [get_task(i) for i in range(1000)]
-    matrix_powers_task = batch.compile(serial_task_list)
-    matrix_powers_task.start()
-
-    # Wait for the compiled task to complete
-    matrix_powers_task.wait()
-
-    # If there was an exception while running the task, it will be raised when get() is called
-    for task in serial_task_list:
+    # Retrieve results — .get() waits for each task to complete if it hasn't yet
+    for task in tasks:
         try:
-            print(f"result={task.result.get()}")
-            # print(f"stdout={task.stdout.get()}")
-            # print(f"stderr={task.stderr.get()}")
+            print(f"result={task.get()}")
         except Exception as e:
             print(f"gpu_matmul failed with the following exception: {e}")
 
@@ -182,49 +175,28 @@ without a PTD file or batching tasks in the background.
     batch.join()
 
 
-The :py:meth:`~dragon.workflows.batch.Batch.compile` operation assumes that the order of functions in
-the list represents a valid order in which a user would manually call
-the functions in a sequential program. Given the list of functions,
-:py:meth:`~dragon.workflows.batch.Batch.compile` will produce a DAG that contains all the information
-needed to efficiently parallelize the function calls. Calling
-``matrix_powers_task.start`` will submit the *compiled* task to the
-Batch service, and calling ``matrix_powers_task.wait`` will wait for the
-completion of the task. The functions :py:meth:`~dragon.workflows.batch.Batch.close` and
-:py:meth:`~dragon.workflows.batch.Batch.join`
-are similar to the functions in :py:meth:`~dragon.mpbridge.context.DragonContext.Pool` with the same
-names; :py:meth:`~dragon.workflows.batch.Batch.close` says that no more work will
-be submitted, and :py:meth:`~dragon.workflows.batch.Batch.join` waits for all work submitted to complete and for
+Tasks are submitted continuously (although batched in the background for better performance). Calls to
+:py:meth:`~dragon.workflows.batch.Batch.function`, :py:meth:`~dragon.workflows.batch.Batch.process`, and
+:py:meth:`~dragon.workflows.batch.Batch.job` return immediately and :py:class:`~dragon.workflows.batch.Batch`
+batches and dispatches submitted tasks to workers in the background. The functions :py:meth:`~dragon.workflows.batch.Batch.close`
+and :py:meth:`~dragon.workflows.batch.Batch.join` are similar to the functions in
+:py:meth:`~dragon.mpbridge.context.DragonContext.Pool` with the same names:
+:py:meth:`~dragon.workflows.batch.Batch.close` indicates that no more work will be submitted, and
+:py:meth:`~dragon.workflows.batch.Batch.join` waits for all work to complete and for
 :py:class:`~dragon.workflows.batch.Batch` to shut down.
 
-Individual (i.e., non-compiled) tasks can also be submitted to the Batch
-service, but batching tasks together via :py:meth:`~dragon.workflows.batch.Batch.compile` will
-generally give better performance in terms of task scheduling overhead.
-There is no guaranteed ordering between separate tasks submitted to the
-Batch service. So, for example, if a user submits several compiled and
-non-compiled tasks to the Batch service, they will be executed in
-parallel and in no particular order.
+Any mix of Python functions, executables, and parallel jobs can be submitted to
+:py:class:`~dragon.workflows.batch.Batch` simultaneously, and dependencies can exist between tasks
+of any type, e.g., an MPI job can depend on the completion of a Python function if the MPI job
+reads from a file that the function writes to. MPI jobs are specified using the
+:py:meth:`~dragon.workflows.batch.Batch.job` function. Likewise, the
+:py:meth:`~dragon.workflows.batch.Batch.process` function submits a task for running a serial
+executable.
 
-Any mix of Python functions, executables, and parallel jobs can be
-submitted to the :py:class:`~dragon.workflows.batch.Batch` simulataneously, and dependencies can
-exist between tasks of any type, e.g., an MPI job can depend on the
-completion of a Python function if the MPI job reads from a file that
-the function writes to. MPI jobs are specified using the :py:meth:`~dragon.workflows.batch.Batch.job`
-function, which will create a task that allows the user to run the
-specified job. Likewise, the :py:meth:`~dragon.workflows.batch.Batch.process` function creates a task
-for running a serial executable.
-
-All tasks, regardless of the type of code that they run, have the same
-interface: ``start`` to start a task without waiting for its
-completion; ``wait`` to wait for the completion of a task;
-``run``, a blocking variant of ``start``, to both start a task
-and wait for its completion; and handles for getting the result, stdout,
-or stderr of a task. Tasks have three handles for obtaining output:
-``result``, ``stdout``, and ``stderr``.
-Calling the ``get`` method for any of these handles gets the associated
-value, and waits for the completion of the task if necessary. If an
-exception was thrown during the execution of a task, then calling
-``get()`` for the ``result`` handle of the task will raise the
-same exception that was thrown by the task.
+Each task has three handles for obtaining output: ``result``, ``stdout``, and ``stderr``.
+Calling ``.get()`` on the task handle returns the task's return value, blocking until the task
+completes if it has not finished yet. If an exception was thrown during the execution of a task,
+calling ``.get()`` on the task's handle will re-raise that exception.
 
 The initial creation of the :py:class:`~dragon.workflows.batch.Batch` object sets up manager and worker
 processes. :py:class:`~dragon.workflows.batch.Batch`
@@ -270,8 +242,7 @@ effects <https://en.wikipedia.org/wiki/Side_effect_(computer_science)>`__
 corresponding Read object must be created using :py:meth:`~dragon.workflows.batch.Batch.read` and
 appended to the list of Reads when creating the task (or added after
 task creation using task ``read``). If this read isn’t associated with
-the task, and the task is part of a compiled task, then the file read
-could happen out-of-order relative to other operations on that file,
+the task, then the file read could happen out-of-order relative to other operations on that file,
 e.g., the file read could occur before the data intended to be read is
 written to the file.
 
@@ -299,10 +270,9 @@ example:
 
     task_foo = batch.function(foo)
     task_bar = batch.function(bar, task_foo.result)
+    task_bar.get()
 
-    batch.compile([task_foo, task_bar]).run()
     # prints: "Hi-diddly-ho!!!"
-    print(f"{task_bar.stdout.get()}", flush=True)
 
     batch.close()
     batch.join()
@@ -311,19 +281,28 @@ example:
 In the above example, the function ``bar`` will not run until ``foo``
 completes, and ``bar`` will print the string returned by ``foo``.
 
+Synchronization
+===============
+
+By default, results can be retrieved in a fine-grained manner with ``.get()``, which blocks only for the specific
+task being waited on. When you need a hard synchronization point, i.e., before
+checkpointing state or starting a new phase of work that must not overlap with the previous one,
+use :py:meth:`~dragon.workflows.batch.Batch.fence`. It blocks until every task submitted by this
+client completes, then clears internal dependency state so the next batch of tasks starts from
+a clean slate. To additionally free the memory used to hold task results, call
+:py:meth:`~dragon.workflows.batch.Batch.clear_results`, which calls
+:py:meth:`~dragon.workflows.batch.Batch.fence` and then clears the results dictionary.
+
 Distributed Dictionary
 ======================
 
-The Distributed Dictionary provides a scalable, in-memory
-distributed key-value store with semantics that are generally similar to
-a standard Python dictionary. The Distrbuted Dictionary uses shared
-memory and RDMA to handle communication of keys and values, and avoids
-central coordination so there are no bottle-necks to scaling. Revisiting
-an example above for the Batch service, we will replace the file system
-as a means of inter-task communication with a Distributed Dictionary.
-The only part that needs to be updated is the creation of subtasks for
-the compiled task–everything from the :py:meth:`~dragon.workflows.batch.Batch.compile` call and down is
-the same.
+The Distributed Dictionary provides a scalable, in-memory distributed key-value store with
+semantics that are generally similar to a standard Python dictionary. The Distributed Dictionary
+uses shared memory and RDMA to handle communication of keys and values, and avoids central
+coordination so there are no bottlenecks to scaling. Revisiting an example above for the Batch
+service, we will replace the file system as a means of inter-task communication with a Distributed
+Dictionary. The only change needed is in the task definitions - the rest of the workflow
+(submitting tasks, retrieving results, closing) is identical.
 
 .. code-block:: python
     :linenos:
@@ -358,7 +337,37 @@ the same.
     a = np.array([i for i in range(100)])
     m = np.vander(a)
 
-    # batch.function will create a task with specified arguments and reads/writes to the
-    # distributed dictionary
-    get_task = lambda i: batch.function(gpu_matmul, (m, ddict, i), [get_read(i)], [get_write(i)])
+    # Submit tasks — Batch dispatches them in the background
+    tasks = [batch.function(gpu_matmul, m, ddict, i,
+                            reads=[get_read(i)], writes=[get_write(i)])
+             for i in range(1000)]
+
+    # Retrieve results — .get() waits for each task to complete if needed
+    for task in tasks:
+        try:
+            print(f"result={task.get()}")
+        except Exception as e:
+            print(f"gpu_matmul failed with the following exception: {e}")
+
+    batch.close()
+    batch.join()
+
+
+Inspecting the Topology
+=======================
+
+:py:meth:`~dragon.workflows.batch.Batch.topology` returns a
+:py:class:`~dragon.workflows.batch.BatchTopology` object that describes how
+:py:class:`~dragon.workflows.batch.Batch` has mapped managers and worker pools onto
+the nodes of the allocation. This is useful for understanding how work will be
+distributed before submitting tasks.
+
+The example below creates several :py:class:`~dragon.workflows.batch.Batch` instances
+with different configurations, prints a summary of each resulting topology, and
+shuts down cleanly without submitting any real work.
+
+.. literalinclude:: ../../examples/workflows/batch/topology.py
+    :language: python
+    :linenos:
+    :caption: **topology.py: Batch topology API walkthrough**
 

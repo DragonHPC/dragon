@@ -112,11 +112,15 @@ class Orchestrator:
     def __setstate__(self):
         # read managers' serialized pool descriptors from file
         ser_metadata = self._persister.load_metadata(log, self._persist_path, self._name)
-        (self._serialized_manager_pool, self._manager_nodes, self._loaded_persister) = cloudpickle.loads(b64decode(ser_metadata))
+        (self._serialized_manager_pool, self._manager_nodes, self._loaded_persister) = cloudpickle.loads(
+            b64decode(ser_metadata)
+        )
 
     def __getstate__(self):
         # write the map of managers' serialized memory pool descriptors to the file
-        ser_metadata = b64encode(cloudpickle.dumps((self._serialized_manager_pool, self._manager_nodes, self._persister)))
+        ser_metadata = b64encode(
+            cloudpickle.dumps((self._serialized_manager_pool, self._manager_nodes, self._persister))
+        )
         self._persister.dump_metadata(log, self._persist_path, self._name, ser_metadata)
 
     def run(self):
@@ -531,7 +535,9 @@ class Orchestrator:
 
         except Exception as ex:
             tb = traceback.format_exc()
-            err_str = f"There was an exception while waiting for manager {msg.managerID} readiness: {ex} \n Traceback: {tb}"
+            err_str = (
+                f"There was an exception while waiting for manager {msg.managerID} readiness: {ex} \n Traceback: {tb}"
+            )
             log.debug(err_str)
             self._return_create_failure(DragonError.FAILURE, err_str)
             raise RuntimeError(err_str)
@@ -638,7 +644,13 @@ class Orchestrator:
         connection.detach()
 
 
-def start(managers_per_node: int, n_nodes: int, total_mem: int, trace: bool, bootstrap_queue: Queue) -> None:
+def start(
+    managers_per_node: int,
+    n_nodes: int,
+    total_mem: int,
+    trace: bool,
+    bootstrap_queue: Queue,
+) -> None:
     try:
         log.debug("Initing Orchestrator")
         orc = Orchestrator(managers_per_node, n_nodes, total_mem, trace, bootstrap_queue)

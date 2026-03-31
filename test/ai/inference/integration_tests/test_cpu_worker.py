@@ -561,7 +561,6 @@ class TestCPUWorkerInferenceWorkerCreation(unittest.TestCase):
             hostname="node-0",
             cpu_worker_pid=12345,
             devices=[0],
-            master_port="29500",
             inf_worker_queue=inf_worker_queue,
             inf_wrkr_barrier=inf_wrkr_barrier,
             inf_wrkr_down_ev=inf_wrkr_down_ev,

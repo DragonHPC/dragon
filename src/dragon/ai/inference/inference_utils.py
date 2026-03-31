@@ -1,6 +1,5 @@
 import dragon
 import multiprocessing as mp
-import socket
 import os
 import sys
 import math
@@ -26,15 +25,11 @@ class Inference:
     power consumption and carbon emissions is also enabled.
     """
 
-    def __init__(self, config: InferenceConfig, num_nodes, offset, input_queue) -> None:
+    def __init__(self, config: InferenceConfig, input_queue) -> None:
         """Initialize a :class:`Inference` instance.
 
         :param config: Type-safe configuration object.
         :type config: InferenceConfig
-        :param num_nodes: Number of nodes to use for inference.
-        :type num_nodes: int
-        :param offset: Offset used to subset nodes from the allocation.
-        :type offset: int
         :param input_queue: Input queue that feeds user prompts into the
             backend service.
         :type input_queue: mp.Queue
@@ -47,6 +42,7 @@ class Inference:
         self.model_name = config.model.model_name
         self.hf_token = config.model.hf_token
         self.tp_size = config.model.tp_size
+        self.run_type = config.run_type
 
         # Initialize user-prompt input queue
         self.end_event = mp.Event()
@@ -90,23 +86,13 @@ class Inference:
         self.system_prompt = config.model.system_prompt
 
         # Infra/Setup parameters - extracted from HardwareConfig
-        self.nnodes = num_nodes
-        self.offset = offset
+        self.nnodes = config.hardware.num_nodes
+        self.node_offset = config.hardware.node_offset
         self.ngpus = config.hardware.num_gpus
         self.num_inf_workers_for_each_cpu_head = config.hardware.num_inf_workers_per_cpu
 
-        self.in_use_ports = []
-
         # Get all nodes in allocation
         self.all_nodes = self.get_nodes_in_alloc()
-
-        # Validate num_nodes parameter
-        available_nodes = len(self.all_nodes)
-        if self.nnodes != -1:
-            if self.nnodes <= 0:
-                raise ValueError(f"num_nodes must be >= 1, got {self.nnodes}")
-            if self.nnodes > available_nodes:
-                raise ValueError(f"Requested {self.nnodes} nodes but only {available_nodes} available")
 
         # Validate configuration against available resources
         config.validate_all(self.all_nodes)
@@ -175,8 +161,8 @@ class Inference:
                 f"Using {self.nnodes} of {num_nodes_in_alloc} node(s) in allocation.",
                 flush=True,
             )
-            start = self.offset
-            end = self.offset + self.nnodes
+            start = self.node_offset
+            end = self.node_offset + self.nnodes
             all_nodes = {key: all_nodes[key] for key in list(all_nodes.keys())[start:end]}
 
         # Maybe subset gpus
@@ -205,33 +191,6 @@ class Inference:
                 flush=True,
             )
             sys.exit(1)
-
-    def get_master_port(self, base_port=29500, port_range_size=1000) -> str:
-        """Return the first available TCP port in a given range.
-
-        :param base_port: Starting port of the search range.
-        :type base_port: int
-        :param port_range_size: Size of the port range to scan.
-        :type port_range_size: int
-        :raises IOError: If no free port is found in the range.
-        :returns: A free port as a string.
-        :rtype: str
-        """
-        port = base_port
-        max_port = base_port + port_range_size
-        sock = socket.socket()
-        while port < max_port:
-            try:
-                if str(port) not in self.in_use_ports:
-                    sock.bind(("", port))
-                    sock.close()
-                    self.in_use_ports.append(str(port))
-                    return str(port)
-                else:
-                    port += 1
-            except OSError:
-                port += 1
-        raise IOError("no free ports")
 
     def create_cpu_device_workers_by_node(self):
         """Create CPU-head workers and associated inference workers by node.
@@ -264,9 +223,8 @@ class Inference:
                     num_inf_wrkrs = 0
 
                 cur_inf_worker = devices[i : i + self.tp_size]
-                ports_list = self.get_master_port()
                 num_inf_wrkrs += 1
-                inf_wrkr_config.append((cur_inf_worker, ports_list))
+                inf_wrkr_config.append(cur_inf_worker)
 
             cpu_wrkr_id += 1
             num_cpu_procs += 1

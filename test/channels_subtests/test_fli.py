@@ -232,7 +232,7 @@ class FLISendRecvTest(unittest.TestCase):
 
     def test_send_recv_direct(self):
         stream = Channel(self.mpool, 9999)
-        sendh = self.fli.sendh(stream)
+        sendh = self.fli.sendh(stream_channel=stream)
         recvh = self.fli.recvh()
 
         b = b"Hello World"

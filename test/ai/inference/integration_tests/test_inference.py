@@ -20,6 +20,7 @@ from dragon.ai.inference.config import (
     DynamicWorkerConfig,
 )
 from dragon.ai.inference.inference_utils import Inference
+from dragon.ai.inference.llm_engine import find_free_port
 
 from ..mocks import MockNode
 
@@ -65,14 +66,14 @@ class TestInferenceQueryPipeline(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -114,14 +115,14 @@ class TestInferenceQueryPipeline(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -171,14 +172,14 @@ class TestInferenceQueryPipeline(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -231,14 +232,14 @@ class TestInferenceCPUWorkerIntegration(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=True),
             dynamic_worker=DynamicWorkerConfig(enabled=True),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -276,14 +277,14 @@ class TestInferenceCPUWorkerIntegration(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -291,18 +292,18 @@ class TestInferenceCPUWorkerIntegration(unittest.TestCase):
         self.assertIn("node-0", dragon_inference.cpu_and_device_proc_by_hostname)
         node_config = dragon_inference.cpu_and_device_proc_by_hostname["node-0"]
 
-        # Each CPU worker entry should have (devices, port) tuples
+        # Each CPU worker entry should have device lists
         for cpu_wrkr_id, inf_wrkr_configs in node_config.items():
             self.assertIsInstance(inf_wrkr_configs, list)
-            for devices, port in inf_wrkr_configs:
+            for devices in inf_wrkr_configs:
                 self.assertIsInstance(devices, list)
                 self.assertEqual(len(devices), 2)  # tp_size=2
-                self.assertIsInstance(port, str)
 
 
 class TestInferencePortManagement(unittest.TestCase):
-    """Integration tests for Inference port allocation to prevent
-    conflicts between inference workers.
+    """Integration tests for port allocation.
+    Ports are discovered on each worker node at initialization time
+    via the standalone find_free_port() utility.
     """
 
     @classmethod
@@ -312,23 +313,44 @@ class TestInferencePortManagement(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.inference_utils.socket.socket")
+    def test_find_free_port_returns_valid_port(self):
+        """Test that find_free_port returns a valid port string within the requested range."""
+        port = find_free_port(base_port=29500, port_range_size=1000)
+        port_int = int(port)
+        self.assertGreaterEqual(port_int, 29500)
+        self.assertLess(port_int, 30500)
+
+    def test_find_free_port_unique_across_calls(self):
+        """Test that consecutive calls to find_free_port can return different ports
+        when the previous port is still bound."""
+        import socket
+
+        # Bind a port to make it unavailable
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.bind(("", 29500))
+        try:
+            port = find_free_port(base_port=29500, port_range_size=1000)
+            self.assertNotEqual(port, "29500")
+        finally:
+            sock.close()
+
+    def test_find_free_port_raises_when_no_ports(self):
+        """Test that find_free_port raises IOError when no ports are available."""
+        with self.assertRaises(IOError):
+            # Use a range of 0 so no ports can be found
+            find_free_port(base_port=29500, port_range_size=0)
+
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_unique_ports_for_workers(self, mock_telemetry, mock_node_class, mock_system, mock_socket):
-        """Test that get_master_port allocates unique ports and tracks
-        them to prevent conflicts.
-        """
+    def test_no_ports_preallocated_on_head_node(self, mock_telemetry, mock_node_class, mock_system):
+        """Test that Inference no longer pre-allocates ports on the head node."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0]
         mock_system.return_value = mock_system_instance
 
         mock_node = MockNode("node-0", num_gpus=4)
         mock_node_class.return_value = mock_node
-
-        mock_sock_instance = MagicMock()
-        mock_socket.return_value = mock_sock_instance
 
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=4),
@@ -337,31 +359,22 @@ class TestInferencePortManagement(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
-        dragon_inference = Inference(
-            config=config,
-            num_nodes=1,
-            offset=0,
-            input_queue=input_queue,
-        )
+        dragon_inference = Inference(config=config, input_queue=input_queue)
 
-        # Track ports allocated during initialization (4 workers with tp_size=1)
-        initial_port_count = len(dragon_inference.in_use_ports)
-
-        # Allocate multiple ports
-        ports = []
-        for _ in range(5):
-            port = dragon_inference.get_master_port()
-            ports.append(port)
-
-        # Verify all ports are unique
-        self.assertEqual(len(ports), len(set(ports)))
-
-        # Verify total ports tracked (initial + 5 new)
-        self.assertEqual(len(dragon_inference.in_use_ports), initial_port_count + 5)
+        # Verify that worker config contains device lists (no port)
+        for (
+            hostname,
+            workers,
+        ) in dragon_inference.cpu_and_device_proc_by_hostname.items():
+            for cpu_wrkr_id, inf_wrkr_configs in workers.items():
+                for devices in inf_wrkr_configs:
+                    self.assertIsInstance(devices, list)
 
 
 class TestInferenceNodeAllocation(unittest.TestCase):
@@ -397,14 +410,14 @@ class TestInferenceNodeAllocation(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=2,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -434,14 +447,14 @@ class TestInferenceNodeAllocation(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=2,
-            offset=2,  # Start from node 2
             input_queue=input_queue,
         )
 

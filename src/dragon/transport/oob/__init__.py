@@ -1,7 +1,13 @@
+import cmd
+import ctypes
 import os
+import shlex
+import shutil
+import signal
+import socket
 import subprocess
 import time
-import socket
+
 from ... import channels as dch
 from ... import managed_memory as dmm
 from ...globalservices.channel import create, release_refcnt
@@ -14,9 +20,18 @@ from ...infrastructure import parameters as dparms
 from ...infrastructure import util as dutil
 from ...launcher import util as dlutil
 from ...dlogging import util as dlogutil
-from ...dlogging.logger import DragonLogger
 from ...utils import B64
 from ...infrastructure.parameters import this_process
+
+
+def set_pdeathsig():
+    """
+    Kills the ssh tunnel on shutdown/failure
+    """
+    PR_SET_PDEATHSIG = 1
+    libc = ctypes.CDLL("libc.so")
+    libc.prctl(PR_SET_PDEATHSIG, signal.SIGTERM)
+
 
 class OutOfBand:
 
@@ -54,6 +69,8 @@ class OutOfBand:
         env[f"DRAGON_RT_UID__{remote_rt_uid}"] = gw_str
         os.environ[f"DRAGON_RT_UID__{remote_rt_uid}"] = gw_str
 
+        env[f"{dfacts.OOB_GW_ENV_PREFIX}1"] = gw_str
+
     def start_oob_transport(self, fe_ext_ip_addr=None, head_node_ip_addr=None, port=None):
         # save port
         self.port = port
@@ -66,20 +83,24 @@ class OutOfBand:
 
         env = dict(os.environ)
 
-        args = [
-            "python3",
-            "-m",
-            "dragon.cli",
-            "dragon-tcp",
+        # TODO: Allow the user to set the transport used for oob agents
+        overlay_transport = os.environ[dfacts.OVERLAY_TRANSPORT_VAR]
+        args = shlex.split(overlay_transport)
+        alias = dfacts.TRANSPORT_AGENT_ALIASES.get(args[0].lower())
+        if alias:
+            args = alias + args[1:]
+        # Resolve executable
+        cmd = shutil.which(args[0])
+        if cmd:  # Only replace if resolved
+            args[0] = cmd
+
+        args = args + [
             f"--oob-port={port}",
-            "--no-tls",
-            "--no-tls-verify",
             f"--ch-in-sdesc={B64.bytes_to_str(input_ch.serialize())}",
             f"--ch-out-sdesc={B64.bytes_to_str(output_ch.serialize())}",
         ]
 
-        dragon_logger = DragonLogger(mpool=dmm.MemoryPool.attach(B64.from_str(this_process.default_pd).decode()))
-        self.log_sdesc = B64(dragon_logger.serialize())
+        self.log_sdesc = os.environ.get(dfacts.DRAGON_LOGGER_SDESC, None)
 
         if self.log_sdesc != None:
             args.append(f"--log-sdesc={self.log_sdesc}")
@@ -91,7 +112,7 @@ class OutOfBand:
         # this should only be true on the connecting side
         if head_node_ip_addr != None:
             self.setup_gateways(env, fe_ext_ip_addr, head_node_ip_addr)
-            oob_ip_addr = head_node_ip_addr
+            oob_ip_addr = "127.0.0.1"
             args.append(f"--oob-ip-addr={oob_ip_addr}")
 
         # this sets an arbitrary value for node_index
@@ -100,11 +121,16 @@ class OutOfBand:
         subprocess.Popen(args, env=env)
 
     def connect(self, fe_ext_ip_addr, head_node_ip_addr, port):
-        print(f"Connecting to OOB transport agents on port {port} with {fe_ext_ip_addr} and {head_node_ip_addr}", flush=True)
+        print(
+            f"Connecting to OOB transport agents on port {port} with {fe_ext_ip_addr} and {head_node_ip_addr}",
+            flush=True,
+        )
         self.connecting_ta = True
         if not self.ta_started:
             if self.oob_ssh_tunnel_override is not None:
-                tunnel_args = self.oob_ssh_tunnel_override.format(fe_ext_ip_addr=fe_ext_ip_addr, head_node_ip_addr=head_node_ip_addr, port=port).split()
+                tunnel_args = self.oob_ssh_tunnel_override.format(
+                    fe_ext_ip_addr=fe_ext_ip_addr, head_node_ip_addr=head_node_ip_addr, port=port
+                ).split()
             else:
                 tunnel_args = [
                     "ssh",
@@ -115,10 +141,14 @@ class OutOfBand:
                     "-N",
                     "-L",
                     f"{port}:localhost:{port}",
-                    "-f",
                     f"{head_node_ip_addr}",
                 ]
 
+            # TODO: this should help clean up the tunnel if the parent process dies, but
+            # we're currently seeing an error in the pre-exec function
+            # self.tunnel_proc = subprocess.Popen(
+            #     tunnel_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, preexec_fn=set_pdeathsig
+            # )
             self.tunnel_proc = subprocess.Popen(tunnel_args, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             start = time.time()
@@ -155,9 +185,3 @@ class OutOfBand:
         for ch in self.channels:
             release_refcnt(ch.cuid)
             ch.detach()
-
-        # kill process that accepts incoming tcp connections
-        # TODO: Improve this. We should know which process is being killed
-        # and kill it explicitly.
-        if self.accepting_ta:
-            os.system(f"kill $(lsof -t -i:{self.port}) > /dev/null 2>&1")

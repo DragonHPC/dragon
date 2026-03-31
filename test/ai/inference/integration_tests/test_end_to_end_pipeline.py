@@ -69,14 +69,14 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -119,14 +119,14 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -171,14 +171,14 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -233,14 +233,14 @@ class TestEndToEndBatchedPrompts(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -285,14 +285,14 @@ class TestEndToEndBatchedPrompts(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -340,14 +340,14 @@ class TestEndToEndWithGuardrails(unittest.TestCase):
             ),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -391,14 +391,14 @@ class TestEndToEndMultiNode(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=3,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -433,6 +433,8 @@ class TestEndToEndMultiNode(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
@@ -440,8 +442,6 @@ class TestEndToEndMultiNode(unittest.TestCase):
         # Use offset=2 to start from node-2
         dragon_inference = Inference(
             config=config,
-            num_nodes=2,
-            offset=2,
             input_queue=input_queue,
         )
 
@@ -464,21 +464,17 @@ class TestEndToEndPortManagement(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.inference_utils.socket.socket")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_unique_ports_allocated_across_workers(self, mock_telemetry, mock_node_class, mock_system, mock_socket):
-        """Test that each inference worker gets a unique port."""
+    def test_unique_ports_allocated_across_workers(self, mock_telemetry, mock_node_class, mock_system):
+        """Test that each inference worker gets None for port (discovered on worker node)."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0]
         mock_system.return_value = mock_system_instance
 
         mock_node = MockNode("node-0", num_gpus=8)
         mock_node_class.return_value = mock_node
-
-        mock_sock_instance = MagicMock()
-        mock_socket.return_value = mock_sock_instance
 
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=8, num_inf_workers_per_cpu=4),
@@ -487,33 +483,25 @@ class TestEndToEndPortManagement(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
-        # Collect all ports from worker configuration
-        all_ports = []
+        # Verify worker config contains device lists (port discovered on worker node)
         for (
             hostname,
             cpu_workers,
         ) in dragon_inference.cpu_and_device_proc_by_hostname.items():
             for cpu_wrkr_id, inf_wrkr_configs in cpu_workers.items():
-                for devices, port in inf_wrkr_configs:
-                    all_ports.append(port)
-
-        # Verify all ports are unique
-        self.assertEqual(len(all_ports), len(set(all_ports)))
-
-        # Verify all ports are tracked
-        for port in all_ports:
-            self.assertIn(port, dragon_inference.in_use_ports)
+                for devices in inf_wrkr_configs:
+                    self.assertIsInstance(devices, list)
 
 
 if __name__ == "__main__":

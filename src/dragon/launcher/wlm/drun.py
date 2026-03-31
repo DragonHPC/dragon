@@ -2,6 +2,7 @@ import os
 import subprocess
 
 from .base import BaseWLM
+from dragon.infrastructure.facts import TransportAgentOptions
 from dragon.tools.dragon_run.src import DragonRunPopen, PIPE
 from typing import Optional
 
@@ -58,6 +59,7 @@ class DRunWLM(BaseWLM):
         fe_host_id: str,
         frontend_sdesc: str,
         network_prefix: str,
+        overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
     ):
@@ -66,6 +68,7 @@ class DRunWLM(BaseWLM):
             fe_host_id=fe_host_id,
             frontend_sdesc=frontend_sdesc,
             network_prefix=network_prefix,
+            overlay_transport=overlay_transport,
             overlay_port=overlay_port,
             transport_test_env=transport_test_env,
         )

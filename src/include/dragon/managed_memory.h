@@ -357,7 +357,7 @@ dragonError_t
 dragon_memory_pool_get_uid_fname(const dragonMemoryPoolSerial_t * pool_ser, dragonULInt * uid_out, char ** fname_out);
 
 bool
-dragon_memory_pool_is_local(dragonMemoryPoolDescr_t * pool_descr);
+dragon_memory_pool_is_local(const dragonMemoryPoolDescr_t * pool_descr);
 
 dragonError_t
 dragon_memory_pool_descr_clone(dragonMemoryPoolDescr_t * newpool_descr, const dragonMemoryPoolDescr_t * oldpool_descr);

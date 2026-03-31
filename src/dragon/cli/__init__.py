@@ -36,6 +36,7 @@ PROCNAME_JUPYTER = "dragon-jupyter"
 PROCNAME_DRUN = "drun"
 PROCNAME_DRBE = "drbe"
 PROCNAME_DHOSTS = "dhosts"
+PROCNAME_OFFLINE_TELEMETRY = "dragon-offline-telemetry"
 
 # TODO Refactor frontend entry point. See ../__main__.py and
 # TODO ../launcher/launch_selector.py.
@@ -69,6 +70,7 @@ entry_points = {
         f"{PROCNAME_DRUN} = dragon.tools.dragon_run.drun:main",
         f"{PROCNAME_DRBE} = dragon.tools.dragon_run.drbe:main",
         f"{PROCNAME_DHOSTS} = dragon.tools.dragon_run.dhosts:main",
+        f"{PROCNAME_OFFLINE_TELEMETRY} = dragon.telemetry.offline_telemetry:main",
     ]
 }
 

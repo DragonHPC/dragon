@@ -14,6 +14,7 @@ import os
 import pickle
 import threading
 from cython.cimports.cpython.ref import PyObject
+from cython.cimports.libc.stdlib import malloc, free
 
 ################################
 # Begin Cython definitions
@@ -1423,6 +1424,25 @@ cdef class Channel:
     @property
     def is_local(self):
         return dragon_channel_is_local(&self._channel)
+
+    @classmethod
+    def ta_update_nodes(self, nodes):
+        cdef derr = DRAGON_SUCCESS
+        cdef num_mappings = len(nodes)
+        cdef dragonNodeMap_t* node_mappings = <dragonNodeMap_t*>malloc(num_mappings * sizeof(dragonNodeMap_t))
+        if not node_mappings:
+            raise MemoryError("Failed to allocate memory for new node mappings")
+
+        for i in range(num_mappings):
+            host_id, ip_addr = nodes[i]
+            node_mappings[i].host_id = host_id
+            node_mappings[i].ip_addr = ip_addr
+
+        derr = dragon_channel_ta_update_nodes(node_mappings, num_mappings)
+        free(node_mappings)
+
+        if derr != DRAGON_SUCCESS:
+            raise ChannelError("Error updating transport agent with new nodes", derr)
 
 
 cdef class ChannelSet:

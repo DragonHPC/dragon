@@ -20,9 +20,8 @@ import dragon.launcher.util as dlutil
 import dragon.infrastructure.util as dutil
 import dragon.utils as du
 
-from dragon.dlogging.logger import DragonLogger, DragonLoggingError
+from dragon.dlogging.logger import DragonLoggingError
 from dragon.channels import ChannelEmpty
-from dragon.utils import B64
 
 
 def generate_msg(length):
@@ -32,7 +31,7 @@ def generate_msg(length):
 def run_logger(info_msg, debug_msg):
 
     # set up my stdin for listening to my channel descriptor
-    logger_sdesc = B64.from_str(os.environ.get(dfacts.DRAGON_LOGGER_SDESC))
+    logger_sdesc = os.environ.get(dfacts.DRAGON_LOGGER_SDESC)
 
     # Log stuff
     level, full_fname = dlog.setup_BE_logging(service=dlog.DragonLoggingServices.TEST, logger_sdesc=logger_sdesc)
@@ -50,7 +49,7 @@ def run_logging_subprocesses(nproc, level, sdesc):
 
     # Update environment
     the_env = os.environ
-    the_env["DRAGON_LOGGER_SDESC"] = du.B64.bytes_to_str(sdesc)
+    the_env["DRAGON_LOGGER_SDESC"] = sdesc
 
     info_msgs = []
     debug_msgs = []
@@ -86,66 +85,6 @@ def close_handlers(log):
         handler.close()
 
 
-class LoggingTest(unittest.TestCase):
-
-    def setUp(self):
-        self.mpool = dlog._get_logging_mpool(0)
-        self.logger = None
-
-    def tearDown(self):
-        if self.logger is None:
-            self.mpool.destroy()
-        else:
-            self.logger.destroy()  # This also nukes the underlying pool, change that behavior?
-
-    def test_create(self):
-        self.logger = DragonLogger(self.mpool)
-
-    def test_put(self):
-        self.logger = DragonLogger(self.mpool)
-        self.logger.put("A")
-
-    def test_put_get(self):
-        self.logger = DragonLogger(self.mpool)
-        self.logger.put("aaaa")
-        a = self.logger.get()
-        self.assertEqual(a, "aaaa")
-
-    def test_put_get_many(self):
-        self.logger = DragonLogger(self.mpool)
-        abcs = "abcdefghijklmnopqrstuvwxyz"
-        for i in range(0, len(abcs)):
-            self.logger.put(abcs[i])
-
-        for i in range(0, len(abcs)):
-            msg = self.logger.get()
-            self.assertEqual(msg, abcs[i])
-
-    def test_get_timeout(self):
-        # What else would be good test cases for timeout besides "it times out"?
-        self.logger = DragonLogger(self.mpool)
-        with self.assertRaises(ChannelEmpty):
-            self.logger.get(logging.WARNING, timeout=1)
-
-    def test_put_get_priority(self):
-        self.logger = DragonLogger(self.mpool)
-        self.logger.put("debug", logging.DEBUG)
-        self.logger.put("info", logging.INFO)
-        self.logger.put("warning", logging.WARNING)
-        self.logger.put("error", logging.ERROR)
-
-        # Only get messages at warning or above
-        msg_debug = self.logger.get(logging.WARNING)
-        msg_info = self.logger.get(logging.WARNING)
-        msg_warning = self.logger.get(logging.WARNING)
-        msg_error = self.logger.get(logging.WARNING)
-
-        self.assertEqual(msg_debug, None)
-        self.assertEqual(msg_info, None)
-        self.assertEqual(msg_warning, "warning")
-        self.assertEqual(msg_error, "error")
-
-
 class TestLogHandler(unittest.TestCase):
 
     def setUp(self) -> None:
@@ -157,55 +96,38 @@ class TestLogHandler(unittest.TestCase):
         return "".join(random.choice(string.ascii_lowercase) for i in range(length))
 
     @patch.dict(os.environ, {"DRAGON_LOG_DEVICE_STDERR": "INFO"})
-    @patch("dragon.dlogging.util.DragonLogger", autospec=True)
-    def test_dragon_loghandler_mock(self, mock_dragon_logger) -> None:
-
-        instance_mock = MagicMock()
-        mock_dragon_logger.attach.return_value = instance_mock
-        serialized_log_descr = B64.from_str(self.get_random_string(1024))
-
-        level, _ = dlog.setup_BE_logging(service=dlog.DragonLoggingServices.TEST, logger_sdesc=serialized_log_descr)
-        py_logger = logging.getLogger(dlog.DragonLoggingServices.TEST)
-        py_logger.info(self.info_log_message)
-        py_logger.debug(self.debug_log_message)
-
-        mock_dragon_logger.attach.assert_called_with(serialized_log_descr.decode(), mpool=None)
-        self.assertEqual(instance_mock.put.call_count, 1)
-
-        serial_msg, level = instance_mock.mock_calls[-1].args
-        msg = dmsg.parse(serial_msg)
-        self.assertEqual(msg.msg, self.info_log_message)
-        self.assertEqual(level, logging.INFO)
-
-    @patch.dict(os.environ, {"DRAGON_LOG_DEVICE_STDERR": "INFO"})
     def test_dragon_loghandler_to_dragon_logging_layer(self) -> None:
         from logging import INFO
 
-        dragon_logger = dlog.setup_dragon_logging(0)
-        dlog.setup_BE_logging(service=dlog.DragonLoggingServices.TEST, logger_sdesc=B64(dragon_logger.serialize()))
+        logging_queue = dlog.setup_dragon_logging(0)
+        serialized_logging_queue = logging_queue.serialize()
+        dlog.setup_BE_logging(service=dlog.DragonLoggingServices.TEST, logger_sdesc=serialized_logging_queue)
         py_logger = logging.getLogger(dlog.DragonLoggingServices.TEST)
         py_logger.info(self.info_log_message)
-        msg = dmsg.parse(dragon_logger.get(INFO))
+        msg = dmsg.parse(logging_queue.get(INFO))
         self.assertEqual(msg.msg, self.info_log_message)
 
-        dragon_logger.destroy()  # This also nukes the underlying pool
+        if logging_queue is not None:
+            logging_queue.destroy()  # This also nukes the underlying pool
+            logging_queue = None
 
 
 class TestLoggingSubprocesses(unittest.TestCase):
 
     def setUp(self):
 
-        self.dragon_logger = None
+        self.logging_queue = None
 
     def create_logger(self):
 
         # Create the logger children will attach to
-        self.dragon_logger = dlog.setup_dragon_logging(0)
+        self.logging_queue = dlog.setup_dragon_logging(0)
 
     def destroy_logger(self):
 
-        self.dragon_logger.destroy()
-        self.dragon_logger = None
+        if self.logging_queue is not None:
+            self.logging_queue.destroy()
+            self.logging_queue = None
 
     def get_messages(self, nmsg, level):
 
@@ -215,7 +137,7 @@ class TestLoggingSubprocesses(unittest.TestCase):
         msgs = []
         while total != nmsg or niter > iter_max:
             try:
-                msgs.append(dmsg.parse(self.dragon_logger.get(level)))
+                msgs.append(dmsg.parse(self.logging_queue.get(level)))
                 total += 1
             except (DragonLoggingError, ChannelEmpty):
                 pass
@@ -232,7 +154,7 @@ class TestLoggingSubprocesses(unittest.TestCase):
         self.create_logger()
 
         # Run logging subprocesses
-        info_msgs, debug_msgs, fnames = run_logging_subprocesses(nproc, level, self.dragon_logger.serialize())
+        info_msgs, debug_msgs, fnames = run_logging_subprocesses(nproc, level, self.logging_queue.serialize())
 
         if level is logging.DEBUG:
             self.nmsgs = 2 * nproc
@@ -297,7 +219,7 @@ class TestLoggingInfrastructure(unittest.TestCase):
 
     def setUp(self):
         # Create a dragon logger
-        self.dragon_logger = dlog.setup_dragon_logging(0)
+        self.logging_queue = dlog.setup_dragon_logging(0)
         self.destroyed_dragon = False
         self.log_levels = [
             logging.CRITICAL,
@@ -313,7 +235,7 @@ class TestLoggingInfrastructure(unittest.TestCase):
     def tearDown(self):
         # Destroy dragon logger
         if not self.destroyed_dragon:
-            self.dragon_logger.destroy()
+            self.logging_queue.destroy()
             self.destroyed_dragon = True
 
         # Make sure the root logger has closed any handlers since the atexit()
@@ -338,8 +260,8 @@ class TestLoggingInfrastructure(unittest.TestCase):
 
     def flush_logs(self, level, test_queue):
 
-        for _ in range(self.dragon_logger.num_logs()):
-            msg = self.dragon_logger.get(level)
+        for _ in range(self.logging_queue.num_logs()):
+            msg = self.logging_queue.get(level)
             if msg is not None:
                 test_queue.send(dmsg.parse(msg).serialize())
 
@@ -386,7 +308,7 @@ class TestLoggingInfrastructure(unittest.TestCase):
     def test_logging_FE_queue_simple(self):
         # Set up basic logging for a given service
         level, _ = dlog.setup_BE_logging(
-            service=dlog.DragonLoggingServices.TEST, logger_sdesc=B64(self.dragon_logger.serialize())
+            service=dlog.DragonLoggingServices.TEST, logger_sdesc=self.logging_queue.serialize()
         )
         log = logging.getLogger(dlog.DragonLoggingServices.TEST)
         test_queue = dlutil.SRQueue()
@@ -406,7 +328,7 @@ class TestLoggingInfrastructure(unittest.TestCase):
 
     def test_log_to_wrong_parent_log(self):
         level, _ = dlog.setup_BE_logging(
-            service=dlog.DragonLoggingServices.TEST, logger_sdesc=B64(self.dragon_logger.serialize())
+            service=dlog.DragonLoggingServices.TEST, logger_sdesc=self.logging_queue.serialize()
         )
 
         fmter = logging.Formatter(dlog.default_services_fmt)
@@ -436,7 +358,7 @@ class TestLoggingInfrastructure(unittest.TestCase):
         log.info("FE logger up")
 
         nproc = 1
-        info_msgs, debug_msgs, fnames = run_logging_subprocesses(nproc, level, self.dragon_logger.serialize())
+        info_msgs, debug_msgs, fnames = run_logging_subprocesses(nproc, level, self.logging_queue.serialize())
 
         written_msgs = info_msgs + debug_msgs
         log.info("fe done")
@@ -467,7 +389,7 @@ class TestLoggingInfrastructure(unittest.TestCase):
     @patch.dict(os.environ, {"DRAGON_LOG_DEVICE_STDERR": "DEBUG", "DRAGON_LA_LOG_DIR": "/not/a/real/dir"})
     def test_undefined_dragon_la_log_dir(self):
         level, fn = dlog.setup_BE_logging(
-            service=dlog.DragonLoggingServices.TEST, logger_sdesc=B64(self.dragon_logger.serialize())
+            service=dlog.DragonLoggingServices.TEST, logger_sdesc=self.logging_queue.serialize()
         )
         log = logging.getLogger(dlog.DragonLoggingServices.TEST)
         info_msg = [generate_msg(random.randrange(20, 100))]
@@ -511,12 +433,12 @@ class TestLoggingInfrastructure(unittest.TestCase):
     def test_write_to_destroyed_dragon_logger(self):
         # Set up logging for BE services
         level, fn = dlog.setup_BE_logging(
-            service=dlog.DragonLoggingServices.TEST, logger_sdesc=B64(self.dragon_logger.serialize())
+            service=dlog.DragonLoggingServices.TEST, logger_sdesc=self.logging_queue.serialize()
         )
         log = logging.getLogger(dlog.DragonLoggingServices.TEST)
 
         # Destroy dragon logger
-        self.dragon_logger.destroy()
+        self.logging_queue.destroy()
         self.destroyed_dragon = True
         self.assertRaises(DragonLoggingError, log.info, generate_msg(random.randrange(20, 100)))
 

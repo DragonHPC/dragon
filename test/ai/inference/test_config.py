@@ -364,6 +364,8 @@ class TestInferenceConfig(TestCase):
                 "spin_up_threshold_seconds": 5,
                 "spin_up_prompt_threshold": 10,
             },
+            "run_type": "full_app",
+            "token": "test_token_abc123",
         }
 
         config = InferenceConfig.from_dict(config_dict)
@@ -404,6 +406,8 @@ class TestInferenceConfig(TestCase):
                 "tp_size": 1,
                 "flask_secret_key": "test-secret",
             },
+            "run_type": "full_app",
+            "token": "test_token_abc123",
             "unexpected_key": {"some": "value"},
         }
 
@@ -421,6 +425,8 @@ class TestInferenceConfig(TestCase):
                 "flask_secret_key": "test-secret",
                 "unexpected_key": "value",
             },
+            "run_type": "full_app",
+            "token": "test_token_abc123",
         }
 
         with self.assertRaises(ValueError) as context:
@@ -436,6 +442,8 @@ class TestInferenceConfig(TestCase):
                 "tp_size": 1,
                 "flask_secret_key": "test-secret",
             },
+            "run_type": "full_app",
+            "token": "test_token_abc123",
         }
 
         config = InferenceConfig.from_dict(config_dict)
@@ -458,6 +466,8 @@ class TestInferenceConfig(TestCase):
             guardrails=GuardrailsConfig(),
             dynamic_worker=DynamicWorkerConfig(),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         # Should not raise

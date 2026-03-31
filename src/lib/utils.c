@@ -162,6 +162,7 @@ bool dg_enable_errstr = true;
 _Thread_local char * errstr = NULL;
 static _Thread_local bool dg_thread_local_mode = false;
 static timespec_t NO_TIMEOUT = {157680000000, 0}; // 5000 years, we'll all be dead.
+dragonULInt dg_frontend_host_id = 1UL;
 
 const char*
 dragon_get_rc_string(const dragonError_t rc)

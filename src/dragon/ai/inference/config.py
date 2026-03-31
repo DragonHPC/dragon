@@ -34,9 +34,7 @@ class HardwareConfig:
             if self.num_nodes <= 0:
                 raise ValueError(f"num_nodes must be >= 1, got {self.num_nodes}")
             if self.num_nodes > available_nodes:
-                raise ValueError(
-                    f"Requested {self.num_nodes} nodes but only {available_nodes} available"
-                )
+                raise ValueError(f"Requested {self.num_nodes} nodes but only {available_nodes} available")
 
         if self.num_gpus != -1:
             for hostname, node in all_nodes.items():
@@ -50,8 +48,14 @@ class HardwareConfig:
                     )
 
         if self.num_inf_workers_per_cpu < 1:
+            raise ValueError(f"num_inf_workers_per_cpu must be >= 1, got {self.num_inf_workers_per_cpu}")
+
+        if self.node_offset < 0:
+            raise ValueError(f"node_offset must be >= 0, got {self.node_offset}")
+
+        if self.node_offset >= available_nodes:
             raise ValueError(
-                f"num_inf_workers_per_cpu must be >= 1, got {self.num_inf_workers_per_cpu}"
+                f"node_offset ({self.node_offset}) must be less than " f"available nodes ({available_nodes})"
             )
 
 
@@ -68,9 +72,7 @@ class ModelConfig:
     truncation_side: str = "left"
     top_k: int = 50
     top_p: float = 0.95
-    system_prompt: List[str] = field(
-        default_factory=lambda: ["You are a helpful chatbot"]
-    )
+    system_prompt: List[str] = field(default_factory=lambda: ["You are a helpful chatbot"])
 
     def validate(self, gpus_per_node: int) -> None:
         """Validate model configuration.
@@ -81,8 +83,7 @@ class ModelConfig:
         """
         if self.tp_size > gpus_per_node:
             raise ValueError(
-                f"Tensor parallelism size ({self.tp_size}) cannot exceed "
-                f"available GPUs per node ({gpus_per_node})"
+                f"Tensor parallelism size ({self.tp_size}) cannot exceed " f"available GPUs per node ({gpus_per_node})"
             )
 
         if self.tp_size < 1:
@@ -108,14 +109,10 @@ class BatchingConfig:
         """Validate batching configuration."""
 
         if self.batch_type not in ["dynamic", "pre-batch"]:
-            raise ValueError(
-                f"batch_type must be 'dynamic' or 'pre-batch', got {self.batch_type}"
-            )
+            raise ValueError(f"batch_type must be 'dynamic' or 'pre-batch', got {self.batch_type}")
 
         if self.batch_wait_seconds <= 0:
-            raise ValueError(
-                f"batch_wait_seconds must be > 0, got {self.batch_wait_seconds}"
-            )
+            raise ValueError(f"batch_wait_seconds must be > 0, got {self.batch_wait_seconds}")
 
         if self.max_batch_size < 1:
             raise ValueError(f"max_batch_size must be >= 1, got {self.max_batch_size}")
@@ -132,10 +129,7 @@ class GuardrailsConfig:
     def validate(self) -> None:
         """Validate guardrails configuration."""
         if not (0.0 <= self.prompt_guard_sensitivity <= 1.0):
-            raise ValueError(
-                f"prompt_guard_sensitivity must be in [0, 1], "
-                f"got {self.prompt_guard_sensitivity}"
-            )
+            raise ValueError(f"prompt_guard_sensitivity must be in [0, 1], " f"got {self.prompt_guard_sensitivity}")
 
 
 @dataclass
@@ -151,28 +145,16 @@ class DynamicWorkerConfig:
     def validate(self) -> None:
         """Validate dynamic worker configuration."""
         if self.min_active_workers_per_cpu < 1:
-            raise ValueError(
-                f"min_active_workers_per_cpu must be >= 1, "
-                f"got {self.min_active_workers_per_cpu}"
-            )
+            raise ValueError(f"min_active_workers_per_cpu must be >= 1, " f"got {self.min_active_workers_per_cpu}")
 
         if self.spin_down_threshold_seconds < 1:
-            raise ValueError(
-                f"spin_down_threshold_seconds must be >= 1, "
-                f"got {self.spin_down_threshold_seconds}"
-            )
+            raise ValueError(f"spin_down_threshold_seconds must be >= 1, " f"got {self.spin_down_threshold_seconds}")
 
         if self.spin_up_threshold_seconds < 1:
-            raise ValueError(
-                f"spin_up_threshold_seconds must be >= 1, "
-                f"got {self.spin_up_threshold_seconds}"
-            )
+            raise ValueError(f"spin_up_threshold_seconds must be >= 1, " f"got {self.spin_up_threshold_seconds}")
 
         if self.spin_up_prompt_threshold < 1:
-            raise ValueError(
-                f"spin_up_prompt_threshold must be >= 1, "
-                f"got {self.spin_up_prompt_threshold}"
-            )
+            raise ValueError(f"spin_up_prompt_threshold must be >= 1, " f"got {self.spin_up_prompt_threshold}")
 
 
 @dataclass
@@ -185,6 +167,8 @@ class InferenceConfig:
     guardrails: GuardrailsConfig
     dynamic_worker: DynamicWorkerConfig
     flask_secret_key: str
+    run_type: str
+    token: str
 
     @classmethod
     def from_dict(cls, config_dict: dict) -> "InferenceConfig":
@@ -198,6 +182,8 @@ class InferenceConfig:
 
         # Validate that only expected top-level keys are present
         expected_keys = {
+            "run_type",
+            "token",
             "required",
             "hardware",
             "llm",
@@ -210,8 +196,7 @@ class InferenceConfig:
 
         if unexpected_keys:
             raise ValueError(
-                f"Unexpected keys in config.yaml: {unexpected_keys}. "
-                f"Expected keys are: {expected_keys}"
+                f"Unexpected keys in config.yaml: {unexpected_keys}. " f"Expected keys are: {expected_keys}"
             )
 
         print("\nValidating config.yaml schema...", flush=True)
@@ -229,7 +214,7 @@ class InferenceConfig:
         )
         cls._validate_section_keys(
             config_dict.get("hardware", {}),
-            {"num_nodes", "num_gpus", "num_inf_wrkrs_per_cpu"},
+            {"num_nodes", "num_gpus", "num_inf_wrkrs_per_cpu", "node_offset"},
             "hardware",
         )
         cls._validate_section_keys(
@@ -275,6 +260,7 @@ class InferenceConfig:
             num_nodes=hw.get("num_nodes", -1),
             num_gpus=hw.get("num_gpus", -1),
             num_inf_workers_per_cpu=hw.get("num_inf_wrkrs_per_cpu", 4),
+            node_offset=hw.get("node_offset", 0),
         )
 
         # Parse model config
@@ -306,9 +292,7 @@ class InferenceConfig:
         guard = config_dict.get("guardrails", {})
         guardrails = GuardrailsConfig(
             enabled=guard.get("toggle_on", True),
-            prompt_guard_model=guard.get(
-                "prompt_guard_model", "meta-llama/Prompt-Guard-86M"
-            ),
+            prompt_guard_model=guard.get("prompt_guard_model", "meta-llama/Prompt-Guard-86M"),
             prompt_guard_sensitivity=guard.get("prompt_guard_sensitivity", 0.5),
         )
 
@@ -329,12 +313,12 @@ class InferenceConfig:
             guardrails=guardrails,
             dynamic_worker=dynamic_worker,
             flask_secret_key=req["flask_secret_key"],
+            run_type=config_dict["run_type"],
+            token=config_dict["token"],
         )
 
     @staticmethod
-    def _validate_section_keys(
-        section_dict: dict, expected_keys: set, section_name: str
-    ) -> None:
+    def _validate_section_keys(section_dict: dict, expected_keys: set, section_name: str) -> None:
         """Validate that a config section contains only expected keys.
 
         :param section_dict: Configuration section dictionary.

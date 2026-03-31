@@ -161,6 +161,7 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
     dragonMessage_t msg;
     dragonMessageAttr_t msg_attrs;
     dragonMemoryDescr_t* dest = NULL;
+    dragonMemoryDescr_t dest_val;
     dragonChannelSendAttr_t send_attrs;
     // This is reset below when needed, but inited here to avoid compiler warning.
     dragonChannelSendReturnWhen_t orig_return_mode = DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY;
@@ -228,10 +229,7 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
     if (dest_pool != NULL) {
         /* This won't block. A zero-byte allocation can be used to direct channels lib
         to put the message into the given pool. */
-        dest = malloc(sizeof(dragonMemoryDescr_t));
-        if (dest == NULL)
-            append_err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate a memory descriptor");
-
+        dest = &dest_val;
         err = dragon_memory_alloc_blocking(dest, dest_pool, 0, NULL);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not get zero-byte allocation.");
@@ -259,15 +257,14 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not free zero-byte allocation.");
 
-        free(dest);
         dest = NULL;
     }
 
-    /* If transferring ownership, then don't destroy underlying memory. If not transferring
-       ownership, then the sender owns the memory and also don't destroy it. */
-    err = dragon_channel_message_destroy(&msg, false);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not destroy the message.");
+    /* Do not call this at all since the message structure is on the stack to
+       avoid an unnecessary malloc. */
+    // err = dragon_channel_message_destroy(&msg, false);
+    // if (err != DRAGON_SUCCESS)
+    //     append_err_return(err, "Could not destroy the message.");
 
     err = dragon_channel_message_attr_destroy(&msg_attrs);
     if (err != DRAGON_SUCCESS)
@@ -337,8 +334,17 @@ static dragonError_t _get_buffered_bytes(dragonFLISendHandle_t* sendh, dragonMem
     }
 
     err = dragon_memory_alloc_blocking(mem_descr, &sendh->adapter->pool, total_bytes, timeout);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not get shared memory for message data.");
+
+    if (err != DRAGON_SUCCESS) {
+        char msg[200];
+        dragonError_t pool_err;
+        dragonULInt muid = 0;
+        pool_err = dragon_memory_pool_muid(&sendh->adapter->pool, &muid);
+        if (pool_err != DRAGON_SUCCESS)
+            append_err_return(pool_err, "Got this error while getting the pool muid");
+        snprintf(msg, 199, "Could not get shared memory for message from pool with muid=%lu", muid);
+        append_err_return(err, msg);
+    }
 
     /* Init these two fields so they are set on the next call. */
     sendh->buffered_allocations = NULL;
@@ -475,6 +481,7 @@ static dragonError_t _recv_mem(dragonChannelRecvh_t* recvh, dragonMemoryDescr_t*
     timespec_t* timeout = NULL;
     timespec_t remaining_time;
     dragonMemoryDescr_t* dest = NULL;
+    dragonMemoryDescr_t dest_val;
 
     if (deadline != NULL) {
         timeout = &remaining_time;
@@ -497,10 +504,7 @@ static dragonError_t _recv_mem(dragonChannelRecvh_t* recvh, dragonMemoryDescr_t*
     if (dest_pool != NULL) {
         /* This won't block. A zero-byte allocation can be used to direct channels lib
            to put the message into the given pool. */
-        dest = malloc(sizeof(dragonMemoryDescr_t));
-        if (dest == NULL)
-            err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not malloc memory descriptor for zero byte allocation.");
-
+        dest = &dest_val;
         err = dragon_memory_alloc_blocking(dest, dest_pool, 0, NULL);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not get zero-byte allocation.");
@@ -524,9 +528,19 @@ static dragonError_t _recv_mem(dragonChannelRecvh_t* recvh, dragonMemoryDescr_t*
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not get memory for stream channel.");
 
-    err = dragon_channel_message_destroy(&msg, false);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not destroy message structure.");
+    if (dest != NULL) {
+        err = dragon_memory_free(dest);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not free zero-byte allocation.");
+
+        dest = NULL;
+    }
+
+    /* Do not call message destroy since the message structures are on the
+       stack to avoid an unnecessary malloc. */
+    // err = dragon_channel_message_destroy(&msg, false);
+    // if (err != DRAGON_SUCCESS)
+    //     append_err_return(err, "Could not destroy message structure.");
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -948,6 +962,9 @@ static dragonError_t _send_stream_channel(const dragonChannelDescr_t* strm_ch, u
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not serialize stream channel.");
 
+    /* The send_bytes cannot use turbo mode (first false below) because if it does,
+       then off-node we experience corruption and this is very hard to trace back to
+       turbo_mode here. */
     err = _send_bytes(&sendh, pool, ser.data, ser.len, type, false, false, NULL, deadline);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not send stream channel.");
@@ -1851,18 +1868,6 @@ dragonError_t dragon_fli_attach(const dragonFLISerial_t* serial, const dragonMem
     obj->num_strm_chs = 0; /* We don't keep track of it the channels in attached objects */
     obj->was_attached = true; /* was attached, not created */
 
-    if (pool == NULL) {
-        /* We will attach to the default pool in this case. */
-        err = dragon_memory_pool_attach_default(&obj->pool);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not attach to default pool.");
-    } else {
-        /* make a clone of the pool descriptor for use here */
-        err = dragon_memory_pool_descr_clone(&obj->pool, pool);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Cannot clone pool descriptor");
-    }
-
     ptr=serial->data;
     memcpy(&adapter_type, ptr, sizeof(adapter_type));
     ptr+=sizeof(adapter_type);
@@ -1912,6 +1917,30 @@ dragonError_t dragon_fli_attach(const dragonFLISerial_t* serial, const dragonMem
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Cannot attach to task semaphore channel of adapter.");
         ptr+=ch_ser.len;
+    }
+
+    if (pool == NULL) {
+        if (obj->has_main_ch && dragon_channel_is_local(&obj->main_ch)) {
+            err = dragon_channel_get_pool(&obj->main_ch, &obj->pool);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not get pool of main channel.");
+        } else if (obj->has_mgr_ch && dragon_channel_is_local(&obj->mgr_ch)) {
+            err = dragon_channel_get_pool(&obj->mgr_ch, &obj->pool);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not get pool of manager channel.");
+        } else {
+            /* We will attach to the default pool in this case. */
+            err = dragon_memory_pool_attach_default(&obj->pool);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not attach to default pool.");
+        }
+    } else if (!dragon_memory_pool_is_local(pool)) {
+        err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "You cannot attach to an FLI with a non-local pool.");
+    } else {
+        /* make a clone of the pool descriptor for use here */
+        err = dragon_memory_pool_descr_clone(&obj->pool, pool);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Cannot clone pool descriptor");
     }
 
     err = _add_umap_fli_entry(adapter, obj);

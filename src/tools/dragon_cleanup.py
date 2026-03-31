@@ -380,9 +380,48 @@ def main():
 if __name__ == "__main__":
     sys.exit(main())
 
+DRAGON_CLEANUP_DESCRIPTION = """
+The dragon-cleanup tool identifies and/or removes residual dragon
+runtime services and user applications from previous runs in either a single
+or multi-node environment. This is particularly useful when an execution of Dragon
+fails to exit cleanly, leaving behind orphaned processes or resources that could
+interfere with subsequent runs.
 
-def get_drun_parser(parser: argparse.ArgumentParser):
+The tool automatically detects if a Workload Manager (WLM)—such as Slurm or PBS—was
+used for node allocation. If a WLM is present, dragon-cleanup targets those
+active nodes. Nodes can also be manually specified via the --hostlist or
+--hostfile arguments, or leverage the dhosts utility to set the
+DRAGON_RUN_NODEFILE environment variable.
 
+To ensure efficiency across large multi-node environments, dragon-cleanup utilizes
+an SSH-tree to launch cleanup processes on each node. This requires that all nodes
+are configured for password-less SSH and maintain mutual routability.
+
+Example usage:
+
+dragon-cleanup --hostlist host1,host2,host3
+    Manually specify that dragon-cleanup should run on host1, host2 and host3.
+
+dragon-cleanup --hostfile my_hostfile.txt --dry-run
+    Specify that dragon-cleanup should run in dry-run mode on the hosts specified
+    in my_hostfile.txt. In dry-run mode, dragon-cleanup will print the processes and
+    resources it would clean up, but won't actually make any changes.
+
+dragon-cleanup --wlm slurm
+    Force dragon-cleanup to look for an active Slurm allocation and run on the nodes
+    from that allocation.
+"""
+
+def get_drun_parser():
+    from tools.dragon_run.src.common_args import add_common_args
+
+    parser = argparse.ArgumentParser(
+        prog="dragon-cleanup",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        description=DRAGON_CLEANUP_DESCRIPTION,
+    )
+
+    add_common_args(parser)
     parser = get_cleanup_parser(parser)
     parser.add_argument(
         "--only-be",
@@ -394,16 +433,8 @@ def get_drun_parser(parser: argparse.ArgumentParser):
 
 
 def get_drun_args(args_input=None):
-    from tools.dragon_run.src.common_args import add_common_args
 
-    parser = argparse.ArgumentParser(
-        prog="dragon-cleanup",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        description="Run dragon backend node cleanup",
-    )
-
-    add_common_args(parser)
-    parser = get_drun_parser(parser)
+    parser = get_drun_parser()
     args = parser.parse_args(args_input)
 
     return {key: value for key, value in vars(args).items()}

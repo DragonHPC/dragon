@@ -5,6 +5,8 @@
 extern "C" {
 #endif
 
+extern dragonULInt dg_frontend_host_id;
+
 dragonULInt
 dragon_host_id();
 

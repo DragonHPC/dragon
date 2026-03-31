@@ -17,8 +17,10 @@ from ..transport.overlay import start_overlay_network
 from ..transport.util import get_fabric_backend
 
 from ..dlogging.util import DragonLoggingServices as dls
+from ..dlogging.util import setup_dragon_logging
 from ..dlogging.util import _get_dragon_log_device_level, LOGGING_OUTPUT_DEVICE_DRAGON_FILE
-from ..dlogging.logger import DragonLogger, DragonLoggingError
+from ..dlogging.logger import DragonLoggingError
+
 
 from ..infrastructure.util import route, rt_uid_from_ip_addrs, get_external_ip_addr
 from ..infrastructure.parameters import POLICY_INFRASTRUCTURE, this_process
@@ -140,7 +142,13 @@ class LauncherFrontEnd:
         self.frontend_port = args_map.get("frontend_port", dfacts.DEFAULT_FRONTEND_PORT)
         self.port = args_map.get("port", dfacts.DEFAULT_TRANSPORT_PORT)
         self._config_from_file = args_map.get("network_config", None)
-        self.transport = self._determine_transport_backend(args_map.get("transport"))
+        self.transport, self.overlay_transport = self._determine_transport_backend(args_map)
+
+        # The oob network should use the same transport agent as the overlay network,
+        # but it's started by an arbitrary user process without that knowledge. So,
+        # we add the overlay network transport string to the environment, which gets
+        # propagated to all user processes.
+        os.environ[dfacts.OVERLAY_TRANSPORT_VAR] = str(self.overlay_transport)
 
         # If using SSH, confirm we have enough info do that:
         self._wlm = args_map.get("wlm", None)
@@ -194,7 +202,7 @@ class LauncherFrontEnd:
         self.local_ch_out = None
         self.local_inout = None
         self.gw_ch = None
-        self.dragon_logger = None
+        self.logging_queue = None
         self.over_proc = None
         self.recv_overlaynet_thread = None
         self.send_overlaynet_thread = None
@@ -214,60 +222,24 @@ class LauncherFrontEnd:
         log.debug("exiting frontend via __exit__")
 
     @staticmethod
-    def _determine_transport_backend(args_transport, config_file=None):
-        # Get any arg from the args_map
-        transport = args_transport
+    def _determine_transport_backend(args_map):
+        transport = args_map.get("transport")
+        overlay_transport = args_map.get("overlay_transport")
 
-        # if we weren't able to build HSTA (presumably because the env was not
-        # configured for it when building), then fall back on the TCP agent
-        fabric_backend, fabric_lib = get_fabric_backend(config_file=config_file)
-        if transport is dfacts.TransportAgentOptions.DRAGON_CONFIG:
-            if fabric_backend is None:
-                print(
-                    """
-By default Dragon looks for a configuration file to determine which transport
-agent implementation to use. However, no such configuration file was found.
-Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
-to determine the best way to configure the transport agent for your
-compute environment. In the meantime, Dragon will use the TCP transport agent
-for network communication. To eliminate this message and continue to use
-the TCP transport agent, run:
+        if not dfacts.HSTA_BINARY.is_file():
+            # Check that there is an HSTA binary
+            transport = dfacts.TransportAgentOptions.TCP
+            overlay_transport = dfacts.TransportAgentOptions.TCP
+            print(f"HSTA binary ({dfacts.HSTA_BINARY}) not available, falling back on TCP transport agent", flush=True)
+        else:
+            # Default to HSTA if transport was not set by user
+            if transport is dfacts.TransportAgentOptions.DRAGON_CONFIG:
+                transport = dfacts.TransportAgentOptions.HSTA
 
-    dragon-config add --tcp-runtime
-"""
-                )
+            if overlay_transport is dfacts.TransportAgentOptions.DRAGON_CONFIG:
+                overlay_transport = dfacts.TransportAgentOptions.TCP
 
-                transport = dfacts.TransportAgentOptions.TCP
-            else:
-                if fabric_backend == dfacts.TransportAgentOptions.TCP.value:
-                    transport = dfacts.TransportAgentOptions.TCP
-                else:
-                    transport = dfacts.TransportAgentOptions.HSTA
-
-        if transport is dfacts.TransportAgentOptions.HSTA:
-            # First check that there is an HSTA binary
-            if not dfacts.HSTA_BINARY.is_file():
-                transport = dfacts.TransportAgentOptions.TCP
-                print(
-                    f"HSTA binary ({dfacts.HSTA_BINARY}) not available, falling back on TCP transport agent", flush=True
-                )
-
-            # If there is an HSTA binary, make sure we can find a backend configuration file less we break in the middle
-            # of bringing up HSTA
-            else:
-                if fabric_lib is None:
-                    transport = dfacts.TransportAgentOptions.TCP
-                    print(
-                        """
-Dragon was unable to find a high-speed network backend configuration.
-Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
-to determine the best way to configure the high-speed network backend to your
-compute environment (e.g., ofi or ucx). In the meantime, we will use the
-lower performing TCP transport agent for backend network communication.
-"""
-                    )
-
-        return transport
+        return transport, overlay_transport
 
     def _kill_backend(self):
         """Simple function for transmitting SIGKILL to backend with helpful message"""
@@ -411,6 +383,14 @@ lower performing TCP transport agent for backend network communication.
             self._dragon_cleanup_bumpy_exit()
 
         log.debug("Exiting _cleanup")
+
+        if self.logging_queue:
+            try:
+                self.logging_queue.destroy()
+                self.logging_queue = None
+            except (Exception):
+                pass
+
         # And raise error
         if self._abnormal_termination.is_set():
             log.debug("Raising Abnormal RuntimeError")
@@ -494,7 +474,7 @@ lower performing TCP transport agent for backend network communication.
             if self.recv_logs_from_overlaynet_thread.is_alive():
                 # Send it a message to make sure it can get out
                 self._shutdown.set()
-                self.dragon_logger.put(halt_logging_msg.serialize())
+                self.logging_queue.put(halt_logging_msg.serialize())
             self.recv_logs_from_overlaynet_thread.join()
         log.info("recv_logs_from_overlaynet_thread joined")
 
@@ -757,6 +737,7 @@ lower performing TCP transport agent for backend network communication.
             fe_host_id=fe_host_id,
             frontend_sdesc=frontend_sdesc,
             network_prefix=network_prefix,
+            overlay_transport=self.overlay_transport,
             overlay_port=self.overlay_port,
             transport_test_env=self.transport_test_env,
         )
@@ -822,7 +803,7 @@ lower performing TCP transport agent for backend network communication.
                 try:
                     be_sdesc = B64.from_str(forwarding[str(idx)].overlay_cd)
                     be_ch = Channel.attach(be_sdesc.decode(), mem_pool=self.fe_mpool)
-                    conn_options = ConnectionOptions(default_pool=self.fe_mpool, min_block_size=2**16)
+                    conn_options = ConnectionOptions(default_pool=self.fe_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23)
                     conn_out = Connection(outbound_initializer=be_ch, options=conn_options, policy=conn_policy)
                     conn_out.ghost = True
 
@@ -1166,7 +1147,7 @@ Performance may be suboptimal."""
 
             # Create a gateway and logging channel for my tcp agent
             self.gw_ch = Channel(self.fe_mpool, gw_cuid)
-            self.dragon_logger = DragonLogger(self.fe_mpool)
+            self.logging_queue = setup_dragon_logging(0)
         except (ChannelError, DragonPoolError, DragonLoggingError, DragonMemoryError) as init_err:
             log.fatal("could not create resources: %s", init_err)
             raise RuntimeError("overlay transport resource creation failed") from init_err
@@ -1339,9 +1320,10 @@ Performance may be suboptimal."""
 
         try:
             self.over_proc = start_overlay_network(
+                overlay_transport=self.overlay_transport,
                 ch_in_sdesc=B64(self.local_ch_out.serialize()),
                 ch_out_sdesc=B64(self.local_ch_in.serialize()),
-                log_sdesc=B64(self.dragon_logger.serialize()),
+                log_sdesc=self.logging_queue.serialize(),
                 host_ids=host_ids,
                 ip_addrs=ip_addrs,
                 frontend=True,
@@ -1770,7 +1752,7 @@ Performance may be suboptimal."""
                 # signal the end of the logging thread by sending its way
                 # an halt message
                 msg = dmsg.HaltLoggingInfra(tag=dlutil.next_tag())
-                self.dragon_logger.put(msg.serialize(), logging.INFO)
+                self.logging_queue.put(msg.serialize(), logging.INFO)
 
                 self.conn_in_bd.send(be_halted.serialize())
                 self.msg_log.info("sent BEHalted to break overlay recv out of loop")
@@ -1793,7 +1775,7 @@ Performance may be suboptimal."""
             # Set timeout to None which allows better interaction with the GIL
             while not self._shutdown.is_set():
                 try:
-                    msg = dmsg.parse(self.dragon_logger.get(level, timeout=None))
+                    msg = dmsg.parse(self.logging_queue.get(level, timeout=None))
                     if isinstance(msg, dmsg.HaltLoggingInfra):
                         break
                     log = logging.getLogger(msg.name)
@@ -1865,7 +1847,7 @@ Performance may be suboptimal."""
         # signal the end of the logging thread by sending its way
         # a HaltLoggingInfra message
         msg = dmsg.HaltLoggingInfra(tag=dlutil.next_tag())
-        self.dragon_logger.put(msg.serialize(), logging.INFO)
+        self.logging_queue.put(msg.serialize(), logging.INFO)
 
         log.info("overlaynet sending thread exiting ...")
 
@@ -1933,7 +1915,7 @@ Performance may be suboptimal."""
             # signal the end of the logging thread by sending its way
             # a Halt message
             msg = dmsg.HaltLoggingInfra(tag=dlutil.next_tag())
-            self.dragon_logger.put(msg.serialize(), logging.INFO)
+            self.logging_queue.put(msg.serialize(), logging.INFO)
 
             log.info("Overlaynet recv thread exiting.")
         except Exception as err:

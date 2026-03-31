@@ -36,7 +36,7 @@ class DragonServer:
         return_queue_dict: object,
         shutdown_event: object,
         telemetry_config: object,
-        mini_telemetry_args: tuple = None,
+        offline_telemetry_args: tuple = None,
     ):
         """Inititialize Dragon Server object.
 
@@ -45,7 +45,7 @@ class DragonServer:
             return_queue (object): Queue where response to requests is sent to
             shutdown_event (object): Used to signal shutdown
             telemetry_config (object): Used to pass along configuration details
-            mini_telemetry_args (tuple, optional): Mini telemetry arguments. Defaults to None.
+            offline_telemetry_args (tuple, optional): Offline telemetry arguments. Defaults to None.
         """
         self.input_queue = input_queue
         self.return_queue_dict = return_queue_dict
@@ -54,7 +54,7 @@ class DragonServer:
         self.telem_cfg = telemetry_config
         self.telemetry_level = int(os.getenv("DRAGON_TELEMETRY_LEVEL", 0))
         self.setup_logging()
-        self.mini_telemetry_args = mini_telemetry_args
+        self.offline_telemetry_args = offline_telemetry_args
 
     def setup_logging(self):
         # This block turns on a client log for each client
@@ -67,7 +67,8 @@ class DragonServer:
     def telemetry_handler(self):
         """Starts Dragon Server on each compute node"""
         mp.set_start_method("dragon")
-        if self.mini_telemetry_args is None:
+        print(f'Dragon Server on {os.uname().nodename}', flush=True)
+        if self.offline_telemetry_args is None:
             collector_start_event = mp.Event()
             try:
                 with Policy(placement=Policy.Placement.HOST_NAME, host_name=socket.gethostname()):
@@ -103,7 +104,7 @@ class DragonServer:
                     ds_proc.start()
                     ds_proc.join()
             except Exception as e:
-                LOG.warn(f"Error in DragonServer Mini Telemetry: {e}")
+                LOG.warn(f"Error in DragonServer Offline Telemetry: {e}")  
 
     def _listen(self):
         """Check request queue for new requests
@@ -113,8 +114,8 @@ class DragonServer:
 
         hostname = os.uname().nodename
         user = os.environ.get("USER", str(os.getuid()))
-        if self.mini_telemetry_args is not None:
-            db_name = self.mini_telemetry_args[1]
+        if self.offline_telemetry_args is not None:
+            db_name = self.offline_telemetry_args[1]
             db_dir = os.path.join(self.telem_cfg.get("dump_dir"), "telemetry/")
             filename = os.path.join(db_dir, db_name + ".db")
             connection = sqlite3.connect(filename)
@@ -244,14 +245,14 @@ class DragonServer:
             result = {}
             for row in tsdb:
                 try:
-                    if self.mini_telemetry_args is None:
+                    if self.offline_telemetry_args is None:
                         # row -> (metric, timestamp, value, tag_key, tag_value)
                         result[(row[4], hostname)][row[1]] = row[2]
                     else:
                         # row -> (table_name, metric, timestamp, value, tag_key, tag_value)
                         result[(row[5], row[0])][row[2]] = row[3]
                 except KeyError:
-                    if self.mini_telemetry_args is None:
+                    if self.offline_telemetry_args is None:
                         result[(row[4], hostname)] = {row[1]: row[2]}
                     else:
                         result[(row[5], row[0])] = {row[2]: row[3]}
@@ -282,26 +283,22 @@ class DragonServer:
                     tagk = None
                 # Filter datapoints by start time
                 if tagk is None:
-                    if self.mini_telemetry_args is None:
+                    if self.offline_telemetry_args is None:
                         sql_query = f"SELECT dps.metric, dps.timestamp, dps.value, json_each.key as tag_key, json_each.value as tag_value FROM datapoints as dps, json_each(dps.tags) WHERE dps.metric = ? AND CAST(timestamp as INTEGER) >= ? AND CAST(timestamp as INTEGER) <= ? ORDER BY tag_value"
                         tsdb = cursor.execute(sql_query, [q["metric"], start_time, end_time]).fetchall()
                     else:
-                        placeholders = ",".join("?" * len(self.mini_telemetry_args[0]))
+                        placeholders = ",".join("?" * len(self.offline_telemetry_args[0]))
                         sql_query = f"SELECT dps.table_name, dps.metric, dps.timestamp, dps.value, json_each.key as tag_key, json_each.value as tag_value FROM datapoints as dps, json_each(dps.tags) WHERE dps.metric = ? AND CAST(timestamp as INTEGER) >= ? AND CAST(timestamp as INTEGER) <= ? AND dps.table_name IN ({placeholders}) ORDER BY tag_value"
-                        tsdb = cursor.execute(
-                            sql_query, [q["metric"], start_time, end_time, *self.mini_telemetry_args[0]]
-                        ).fetchall()
+                        tsdb = cursor.execute(sql_query, [q["metric"], start_time, end_time, *self.offline_telemetry_args[0]]).fetchall()
 
                 else:
-                    if self.mini_telemetry_args is None:
+                    if self.offline_telemetry_args is None:
                         sql_query = f"SELECT dps.metric, dps.timestamp, dps.value, json_each.key as tag_key, json_each.value as tag_value FROM datapoints as dps, json_each(dps.tags) WHERE dps.metric = ? AND tag_key = ? AND CAST(timestamp as INTEGER) >= ? AND CAST(timestamp as INTEGER) <= ? ORDER BY tag_value"
                         tsdb = cursor.execute(sql_query, [q["metric"], tagk, start_time, end_time]).fetchall()
                     else:
-                        placeholders = ",".join("?" * len(self.mini_telemetry_args[0]))
+                        placeholders = ",".join("?" * len(self.offline_telemetry_args[0]))
                         sql_query = f"SELECT dps.table_name, dps.metric, dps.timestamp, dps.value, json_each.key as tag_key, json_each.value as tag_value FROM datapoints as dps, json_each(dps.tags) WHERE dps.metric = ? AND tag_key = ? AND CAST(timestamp as INTEGER) >= ? AND CAST(timestamp as INTEGER) <= ? AND dps.table_name IN ({placeholders}) ORDER BY tag_value"
-                        tsdb = cursor.execute(
-                            sql_query, [q["metric"], tagk, start_time, end_time, *self.mini_telemetry_args[0]]
-                        ).fetchall()
+                        tsdb = cursor.execute(sql_query, [q["metric"], tagk, start_time, end_time, *self.offline_telemetry_args[0]]).fetchall()
 
                 tsdb = create_dps_tags(tsdb, hostname)
 
@@ -323,7 +320,7 @@ class DragonServer:
         node_name = self.telem_cfg.get("dump_node", None)
         dest_path = self.telem_cfg.get("dump_dir", None)
         if node_name is None or dest_path is None:
-            print("Remote tunnel node not given", flush=True)
+            log.error("Remote tunnel node not specified or dump directory not specified")
         else:
             user = os.environ.get("USER", str(os.getuid()))
 
@@ -341,9 +338,9 @@ class DragonServer:
             stdout, stderr = process.communicate()
             # Output results
             if process.returncode == 0:
-                print("File transferred successfully.", flush=True)
+                log.info("File transferred successfully.")
                 status = "success"
             else:
-                print("Error during SCP transfer:", flush=True)
+                log.error("Error during SCP transfer:")
                 status = "error"
         return {"status": status, "message": stderr.decode() if status == "error" else "Database dumped successfully."}

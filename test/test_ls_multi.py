@@ -103,7 +103,7 @@ class MultiLS(unittest.TestCase):
                 ip_addrs=[self.ip_addr],
                 host_name=self.hostname,
                 primary=(node_idx == 0),
-                logger_sdesc=B64(self.logger_sdesc),
+                logger_sdesc=self.logger_sdesc,
                 net_conf_key=str(node_idx),
             ).serialize()
         )

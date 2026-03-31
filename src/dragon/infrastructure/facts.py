@@ -25,6 +25,7 @@ NUM_GW_TYPES = 3
 # should be unique on a given node, not globally
 # Note: there is also a dependency on dragon_channel_register_gateways_from_env()
 GW_ENV_PREFIX = PREFIX + "GW"
+OOB_GW_ENV_PREFIX = PREFIX + "OOB_GW"
 
 DEFAULT_HSTA_TRANSPORT_TYPE = "p2p"
 
@@ -40,6 +41,8 @@ OOM_DEFAULT_WARN_BYTES = 6 * 1024 * 1024 * 1024  # 6GB
 OOM_DEFAULT_CRITICAL_PCT = 2
 OOM_DEFAULT_CRITICAL_BYTES = 600 * 1024 * 1024  # 600MB
 OOM_DEFAULT_POOL_WARN_PCT = 10
+
+OVERLAY_TRANSPORT_VAR = PREFIX + "OVERLAY_TRANSPORT"
 
 
 # For environment variable passing, this set is the list of dragon parameters
@@ -84,6 +87,7 @@ env_vars = frozenset(
         OOM_CRITICAL_BYTES_VAR,
         OOM_DEFAULT_POOL_WARN_PCT_VAR,
         QUIET_VAR,
+        OVERLAY_TRANSPORT_VAR,
     }
 )
 

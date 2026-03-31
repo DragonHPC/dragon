@@ -12,6 +12,7 @@ import cloudpickle
 import threading
 from shutil import which
 import traceback
+import json
 
 from ..globalservices.process import (
     ProcessError,
@@ -323,9 +324,16 @@ class ProcessTemplate:
             self.argdata = None
 
         if cwd is None or cwd == ".":
-            cwd = os.getcwd()
+            if bool(os.getenv("DRAGON_PROXY_ENABLED", False)) and os.getenv("DRAGON_PROXY_REMOTE_CWD", None) is not None:
+                cwd = os.getenv("DRAGON_PROXY_REMOTE_CWD")
+            else:
+                cwd = os.getcwd()
 
         self.cwd = cwd
+
+        if env is None and bool(os.getenv("DRAGON_PROXY_ENABLED", False)) and os.getenv("DRAGON_PROXY_REMOTE_ENV", None) is not None:
+            env = json.loads(os.getenv("DRAGON_PROXY_REMOTE_ENV"))
+
         self.env = env
 
         self.stdout = stdout
@@ -413,7 +421,7 @@ class ProcessTemplate:
             else:
                 new_target = os.path.join(cwd, target)
 
-                if not os.path.isfile(new_target):
+                if not os.path.isfile(new_target) and not bool(os.getenv("DRAGON_PROXY_ENABLED", False)):
                     raise AttributeError(
                         f"Cannot find executable {target} directly, in PATH or in working directory {cwd}"
                     )
@@ -421,7 +429,10 @@ class ProcessTemplate:
         return new_target
 
     def _get_python_process_parameters(self, target, args, kwargs) -> tuple:
-        new_target = sys.executable
+        if os.getenv("DRAGON_PROXY_ENABLED", False):
+            new_target = os.getenv("DRAGON_PROXY_PYTHON_EXECUTABLE", sys.executable)
+        else:
+            new_target = sys.executable
         new_args = [
             "-c",
             "from dragon.native.process import _dragon_native_python_process_main; _dragon_native_python_process_main()",

@@ -29,7 +29,7 @@ The Dragon launcher frontend is the ultimate destination for all the logging mes
 created by backend services. In order to avoid clobbering
 infrastructure messages, the :py:func:`dragon.launcher.util.logging_queue_monitor` decorator
 pulls any messages received from the callback and puts them in a separate queue so
-the MRNet server can write them to log as infrastructure requests allow. All the messages
+the server can write them to log as infrastructure requests allow. All the messages
 received by the frontend server must be an instance of
 :py:class:`dragon.infrastructure.messages.LoggingMsgList`
 
@@ -52,16 +52,22 @@ be created from this parent log, but they should belong to a given parent (ie: s
 Backend Services
 ================
 
-During bring-up, the MRNet server backend creates a :py:class:`DragonLogger` instance and
-passes its serialized descriptor to all backend services on the same node as it:
-global services (for primary node), local services, transport agent, and the launcher
-backend.
+During bring-up, each Dragon Backend Launcher creates a logging :py:class:`Queue` instance
+and passes its serialized descriptor to all backend services on the same node as it:
+global services (for primary node), local services, transport agent, among others. The Queue
+is used to aggregate logging messages from the services local to that node.
 
-All the listed services then connect to the MRNet server's :py:class:`DragonLogger` instance
-by attaching to it. All the services' log messages are passed through a :py:class:DragonLogginerHandler
-that simply put them int the MRNet backend's :py:class:`DragonLogger` channel queue. Timestamps are
-generated when a given service emits its message, not when the MRNet backend plucks it from the queue.
-That way log messages reflect the time they were emitted by the given backend service.
+Each python based Dragon service then creates an instance of :py:class:`DragonLoggingHandler`,
+passing the logging :py:class:`Queue` serialized descriptor to the instance. Log messages from each
+Dragon infrastructure process are passed through the :py:class:`DragonLoggingHandler`, which adds
+them into the logging :py:class:`Queue`. Timestamps are generated when a given service emits its
+message, not when the backend pulls it from the queue. That way log messages reflect the time
+they were emitted by the given backend service.
+
+The Dragon launcher backend is responsible for pulling the logging messages from the logging
+:py:class:`Queue` and sending them to the frontend. Once received by the Dragon frontend, logging
+messages are either written to the frontend's log file and/or stderr, depending on the logging
+configuration.
 
 .. code-block:: python
     :caption: Launcher backend attaching to a logging channel and logging

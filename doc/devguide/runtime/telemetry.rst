@@ -190,9 +190,21 @@ YAML Configuration options
 
   * Specify whether local tsdb database should be deleted post cleanup. Setting it to 1 will delete it.
 
-* ``remote_port_forward``
+* ``remote_tunnel_node``
 
-  * Specify the login node. If set, the Aggregator server will execute an ssh tunnel from compute node to login node.
+  * Specify the login node for SSH tunnel. If set, the Aggregator server will execute an ssh tunnel from compute node to login node.
+
+* ``remote_tunnel_port``
+
+  * Specify the port for the remote SSH tunnel.
+
+* ``dump_node``
+
+  * Node where telemetry database dumps are stored for post-run analysis.
+
+* ``dump_dir``
+
+  * Directory path on ``dump_node`` where telemetry database dumps are stored. Path must exist on the specified ``dump_node``.
 
 Telemetery Service Startup
 ===========================
@@ -256,8 +268,7 @@ Phase 1
 
 Phase 2
 --------
-1. Way for users to dump DBs to persistent storage for post-run processing.
-2. User API - Add Filter class that allows users to define functions that filter data both at collection time and when a request from Grafana is made.
+1. User API - Add Filter class that allows users to define functions that filter data both at collection time and when a request from Grafana is made.
 
 
 Phase 3

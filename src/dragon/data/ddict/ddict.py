@@ -46,6 +46,7 @@ import subprocess
 
 try:
     import pydaos
+
     DAOS_EXISTS = True
 except:
     DAOS_EXISTS = False
@@ -53,6 +54,7 @@ except:
 from ...utils import b64decode, b64encode, hash as dragon_hash, get_local_kv, host_id
 from ...infrastructure.parameters import this_process
 from ...infrastructure import messages as dmsg
+from ...infrastructure import util as dutil
 from ...infrastructure import policy
 from ...channels import Channel
 from ...native.process import Popen, Process
@@ -96,6 +98,7 @@ class DDictError(DragonLoggingError):
         are provided here.
 
     """
+
     def __str__(self):
         if not self.lib_msg.strip():
             return f"DDict Exception: {self.msg}\nDragon Error Code: {self.lib_err}"
@@ -196,6 +199,7 @@ class DDictManagerStats:
     max_pool_allocations: int
     max_pool_allocations_used: int
     current_pool_allocations_used: int
+    timekeeper_stats: dict
 
 
 # A SentinelQueue is a queue that raise EOFError when end of
@@ -485,6 +489,7 @@ class FilterContextManager:
     create the context manager and use it in a program.
 
     """
+
     def __init__(self, filter_proc, filter_queue):
         self._proc = filter_proc
         self._queue = filter_queue
@@ -538,7 +543,7 @@ class CheckpointPersister(ABC):
 
     @abstractmethod
     def load(self, pool: dmem.MemoryPool, cleanup: bool = False):
-       pass
+        pass
 
     @abstractmethod
     def advance(self):
@@ -576,6 +581,7 @@ class CheckpointPersister(ABC):
     @abstractmethod
     def current_chkpt(self):
         pass
+
 
 class NULLCheckpointPersister(CheckpointPersister):
     def __init__(
@@ -634,6 +640,7 @@ class NULLCheckpointPersister(CheckpointPersister):
     @property
     def current_chkpt(self):
         pass
+
 
 class PosixCheckpointPersister(CheckpointPersister):
     def __init__(
@@ -699,7 +706,9 @@ class PosixCheckpointPersister(CheckpointPersister):
             new_id_added = False
 
             # If persist frequency or persist count is 0, no checkpoint is persisted.
-            if not force and (self._persist_freq == 0 or self._persist_count == 0 or chkpt.id % self._persist_freq != 0):
+            if not force and (
+                self._persist_freq == 0 or self._persist_count == 0 or chkpt.id % self._persist_freq != 0
+            ):
                 return
             # If persist_count is -1, we keep every checkpoint files without cleaning up.
             # TODO: any other mechanism to cleanup the files when disk is full?
@@ -1048,7 +1057,7 @@ class DAOSCheckpointPersister(CheckpointPersister):
             self._log(f"finished loading serialized checkpoint")
 
             for id in daos_chkpt_dict:
-                if id != 'serialized_chkpt':
+                if id != "serialized_chkpt":
                     val = daos_chkpt_dict[id]
                     mem = pool.alloc(size=len(val))
                     mem_view = mem.get_memview()
@@ -1138,7 +1147,7 @@ class DAOSCheckpointPersister(CheckpointPersister):
         dcont = pydaos.DCont(pool_name, name)
         orc_logger.debug("connected to ddict metadata container")
         metadata_daos_dd = dcont.get("metadata")
-        metadata = metadata_daos_dd["data"].decode('utf-8')
+        metadata = metadata_daos_dd["data"].decode("utf-8")
         return metadata
 
     @classmethod
@@ -1682,14 +1691,11 @@ class DDict:
             self._orc_policy = orc_policy
             # Start the Orchestrator and capture its serialized descriptor so we can connect to it.
             from .orchestrator import start as orc_start
+
             bootstrap_queue = Queue()
             self._orc_proc = Process(
                 target=orc_start,
-                args=(managers_per_node,
-                      n_nodes,
-                      total_mem,
-                      trace,
-                      bootstrap_queue),
+                args=(managers_per_node, n_nodes, total_mem, trace, bootstrap_queue),
                 policy=self._orc_policy,
             )
             self._orc_proc.start()
@@ -1750,6 +1756,8 @@ class DDict:
         random.seed()
 
         self._managers = dict()
+        self._timekeeper = dutil.TimeKeeper(True)
+        self._start_tic = self._timekeeper.now()
         self._tag = 0
         self._chkpt_id = chkpt_id
         self._destroyed = False
@@ -1814,7 +1822,7 @@ class DDict:
         except DDictUnableToCreateError as ex:
             tb = traceback.format_exc()
             raise DDictUnableToCreateError(
-                DragonError.FAILURE, "Failed to create dictionary: %s\n Traceback: %s\n"%(ex, tb)
+                DragonError.FAILURE, "Failed to create dictionary: %s\n Traceback: %s\n" % (ex, tb)
             )
         except DDictError as ex:
             tb = traceback.format_exc()
@@ -1822,13 +1830,20 @@ class DDict:
         except Exception as ex:
             tb = traceback.format_exc()
             try:
-                log.debug("There is an exception __setstate__ of ddict: %s\n Traceback: %s\n"%(ex, tb))
+                log.debug("There is an exception __setstate__ of ddict: %s\n Traceback: %s\n" % (ex, tb))
             except:
                 pass
             raise RuntimeError(f"There is an exception __setstate__ of ddict.")
 
     def __getstate__(self):
-        return (False, self.serialize(), self._chkpt_id, self._timeout, self._trace, self._input_args)
+        return (
+            False,
+            self.serialize(),
+            self._chkpt_id,
+            self._timeout,
+            self._trace,
+            self._input_args,
+        )
 
     def __enter__(self):
         return self
@@ -2184,23 +2199,28 @@ class DDict:
         self._check_manager_connection(manager_id)
         try:
             self._traceit("Opening send handle to manager for put: %s", manager_id)
+            tic = self._timekeeper.now()
             with self._managers[manager_id].sendh(
                 stream_channel=self._main_stream_channel, timeout=self._timeout
             ) as sendh:
+                self._timekeeper.add("open send handle", tic)
                 self._traceit("Sending to manager: %s", msg)
-                sendh.send_bytes(msg.serialize(), timeout=self._timeout)
+                with self._timekeeper.record("Sending message"):
+                    sendh.send_bytes(msg.serialize(), timeout=self._timeout)
                 self._traceit("Sending pickled key to manager: %s", key)
-                sendh.send_bytes(pickled_key, arg=KEY_HINT, timeout=self._timeout)
-                if self._value_pickler is not None:
-                    self._value_pickler.dump(
-                        value, file=PickleWriteAdapter(sendh=sendh, hint=VALUE_HINT, timeout=self._timeout)
-                    )
-                else:
-                    cloudpickle.dump(
-                        value,
-                        file=PickleWriteAdapter(sendh=sendh, hint=VALUE_HINT, timeout=self._timeout),
-                        protocol=pickle.HIGHEST_PROTOCOL,
-                    )
+                with self._timekeeper.record("Sending key"):
+                    sendh.send_bytes(pickled_key, arg=KEY_HINT, timeout=self._timeout)
+                with self._timekeeper.record("Sending value"):
+                    if self._value_pickler is not None:
+                        self._value_pickler.dump(
+                            value, file=PickleWriteAdapter(sendh=sendh, hint=VALUE_HINT, timeout=self._timeout)
+                        )
+                    else:
+                        cloudpickle.dump(
+                            value,
+                            file=PickleWriteAdapter(sendh=sendh, hint=VALUE_HINT, timeout=self._timeout),
+                            protocol=pickle.HIGHEST_PROTOCOL,
+                        )
 
         except TimeoutError as ex:
             raise DDictTimeoutError(
@@ -2212,7 +2232,8 @@ class DDict:
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
         self._send_dmsg_and_key_value(manager_id, msg, pickled_key, key, value)
         try:
-            resp_msg = self._recv_resp(set([msg.tag]), self._buffered_return_connector)
+            with self._timekeeper.record("recv put resp"):
+                resp_msg = self._recv_resp(set([msg.tag]), self._buffered_return_connector)
         except TimeoutError as ex:
             raise DDictTimeoutError(
                 DragonError.TIMEOUT,
@@ -2247,7 +2268,8 @@ class DDict:
                 strm = Channel.make_process_local()
                 # Keep track of stream channels and send handle for cleanup in the end of batch put.
                 self._batch_put_stream_channels[manager_id] = strm
-                sendh = self._managers[manager_id].sendh(stream_channel=strm, timeout=self._timeout)
+                with self._timekeeper.record("open send handle"):
+                    sendh = self._managers[manager_id].sendh(stream_channel=strm, timeout=self._timeout)
                 self._opened_send_handles[manager_id] = sendh
                 # Send DDBatchPutMsg first to notify the manager that the following puts are batch puts.
                 msg = dmsg.DDBatchPut(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, persist=persist)
@@ -2882,9 +2904,10 @@ class DDict:
                     self._check_manager_connection(root_manager)
                     # create new send handle for the root manager
                     self._bput_strm = Channel.make_process_local()
-                    self._bput_root_manager_sendh = self._managers[root_manager].sendh(
-                        stream_channel=self._bput_strm, timeout=self._timeout
-                    )
+                    with self._timekeeper.record("open send handle"):
+                        self._bput_root_manager_sendh = self._managers[root_manager].sendh(
+                            stream_channel=self._bput_strm, timeout=self._timeout
+                        )
 
                     # There might be other response expected in the main response channel, so create a new
                     # response FLI that only receives the bput response for current batch. In the cleanup
@@ -3106,12 +3129,14 @@ class DDict:
                                 if self._value_pickler is None:
                                     value = cloudpickle.load(
                                         file=PickleReadAdapter(
-                                            recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout)
+                                            recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout
+                                        )
                                     )
                                 else:
                                     value = self._value_pickler.load(
                                         file=PickleReadAdapter(
-                                            recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout)
+                                            recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout
+                                        )
                                     )
                                 yield value
                             except EOFError:
@@ -3192,12 +3217,14 @@ class DDict:
                                 if self._value_pickler is None:
                                     value = cloudpickle.load(
                                         file=PickleReadAdapter(
-                                            recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout)
+                                            recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout
+                                        )
                                     )
                                 else:
                                     value = self._value_pickler.load(
                                         file=PickleReadAdapter(
-                                            recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout)
+                                            recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout
+                                        )
                                     )
                                 yield (key, value)
                             except Exception as e:
@@ -3232,7 +3259,9 @@ class DDict:
         """
         tag = self._tag_inc()
         msg = dmsg.DDChkptAvail(
-            tag, chkptID=chkptID, respFLI=self._serialized_buffered_return_connector,
+            tag,
+            chkptID=chkptID,
+            respFLI=self._serialized_buffered_return_connector,
         )
         self._check_manager_connection(0)
         self._send([(msg, None)], self._managers[0], buffered=True)
@@ -3255,7 +3284,9 @@ class DDict:
         """
         tag = self._tag_inc()
         msg = dmsg.DDPersistedChkptAvail(
-            tag, chkptID=chkptID, respFLI=self._serialized_buffered_return_connector,
+            tag,
+            chkptID=chkptID,
+            respFLI=self._serialized_buffered_return_connector,
         )
         self._check_manager_connection(0)
         self._send([(msg, None)], self._managers[0], buffered=True)
@@ -3827,7 +3858,9 @@ class DDict:
         ret_list.sort()
         return ret_list
 
-    def filter(self, mgr_code: FunctionType, mgr_code_args: tuple, comparator: FunctionType, branching_factor: int = 5) -> FilterContextManager:
+    def filter(
+        self, mgr_code: FunctionType, mgr_code_args: tuple, comparator: FunctionType, branching_factor: int = 5
+    ) -> FilterContextManager:
         """
 
         Calling this instantiates a tree of process groups where mgr_code is
@@ -4070,3 +4103,10 @@ class DDict:
             raise DDictError(resp_msg.err, f"Failed to create dictionary! {resp_msg.errInfo}")
 
         return resp_msg.managers
+
+    def profile(self):
+        self._timekeeper.add("Total Time", self._start_tic)
+        return str(self._timekeeper)
+
+    def profile_reset(self):
+        self._timekeeper.reset_all()

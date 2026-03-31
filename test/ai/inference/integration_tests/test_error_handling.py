@@ -238,7 +238,6 @@ class TestLLMEngineErrorHandling(unittest.TestCase):
             batching_config=self.batching_config,
             hostname="node-0",
             devices=[0],
-            master_port="29500",
         )
         engine.llm = mock_llm
         engine.sampling_params = MagicMock()
@@ -263,7 +262,6 @@ class TestLLMEngineErrorHandling(unittest.TestCase):
             batching_config=self.batching_config,
             hostname="node-0",
             devices=[0],
-            master_port="29500",
         )
         engine.llm = mock_llm
         engine.sampling_params = MagicMock()
@@ -294,7 +292,6 @@ class TestLLMEngineErrorHandling(unittest.TestCase):
             batching_config=self.batching_config,
             hostname="node-0",
             devices=[0],
-            master_port="29500",
         )
         engine.llm = mock_llm
         engine.sampling_params = MagicMock()

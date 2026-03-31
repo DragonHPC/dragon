@@ -11,7 +11,7 @@ from utils.test_basic_mempool import (
 
 from utils.test_mempool import MemPoolTest
 from utils.test_pyheap import PHeapTest
-from utils.test_logging import LoggingTest, TestLogHandler
+from utils.test_logging import TestLogHandler
 from utils.test_logging import TestLoggingSubprocesses
 
 # TEMPORARY HACK: somehow the use of parameterized in these tests

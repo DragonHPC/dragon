@@ -1,4 +1,3 @@
-"""Logging setup for Dragon runtime infrastructure"""
 
 import logging
 import os
@@ -12,7 +11,6 @@ import dragon.infrastructure.facts as dfacts
 import dragon.infrastructure.messages as dmsg
 from dragon.utils import B64
 from dragon.managed_memory import MemoryPool, DragonPoolCreateFail
-from dragon.dlogging.logger import DragonLogger, DragonLoggingError
 
 # This is random and exists to conform to the messaging infrastructure.
 # It is discarded once logs are written out
@@ -155,6 +153,7 @@ class DragonLoggingServices(str, enum.Enum):
     PERF = "PERF"
     PG = "PG"
     TELEM = "TELEM"
+    BATCH = "BATCH"
 
     def __str__(self):
         return str(self.value)
@@ -205,7 +204,7 @@ class DragonLoggingHandler(logging.StreamHandler):
 
     def __init__(
         self,
-        serialized_log_descr: B64,
+        serialized_log_queue: str,
         mpool: MemoryPool = None,
         hostname: str = None,
         ip_address: str = None,
@@ -216,11 +215,11 @@ class DragonLoggingHandler(logging.StreamHandler):
 
         Ultimately a `logging.StreamHandler` that sends stream output to ``/dev/null`` and also
         emits log records into a  :ref:`dragon.infrastructure.messages.LoggingMsg <loggingmsg>` object that
-        is serialized into a :class:`dragon.dlogging.logger.DragonLogger`
+        is serialized into a :class:`dragon.native.queue.Queue` instance
 
-        :param serialized_log_descr: serialized descriptor from
-            :class:`dragon.dlogging.logger.DragonLogger`
-        :type serialized_log_descr: B64
+        :param serialized_log_queue: serialized descriptor from
+            :class:`dragon.native.queue.Queue`
+        :type serialized_log_queue: B64
         :param mpool: Memory pool to use for attaching to logging channel, defaults to None
         :type mpool: MemoryPool, optional
         :param hostname: hostname of logging service, defaults to None
@@ -233,9 +232,14 @@ class DragonLoggingHandler(logging.StreamHandler):
             in :class:`DragonLoggingServices`
         :type service: Union[DragonLoggingServices, str], optional
         """
+
+        # To prevent circular imports, we need to import these here.
+        from dragon.native.queue import Queue
+
         with open(os.devnull, "w") as f:
             super().__init__(f)
-        self._dlog = DragonLogger.attach(serialized_log_descr.decode(), mpool=mpool)
+
+        self._dlog = Queue.attach(serialized_log_queue, mpool=mpool)
         self.hostname = hostname
         self.ip_address = ip_address
         self.port = port
@@ -263,11 +267,8 @@ class DragonLoggingHandler(logging.StreamHandler):
                 service=self.service,
                 level=record.levelno,
             )
-            self._dlog.put(msg.serialize(), record.levelno)
-        except (Exception, DragonLoggingError) as err:
-            if isinstance(err, DragonLoggingError):
-                raise err
-            else:
+            self._dlog.put(msg.serialize())
+        except Exception as err:
                 self.handleError(record)
 
 
@@ -508,6 +509,8 @@ def close_FE_logging():
             handle.close()
             log.removeHandler(handle)
 
+def _cleanup_logging():
+    pass
 
 def _get_logging_mpool(node_index: int):
     """Create memory pool for logging infrastructure
@@ -516,7 +519,7 @@ def _get_logging_mpool(node_index: int):
         node_index (int): node ID of caller
     """
     _user = os.environ.get("USER", str(os.getuid()))
-    lps = int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ)
+    lps = int(dfacts.DEFAULT_SINGLE_INF_SEG_SZ)
     lpn = f"D{_user[-3:]}{str(os.getpid())[-3:]}{str(dfacts.LOGGING_POOL_SUFFIX)[-3:]}"
     lp_muid = dfacts.logging_pool_muid_from_index(node_index)
     # In some tests, the previous logging pool has not quite been released (by the OS)
@@ -528,23 +531,47 @@ def _get_logging_mpool(node_index: int):
             logging_mpool = MemoryPool(lps, lpn + "_" + str(i), lp_muid, None)
             break
         except DragonPoolCreateFail:
-            pass
+            raise
     return logging_mpool
 
 
-def setup_dragon_logging(node_index: int) -> DragonLogger:
-    """Create a :class:`dragon.dlogging.logger.DragonLogger` instance
+def setup_dragon_logging(node_index: int):
+    """Create a :class:`dragon.native.Queue` instance
 
     Args:
         node_index (int): node index logger is being created on
 
     Returns:
-        DragonLogger: created DragonLogger instance
+        Queue: created Dragon native Queue instance
     """
-    logging_mpool = _get_logging_mpool(node_index)
-    dragon_logger = DragonLogger(logging_mpool)
 
-    return dragon_logger
+    # To prevent circular imports, we need to import these here.
+    import random
+    from dragon.native.queue import Queue
+    from dragon.channels import Channel
+
+    class DragonLogger(Queue):
+        def destroy(self):
+            channel = self._main_channel
+            pool = self._pool
+            super().destroy()
+            try:
+                if channel is not None:
+                    channel.destroy()
+            except:
+                pass
+            try:
+                if pool is not None:
+                    pool.destroy()
+            except:
+                pass
+
+    l_uid = dfacts.BASE_LOG_CUID + random.randrange(1, 2**10) # Generate semi-random UID
+    logging_mpool = _get_logging_mpool(l_uid)
+    logging_channel = Channel(mem_pool=logging_mpool, c_uid=l_uid)
+    logging_queue = DragonLogger(main_channel=logging_channel, pool=logging_mpool)
+
+    return logging_queue
 
 
 def detach_from_dragon_handler(service: Union[DragonLoggingServices, str]):
@@ -600,7 +627,7 @@ def setup_BE_logging(
 ) -> Tuple[int, str]:
     """Configure backend logging for requested backend service
 
-    Create a handler using the :class:`dragon.dlogging.logger.DragonLogger` serialized
+    Create a handler using the :class:`dragon.native.queue.Queue` serialized
     descriptor and add it to the given service's logger
     :param service: logging service, options defined in :class:`DragonLoggingServices`
     :type service: Union[DragonLoggingServices, str]
@@ -624,8 +651,6 @@ def setup_BE_logging(
 
     if load_sdesc_from_environ and not any([logger_sdesc, mpool]):
         logger_sdesc = os.environ.get(dfacts.DRAGON_LOGGER_SDESC, None)
-        if logger_sdesc is not None:
-            logger_sdesc = B64.from_str(logger_sdesc)
 
     # Make sure there isn't a duplicate handler already attached to this root instance
     _clear_root_log_handlers()

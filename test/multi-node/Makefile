@@ -46,7 +46,7 @@ endif
 ifeq ($(TEST_OPEN_MPI_FLAGS),)
 OMPI_DIR := $(shell echo $(shell dragon-config -g open_mpi))
     ifeq ($(OMPI_DIR),)
-$(shell dragon-config test --open-mpi=/lus/scratch/dragonhpc/openmpi)
+_ := $(shell dragon-config test --open-mpi=/lus/scratch/dragonhpc/openmpi)
 	    OMPI_DIR = $(shell echo $(shell dragon-config -g open_mpi))
     endif
 	OMPI_FLAGS = -I $(OMPI_DIR)/include -L $(OMPI_DIR)/lib -lmpi
@@ -57,7 +57,7 @@ endif
 ifeq ($(TEST_ANL_MPICH_FLAGS),)
 ANL_MPICH_DIR := $(shell echo $(shell dragon-config -g anl_mpich))
     ifeq ($(ANL_MPICH_DIR),)
-$(shell dragon-config test --anl-mpich=/lus/scratch/dragonhpc/mpich)
+_ := $(shell dragon-config test --anl-mpich=/lus/scratch/dragonhpc/mpich)
         ANL_MPICH_DIR := $(shell echo $(shell dragon-config -g anl_mpich))
     endif
     ANL_MPICH_FLAGS = -I $(ANL_MPICH_DIR)/include -L $(ANL_MPICH_DIR)/lib -lmpich
@@ -69,7 +69,7 @@ endif
 ifeq ($(TEST_CRAY_MPICH_FLAGS),)
 CRAY_MPICH_DIR := $(shell echo $(shell dragon-config -g cray_mpich))
     ifeq ($(CRAY_MPICH_DIR),)
-$(shell dragon-config test --cray-mpich=${CRAY_MPICH_PREFIX})
+_ := $(shell dragon-config test --cray-mpich=${CRAY_MPICH_PREFIX})
         CRAY_MPICH_DIR := $(shell echo $(shell dragon-config -g cray_mpich))
     endif
     CRAY_MPICH_FLAGS = -I $(CRAY_MPICH_DIR)/include -L $(CRAY_MPICH_DIR)/lib -lmpich
@@ -108,7 +108,8 @@ TESTS_DRAGON_MULTI_NODE := test_barrier.py \
 						   test_distdict.py \
 						   test_fli.py \
 						   test_distdict_c.py \
-						   test_zarr_store.py
+						   test_zarr_store.py \
+						   test_batch.py
 
 TESTS_DRAGON_PMI_BACKENDS := test_pmi_backends.py
 
@@ -117,6 +118,10 @@ TESTS_DRAGON_RUNTIME_REBOOT := test_runtime_restart.py
 TESTS_DRAGON_HSTA := test_hsta.py
 
 TESTS_DRAGON_DATA_MOVERS := test_data_mover.py
+
+BATCH_UTILS_DIR := batch_utils
+BATCH_MY_DUMB_PROC := my_dumb_proc
+BATCH_MPI_JOB := mpi_job
 
 .PHONY: all
 all: multinode_default_wlm multinode_drun_wlm
@@ -141,6 +146,15 @@ multinode-tests: c_ddict cpp_ddict $(TESTS_DRAGON_MULTI_NODE) resiliency test_hs
 
 .PHONY: resiliency
 resiliency: $(TESTS_DRAGON_RUNTIME_REBOOT)
+
+test_batch.py: $(BATCH_MY_DUMB_PROC) $(BATCH_MPI_JOB)
+	module load cray-mpich-abi && $(PYTHON) -m dragon $(WLM_OPTS) $(DEF_NODES) $@ -v -f
+
+$(BATCH_MY_DUMB_PROC): $(BATCH_UTILS_DIR)/my_dumb_proc.c
+	$(CC) $(CFLAGS) -o $@ $<
+
+$(BATCH_MPI_JOB): $(BATCH_UTILS_DIR)/my_mpi_job.c
+	$(CC) $(CRAY_MPICH_FLAGS) -o $@ $<
 
 .PHONY: test_data_movers
 test_data_movers: $(TESTS_DRAGON_DATA_MOVERS)
@@ -197,6 +211,9 @@ endif
 clean: $(CLEAN_COMPONENTS)
 	$(RM) *.log
 	$(RM) -f *.o c_ddict cpp_ddict $(MPI_HELLO_OMPI) $(MPI_HELLO_CRAY) $(MPI_HELLO_MPICH)
+	$(RM) -f $(BATCH_MY_DUMB_PROC) $(BATCH_MPI_JOB)
+	$(RM) -f process_w_deps_data_* job_w_deps_data_*
+	$(RM) -rf batch_unittest_fib_seq
 	$(RM) -f /dev/shm/*
 
 .PHONY: print_test_list

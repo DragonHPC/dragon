@@ -32,7 +32,7 @@ default: build
 build: dragon-popen
 
 dragon-popen: dragon_popen_wrapper.c.o
-	$(CC) $(INCLUDE) $(CFLAGS) -o dragon-popen $< $(LIBS) -ldl
+	$(CC) $(INCLUDE) $(CFLAGS) -o dragon-popen $< $(LIBS) -ldl -Wl,-rpath,'$$ORIGIN/../../../lib' -Wl,-rpath,'$$ORIGIN/../lib'
 
 clean:
 	rm -rf *.o $(BIN_FILES)

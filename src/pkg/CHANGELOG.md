@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.13.2] - 2026-03-30
+
+### Changed
+
+    [AICI-1941] - Update managed memory docs
+    [AICI-2013] - Swap in Native Queue in Dragon Logging
+    [AICI-2030] - Proxy use case documentation based on AI-in-the-loop example and tutorial
+    [AICI-2072] - Rename MiniTelemetry and add CLI
+    [AICI-1987] - Additional hardening of channels and managed memory APIs against incorrect arguments
+
+### Added
+
+    [AICI-2019] - Batch only support CRAY PMI and needs controls for using PMIX on Job tasks
+    [AICI-2069] - Support vllm 0.15 with Dragon Inference
+    [AICI-2070] - Scale Dragon Inference with cpu-only compute on hotlum
+    [AICI-2077] - Add TimeKeeper Stats to DDictStats that get reported.
+    [AICI-2033] - Dynamic Graph for Batch
+    [AICI-2067] - Document drun and dhosts utilities
+    [AICI-2002] - Proxy use case documentation based on AI-in-the-loop example
+    [AICI-1987] - Added profiling of DDict managers
+
+### Fixed
+
+    [AICI-2004] - Fix GPU policies for Aurora
+    [AICI-2023] - Review and solve GSPingSH ordering issue
+    [AICI-2020] - Seeing HSTA/Channel Library issue when running DDict Persistence Performance
+    [AICI-1952] - Missing setuptools in setup.py
+    [AICI-2062] - Batch Processing loses output
+    [AICI-2063] - Policy Information lost in Batch
+    [AICI-2064] - Jupyter Startup CLI missing in package
+    [AICI-2066] - Dragon Launcher Frontend hangs at end of shutdown when node count > 4 and logging is enabled
+    [AICI-2073] - Single node launcher is not cleaning up /dev/shm files
+    [AICI-2074] - Performance regression in data loading for ALCF workload
+
 ## [0.13.1] - 2026-02-17
 
 ### Changed

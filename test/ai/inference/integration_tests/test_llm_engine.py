@@ -70,7 +70,6 @@ class TestLLMEngineWithQueuePipeline(unittest.TestCase):
             batching_config=self.batching_config,
             hostname="gpu-node",
             devices=[0],
-            master_port="29500",
         )
         engine.llm = mock_llm
         engine.sampling_params = MagicMock()
@@ -135,7 +134,6 @@ class TestLLMEngineWithQueuePipeline(unittest.TestCase):
             batching_config=self.batching_config,
             hostname="gpu-node",
             devices=[0],
-            master_port="29500",
         )
         engine.llm = mock_llm
         engine.sampling_params = MagicMock()
@@ -234,7 +232,6 @@ class TestLLMEngineInferenceWorkerIntegration(unittest.TestCase):
             batching_config=self.batching_config,
             hostname="test-host",
             devices=[0],
-            master_port="29500",
         )
         engine.llm = mock_llm
         engine.sampling_params = MagicMock()
@@ -334,7 +331,6 @@ class TestLLMEngineInferenceWorkerIntegration(unittest.TestCase):
             batching_config=self.batching_config,
             hostname="test-host",
             devices=[0],
-            master_port="29500",
         )
         engine.llm = mock_llm
         engine.sampling_params = MagicMock()
@@ -417,7 +413,6 @@ class TestEngineResponseQueuePreservation(unittest.TestCase):
             batching_config=batching_config,
             hostname="node",
             devices=[0],
-            master_port="29500",
         )
         engine.llm = mock_llm
         engine.sampling_params = MagicMock()

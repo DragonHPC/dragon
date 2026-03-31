@@ -196,7 +196,6 @@ class TestConfigWithLLMEngine(unittest.TestCase):
             batching_config=batching_config,
             hostname="node-0",
             devices=[0, 1],
-            master_port="29500",
         )
 
         # Verify config is accessible
@@ -241,7 +240,6 @@ class TestConfigWithLLMEngine(unittest.TestCase):
             batching_config=batching_config,
             hostname="node-0",
             devices=[0],
-            master_port="29500",
         )
         engine.llm = mock_llm
         engine.sampling_params = MagicMock()
@@ -299,14 +297,14 @@ class TestConfigWithInference(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.7),
             dynamic_worker=DynamicWorkerConfig(enabled=True),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 
@@ -346,14 +344,14 @@ class TestConfigWithInference(unittest.TestCase):
             guardrails=GuardrailsConfig(enabled=True),
             dynamic_worker=DynamicWorkerConfig(enabled=True),
             flask_secret_key="secret",
+            run_type="full_app",
+            token="test_token_abc123",
         )
 
         input_queue = mp.Queue()
 
         dragon_inference = Inference(
             config=config,
-            num_nodes=1,
-            offset=0,
             input_queue=input_queue,
         )
 

@@ -87,7 +87,6 @@ class InferenceWorker:
         inf_wrkr_barrier=None,
         llm_proc_end_ev=None,
         # Additional runtime parameters for LLM module
-        master_port: str = None,
         inf_wrkr_down_ev=None,
         inf_wrkr_manager_q=None,
     ) -> None:
@@ -127,13 +126,11 @@ class InferenceWorker:
         :param llm_proc_end_ev: Event used to denote that the LLM module
             should spin down.
         :type llm_proc_end_ev: mp.Event
-        :param master_port: Master port assigned to the inference worker.
-        :type master_port: str
         :param inf_wrkr_down_ev: Event used to denote that the entire
             inference worker should tear down.
         :type inf_wrkr_down_ev: mp.Event
         :param inf_wrkr_manager_q: Queue of tuples of the form
-            ``(hostname, devices, master_port, inf_wrkr_id)``.
+            ``(hostname, devices, inf_wrkr_id)``.
         :type inf_wrkr_manager_q: mp.Queue
         """
 
@@ -155,7 +152,6 @@ class InferenceWorker:
         self.preprocessing_output_queue = preprocessing_output_queue
         self.inf_wrkr_barrier = inf_wrkr_barrier
         self.llm_proc_end_ev = llm_proc_end_ev
-        self.master_port = master_port
         self.inf_wrkr_down_ev = inf_wrkr_down_ev
         self.inf_wrkr_manager_q = inf_wrkr_manager_q
 
@@ -815,7 +811,7 @@ class InferenceWorker:
         to perform batch inference using vLLM.
 
         Uses instance attributes set in __init__:
-            self.hostname, self.head_cpu_pid, self.devices, self.master_port,
+            self.hostname, self.head_cpu_pid, self.devices,
             self.preprocessing_input_queue (used as read_from_queue), self.inf_wrkr_barrier,
             self.llm_proc_end_ev, self.inf_wrkr_down_ev, self.inf_wrkr_manager_q, self.inf_wrkr_id
         """
@@ -833,7 +829,6 @@ class InferenceWorker:
             batching_config=self.batching_config,
             hostname=self.hostname,
             devices=self.devices,
-            master_port=self.master_port,
         )
         llm_engine.initialize()
         self.log.info("LLM Module: LLMInferenceEngine initialized")
@@ -926,13 +921,12 @@ class InferenceWorker:
                 if self.end_event.is_set() or self.llm_proc_end_ev.is_set():
                     if self.llm_proc_end_ev.is_set():
                         self.log.info(
-                            f"LLM Module: {self.llm_proc_end_ev.is_set()=} {self.hostname=} {self.devices=} {self.master_port=} {self.inf_wrkr_id=}"
+                            f"LLM Module: {self.llm_proc_end_ev.is_set()=} {self.hostname=} {self.devices=} {self.inf_wrkr_id=}"
                         )
                         self.inf_wrkr_manager_q.put(
                             (
                                 self.hostname,
                                 self.devices,
-                                self.master_port,
                                 self.inf_wrkr_id,
                             )
                         )

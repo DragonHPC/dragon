@@ -308,7 +308,10 @@ _encode_gateway_message_objects(dragonGatewayMessage_t * gmsg, dragonChannelSeri
 
     obj_ptr = gptr + *(gmsg->_header.target_ch_ser_offset);
     *(gmsg->_header.target_ch_ser_nbytes) = ch_ser->len;
-    memcpy(obj_ptr, ch_ser->data, ch_ser->len);
+
+    if (ch_ser->data != NULL) {
+        memcpy(obj_ptr, ch_ser->data, ch_ser->len);
+    }
 
     if (payload_mem_descr != NULL) {
 
@@ -863,9 +866,6 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
     if (send_msg == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The send_msg cannot be NULL.");
 
-    if (target_ch == NULL)
-        err_return(DRAGON_INVALID_ARGUMENT, "The target_ch cannot be NULL.");
-
     if (send_attr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The send_attr cannot be NULL.");
 
@@ -903,9 +903,15 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
     }
 
     dragonULInt target_hostid;
-    err = dragon_channel_get_hostid(target_ch, &target_hostid);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Failed to obtain hostid for target channel.");
+    if (target_ch != NULL) {
+        err = dragon_channel_get_hostid(target_ch, &target_hostid);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to obtain hostid for target channel.");
+    }
+    else {
+        // target_hostid isn't used when updating the transport agent
+        target_hostid = 0;
+    }
 
     if (dest_mem_descr != NULL) {
         dragonULInt dest_mem_host_id;
@@ -936,9 +942,17 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
         append_err_return(err, "Unable to determine size of payload message.");
 
     dragonChannelSerial_t target_ch_ser;
-    err = dragon_channel_serialize(target_ch, &target_ch_ser);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Failed to serialize target channel.");
+    if (target_ch != NULL) {
+        err = dragon_channel_serialize(target_ch, &target_ch_ser);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Failed to serialize target channel.");
+    }
+    else {
+        // target_ch_ser isn't used when updating the transport agent
+        target_ch_ser.data = NULL;
+        target_ch_ser.len = 0UL;
+
+    }
 
     bool cleanup_payload_required = false;
     if (send_msg->_attr.send_transfer_ownership)

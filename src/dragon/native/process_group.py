@@ -1450,7 +1450,7 @@ class Manager:
         finfo("Up and running (p_uid %s) in %s with %s", self._puid, self._the_state.state, self._cur_procs)
 
         while not self._stop_serving.is_set():
-            finfo("Status check with: %s in state %s", self._cur_procs, self._the_state.state)
+            fdebug("Status check with: %s in state %s", self._cur_procs, self._the_state.state)
             try:
                 client_msg = self._state_inq.get(timeout=self._QPATIENCE)
             except queue.Empty:

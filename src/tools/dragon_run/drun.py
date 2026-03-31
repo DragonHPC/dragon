@@ -9,6 +9,8 @@ from .src import run_wrapper
 from .src.common_args import add_common_args
 from .src.exceptions import DragonRunMissingAllocation, DragonRunNoSupportedWLM, DragonRunSingleNodeUnsupported
 
+from argparse import RawDescriptionHelpFormatter
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -44,12 +46,48 @@ class kwargs_append_action(argparse.Action):
             raise argparse.ArgumentError(self, f'Could not parse argument "{values}" as k1=v1 format')
         setattr(args, self.dest, ret_value)
 
+def getLoggingLevels():
+    if hasattr(logging, "getLevelNamesMapping"):
+        return list(logging.getLevelNamesMapping())
+    # getLevelNamesMapping was added in Python 3.11, so for older versions we need to do this manually
+    else:
+        return list(logging._nameToLevel.keys())
+
+
+DRUN_DESCRIPTION = """
+The DragonRun (drun) utility is used to launch applications on a set of hosts.
+
+The tool automatically detects if a Workload Manager (WLM)—such as Slurm or PBS—was
+used for node allocation. If a WLM is present, drun targets those
+active nodes. Nodes can also be manually specified via the --hostlist or
+--hostfile arguments, or leverage the dhosts utility to set the
+DRAGON_RUN_NODEFILE environment variable.
+
+To ensure efficiency across large multi-node environments, drun utilizes
+an SSH-tree to launch processes on each node. This requires that all nodes
+are configured for password-less SSH and maintain mutual routability.
+
+Example usage:
+
+drun --hostlist host1,host2,host3 my_executable --option1 --option2
+    Manually specify a list of hosts, in this case, host1, host2 and host3,
+    on which to run my_executable with options --option1 and --option2.
+
+drun --hostfile my_hostfile.txt my_executable
+    Specify a file containing a list of hosts, in this case, my_hostfile.txt,
+    on which to run my_executable.
+
+drun --wlm slurm my_executable
+    Force drun to look for an active Slurm allocation and use the nodes
+    from that allocation to run my_executable.
+"""
 
 def get_parser():
     parser = argparse.ArgumentParser(
         prog="drun",
-        description="Dragon Run Launcher Arguments and Options",
+        description=DRUN_DESCRIPTION,
         fromfile_prefix_chars="@",
+        formatter_class=RawDescriptionHelpFormatter,
     )
 
     add_common_args(parser)
@@ -86,7 +124,7 @@ def get_parser():
     parser.add_argument(
         "-l",
         "--log-level",
-        choices=logging.getLevelNamesMapping().keys(),
+        choices=getLoggingLevels(),
         metavar="LOG_LEVEL",
         help=LOGGING_HELP,
         default=logging.getLevelName(logging.NOTSET),

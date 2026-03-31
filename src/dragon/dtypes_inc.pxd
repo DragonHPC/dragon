@@ -126,7 +126,7 @@ cdef extern from "<dragon/managed_memory.h>":
     dragonError_t dragon_memory_attr_init(dragonMemoryPoolAttr_t * attr) nogil
     dragonError_t dragon_memory_attr_destroy(dragonMemoryPoolAttr_t * attr) nogil
     dragonError_t dragon_memory_get_attr(dragonMemoryPoolDescr_t * pool_descr, dragonMemoryPoolAttr_t * attr) nogil
-    bool dragon_memory_pool_is_local(dragonMemoryPoolDescr_t * pool_descr) nogil
+    bool dragon_memory_pool_is_local(const dragonMemoryPoolDescr_t * pool_descr) nogil
     dragonError_t dragon_memory_pool_muid(dragonMemoryPoolDescr_t* pool_descr, dragonULInt* muid) nogil
     dragonError_t dragon_memory_pool_get_free_size(dragonMemoryPoolDescr_t* pool_descr, uint64_t* free_size) nogil
     dragonError_t dragon_memory_pool_get_total_size(dragonMemoryPoolDescr_t* pool_descr, uint64_t* total_size) nogil
@@ -299,6 +299,10 @@ cdef extern from "<dragon/channels.h>":
         size_t len
         uint8_t * data
 
+    ctypedef struct dragonNodeMap_t:
+        dragonULInt host_id
+        dragonUInt ip_addr
+
 
     dragonMemoryDescr_t * DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP
     timespec_t DRAGON_CHANNEL_BLOCKING_NOTIMEOUT
@@ -315,6 +319,7 @@ cdef extern from "<dragon/channels.h>":
     dragonError_t dragon_channel_detach(dragonChannelDescr_t * ch) nogil
     dragonError_t dragon_channel_get_pool(const dragonChannelDescr_t * ch, dragonMemoryPoolDescr_t * pool_descr) nogil
     bint dragon_channel_is_local(const dragonChannelDescr_t * ch) nogil
+    dragonError_t dragon_channel_ta_update_nodes(dragonNodeMap_t * node_mappings, int num_mappings) nogil
     dragonError_t dragon_channel_poll(const dragonChannelDescr_t * ch, dragonWaitMode_t wait_mode, const uint8_t event_mask, timespec_t * timeout, dragonULInt* result) nogil
     dragonError_t dragon_channel_get_uid(const dragonChannelSerial_t * ch_ser, dragonULInt * uid_out) nogil
     dragonError_t dragon_channel_pool_get_uid_fname(const dragonChannelSerial_t * ch_ser, dragonULInt * pool_uid_out, char ** pool_fname_out) nogil
@@ -516,45 +521,6 @@ cdef extern from "<dragon/utils.h>":
 
 cdef extern from "<string.h>":
     size_t strlen(const char *s)
-
-cdef extern from "logging.h":
-
-    ctypedef struct dragonLoggingDescr_t:
-        pass
-
-    ctypedef enum dragonLoggingMode_t:
-        DRAGON_LOGGING_LOSSLESS
-        DRAGON_LOGGING_FIRST
-        DRAGON_LOGGING_LAST
-
-    ctypedef struct dragonLoggingSerial_t:
-        size_t len
-        uint8_t * data
-
-    ctypedef struct dragonLoggingAttr_t:
-        dragonChannelAttr_t ch_attr
-        dragonLoggingMode_t mode
-
-    # These should match logging.h and python's logging module
-    ctypedef enum dragonLogPriority_t:
-        DG_NOTSET = 0,
-        DG_DEBUG = 10,
-        DG_INFO = 20,
-        DG_WARNING = 30,
-        DG_CRITICAL = 40,
-        DG_ERROR = 50
-
-    dragonError_t dragon_logging_init(dragonMemoryPoolDescr_t * mpool, const dragonC_UID_t l_uid, dragonLoggingAttr_t * lattrs, dragonLoggingDescr_t * logger)
-    dragonError_t dragon_logging_serialize(const dragonLoggingDescr_t * logger, dragonLoggingSerial_t * log_ser)
-    dragonError_t dragon_logging_serial_free(dragonLoggingSerial_t * log_ser)
-    dragonError_t dragon_logging_destroy(dragonLoggingDescr_t * logger, bool destroy_pool)
-    dragonError_t dragon_logging_attach(const dragonLoggingSerial_t * log_ser, dragonLoggingDescr_t * logger, dragonMemoryPoolDescr_t *pool_descr)
-    dragonError_t dragon_logging_attr_init(dragonLoggingAttr_t * lattr)
-    dragonError_t dragon_logging_put(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, void* log, size_t log_len) nogil
-    dragonError_t dragon_logging_get(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, void ** log, size_t* log_len, timespec_t * timeout) nogil
-    dragonError_t dragon_logging_get_priority(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, dragonLogPriority_t *actual_priority, void ** log, size_t* log_len, timespec_t * timeout) nogil
-    dragonError_t dragon_logging_print(const dragonLoggingDescr_t * logger, dragonLogPriority_t priority, timespec_t * timeout) nogil
-    dragonError_t dragon_logging_count(const dragonLoggingDescr_t * logger, uint64_t * count) nogil
 
 cdef extern from "<stdatomic.h>":
     ctypedef int atomic_uint_fast64_t

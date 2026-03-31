@@ -1,3 +1,39 @@
+# Dragon 0.13.2 Release Summary
+
+We're excited to announce the release of Dragon v0.13.2, which includes several updates, additions and fixes. Here are the highlights:
+
+### Changed
+
+    - Multiple documentation updates including for managed memory, proxy
+    - Refactored on-node logging to use native Queue
+    - Renamed MiniTelemetry and add CLI
+    - Did some additional hardening against incorrect arguments in channels and managed memory APIs
+    - Updated maximum block size for infrastructure messages
+
+### Added
+
+    - Batch only support CRAY PMI and needs controls for using PMIX on Job tasks
+    - Support vllm 0.15 with Dragon Inference
+    - Scale Dragon Inference with cpu-only compute on hotlum
+    - Dynamic Graph for Batch
+    - Added documentation for drun and dhosts utilities
+    - Added Proxy use case documentation based on AI-in-the-loop example
+    - Added some DDict profiling code for managers. It can be accessed via the stats property
+
+### Fixed
+
+    - Fix GPU policies for Aurora
+    - Review and solve GSPingSH ordering issue
+    - Seeing HSTA/Channel Library issue when running DDict Persistence Performance
+    - Missing setuptools in setup.py
+    - Batch Processing loses output
+    - Policy Information lost in Batch
+    - Jupyter Startup CLI missing in package
+    - Dragon Launcher Frontend hangs at end of shutdown when node count > 4 and logging is enabled
+    - Single node launcher is not cleaning up /dev/shm files
+    - Performance regression in data loading for ALCF workload
+    - Fixed TimeoutError in dragon-cleanup
+
 # Dragon 0.13.1 Release Summary
 
 We're excited to announce the release of Dragon v0.13.1, which includes several updates, additions and fixes. Here are the highlights:

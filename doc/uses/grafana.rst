@@ -208,6 +208,61 @@ User defined metrics are by default set to a telemetry level of 1 but can be cha
 Running without the arg will mean that no telemetry data is collected. All of user generated telemetry data can be left in the user 
 program but will not be collected.
 
+Database Dump
+=============
+
+Telemetry data can be dumped to persistent storage for post-run analysis. 
+
+To enable database dumps, use the ``AnalysisClient`` in your application:
+
+.. code-block:: python
+    :linenos:
+    :caption: Using AnalysisClient for database dumps
+
+    from dragon.telemetry import Telemetry as dragon_telem, AnalysisClient
+
+    if __name__ == "__main__":
+        dt = dragon_telem()
+        tac = AnalysisClient()
+        tac.connect(timeout=60)
+
+        # Your application code here
+        # ...
+
+        # Dump the database periodically or at the end
+        tac.db_dump()
+
+        dt.finalize()
+
+Specify a dump path in your ``telemetry.yaml`` config file. Run your application with telemetry enabled:
+
+.. code-block:: console
+    :linenos:
+    :caption: **Running with database dump enabled**
+
+    > salloc --nodes=2 --exclusive
+    > dragon --telemetry-level=2 your_application.py
+
+After the runtime has exited, you can view the dumped metrics using the offline telemetry tool:
+
+.. code-block:: console
+
+    > salloc --nodes=1 --exclusive
+    > dragon-offline-telemetry
+
+By default, offline telemetry runs on all nodes in the current allocation. You can specify a custom number of nodes using the ``-N`` argument:
+
+.. code-block:: console
+
+    > salloc --nodes=2 --exclusive
+    > dragon-offline-telemetry -N 1
+
+.. note::
+
+    By default, only the last 5 minutes of telemetry data is retained for database dumps. For longer runs, adjust the ``default_tmdb_window`` parameter in your telemetry configuration (default: 300 seconds).
+
+Metrics from offline telemetry can be accessed using Grafana as described above.
+
 Additional configurations
 ----------------------------
 

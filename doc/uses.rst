@@ -93,6 +93,28 @@ Tutorials
             <p>Develop a workflow that puts it all together</p>
         </a>
     </div>
+    <div class="tiles">
+        <a href="uses/proxy.html" class="tile_item">
+            <h3>Running multi-system workflows</h3>
+            <p>Connect and run workflows across multiple systems</p>
+        </a>
+        <a href="uses/batch.html" class="tile_item">
+            <h3>Batch</h3>
+            <p>Use batch processing with Dragon</p>
+        </a>
+        <a href="uses/tutorial1.html" class="tile_item">
+            <h3>Tutorial 1</h3>
+            <p>First tutorial for using Dragon</p>
+        </a>
+        <a href="uses/tutorial2.html" class="tile_item">
+            <h3>Tutorial 2</h3>
+            <p>Second tutorial for using Dragon</p>
+        </a>
+        <a href="uses/tutorial3.html" class="tile_item">
+            <h3>Tutorial 3</h3>
+            <p>Third tutorial for using Dragon</p>
+        </a>
+    </div>
 
 .. toctree::
     :maxdepth: 2
@@ -108,3 +130,4 @@ Tutorials
     uses/gpus.rst
     uses/grafana.rst
     uses/workflow.rst
+    uses/proxy.rst

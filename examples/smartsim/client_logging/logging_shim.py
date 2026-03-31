@@ -13,7 +13,7 @@ from dragon.infrastructure import messages as dmsg
 from dragon.infrastructure.parameters import this_process
 from dragon.dlogging.util import setup_dragon_logging, setup_FE_logging, setup_BE_logging
 from dragon.dlogging.util import LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING, DragonLoggingServices as dls
-from dragon.dlogging.logger import DragonLogger
+from dragon.native.queue import Queue
 from dragon.utils import B64
 
 
@@ -51,11 +51,8 @@ class Shim:
 
     def run_image(self, cmdline, logger_sdesc, use_dragon):
 
-        # Configure handlers to make sure our log messages go to the DragonLogger channel
-        def_mpool = None
-        if use_dragon:
-            def_mpool = MemoryPool.attach(B64.from_str(this_process.default_pd).decode())
-        level, fname = setup_BE_logging(dls.TEST, logger_sdesc=B64.from_str(logger_sdesc), mpool=def_mpool)
+        # Configure handlers to make sure our log messages go to the logging Queue
+        level, fname = setup_BE_logging(dls.TEST, logger_sdesc=logger_sdesc)
 
         # Execute the user-provided application until it is successful or we run out
         # of retry attempts. Log as we do it
@@ -91,12 +88,8 @@ def run_logging(logger_sdesc, LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING, use_dragon):
     """Run a proc pulling messages out of logging channel and logging them away"""
 
     # Configure logging handlers for our logging environment
-    def_mpool = None
     if use_dragon:
         basename = 'dragon-shim'
-
-        # Attach to the default memory pool
-        def_mpool = MemoryPool.attach(B64.from_str(this_process.default_pd).decode())
     else:
         basename = 'regular-shim'
 
@@ -108,11 +101,11 @@ def run_logging(logger_sdesc, LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING, use_dragon):
     local_log = logging.getLogger(f'logger_{gethostname()}')
     local_log.info('hello from logging thread')
 
-    dragon_logger = DragonLogger.attach(B64.from_str(logger_sdesc).decode(), mpool=def_mpool)
+    logger_queue = Queue.attach(logger_sdesc)
 
-    # Pull messages out of the DragonLogger and log them until told to stop
+    # Pull messages out of the Queue and log them until told to stop
     while True:
-        msg = dmsg.parse(dragon_logger.get(logging.INFO, timeout=None))
+        msg = dmsg.parse(logger_queue.get(logging.INFO, timeout=None))
         if isinstance(msg, dmsg.HaltLoggingInfra):
             break
         elif isinstance(msg, dmsg.LoggingMsg):
@@ -156,12 +149,10 @@ if __name__ == "__main__":
     # Create my dragon logger and run it in its own process.
     print(f'creating logger on {gethostname()}', flush=True)
 
-    if args.dragon:
-        dragon_logger = DragonLogger(mpool=MemoryPool.attach(B64.from_str(this_process.default_pd).decode()))
-    else:
-        dragon_logger = setup_dragon_logging(0)
-    logging_sdesc = B64(dragon_logger.serialize())
-    logging_proc = mp.Process(target=run_logging, args=(str(logging_sdesc), LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING, args.dragon))
+    logger_queue = setup_dragon_logging(100)
+    logging_sdesc = logger_queue.serialize()
+
+    logging_proc = mp.Process(target=run_logging, args=(logging_sdesc, LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING, args.dragon))
     print('starting dragon logger receiver', flush=True)
     logging_proc.start()
 
@@ -173,15 +164,11 @@ if __name__ == "__main__":
     print("entering shim.run_image", flush=True)
     pool_proc = worker_pool.map(launch_partial, shims, 1)
     print("Pool work is complete.", flush=True)
+    worker_pool.close()
+    worker_pool.join()
 
     # Tell the dragon logger to halt
-    dragon_logger.put(dmsg.HaltLoggingInfra(tag=0).serialize(), logging.INFO)
+    logger_queue.put(dmsg.HaltLoggingInfra(tag=0).serialize())
     print("signaled logging exit", flush=True)
     logging_proc.join()
     print('joined on logging thread', flush=True)
-
-    if args.dragon:
-        dragon_logger.destroy(destroy_pool=False)
-    else:
-        dragon_logger.destroy()
-

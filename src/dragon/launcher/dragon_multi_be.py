@@ -5,14 +5,16 @@ import logging
 import socket
 
 from .backend import LauncherBackEnd
-from .launchargs import NETWORK_HELP, OVERLAY_PORT_HELP
+from .launchargs import NETWORK_HELP, OVERLAY_TRANSPORT_HELP, OVERLAY_PORT_HELP
 
 from ..utils import B64
 from ..infrastructure.facts import (
-    PROCNAME_LA_BE,
-    DEFAULT_TRANSPORT_NETIF,
-    TRANSPORT_TEST_ENV,
     DEFAULT_OVERLAY_NETWORK_PORT,
+    DEFAULT_TRANSPORT_AGENT,
+    DEFAULT_TRANSPORT_NETIF,
+    PROCNAME_LA_BE,
+    TRANSPORT_TEST_ENV,
+    TransportAgentOptions,
 )
 from ..dlogging.util import setup_BE_logging
 from ..dlogging.util import DragonLoggingServices as dls
@@ -51,6 +53,9 @@ def main(transport_test_env: bool = False):
     )
     parser.add_argument("--transport-test", action="store_true", help="Run in transport test mode")
     parser.add_argument("--network-prefix", dest="network_prefix", type=str, help=NETWORK_HELP)
+    parser.add_argument(
+        "--overlay-transport", dest="overlay_transport", type=TransportAgentOptions, help=OVERLAY_TRANSPORT_HELP
+    )
     parser.add_argument("--overlay-port", dest="overlay_port", type=int, help=OVERLAY_PORT_HELP)
     parser.add_argument(
         "--backend-ip-addr", dest="backend_ip_addr", type=str, help="Force backend transport agent IP address"
@@ -60,13 +65,16 @@ def main(transport_test_env: bool = False):
     parser.set_defaults(
         transport_test=bool(strtobool(os.environ.get(TRANSPORT_TEST_ENV, str(transport_test_env)))),
         network_prefix=DEFAULT_TRANSPORT_NETIF,
+        overlay_transport=DEFAULT_TRANSPORT_AGENT,
         overlay_port=DEFAULT_OVERLAY_NETWORK_PORT,
         backend_ip_addr=None,
         backend_hostname=None,
     )
     args = parser.parse_args()
 
-    with LauncherBackEnd(args.transport_test, args.network_prefix, args.overlay_port) as be_server:
+    with LauncherBackEnd(
+        args.transport_test, args.network_prefix, args.overlay_transport, args.overlay_port
+    ) as be_server:
         try:
             be_server.run_startup(
                 args.ip_addrs,

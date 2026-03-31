@@ -281,6 +281,8 @@ class LaunchParameters:
     :type OOM_WARNING_BYTES: int
     :param OOM_CRITICAL_BYTES: The bytes of free memory when a critical error is printed to stderr. Setting this value to 0 will result in no critical error message. When bytes is non-zero the smaller value of the percent and bytes (in bytes) will be used to decide about critical takedown of the Dragon run-time.
     :type OOM_CRITICAL_BYTES: int
+    :param OVERLAY_TRANSPORT: The transport agent used for the overlay network, defaults to ''.
+    :type OVERLAY_TRANSPORT: str
     """
 
     @classmethod
@@ -397,6 +399,7 @@ class LaunchParameters:
                 default=dfacts.OOM_DEFAULT_CRITICAL_BYTES,
             ),
             TypedParm(name=dfacts.QUIET_VAR, cast=typecast(str), check=nocheck, default="False"),
+            TypedParm(name=dfacts.OVERLAY_TRANSPORT_VAR, cast=typecast(str), check=nocheck, default=""),
         ]
 
         env = os.environ

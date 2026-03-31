@@ -22,6 +22,7 @@ tasking API.
     :recursive:
 
     Batch
+    BatchTopology
 
 .. currentmodule:: dragon.workflows.batch.batch
 
@@ -29,8 +30,6 @@ tasking API.
     :toctree:
     :recursive:
 
-    BatchDDict
-    BatchFile
     Function
     Job
     MakeTask
@@ -50,6 +49,23 @@ Prototype API for creating dataflow processing pipelines.
     :recursive:
 
     data_mover
+
+Proxy for Multi-System Workflow Execution
+-----------------------------------------
+
+Create workflows that span multiple systems, with a proxy API that abstracts away the details of remote execution and data movement
+
+.. currentmodule:: dragon.workflows.runtime
+
+.. autosummary::
+    :toctree:
+    :recursive:
+
+    Proxy
+    publish
+    lookup
+    attach
+
 
 
 Other Workflow Tools

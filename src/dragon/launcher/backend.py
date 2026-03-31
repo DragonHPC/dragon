@@ -21,7 +21,7 @@ from .wlm.k8s import KubernetesNetworkConfig
 
 from ..dlogging.util import setup_dragon_logging, setup_BE_logging, detach_from_dragon_handler
 from ..dlogging.util import DragonLoggingServices as dls
-from ..dlogging.logger import DragonLogger, DragonLoggingError
+from ..native.queue import Queue
 
 from ..infrastructure import facts as dfacts
 from ..infrastructure import messages as dmsg
@@ -109,13 +109,14 @@ class LauncherBackEnd:
 
     _DTBL = {}  # dispatch router for msgs, keyed by type of message
 
-    def __init__(self, transport_test_env, network_prefix, overlay_port):
+    def __init__(self, transport_test_env, network_prefix, overlay_transport, overlay_port):
 
         self._state = BackendState.INITIALIZING
         self._abnormally_terminating = False
 
         self.transport_test_env = bool(transport_test_env)
         self.network_prefix = network_prefix
+        self.overlay_transport = overlay_transport
         self.overlay_port = overlay_port
 
         # The la_be_stdin queue is the connection between this main thread
@@ -140,6 +141,8 @@ class LauncherBackEnd:
         # they are properly initialized before use.
         self.gs_channel = None
         self.gs_queue = None
+
+        self.logging_queue = None
 
     def __enter__(self):
         return self
@@ -215,7 +218,7 @@ class LauncherBackEnd:
             if self.send_log_to_overlaynet_thread.is_alive():
                 # Send it a message to make sure it can get out
                 self._logging_shutdown.set()
-                self.dragon_logger.put(halt_logging_msg.serialize())
+                self.logging_queue.put(halt_logging_msg.serialize())
             self.send_log_to_overlaynet_thread.join()
         except AttributeError:
             pass
@@ -337,11 +340,12 @@ class LauncherBackEnd:
         except Exception:
             pass
 
-        try:
-            log.debug("dragon_logger destroy")
-            self.dragon_logger.destroy()
-        except (DragonLoggingError, AttributeError):
-            pass
+        if self.logging_queue:
+            try:
+                self.logging_queue.destroy()
+                self.logging_queue = None
+            except (Exception):
+                pass
 
         try:
             log.debug("be_mpool destroy")
@@ -414,8 +418,9 @@ class LauncherBackEnd:
         self.infra_in.close()
         log.debug("infra in closed")
 
-        self.dragon_logger.destroy()
-        log.debug("dragon_logger closed")
+        if self.logging_queue is not None:
+            self.logging_queue.destroy()
+            log.debug("dragon_logger closed")
 
         # Close rest of infrastructure
         self.gw_ch.destroy()
@@ -511,7 +516,7 @@ class LauncherBackEnd:
 
         log.info(f"{self.node_idx} forward to nodes {ids_to_forward}")
 
-        conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2**16)
+        conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23)
         conn_policy = POLICY_INFRASTRUCTURE
         for idx in ids_to_forward:
             outbound = Channel.attach(
@@ -613,8 +618,6 @@ class LauncherBackEnd:
             self.hostname = backend_hostname or net_conf.name
             self.transport_agent_ipaddr = backend_ip_addr or net_conf.ip_addrs[0]
 
-        conn_options = ConnectionOptions(min_block_size=2**16)
-        conn_policy = POLICY_INFRASTRUCTURE
         try:
             local_cuid_in = dfacts.be_local_cuid_in_from_hostid(self.host_id)
             local_cuid_out = dfacts.be_local_cuid_out_from_hostid(self.host_id)
@@ -634,6 +637,8 @@ class LauncherBackEnd:
             self.be_inbound = Channel(self.be_mpool, be_cuid)
             self.local_ch_in = Channel(self.be_mpool, local_cuid_in)
             self.local_ch_out = Channel(self.be_mpool, local_cuid_out)
+            conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23)
+            conn_policy = POLICY_INFRASTRUCTURE
             self.local_inout = Connection(
                 inbound_initializer=self.local_ch_in,
                 outbound_initializer=self.local_ch_out,
@@ -653,7 +658,6 @@ class LauncherBackEnd:
 
             # Connect to frontend
             be_outbound = Channel.attach(frontend_sdesc.decode(), mem_pool=self.be_mpool)
-            conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2**16)
 
             # There are three places where we can try to send messages to the frontend:
             # 1) send_messages_to_overlaynet for normal infrastructure messages
@@ -706,16 +710,17 @@ class LauncherBackEnd:
         host_ids = [arg_host_id, str(self.host_id)]
         ip_addrs = [arg_ip_addr, self.transport_agent_ipaddr]  # it includes the port
         log.debug(f"standing up tcp agent with gw: {encoded_ser_gw_str}, host_ids={host_ids}, and ip_addrs={ip_addrs}")
-        self.dragon_logger = setup_dragon_logging(node_index=0)
+        self.logging_queue = setup_dragon_logging(node_index=0)
 
-        serialized_dragon_logger = self.dragon_logger.serialize()
-        log.debug("%s dragon logger sdesc: %s", self.host_id, B64(serialized_dragon_logger))
+        serialized_dragon_logger = self.logging_queue.serialize()
+        log.debug("%s dragon logger sdesc: %s", self.host_id, serialized_dragon_logger)
 
         try:
             self.tree_proc = start_overlay_network(
+                overlay_transport=self.overlay_transport,
                 ch_in_sdesc=B64(self.local_ch_out.serialize()),
                 ch_out_sdesc=B64(self.local_ch_in.serialize()),
-                log_sdesc=B64(serialized_dragon_logger),
+                log_sdesc=serialized_dragon_logger,
                 host_ids=host_ids,
                 ip_addrs=ip_addrs,
                 frontend=False,
@@ -809,9 +814,9 @@ class LauncherBackEnd:
         self.send_msgs_to_overlaynet_thread.start()
         self._state = BackendState.OVERLAY_THREADS_UP
 
-        logger_sdesc = self.dragon_logger.serialize()
+        logger_sdesc = self.logging_queue.serialize()
         log.debug("setting up logging again")
-        level, fname = setup_BE_logging(dls.LA_BE, logger_sdesc=B64(logger_sdesc), fname=fname)
+        level, fname = setup_BE_logging(dls.LA_BE, logger_sdesc=logger_sdesc, mpool=self.be_mpool, fname=fname)
         log = logging.getLogger(dls.LA_BE).getChild("run_startup")
 
         self.is_primary = self.node_idx == 0
@@ -824,7 +829,7 @@ class LauncherBackEnd:
         log.debug("testing debug level")
 
         # This starts the "logging" router.
-        send_log_to_overlaynet_thread_args = (self.dragon_logger, level)
+        send_log_to_overlaynet_thread_args = (self.logging_queue, level)
         self.send_log_to_overlaynet_thread = threading.Thread(
             name="Logging Monitor",
             target=self.send_log_msgs_to_overlaynet,
@@ -857,7 +862,7 @@ class LauncherBackEnd:
             host_name=self.hostname,
             ip_addrs=ip_addrs,
             primary=self.is_primary,
-            logger_sdesc=B64(logger_sdesc),
+            logger_sdesc=logger_sdesc,
             net_conf_key=self.net_conf_key,
         )
 
@@ -875,9 +880,9 @@ class LauncherBackEnd:
         # switch to comms with local services over channels and proceed with bring up
         self.ls_channel = Channel.attach(B64.from_str(sh_ping_be_msg.shep_cd).decode())
         self.la_channel = Channel.attach(B64.from_str(sh_ping_be_msg.be_cd).decode())
-        self.ls_queue = Connection(outbound_initializer=self.ls_channel, policy=POLICY_INFRASTRUCTURE)
+        self.ls_queue = Connection(outbound_initializer=self.ls_channel, options=conn_options, policy=POLICY_INFRASTRUCTURE)
         self.la_queue = Connection(inbound_initializer=self.la_channel, policy=POLICY_INFRASTRUCTURE)
-        self.la_queue_bd = Connection(outbound_initializer=self.la_channel, policy=POLICY_INFRASTRUCTURE)
+        self.la_queue_bd = Connection(outbound_initializer=self.la_channel, options=conn_options, policy=POLICY_INFRASTRUCTURE)
         log.info("la_be attached to ls created channels - a7")
 
         # Start the channel monitor thread
@@ -985,12 +990,12 @@ class LauncherBackEnd:
         self._shutdown.set()
         self.to_overlaynet_log.info("exiting send_messages_to_overlaynet")
 
-    def send_log_msgs_to_overlaynet(self, my_dragon_logger: DragonLogger, level: int):
+    def send_log_msgs_to_overlaynet(self, logging_queue: Queue, level: int):
         """This service forwards any log messages received on the Dragon logging channel to
         the OverlayNet queue to be sent to the front end launcher.
 
         Args:
-            logger_sdesc (B64): Dragon handle used to attach to the logging channel
+            logger_sdesc (str): Dragon handle used to attach to the logging channel
             level (int): minimum log priority of messages to forward
         """
         try:
@@ -998,9 +1003,9 @@ class LauncherBackEnd:
             try:
                 log.debug("starting send_log_msgs_to_overlaynet loop")
                 # Set timeout to None which allows better interaction with the GIL
-                while not self._logging_shutdown.is_set():
+                while logging_queue and not self._logging_shutdown.is_set():
                     try:
-                        serialized_msg = my_dragon_logger.get(level, timeout=None)
+                        serialized_msg = logging_queue.get(timeout=None)
                         msg = dmsg.parse(serialized_msg)
                         log.debug('got log message of type %s - "%s"', type(msg), msg.msg)
                         if isinstance(msg, dmsg.HaltLoggingInfra):
@@ -1065,7 +1070,7 @@ class LauncherBackEnd:
 
                     log.info("detaching from dragon logging")
                     detach_from_dragon_handler(dls.LA_BE)
-                    self.dragon_logger.put(dmsg.HaltLoggingInfra(tag=dlutil.next_tag()).serialize())
+                    self.logging_queue.put(dmsg.HaltLoggingInfra(tag=dlutil.next_tag()).serialize())
 
             except Exception as ex:
                 log.critical(f"Caught exception in be_channel_monitor thread: {ex}")
@@ -1234,7 +1239,8 @@ class LauncherBackEnd:
         # global services channel, so now we can attach to that channel.
         if self.is_primary and (not self.transport_test_env):
             self.gs_channel = Channel.attach(B64.from_str(msg.gs_cd).decode())
-            self.gs_queue = Connection(outbound_initializer=self.gs_channel, policy=POLICY_INFRASTRUCTURE)
+            conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23)
+            self.gs_queue = Connection(outbound_initializer=self.gs_channel, options=conn_options, policy=POLICY_INFRASTRUCTURE)
             self.msg_log.debug(f"Primary la_be created gs_queue: {self.gs_queue}")
 
         # Forward the message to my leaves

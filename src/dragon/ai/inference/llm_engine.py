@@ -8,12 +8,51 @@ separated from preprocessing, batching, and guardrails logic.
 import os
 import time
 import logging
+import socket
 import multiprocessing as mp
 from typing import List, Tuple, Dict
 from ...infrastructure.policy import Policy
 from .config import ModelConfig, BatchingConfig
 
 log = logging.getLogger(__name__)
+
+
+def find_free_port(device_index: int = 0, base_port=20000, port_range_size=10000) -> str:
+    """Return an available TCP port using the worker's device index as seed.
+
+    The device index seeds a deterministic random starting point within the
+    range, so concurrent workers on the same node begin scanning from widely
+    separated ports, virtually eliminating collisions.  If a port is taken,
+    the search wraps around until a free one is found.
+
+    The default range (20000-29999) is intentionally disjoint from the
+    vLLM ``get_open_port()`` patch range (30000-60000) so the two never
+    interfere.
+
+    :param device_index: GPU device index used to seed the random start.
+    :type device_index: int
+    :param base_port: Starting port of the search range.
+    :type base_port: int
+    :param port_range_size: Size of the port range to scan.
+    :type port_range_size: int
+    :raises IOError: If no free port is found in the range.
+    :returns: A free port as a string.
+    :rtype: str
+    """
+    import random
+
+    rng = random.Random(device_index)
+    start = rng.randint(0, port_range_size - 1)
+    for i in range(port_range_size):
+        port = base_port + (start + i) % port_range_size
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            sock.bind(("", port))
+            sock.close()
+            return str(port)
+        except OSError:
+            sock.close()
+    raise IOError("no free ports")
 
 
 def chat_template_formatter(system_prompt, user_prompt, chat_history, model_name):
@@ -40,7 +79,6 @@ class LLMInferenceEngine:
         batching_config: BatchingConfig,
         hostname: str,
         devices: List[int],
-        master_port: str,
     ):
         """Initialize the LLM inference engine.
 
@@ -53,14 +91,11 @@ class LLMInferenceEngine:
         :type hostname: str
         :param devices: List of GPU device IDs.
         :type devices: list[int]
-        :param master_port: Master port for distributed execution.
-        :type master_port: str
         """
         self.model_config = model_config
         self.batching_config = batching_config
         self.hostname = hostname
         self.devices = devices
-        self.master_port = master_port
 
         self.llm = None
         self.sampling_params = None
@@ -72,60 +107,60 @@ class LLMInferenceEngine:
         This should be called within the worker process to avoid
         serialization issues with CUDA objects.
         """
-        # Set GPU affinity context
-        with Policy(
-            placement=Policy.Placement.HOST_NAME,
-            host_name=self.hostname,
-            gpu_affinity=self.devices,
-        ):
-            # Set environment variables
-            os.environ["HF_TOKEN"] = self.model_config.hf_token
-            os.environ["MASTER_ADDR"] = "127.0.0.1"
-            os.environ["MASTER_PORT"] = str(self.master_port)
+        # Set environment variables
+        os.environ["HF_TOKEN"] = self.model_config.hf_token
+        os.environ["MASTER_ADDR"] = "127.0.0.1"
+        # Discover a free port on this worker node for distributed communication; needed for vLLM's distributed executor backend
+        os.environ["MASTER_PORT"] = find_free_port(device_index=self.devices[0])
 
-            # Lazy import vLLM to ensure Dragon start method is maintained
-            from vllm import LLM, SamplingParams
-            from vllm.engine.arg_utils import EngineArgs
-            import vllm
-            import dataclasses
-            from packaging import version
+        # Tell the Dragon get_open_port() patch which device offset to
+        # use so that each co-located vLLM instance gets a unique
+        # distributed-init port deterministically.
+        os.environ["_DRAGON_DEVICE_OFFSET"] = str(self.devices[0])
 
-            # Configure sampling parameters
-            self.sampling_params = SamplingParams(
-                temperature=0.5,
-                repetition_penalty=1.1,
-                stop=["<|eot_id|>", "<END>"],
-                top_p=self.model_config.top_p,
-                top_k=self.model_config.top_k,
-                max_tokens=self.model_config.max_tokens,
-                ignore_eos=False,
-                skip_special_tokens=False,
-            )
+        # Lazy import vLLM to ensure Dragon start method is maintained
+        from vllm import LLM, SamplingParams
+        from vllm.engine.arg_utils import EngineArgs
+        import vllm
+        import dataclasses
+        from packaging import version
 
-            # Configure engine arguments
-            # trust_remote_code was removed in vLLM 0.12.0
-            engine_kwargs = dict(
-                model=self.model_config.model_name,
-                tensor_parallel_size=self.model_config.tp_size,
-                enforce_eager=True,
-                distributed_executor_backend="mp",
-                disable_custom_all_reduce=True,
-                dtype=self.model_config.dtype,
-                gpu_memory_utilization=0.95,
-                max_num_seqs=self.batching_config.max_batch_size,
-                max_model_len=1024,
-            )
+        # Configure sampling parameters
+        self.sampling_params = SamplingParams(
+            temperature=0.5,
+            repetition_penalty=1.1,
+            stop=["<|eot_id|>", "<END>"],
+            top_p=self.model_config.top_p,
+            top_k=self.model_config.top_k,
+            max_tokens=self.model_config.max_tokens,
+            ignore_eos=False,
+            skip_special_tokens=False,
+        )
 
-            # Add trust_remote_code only for vLLM versions < 0.12.0
-            vllm_version = version.parse(vllm.__version__)
-            if vllm_version < version.parse("0.12.0"):
-                engine_kwargs["trust_remote_code"] = True
+        # Configure engine arguments
+        # trust_remote_code was removed in vLLM 0.12.0
+        engine_kwargs = dict(
+            model=self.model_config.model_name,
+            tensor_parallel_size=self.model_config.tp_size,
+            enforce_eager=True,
+            distributed_executor_backend="mp",
+            disable_custom_all_reduce=True,
+            dtype=self.model_config.dtype,
+            gpu_memory_utilization=0.95,
+            max_num_seqs=self.batching_config.max_batch_size,
+            max_model_len=1024,
+        )
 
-            engine_args = EngineArgs(**engine_kwargs)
+        # Add trust_remote_code only for vLLM versions < 0.12.0
+        vllm_version = version.parse(vllm.__version__)
+        if vllm_version < version.parse("0.12.0"):
+            engine_kwargs["trust_remote_code"] = True
 
-            # Initialize LLM
-            self.llm = LLM(**dataclasses.asdict(engine_args))
-            log.info(f"LLM Engine initialized on {self.hostname} " f"with devices {self.devices}")
+        engine_args = EngineArgs(**engine_kwargs)
+
+        # Initialize LLM
+        self.llm = LLM(**dataclasses.asdict(engine_args))
+        log.info(f"LLM Engine initialized on {self.hostname} " f"with devices {self.devices}")
 
     def generate(
         self,

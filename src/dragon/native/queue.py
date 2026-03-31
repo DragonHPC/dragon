@@ -14,7 +14,7 @@ import logging
 
 from ..channels import Channel, ChannelEmpty, ChannelFull
 from ..managed_memory import MemoryPool
-from ..utils import b64encode
+from ..utils import b64encode, b64decode
 from ..globalservices.channel import create, destroy, release_refcnt, get_refcnt, query
 from ..infrastructure.parameters import POLICY_USER, Policy
 from ..infrastructure.channel_desc import ChannelOptions
@@ -28,9 +28,6 @@ class QueueError(Exception):
 
 
 def _mk_channel(*, pool=None, block_size=None, capacity=100, policy=None):
-    if pool is None:
-        pool = MemoryPool.attach_default()
-
     if pool is not None:
         muid = pool.muid
     else:
@@ -49,9 +46,6 @@ def _mk_channel(*, pool=None, block_size=None, capacity=100, policy=None):
 
 
 def _mk_sem_channel(*, pool=None, block_size=None, policy=None):
-    if pool is None:
-        pool = MemoryPool.attach_default()
-
     if pool is not None:
         muid = pool.muid
     else:
@@ -151,6 +145,9 @@ class Queue:
 
         if pool is None:
             pool = MemoryPool.attach_default()
+            self._pool_internally_attached = True
+        else:
+            self._pool_internally_attached = False
 
         self._maxsize = maxsize
         self._pool = pool
@@ -294,8 +291,11 @@ class Queue:
 
         self._serialized_fli = b64encode(self._fli.serialize())
 
-        if not self._pool.is_local:
+        if self._pool is not None and not self._pool.is_local:
             self._pool = MemoryPool.attach_default()
+            self._pool_internally_attached = True
+        else:
+            self._pool_internally_attached = False
 
         if self._main_channel_internally_managed:
             get_refcnt(self._main_channel.cuid)
@@ -582,7 +582,7 @@ class Queue:
                     except:
                         pass
 
-                if self._pool is not None:
+                if self._pool_internally_attached:
                     try:
                         self._pool.detach()
                     except Exception as e:
@@ -612,3 +612,61 @@ class Queue:
         """
 
         return self._serialized_fli
+
+    @classmethod
+    def attach(cls, serialized_bytes, *, mpool: object = None) -> object:
+        """Attach to a Dragon native Queue from its serialized descriptor.
+
+        :param serialized_bytes: The serialized descriptor of the queue.
+        :type serialized_bytes: bytes
+        :return: The attached Queue object.
+        :rtype: Queue
+        """
+
+        new_queue = cls.__new__(cls)
+
+        # Many/most of these values are "default" values that may differ from
+        # the values in the original queue.
+
+        _maxsize = 100
+        _pool = mpool
+        _block_size = 2**16
+        _joinable = False
+        _buffered = True
+        _policy = None
+        _num_streams = 0
+        _main_channel = None
+        _mgr_channel = None
+        _sem_channel = None
+        _main_channel_internally_managed = False
+        _mgr_channel_internally_managed = False
+        _sem_channel_internally_managed = False
+        _num_managed_strm_channels = 0
+        _strm_channels = []
+        _fli = fli.FLInterface.attach(b64decode(serialized_bytes), mpool)
+        _node_index = None  # Don't set it here. That way we won't talk to GS unless asked to.
+        _pickler = cp.dumps(cp)
+
+        new_state = (
+            _maxsize,
+            _pool,
+            _block_size,
+            _joinable,
+            _buffered,
+            _policy,
+            _num_streams,
+            _main_channel,
+            _mgr_channel,
+            _sem_channel,
+            _main_channel_internally_managed,
+            _mgr_channel_internally_managed,
+            _sem_channel_internally_managed,
+            _num_managed_strm_channels,
+            _strm_channels,
+            _fli,
+            _node_index,
+            _pickler,
+        )
+
+        new_queue.__setstate__(new_state)
+        return new_queue

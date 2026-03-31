@@ -225,7 +225,7 @@ class RemoteExecutor:
                             except Exception as exc:
                                 logger.debug("pool_watcher - Unhandled Exception: %d %s", i, exc)
                     completed = True
-                except TimeoutError:
+                except concurrent.futures.TimeoutError:
                     logger.debug("sending Pings")
 
                     for _, backend_connector in self.futures.values():

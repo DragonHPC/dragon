@@ -17,7 +17,7 @@ from ...data.ddict.ddict import DDict
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 from ...infrastructure.facts import PMIBackend
 from ...infrastructure.policy import Policy
-from ...native.machine import cpu_count, current, Node, System
+from ...native.machine import current, Node, System
 from ...native.pool import Pool
 from ...native.process_group import ProcessGroup
 from ...native.process import ProcessTemplate, Process, Popen
@@ -25,9 +25,9 @@ from ...native.queue import Queue
 from ...telemetry.telemetry import Telemetry as dt
 from enum import Enum, IntEnum
 from .facts import (
-    default_workers_per_manager,
     default_timeout,
     default_progress_timeout,
+    default_block_size,
     manager_work_queue_max_batch_size,
     manager_work_queue_maxsize,
     primary_client_id,
@@ -36,7 +36,7 @@ from .facts import (
 from functools import singledispatchmethod
 from pathlib import Path
 from .proxy import ProxyObj
-from queue import Queue as LocalQueue
+from queue import Empty, Queue as LocalQueue
 from typing import Any, Iterable, Optional, TYPE_CHECKING
 from uuid import uuid1
 
@@ -58,14 +58,18 @@ def _setup_logging(context: str = None) -> logging.Logger:
     """
     Set up logging for a manager.
     """
-    # TODO: change TA to something else
     if context is None:
-        file_name = f"BATCH_{current().hostname}.log"
+        file_name = f"{dls.BATCH}_{current().hostname}.log"
     else:
-        file_name = f"BATCH_{context}_{current().hostname}.log"
+        file_name = f"{dls.BATCH}_{context}_{current().hostname}.log"
 
-    setup_BE_logging(service=dls.TA, fname=file_name)
-    log = logging.getLogger(__name__)
+    setup_BE_logging(service=dls.BATCH, fname=file_name)
+
+    if context is None:
+        log = logging.getLogger(dls.BATCH)
+    else:
+        log = logging.getLogger(dls.BATCH).getChild(context)
+
     return log
 
 
@@ -79,6 +83,20 @@ def _get_traceback() -> str:
     return traceback.format_exc().replace("\\n", "\n").replace("\n", "\n> ")
 
 
+def _compress_hostnames(hostnames: list) -> str:
+    """Return a compressed hostlist string (e.g. 'node[001-003]') for *hostnames*.
+
+    Requires the ``python-hostlist`` package.  Falls back to a comma-separated
+    list if the package is not available.
+    """
+    try:
+        import hostlist as _hostlist
+
+        return _hostlist.collect_hostlist(hostnames)
+    except ImportError:
+        return ", ".join(hostnames)
+
+
 ResultWrapper = namedtuple(
     "ResultWrapper",
     ["compiled_tuid", "tuid", "result", "traceback", "stdout", "stderr", "raised"],
@@ -89,13 +107,23 @@ CompiledResultWrapper = namedtuple(
 )
 AsyncWrapper = namedtuple("AsyncWrapper", ["async_result", "async_stdout", "async_stderr"])
 ManagerException = namedtuple("ManagerException", ["tuid", "exception", "traceback", "err_message"])
-DepSat = namedtuple("DepSat", ["tuid", "compiled_tuid", "input_tuples"])
-DepOutputIdxs = namedtuple("DepOutputIdxs", ["result_idx", "stdout_idx", "stderr_idx"])
+DepSat = namedtuple("DepSat", ["source_tuid", "tuid", "compiled_tuid", "arg_dep_updates"])
+DepSatRequest = namedtuple(
+    "DepSatRequest",
+    ["upstream_tuid", "tuid", "compiled_tuid", "arg_dep_updates", "reply_q", "client_id"],
+)
+ArgDepUpdate = namedtuple("ArgDepUpdate", ["template_idx", "arg_idx"])
 HostInfo = namedtuple("HostInfo", ["tuid", "hostname"])
+FollowerDone = namedtuple("FollowerDone", ["tuid", "compiled_tuid"])
+CompletionNotification = tuple[str, str] | FollowerDone
 RegisterClient = namedtuple("RegisterClient", ["ret_q", "client_id"])
 UnregisterClient = namedtuple("UnregisterClient", ["client_id"])
 JoinCalled = namedtuple("JoinCalled", [])
-DataAccess = namedtuple("DataAccess", ["access_type", "comm_object", "channels"])
+FenceRequest = namedtuple("FenceRequest", ["client_id", "reply_q", "done_event"])
+ManagerFenceRequest = namedtuple("ManagerFenceRequest", ["client_id", "reply_q"])
+FenceComplete = namedtuple("FenceComplete", ["client_id"])
+DataAccess = namedtuple("DataAccess", ["access_type", "kvs", "keys"])
+FrontierInfo = namedtuple("FrontierInfo", ["task_list", "access_type", "write_before_read"])
 
 
 class AccessType(Enum):
@@ -125,6 +153,22 @@ class SubmitAfterCloseError(BatchError):
 
     def __init__(self, message):
         """Initialize the submit-after-close subclass for Batch exceptions"""
+        super().__init__(message)
+        self.message = message
+
+    def __str__(self):
+        """Return the message for this exception."""
+        return f"{self.message}"
+
+
+class TaskNotReadyError(BatchError):
+    """
+    Exception raised by :py:meth:`Task.get` when ``block=False`` and the task
+    result is not yet available.
+    """
+
+    def __init__(self, message):
+        """Initialize the task-not-ready subclass for Batch exceptions"""
         super().__init__(message)
         self.message = message
 
@@ -198,9 +242,14 @@ class TaskCore:
         self.tuid = str(uuid1())
         self.compiled_tuid = self.tuid
         self.cached_queue = None
-        self.dep_queues = []
-        self.dep_tuids = []
-        self.dep_output_idxs = []
+        self.downstream_queues = []
+        self.downstream_tuids = []
+        self.upstream_queues = []
+        self.upstream_tuids = []
+        # for cross-compiled dependencies, keep parallel list of arg dep updates
+        # corresponding to entries in `upstream_tuids` / `upstream_queues`
+        self.upstream_arg_dep_updates = []
+        self.downstream_arg_dep_updates = []
         self.num_dep_sat = 0
         self.num_dep_tot = 0
 
@@ -219,36 +268,21 @@ class TaskCore:
         """
         return f"name={self.name}, client_id={self.client_id}, tuid={self.tuid}, compiled_tuid={self.compiled_tuid}"
 
-    def _notify_dep_tasks(self, result, stdout, stderr) -> None:
+    def _notify_dep_tasks(self, result) -> None:
         """
         Notifies all tasks that depend on this task of its completion.
 
         :return: Returns None.
         :rtype: None
         """
-        if len(self.dep_queues) > 0:
+        if len(self.downstream_queues) > 0:
             compiled_tuid = self.compiled_tuid
 
-            for q, tuid, output_idxs in zip(self.dep_queues, self.dep_tuids, self.dep_output_idxs):
-                input_tuples = []
-
-                if output_idxs is not None:
-                    result_templ_arg_idx = output_idxs[AsyncType.RESULT]
-                    if result_templ_arg_idx is not None:
-                        template_idx, arg_idx = result_templ_arg_idx
-                        input_tuples.append((result, template_idx, arg_idx))
-
-                    stdout_templ_arg_idx = output_idxs[AsyncType.STDOUT]
-                    if stdout_templ_arg_idx is not None:
-                        template_idx, arg_idx = stdout_templ_arg_idx
-                        input_tuples.append((stdout, template_idx, arg_idx))
-
-                    stderr_templ_arg_idx = output_idxs[AsyncType.STDERR]
-                    if stderr_templ_arg_idx is not None:
-                        template_idx, arg_idx = stderr_templ_arg_idx
-                        input_tuples.append((stderr, template_idx, arg_idx))
-
-                dep_sat = DepSat(tuid, compiled_tuid, input_tuples)
+            for q, tuid, arg_dep_update_list in zip(
+                self.downstream_queues, self.downstream_tuids, self.downstream_arg_dep_updates
+            ):
+                arg_dep_updates = arg_dep_update_list if arg_dep_update_list is not None else []
+                dep_sat = DepSat(self.tuid, tuid, compiled_tuid, arg_dep_updates)
                 q.put(dep_sat)
 
 
@@ -265,12 +299,12 @@ class Task:
         Initializes a new task.
 
         :param task_core: The core parts of the task, allowing us to send leaner objects to the managers.
-        :type task_core: TaskCore
+        :type task_core: :py:class:`TaskCore`
         :param batch: The batch to which this task belongs.
-        :type batch: Batch
-        :param reads: A list of ``Read`` objects created by calling ``Batch.read``.
+        :type batch: :py:class:`Batch`
+        :param reads: A list of ``Read`` objects created by calling :py:meth:`Batch.read`.
         :type reads: Optional[list]
-        :param writes: A list of ``Write`` objects created by calling ``Batch.write``.
+        :param writes: A list of ``Write`` objects created by calling :py:meth:`Batch.write`.
         :type writes: Optional[list]
         :param compiled: A flag indicating if this task is compiled.
         :type compiled: bool
@@ -278,6 +312,8 @@ class Task:
         :return: Returns None.
         :rtype: None
         """
+        batch.log.debug(f"initializing task with core={task_core}, reads={reads}, writes={writes}, compiled={compiled}")
+
         self.core = task_core
         # non-core attributes are only needed by client code (i.e., can be deleted
         # when sending a work chunk to a manager)
@@ -288,10 +324,6 @@ class Task:
         self._manager_offset = None
         self._started = False
         self._ready = False
-        # TODO: get rid of ret_q_handler now that the Task object has direct access
-        # to the Batch object
-        self.ret_q_handler = batch.ret_q_handler
-        self.num_managers_complete = 0
         self.exception = None
         self.traceback = None
         self.num_subtasks = 0
@@ -316,22 +348,12 @@ class Task:
         if compiled:
             self._compiled_task = self
 
-    def __del__(self) -> None:
-        """
-        Clean up this task, and guarantee that all background tasks are complete before
-        the garbage collector free the task's memory.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        try:
-            # TODO: we should check if this task is in _background_tasks before calling fence()
-            self._batch.fence()
-            del self.ret_q_handler._async_dicts[self.core.tuid]
-        except:
-            pass
-
-    def _depends_on(self, task, compiled_task, output_idxs: Optional[dict] = None) -> None:
+    def _depends_on(
+        self,
+        task: "Task",
+        compiled_task: "Task",
+        arg_dep_update: Optional[list[ArgDepUpdate]] = None,
+    ) -> None:
         """
         Sets a dependency for this task, which will be blocked until the completion of ``task``.
 
@@ -342,114 +364,99 @@ class Task:
         :return: Returns None.
         :rtype: None
         """
-        task.core.dep_tuids.append(self.core.tuid)
-        task.core.dep_output_idxs.append(output_idxs)
-
         self.core.num_dep_tot += 1
 
-        # TODO: this if-statement prevents arg-passing deps from being represented in
-        # networkx dependency dag (this only really impacts visualization of the dag,
-        # since DepSat messages are based on the dep_tuids list in the task_core)
-        if compiled_task is not None:
-            if compiled_task.dep_dag is None:
-                compiled_task.dep_dag = nx.DiGraph()
+        # Two cases based on whether the upstream task belongs to the same compiled task as self:
+        #
+        # 1. Same compiled_tuid: both tasks were submitted together in one `compile()` call.
+        #    The compiled task's DAG is partitioned across managers, so the two tasks may end up
+        #    on different managers. The upstream task_core tracks intra-compiled dependencies via
+        #    `downstream_tuids` / `downstream_arg_dep_updates`, and calls `_notify_dep_tasks` (which puts a
+        #    DepSat directly on the downstream task's manager queue) when the upstream one completes.
+        #
+        # 2. Different compiled_tuid: the upstream task belongs to a different (already-dispatched)
+        #    compiled task, possibly on a different manager. Self records the upstream tuid in
+        #    `upstream_tuids` and sends a DepSatRequest to the upstream manager when its Work chunk
+        #    is dispatched; the upstream manager replies with a DepSat when that task finishes.
 
-            compiled_task.dep_dag.add_edge(task.core, self.core)
+        if task.core.compiled_tuid == self.core.compiled_tuid:
+            task.core.downstream_tuids.append(self.core.tuid)
+            # `downstream_arg_dep_updates` is a parallel list to `downstream_tuids`, so we always append
+            # to keep them in sync — even when there's no arg-passing dep (None means "no update
+            # needed", and `_notify_dep_tasks` handles None by passing an empty list).
+            task.core.downstream_arg_dep_updates.append(arg_dep_update)
+
+            # TODO: this if-statement prevents arg-passing deps from being represented in
+            # networkx dependency dag (this only really impacts visualization of the dag,
+            # since DepSat messages are based on the downstream_tuids list in the task_core)
+            if compiled_task is not None:
+                if compiled_task.dep_dag is None:
+                    compiled_task.dep_dag = nx.DiGraph()
+
+                compiled_task.dep_dag.add_edge(task.core, self.core)
+        else:
+            self.core.upstream_tuids.append(task.core.tuid)
+            # record arg_dep_update (may be None) for this upstream tuid so we can
+            # create DepSatRequest messages to upstream managers containing the
+            # arg-update indices (the actual values will be fetched from results_ddict)
+            self.core.upstream_arg_dep_updates.append(arg_dep_update)
 
     def _handle_arg_passing_deps(self, list_of_arg_lists: Optional[list]) -> None:
         """
         Set up argument-passing dependencies for this task.
 
-        :param list_of_arg_lists: A list of argument lists to be checked for AsyncDict args.
+        :param list_of_arg_lists: A list of argument lists to be checked for Task args.
         :type list_of_arg_lists: list
 
         :return: Returns None.
         :rtype: None
         """
-        arg_deps = {}
+        arg_dep_updates = {}
 
         for template_idx, args in enumerate(list_of_arg_lists):
             if args is None:
                 continue
 
-            # get the index for each argument that's an AsyncDict (representing another task's output)
-            # and add a key-value pair to the arg_deps dict, key=AsyncDict, value=list of output indexes
-            # and the index is stored in the list slot determined by its output type
+            # get the index for each argument that's a Task (representing its output in this case)
+            # and add a key-value pair to the arg_dep_updates dict, key=arg, value=list of arg dep
+            # update tuples
             for idx, arg in enumerate(args):
-                if isinstance(arg, AsyncDict):
-                    if arg not in arg_deps:
-                        arg_deps[arg] = [None, None, None]
+                if isinstance(arg, Task):
+                    try:
+                        arg_dep_updates[arg].append(ArgDepUpdate(template_idx, idx))
+                    except KeyError:
+                        arg_dep_updates[arg] = [ArgDepUpdate(template_idx, idx)]
 
-                    arg_deps[arg][arg._async_type] = (template_idx, idx)
-
-        # for each argument and its associated list of indexes, add a dependency from the (sub)task
-        # associated with the AsyncDict to this task, and associate the list of output indexes with
-        # this dependency
-        for arg, output_idxs in arg_deps.items():
-            self._depends_on(arg._subtask, arg._compiled_task, output_idxs)
+        # for each argument and its associated list of indexes, add a dependency from the task
+        # associated with the argument to this task, and associate the list of output indexes
+        # with this dependency
+        for arg, arg_dep_update_list in arg_dep_updates.items():
+            self._depends_on(arg, arg._compiled_task, arg_dep_update_list)
 
     def _access(self, data_access: DataAccess) -> None:
         """
-        Indicates that this task will access (read or write) a communication object on the specified channels.
+        Indicates that this task will access (read or write) a kvs at the specified keys.
 
-        :param data_access: Specifies the access type, communication object, and channels used for one or more data accesses
+        :param data_access: Specifies the access type, kvs, and keys used for one or more data accesses
 
         :return: Returns None.
         :rtype: None
         """
         access_type = data_access.access_type
-        comm_object = data_access.comm_object
-        channels = data_access.channels
+        kvs = data_access.kvs
+        keys = data_access.keys
 
-        if comm_object not in self.accesses:
-            self.accesses[comm_object] = {}
+        for key in keys:
+            # if we haven't seen this access before, or if the previous access was a read,
+            # then update the accesses dict. the check for previous read accesses is necessary
+            # because (1) this access could be a write, and (2) if there are multiple accesses
+            # to the same key, and at least one of them is a write, then this access type should
+            # be a write for the purpose of inferring dependencies
+            access_key = (id(kvs), key)
+            if access_key not in self.accesses or self.accesses[access_key][1] == AccessType.READ:
+                self.accesses[access_key] = (self, access_type)
 
-        accesses_this_dict = self.accesses[comm_object]
-
-        for channel in channels:
-            try:
-                # if the current access type is READ and this new one is WRITE,
-                # then update the access type to WRITE
-                _, current_access_type = accesses_this_dict[channel]
-                if current_access_type == AccessType.READ and access_type == AccessType.WRITE:
-                    accesses_this_dict[channel] = (self, access_type)
-            except:
-                # no access type has been set yet, so we do that now
-                accesses_this_dict[channel] = (self, access_type)
-
-    def read(self, obj, *channels) -> None:
-        """
-        Indicates READ accesses of a specified set of channels on a communication object, and
-        associates these accesses with this task. Associating READ accesses with a task allows
-        the Batch service to infer dependencies between subtasks in a compiled task, but has
-        no effect on individual (non-compiled) tasks.
-
-        :param obj: The communication object being accessed.
-        :param *channels: A tuple of channels on the communcation object that will be read from.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        data_access = DataAccess(AccessType.READ, obj, channels)
-        self._access(data_access)
-
-    def write(self, obj, *channels) -> None:
-        """
-        Indicates WRITE accesses of a specified set of channels on a communication object, and
-        associates these accesses with this task. Associating WRITE accesses with a task allows
-        the Batch service to infer dependencies between subtasks in a compiled task, but has
-        no effect on individual (non-compiled) tasks.
-
-        :param obj: The communication object being accessed.
-        :param *channels: A tuple of channels on the communcation object that will be written to.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        data_access = DataAccess(AccessType.WRITE, obj, channels)
-        self._access(data_access)
-
-    def start(self) -> None:
+    def _start(self) -> None:
         """
         Start this task by sending its work chunks to the managers. Currently, a task can only
         be started once and cannot be restarted after it completes. If a task is a subtask of
@@ -458,14 +465,11 @@ class Task:
         :return: Returns None.
         :rtype: None
         """
-        if self._compiled_task is None:
-            self._batch.compile([self])
-
         compiled_task = self._compiled_task
 
         # this is a program with multiple work chunks, so round-robin them
         # across managers
-        manager_qs = compiled_task.ret_q_handler._manager_qs
+        manager_qs = compiled_task._batch.manager_qs
         num_managers = len(manager_qs)
         idx = compiled_task._manager_offset
 
@@ -474,52 +478,9 @@ class Task:
             manager_q.put(work)
             idx = (idx + 1) % num_managers
 
-        # create AsyncDicts to hold the returned output from the task
-        async_dicts = compiled_task.ret_q_handler._async_dicts
-        async_dicts[compiled_task.core.compiled_tuid] = AsyncWrapper(
-            AsyncDict(compiled_task._batch, AsyncType.RESULT, compiled_task=compiled_task),
-            AsyncDict(compiled_task._batch, AsyncType.STDOUT, compiled_task=compiled_task),
-            AsyncDict(compiled_task._batch, AsyncType.STDERR, compiled_task=compiled_task),
-        )
-
         compiled_task._started = True
 
-    # TODO: add other options for checking completions, and take inspiration from Pool
-    def wait(self, timeout: float = default_timeout) -> None:
-        """
-        Wait for this Task to complete. This can only be called after ``start`` has been called.
-        This function does not return the task's result; instead, use ``get`` for that purpose.
-
-        :param timeout: The timeout for waiting. Defaults to 1e9.
-
-        :raises TimeoutError: If the specified timeout is exceeded.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        start = time.time()
-        compiled_task = self._compiled_task
-        num_work_chunks = len(compiled_task.work_chunks)
-
-        while compiled_task.num_managers_complete < num_work_chunks and compiled_task.exception is None:
-            time_so_far = time.time() - start
-            try:
-                compiled_task.ret_q_handler._handle_next_ret(timeout - time_so_far)
-            except Exception as e:
-                time_so_far = time.time() - start
-                if time_so_far >= timeout:
-                    raise TimeoutError("timed out while waiting for result") from e
-                else:
-                    pass
-
-        if compiled_task.exception is not None:
-            message = f"compiled task with {compiled_task.core._get_id_str()} failed with the following traceback\n{compiled_task.traceback}"
-            e = type(compiled_task.exception)
-            raise e(message)
-
-        compiled_task._ready = True
-
-    def run(self, timeout: float = default_timeout) -> Any:
+    def _run(self, timeout: float = default_timeout) -> Any:
         """
         Starts a task and waits for it to complete. Currently, a task can only
         be started once and cannot be restarted after it completes.
@@ -533,19 +494,51 @@ class Task:
         :return: Returns the result of the operation being waited on.
         :rtype: Any
         """
-        self.start()
-        return self.wait(timeout)
+        self._start()
+        return self.get(timeout)
 
-    def get(self):
+    # TODO: add other options for checking completions, and take inspiration from Pool
+    def get(self, block: bool = True, timeout: float = default_timeout) -> None:
         """
-        Performs a batch fence to guarantee the completion of all tasks batched in the background,
-        and then gets the result for this task.
+        Wait for this Task to complete. This function returns the task's result and prints
+        any stdout/stderr output.
 
-        :return: Returns the result of this task.
+        :param block: If True (the default), block until the result is available or *timeout* is
+            exceeded. If False, return immediately if the result is available, otherwise raise
+            :py:exc:`TaskNotReadyError`.
+        :type block: bool
+        :param timeout: The timeout for waiting. Defaults to 1e9. Ignored when *block* is False.
+        :type timeout: float
+
+        :raises TimeoutError: If the specified timeout is exceeded.
+        :raises :py:exc:`TaskNotReadyError`: If *block* is False and the result is not yet available.
+
+        :return: Returns the result of the task.
         :rtype: Any
         """
-        self._batch.fence()
-        return self.result.get()
+        if not block:
+            if self.core.tuid not in self._batch.results_ddict:
+                raise TaskNotReadyError(f"result not yet available: {self.core._get_id_str()}")
+
+        try:
+            # we're using wait_for_keys in the ddict, so this will wait for the
+            # result to be ready
+            result, tb, raised, stdout, stderr = self._batch.results_ddict[self.core.tuid]
+        except KeyError:
+            raise RuntimeError(f"no return value found for task: {self.core._get_id_str()}")
+
+        # Print stdout and stderr if available
+        if stdout:
+            print(stdout)
+        if stderr:
+            print(stderr, file=sys.stderr)
+
+        if raised:
+            message = f"task with {self.core._get_id_str()} failed with the following traceback:\n{tb}"
+            e = type(result)
+            raise e(message)
+        else:
+            return result
 
     @property
     def uid(self):
@@ -553,51 +546,6 @@ class Task:
         Provides the unique ID for this task.
         """
         return self.core.tuid
-
-    @property
-    def result(self):
-        """
-        Handle for the task's result. This should not be accessed until the task is started.
-        ``result`` only applies to individual tasks and compiled tasks with a single subtask.
-        The handle has type AsyncDict.
-        """
-        if self.num_subtasks > 1:
-            raise RuntimeError("result does not apply to compiled tasks with more than one subtask")
-
-        if self._result is None:
-            self._result = AsyncDict(self._batch, AsyncType.RESULT, compiled_task=None, subtask=self)
-
-        return self._result
-
-    @property
-    def stdout(self):
-        """
-        Handle for the task's stdout. This should not be accessed until the task is started.
-        ``stdout`` only applies to individual tasks and compiled tasks with a single subtask.
-        The handle has type AsyncDict.
-        """
-        if self.num_subtasks > 1:
-            raise RuntimeError("stdout does not apply to compiled tasks with more than one subtask")
-
-        if self._stdout is None:
-            self._stdout = AsyncDict(self._batch, AsyncType.STDOUT, compiled_task=None, subtask=self)
-
-        return self._stdout
-
-    @property
-    def stderr(self):
-        """
-        Handle for the task's stderr. This should not be accessed until the task is started.
-        ``stderr`` only applies to individual tasks and compiled tasks with a single subtask.
-        The handle has type AsyncDict.
-        """
-        if self.num_subtasks > 1:
-            raise RuntimeError("stderr does not apply to compiled tasks with more than one subtask")
-
-        if self._stderr is None:
-            self._stderr = AsyncDict(self._batch, AsyncType.STDERR, compiled_task=None, subtask=self)
-
-        return self._stderr
 
     def dump_dag(self, file_name: str) -> None:
         """
@@ -608,144 +556,13 @@ class Task:
         :return: Returns None.
         :rtype: None
         """
+        if self.dep_dag is None:
+            raise RuntimeError(
+                "no dependency DAG found for this task (only tasks with Kernighan-Lin scheduling have dumpable DAGs)"
+            )
+
         pydot_graph = nx.drawing.nx_pydot.to_pydot(self.dep_dag)
         pydot_graph.write_png(f"{file_name}")
-
-
-class AsyncDict:
-    def __init__(
-        self,
-        batch: "Batch",
-        async_type: AsyncType,
-        compiled_task: Optional[Task] = None,
-        subtask: Optional[Task] = None,
-    ) -> None:
-        """
-        Initialize an AsyncDict, which is used to store and look up output from subtasks of a
-        compiled task. A single AsyncDict stores a specific type of output (return value, stdout,
-        or stderr) for all subtasks of a given compiled task, but copies of that AsyncDict are
-        also used to fetch output for a given subtask (these are obtained by calling Task.result,
-        Task.stdout, or Task.stderr).
-
-        :param batch: The batch for the compiled task.
-        :type batch: Batch
-        :param async_type: The type of output handled by this AsyncDict, i.e., return values, stdout, or stderr.
-        :type async_type: AsyncType
-        :param compiled_task: The compiled task that generates the output.
-        :type compiled_task: Optional[Task]
-        :param subtask: A subtask of the compiled task.
-        :type subtask: Optional[Task]
-
-        :raises RuntimeError: If there is an issue while setting up the dependency graph
-
-        :return: Returns None.
-        :rtype: None
-        """
-        self._async_dicts = batch.ret_q_handler._async_dicts
-        self._compiled_task = compiled_task
-        self._subtask = subtask
-        self._async_type = async_type
-        self._dict = {}
-
-    # avoid sending the whole AsyncDict to managers
-    # TODO: might need to revisit this when we add support for deeply-nested arg-passing deps
-    def __getstate__(self) -> AsyncType:
-        """
-        Since the user can pass task output to other tasks, we need to be careful
-        not to send the whole AsyncDict to the managers. Consequently, we make this
-        function trivial and just return the async type of the AsyncDict, although
-        this may have to be updated in the future.
-
-        :return: Returns the async type of the AsyncDict.
-        :rtype: AsyncType
-        """
-        return self._async_type
-
-    def __setstate__(self, async_type: AsyncType) -> None:
-        """
-        Since ``__getstate__`` just returns the async type, all we have to do here
-        is set that attribute.
-
-        :param async_type: The async type for this AsyncDict, i.e., return value, stdout, or stderr.
-        :type async_type: AsyncType
-
-        :raises RuntimeError: If there is an issue while setting up the dependency graph
-
-        :return: Returns None.
-        :rtype: None
-        """
-        self._async_type = async_type
-
-    def get(self, timeout: float = default_timeout) -> Any:
-        """
-        Get the result, stdout, or stderr for a task.
-
-        :param timeout: A timeout for waiting on the task to complete.
-
-        :return: Returns output for a given task. The output can be the result returned
-        from the task, or its stdout or stderr.
-        :rtype: Any
-        """
-        if self._compiled_task is None:
-            async_result, async_stdout, async_stderr = self._async_dicts[self._subtask.core.compiled_tuid]
-            # TODO: use match statement once we deprecate support for python 3.9
-            """
-            match self._async_type:
-                case AsyncType.RESULT:
-                    self._dict = async_result._dict
-                    self._compiled_task = async_result._compiled_task
-                case AsyncType.STDOUT:
-                    self._dict = async_stdout
-                    self._compiled_task = async_stdout._compiled_task
-                case AsyncType.STDERR:
-                    self._dict = async_stderr
-                    self._compiled_task = async_stdout._compiled_task
-                case _:
-                    raise RuntimeError(f"invalid async type: {self._async_type=}")
-            """
-            if self._async_type == AsyncType.RESULT:
-                self._dict = async_result._dict
-                self._compiled_task = async_result._compiled_task
-            elif self._async_type == AsyncType.STDOUT:
-                self._dict = async_stdout._dict
-                self._compiled_task = async_stdout._compiled_task
-            elif self._async_type == AsyncType.STDERR:
-                self._dict = async_stderr._dict
-                self._compiled_task = async_stderr._compiled_task
-            else:
-                raise RuntimeError(f"invalid async type: {self._async_type=}")
-
-        if self._subtask.core.tuid not in self._dict:
-            # TODO: it would be better to wait for just the subtask, rather than
-            # the whole compiled task
-            self._compiled_task.wait(timeout)
-
-        if self._subtask.exception is not None:
-            message = f"task with {self._subtask.core._get_id_str()} failed with the following traceback\n{self._subtask.traceback}"
-            e = type(self._subtask.exception)
-            raise e(message)
-
-        try:
-            val = self._dict[self._subtask.core.tuid]
-        except KeyError:
-            if self._async_type != AsyncType.RESULT:
-                # we don't add entries to _dict for empty output strings in Manager._handle_results,
-                # so in that case we can just manually set val here
-                val = ""
-            else:
-                raise RuntimeError(f"no return value found for task: {self._subtask.core._get_id_str()}")
-
-        if isinstance(val, tuple):
-            # this is a (result, tb, raised) tuple, so check if there was an exception
-            result, tb, raised = val
-            if raised:
-                message = f"task with {self._subtask.core._get_id_str()} failed with the following traceback:\n{tb}"
-                e = type(result)
-                raise e(message)
-            else:
-                return result
-        else:
-            return val
 
 
 class FunctionCore(TaskCore):
@@ -818,9 +635,16 @@ class FunctionCore(TaskCore):
         :rtype: Any
         """
         output = []
-        t = threading.Thread(target=self._func_wrapper, args=(output,))
-        t.start()
-        t.join(timeout=self.timeout)
+
+        if self.timeout >= default_timeout:
+            # Fast path: no finite timeout requested, so skip thread creation and
+            # call the wrapper directly. Thread spawn/join overhead (~50-100µs) would
+            # otherwise dominate execution time for fast functions.
+            self._func_wrapper(output)
+        else:
+            t = threading.Thread(target=self._func_wrapper, args=(output,))
+            t.start()
+            t.join(timeout=self.timeout)
 
         result, stdout, stderr = output
         return result, stdout.getvalue(), stderr.getvalue()
@@ -841,17 +665,17 @@ class Function(Task):
         timeout: float = default_timeout,
     ) -> None:
         """
-        Creates a new function task. Arguments for the function that are of type ``AsyncDict``
-        will create a dependency for this task on the output specified by the ``AsyncDict``.
-        Further, the output specified by the ``AsyncDict`` will be passed in place of the
-        ``AsyncDict`` when the function executes.
+        Creates a new function task. Arguments for the function that are of type :py:class:`Task`
+        will create a dependency for this task on the output of the task specified by the
+        argument. Further, the output of the specified task will be passed in place of the
+        :py:class:`Task` argument when the function executes.
 
         :param batch: The batch in which this function task will execute.
         :param func: The function to associate with the object.
         :param *args: The arguments for the function.
-        :param reads: A list of ``Read`` objects created by calling ``Batch.read``.
+        :param reads: A list of ``Read`` objects created by calling :py:meth:`Batch.read`.
         :type reads: Optional[list]
-        :param writes: A list of ``Write`` objects created by calling ``Batch.write``.
+        :param writes: A list of ``Write`` objects created by calling :py:meth:`Batch.write`.
         :type writes: Optional[list]
         :param name: A human-readable name for the task.
         :type name: Optional[str]
@@ -859,13 +683,15 @@ class Function(Task):
         :return: Returns None.
         :rtype: None
         """
+        # replace Task argument with None, since the actual value will be filled in
+        # by the manager after the dependency is satisfied
+        sanitized_args = tuple(None if isinstance(arg, Task) else arg for arg in args)
         super().__init__(
-            FunctionCore(batch.client_id, name, timeout, target, args, kwargs),
+            FunctionCore(batch.client_id, name, timeout, target, sanitized_args, kwargs),
             batch,
             reads=reads,
             writes=writes,
         )
-
         self._handle_arg_passing_deps([args])
 
 
@@ -876,6 +702,7 @@ class JobCore(TaskCore):
         name: str,
         timeout: float,
         process_templates: list[ProcessTemplate],
+        pmi: PMIBackend = PMIBackend.CRAY,
     ) -> None:
         """
         Description.
@@ -890,6 +717,9 @@ class JobCore(TaskCore):
         nprocs indicates the number of processes to create for this job using the corresponding
         ProcessTemplate.
         :type process_templates: list
+        :param pmi: The PMI backend to use for launching MPI jobs. Defaults to ``PMIBackend.CRAY``.
+            Set to ``PMIBackend.PMIX`` for systems using PMIx, or ``None`` to disable PMI.
+        :type pmi: PMIBackend
 
         :raises RuntimeError: If there is an issue while setting up the dependency graph
 
@@ -902,6 +732,7 @@ class JobCore(TaskCore):
         self.process_templates = process_templates
         self.hostname_list = None
         self.is_parallel = True
+        self.pmi = pmi
 
     def run(self) -> None:
         """
@@ -913,17 +744,21 @@ class JobCore(TaskCore):
         :rtype: None
         """
         if self.is_parallel:
-            pmi = PMIBackend.CRAY
+            pmi = self.pmi
         else:
             pmi = None
 
         grp = ProcessGroup(restart=False, pmi=pmi, walltime=self.timeout)
+
         proc_count = 0
         template_idx = 0
 
         for hostname in self.hostname_list:
             nprocs_this_template, template = self.process_templates[template_idx]
-            template.policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=hostname)
+            base_policy = template.policy if template.policy is not None else Policy()
+            template.policy = Policy.merge(
+                base_policy, Policy(placement=Policy.Placement.HOST_NAME, host_name=hostname)
+            )
 
             template.stdout = Popen.PIPE
 
@@ -944,7 +779,7 @@ class JobCore(TaskCore):
         puids = []
         exit_codes = []
         proc_resources = []
-        stdout = "" # captures output from all batch jobs
+        stdout = ""  # captures output from all batch jobs
         stderr = ""
 
         for puid, exit_code in grp.inactive_puids:
@@ -990,37 +825,34 @@ class Job(Task):
         writes: Optional[list] = None,
         name: Optional[str] = None,
         timeout: float = default_timeout,
+        pmi: PMIBackend = PMIBackend.CRAY,
     ) -> None:
         """
-        Creates a new job task. Arguments for a process passed using ``ProcessTemplate.args``
-        that are of type ``AsyncDict`` will create a dependency for this task on the output
-        specified by the ``AsyncDict``. Further, the output specified by the ``AsyncDict``
-        will be passed in place of the ``AsyncDict`` when the job executes.
+        Creates a new job task. Arguments for a process passed using :py:attr:`ProcessTemplate.args`
+        that are of type :py:class:`Task` will create a dependency for this task on the output of the
+        task specified by the argument. Further, the output of the specified task will be
+        passed in place of the :py:class:`Task` argument when the job executes.
 
         :param batch: The batch in which this function task will execute.
-        :type batch: Batch
+        :type batch: :py:class:`Batch`
         :param process_templates: List of pairs of the form (nprocs, process_template), where nprocs is the number
         of processes to create using the specified template.
         :type process_templates: list
-        :param reads: A list of ``Read`` objects created by calling ``Batch.read``.
+        :param reads: A list of ``Read`` objects created by calling :py:meth:`Batch.read`.
         :type reads: Optional[list]
-        :param writes: A list of ``Write`` objects created by calling ``Batch.write``.
+        :param writes: A list of ``Write`` objects created by calling :py:meth:`Batch.write`.
         :type writes: Optional[list]
         :param name: A human-readable name for the task.
         :type name: Optional[str]
+        :param pmi: The PMI backend to use for launching MPI jobs. Defaults to ``PMIBackend.CRAY``.
+            Set to ``PMIBackend.PMIX`` for systems using PMIx, or ``None`` to disable PMI.
+        :type pmi: PMIBackend
 
         :return: Returns None.
         :rtype: None
         """
         if len(process_templates) == 0:
             raise RuntimeError("need at least one process template")
-
-        super().__init__(
-            JobCore(batch.client_id, name, timeout, process_templates),
-            batch,
-            reads=reads,
-            writes=writes,
-        )
 
         total_procs = 0
         list_of_arg_lists = []
@@ -1029,6 +861,18 @@ class Job(Task):
         for nprocs_this_template, template in process_templates:
             total_procs += nprocs_this_template
             list_of_arg_lists.append(template.args)
+
+            # replace Task argument with None, since the actual value will be filled in
+            # by the manager after the dependency is satisfied
+            sanitized_args = tuple(None if isinstance(arg, Task) else arg for arg in template.args)
+            template.args = sanitized_args
+
+        super().__init__(
+            JobCore(batch.client_id, name, timeout, process_templates, pmi=pmi),
+            batch,
+            reads=reads,
+            writes=writes,
+        )
 
         self.core.num_procs = total_procs
         self._handle_arg_passing_deps(list_of_arg_lists)
@@ -1098,52 +942,45 @@ def _bootstrap_manager(work_q: Queue) -> None:
     manager._run()
 
 
-def _do_task_impl(task_core: TaskCore) -> ResultWrapper:
+def _do_task_impl(task_core: TaskCore, results_ddict: DDict) -> tuple[str, str]:
     """
-    Start a specified task in this manager's pool.
+    Start a specified task and write results directly to the distributed dict.
 
-    :param task: The task to start.
-    :type task: Task
+    :param task_core: The core of the task to start.
+    :type task_core: TaskCore
+    :param results_ddict: Distributed dict to store results keyed by tuid.
+    :type results_ddict: DDict
 
-    :return: Returns the task after it completes.
-    :rtype: Task
+    :return: Returns tuple of (tuid, compiled_tuid) as completion notification.
+    :rtype: tuple[str, str]
     """
     try:
         result, stdout, stderr = task_core.run()
-        rw = ResultWrapper(
-            task_core.compiled_tuid,
-            task_core.tuid,
-            result,
-            None,
-            stdout.removesuffix("\n"),
-            stderr.removesuffix("\n"),
-            False,
-        )
+        raised = False
+        tb = None
+        stdout_val = stdout.removesuffix("\n")
+        stderr_val = stderr.removesuffix("\n")
     except Exception as e:
         result = e
-        # TODO: can we do better than this for stdout/stderr, i.e., get partial output?
-        stdout = stderr = None
+        raised = True
+        tb = _get_traceback()
+        stdout_val = None
+        stderr_val = None
 
-        rw = ResultWrapper(
-            task_core.compiled_tuid,
-            task_core.tuid,
-            result,
-            _get_traceback(),
-            stdout,
-            stderr,
-            True,
-        )
+    task_core._notify_dep_tasks(result)
 
-    task_core._notify_dep_tasks(result, stdout, stderr)
+    # Write result directly to the distributed dict
+    results_ddict[task_core.tuid] = (result, tb, raised, stdout_val, stderr_val)
 
-    return rw
+    return (task_core.tuid, task_core.compiled_tuid)
 
 
 def _get_hostname_for_job(
     task_core: TaskCore,
     work_q: Queue,
     job_done_q: Queue,
-) -> Optional[ResultWrapper]:
+    results_ddict: DDict,
+) -> CompletionNotification:
     """
     This function (1) gets the hostname of the worker and sends it back to the manager,
     which uses it to help set the policy for an MPI job; and (2) it sleeps until the
@@ -1156,9 +993,12 @@ def _get_hostname_for_job(
     :type work_q: Queue
     :param job_done_q: The queue used to wait for a "job complete" message, as well as the full list of hostnames for the job.
     :type job_done_q: Queue
+    :param results_ddict: Distributed dict to store results keyed by tuid.
+    :type results_ddict: DDict
 
-    :return: Returns a ``ResultWrapper`` for the task if the job is launched, otherwise None.
-    :rtype: Optional[ResultWrapper]
+    :return: Returns tuple of (tuid, compiled_tuid) if the job is launched, otherwise a
+        ``FollowerDone`` sentinel for follower slots.
+    :rtype: CompletionNotification
     """
     hostname = current().hostname
 
@@ -1179,29 +1019,35 @@ def _get_hostname_for_job(
 
     if isinstance(item, list):
         task_core.hostname_list = item
-        rw = _do_task_impl(task_core)
+        tuid_compiled_tuid = _do_task_impl(task_core, results_ddict)
 
         for _ in range(task_core.num_procs - 1):
             # put 0 onto all other "job done" queues just to indicate that the job
             # has completed and we can exit this function
             job_done_q.put(0)
 
-        return rw
+        return tuid_compiled_tuid
     else:
-        return None
+        # Return a sentinel so the manager knows this follower slot is done and
+        # can safely recycle the job_done_q once all followers have reported back.
+        return FollowerDone(task_core.tuid, task_core.compiled_tuid)
 
 
-def _do_task(task_and_args) -> Task:
+def _do_task(task_and_args) -> CompletionNotification:
     """
     Wrapper around the user's task that is called by the workers.
+    Returns either a task completion tuple or a ``FollowerDone`` sentinel.
     """
     task_core, args = task_and_args
     if isinstance(task_core, JobCore):
-        rw = _get_hostname_for_job(task_core, *args)
+        # For jobs, args is (work_q, job_done_queue, results_ddict)
+        tuid_compiled_tuid = _get_hostname_for_job(task_core, *args)
     else:
-        rw = _do_task_impl(task_core)
+        # For regular tasks, args is (results_ddict,)
+        results_ddict = args[0]
+        tuid_compiled_tuid = _do_task_impl(task_core, results_ddict)
 
-    return rw
+    return tuid_compiled_tuid
 
 
 class Manager:
@@ -1211,6 +1057,9 @@ class Manager:
         num_workers: int,
         work_q: Queue,
         ret_q: Queue,
+        results_ddict: DDict,
+        pool_node_huids: Optional[list[int]] = None,
+        physical_cores_per_node: int = 1,
         disable_telem: bool = False,
     ) -> None:
         """
@@ -1224,6 +1073,15 @@ class Manager:
         :type work_q: multiprocessing.Queue
         :param ret_q: Qeueue used by this manager to return work to the origin.
         :type ret_q: multiprocessing.Queue
+        :param results_ddict: Distributed dict to store task results keyed by tuid.
+        :type results_ddict: DDict
+        :param pool_node_huids: List of Dragon node h_uids whose cores make up this manager's
+            worker pool.  Workers are pinned to these nodes via placement policy.  When
+            ``None`` the pool is created without hostname placement (legacy behaviour).
+        :type pool_node_huids: Optional[list[int]]
+        :param physical_cores_per_node: Number of physical CPU cores per node (hyperthreads // 2).
+            Used to determine how many workers to launch on each pool node.
+        :type physical_cores_per_node: int
         :param disable_telem: Disables telemetry for the managers.
         :type disable_telem: bool
 
@@ -1236,13 +1094,29 @@ class Manager:
         self.work = None
         self.work_q = work_q
         self.ret_q = {0: ret_q}
+        self.results_ddict = results_ddict
         self.cached_queues = []
         self.primary_client_id = 0
         self.client_ctr = 1
         self.work_backlog = {}
         self.unexpected_dep_sat = {}
         self.job_hostname_lists = {}
+        self._pending_followers = {}
         self.active_clients = {0}
+        # Per-client sets of completed subtask tuids. Used to answer DepSatRequest
+        # queries that arrive after completion. Keyed by client_id so each client's
+        # set can be cleared independently when a fence completes for that client.
+        self._completed_tuids: dict[int, set] = {}
+        # Mapping from upstream_tuid -> list of
+        # (reply_q, downstream_tuid, downstream_compiled_tuid, downstream_arg_dep_updates)
+        # where reply_q is the queue to notify when upstream_tuid completes.
+        self._dep_request_reply_map = {}
+        # Number of in-flight Work chunks per client (client_id -> count). Incremented
+        # when a Work chunk is accepted by this manager, decremented when it completes.
+        self._pending_task_counts = {}
+        # Fence requests waiting for a client's pending count to reach zero
+        # (client_id -> reply_q).
+        self._fence_requests = {}
         self._map_args_list = []
         self._compiled_task_list = []
         self._queued_task_count = 0
@@ -1251,6 +1125,8 @@ class Manager:
         self.dbg_start_time = None
         self.dbg_update_start = False
         self.dispatch = None
+        self.pool_node_huids = pool_node_huids if pool_node_huids is not None else []
+        self.physical_cores_per_node = physical_cores_per_node
 
         # telemetry stuff
         self.dragon_telem = None
@@ -1272,21 +1148,38 @@ class Manager:
         """
         self.__dict__.update(state)
 
-        my_alloc = System()
-        node = Node(my_alloc.nodes[0])
-
         policy_list = []
 
-        num_gpus = node.num_gpus
-        for _ in range(self.num_workers):
-            if num_gpus > 0:
-                # TODO: It would be better to round-robin device indexes on each node, but since
-                # we're not specifying hosts for the workers, we don't know which nodes will be
-                # used or how many workers will be on a given node.
-                device_idx = random.randint(0, num_gpus - 1)
-            else:
-                device_idx = []
-            policy_list.append(Policy(gpu_affinity=[device_idx]))
+        if self.pool_node_huids:
+            # Pin each worker to one of the designated pool nodes, distributing
+            # physical_cores_per_node workers across each node.
+            for h_uid in self.pool_node_huids:
+                node = Node(h_uid)
+                hostname = node.hostname
+                num_gpus = node.num_gpus
+                for _ in range(self.physical_cores_per_node):
+                    if num_gpus > 0:
+                        device_idx = random.randint(0, num_gpus - 1)
+                    else:
+                        device_idx = []
+                    policy_list.append(
+                        Policy(
+                            placement=Policy.Placement.HOST_NAME,
+                            host_name=hostname,
+                            gpu_affinity=[device_idx],
+                        )
+                    )
+        else:
+            # Legacy fallback: no hostname placement, use first node for GPU discovery.
+            my_alloc = System()
+            node = Node(my_alloc.nodes[0])
+            num_gpus = node.num_gpus
+            for _ in range(self.num_workers):
+                if num_gpus > 0:
+                    device_idx = random.randint(0, num_gpus - 1)
+                else:
+                    device_idx = []
+                policy_list.append(Policy(gpu_affinity=[device_idx]))
 
         self.pool = Pool(policy=policy_list, processes_per_policy=1)
         self._async_queue = LocalQueue()
@@ -1294,7 +1187,11 @@ class Manager:
         self.dbg_start_time = time.time()
 
         self.log = _setup_logging("manager")
-        self.log.debug("creating pool for manager")
+        if self.pool_node_huids:
+            pool_hosts = _compress_hostnames([Node(h).hostname for h in self.pool_node_huids])
+        else:
+            pool_hosts = current().hostname
+        self.log.debug(f"manager {self.idx} starting pool: {self.num_workers} worker(s) on {pool_hosts}")
 
         if not self.disable_telem:
             self.dragon_telem = dt()
@@ -1328,7 +1225,7 @@ class Manager:
         try:
             task_core.cached_queue = self.cached_queues.pop()
         except:
-            task_core.cached_queue = Queue()
+            task_core.cached_queue = Queue(block_size=default_block_size)
 
         return task_core.cached_queue
 
@@ -1349,7 +1246,7 @@ class Manager:
             self._map_args_list.append(
                 (
                     task_core,
-                    (self.work_q, job_done_queue),
+                    (self.work_q, job_done_queue, self.results_ddict),
                 )
             )
 
@@ -1358,6 +1255,14 @@ class Manager:
             job_done_queue,
             [],
         )
+
+        if task_core.num_procs > 1:
+            # Register the pending-follower count now, before any worker is
+            # dispatched to the pool. This prevents the race where follower
+            # workers return FollowerDone before the leader's ResultWrapper is
+            # processed by the manager, which would cause _handle_follower_done
+            # to silently drop the sentinel (tuid not yet in _pending_followers).
+            self._pending_followers[task_core.tuid] = [task_core.num_procs - 1, job_done_queue]
 
     def _add_to_map_args_list(self, task_core: TaskCore) -> None:
         """
@@ -1372,7 +1277,8 @@ class Manager:
         if isinstance(task_core, JobCore):
             self._setup_job(task_core)
         else:
-            self._map_args_list.append((task_core, ()))
+            # For regular tasks, include results_ddict as argument
+            self._map_args_list.append((task_core, (self.results_ddict,)))
 
         self._queued_task_count += 1
 
@@ -1384,7 +1290,7 @@ class Manager:
         tuid: Optional[str] = None,
     ) -> None:
         """
-        Return a general "manager exception" unrelated to any task.
+        Handle a general "manager exception" unrelated to any task.
 
         :param e: The exception to be returned to the primary client.
         :type e: Exception
@@ -1394,13 +1300,7 @@ class Manager:
         :return: Returns None.
         :rtype: None
         """
-        self.log.debug(f"{err_msg}: {e}")
-        me = ManagerException(tuid, e, _get_traceback(), err_msg)
-        # if this exception isn't associated with any client/ret_q, just send it to the primary client
-        if ret_q is None:
-            ret_q = self.ret_q[self.primary_client_id]
-
-        ret_q.put(me)
+        self.log.debug(f"error associated with task {tuid} (exception below): {err_msg}\n\n{e}")
 
     def _handle_compiled_task(self, work: Work) -> None:
         """
@@ -1421,14 +1321,44 @@ class Manager:
         # make sure this client is active
         self._is_active_client(work._client_id)
 
+        # count this Work chunk as in-flight for the client so fence() knows when
+        # all of the client's work has completed on this manager
+        client_id = work._client_id
+        self._pending_task_counts[client_id] = self._pending_task_counts.get(client_id, 0) + 1
+
         compiled_tuid = work._compiled_result_wrapper.tuid
         self.work_backlog[compiled_tuid] = work
 
         for _, task_core in work._ready_task_cores.items():
             self._add_to_map_args_list(task_core)
 
+        for _, task_core in work._blocked_task_cores.items():
+            # send DepSatRequest messages to the managers that own each upstream tuid
+            for upstream_tuid, upstream_q, upstream_arg_dep_updates in zip(
+                task_core.upstream_tuids, task_core.upstream_queues, task_core.upstream_arg_dep_updates
+            ):
+                arg_dep_updates = upstream_arg_dep_updates if upstream_arg_dep_updates is not None else []
+
+                # reply queue for DepSat is this manager's work_q so DepSat messages
+                # arrive as regular work-queue items and are handled by _handle_dep_sat
+                dep_sat_req = DepSatRequest(
+                    upstream_tuid,
+                    task_core.tuid,
+                    task_core.compiled_tuid,
+                    arg_dep_updates,
+                    self.work_q,
+                    work._client_id,
+                )
+
+                upstream_q.put(dep_sat_req)
+
         self._compiled_task_list.append((work._client_id, compiled_tuid))
 
+        # A DepSat message for a task in this compiled task can arrive before the Work chunk
+        # for the compiled task itself does. When that happens, `_handle_dep_sat` cannot find
+        # the compiled_tuid in `work_backlog` and stashes the message in `unexpected_dep_sat`.
+        # Now that we've added the work to the backlog, drain any stashed messages so those
+        # dependencies are correctly accounted for.
         try:
             # if there aren't any unexpected DepSat messages waiting to be processed,
             # this will throw an exception
@@ -1441,40 +1371,52 @@ class Manager:
         except:
             pass
 
-    def _update_task_args(self, task_core: TaskCore, input_tuples: list) -> None:
+    def _update_task_args(
+        self, task_core: TaskCore, arg_dep_updates: list[ArgDepUpdate], source_tuid: Optional[str] = None
+    ) -> None:
         """
-        Update task args using dep_sat.input_tuples of the form (new arg, template idx, argument idx).
+        Update task args using dep_sat.arg_dep_updates. ArgDepUpdate contains only
+        indices; the actual value is fetched from results_ddict using source_tuid.
         """
-        if len(input_tuples) > 0:
-            if isinstance(task_core, FunctionCore):
-                args_list = list(task_core.args)
+        if len(arg_dep_updates) == 0:
+            return
 
-                # update the current arguments with the new ones
-                for new_arg, _, arg_idx in input_tuples:
-                    args_list[arg_idx] = new_arg
+        # fetch the result value from the distributed dict
+        if source_tuid is not None:
+            try:
+                result_tuple = self.results_ddict[source_tuid]
+                new_arg = result_tuple[0]
+            except Exception:
+                raise
+        else:
+            return
 
-                task_core.args = tuple(args_list)
-            else:
-                # this is a JobCore, so we need to handle all process templates
-                template_idx_to_new_args = {}
+        if isinstance(task_core, FunctionCore):
+            args_list = list(task_core.args)
 
-                # create a dict that maps a template index to a list of (new arg, arg idx) pairs
-                for argval_templidx_argidx in input_tuples:
-                    new_arg, template_idx, arg_idx = argval_templidx_argidx
+            for template_idx, arg_idx in arg_dep_updates:
+                args_list[arg_idx] = new_arg
 
-                    if template_idx not in template_idx_to_new_args:
-                        template_idx_to_new_args[template_idx] = []
+            task_core.args = tuple(args_list)
+        else:
+            # JobCore: map template_idx -> list of (new_arg, arg_idx)
+            template_idx_to_new_args = {}
 
-                    template_idx_to_new_args[template_idx].append((new_arg, arg_idx))
+            for template_idx, arg_idx in arg_dep_updates:
+                if template_idx not in template_idx_to_new_args:
+                    template_idx_to_new_args[template_idx] = []
 
-                # for each template, update the current arguments with the new ones
-                for template_idx, nprocs_and_template in enumerate(task_core.process_templates):
-                    _, process_template = nprocs_and_template
-                    new_args_list = template_idx_to_new_args[template_idx]
-                    args_list = list(process_template.args)
+                template_idx_to_new_args[template_idx].append((new_arg, arg_idx))
 
-                    for new_arg, arg_idx in new_args_list:
-                        args_list[arg_idx] = new_arg
+            for template_idx, nprocs_and_template in enumerate(task_core.process_templates):
+                _, process_template = nprocs_and_template
+                new_args_list = template_idx_to_new_args.get(template_idx, [])
+                args_list = list(process_template.args)
+
+                for new_arg_val, arg_idx in new_args_list:
+                    args_list[arg_idx] = new_arg_val
+
+                process_template.args = tuple(args_list)
 
     def _handle_dep_sat(self, dep_sat: DepSat) -> None:
         """
@@ -1488,6 +1430,7 @@ class Manager:
         :return: Returns None.
         :rtype: None
         """
+        source_tuid = dep_sat.source_tuid
         tuid = dep_sat.tuid
         compiled_tuid = dep_sat.compiled_tuid
 
@@ -1500,12 +1443,12 @@ class Manager:
             task_core = work._blocked_task_cores[tuid]
             task_core.num_dep_sat += 1
 
-            self._update_task_args(task_core, dep_sat.input_tuples)
+            self._update_task_args(task_core, dep_sat.arg_dep_updates, source_tuid)
 
             self.log.debug(
                 f"received update for task with {task_core._get_id_str()} about a satisfied dependency: satisfied={task_core.num_dep_sat}, total={task_core.num_dep_tot}"
             )
-        except:
+        except Exception:
             # this manager received a "dependency satisfied" message for a compiled task
             # before receiving the task, so add dep_sat to a list of unexpected messages
             self.log.debug(
@@ -1515,7 +1458,7 @@ class Manager:
             try:
                 dep_sat_list = self.unexpected_dep_sat[compiled_tuid]
                 dep_sat_list.append(dep_sat)
-            except:
+            except Exception:
                 self.unexpected_dep_sat[compiled_tuid] = [dep_sat]
             return
 
@@ -1528,6 +1471,63 @@ class Manager:
             del work._blocked_task_cores[tuid]
 
             self.log.debug(f"number of remaining tasks to be started={len(work._blocked_task_cores)}")
+
+    def _handle_dep_sat_request(self, dep_sat_request: DepSatRequest):
+        try:
+            upstream_tuid = dep_sat_request.upstream_tuid
+            reply_q = dep_sat_request.reply_q
+            downstream_tuid = dep_sat_request.tuid
+            downstream_compiled_tuid = dep_sat_request.compiled_tuid
+            arg_dep_updates = dep_sat_request.arg_dep_updates
+            client_id = dep_sat_request.client_id
+
+            if upstream_tuid in self._completed_tuids.get(client_id, set()):
+                # The upstream task is already complete; reply immediately.
+                self.log.debug(
+                    f"DepSatRequest: upstream {upstream_tuid} already complete, "
+                    f"replying immediately for downstream {downstream_tuid} ({downstream_compiled_tuid})"
+                )
+                dep_sat = DepSat(upstream_tuid, downstream_tuid, downstream_compiled_tuid, arg_dep_updates)
+                reply_q.put(dep_sat)
+                return
+            else:
+                # Upstream task is not yet complete; record the request so we
+                # can notify the requester when it completes.
+                self.log.debug(
+                    f"DepSatRequest: upstream {upstream_tuid} pending, "
+                    f"registered downstream {downstream_tuid} ({downstream_compiled_tuid})"
+                )
+                entry = (reply_q, downstream_tuid, downstream_compiled_tuid, arg_dep_updates)
+                try:
+                    self._dep_request_reply_map[upstream_tuid].append(entry)
+                except Exception:
+                    self._dep_request_reply_map[upstream_tuid] = [entry]
+                return
+        except Exception as e:
+            self._handle_manager_exception(e, "failed to handle DepSatRequest")
+
+    def _handle_follower_done(self, follower_done: FollowerDone) -> None:
+        """
+        Handle a ``FollowerDone`` sentinel returned by a job follower worker.
+        Decrements the pending-follower count for the job and recycles the
+        job_done_q only after every follower slot has been released, preventing
+        the queue from being handed to a new job while old followers might still
+        hold a reference to it.
+
+        :param follower_done: Contains the ``tuid`` of the completed follower's job.
+        :type follower_done: FollowerDone
+
+        :return: Returns None.
+        :rtype: None
+        """
+        tuid = follower_done.tuid
+        entry = self._pending_followers.get(tuid)
+        if entry is not None:
+            entry[0] -= 1
+            self.log.debug(f"follower done for job tuid={tuid}, {entry[0]} followers pending")
+            if entry[0] == 0:
+                self.cached_queues.append(entry[1])
+                del self._pending_followers[tuid]
 
     def _handle_host_info(self, host_info: HostInfo) -> None:
         """
@@ -1646,6 +1646,27 @@ class Manager:
             )
 
     @_handle_request.register
+    def _(self, dep_sat_request: DepSatRequest) -> None:
+        try:
+            self._handle_dep_sat_request(dep_sat_request)
+        except Exception as e:
+            # best-effort: try to find related compiled task for error reporting
+            try:
+                compiled_tuid = dep_sat_request.compiled_tuid
+                work = self.work_backlog.get(compiled_tuid, None)
+                ret_q = self.ret_q[work._client_id] if work is not None else None
+            except Exception:
+                compiled_tuid = None
+                ret_q = None
+
+            self._handle_manager_exception(
+                e,
+                "manager got exception when handling DepSatRequest",
+                ret_q,
+                compiled_tuid,
+            )
+
+    @_handle_request.register
     def _(self, host_info: HostInfo) -> None:
         try:
             self._handle_host_info(host_info)
@@ -1688,8 +1709,36 @@ class Manager:
         except Exception as e:
             self._handle_manager_exception(e, "manager got exception when handling join-called message")
 
-    def _add_to_async_queue(self, result_wrapper: Optional[ResultWrapper]):
-        self._async_queue.put(result_wrapper)
+    @_handle_request.register
+    def _(self, fence_request: ManagerFenceRequest) -> None:
+        try:
+            self._handle_fence_request(fence_request)
+        except Exception as e:
+            self._handle_manager_exception(e, "manager got exception when handling fence request")
+
+    def _handle_fence_request(self, fence_request: ManagerFenceRequest) -> None:
+        """
+        Handle a fence request from a client. If the client has no in-flight Work
+        chunks on this manager, reply immediately with FenceComplete; otherwise,
+        record the request and reply when the last Work chunk for this client finishes.
+
+        :param fence_request: Contains the client_id and the queue to reply on.
+        :type fence_request: ManagerFenceRequest
+
+        :return: Returns None.
+        :rtype: None
+        """
+        client_id = fence_request.client_id
+        reply_q = fence_request.reply_q
+
+        if self._pending_task_counts.get(client_id, 0) == 0:
+            reply_q.put(FenceComplete(client_id))
+        else:
+            self._fence_requests[client_id] = reply_q
+
+    def _add_to_async_queue(self, tuid_notification: CompletionNotification) -> None:
+        """Add completion notification (tuid) to the async queue."""
+        self._async_queue.put(tuid_notification)
 
     def _launch_tasks(self) -> None:
         """
@@ -1702,6 +1751,12 @@ class Manager:
             return
 
         num_tasks = len(self._map_args_list)
+        # chunk_size=1 ensures each task is dispatched to a worker individually, so completed
+        # tasks are reported back (via _add_to_async_queue) as soon as possible. A larger
+        # chunk_size would bundle multiple tasks onto one worker and execute them sequentially,
+        # delaying completion notifications and therefore holding up any tasks that depend on
+        # the ones in that chunk. The per-task dispatch overhead is negligible compared to the
+        # cost of the user-defined work (functions, processes, MPI jobs).
         chunk_size = 1
 
         self.log.debug(f"starting {num_tasks} tasks")
@@ -1716,50 +1771,87 @@ class Manager:
             self.num_running_tasks += self._queued_task_count
             self.dragon_telem.add_data("num_running_tasks", self.num_running_tasks)
 
-    def _handle_results(self, result_wrappers: list[ResultWrapper]) -> None:
+    def _handle_results(self, tuid_compiled_tuid_list: list[CompletionNotification]) -> None:
         """
-        Process async results returned from map_async to check for task completions and
-        handle any required cleanup.
+        Process completion notifications returned from workers.
+        Each notification contains (tuid, compiled_tuid).
+        Results have already been written to the distributed dict by the workers.
 
-        :param result_wrapper: The result to be processed.
-        :type result_wrapper: ResultWrapper
+        :param tuid_compiled_tuid_list: List of (tuid, compiled_tuid) tuples from completed tasks.
+        :type tuid_compiled_tuid_list: list[CompletionNotification]
 
         :return: Returns None.
         :rtype: None
         """
-        for rw in result_wrappers:
-            # if the result wrapper is None, this result is for a job sub-task that returned
-            # None (only the primary sub-task that launched the job returns a real result)
-            if rw is None:
+        num_tasks = 0
+
+        for tuid_compiled_tuid in tuid_compiled_tuid_list:
+            # FollowerDone sentinels are returned by follower workers (all ranks of an
+            # MPI job except the one that actually ran the ProcessGroup). Defer recycling
+            # the job_done_q until every follower has reported back to avoid the race
+            # where a recycled queue is assigned to a new job while old followers still
+            # hold a reference to it.
+            if isinstance(tuid_compiled_tuid, FollowerDone):
+                self._handle_follower_done(tuid_compiled_tuid)
                 continue
 
-            self.log.debug(f"individual task complete: result wrapper={rw}")
-            compiled_tuid, tuid, result, tb, stdout, stderr, raised = rw
+            num_tasks += 1
+
+            tuid, compiled_tuid = tuid_compiled_tuid
+            self.log.debug(f"individual task complete: tuid={tuid}, compiled_tuid={compiled_tuid}")
 
             work = self.work_backlog[compiled_tuid]
             task_core = work._ready_task_cores[tuid]
             del work._ready_task_cores[tuid]
-
-            crw = work._compiled_result_wrapper
-            crw.result_dict[tuid] = (result, tb, raised)
-            if stdout != "":
-                crw.stdout_dict[tuid] = stdout
-            if stderr != "":
-                crw.stderr_dict[tuid] = stderr
+            work_client_id = work._client_id
 
             if len(work._ready_task_cores) == 0 and len(work._blocked_task_cores) == 0:
-                self.log.debug(f"compiled task complete: {compiled_tuid=}, {tuid=}")
+                self.log.debug(f"compiled task complete: {compiled_tuid=}")
 
                 # notify client that the compiled task is complete
-                self.ret_q[work._client_id].put(crw)
                 del self.work_backlog[compiled_tuid]
 
-            # recycle the queue used for this task if there is one
+                # decrement in-flight count for this client; if it reaches zero and
+                # a fence is pending, clear the per-client completed tuids (the client
+                # will clear dep_frontier / tuid_to_manager_q, so no new DepSatRequests
+                # will reference these tuids) and send FenceComplete back to the client
+                new_count = self._pending_task_counts.get(work_client_id, 1) - 1
+                if new_count == 0:
+                    del self._pending_task_counts[work_client_id]
+                    if work_client_id in self._fence_requests:
+                        self._completed_tuids.pop(work_client_id, None)
+                        reply_q = self._fence_requests.pop(work_client_id)
+                        reply_q.put(FenceComplete(work_client_id))
+                else:
+                    self._pending_task_counts[work_client_id] = new_count
+
+            # Recycle the queue used for this task. For multi-rank jobs the
+            # job_done_q was already registered in _setup_job so _handle_follower_done
+            # will recycle it once all followers report back; don't touch it here.
             if task_core.cached_queue is not None:
-                self.cached_queues.append(task_core.cached_queue)
+                num_procs = getattr(task_core, "num_procs", 1) or 1
+                if num_procs == 1:
+                    self.cached_queues.append(task_core.cached_queue)
+
+            # notify any other managers that had requested DepSat for this tuid
+            try:
+                reply_list = self._dep_request_reply_map.pop(tuid)
+                for reply_q, downstream_tuid, downstream_compiled_tuid, arg_dep_updates in reply_list:
+                    try:
+                        ds = DepSat(tuid, downstream_tuid, downstream_compiled_tuid, arg_dep_updates)
+                        reply_q.put(ds)
+                    except Exception:
+                        self.log.debug(f"failed to send DepSat for {tuid=} to waiting manager")
+            except Exception:
+                pass
+
+            # record that this subtask has completed, keyed by client so each
+            # client's set can be cleared independently when its fence completes
+            if work_client_id not in self._completed_tuids:
+                self._completed_tuids[work_client_id] = set()
+            self._completed_tuids[work_client_id].add(tuid)
 
         if not self.disable_telem:
-            num_tasks = len(result_wrappers)
             self.num_running_tasks -= num_tasks
             self.num_completed_tasks += num_tasks
 
@@ -1779,7 +1871,10 @@ class Manager:
         self.log.debug(f"+     {task_core._get_id_str()}")
         if isinstance(task_core, JobCore):
             num_procs, _, hostname_list = self.job_hostname_lists[task_core.tuid]
-            self.log.debug(f"+     --> {len(hostname_list)} out of {num_procs} hosts reserved: {hostname_list}")
+            hosts_str = _compress_hostnames(hostname_list)
+            self.log.debug(f"+     --> {len(hostname_list)} out of {num_procs} hosts reserved: {hosts_str}")
+        if task_core.num_dep_tot > 0:
+            self.log.debug(f"+     --> deps: {task_core.num_dep_sat}/{task_core.num_dep_tot} satisfied")
 
     def _dump_debug_state(self) -> None:
         """
@@ -1807,6 +1902,8 @@ class Manager:
         self.log.debug(f"| size of backlog={len(self.work_backlog)}")
         self.log.debug(divider)
         self.log.debug(f"| join called={self.join_called}")
+        self.log.debug(divider)
+        self.log.debug(f"| pending DepSatRequests={len(self._dep_request_reply_map)}")
 
         if len(self.work_backlog) > 0:
             for _, item in self.work_backlog.items():
@@ -1908,68 +2005,11 @@ class Manager:
         except Exception as e:
             self._handle_manager_exception(e, f"failed to join worker pool")
 
-
-class ReturnQueueHandler:
-    def __init__(self, manager_queues: list[Queue]) -> None:
-        """
-        Initializes a return queue for a batch (shared by all managers).
-
-        :return: Returns None.
-        :rtype: None
-        """
-        self._manager_qs = manager_queues
-        self.ret_q = Queue(maxsize=return_queue_maxsize)
-        self._async_dicts = {}
-        self.manager_exception = None
-        self.manager_traceback = None
-
-    def _handle_next_ret(self, timeout: Optional[float] = None) -> None:
-        """
-        Handles the next message received on the return queue, either a return value,
-        an exception, or a special "end of batch" value used to indicate that the
-        manager has completed all its work.
-
-        :param timeout: A timeout value for the get operation on the return queue. Defaults to None.
-        :type timeout: float
-
-        :return: Returns None.
-        :rtype: None
-        """
-        try:
-            ret = self.ret_q.get(timeout=timeout)
-        except Exception as e:
-            raise RuntimeError("failed to get update from managers")
-
-        if not isinstance(ret, ManagerException):
-            async_result, async_stdout, async_stderr = self._async_dicts[ret.tuid]
-            task = async_result._compiled_task
-
-            async_result._dict.update(ret.result_dict)
-            async_stdout._dict.update(ret.stdout_dict)
-            async_stderr._dict.update(ret.stderr_dict)
-
-            for msg in ret.stdout_dict.values():
-                if msg is not None:
-                    print(msg)
-
-            for msg in ret.stderr_dict.values():
-                if msg is not None:
-                    print(msg, file=sys.stderr)
-
-            task.num_managers_complete += 1
-        else:
-            if ret.tuid is not None:
-                # this exception is associated with trying to execute a work chunk,
-                # so mark the compiled task as failed
-                async_result, async_stdout, async_stderr = self._async_dicts[ret.tuid]
-                task = async_result._compiled_task
-                task.exception = ret.exception
-                task.traceback = ret.traceback
-            else:
-                # we can assume here that this is an exception unrelated to a specific task,
-                # so we set the general manager_exception
-                self.manager_exception = ret.exception
-                self.manager_traceback = ret.traceback
+        for q in self.cached_queues:
+            try:
+                q.close()
+            except Exception as e:
+                self._handle_manager_exception(e, f"failed to close cached job_done queue")
 
 
 def _get_timeout_val(timeout_dict: Optional[dict]) -> float:
@@ -2023,7 +2063,7 @@ def _resolve_val(val: Any) -> Any:
     return real_val
 
 
-def _init_task_deps(read_or_write: dict, access_type: AccessType, task: Task) -> None:
+def _init_task_deps(read_or_write: dict, access_type: AccessType, batch: "Batch") -> list:
     """
     Set dependencies for a task given a list of keys or files to be accessed.
 
@@ -2045,13 +2085,19 @@ def _init_task_deps(read_or_write: dict, access_type: AccessType, task: Task) ->
         comm_obj = None
         keys_or_files = "files"
 
+    accesses = []
+
     for key_or_file in read_or_write[keys_or_files]:
         real_key_or_file = _resolve_val(key_or_file)
 
         if access_type == AccessType.READ:
-            task.read(comm_obj, real_key_or_file)
+            read = batch.read(comm_obj, real_key_or_file)
+            accesses.append(read)
         else:
-            task.write(comm_obj, real_key_or_file)
+            write = batch.write(comm_obj, real_key_or_file)
+            accesses.append(write)
+
+    return accesses
 
 
 class FuncDesc:
@@ -2462,8 +2508,8 @@ class MakeTask:
         call-time arguments. The outline of how the task is generated is as follows: (1)
         the PTD dict is updated by swapping in the real call-time arguments; (2) the PTD
         dict is processed and values reprsented as FuncDesc objects are resolved; (3) the
-        task is created using values from the PTD and the task creation functions (``function``,
-        ``process``, and ``job``); (4) task dependencies are initialized using values from
+        task is created using values from the PTD and the task creation functions (:py:meth:`function`,
+        :py:meth:`process`, and :py:meth:`job`); (4) task dependencies are initialized using values from
         the PTD and the task's read/write dependency functions; (5) if background batching
         has been disabled, we just return the task; otherwise, a proxy object for the task
         is created and returned. The proxy object acts as a proxy for the return value of
@@ -2553,11 +2599,25 @@ class MakeTask:
                 pt = ProcessTemplate(target=target, args=args, kwargs=kwargs, cwd=cwd, env=env)
                 pt_list.append((nprocs, pt))
 
+        # set up reads and writes
+        reads = []
+        writes = []
+
+        for read in self._reads:
+            new_reads = _init_task_deps(read, AccessType.READ, self._batch)
+            reads.extend(new_reads)
+
+        for write in self._writes:
+            new_writes = _init_task_deps(write, AccessType.WRITE, self._batch)
+            writes.extend(new_writes)
+
         # create Task from task_type and pt_list
         if task_type == TaskType.FUNC:
             task = self._batch.function(
                 target,
                 *args,
+                reads=reads,
+                writes=writes,
                 name=task_name,
                 timeout=_get_timeout_val(timeout_dict),
                 **kwargs,
@@ -2566,274 +2626,75 @@ class MakeTask:
             _, pt = pt_list[0]
             task = self._batch.process(
                 process_template=pt,
+                reads=reads,
+                writes=writes,
                 name=task_name,
                 timeout=_get_timeout_val(timeout_dict),
             )
         elif task_type == TaskType.JOB:
             task = self._batch.job(
                 process_templates=pt_list,
+                reads=reads,
+                writes=writes,
                 name=task_name,
                 timeout=_get_timeout_val(timeout_dict),
             )
         else:
             raise RuntimeError(f"invalid task type: {task_type}\n==> valid types: function, process, job")
 
-        # set up reads and writes
-        for read in self._reads:
-            _init_task_deps(read, AccessType.READ, task)
-
-        for write in self._writes:
-            _init_task_deps(write, AccessType.WRITE, task)
-
-        # queue up tasks in the background so they can be run in a batch later
-        if not self._batch._disable_background_batching:
-            self._batch._background_tasks.append(task)
-
         return task
 
 
-class BatchDDict(DDict):
-    def __init__(self, batch: "Batch", *args, **kwargs) -> None:
-        """
-        Initialize a batch ddict object. This object adds a little logic on top of a normal
-        ddict to guarantee that previous (according to client program order) updates to the
-        ddict are complete before the client accesses the ddict. This is only necessary when
-        background batching is enabled.
+class BatchTopology:
+    """Describes the placement of managers and worker pools across nodes.
 
-        :param batch: The batch whose tasks will update the ddict.
-        :type batch: Batch
+    Returned by :py:meth:`Batch.topology`.
 
-        :return: Returns None.
-        :rtype: None
-        """
-        self._batch = batch
-        super().__init__(*args, **kwargs)
+    Each manager process is co-located on the first node of its worker pool.
+    All physical cores on every pool node are available as workers; no core is
+    reserved for the manager process.
 
-    def __getstate__(self) -> dict:
-        """
-        Performs a fence operation (if called by client code), and returns the ddict's state.
+    Hostnames in the string representation are compressed into Slurm-style
+    bracket notation (e.g. ``node[001-004]``) when the ``python-hostlist``
+    package is installed (``pip install python-hostlist``).  Without it,
+    hostnames are listed verbatim, separated by commas.
+    """
 
-        :return: Returns the ddict's state.
-        :rtype: tuples
-        """
-        # call fence() here to avoid scenarios where, e.g., a ddict is passed to another process
-        # after the user queues tasks that will update the ddict once they (lazily) execute, and
-        # that process attempts to access keys that it expects to be there based on program order
-        if self._batch is not None:
-            self._batch.fence()
-        return super().__getstate__()
+    def __init__(
+        self,
+        total_nodes: int,
+        manager_hostnames: list[str],
+        pool_hostnames: list[list[str]],
+        workers_per_pool: list[int],
+    ) -> None:
+        self.total_nodes = total_nodes
+        """Total number of nodes used by this Batch instance."""
+        self.manager_hostnames = manager_hostnames
+        """Hostname of the pool node where each manager process is co-located
+        (the first node of the respective pool)."""
+        self.pool_hostnames = pool_hostnames
+        """List of hostname-lists, one inner list per worker pool."""
+        self.workers_per_pool = workers_per_pool
+        """Per-pool worker counts (physical cores x nodes in that pool)."""
 
-    def __setstate__(self, state: tuple) -> None:
-        """
-        Sets the ddict's state, and sets ``_batch`` to None. The managers don't currently need the
-        batch object, and performing fences in manager code is unnecessary.
+    def __str__(self) -> str:
+        lines = ["Batch Topology:"]
+        lines.append(f"  Total nodes  : {self.total_nodes}")
+        lines.append(f"  Worker pools : {len(self.pool_hostnames)} pool(s) (manager co-located on first pool node)")
+        for i, (hostnames, wpp, mgr_host) in enumerate(
+            zip(self.pool_hostnames, self.workers_per_pool, self.manager_hostnames)
+        ):
+            compressed = _compress_hostnames(hostnames)
+            lines.append(f"    Pool {i} ({len(hostnames)} node(s), {wpp} worker(s)): {compressed}  [mgr: {mgr_host}]")
+        return "\n".join(lines)
 
-        :param state: Used to set the ddict's state.
-        :type state: tuple
-
-        :return: Returns None.
-        :rtype: None
-        """
-        self._batch = None
-        super().__setstate__(state)
-
-    def _send(self, *args, **kwargs) -> None:
-        """
-        Wraps the ddict's ``_send`` function and performs a fence before calling it. This guarantees
-        that interactions with the ddict will be consistent with the user's expectations based on
-        client program order.
-
-        :param msglist: First argument to ``ddict._send``.
-        :type msglist: list
-        :param connection: Second argument to ``ddict._send``.
-        :type connection: FLInterface
-
-        :return: Returns None.
-        :rtype: None
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        super()._send(*args, **kwargs)
-
-
-# TODO: need to handle more dunder methods
-class BatchFile:
-    def __init__(self, batch, *args, **kwargs) -> None:
-        """
-        Initialize a batch file object. This object adds a little logic on top of a normal
-        file to guarantee that previous (according to client program order) updates to the
-        file are complete before the client accesses the file. This is only necessary when
-        background batching is enabled.
-
-        :param batch: The batch whose tasks will update the ddict.
-        :type batch: Batch
-
-        :return: Returns None.
-        :rtype: None
-        """
-        self._batch = batch
-        self._file = open(*args, **kwargs)
-
-    def __getstate__(self) -> Any:
-        """
-        Performs a fence before returning the the file's state.
-
-        :return: Returns the file's state.
-        :rtype: Any
-        """
-        # call fence() here to avoid scenarios where, e.g., a file is passed to another process
-        # after the user queues tasks that will update the ddict once they (lazily) execute, and
-        # that process attempts to access data that it expects to be there based on program order
-        if self._batch is not None:
-            self._batch.fence()
-        return self._file.__getstate__()
-
-    def __setstate__(self, state: Any) -> None:
-        """
-        Sets the file's state, and sets ``_batch`` to None. The managers don't currently need the
-        batch object, and performing fences in manager code is unnecessary.
-
-        :param state: Used to set the file's state.
-        :type state: Any
-
-        :return: Returns None.
-        :rtype: None
-        """
-        self._batch = None
-        self._file.__setstate__(state)
-
-    def __getattr__(self, name: Any) -> Any:
-        """
-        Calls the file's ``__getattr__`` method.
-
-        :param name: Argument to be passed to the file's ``__getattr__`` method.
-        :type name: Any
-
-        :return: Returns the value obtained from calling the file's ``__getattr__`` method.
-        :rtype: Any
-        """
-        return self._file.__getattr__(name)
-
-    def __enter__(self) -> "BatchFile":
-        """
-        Simply returns this object.
-
-        :return: Returns this object.
-        :rtype: BatchFile
-        """
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
-        """
-        Closes the file.
-
-        :param exc_type: Unused.
-        :param exc_val: Unused.
-        :param exc_tb: Unused.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        self._file.close()
-
-    def read(self, *args, **kwargs) -> Any:
-        """
-        Performs a batch fence before reading from the file.
-
-        :return: Returns the data read from the file.
-        :rtype: Any
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        return self._file.read(*args, **kwargs)
-
-    def read1(self, *args, **kwargs) -> Any:
-        """
-        Performs a batch fence before reading from the file.
-
-        :return: Returns the data read from the file.
-        :rtype: Any
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        return self._file.read1(*args, **kwargs)
-
-    def readline(self, *args, **kwargs) -> Any:
-        """
-        Performs a batch fence before reading from the file.
-
-        :return: Returns the data read from the file.
-        :rtype: Any
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        return self._file.readline(*args, **kwargs)
-
-    def readlines(self, *args, **kwargs) -> Any:
-        """
-        Performs a batch fence before reading from the file.
-
-        :return: Returns the data read from the file.
-        :rtype: Any
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        return self._file.readlines(*args, **kwargs)
-
-    def readall(self, *args, **kwargs) -> Any:
-        """
-        Performs a batch fence before reading from the file.
-
-        :return: Returns the data read from the file.
-        :rtype: Any
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        return self._file.readall(*args, **kwargs)
-
-    def readinto(self, *args, **kwargs) -> Any:
-        """
-        Performs a batch fence before reading from the file.
-
-        :return: Returns the data read from the file.
-        :rtype: Any
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        return self._file.readinto(*args, **kwargs)
-
-    def readinto1(self, *args, **kwargs) -> Any:
-        """
-        Performs a batch fence before reading from the file.
-
-        :return: Returns the data read from the file.
-        :rtype: Any
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        return self._file.readinto1(*args, **kwargs)
-
-    def write(self, *args, **kwargs) -> None:
-        """
-        Performs a batch fence before writing to the file.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        self._file.write(*args, **kwargs)
-
-    def writelines(self, *args, **kwargs) -> None:
-        """
-        Performs a batch fence before writing to the file.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        if self._batch is not None:
-            self._batch.fence()
-        self._file.writelines(*args, **kwargs)
+    def __repr__(self) -> str:
+        total_workers = sum(self.workers_per_pool)
+        return (
+            f"BatchTopology(total_nodes={self.total_nodes}, "
+            f"num_pools={len(self.pool_hostnames)}, "
+            f"total_workers={total_workers})"
+        )
 
 
 # TODO: need to be able to pickle and unpickle Batch objects and send them
@@ -2843,16 +2704,22 @@ class Batch:
 
     def __init__(
         self,
-        num_workers: int = 0,
+        num_nodes: Optional[int] = None,
+        pool_nodes: Optional[int] = None,
         disable_telem: bool = False,
-        disable_background_batching: bool = False,
     ) -> None:
         """
         Create a Batch instance for orchestrating functions, executables, and parallel applications
         with data dependencies with a directed acyclic graph (DAG).
 
-        :param num_workers: Number of workers for this batch. Defaults to multiprocessing.cpu_count().
-        :type num_workers: int
+        :param num_nodes: Number of nodes to use for this Batch instance.  Defaults to all nodes
+            in the allocation.  Values larger than the allocation are silently clamped.
+        :type num_nodes: Optional[int]
+        :param pool_nodes: Number of nodes in each worker pool (one pool per manager).  Defaults
+            to 1.  Each pool node contributes ``node.num_cpus // 2`` workers (one per physical
+            core).  The manager process for each pool is co-located on the pool's first node
+            and does not reserve a core from the pool.
+        :type pool_nodes: Optional[int]
         :param disable_telem: Indicates if telemetry should be disabled for this Batch instance. Defaults to False.
         :type disable_telem: bool
 
@@ -2870,35 +2737,26 @@ class Batch:
                 return matrix
 
             # A base directory, and files in it, will be used for communication of results
-            batch = Batch(background_batching=False)
+            batch = Batch()
             base_dir = Path("/some/path/to/base_dir")
 
-            # Knowledge of reads and writes to files will also be used by the Batch service
-            # to determine data dependencies and how to parallelize tasks
+            # Knowledge of reads and writes to files is used by Batch to infer data dependencies
+            # and automatically parallelize tasks
             get_read = lambda i: batch.read(base_dir, Path(f"file_{i}"))
             get_write = lambda i: batch.write(base_dir, Path(f"file_{i+1}"))
 
             a = np.array([j for j in range(100)])
             m = np.vander(a)
 
-            # batch.function will create a task with specified arguments and reads/writes to the file system
-            get_task = lambda i: batch.function(gpu_matmul, m, base_dir, i, reads=[get_read(i)], writes=[get_write(i)], timeout=30)
+            # Submit tasks — Batch dispatches them to workers in the background
+            tasks = [batch.function(gpu_matmul, m, base_dir, i,
+                                    reads=[get_read(i)], writes=[get_write(i)], timeout=30)
+                     for i in range(1000)]
 
-            # Package up the list of tasks into a single compiled task and create the DAG (done by batch.compile),
-            # and then submit the compiled task to the Batch service (done by matrix_powers_task.start)
-            serial_task_list = [get_task(i) for i in range(1000)]
-            matrix_powers_task = batch.compile(serial_task_list)
-            matrix_powers_task.start()
-
-            # Wait for the compiled task to complete
-            matrix_powers_task.wait()
-
-            # If there was an exception while running the task, it will be raised when get() is called
-            for task in serial_task_list:
+            # Retrieve results — .get() waits for each task to complete if needed
+            for task in tasks:
                 try:
-                    print(f"result={task.result.get()}")
-                    # print(f"stdout={task.stdout.get()}")
-                    # print(f"stderr={task.stderr.get()}")
+                    print(f"result={task.get()}")
                 except Exception as e:
                     print(f"gpu_matmul failed with the following exception: {e}")
 
@@ -2909,21 +2767,74 @@ class Batch:
         :return: Returns None.
         :rtype: None
         """
-        if not isinstance(num_workers, int) or num_workers <= 0 or num_workers > cpu_count():
-            num_workers = cpu_count()
+        # ------------------------------------------------------------------ #
+        # Node discovery and placement decisions                             #
+        # ------------------------------------------------------------------ #
 
-        self.num_workers = num_workers
-        self.num_managers = min(
-            num_workers,
-            _next_pow_of_2(max(1, num_workers // default_workers_per_manager)),
-        )
-        self._background_tasks = []
-        self._disable_background_batching = disable_background_batching
+        alloc = System()
+        all_node_objs = alloc._node_objs
+        total_available = len(all_node_objs)
+
+        # Clamp requested node count to what is actually available.
+        if num_nodes is None or num_nodes > total_available:
+            num_nodes = total_available
+        num_nodes = max(1, num_nodes)
+
+        node_objs = all_node_objs[:num_nodes]
+
+        # Physical cores per node: Dragon cpu_count() reports hyperthreads across
+        # all nodes; dividing each node's logical CPU count by 2 gives physical cores.
+        cpus_per_node = max(1, node_objs[0].num_cpus // 2)
+
+        # pool_nodes: how many nodes form one worker pool.
+        if pool_nodes is None:
+            pool_nodes = 1
+        pool_nodes = max(1, pool_nodes)
+
+        # All nodes are pool nodes.  Each manager process is co-located on the
+        # first node of its own pool and does not reserve a core from the pool.
+        pool_nodes_eff = min(pool_nodes, num_nodes)
+        num_managers = max(1, num_nodes // pool_nodes_eff)
+
+        # Distribute any remainder nodes to the first pools so every node is used.
+        remainder = num_nodes - num_managers * pool_nodes_eff
+
+        # Each pool node contributes cpus_per_node workers; no core reservation.
+        workers_per_node_in_pool = cpus_per_node
+
+        pool_node_huids_list: list[list[int]] = []
+        node_offset = 0
+        for pm_idx in range(num_managers):
+            this_pool_nodes = pool_nodes_eff + (1 if pm_idx < remainder else 0)
+            pool_node_huids_list.append([n.h_uid for n in node_objs[node_offset : node_offset + this_pool_nodes]])
+            node_offset += this_pool_nodes
+
+        # Each manager runs on the first node of its own pool.
+        manager_node_objs = [Node(pool[0]) for pool in pool_node_huids_list]
+
+        # Publish node topology for use by _setup_managers and topology().
+        self._node_objs = node_objs
+        self._manager_node_objs = manager_node_objs
+        self._pool_node_huids_list = pool_node_huids_list
+        self._cpus_per_node = cpus_per_node
+        self._workers_per_node_in_pool = workers_per_node_in_pool
+
+        # Use the first pool's node count as the representative worker count.
+        self.num_workers = workers_per_node_in_pool * (len(pool_node_huids_list[0]) if pool_node_huids_list else 1)
+        self.num_managers = num_managers
+
+        self.work_q = LocalQueue(maxsize=manager_work_queue_max_batch_size)
 
         # this is the primary client and responsible for cleanup
         self.client_id = 0
         self.manager_qs = []
+        self.tuid_to_manager_q = {}
         self.grp = None
+        self.dep_frontier = {}
+
+        self.stop_event = threading.Event()
+        self.work_q_handler_thread = threading.Thread(target=self._handle_work_requests, daemon=True)
+        self.work_q_handler_thread.start()
 
         # these flags are only used by the primary client, which is responsible for bringup and teardown
         self.closed = False
@@ -2932,9 +2843,22 @@ class Batch:
 
         self.disable_telem = disable_telem
 
-        self._set_unique_attrs(self.manager_qs)
-        # NOTE: self.log is set in _set_unique_addrs
-        self.log.debug(f"creating new Batch object with {num_workers} workers and {self.num_managers} managers")
+        # Create a distributed dict to store task results keyed by tuid.
+        # One DDict manager per Batch node, with one gigabyte of memory each.
+        one_gig = 1024**3
+
+        self.results_ddict = DDict(
+            n_nodes=num_nodes,
+            managers_per_node=1,
+            total_mem=(num_nodes * one_gig),
+            wait_for_keys=True,
+            working_set_size=2,
+            name=str(uuid1()),
+        )
+
+        self._set_unique_attrs()
+        # NOTE: self.log is set in _set_unique_attrs
+        self.log.debug(str(self.topology()))
 
         self._setup_managers()
 
@@ -2962,7 +2886,7 @@ class Batch:
         self.__dict__.update(state)
 
         # update attributes that are unique to this batch instance
-        self._set_unique_attrs(self.manager_qs)
+        self._set_unique_attrs()
 
         # register this client with the managers
         self._register()
@@ -2975,27 +2899,40 @@ class Batch:
         :return: Returns None.
         :rtype: None
         """
-        # create the managers
-
         self.log.debug(f"setting up managers")
 
         self.grp = ProcessGroup(restart=False)
-
-        num_workers_per_manager_floor = self.num_workers // self.num_managers
-        extra_worker_cutoff = self.num_workers % self.num_managers
-
         managers = []
 
         for idx in range(self.num_managers):
-            num_workers_per_manager = num_workers_per_manager_floor
-            if idx < extra_worker_cutoff:
-                num_workers_per_manager += 1
+            pool_node_huids = self._pool_node_huids_list[idx]
+
+            # Manager process is co-located on the first node of its pool.
+            manager_hostname = Node(pool_node_huids[0]).hostname
+            manager_node_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=manager_hostname)
+
+            # Place the manager's work queue on the same node as the manager process
+            # so that queue operations stay local and avoid cross-node traffic.
+            manager_q = Queue(
+                maxsize=manager_work_queue_maxsize,
+                block_size=default_block_size,
+                policy=Policy(
+                    placement=Policy.Placement.HOST_NAME,
+                    host_name=manager_hostname,
+                ),
+            )
+
+            # Worker count for this manager is determined by its pool's node count.
+            num_workers_this_manager = len(pool_node_huids) * self._workers_per_node_in_pool
 
             manager = Manager(
                 idx,
-                num_workers_per_manager,
-                Queue(maxsize=manager_work_queue_maxsize),
-                self.ret_q_handler.ret_q,
+                num_workers_this_manager,
+                manager_q,
+                self.ret_q,
+                self.results_ddict,
+                pool_node_huids=pool_node_huids,
+                physical_cores_per_node=self._workers_per_node_in_pool,
                 disable_telem=self.disable_telem,
             )
             managers.append(manager)
@@ -3003,7 +2940,11 @@ class Batch:
 
             self.grp.add_process(
                 nproc=1,
-                template=ProcessTemplate(target=_bootstrap_manager, args=(manager.work_q,)),
+                template=ProcessTemplate(
+                    target=_bootstrap_manager,
+                    args=(manager.work_q,),
+                    policy=manager_node_policy,
+                ),
             )
 
         self.log.debug(f"initializing and starting the process group of managers")
@@ -3014,13 +2955,32 @@ class Batch:
         for manager, manager_q in zip(managers, self.manager_qs):
             manager_q.put(manager)
 
-    def _set_unique_attrs(self, manager_qs: list[Queue]) -> None:
+            if self.log.isEnabledFor(logging.DEBUG):
+                pool_node_huids = self._pool_node_huids_list[manager.idx]
+                mgr_host = Node(pool_node_huids[0]).hostname
+                pool_hosts = _compress_hostnames([Node(h).hostname for h in pool_node_huids])
+
+                self.log.debug(
+                    f"  manager {manager.idx}: process on {mgr_host}, "
+                    f"pool={pool_hosts} ({manager.num_workers} workers)"
+                )
+
+    def _set_unique_attrs(self) -> None:
         """
         Set manager attributes that are unique to this client (most are generic and apply to all clients).
         """
         self.closed = False
-        # each manager needs its own return queue
-        self.ret_q_handler = ReturnQueueHandler(manager_qs)
+        # Pin the return queue to the node where this client is running so that
+        # managers sending results back incur only a single hop.
+        client_hostname = current().hostname
+        self.ret_q = Queue(
+            maxsize=return_queue_maxsize,
+            block_size=default_block_size,
+            policy=Policy(
+                placement=Policy.Placement.HOST_NAME,
+                host_name=client_hostname,
+            ),
+        )
         self.log = _setup_logging("client")
 
     def _register(self) -> None:
@@ -3033,16 +2993,96 @@ class Batch:
         """
         # get client_id from the primary manager
         self.log.debug(f"registering a new client")
-        register_client = RegisterClient(self.ret_q_handler.ret_q, None)
+        register_client = RegisterClient(self.ret_q, None)
         primary_manager = 0
         self.manager_qs[primary_manager].put(register_client)
-        self.client_id = self.ret_q_handler.ret_q.get()
+        self.client_id = self.ret_q.get()
         self.log.debug(f"received new client_id={self.client_id}")
 
         # use the client_id to register with the remaining managers
-        register_client = RegisterClient(self.ret_q_handler.ret_q, self.client_id)
+        register_client = RegisterClient(self.ret_q, self.client_id)
         for manager_q in self.manager_qs[1:]:
             manager_q.put(register_client)
+
+    def _handle_work_requests(self) -> None:
+        """
+        Get new work requests and compile and start them. This is meant to be run in a background
+        thread for each client.
+
+        :return: Returns None.
+        :rtype: None
+        """
+        new_tasks = []
+        pending_fence_req = None
+
+        while not self.stop_event.is_set():
+            if pending_fence_req is None:
+                try:
+                    task = self.work_q.get(timeout=5)
+                except Empty:
+                    continue
+            else:
+                task = pending_fence_req
+                pending_fence_req = None
+
+            if isinstance(task, FenceRequest):
+                # Flush any tasks accumulated so far before starting the fence, so
+                # that all work submitted before fence() is dispatched to the managers.
+                if new_tasks:
+                    try:
+                        compiled_task = self.compile(new_tasks)
+                        compiled_task._start()
+                    except Exception as e:
+                        self.log.exception(f"failed to compile/start background tasks: {e}")
+                        raise
+                    new_tasks = []
+
+                # Send FenceRequest messages to all managers and wait for all
+                # FenceComplete replies before resuming normal work processing.
+                fence_request = task
+                manager_fence_request = ManagerFenceRequest(fence_request.client_id, fence_request.reply_q)
+                for manager_q in self.manager_qs:
+                    manager_q.put(manager_fence_request)
+
+                num_responses = 0
+                num_managers = len(self.manager_qs)
+                while num_responses < num_managers:
+                    try:
+                        item = self.ret_q.get(timeout=1)
+                        if not isinstance(item, FenceComplete):
+                            self.log.debug(f"expected FenceComplete but got {item}")
+                            raise RuntimeError(f"expected FenceComplete but got {item}")
+                        num_responses += 1
+                    except Empty:
+                        pass
+
+                # Clear client-side dependency state so the next batch of work
+                # starts from a clean slate, then signal fence() that we're done.
+                self.dep_frontier.clear()
+                self.tuid_to_manager_q.clear()
+                fence_request.done_event.set()
+                continue
+
+            new_tasks.append(task)
+
+            while True:
+                try:
+                    task = self.work_q.get_nowait()
+                    if isinstance(task, FenceRequest):
+                        # Save it and stop draining; handle it on the next outer iteration.
+                        pending_fence_req = task
+                        break
+                    new_tasks.append(task)
+                except Empty:
+                    break
+
+            try:
+                compiled_task = self.compile(new_tasks)
+                compiled_task._start()
+            except Exception as e:
+                self.log.exception(f"failed to compile/start background tasks: {e}")
+                raise
+            new_tasks = []
 
     def _unregister(self) -> None:
         """
@@ -3058,42 +3098,6 @@ class Batch:
 
         self.closed = True
 
-    def _add_to_compiled_task(self, subtask: Task, compiled_task: Task) -> None:
-        """
-        Add a new task to a program.
-
-        :param task: The task to be added.
-        :type task: Task
-        :param compiled_task: The compiled task to be extended.
-        :type compiled_task: Task
-
-        :return: Returns None.
-        :rtype: None
-        """
-        if subtask._started:
-            raise ("cannot compile a task that has already been started")
-
-        # append task's access list to program's access list
-        for ddict, accesses_this_ddict_for_subtask in subtask.accesses.items():
-            if ddict not in compiled_task.accesses:
-                compiled_task.accesses[ddict] = {}
-
-            accesses_this_ddict_for_prog = compiled_task.accesses[ddict]
-
-            for key, access_for_subtask in accesses_this_ddict_for_subtask.items():
-                if key not in accesses_this_ddict_for_prog:
-                    accesses_this_ddict_for_prog[key] = []
-
-                accesses_this_ddict_for_prog[key].append(access_for_subtask)
-
-        # NOTE: this assumes all subtasks of a compiled task are unique
-        compiled_task.dep_dag.add_node(subtask.core)
-
-        compiled_task.num_subtasks += 1
-
-        subtask.core.compiled_tuid = compiled_task.core.tuid
-        subtask._compiled_task = compiled_task
-
     def read(self, obj, *channels) -> DataAccess:
         """
         Indicates READ accesses of a specified set of channels on a communication object. These
@@ -3105,7 +3109,7 @@ class Batch:
         :return: Returns an descriptor for the data access that can be passed to (in a list) when creating a new task.
         :rtype: DataAccess
         """
-        return DataAccess(AccessType.READ, obj, *channels)
+        return DataAccess(AccessType.READ, obj, channels)
 
     def write(self, obj, *channels) -> DataAccess:
         """
@@ -3118,22 +3122,7 @@ class Batch:
         :return: Returns an descriptor for the data access that can be passed to (in a list) when creating a new task.
         :rtype: DataAccess
         """
-        return DataAccess(AccessType.WRITE, obj, *channels)
-
-    def fence(self) -> None:
-        """
-        Compiles and runs all background tasks for this batch. Once a fence completes,
-        the results of all background tasks will be ready and locally available.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        if len(self._background_tasks) > 0:
-            background_tasks = self._background_tasks
-            # reset _background_tasks before running the compiled task to avoid scenarios
-            # where run() recursively calls fence() (i.e., when pickling a ddict)
-            self._background_tasks = []
-            self.compile(tasks_to_compile=background_tasks).run()
+        return DataAccess(AccessType.WRITE, obj, channels)
 
     def dump_background_dag(self, file_name: str | Path) -> None:
         """
@@ -3147,6 +3136,30 @@ class Batch:
         """
         task = self.compile(tasks_to_compile=None)
         task.dump_dag(file_name)
+
+    def fence(self, timeout: float = default_timeout) -> None:
+        """
+        Wait for all tasks submitted by this client to complete. Tasks submitted after
+        the :class:`FenceRequest` is enqueued will be compiled and dispatched after the
+        fence finishes. After all managers confirm that the client's work is done, the
+        accumulated dependency state (``dep_frontier``, ``tuid_to_manager_q``, and each
+        manager's per-client set of completed tuids) is cleared so that the next batch of
+        work starts from a clean slate.
+
+        :param timeout: Timeout in seconds for each blocking operation. Defaults to 1e9.
+        :type timeout: float
+
+        :return: Returns None.
+        :rtype: None
+        """
+        # Put the FenceRequest on the work queue. The background compiler thread
+        # (_handle_work_requests) will flush any pending tasks, coordinate with the
+        # managers, clear dep_frontier / tuid_to_manager_q, and set done_event
+        # when the fence completes.
+        done_event = threading.Event()
+        fence_request = FenceRequest(self.client_id, self.ret_q, done_event)
+        self.work_q.put(fence_request)
+        done_event.wait(timeout=timeout)
 
     def close(self) -> None:
         """
@@ -3183,11 +3196,6 @@ class Batch:
         if self.joined or self.terminated:
             return
 
-        if self.ret_q_handler.manager_exception is not None:
-            raise RuntimeError(
-                "manager raised a general exception (not connected to a particular task)"
-            ) from self.ret_q_handler.manager_exception
-
         # indicate that join has been called so the manager know to begin shutdown
         join_called = JoinCalled()
         for manager_q in self.manager_qs:
@@ -3195,6 +3203,15 @@ class Batch:
 
         self.grp.join(timeout=timeout)
         self.grp.close()
+
+        self.stop_event.set()
+        self.work_q_handler_thread.join(timeout=timeout)
+
+        # clean up ddict and queues
+        self.results_ddict.destroy()
+        for manager_q in self.manager_qs:
+            manager_q.close()
+        self.ret_q.close()
 
         self.joined = True
 
@@ -3218,6 +3235,68 @@ class Batch:
 
         self.terminated = True
 
+    def clear_results(self) -> None:
+        """
+        Wait for all outstanding tasks to complete then clear the results dict for
+        this batch. This can be used to free up memory after tasks have completed
+        and their results have been retrieved.
+
+        :return: Returns None.
+        :rtype: None
+        """
+        self.fence()
+        self.results_ddict.clear()
+
+    def topology(self) -> BatchTopology:
+        """
+        Return a :py:class:`BatchTopology` describing the node placement of managers and
+        worker pools in this Batch instance.
+
+        The returned object reports:
+
+        * the total number of nodes used,
+        * the hostname of the pool node where each manager process runs (first node of the pool), and
+        * for each worker pool, the hostnames of the nodes that make up that pool.
+
+        Each manager process is co-located on the first node of its own worker pool.  All
+        physical cores on every pool node are available as workers; no core is reserved for
+        the manager.
+
+        Example::
+
+            batch = Batch(num_nodes=8, pool_nodes=2)
+            print(batch.topology())
+            # Batch Topology:
+            #   Total nodes  : 8
+            #   Worker pools : 4 pool(s) (manager co-located on first pool node)
+            #     Pool 0 (2 node(s), 64 worker(s)): hotlum[0001-0002]  [mgr: hotlum0001]
+            #     Pool 1 (2 node(s), 64 worker(s)): hotlum[0003-0004]  [mgr: hotlum0003]
+            #     Pool 2 (2 node(s), 64 worker(s)): hotlum[0005-0006]  [mgr: hotlum0005]
+            #     Pool 3 (2 node(s), 64 worker(s)): hotlum[0007-0008]  [mgr: hotlum0007]
+
+        .. tip::
+
+            Install ``python-hostlist`` (``pip install python-hostlist``) to have
+            hostnames in the output compressed into Slurm-style bracket notation,
+            e.g. ``hotlum[0001-0008]`` instead of a long comma-separated list.
+            This is especially helpful on large allocations.
+
+        :return: A :py:class:`BatchTopology` object describing the placement.
+        :rtype: BatchTopology
+        """
+        manager_hostnames = [n.hostname for n in self._manager_node_objs]
+
+        pool_hostnames = [[Node(h_uid).hostname for h_uid in pool_huids] for pool_huids in self._pool_node_huids_list]
+
+        workers_per_pool_list = [len(huids) * self._workers_per_node_in_pool for huids in self._pool_node_huids_list]
+
+        return BatchTopology(
+            total_nodes=len(self._node_objs),
+            manager_hostnames=manager_hostnames,
+            pool_hostnames=pool_hostnames,
+            workers_per_pool=workers_per_pool_list,
+        )
+
     def function(
         self,
         # function args (except kwargs)
@@ -3231,23 +3310,28 @@ class Batch:
         **kwargs,
     ) -> Function:
         """
-        Creates a new function task. Arguments for the function that are of type ``AsyncDict``
-        will create a dependency for this task on the output specified by the ``AsyncDict``.
-        Further, the output specified by the ``AsyncDict`` will be passed in place of the
-        ``AsyncDict`` when the job executes.
+        Creates a new function task. Arguments for the function that are of type :py:class:`Task`
+        will create a dependency for this task on the output of the task specified by the
+        argument. Further, the output of the specified task will be passed in place of the
+        :py:class:`Task` argument when the function executes.
 
         :param func: The function to associate with the object.
         :param *args: The arguments for the function.
-        :param reads: A list of ``Read`` objects created by calling ``Batch.read``.
+        :param reads: A list of ``Read`` objects created by calling :py:meth:`Batch.read`.
         :type reads: Optional[list]
-        :param writes: A list of ``Write`` objects created by calling ``Batch.write``.
+        :param writes: A list of ``Write`` objects created by calling :py:meth:`Batch.write`.
         :type writes: Optional[list]
         :param name: A human-readable name for the task.
         :type name: Optional[str]
 
+        :raises :py:exc:`SubmitAfterCloseError`: If the batch has already been closed.
+
         :return: The new function task.
         :rtype: Function
         """
+        if self.closed:
+            raise SubmitAfterCloseError("cannot submit work after batch has been closed")
+
         task = Function(
             self,
             # function args
@@ -3260,6 +3344,9 @@ class Batch:
             name=name,
             timeout=timeout,
         )
+
+        self.work_q.put(task)
+
         return task
 
     def process(
@@ -3271,23 +3358,28 @@ class Batch:
         timeout: float = default_timeout,
     ) -> Job:
         """
-        Creates a new process task. Arguments for the process passed using ``ProcessTemplate.args``
-        that are of type ``AsyncDict`` will create a dependency for this task on the output
-        specified by the ``AsyncDict``. Further, the output specified by the ``AsyncDict``
-        will be passed in place of the ``AsyncDict`` when the process executes.
+        Creates a new process task. Arguments for a process passed using :py:attr:`ProcessTemplate.args`
+        that are of type :py:class:`Task` will create a dependency for this task on the output of the
+        task specified by the argument. Further, the output of the specified task will be
+        passed in place of the :py:class:`Task` argument when the process executes.
 
-        :param process_template: A Dragon ``ProcessTemplate`` to describe the process to be run.
+        :param process_template: A Dragon :py:class:`ProcessTemplate` to describe the process to be run.
         :type process_template: ProcessTemplate
-        :param reads: A list of ``Read`` objects created by calling ``Batch.read``.
+        :param reads: A list of ``Read`` objects created by calling :py:meth:`Batch.read`.
         :type reads: Optional[list]
-        :param writes: A list of ``Write`` objects created by calling ``Batch.write``.
+        :param writes: A list of ``Write`` objects created by calling :py:meth:`Batch.write`.
         :type writes: Optional[list]
         :param name: A human-readable name for the task.
         :type name: Optional[str]
 
+        :raises :py:exc:`SubmitAfterCloseError`: If the batch has already been closed.
+
         :return: The new process task.
         :rtype: Job
         """
+        if self.closed:
+            raise SubmitAfterCloseError("cannot submit work after batch has been closed")
+
         job = self.job(
             [(1, process_template)],
             reads,
@@ -3306,27 +3398,36 @@ class Batch:
         writes: Optional[list] = None,
         name: Optional[str] = None,
         timeout: float = default_timeout,
+        pmi: PMIBackend = PMIBackend.CRAY,
     ) -> Job:
         """
-        Creates a new job task. Arguments for a process passed using ``ProcessTemplate.args``
-        that are of type ``AsyncDict`` will create a dependency for this task on the output
-        specified by the ``AsyncDict``. Further, the output specified by the ``AsyncDict``
-        will be passed in place of the ``AsyncDict`` when the job executes.
+        Creates a new job task. Arguments for a process passed using :py:attr:`ProcessTemplate.args`
+        that are of type :py:class:`Task` will create a dependency for this task on the output of the
+        task specified by the argument. Further, the output of the specified task will be
+        passed in place of the :py:class:`Task` argument when the job executes.
 
         :param process_templates: A list of pairs of the form (num_procs, process_template), where
         ``process_template`` is template for ``num_procs`` processes in the job. The process template
-        is based on Dragon's ProcessTemplate.
+        is based on Dragon's :py:class:`ProcessTemplate`.
         :type process_templates: list
-        :param reads: A list of ``Read`` objects created by calling ``Batch.read``.
+        :param reads: A list of ``Read`` objects created by calling :py:meth:`Batch.read`.
         :type reads: Optional[list]
-        :param writes: A list of ``Write`` objects created by calling ``Batch.write``.
+        :param writes: A list of ``Write`` objects created by calling :py:meth:`Batch.write`.
         :type writes: Optional[list]
         :param name: A human-readable name for the task.
         :type name: Optional[str]
+        :param pmi: The PMI backend to use for launching MPI jobs. Defaults to ``PMIBackend.CRAY``.
+            Set to ``PMIBackend.PMIX`` for systems using PMIx, or ``None`` to disable PMI.
+        :type pmi: PMIBackend
+
+        :raises :py:exc:`SubmitAfterCloseError`: If the batch has already been closed.
 
         :return: The new job task.
         :rtype: Job
         """
+        if self.closed:
+            raise SubmitAfterCloseError("cannot submit work after batch has been closed")
+
         task = Job(
             self,
             process_templates=process_templates,
@@ -3334,8 +3435,89 @@ class Batch:
             writes=writes,
             name=name,
             timeout=timeout,
+            pmi=pmi,
         )
+
+        self.work_q.put(task)
+
         return task
+
+    def kernighan_lin_partition(self, tasks_to_compile: list[Task], dep_dag) -> list[set[TaskCore]]:
+        """
+        Partition tasks across managers using the Kernighan-Lin algorithm.
+
+        Managers are treated as the partitions in the KL model. The resulting partition list
+        contains one task-core set per manager, and may contain empty sets for managers that
+        receive no work.
+
+        :param tasks_to_compile: Tasks in the compiled DAG.
+        :type tasks_to_compile: list[Task]
+        :param dep_dag: The dependency DAG built by :py:meth:`compile`.
+
+        :return: A list of task-core sets, one per manager partition.
+        :rtype: list[set[TaskCore]]
+        """
+        # partition the dependency graph for the managers, subdiving partitions
+        # until there is one partition per manager, or until it doesn't make sense
+        # to keep partitioning
+
+        self.log.debug("partitioning the dependency graph")
+
+        if self.num_managers > 1 and len(tasks_to_compile) > 1:
+            dep_graph = dep_dag.to_undirected()
+
+            # If all inter-task dependencies are cross-compiled (inter-batch), dep_dag will
+            # have no edges. kernighan_lin_bisection requires at least one edge, so fall back
+            # to using round-robin across partitions in that case.
+            if dep_graph.number_of_edges() > 0:
+                partitions = list(nx.community.kernighan_lin_bisection(dep_graph))
+            else:
+                # No intra-batch edges: distribute tasks round-robin.
+                # Cap at len(tasks_to_compile) to avoid creating empty partitions,
+                # which would leave stale entries in work_backlog and prevent managers
+                # from ever reaching the shutdown condition.
+                n = min(len(tasks_to_compile), self.num_managers)
+                partitions = [set() for _ in range(n)]
+                for i, task in enumerate(tasks_to_compile):
+                    partitions[i % n].add(task.core)
+
+            while len(partitions) < self.num_managers:
+                try:
+                    new_partitions = []
+                    made_progress = False
+                    for part in partitions:
+                        g = dep_graph.subgraph(part)
+                        # only bisect partitions with >1 node and at least one edge;
+                        # edgeless subgraphs arise when all deps in the partition are
+                        # inter-batch and were not captured as edges in dep_dag
+                        if len(part) > 1 and g.number_of_edges() > 0:
+                            new_partitions.extend(nx.community.kernighan_lin_bisection(g))
+                            made_progress = True
+                        else:
+                            new_partitions.append(part)
+
+                    partitions = new_partitions
+
+                    if not made_progress:
+                        break
+                except Exception:
+                    raise RuntimeError("failure occurred while trying to bisect dependency graph")
+
+            # A bisection step can overshoot num_managers (each bisect() adds 2 at
+            # once, so going from num_managers-1 to num_managers+1 is possible).
+            # Redistribute round-robin so each manager gets at most one Work chunk
+            # for this compiled_tuid; sending two to the same manager would
+            # overwrite work_backlog and permanently block tasks.
+            if len(partitions) > self.num_managers:
+                merged = [set() for _ in range(self.num_managers)]
+                for i, part in enumerate(partitions):
+                    merged[i % self.num_managers] |= part
+                partitions = merged
+        else:
+            task_core_set = {task.core for task in tasks_to_compile}
+            partitions = [task_core_set]
+
+        return partitions
 
     def compile(
         self,
@@ -3343,9 +3525,11 @@ class Batch:
         name: Optional[str] = None,
     ) -> Task:
         """
-        Generate a single, compiled task from a list of tasks. After a list of tasks has been
-        compiled, the individual subtasks of the compiled task can no longer be started or waited
-        on separately--``start``, ``wait``, and ``run`` should all be called via the compiled task.
+        Generate a single compiled task from a list of tasks. :py:class:`Batch` calls this method
+        internally to batch and dispatch tasks submitted via :py:meth:`function`,
+        :py:meth:`process`, and :py:meth:`job`. The ordering of ``tasks_to_compile`` is treated as
+        a valid sequential execution order; dependencies are inferred from data accesses to produce
+        a DAG that maximizes parallelism.
 
         :param tasks_to_compile: List of tasks to compile.
         :type tasks_to_compile: list
@@ -3365,81 +3549,70 @@ class Batch:
             elif not isinstance(tasks_to_compile[0], Task):
                 raise RuntimeError(f"tasks_to_compile must be a list of tasks: {tasks_to_compile[0]=}")
 
-        task_core = TaskCore(self.client_id, name, None)
-        compiled_task = Task(task_core, self, compiled=True)
+        compiled_task_core = TaskCore(self.client_id, name, None)
+        compiled_task = Task(compiled_task_core, self, compiled=True)
 
-        # TODO: add a check to make sure a task isn't a subtask for two different progs
         for task in tasks_to_compile:
-            self._add_to_compiled_task(task, compiled_task)
+            # NOTE: this assumes all subtasks of a compiled task are unique
+            compiled_task.dep_dag.add_node(task.core)
 
-        # determine dependecies from accesses
-        for ddict, accesses_this_ddict in compiled_task.accesses.items():
-            for key, access_list in accesses_this_ddict.items():
-                if len(access_list) > 1:
-                    # process access list and add dependencies as necessary
+            compiled_task.num_subtasks += 1
 
-                    tmp_read_list = []
-                    prev_task, prev_access_type = access_list[0]
+            task.core.compiled_tuid = compiled_task.core.tuid
+            task._compiled_task = compiled_task
 
-                    if prev_access_type == AccessType.READ:
-                        write_before_read = None
+            # compare each task's accesses to a access frontier to determine inter-task dependencies
+
+            for kvs_and_key, task_and_access_type in task.accesses.items():
+                task, access_type = task_and_access_type
+
+                # if key isn't in dep_frontier, then there are no previous accesses to
+                # this key, so we don't need to add any dependencies
+                if kvs_and_key not in self.dep_frontier:
+                    if access_type == AccessType.WRITE:
+                        write_before_read = task
                     else:
-                        write_before_read = prev_task
+                        write_before_read = None
 
-                    for task, access_type in access_list[1:]:
-                        if prev_access_type == AccessType.READ:
-                            if access_type == AccessType.READ:
-                                # prev=READ, curr=READ
-                                tmp_read_list.append(task)
-                                if write_before_read is not None:
-                                    task._depends_on(write_before_read, compiled_task)
-                            elif access_type == AccessType.WRITE:
-                                # prev=READ, curr=WRITE
-                                for prev_read in tmp_read_list:
-                                    task._depends_on(prev_read, compiled_task)
-                                tmp_read_list = []
-                                write_before_read = task
-                        else:
-                            if prev_access_type != AccessType.WRITE:
-                                raise RuntimeError("invalid access mode")
+                    self.dep_frontier[kvs_and_key] = FrontierInfo([task], access_type, write_before_read)
+                    continue
 
-                            if access_type == AccessType.READ:
-                                # prev=WRITE, curr=READ
-                                tmp_read_list.append(task)
-                                task._depends_on(prev_task, compiled_task)
-                            else:
-                                # prev=WRITE, curr=WRITE
-                                task._depends_on(prev_task, compiled_task)
+                frontier_info = self.dep_frontier[kvs_and_key]
+                prev_task_list, prev_access_type, write_before_read = frontier_info
 
-                        prev_task = task
-                        prev_access_type = access_type
+                if prev_access_type == AccessType.READ:
+                    if access_type == AccessType.READ:
+                        # prev=READ, curr=READ
+                        if write_before_read is not None:
+                            task._depends_on(write_before_read, compiled_task)
 
-        # partition the dependency graph for the managers, subdiving partitions
-        # until there is one partition per manager, or until it doesn't make sense
-        # to keep partitioning
+                        prev_task_list.append(task)
+                    elif access_type == AccessType.WRITE:
+                        # prev=READ, curr=WRITE
+                        for prev_read in prev_task_list:
+                            task._depends_on(prev_read, compiled_task)
 
+                        self.dep_frontier[kvs_and_key] = FrontierInfo([task], access_type, task)
+                else:
+                    if prev_access_type != AccessType.WRITE:
+                        raise RuntimeError("invalid access mode")
+
+                    if access_type == AccessType.READ:
+                        # prev=WRITE, curr=READ
+                        task._depends_on(prev_task_list[0], compiled_task)
+                        self.dep_frontier[kvs_and_key] = FrontierInfo([task], access_type, write_before_read)
+                    else:
+                        # prev=WRITE, curr=WRITE
+                        task._depends_on(prev_task_list[0], compiled_task)
+                        self.dep_frontier[kvs_and_key] = FrontierInfo([task], access_type, task)
+
+        # partition the dependency graph for the managers
         self.log.debug("partitioning the dependency graph")
-
-        if self.num_managers > 1 and len(tasks_to_compile) > 1:
-            dep_graph = compiled_task.dep_dag.to_undirected()
-            partitions = list(nx.community.kernighan_lin_bisection(dep_graph))
-
-            while len(partitions) < self.num_managers and len(partitions[0]) > 1:
-                try:
-                    new_partitions = []
-                    for part in partitions:
-                        g = dep_graph.subgraph(part)
-                        tmp_partitions = list(nx.community.kernighan_lin_bisection(g))
-                        new_partitions.extend(tmp_partitions)
-
-                    partitions = new_partitions
-                except:
-                    raise RuntimeError("failure occurred while trying to bisect dependency graph")
-        else:
-            task_core_set = {task.core for task in tasks_to_compile}
-            partitions = [task_core_set]
-
-        tuid_to_queue = {}
+        partitions = self.kernighan_lin_partition(tasks_to_compile, compiled_task.dep_dag)
+        self.log.debug(
+            f"compiled_tuid={compiled_task.core.tuid}: {len(tasks_to_compile)} task(s) "
+            f"-> {len(partitions)} partition(s): " + ", ".join(f"{len(p)} task(s)" for p in partitions)
+        )
 
         # establish mapping between tasks and managers/queues
 
@@ -3452,7 +3625,7 @@ class Batch:
             manager_q = self.manager_qs[idx]
 
             for task_core in task_set:
-                tuid_to_queue[task_core.tuid] = manager_q
+                self.tuid_to_manager_q[task_core.tuid] = manager_q
 
         # now that we know the mapping between tasks and managers/queues, we can
         # update the list of dependent tuids to make it a list of dependent queues
@@ -3461,9 +3634,17 @@ class Batch:
 
         for task_set in partitions:
             for task_core in task_set:
-                for dep_tuid in task_core.dep_tuids:
-                    q = tuid_to_queue[dep_tuid]
-                    task_core.dep_queues.append(q)
+                for downstream_tuid in task_core.downstream_tuids:
+                    q = self.tuid_to_manager_q[downstream_tuid]
+                    task_core.downstream_queues.append(q)
+
+                for upstream_tuid in task_core.upstream_tuids:
+                    q = self.tuid_to_manager_q.get(upstream_tuid, None)
+                    if q is None:
+                        raise RuntimeError(
+                            f"failed to find manager queue for upstream task {upstream_tuid} while compiling inter-compiled dependency"
+                        )
+                    task_core.upstream_queues.append(q)
 
         # create a work item for each manager
         for task_set in partitions:
@@ -3478,14 +3659,14 @@ class Batch:
 
     def import_func(self, ptd_file: str, *real_import_args, **real_import_kwargs) -> MakeTask:
         """
-        Loads the PTD dict and creates a ``MakeTask`` object for the parameterized task group
+        Loads the PTD dict and creates a :py:class:`MakeTask` object for the parameterized task group
         specified by the PTD file and import arguments (``real_import_args`` and ``real_import_kwargs``).
-        The group of tasks is parameterized by the arguments passed to the ``MakeTask``object's
-        ``__call__`` method, with a different task created for each unique collection of arguments.
-        The name of this function comes from the fact that the ``__call__`` method of the``MakeTask``
-        object is meant to "look and feel" like calling the task and getting a return value without
-        blocking, i.e., writing a serial program that runs locally, even though the tasks are lazily
-        executed in parallel by the remote batch workers.
+        The group of tasks is parameterized by the arguments passed to the :py:class:`MakeTask` object's
+        :py:meth:`MakeTask.__call__` method, with a different task created for each unique collection of arguments.
+        The name of this function comes from the fact that the :py:meth:`MakeTask.__call__` method of
+        the :py:class:`MakeTask` object is meant to "look and feel" like calling the task and getting a
+        return value without blocking, i.e., writing a serial program that runs locally, even though
+        the tasks are lazily executed in parallel by the remote batch workers.
 
         :param ptd_file: Specifies the parameterized task group.
         :type ptd_file: str
@@ -3494,8 +3675,8 @@ class Batch:
         :param x: Keyword arguments to replace the key/value identifiers specified under the
         "import_args" key in the PTD file.
 
-        :return: Returns a MakeTask object representing the parameterized group of tasks specified by
-        the PTD file and import arguments.
+        :return: Returns a :py:class:`MakeTask` object representing the parameterized group of tasks
+        specified by the PTD file and import arguments.
         :rtype: MakeTask
         """
         with open(ptd_file) as file:
@@ -3507,24 +3688,3 @@ class Batch:
             real_import_args,
             real_import_kwargs,
         )
-
-    def ddict(self, *args, **kwargs) -> BatchDDict:
-        """
-        Creates a batch ddict.
-
-        :return: Returns the batch ddict.
-        :rtype: BatchDDict
-        """
-        return BatchDDict(self, *args, **kwargs)
-
-    def open(self, *args, **kwargs) -> BatchFile:
-        """
-        Creates a batch file.
-
-        :return: Returns the batch file.
-        :rtype: BatchFile
-        """
-        # need a fence here, because it's possible that queued tasks are supposed to
-        # create the file that we're about to open
-        self.fence()
-        return BatchFile(self, *args, **kwargs)

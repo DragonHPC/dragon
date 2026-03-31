@@ -38,7 +38,7 @@ def setUpModule():
 
 @patch.dict(os.environ, {"DRAGON_LOG_DEVICE_STDERR": "INFO"})
 def external_single_echo(conn, resp_size, serialized_dlogging, idx):
-    dlog.setup_BE_logging(service=dlog.DragonLoggingServices.TEST, logger_sdesc=B64(serialized_dlogging))
+    dlog.setup_BE_logging(service=dlog.DragonLoggingServices.TEST, logger_sdesc=serialized_dlogging)
     logger = logging.getLogger(dlog.DragonLoggingServices.TEST)
 
     logger.info(f"{idx}: external_single_echo")
@@ -82,8 +82,8 @@ class SendReceiveTest(unittest.TestCase):
 
         pipeconns = [self.Pipe() for _ in range(num_workers)]
 
-        dragon_logger = dlog.setup_dragon_logging(0)
-        serialized_dlogging = dragon_logger.serialize()
+        logging_queue = dlog.setup_dragon_logging(0)
+        serialized_dlogging = logging_queue.serialize()
 
         processes = []
         for idx in range(num_workers):
@@ -109,16 +109,17 @@ class SendReceiveTest(unittest.TestCase):
         for idx, handle in enumerate(processes):
             handle.join()
 
-        num_logs = dragon_logger.num_logs()
+        num_logs = logging_queue.size()
         self.assertEqual(num_logs, num_workers, f"expected {num_workers} log entries, but there's only {num_logs}")
         found_worker_log_msg = [False for _ in range(num_workers)]
         for i in range(num_workers):
-            msg = dmsg.parse(dragon_logger.get(i))
+            msg = dmsg.parse(logging_queue.get())
             worker = int(msg.msg.split(":")[0])
             self.assertFalse(found_worker_log_msg[worker - 1], f"duplicate log message received for node {worker}")
             found_worker_log_msg[worker - 1] = True
         self.assertTrue(all(found_worker_log_msg), "One or more log messages not found in DragonLogging chanel")
-        dragon_logger.destroy()
+
+        logging_queue.destroy()
 
         return time.time_ns() - start_time
 

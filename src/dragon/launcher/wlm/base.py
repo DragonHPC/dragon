@@ -8,7 +8,7 @@ from enum import Enum
 from shlex import quote
 from typing import Optional
 
-from ...infrastructure.facts import PROCNAME_LA_BE
+from ...infrastructure.facts import PROCNAME_LA_BE, TransportAgentOptions
 from ...infrastructure.parameters import this_process
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.util import NewlineStreamWrapper
@@ -49,6 +49,7 @@ class BaseWLM(ABC):
             " --host-id {host_id}"
             " --frontend-sdesc {frontend_sdesc}"
             " --network-prefix {network_prefix}"
+            " --overlay-transport {overlay_transport}"
             " --overlay-port {overlay_port}"
         )
 
@@ -261,6 +262,7 @@ class BaseWLM(ABC):
         fe_host_id: str,
         frontend_sdesc: str,
         network_prefix: str,
+        overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
     ) -> list[str]:
@@ -272,6 +274,7 @@ class BaseWLM(ABC):
                 host_id=fe_host_id,
                 frontend_sdesc=frontend_sdesc,
                 network_prefix=network_prefix,
+                overlay_transport=overlay_transport,
                 overlay_port=overlay_port,
             ).split()
             if transport_test_env:
@@ -323,6 +326,7 @@ class BaseWLM(ABC):
         fe_host_id: str,
         frontend_sdesc: str,
         network_prefix: str,
+        overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
     ) -> subprocess.Popen:
@@ -332,6 +336,7 @@ class BaseWLM(ABC):
                 fe_host_id=fe_host_id,
                 frontend_sdesc=frontend_sdesc,
                 network_prefix=network_prefix,
+                overlay_transport=overlay_transport,
                 overlay_port=overlay_port,
                 transport_test_env=transport_test_env,
             )

@@ -1,1 +1,1 @@
-from .batch import Batch, SubmitAfterCloseError
+from .batch import Batch, BatchTopology, SubmitAfterCloseError

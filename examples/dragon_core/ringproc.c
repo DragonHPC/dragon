@@ -39,7 +39,7 @@ int main(int argc, char* argv[]) {
      * When sending a message, the structure must be initialized first.
      */
 
-    err = dragon_channel_message_init(&msg, NULL, NULL);
+    dragonError_t err = dragon_channel_message_init(&msg, NULL, NULL);
     if (err != DRAGON_SUCCESS) {
         fprintf(stderr, "Could not init message with err=%s\n", dragon_get_rc_string(err));
         fflush(stderr);

@@ -49,12 +49,12 @@ class DragonConfigTest(unittest.TestCase):
         args_list = ["add"] + [f"--{key.replace('_', '-')}={val.name}" for key, val in add_options.items()]
 
         add_options["tcp_runtime"] = True
-        add_options[
-            "netconfig_mpiexec_override"
-        ] = "mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output"
-        add_options[
-            "backend_mpiexec_override"
-        ] = "mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output --host {nodelist}"
+        add_options["netconfig_mpiexec_override"] = (
+            "mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output"
+        )
+        add_options["backend_mpiexec_override"] = (
+            "mpiexec --np {nnodes} --map-by ppr:1:node --stream-buffering=1 --tag-output --host {nodelist}"
+        )
 
         args_list.append("--tcp-runtime")
         args_list.append("--netconfig-mpiexec-override")
@@ -279,35 +279,6 @@ class DragonConfigTest(unittest.TestCase):
 
             self.assertEqual(backend_name, "ofi")
             self.assertEqual(":".join([d.name for d in dirs]), backend_lib)
-
-    def test_tcp_error_msg(self):
-        """Make sure the frontend raises the TCP is being used error, or ignores it if told to"""
-
-        args_map = get_cli_args(["hello_world.py"])
-        error_string = "To eliminate this message and continue to use the TCP transport agent"
-
-        with tempfile.NamedTemporaryFile() as config_file, tempfile.NamedTemporaryFile() as makefile:
-            captured_output = StringIO()
-
-            with redirect_stdout(captured_output):
-                LauncherFrontEnd._determine_transport_backend(args_map.get("transport"), config_file=config_file.name)
-
-            # Replace newlines with spaces:
-            out = captured_output.getvalue().replace("\n", " ")
-            self.assertIn(error_string, out)
-
-            # Now write out a config file that uses TCP intentionally and make sure it works
-            config_args = self.parser.parse_args(["add", "--tcp-runtime"])
-            base_dir = os.path.dirname(config_file.name)
-
-            dconf._handle_subparsers(config_args, base_dir, config_file.name, makefile.name)
-
-            captured_output = StringIO()
-            with redirect_stdout(captured_output):
-                LauncherFrontEnd._determine_transport_backend(args_map.get("transport"), config_file=config_file.name)
-
-            out = captured_output.getvalue().replace("\n", " ")
-            self.assertNotIn(error_string, out)
 
     def test_location_placement(self):
         """Make sure the config file goes to the expected placed"""

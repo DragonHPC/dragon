@@ -3,26 +3,29 @@
 Running Across Nodes
 ++++++++++++++++++++
 
-*Cleanup needed yet*
+.. *Cleanup needed yet*
 
 To run in multinode mode, Dragon must know what resources are available for its use on the
-compute backend. When using a workload manager (WLM) such as Slurm or PBS+Pals, Dragon normally
-obtains the list of available backend compute resources automatically from the active WLM
-allocation. However, when Dragon is used on a generic cluster without a traditional WLM,
-Dragon has no way to automatically ascertain what backend compute resources are available.
-In these cases Dragon can be run using a generic SSH launch.
+compute backend. Dragon natively supports the Slurm and PBS Workload Managers (WLMs) and can, in most
+cases, automatically detect the allocated resources when running within an active job
+on a cluster or supercomputer.
+
+There are cases, however, when no traditional WLM is present, Dragon can't automatically
+detect the available resources, or perhaps a subset of the available resources should be
+used. In these cases, the :ref:`dragon` Launcher supports both the DragonRun and SSH
+Lightweight Workload Managers (WLM).
 
 The following multinode configurations are supported:
 
-1. :ref:`Running on a cluster or supercomputer that has been configured with a Work Load Manager (WLM), such has Slurm or PBS+Pals.<using_a_wlm>`
-2. :ref:`Running on a cluster without any Work Load Manager (WLM) using generic SSH launch.<using_ssh_launch>`
+1. :ref:`Running on a cluster or supercomputer that has been configured with a Traditional WLM, such has Slurm or PBS+Pals.<using_a_traditional_wlm>`
+2. :ref:`Running on a cluster using either the DragonRun or SSH Lightweight WLM.<using_drun_or_ssh_wlm>`
 
-.. _using_a_wlm:
+.. _using_a_traditional_wlm:
 
-Running Dragon with a Workload Manager
---------------------------------------
+Running Dragon with a Traditional Workload Manager
+--------------------------------------------------
 To launch a Dragon program on several compute nodes, a Work Load Manager job allocation
-obtained via `salloc`_ or `sbatch`_ (Slurm) or `qsub` (PBS+Pals) is required, eg:
+obtained via `salloc` or `sbatch` (Slurm) or `qsub` (PBS+Pals) is required, eg:
 
 .. code-block:: bash
 
@@ -43,7 +46,7 @@ raised, and the program will not execute:
 To override this default behavior and execute a Dragon program on the same node as your shell,
 the `--single-node-override / -s` option is available.
 
-The Dragon service runtime assumes all nodes in an allocation are to be used unless the `--node-count` option is used.
+The Dragon runtime assumes all nodes in an allocation are to be used unless the `--nodes` option is specified.
 This limits the user program to executing on a smaller subset of nodes, potentially useful for execution of scaling
 benchmarks. For example, if the user has a job allocation for 4 nodes, but only wants to use 2 for their Dragon program,
 they may do the following:
@@ -53,49 +56,150 @@ they may do the following:
     $ salloc --nodes=4
     $ dragon --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
 
-.. _using_ssh_launch:
+.. _using_drun_or_ssh_wlm:
 
-Running Dragon using generic SSH launch
----------------------------------------
+Running Dragon using either the DragonRun or SSH WLM
+----------------------------------------------------
 
-To use SSH launch, the following configuration options must be provided on the `dragon`
-launcher command line:
+The DragonRun and SSH WLMs are Lightweight Workload Managers (WLM) built into Dragon. These can be used on a generic cluster
+without a traditional WLM, or any time Dragon needs to be run on a set of backend resources that otherwise can't be
+automatically detected. This includes cases where a traditional WLM is present but perhaps only a specific subset of the allocated
+nodes should be used, or when Dragon is not able to accurately detect the allocated nodes from the traditional WLM.
 
-1. Select the SSH Workload Manager
+The DragonRun WLM uses an ssh-based 'command and control tree' to efficiently fan out the launch of the Dragon Runtime on
+the backend compute notes. By using this tree-based launch mechanism, the DragonRun WLM can successfully launch on large
+numbers of nodes with minimal load on the frontend Dragon launcher.
 
-  The `--wlm ssh / -w ssh` option tells the `dragon` launcher to use generic SSH launch
-  semantics.
+The soon to be deprecated SSH WLM uses a more traditional one-to-many SSH launch mechanism. Here the frontend Dragon Launcher
+SSH's to each backend compute node individually in order to launch the Dragon runtime. This one-to-many SSH launch mechanism
+can cause significant load on the frontend Dragon launcher when launching on large numbers of nodes, and is therefore not
+recommended for large scale runs. For small scale runs, the SSH WLM can be used as a simple alternative to the DragonRun WLM
+if desired.
 
-2. Provide available backend compute resources
+The following sections describe how to use the DragonRun and SSH WLM options:
 
-  The list of available backend compute resources can be provided to the `dragon` launcher in
+1. :ref:`Using the DragonRun WLM<use_drun_wlm>`
+2. :ref:`Using the SSH WLM<use_ssh_wlm>`
+
+.. _use_drun_wlm:
+
+Using the DragonRun WLM:
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+To use the DragonRun WLM, the following  options must be provided on the :ref:`dragon` launcher command line:
+
+1. Select the DragonRun (drun) SSH Workload Manager
+
+  The `--wlm drun / -w drun` option tells the :ref:`dragon` launcher to use the DragonRun launch WLM.
+
+1. Provide available backend compute resources
+
+  The list of available backend compute resources can be provided to the :ref:`dragon` launcher in
+  one of several ways
+
+    * :ref:`by using the Dragon Hosts (dhosts) utility<use_dhosts>` or
+    * :ref:`by providing a list of backend compute resources (either explicitly on the launcher command line or via a file)<hostlist_hostfile>` or
+    * :ref:`by providing a Dragon network configuration file<network_config>`
+
+Note: Dragon requires that all nodes are configured for password-less SSH and maintain mutual routability.
+
+.. _use_ssh_wlm:
+
+Using the SSH WLM:
+^^^^^^^^^^^^^^^^^^
+
+To use the SSH WLM, the following  options must be provided on the :ref:`dragon` launcher command line:
+
+1. Select the SSH SSH Workload Manager
+
+  The `--wlm ssh / -w ssh` option tells the `dragon` launcher to use the SSH launch WLM.
+
+1. Provide available backend compute resources
+
+  The list of available backend compute resources can be provided to the :ref:`dragon` launcher in
   one of several ways
 
     * :ref:`by providing a list of backend compute resources (either explicitly on the launcher command line or via a file)<hostlist_hostfile>` or
     * :ref:`by providing a Dragon network configuration file<network_config>`
 
-Note: Dragon requires that passwordless SSH is enabled for all backend compute resources.
+Note: Dragon requires that all nodes are configured for password-less SSH and maintain mutual routability.
+
+.. _use_dhosts:
+
+Using the Dragon Hosts (dhosts) utility
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The :ref:`dhosts` utility defines the list of hosts that should be used by other Dragon
+runtime tools. To do this, :ref:`dhosts` generates a temporary hostfile and exports the
+DRAGON_RUN_NODEFILE environment variable within a subshell. To generate the host
+list, :ref:`dhosts` first attempts to detect an active Workload Manager (WLM)
+allocation, such as from Slurm or PBS. If no WLM is present, or if :ref:`dhosts` is unable
+to detect the allocated WLM nodes, the list of hosts can be specified manually via the
+`--hostlist` or `--hostfile` options.
+
+This is useful for running other dragon tools on a specific set of hosts without having to
+specify the list of hosts to each tool individually. Since :ref:`dhosts` exports the
+DRAGON_RUN_NODEFILE environment variable, any tool that relies on this environment variable
+can automatically use the generated hostlist. For example, dragon-cleanup will automatically
+use the hostlist generated by :ref:`dhosts` if DRAGON_RUN_NODEFILE is set in the environment.
+
+To provide the available nodes explicitly on the :ref:`dhosts` command line, specify the available
+backend hostnames as a comma-separated list, eg: `--hostlist host_1,host_2,host_3`.
+
+.. code-block:: shell
+  :name: host_list
+  :caption: **Providing a list of hosts via the dhosts utility**
+
+  $ dhosts --hostlist host_1,host_2,host_3
+  $ echo $DRAGON_RUN_NODEFILE
+  /tmp/dragon_run_nodefile_12345
+  $ cat $DRAGON_RUN_NODEFILE
+  host_1
+  host_2
+  host_3
+
+To provide the available nodes via a text file, create a newline separated text file with each
+backend node's hostname on a separate line. Pass the name of the text file to the :ref:`dhosts`
+command line, eg: `--hostfile hosts.txt`.
+
+.. code-block:: shell
+  :name: host_file
+  :caption: **Providing a list of hosts via a text file**
+
+  $ cat hosts.txt
+  host_1
+  host_2
+  host_3
+  $ dhosts --hostfile hosts.txt
+  $ echo $DRAGON_RUN_NODEFILE
+  /tmp/dragon_run_nodefile_12345
+  $ cat $DRAGON_RUN_NODEFILE
+  host_1
+  host_2
+  host_3
+
+NOTE: You cannot use both `--hostfile` and `--hostlist` on the commandline at the same time.
 
 .. _hostlist_hostfile:
 
 Providing a Host List or Host File
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Providing a list of hosts to the `dragon` launcher can be done either by listing them explicitly
-on the `dragon` command-line or by providing the `dragon` launcher the name of a newline
+Providing a list of hosts to the :ref:`dragon` launcher can be done either by listing them explicitly
+on the :ref:`dragon` command-line or by providing the :ref:`dragon` launcher the name of a newline
 seperated text file containing the list of host names.
 
-To provide the available nodes explicitly on the `dragon` command line, specify the available
+To provide the available nodes explicitly on the :ref:`dragon` command line, specify the available
 backend hostnames as a comma-separated list, eg: `--hostlist host_1,host_2,host_3`.
 
 .. code-block:: shell
   :name: host_list
   :caption: **Providing a list of hosts via the command line**
 
-  $ dragon -w ssh -t tcp --hostlist host_1,host_2,host_3 [PROG]
+  $ dragon -w drun -t tcp --hostlist host_1,host_2,host_3 [PROG]
 
 To provide the available nodes via a text file, create a newline separated text file with each
-backend node's hostname on a separate line. Pass the name of the text file to the `dragon`
+backend node's hostname on a separate line. Pass the name of the text file to the :ref:`dragon`
 launcher, eg: `--hostfile hosts.txt`.
 
 .. code-block:: shell
@@ -106,11 +210,11 @@ launcher, eg: `--hostfile hosts.txt`.
   host_1
   host_2
   host_3
-  $ dragon -w ssh -t tcp --hostfile hosts.txt [PROG]
+  $ dragon -w drun -t tcp --hostfile hosts.txt [PROG]
 
 NOTE: You cannot use both `--hostfile` and `--hostlist` on the commandline at the same time.
 
-When passing the list of available backend nodes in either of these ways, the `dragon` launcher
+When passing the list of available backend nodes in either of these ways, the :ref:`dragon` launcher
 needs to determine basic network configuration settings for each listed node before it can launch
 the Dragon user application. This is done by launching a utility application on each listed node
 to report the node's IP and other relevant information. Running this utility application slightly
@@ -124,7 +228,7 @@ Providing a Dragon Network-Config File
 
 Dragon provides a utility application to gather and persist relevant network information
 from it's backend compute resorces. This utility can be used to generate a persistent YAML
-or JSON configuration which, when passed to the `dragon` launcher, provides all
+or JSON configuration which, when passed to the :ref:`dragon` launcher, provides all
 required information about a set of backend compute nodes.
 
 To generate a network configuration file for a given set of backend compute nodes, run the
@@ -134,18 +238,18 @@ To generate a network configuration file for a given set of backend compute node
   :name: ex_run_network_config
   :caption: **Example of how to run the dragon-network-config tool**
 
-  $ dragon-network-config -w ssh --hostlist host1,host2,host3,host4 -j
+  $ dragon-network-config -w drun --hostlist host1,host2,host3,host4 -j
   $  ls ssh.json
   ssh.json
 
 Once you have a network configuration file, the name of the configuration file can
-be passed to the `dragon` launcher to identify the available backend compute resources:
+be passed to the :ref:`dragon` launcher to identify the available backend compute resources:
 
 .. code-block:: shell
   :name: host_list
   :caption: **Providing a list of hosts via the command line**
 
-  $ dragon -w ssh -t tcp --network-config ssh.json [PROG]
+  $ dragon -w drun -t tcp --network-config ssh.json [PROG]
 
 *NOTE*: Changes to the backend compute node's IP addresses or other relevant network
 settings will invalidate the saved network config file. If this happens, please
@@ -238,7 +342,7 @@ config JSON file):
 .. code-block:: bash
 
     # Note that the value "1.2.3.4" should be replaced with the appropriate local IP address.
-    $ DRAGON_FE_IP_ADDR="1.2.3.4:6566" dragon --wlm ssh --network-config my_cluster_config.json --network-prefix '' my_user_code.py
+    $ DRAGON_FE_IP_ADDR="1.2.3.4:6566" dragon --wlm drun --network-config my_cluster_config.json --network-prefix '' my_user_code.py
 
 .. _transport_agents:
 
@@ -274,7 +378,7 @@ dragon-config as follows.
   dragon-config -a 'tcp-runtime=True'
 
 The TCP agent is configured to use port 7575 by default. If that port is blocked,
-it can be changed with the `--port` argument to `dragon`. If not specific,
+it can be changed with the `--port` argument to :ref:`dragon`. If not specific,
 7575 is used:, eg:
 
 .. code-block:: bash

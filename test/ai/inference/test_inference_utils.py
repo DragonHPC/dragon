@@ -68,6 +68,8 @@ def create_test_config():
             spin_up_prompt_threshold=5,
         ),
         flask_secret_key="test-secret-key",
+        run_type="full_app",
+        token="test_token_abc123",
     )
 
 
@@ -100,15 +102,16 @@ class TestInferenceUtils(TestCase):
 
         # Test num_nodes = 0 (should raise ValueError)
         config = create_test_config()
+        config.hardware.num_nodes = 0
         with self.assertRaises(ValueError) as context:
-            # Inference(config, num_nodes, offset, input_queue)
-            Inference(config, 0, 0, input_queue)
+            Inference(config, input_queue)
         self.assertIn("num_nodes must be >= 1", str(context.exception))
 
         # Test num_nodes > available (should raise ValueError)
         config = create_test_config()
+        config.hardware.num_nodes = num_available_nodes + 100
         with self.assertRaises(ValueError) as context:
-            Inference(config, num_available_nodes + 100, 0, input_queue)
+            Inference(config, input_queue)
         self.assertIn("only", str(context.exception).lower())
 
     def test_maybe_subset_nodes_gpus(self, mock_cpu_wrkr, mock_mp_proc, mock_dt):
@@ -132,8 +135,8 @@ class TestInferenceUtils(TestCase):
         # Validate subset of nodes - use num_nodes=1
         input_queue = mp.Queue()
         config = create_test_config()
-        # New signature: nference(config, num_nodes, offset, input_queue)
-        pipeline = Inference(config, 1, 0, input_queue)
+        config.hardware.num_nodes = 1
+        pipeline = Inference(config, input_queue)
         nodes = pipeline.nodes
         self.assertEqual(len(nodes.keys()), 1)  # Assert number of nodes is 1
         for (hostname, node), gpus in nodes.items():
@@ -144,8 +147,8 @@ class TestInferenceUtils(TestCase):
             input_queue = mp.Queue()
             config = create_test_config()
             config.hardware.num_gpus = 4
-            # Use -1 for num_nodes to use all nodes
-            pipeline = Inference(config, -1, 0, input_queue)
+            config.hardware.num_nodes = -1  # Use all nodes
+            pipeline = Inference(config, input_queue)
             nodes = pipeline.nodes
             self.assertEqual(len(nodes.keys()), num_available_nodes)  # Assert all nodes
             for (hostname, node), gpus in nodes.items():

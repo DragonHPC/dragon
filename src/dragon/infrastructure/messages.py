@@ -8114,7 +8114,7 @@ class RuntimeDesc(InfraMsg):
     _tc = MessageTypes.RUNTIME_DESC
 
     def __init__(
-        self, tag, gs_cd, gs_ret_cd, ls_cd, ls_ret_cd, fe_ext_ip_addr, head_node_ip_addr, oob_port, env, _tc=None
+        self, tag, gs_cd, gs_ret_cd, ls_cd, ls_ret_cd, fe_ext_ip_addr, head_node_ip_addr, oob_port, python_path, env, _tc=None
     ):
         super().__init__(tag)
         self.gs_cd = gs_cd
@@ -8125,6 +8125,7 @@ class RuntimeDesc(InfraMsg):
         self.fe_ext_ip_addr = fe_ext_ip_addr
         self.head_node_ip_addr = head_node_ip_addr
         self.oob_port = oob_port
+        self.python_path = python_path
         self.env = json.dumps(dict(env))
         # add something to help deal with differences in dir structure?
 
@@ -8137,6 +8138,7 @@ class RuntimeDesc(InfraMsg):
         rv["fe_ext_ip_addr"] = self.fe_ext_ip_addr
         rv["head_node_ip_addr"] = self.head_node_ip_addr
         rv["oob_port"] = self.oob_port
+        rv["python_path"] = self.python_path
         rv["env"] = json.loads(self.env)
         return rv
 

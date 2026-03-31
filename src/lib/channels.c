@@ -10,6 +10,7 @@
 #include <time.h>
 #include <stdio.h>
 
+
 /* dragon globals */
 DRAGON_GLOBAL_MAP(channels);
 DRAGON_GLOBAL_LIST(gateways);
@@ -2123,11 +2124,21 @@ _channel_serialize(const dragonChannelDescr_t* ch, dragonChannelSerial_t* ch_ser
 
     /* finally copy in the memory descriptor */
     memcpy(sptr, mem_ser.data, mem_ser.len);
+    sptr = (dragonULInt*)((void*)sptr + mem_ser.len);
 
     /* free our serialized memory descriptor after we memcpy */
     err = dragon_memory_serial_free(&mem_ser);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "could not release serialized memory descriptor after memcpy");
+
+    size_t actual_sz = ((size_t) sptr - (size_t) ch_ser->data);
+
+    if (actual_sz > DRAGON_CHANNEL_MAX_SERIALIZED_LEN) {
+        char err_msg[200];
+        snprintf(err_msg, 200, "The size of the serialized descriptor was %lu but is limited to %lu in the library.\n"
+                               "    DRAGON_CHANNEL_MAX_SERIALIZED_LEN needs adjusting.", actual_sz, DRAGON_CHANNEL_MAX_SERIALIZED_LEN);
+        err_return(DRAGON_FAILURE, err_msg);
+    }
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -2992,6 +3003,9 @@ dragon_channel_attach(const dragonChannelSerial_t* ch_ser, dragonChannelDescr_t*
     if (ch_ser->len <= DRAGON_CHANNEL_CHSER_NULINTS * sizeof(dragonULInt))
         err_return(DRAGON_INVALID_ARGUMENT, "invalid data length in serialized channel descriptor");
 
+    if (ch_ser->len > DRAGON_CHANNEL_MAX_SERIALIZED_LEN)
+        err_return(DRAGON_INVALID_ARGUMENT, "The serialized channel descriptor length field is too big likely due to an uninitialized serialized channel descriptor.");
+
     /* pull out the c_uid */
     dragonULInt* sptr = (dragonULInt*)ch_ser->data;
     dragonC_UID_t c_uid = (dragonC_UID_t)*sptr;
@@ -3388,6 +3402,126 @@ dragon_channel_is_local(const dragonChannelDescr_t* ch)
         return false;
 
     return true;
+}
+
+/**
+ * @brief Update transport agent with new host_id to ip_addr mappings.
+ *
+ * This function sends messages over the gateway channels to the local transport agent
+ * to update the agent with new host_id-to-ip_addr mappings.
+ *
+ * @param node_mappings An array of host_id-to-ip_addr mappings.
+ * @param num_mappings The length of the array of mappings.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_ta_update_nodes(dragonNodeMap_t* node_mappings, int num_mappings)
+{
+    dragonError_t err = DRAGON_SUCCESS;
+    dragonChannel_t* gw_channel;
+    dragonChannelSendh_t gw_sh;
+    dragonGatewayMessage_t gw_msg;
+    dragonGatewayMessageSerial_t gw_ser_msg;
+    dragonMessage_t req_msg;
+    dragonMemoryDescr_t req_mem;
+
+    size_t num_gws = dragon_ulist_get_size(dg_gateways, true);
+    const size_t gws_per_agent = 3;
+
+    /* For each gateway, send a message containing the new node mappings. */
+
+    for (size_t i = 0; i < num_gws; i += gws_per_agent) {
+        for (size_t j = 0; j < gws_per_agent; ++j) {
+            err = dragon_ulist_get_current_advance(dg_gateways, (void**)&gw_channel, true);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not advance and get with gateway channel iterator.");
+        }
+
+        dragonMemoryDescr_t msg_mem;
+        dragonMessage_t msg_send;
+
+        err = dragon_memory_alloc_blocking(&msg_mem, &gw_channel->pool, num_mappings * sizeof(dragonNodeMap_t), NULL);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not allocate memory for send request message.");
+
+        err = dragon_channel_message_init(&msg_send, &msg_mem, NULL);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not initialize host_id-to-ip_addr update message to send to "
+                                   "transport service via gateway channel.");
+
+        void* msg_ptr = NULL;
+        err = dragon_memory_get_pointer(&msg_mem, &msg_ptr);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "invalid memory descriptor in message");
+
+        memcpy(msg_ptr, node_mappings, num_mappings * sizeof(dragonNodeMap_t));
+
+        dragonChannelSendAttr_t sattrs;
+        dragon_channel_send_attr_init(&sattrs);
+        sattrs.return_mode = DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY;
+
+        err = dragon_channel_gatewaymessage_send_create(&gw_channel->pool, &msg_send, NULL, NULL, &sattrs, NULL, &gw_msg);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not create gateway message for send request.");
+
+        err = dragon_channel_gatewaymessage_serialize(&gw_msg, &gw_ser_msg);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not serialize gateway message for send request.");
+
+        err = dragon_memory_alloc_blocking(&req_mem, &gw_channel->pool, gw_ser_msg.len, NULL);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not allocate memory for send request message.");
+
+        err = dragon_memory_get_pointer(&req_mem, &msg_ptr);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not get pointer to space for serialized descriptor.");
+
+        memcpy(msg_ptr, gw_ser_msg.data, gw_ser_msg.len);
+
+        err = dragon_channel_gatewaymessage_serial_free(&gw_ser_msg);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not free serialized descriptor for gateway message.");
+
+        err = dragon_channel_message_init(&req_msg, &req_mem, NULL);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not initialize message to send to "
+                                    "transport service via gateway channel.");
+
+        dragonChannelDescr_t ch_descr = { ._idx = gw_channel->c_uid, ._rt_idx = dragon_get_local_rt_uid() };
+
+        err = dragon_channel_sendh(&ch_descr, &gw_sh, NULL);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not create gateway send handle.");
+
+        err = dragon_chsend_open(&gw_sh);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not open gateway send handle.");
+
+        err = dragon_chsend_send_msg(&gw_sh, &req_msg, DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP, NULL);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not send gateway message.");
+
+        err = dragon_chsend_close(&gw_sh);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not close gateway send handle.");
+
+        err = dragon_channel_message_destroy(&req_msg, false);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Unexpected error on destroying the send "
+                                   "request after sending to the gateway.");
+
+        err = dragon_channel_gatewaymessage_client_send_cmplt(&gw_msg, sattrs.wait_mode);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "non-zero completion of remote send operation.");
+
+        err = dragon_channel_message_destroy(&msg_send, false);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Unexpected error on destroying the host_id-to-ip_addr update "
+                                   "message after sending to the gateway.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
 }
 
 /**

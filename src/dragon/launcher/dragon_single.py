@@ -25,6 +25,8 @@ import dragon.dlogging.util as dlog
 import dragon.launcher.util as dlutil
 import dragon.utils as du
 
+from dragon.managed_memory import DragonPoolError
+
 # TODO: consider ways to bypass serialization when it isn't really needed
 
 LAUNCHER_FAIL_EXIT = 1
@@ -93,7 +95,7 @@ def output_monitor(la_in):
             dds.handle_breakpoint(msg)
         elif isinstance(msg, dmsg.AbnormalTermination):
             print(f"\n+++ Abnormal Termination of Dragon run-time with message:\n{msg.err_info}", flush=True)
-            return -1 # Something else?
+            return -1  # Something else?
         else:
             print("unexpected message: {}".format(msg))
 
@@ -114,12 +116,12 @@ def shutdown_monitor(la_in):
     raise TimeoutError()
 
 
-def send_log_msgs_to_py_logger(my_dragon_logger: dlog.DragonLogger, level: int, logging_shutdown: threading.Event):
-    """This thread forwards any log messages received by the DragonLogger channel to
+def send_log_msgs_to_py_logger(my_dragon_logger, level: int, logging_shutdown: threading.Event):
+    """This thread forwards any log messages received by the logging queue to
     the single node python logger.
 
     Args:
-        my_dragon_logger (DragonLogger): DragonLogger instance to read messages from
+        my_dragon_logger (Queue): dragon.native.queue.Queue instance to read messages from
         level (int): minimum log priority of messages to forward
         logging_shutdown (threading.Event): event to signal shutdown of logging thread
     """
@@ -162,6 +164,9 @@ def main():
         os.environ["DRAGON_HEAD_NODE_IP_ADDR"] = runtime_ip_addr
         os.environ["DRAGON_RT_UID"] = str(dutil.rt_uid_from_ip_addrs(runtime_ip_addr, runtime_ip_addr))
 
+    if dfacts.OVERLAY_TRANSPORT_VAR not in os.environ:
+        os.environ[dfacts.OVERLAY_TRANSPORT_VAR] = str(dfacts.TransportAgentOptions.TCP)
+
     dlog.setup_FE_logging(log_device_level_map=arg_map["log_device_level_map"], basename="dragon", basedir=os.getcwd())
 
     log = logging.getLogger(LOGBASE).getChild("main")
@@ -180,8 +185,8 @@ def main():
     logging_shutdown = threading.Event()
     level_name = arg_map["log_device_level_map"].get("DRAGON_LOG_DEVICE_STDERR", logging.INFO)
     level = getattr(logging, level_name.upper(), logging.INFO)
-    dragon_logger = dlog.setup_dragon_logging(node_index=0)
-    send_log_msgs_to_py_logger_thread_args = (dragon_logger, level, logging_shutdown)
+    logging_queue = dlog.setup_dragon_logging(node_index=0)
+    send_log_msgs_to_py_logger_thread_args = (logging_queue, level, logging_shutdown)
     send_log_msgs_to_py_logger_thread = threading.Thread(
         name="Logging Monitor",
         target=send_log_msgs_to_py_logger,
@@ -189,7 +194,7 @@ def main():
         daemon=False,
     )
     send_log_msgs_to_py_logger_thread.start()
-    serialized_logger_sdesc = du.B64.bytes_to_str(dragon_logger.serialize())
+    serialized_logger_sdesc = logging_queue.serialize()
     os.environ[dfacts.DRAGON_LOGGER_SDESC] = serialized_logger_sdesc
 
     try:  # ls startup
@@ -269,11 +274,18 @@ def main():
 
     try:
         logging_shutdown.set()
-        dragon_logger.put(dmsg.HaltLoggingInfra(tag=dlutil.next_tag()).serialize())
+        logging_queue.put(dmsg.HaltLoggingInfra(tag=dlutil.next_tag()).serialize())
         send_log_msgs_to_py_logger_thread.join()
     except Exception as ex:
         print(f"Exception during logging thread shutdown: {ex}", flush=True)
         log.warning("Exception during logging thread shutdown: %s", ex)
+
+    if logging_queue:
+        try:
+            logging_queue.destroy()
+            logging_queue = None
+        except (Exception):
+            pass
 
     dutil.compare_dev_shm(shm_status)
 

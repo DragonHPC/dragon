@@ -4,6 +4,7 @@ import os
 import socket
 import sys
 import time
+import argparse
 
 from dragon.native.process import ProcessTemplate, Popen, Process
 from dragon.native.process_group import ProcessGroup
@@ -26,33 +27,30 @@ def howdy(q):
     )
 
 
-def signal_exit():
-    path = "/home/users/nradclif/hpc-pe-dragon-dragon/examples/dragon_workflows/client_exit"
-    file = open(path, "w")
+def signal_exit(exit_path):
+    file = open(exit_path, "w")
+    file.close()
 
 
-def main():
-    mp.set_start_method("dragon")
-    username = os.environ["USER"]
-    if len(sys.argv) > 1:
-        system = sys.argv[1]
+def shutdown_remote_runtime(exit_path, remote_working_dir):
+    exit_proc = Process(target=signal_exit, args=(exit_path,), cwd=remote_working_dir)
+    exit_proc.start()
+    exit_proc.join()
+
+
+def remote_work(proxy, remote_working_dir):
+
+    if proxy is not None:
+        proc_env = proxy.get_env()
     else:
-        system = "hotlum-login"
-
-    runtime_sdesc = runtime.lookup(system, "my-runtime", 30)
-    proxy = runtime.attach(runtime_sdesc)
-
-    print("\n")
-
-    # test process and queue
-
-    proxy.enable()
+        proc_env = os.environ.copy()
 
     q = mp.Queue()
     procs = []
 
+    print("Launching remote runtime processes...", flush=True)
     for _ in range(2):
-        p = mp.Process(target=howdy, args=(q,))
+        p = Process(target=howdy, args=(q,), cwd=remote_working_dir)
         procs.append(p)
 
     for p in procs:
@@ -69,22 +67,21 @@ def main():
 
     # TODO: it seems like the client tries to verify that mpi_hello exists locally
     num_ranks = 4
-    exe = "./mpi_hello"
+    exe = os.path.join(remote_working_dir, "mpi_hello")
     grp.add_process(
-        nproc=1, template=ProcessTemplate(target=exe, args=[], env=proxy.get_env(), cwd=os.getcwd(), stdout=Popen.PIPE)
+        nproc=1, template=ProcessTemplate(target=exe, args=(), env=proc_env, cwd=remote_working_dir, stdout=Popen.PIPE)
     )
     grp.add_process(
         nproc=num_ranks - 1,
-        template=ProcessTemplate(target=exe, args=[], env=proxy.get_env(), cwd=os.getcwd(), stdout=Popen.DEVNULL),
+        template=ProcessTemplate(target=exe, args=(), env=proc_env, cwd=remote_working_dir, stdout=Popen.DEVNULL),
     )
     grp.init()
     grp.start()
 
     while None in grp.puids:
-        time.sleep(2)
+        time.sleep(0.1)
 
     # get remote runtime's stdout
-
     child_resources = [Process(None, ident=puid) for puid in grp.puids]
     conn = child_resources[0].stdout_conn
     try:
@@ -96,19 +93,86 @@ def main():
     # wait for MPI job to complete
 
     grp.join()
-    grp.stop()
     grp.close()
-
-    # signal client's exit
-
-    exit_proc = mp.Process(target=signal_exit, args=())
-    exit_proc.start()
-    exit_proc.join()
 
     cleanup(conn, q, procs, grp)
 
+
+def main(args):
+    mp.set_start_method("dragon")
+    runtime_sdesc = runtime.lookup(args.system, args.runtime_name, 30, publish_dir=args.remote_working_dir)
+    proxy = runtime.attach(runtime_sdesc, remote_cwd=args.remote_working_dir)
+
+    print("\n")
+
+    proxy.enable()
+    remote_work(proxy, args.remote_working_dir)
+    # signal client's exit
+    shutdown_remote_runtime(args.exit_path, args.remote_working_dir)
     proxy.disable()
 
 
+def main_proxy_on_off(args):
+    mp.set_start_method("dragon")
+    runtime_sdesc = runtime.lookup(args.system, args.runtime_name, 30, publish_dir=args.remote_working_dir)
+    proxy = runtime.attach(runtime_sdesc, remote_cwd=args.remote_working_dir)
+
+    print("\n")
+
+    proxy.enable()
+    remote_work(proxy, args.remote_working_dir)
+    proxy.disable()
+
+    time.sleep(2)
+    remote_work(None, os.getcwd())
+    time.sleep(2)
+
+    proxy.enable()
+    remote_work(proxy, args.remote_working_dir)
+    # signal client's exit
+    shutdown_remote_runtime(args.exit_path, args.remote_working_dir)
+    proxy.disable()
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Dragon Proxy Client Example")
+    parser.add_argument(
+        "--exit-path",
+        type=str,
+        default=os.path.join(os.getcwd(), "client_exit"),
+        help="Path to the exit file to monitor",
+    )
+    parser.add_argument(
+        "--remote-working-dir",
+        "-rwd",
+        type=str,
+        default=os.getcwd(),
+        help="Remote working directory",
+    )
+    parser.add_argument(
+        "--runtime-name",
+        type=str,
+        default="my-runtime",
+        help="Name of the runtime to attach",
+    )
+    parser.add_argument(
+        "--system",
+        type=str,
+        help="Remote system to connect to",
+    )
+    parser.add_argument(
+        "--proxy-on-off",
+        type=bool,
+        help="Remote system to connect to",
+    )
+
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    if args.proxy_on_off:
+        main_proxy_on_off(args)
+    else:
+        main(args)

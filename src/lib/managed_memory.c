@@ -499,7 +499,6 @@ _open_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPoolAt
     }
 
     no_err_return(DRAGON_SUCCESS);
-
 }
 
 static dragonError_t
@@ -1971,6 +1970,9 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
     if ((pool_ser->len) <= DRAGON_MEMORY_POOLSER_NULINTS*sizeof(dragonULInt))
         err_return(DRAGON_INVALID_ARGUMENT, "The serialized pool length field value is too small to be valid.");
 
+    if (pool_ser->len > DRAGON_MEMORY_POOL_MAX_SERIALIZED_LEN)
+        err_return(DRAGON_INVALID_ARGUMENT, "The serialized pool length field is too big likely due to an uninitialized serialized pool descriptor.");
+
     /* Grab pointer for local movement */
     dragonULInt * ptr = (dragonULInt*)pool_ser->data;
 
@@ -2497,7 +2499,7 @@ dragon_memory_pool_get_uid_fname(const dragonMemoryPoolSerial_t * pool_ser, drag
  * @return true if is is local and false otherwise.
  */
 bool
-dragon_memory_pool_is_local(dragonMemoryPoolDescr_t * pool_descr)
+dragon_memory_pool_is_local(const dragonMemoryPoolDescr_t * pool_descr)
 {
     dragonMemoryPool_t * pool;
     dragonError_t err = _pool_from_descr(pool_descr, &pool);
@@ -2873,8 +2875,9 @@ dragon_memory_serialize(dragonMemorySerial_t * mem_ser, const dragonMemoryDescr_
     /* bytes is included for remote mem descriptors and verification for
        subsequent clones. */
     *(dragonULInt*)ptr = mem->bytes;
+    ptr += sizeof(dragonULInt);
 
-    size_t actual_sz = ((size_t) ptr - (size_t) mem_ser->data) + sizeof(dragonULInt*);
+    size_t actual_sz = ((size_t) ptr - (size_t) mem_ser->data);
 
     if (actual_sz > DRAGON_MEMORY_MAX_SERIALIZED_LEN) {
         char err_msg[200];
@@ -2945,6 +2948,9 @@ dragon_memory_attach(dragonMemoryDescr_t * mem_descr, const dragonMemorySerial_t
 
     if ((mem_ser->len) <= DRAGON_MEMORY_MEMSER_NULINTS*sizeof(dragonULInt))
         err_return(DRAGON_INVALID_ARGUMENT, "The memory serialized length field value is too small to be valid.");
+
+    if (mem_ser->len > DRAGON_MEMORY_MAX_SERIALIZED_LEN)
+        err_return(DRAGON_INVALID_ARGUMENT, "The serialized memory descriptor length field is too big likely due to an uninitialized serialized memory descriptor.");
 
     uint8_t * ptr = mem_ser->data;
 
@@ -3157,10 +3163,14 @@ dragon_memory_alloc_blocking(dragonMemoryDescr_t * mem_descr, const dragonMemory
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "cannot allocate new memory object");
     }
 
-    /* _generate_manifest_record assumes these fields are set */
+    /* _generate_manifest_record assumes these three fields are set */
     mem->local_dptr = NULL;
     mem->bytes = bytes;
     mem->offset = 0;
+
+    /* Init these before resetting below in case this is a zero byte allocation. */
+    mem->mfst_record.type = 0;
+    mem->mfst_record.id = 0;
 
     if (pool->local_dptr != NULL && bytes > 0) {
         err = dragon_heap_malloc_blocking(&pool->heap.mgrs[0], bytes, &hptr, timeout);

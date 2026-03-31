@@ -1,6 +1,8 @@
 """Module for detecting GPU devices across differet vendors"""
+
 import re
 import enum
+import os
 from dataclasses import dataclass, field
 from subprocess import check_output, DEVNULL
 
@@ -185,9 +187,16 @@ def find_accelerators() -> AcceleratorDescriptor:
     if n_devices > 0:
         if devices.vendor == AccVendor.INTEL:
             devices.device_list = []
+            hierarchy_mode = os.environ.get("ZE_FLAT_DEVICE_HIERARCHY", "COMPOSITE")
             for i in range(n_devices):
-                devices.device_list.append(i + 0.0)
-                devices.device_list.append(i + 0.1)
+                if hierarchy_mode == "FLAT":
+                    devices.device_list.append(i)
+                    devices.device_list.append(i + n_devices)
+                elif hierarchy_mode == "COMPOSITE":
+                    devices.device_list.append(i + 0.0)
+                    devices.device_list.append(i + 0.1)
+            # sorting for readability
+            devices.device_list.sort()
         else:
             devices.device_list = list(range(n_devices))
     else:

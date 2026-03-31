@@ -1528,6 +1528,7 @@ class Manager:
         self._manager_id = manager_id
         self._tag = 0
         self._manager_pool_full_thresh = 100.0 * self._manager_pool_full_thresh
+        self._time_keeper = dutil.TimeKeeper(recording=True)
 
         self.iterators = {}
         self._iter_id = 0
@@ -1999,7 +2000,9 @@ class Manager:
                 strm = None
             else:
                 strm = self._get_strm_channel()
-            with connection.sendh(timeout=self._timeout, stream_channel=strm, use_main_buffered=(strm is None), turbo_mode=turbo_mode) as sendh:
+            with connection.sendh(
+                timeout=self._timeout, stream_channel=strm, use_main_buffered=(strm is None), turbo_mode=turbo_mode
+            ) as sendh:
                 sendh.send_bytes(msg.serialize(), timeout=self._timeout)
             if strm is not None:
                 self._release_strm_channel(strm)
@@ -2265,17 +2268,31 @@ class Manager:
         self._working_set.check_for_key_existence_before_free(key)
 
     def run(self):
+        timing = False
         try:
             while self._serving:
+                tic = self._time_keeper.now()
                 with self._main_connector.recvh(destination_pool=self._pool) as recvh:
                     try:
-                        mem, hint = recvh.recv_mem(timeout=self._timeout)
+                        if timing:
+                            self._time_keeper.add("open recv handle", tic)
+
+                        with self._time_keeper.record("recv msg"):
+                            mem, hint = recvh.recv_mem(timeout=self._timeout)
+
                         mem_view = mem.get_memview()
-                        msg = dmsg.parse(mem_view)
-                        self._traceit("About to process: %s with pool utlization %s%.", msg, self._pool.utilization)
+                        with self._time_keeper.record("parse msg"):
+                            msg = dmsg.parse(mem_view)
+                        self._traceit("About to process: %s with pool utlization %s.", msg, self._pool.utilization)
 
                         if type(msg) in self._DTBL:
+                            tic = self._time_keeper.now()
                             self._DTBL[type(msg)][0](self, msg=msg, recvh=recvh)
+                            if not type(msg) is dmsg.DDPut:
+                                self._time_keeper.add("process all other msgs", tic)
+                            else:
+                                timing = True
+
                             self._traceit("Finished processing: %s", msg)
                         else:
                             self._serving = False
@@ -3315,7 +3332,8 @@ class Manager:
             log.debug("Getting Key")
 
             # There is likely room for the key/value pair.
-            client_key_mem, hint = recvh.recv_mem(timeout=self._timeout)
+            with self._time_keeper.record("key_recv"):
+                client_key_mem, hint = recvh.recv_mem(timeout=self._timeout)
 
             assert hint == KEY_HINT
 
@@ -3323,8 +3341,12 @@ class Manager:
 
             try:
                 while True:
-                    val_mem, hint = recvh.recv_mem(timeout=self._timeout)
-                    val_mem = self._move_to_pool(val_mem)
+                    with self._time_keeper.record("value_recv"):
+                        val_mem, hint = recvh.recv_mem(timeout=self._timeout)
+
+                    with self._time_keeper.record("move_to_pool"):
+                        val_mem = self._move_to_pool(val_mem)
+
                     assert hint == VALUE_HINT
                     val_list.append(val_mem)
             except EOFError:
@@ -3340,12 +3362,14 @@ class Manager:
             if self._working_set.put(msg.chkptID) is not None:
                 # process any earlier get or put requests first that can be performed
                 self._process_deferred_ops(msg.chkptID)
-            if not put_op.perform():
-                # We must wait for the checkpoint to exist in this case
-                self._defer(put_op)
-            else:
-                # if there's any get for this key, then process deferred gets
-                self._process_deferred_ops(msg.chkptID)
+
+            with self._time_keeper.record("put_op"):
+                if not put_op.perform():
+                    # We must wait for the checkpoint to exist in this case
+                    self._defer(put_op)
+                else:
+                    # if there's any get for this key, then process deferred gets
+                    self._process_deferred_ops(msg.chkptID)
 
         except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
             log.info("Manager %s with PUID %s could not process put request. %s", self._manager_id, self._puid, ex)
@@ -3630,6 +3654,7 @@ class Manager:
                 max_pool_allocations=self._pool.max_allocations,
                 max_pool_allocations_used=self._pool.max_used_allocations,
                 current_pool_allocations_used=self._pool.current_allocations,
+                timekeeper_stats=self._time_keeper.get_timings(),
             )
 
             data = b64encode(cloudpickle.dumps(stats))
@@ -4167,10 +4192,24 @@ class Manager:
 
 
 def manager_proc(
-    pool_size: int, serialized_return_orc, serialized_main_orc, trace, args, manager_id, ser_pool_desc=None
+    pool_size: int,
+    serialized_return_orc,
+    serialized_main_orc,
+    trace,
+    args,
+    manager_id,
+    ser_pool_desc=None,
 ):
     try:
-        manager = Manager(pool_size, serialized_return_orc, serialized_main_orc, trace, args, manager_id, ser_pool_desc)
+        manager = Manager(
+            pool_size,
+            serialized_return_orc,
+            serialized_main_orc,
+            trace,
+            args,
+            manager_id,
+            ser_pool_desc,
+        )
         manager.run()
         log.debug("Manager is exiting....")
     except Exception as ex:

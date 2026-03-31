@@ -1,6 +1,7 @@
 import os
 import shutil
 import sys
+from uuid import uuid4
 
 from dragon.data.ddict import DDict
 from dragon.native.machine import System
@@ -9,11 +10,8 @@ from typing import Optional
 
 
 hi = "Hi-diddly-ho, neighborino!!!"
-darn = "Son-of-a-diddly"
-cider_vs_juice = "If it's clear and yella, you've got juice there fella! If its tangy and brown, you're in cider town!"
-
-
 supersingular_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 41, 47, 59, 71]
+ITERATED_DEP_MODULUS = 97
 
 
 class FileUtils:
@@ -61,7 +59,7 @@ def get_ddict(batch, num_tasks: int) -> DDict:
     # to be under 8GB (mostly arbitrary choice)
     eight_gb = 8 * (1 << 30)
     num_nodes = min(1 + num_bytes // eight_gb, System().nnodes)
-    return batch.ddict(2, num_nodes, num_bytes, wait_for_keys=True, working_set_size=2)
+    return DDict(2, num_nodes, num_bytes, wait_for_keys=True, working_set_size=2, name=str(uuid4()))
 
 
 def fib(fs: FileUtils, i: int) -> int:
@@ -92,40 +90,42 @@ def get_fib_sequence(batch, use_ddict) -> list:
     program = []
 
     for i in range(num_tasks):
-        task_f = batch.function(fib, fs, i)
-        task_f.read(fs.base_dir, f"key_{i}", f"key_{i + 1}")
-        task_f.write(fs.base_dir, f"key_{i + 2}")
-        program.append(task_f)
-
-    batch.compile(program).run()
-
-    fs.cleanup()
+        read = batch.read(fs.base_dir, f"key_{i}", f"key_{i + 1}")
+        write = batch.write(fs.base_dir, f"key_{i + 2}")
+        task = batch.function(fib, fs, i, reads=[read], writes=[write])
+        program.append(task)
 
     fib_seq = []
     for task in program:
-        fib_seq.append(task.result.get())
+        fib_seq.append(task.get())
+
+    fs.cleanup()
 
     return fib_seq
 
 
-def foo_result(return_me) -> str:
+def foo_3_1(return_me, b, c) -> str:
     return return_me
 
 
-def foo_stdout(print_me: str) -> None:
-    print(print_me, flush=True)
+def foo_3_2(a, return_me, c) -> str:
+    return return_me
 
 
-def foo_stderr(print_me: str) -> None:
-    print(print_me, file=sys.stderr, flush=True)
+def foo_3_3(a, b, return_me) -> str:
+    return return_me
 
 
-def print_it(junk: int, print_me: str, more_junk: int) -> None:
-    print(print_me, flush=True)
+def foo_5_1(return_me, b, c, d, e) -> str:
+    return return_me
 
 
-def print_several(print_me: str, me_too: str, and_one_more: str) -> None:
-    print(f"{print_me}, {me_too}, {and_one_more}", flush=True)
+def foo_5_3(a, b, return_me, d, e) -> str:
+    return return_me
+
+
+def foo_5_5(a, b, c, d, return_me) -> str:
+    return return_me
 
 
 def check_exit_code(junk: int, more_junk: int, exit_code: int) -> bool:
@@ -169,3 +169,22 @@ def update_dict(the_dict, i: int, num_items: int) -> None:
     if y > max_val:
         y = y / (2 * the_dict[i])
     the_dict[j] = y
+
+
+def iterated_return_value(previous_sum: int, offset: int) -> int:
+    return (previous_sum + offset + 1) % ITERATED_DEP_MODULUS
+
+
+def iterated_write_value(shared_ddict: DDict, key: str, previous_sum: int, offset: int) -> int:
+    value = (previous_sum + offset + 11) % ITERATED_DEP_MODULUS
+    shared_ddict[key] = value
+    return value
+
+
+def iterated_sum_values(shared_ddict: DDict, keys: tuple[str, ...], *values: int) -> int:
+    total = sum(values)
+
+    for key in keys:
+        total += shared_ddict[key]
+
+    return total

@@ -9,6 +9,7 @@ from ...dlogging.util import DragonLoggingServices as dls
 
 
 def start_overlay_network(
+    overlay_transport: TransportAgentOptions,
     ch_in_sdesc: B64,
     ch_out_sdesc: B64,
     log_sdesc: B64,
@@ -42,7 +43,7 @@ def start_overlay_network(
     log = logging.getLogger(dls.ON).getChild("start_overlay_network")
 
     # If no transport agent settings are set in launch parameters
-    args = shlex.split(str(TransportAgentOptions.TCP))
+    args = shlex.split(str(overlay_transport))
     alias = TRANSPORT_AGENT_ALIASES.get(args[0].lower())
     if alias:
         args = alias + args[1:]

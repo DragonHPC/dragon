@@ -8,9 +8,10 @@ from os import environ, getcwd
 from shlex import quote
 from typing import Dict, List, Union, Optional
 
+from ...infrastructure.config import dragon_config
+from ...infrastructure.facts import TransportAgentOptions
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.parameters import this_process
-from ...infrastructure.config import dragon_config
 from .base import BaseWLM
 
 SSH_OPTIONS = "ssh-options"
@@ -262,6 +263,7 @@ class SSHWLM(BaseWLM):
         fe_host_id: str,
         frontend_sdesc: str,
         network_prefix: str,
+        overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
     ) -> list[str]:
@@ -273,6 +275,7 @@ class SSHWLM(BaseWLM):
                 host_id=fe_host_id,
                 frontend_sdesc=frontend_sdesc,
                 network_prefix=quote(network_prefix),
+                overlay_transport=overlay_transport,
                 overlay_port=overlay_port,
             ).split()
             if transport_test_env:
@@ -322,6 +325,7 @@ class SSHWLM(BaseWLM):
         fe_host_id: str,
         frontend_sdesc: str,
         network_prefix: str,
+        overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
     ):
@@ -337,6 +341,7 @@ class SSHWLM(BaseWLM):
                     fe_host_id=fe_host_id,
                     frontend_sdesc=frontend_sdesc,
                     network_prefix=network_prefix,
+                    overlay_transport=overlay_transport,
                     overlay_port=overlay_port,
                     transport_test_env=transport_test_env,
                 )

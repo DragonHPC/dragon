@@ -108,11 +108,15 @@ WARNING, ERROR or CRITICAL (eg `-l dragon_file=INFO -l actor_file=DEBUG`).
 Multiple -l|--log-level options may be passed to enable the logging desired."""
 
 TRANSPORT_HELP = f"""TRANSPORT_AGENT selects which transport agent will be used
-for backend node-to-node communication. By default, Dragon consults the files
-created by running dragon-config. Run dragon-config --help for more information.
-In the absence of dragon-config files the TCP agent will be used.
-Currently supported agents are: {', '.join([ta.value
+for backend node-to-node communication. In the absence of a dragon-hsta binrary,
+the TCP agent will be used. Currently supported agents are: {', '.join([ta.value
 for ta in TransportAgentOptions if ta != TransportAgentOptions.DRAGON_CONFIG])}"""
+
+OVERLAY_TRANSPORT_HELP = f"""OVERLAY_TRANSPORT_AGENT selects which transport agent
+will be used for node-to-node communication on the overlay network, connecting the
+frontend to the backend nodes. In the absence of a dragon-hsta binary, the TCP agent
+will be used. Currently supported agents are: {', '.join([ta.value for ta in TransportAgentOptions
+if ta != TransportAgentOptions.DRAGON_CONFIG])}"""
 
 RESILIENT_HELP = """If used, the Dragon runtime will attempt to continue
 execution of the user app in the event of a hardware or user software error by
@@ -221,17 +225,25 @@ def get_parser():
 
     parser.add_argument("--network-prefix", metavar="NETWORK_PREFIX", type=str, help=NETWORK_HELP)
     parser.add_argument("--network-config", metavar="NETWORK_CONFIG", type=str, help=NETWORK_CONFIG_HELP)
-    parser.add_argument("--wlm", "-w", metavar="WORKLOAD_MANAGER", type=WLM.from_str, choices=list(WLM), help=WLM_HELP)
+    parser.add_argument("-w", "--wlm", metavar="WORKLOAD_MANAGER", type=WLM.from_str, choices=list(WLM), help=WLM_HELP)
     parser.add_argument("-p", "--port", metavar="PORT", type=valid_port_int, help=PORT_HELP)
     parser.add_argument("--overlay-port", metavar="OVERLAY_PORT", type=valid_port_int, help=OVERLAY_PORT_HELP)
     parser.add_argument("--frontend-port", metavar="FRONTEND_PORT", type=valid_port_int, help=FRONTEND_PORT_HELP)
     parser.add_argument(
-        "--transport",
         "-t",
+        "--transport",
         metavar="TRANSPORT_AGENT",
         type=TransportAgentOptions.from_str,
         choices=list(TransportAgentOptions),
         help=TRANSPORT_HELP,
+    )
+    parser.add_argument(
+        "-o",
+        "--overlay-transport",
+        metavar="OVERLAY_TRANSPORT_AGENT",
+        type=TransportAgentOptions.from_str,
+        choices=list(TransportAgentOptions),
+        help=OVERLAY_TRANSPORT_HELP,
     )
 
     group = parser.add_mutually_exclusive_group()
@@ -279,6 +291,7 @@ def get_parser():
 
     parser.set_defaults(
         transport=TransportAgentOptions.DRAGON_CONFIG,
+        overlay_transport=TransportAgentOptions.DRAGON_CONFIG,
         single_node_override=strtobool(os.environ.get("DRAGON_SINGLE_NODE_OVERRIDE", "False")),
         multi_node_override=strtobool(os.environ.get("DRAGON_MULTI_NODE_OVERRIDE", "False")),
     )
@@ -301,8 +314,8 @@ def get_args(args_input=None):
         args_dict = {key: value for key, value in vars(args).items() if value is not None}
 
         # If no workload manager is specified and hostfile is provided, assume ssh
-        if ('hostfile' in args_dict or 'hostlist' in args_dict) and not 'wlm' in args_dict:
-            args_dict['wlm'] = WLM.DRUN
+        if ("hostfile" in args_dict or "hostlist" in args_dict) and not "wlm" in args_dict:
+            args_dict["wlm"] = WLM.DRUN
 
         return args_dict
 

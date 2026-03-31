@@ -69,11 +69,11 @@ TESTS_PYTHON := test_c_files.py \
                 test_infrastructure.py \
                 test_globalservices.py \
                 test_policy.py \
-				test_shepherd.py \
+                test_shepherd.py \
                 $(wildcard transport/tcp/test_*.py) \
                 transport/test_lsif.py \
                 test_transport.py \
-				test_integration_shep_gs.py \
+                test_integration_shep_gs.py \
                 test_dragon_cleanup.py
 # test_launcher.py (waiting for fix from Jira AICI-1859)
 

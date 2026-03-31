@@ -137,7 +137,6 @@ def mk_inf_resources(node_index):
                 pass
         log.info("inf pool: %s size %s" % (ipn, ips))
 
-
         def_muid = dfacts.default_pool_muid_from_index(node_index)
         dps = dparms.this_process.default_seg_sz
         for i in range(10):
@@ -165,13 +164,13 @@ def mk_inf_resources(node_index):
         la_input_ch = dch.Channel(inf_pool, la_input_cuid, None)
         dparms.this_process.local_be_cd = dutils.B64.bytes_to_str(la_input_ch.serialize())
         dparms.this_process.be_cuid = dfacts.launcher_cuid_from_index(node_index)
-        la_input = dconn.Connection(outbound_initializer=la_input_ch, policy=dparms.POLICY_INFRASTRUCTURE)
+        la_input = dconn.Connection(outbound_initializer=la_input_ch, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparms.POLICY_INFRASTRUCTURE)
 
         ta_input_cuid = dfacts.transport_cuid_from_index(node_index)
         ta_input_ch = dch.Channel(inf_pool, ta_input_cuid, None)
         ta_input_descr = ta_input_ch.serialize()
         dparms.this_process.local_ta_cd = dutils.B64.bytes_to_str(ta_input_descr)
-        ta_input = dconn.Connection(outbound_initializer=ta_input_ch, policy=dparms.POLICY_INFRASTRUCTURE)
+        ta_input = dconn.Connection(outbound_initializer=ta_input_ch, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparms.POLICY_INFRASTRUCTURE)
 
         start_channels = {shep_input_cuid: shep_ch, la_input_cuid: la_input_ch, ta_input_cuid: ta_input_ch}
 
@@ -179,7 +178,7 @@ def mk_inf_resources(node_index):
             gs_chan = dch.Channel(inf_pool, dfacts.GS_INPUT_CUID, None)
             start_channels[dfacts.GS_INPUT_CUID] = gs_chan
             dparms.this_process.gs_cd = dutils.B64.bytes_to_str(gs_chan.serialize())
-            gs_input = dconn.Connection(outbound_initializer=gs_chan, policy=dparms.POLICY_INFRASTRUCTURE)
+            gs_input = dconn.Connection(outbound_initializer=gs_chan, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparms.POLICY_INFRASTRUCTURE)
         else:
             gs_input = None
 
@@ -530,7 +529,7 @@ def multinode(
             gs_ch = la_channels_info.gs_cd
             gs_in_ch = dch.Channel.attach(dutils.B64.str_to_bytes(gs_ch))
             log.info("ls attached to gs channel")
-            gs_in_wh = dconn.Connection(outbound_initializer=gs_in_ch, policy=dparms.POLICY_INFRASTRUCTURE)
+            gs_in_wh = dconn.Connection(outbound_initializer=gs_in_ch, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparms.POLICY_INFRASTRUCTURE)
 
             # Do a timeout on this recv. Just a few seconds if primary. Longer if we're getting remote comms from GS
             # If it fails, check that it didn't fall over on instantiation

@@ -139,6 +139,7 @@ class DDictGUPS:
         self,
         num_ddict_nodes: int = 1,
         num_ddict_managers_per_node: int = 1,
+        num_streams_per_manager: int = 5,
         num_clients: int = 1,
         ddict_gbytes: int = 1,
         start_value_bytes: int = 1024,
@@ -150,11 +151,13 @@ class DDictGUPS:
         max_iterations: int = 0,
         trace: bool = False,
         print_stats: bool = False,
+        print_profile: bool = False,
         nodes: List[Node] = None,
     ):
 
         self._ddict_nodes = num_ddict_nodes
         self._ddict_nmgrs = num_ddict_managers_per_node
+        self._num_streams_per_manager = num_streams_per_manager
         self._nclients = num_clients
         self._ddict_gbs = ddict_gbytes
         self._start_bytes = start_value_bytes
@@ -164,6 +167,7 @@ class DDictGUPS:
         self._max_keys = max_keys
         self._max_iterations = max_iterations
         self._print_stats = print_stats
+        self._print_profile = print_profile
         self._tot_dict_bytes = int(self._ddict_gbs * (1024**3))
         try:
             self._op = self.OPS[operation]
@@ -182,6 +186,7 @@ class DDictGUPS:
                 managers_per_policy=self._ddict_nmgrs,
                 total_mem=self._tot_dict_bytes,
                 trace=trace,
+                streams_per_manager = self._num_streams_per_manager
             )
 
         else:
@@ -190,6 +195,7 @@ class DDictGUPS:
                 n_nodes=self._ddict_nodes,
                 total_mem=self._tot_dict_bytes,
                 trace=trace,
+                streams_per_manager = self._num_streams_per_manager
             )
 
         # create a Barrier used to sync clients with
@@ -212,22 +218,23 @@ class DDictGUPS:
                 processes_per_policy=(self._nclients // len(policies)),
                 policy=policies,
                 initializer=self._tester_loop,
-                initargs=(self._ddict, self._barr, self._freeze_barr, self._inq, self._outq, self._stop_ev),
+                initargs=(self._ddict, self._barr, self._freeze_barr, self._inq, self._outq, self._stop_ev, self._print_profile),
             )
         else:
             self._pool = Pool(
                 self._nclients,
                 initializer=self._tester_loop,
-                initargs=(self._ddict, self._barr, self._freeze_barr, self._inq, self._outq, self._stop_ev),
+                initargs=(self._ddict, self._barr, self._freeze_barr, self._inq, self._outq, self._stop_ev, self._print_profile),
             )
 
     @classmethod
     def _tester_loop(
-        cls, _ddict: DDict, _barr: Barrier, _freeze_barrier: Barrier, _inq: Queue, _outq: Queue, _stop_ev: Event
+        cls, _ddict: DDict, _barr: Barrier, _freeze_barrier: Barrier, _inq: Queue, _outq: Queue, _stop_ev: Event, print_profile: bool
     ) -> None:
 
         # warm-up connections with each DDict manager using something "cheap"
         _ = len(_ddict)
+        party = None
 
         while True:
 
@@ -246,10 +253,16 @@ class DDictGUPS:
                 break
 
             ddict_test = DDictTester(_ddict, next_test)
-            _barr.wait()
+            party = _barr.wait()
             result_time = ddict_test.run_test(_freeze_barrier)
 
             _outq.put(result_time)
+
+        if print_profile and party == 0:
+            print()
+            print("Sample DDict Client Profile")
+            print(_ddict.profile(), flush=True)
+        _ddict.profile_reset()
 
         del _ddict
 
@@ -328,6 +341,7 @@ class DDictGUPS:
             print("Final Stats for DDict")
             print("+++++++++++++++++++++")
             print(self._ddict.stats)
+
         self._ddict.destroy()
 
 
@@ -370,6 +384,12 @@ def get_args(arg_dict=None):
         help="number of managers per node for the dragon dict",
     )
     parser.add_argument(
+        "--streams_per_manager",
+        type=int,
+        default=5,
+        help="number of streams per manager for the dragon dict",
+    )
+    parser.add_argument(
         "--total_mem_size",
         type=float,
         default=0.1,
@@ -409,6 +429,18 @@ def get_args(arg_dict=None):
         type=int,
         default=0,
         help="minimum number of nodes to start testing at when --benchit is set",
+    )
+
+    parser.add_argument(
+        "--profileit",
+        action="store_true",
+        help="run a profiling of the DDict to get extra data",
+    )
+    parser.add_argument(
+        "--profileit_num_nodes",
+        type=int,
+        default=0,
+        help="number of nodes to use when --profileit is specified",
     )
     parser.add_argument(
         "--trace_ddict",
@@ -459,6 +491,7 @@ def main(bargs=None, nodelist=None):
     the_test = DDictGUPS(
         num_ddict_nodes=my_args.num_nodes,
         num_ddict_managers_per_node=my_args.managers_per_node,
+        num_streams_per_manager = my_args.streams_per_manager,
         num_clients=my_args.nclients,
         ddict_gbytes=my_args.total_mem_size,
         start_value_bytes=my_args.value_size_min,
@@ -470,6 +503,7 @@ def main(bargs=None, nodelist=None):
         max_iterations=my_args.max_iterations,
         trace=my_args.trace_ddict,
         print_stats=my_args.stats,
+        print_profile=my_args.profileit,
         nodes=nodelist,
     )
 
@@ -499,6 +533,7 @@ def benchit(min_nodes=1):
         my_args = {
             "num_nodes": nnodes,
             "managers_per_node": 2,
+            "streams_per_manager": 5,
             "nclients": nclients,
             "total_mem_size": (nnodes * mem_per_node),
             "value_size_min": 1024,
@@ -526,11 +561,64 @@ def benchit(min_nodes=1):
 
         nnodes *= 2
 
+def profileit(num_nodes=1):
+    """This mode runs the benchmark with 24 clients per node and 4 managers per node. It can be configured to
+    run with a specific number of nodes less than your allocation.
+
+    You must increase the default managed memory pool due to how intensively memory is used:
+
+    export DRAGON_DEFAULT_SEG_SZ=21474836480
+    dragon gups_ddict.py --profileit --profileit_num_nodes=8 [for running with lesss nodes than your allocation]
+    """
+    my_system = System()
+
+    if num_nodes == 0:
+        num_nodes = my_system.nnodes
+
+    mem_per_node = 18
+
+    nnodes = num_nodes
+    if nnodes > my_system.nnodes:
+        raise Exception(f"Allocation has {my_system.nnodes} and profileit_nodes specified {num_nodes}")
+
+
+    nclients = nnodes * 24
+    my_args = {
+        "num_nodes": nnodes,
+        "managers_per_node": 4,
+        "streams_per_manager": 0,
+        "nclients": nclients,
+        "total_mem_size": (nnodes * mem_per_node),
+        "value_size_min": 1024,
+        "value_size_max": (64 * 1024**2),
+        "iterations": 1,
+        "mem_frac": 0.6,
+        "max_keys": max(8, int(129 * (1 - (float(min(nnodes, 256)) / 256)))),
+        "max_iterations": 4,
+    }
+
+    allnodes = my_system.nodes
+    nodelist = [Node(h_uid) for h_uid in allnodes[0:nnodes]]
+
+    my_args["operation"] = "put"
+    main(my_args, nodelist=nodelist)
+
+    my_args["operation"] = "batchput"
+    main(my_args, nodelist=nodelist)
+
+    my_args["operation"] = "get"
+    main(my_args, nodelist=nodelist)
+
+    my_args["operation"] = "frozenget"
+    main(my_args, nodelist=nodelist)
+
 
 if __name__ == "__main__":
     set_start_method("dragon")
     args = get_args()
     if args.benchit:
         benchit(args.benchit_min_nodes)
+    elif args.profileit:
+        profileit(args.profileit_num_nodes)
     else:
         main()

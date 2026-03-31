@@ -79,8 +79,18 @@ To view these metrics after the runtime has exited run the following command:
 
 ```
 > salloc --nodes=1 --exclusive
-> dragon mini_telemetry.py
+> dragon-offline-telemetry
 ```
+
+By default, offline telemetry will run on all nodes in the current allocation. You can specify a custom number of nodes using the `-N` argument:
+
+```
+> salloc --nodes=2 --exclusive
+> dragon-offline-telemetry -N 1
+```
+
+This will run the offline telemetry analysis on only 1 node from your allocation.
+
 
 Metrics can be accessed using Grafana as they are for telemetry.
 

@@ -109,10 +109,10 @@ cdef class B64:
         return data
 
 cpdef b64encode(the_bytes):
-    return B64.bytes_to_str(the_bytes)
+    return str(B64.bytes_to_str(the_bytes))
 
 cpdef b64decode(the_str):
-    return B64.str_to_bytes(the_str)
+    return B64.str_to_bytes(str(the_str))
 
 cpdef hash(byte_str:bytes):
     cdef:

@@ -141,7 +141,6 @@ class TestInferenceWorkerInit(TestCase):
             preprocessing_output_queue=output_queue,
             inf_wrkr_barrier=barrier,
             llm_proc_end_ev=end_ev,
-            master_port="29500",
             inf_wrkr_down_ev=down_ev,
             inf_wrkr_manager_q=manager_q,
         )
@@ -150,7 +149,6 @@ class TestInferenceWorkerInit(TestCase):
         self.assertEqual(worker.preprocessing_output_queue, output_queue)
         self.assertEqual(worker.inf_wrkr_barrier, barrier)
         self.assertEqual(worker.llm_proc_end_ev, end_ev)
-        self.assertEqual(worker.master_port, "29500")
         self.assertEqual(worker.inf_wrkr_down_ev, down_ev)
         self.assertEqual(worker.inf_wrkr_manager_q, manager_q)
 

@@ -20,4 +20,4 @@ Cython Interface
 ================
 
 .. automodule:: dragon.dlogging.logger
-    :members: DragonLogger, DragonLoggingError
+    :members: DragonLoggingError

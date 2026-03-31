@@ -15,6 +15,7 @@ hardware:
   num_nodes: -1 # Type: (int). Default: '-1' to automatically infer number of available Nodes in your allocation. Definition: Manually subset nodes with your cluster allocation.
   num_gpus: -1 # Type: (int). Default: '-1' to automatically infer number of available GPUs in your allocation. Definition: Manually subset GPUs with your cluster allocation.
   num_inf_wrkrs_per_cpu: 4 # Type: (int). Definition: Load balancing feature that defines the number of GPU inference workers assigned to each CPU worker head.
+  node_offset: 0 # Type: (int). Default: '0'. Definition: Controls resources when multiple inference services share a cluster by specifying the first node index to use (from 0 to num_nodes-1).
 
 
 llm:

@@ -44,12 +44,12 @@ def single_connect_to_default_channels(gs_input, shep_input, bela_input):
     if shep_input is None:
         shep_input_cd = B64.str_to_bytes(dparm.this_process.local_shep_cd)
         shep_input_channel = dch.Channel.attach(shep_input_cd)
-        shep_input = dconn.Connection(outbound_initializer=shep_input_channel, policy=dparm.POLICY_INFRASTRUCTURE)
+        shep_input = dconn.Connection(outbound_initializer=shep_input_channel, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparm.POLICY_INFRASTRUCTURE)
 
     if bela_input is None:
         bela_input_cd = B64.str_to_bytes(dparm.this_process.local_be_cd)
         bela_input_channel = dch.Channel.attach(bela_input_cd)
-        bela_input = dconn.Connection(outbound_initializer=bela_input_channel, policy=dparm.POLICY_INFRASTRUCTURE)
+        bela_input = dconn.Connection(outbound_initializer=bela_input_channel, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparm.POLICY_INFRASTRUCTURE)
 
     return gs_input, shep_input, bela_input
 
@@ -122,7 +122,7 @@ def startup_multi(the_ctx, gs_input=None, shep_inputs=None, bela_input=None):
     n_ls = len(la_chs_info.nodes_desc)
     for val in range(n_ls):
         ls_ch = dch.Channel.attach(B64.str_to_bytes(la_chs_info.nodes_desc[str(val)].shep_cd))
-        ls_in_whs.append(dconn.Connection(outbound_initializer=ls_ch, policy=dparm.POLICY_INFRASTRUCTURE))
+        ls_in_whs.append(dconn.Connection(outbound_initializer=ls_ch, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparm.POLICY_INFRASTRUCTURE))
     log.info("GS now attached to all ls channels a17")
 
     # Ping all the shepherds and wait for responses.
@@ -133,7 +133,7 @@ def startup_multi(the_ctx, gs_input=None, shep_inputs=None, bela_input=None):
     # Attach to the launcher backend on this node.
     be_ch = dparm.this_process.local_be_cd
     be_in_ch = dch.Channel.attach(B64.from_str(be_ch).decode())
-    be_in_wh = dconn.Connection(outbound_initializer=be_in_ch, policy=dparm.POLICY_INFRASTRUCTURE)
+    be_in_wh = dconn.Connection(outbound_initializer=be_in_ch, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparm.POLICY_INFRASTRUCTURE)
     log.info("GS attached to its launcher BE channel - a17")
 
     return ls_in_whs, gs_in_rh, be_in_wh, n_ls

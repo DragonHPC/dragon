@@ -154,18 +154,18 @@ class TestDragonTelemetryDragonServer(unittest.TestCase):
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["message"], "rsync error")
     
-    def test_query_mini_telemetry(self):
-        # Setup DragonServer with mini_telemetry_args
-        mini_args = (["node1"], "merged_db")
+    def test_query_offline_telemetry(self):
+        # Setup DragonServer with offline_telemetry_args
+        offline_args = (["node1"], "merged_db")
         ds = DragonServer(
             input_queue=mp.Queue(),
             return_queue_dict={},
             shutdown_event=mp.Event(),
             telemetry_config={},
-            mini_telemetry_args=mini_args
+            offline_telemetry_args=offline_args
         )
 
-        # Setup in-memory DB with expected schema for mini telemetry
+        # Setup in-memory DB with expected schema for offline telemetry
         conn = sqlite3.connect(":memory:")
         cursor = conn.cursor()
         # Note: table_name column added
@@ -197,7 +197,7 @@ class TestDragonTelemetryDragonServer(unittest.TestCase):
         # Assertions
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0]["metric"], "cpu")
-        # In mini telemetry mode, host tag comes from table_name which is index 1 of the tuple key
+        # In offline telemetry mode, host tag comes from table_name which is index 1 of the tuple key
         self.assertEqual(result[0]["tags"]["host"], "node1")
         self.assertEqual(result[0]["dps"]["1000"], 1.0)
 

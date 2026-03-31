@@ -1580,7 +1580,7 @@ def single():
             if rdng:
                 the_test_conns[cuid] = dconn.Connection(inbound_initializer=chan, policy=dparm.POLICY_INFRASTRUCTURE)
             else:
-                the_test_conns[cuid] = dconn.Connection(outbound_initializer=chan, policy=dparm.POLICY_INFRASTRUCTURE)
+                the_test_conns[cuid] = dconn.Connection(outbound_initializer=chan, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparm.POLICY_INFRASTRUCTURE)
 
     else:
         log.debug("no test channels here!")
@@ -1663,7 +1663,7 @@ def multi():
             if rdng:
                 the_test_conns[cuid] = dconn.Connection(inbound_initializer=chan, policy=dparm.POLICY_INFRASTRUCTURE)
             else:
-                the_test_conns[cuid] = dconn.Connection(outbound_initializer=chan, policy=dparm.POLICY_INFRASTRUCTURE)
+                the_test_conns[cuid] = dconn.Connection(outbound_initializer=chan, options=dconn.ConnectionOptions(min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23), policy=dparm.POLICY_INFRASTRUCTURE)
     else:
         log.debug("no test channels here!")
 

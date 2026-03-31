@@ -65,7 +65,7 @@ def get_fabric_backend(config_file=None):
     return None, None
 
 
-def create_hsta_env(nic_idx):
+def create_hsta_env(nic_idx, user_initiated, oob_connect):
     from ..dlogging.util import DragonLoggingServices as dls
 
     log = logging.getLogger(dls.TA).getChild("create_hsta_env")
@@ -82,19 +82,36 @@ def create_hsta_env(nic_idx):
     # set the nic idx for this HSTA agent
     env["DRAGON_HSTA_NIC_IDX"] = str(nic_idx)
 
+    # HSTA gets its gateway serialized descriptors from this environment variable
     HSTA_GW_ENV_PREFIX = "DRAGON_HSTA_GW"
 
     # Make sure the HSTA binary is in the path
     bin_path = os.path.join(dfacts.DRAGON_BASE_DIR, "bin")
     env["PATH"] = bin_path + ":" + env["PATH"]
 
-    for i in range(dfacts.NUM_GW_TYPES):
-        hsta_key = f"{HSTA_GW_ENV_PREFIX}{i + 1}_TIDX{nic_idx}"
-        j = (dfacts.NUM_GW_TYPES * nic_idx) + i + 1
-        dragon_key = f"{dfacts.GW_ENV_PREFIX}{j}"
-        if dragon_key in os.environ:
+    if user_initiated:
+        for i in range(dfacts.NUM_GW_TYPES):
+            hsta_key = f"{HSTA_GW_ENV_PREFIX}{i + 1}_TIDX{nic_idx}"
+            j = (dfacts.NUM_GW_TYPES * nic_idx) + i + 1
+            dragon_key = f"{dfacts.GW_ENV_PREFIX}{j}"
+
             env[hsta_key] = os.environ[dragon_key]
-            log.info(f"setting env[{hsta_key}] = {env[dragon_key]} for agent with thread_idx = {nic_idx}")
+            log.info(f"setting env[{hsta_key}] = {env[dragon_key]} for agent with {nic_idx=}")
+    else:
+        hsta_key = f"{HSTA_GW_ENV_PREFIX}1_TIDX{nic_idx}"
+        if oob_connect:
+            # We use OOB_GW_ENV_PREFIX to store the input gateway to the connecting out-of-band
+            # agent, and GW_ENV_PREFIX for the input gateway to the user agent. The connecting
+            # oob agent needs the OOB_GW_ENV_PREFIX so it can get requests from the gateway. It
+            # registers the input gateway to the user agent but never sends requests over it. The
+            # accepting oob agent is a client of the user agent, but does not get requests from
+            # an input gateway. It needs {GW_ENV_PREFIX}1 set so it can register with the user agent.
+            dragon_key = f"{dfacts.OOB_GW_ENV_PREFIX}1"
+        else:
+            dragon_key = f"{dfacts.GW_ENV_PREFIX}1"
+
+        env[hsta_key] = os.environ[dragon_key]
+        log.info(f"setting env[{hsta_key}] = {env[dragon_key]} for agent with {nic_idx=}")
 
     # updating LD_LIBRARY_PATH below, so make sure the key exists
     if "LD_LIBRARY_PATH" not in env:

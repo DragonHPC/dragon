@@ -1,21 +1,32 @@
-import os
-import yaml
-import sqlite3
+import argparse
 import json
+import logging
+import os
+import socket
+import sys
 import time
 from collections import defaultdict
-import multiprocessing as mp
+
+import sqlite3
+import yaml
+
 import dragon
-import logging
-import socket
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import ProcessTemplate, Process
-from dragon.native.queue import Queue
-from dragon.native.machine import System, Node
-from dragon.infrastructure.policy import Policy
-from dragon.telemetry.telemetry_head import setup_logging, aggregator_server, start_server
-from dragon.dlogging.util import setup_BE_logging, DragonLoggingServices as dls
+import multiprocessing as mp
+
+from dragon.dlogging.util import DragonLoggingServices as dls
+from dragon.dlogging.util import setup_BE_logging
 from dragon.infrastructure.parameters import this_process
+from dragon.infrastructure.policy import Policy
+from dragon.launcher import launch_selector as launcher
+from dragon.native.machine import Node
+from dragon.native.machine import System
+from dragon.native.process import Process
+from dragon.native.process import ProcessTemplate
+from dragon.native.process_group import ProcessGroup
+from dragon.native.queue import Queue
+from dragon.telemetry.telemetry_head import aggregator_server
+from dragon.telemetry.telemetry_head import setup_logging
+from dragon.telemetry.telemetry_head import start_server
 log = None
 
 
@@ -27,7 +38,7 @@ def setup_logging():
         setup_BE_logging(service=dls.TELEM, fname=fname)
         log = logging.getLogger(str(dls.TELEM))
 
-class MiniTelemetry():
+class OfflineTelemetry():
     def __init__(self):
         telem_cfg_path = os.getenv("DRAGON_TELEMETRY_CONFIG", None)
         if telem_cfg_path is None:
@@ -73,11 +84,11 @@ class MiniTelemetry():
             user = os.environ.get("USER", str(os.getuid()))
             timestamp = time.strftime("%Y%m%d_%H%M%S")
             nodename = os.uname().nodename
-            db_name = "mini_ts_" + user + "_" + nodename
+            db_name = "offline_ts_" + user + "_" + nodename
             merged_db_name = os.path.join(db_dir, db_name + ".db")
             
             # Find all telemetry db files in the dump directory
-            db_files = [f for f in os.listdir(db_dir) if f.endswith('.db') and "mini_ts_" not in f]
+            db_files = [f for f in os.listdir(db_dir) if f.endswith('.db') and "offline_ts_" not in f]
             
             groups = defaultdict(list)
             for f in db_files:
@@ -114,8 +125,8 @@ class MiniTelemetry():
             raise e
         return list_of_tables, db_name
 
-def start_mini_telemetry(table_list, mt_db_name):
-    """Starts mini telemetry servers on multiple nodes and an aggregator process.
+def start_offline_telemetry(table_list, mt_db_name):
+    """Starts offline telemetry servers on multiple nodes and an aggregator process.
     param table_list: List of table names (nodes) to monitor.
     param mt_db_name: Name of the merged telemetry database.
     """
@@ -168,16 +179,14 @@ def start_mini_telemetry(table_list, mt_db_name):
         
         local_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=hostname)
         grp.add_process(nproc=1, template=ProcessTemplate(target=start_server, args=args, cwd=cwd, policy=local_policy))
-        print(f"Sending mini telemetry server to node: {hostname} for nodes:{node_tables}", flush=True)
         start_idx = end_idx
     
     grp.init()
     grp.start()
 
-    print(f"Started Dragon Server for mini telemetry.", flush=True)
-    
-    host, queue = queue_discovery.get()
-    queue_dict[host] = queue
+    for hostname in node_list:
+        host, queue = queue_discovery.get()
+        queue_dict[host] = queue
     
     # Start Aggregator Process
     aggregator_proc = Process(
@@ -186,7 +195,6 @@ def start_mini_telemetry(table_list, mt_db_name):
     )
 
     aggregator_proc.start()
-    print(f"Started Aggregator for mini telemetry.", flush=True)
 
     log.debug("grp joining")
     grp.join()
@@ -199,13 +207,24 @@ def start_mini_telemetry(table_list, mt_db_name):
 
 
 def main():
-    mp.set_start_method("dragon")
-    minitelem = MiniTelemetry()
-    tables, db_name = minitelem.merge_ts_dbs()
 
-    print("Merge complete, starting mini telemetry server...", flush=True)
+    parser = argparse.ArgumentParser(description="Dragon Offline Telemetry")
+    parser.add_argument("-N", "--nodes", type=int, default=1, 
+                       help="Number of nodes to run on (default: 1)")
+    args, remaining = parser.parse_known_args()
 
-    start_mini_telemetry(tables, db_name)
+    # Check if running under Dragon runtime
+    if os.getenv("DRAGON_GS_RET_CD") is not None:
+        # Already in Dragon environment, run directly
+        offline_telem = OfflineTelemetry()
+        tables, db_name = offline_telem.merge_ts_dbs()
+        print("Starting offline telemetry...", flush=True)
+        start_offline_telemetry(tables, db_name)
+    else:
+        # Need to launch under Dragon runtime
+        sys.argv = ["dragon", "-N", str(args.nodes), __file__] + remaining
+        sys.exit(launcher.main())
+
 
 if __name__=="__main__":
     main()

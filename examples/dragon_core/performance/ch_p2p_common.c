@@ -15,7 +15,6 @@ attach_to_channel(char *b64_channel_data, dragonChannelDescr_t *pdragon_channel_
     DEBUG_PRINT(("Decoding channels's serialized descriptor\n"));
     dragon_channel_serial.data = dragon_base64_decode(
         b64_channel_data,
-        strlen(b64_channel_data),
         &dragon_channel_serial.len);
 
     DEBUG_PRINT(("Attaching to channel %s\n", b64_channel_data));

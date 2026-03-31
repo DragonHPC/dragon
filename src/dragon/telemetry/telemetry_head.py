@@ -163,15 +163,15 @@ def _register_with_local_services(serialized_slow_node_channel):
     set_local_kv(key=LS_TAS_KEY, value=serialized_slow_node_channel)
 
 
-def start_server(queue_discovery, slow_node_discovery, return_queue_dict, shutdown_event, telemetry_cfg: object, mini_telemetry_args: tuple = None):
+def start_server(queue_discovery, slow_node_discovery, return_queue_dict, shutdown_event, telemetry_cfg: object, offline_telemetry_args: tuple = None):
     from dragon.telemetry.dragon_server import DragonServer
     
     ds_queue = Queue()
     hostname = os.uname().nodename
     queue_discovery.put((hostname, ds_queue))
     # if slow_node_service:
-    # TODO: should consider a long timeout here maybe - keep off for mini_telemetry
-    if mini_telemetry_args is None: # We don't have slow node service for mini telemetry 
+    # TODO: should consider a long timeout here maybe - keep off for offline_telemetry
+    if offline_telemetry_args is None: # We don't have slow node service for offline telemetry 
         slow_node_channel_sdesc = slow_node_discovery.get()
         _register_with_local_services(slow_node_channel_sdesc)
 
@@ -180,7 +180,7 @@ def start_server(queue_discovery, slow_node_discovery, return_queue_dict, shutdo
         return_queue_dict=return_queue_dict,
         shutdown_event=shutdown_event,
         telemetry_config=telemetry_cfg,
-        mini_telemetry_args=mini_telemetry_args,
+        offline_telemetry_args=offline_telemetry_args,
     )
     ds.telemetry_handler()
 
@@ -221,7 +221,7 @@ def start_telemetry():
     else:
         with open(cfg_path, "r") as file:
             telemetry_cfg = yaml.safe_load(file)
-    args = (queue_discovery, as_discovery, return_queue_dict, shutdown_event, telemetry_cfg, None) # None since mini_telemetry is not used
+    args = (queue_discovery, as_discovery, return_queue_dict, shutdown_event, telemetry_cfg, None) # None since offline_telemetry is not used
     cwd = os.getcwd()
 
     grp = ProcessGroup(restart=False, pmi=None)

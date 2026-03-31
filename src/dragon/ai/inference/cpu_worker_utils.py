@@ -147,12 +147,12 @@ class CPUWorker:
         :type cpu_worker_pid: int
         :param inf_wrkr_input_queue: Input queue from which inference workers pull user prompts.
         :type inf_wrkr_input_queue: mp.Queue
-        :param inf_wrkr_manager_q: Queue of tuples of the form ``(hostname, devices, master_port, inf_wrkr_id)`` that describe
+        :param inf_wrkr_manager_q: Queue of tuples of the form ``(hostname, devices, inf_wrkr_id)`` that describe
             available inference worker slots.
         :type inf_wrkr_manager_q: mp.Queue
         :param hostname: Hostname of the current CPU worker process.
         :type hostname: str
-        :param inf_wrkr_config: List of tuples of the form ``(devices, master_port)`` defining each inference worker.
+        :param inf_wrkr_config: List of device lists defining each inference worker.
         :type inf_wrkr_config: list
         :returns: Updated list of inference worker tuples.
         :rtype: list
@@ -170,7 +170,7 @@ class CPUWorker:
 
         # Create inference worker.
         inf_wrkr_id = 1
-        for devices, master_port in inf_wrkr_config:
+        for devices in inf_wrkr_config:
             llm_proc_end_ev = mp.Event()
             self.llm_proc_end_events.append(llm_proc_end_ev)
 
@@ -186,7 +186,6 @@ class CPUWorker:
                 hostname,
                 cpu_worker_pid,
                 devices,
-                master_port,
                 inf_wrkr_input_queue,
                 self.init_inf_wrkr_barrier,
                 inf_wrkr_down_ev,
@@ -197,7 +196,7 @@ class CPUWorker:
             )
 
             self.log.info(
-                f"\nCPU Head Module: Created new inf-wrkr. {hostname=} {cpu_worker_pid=} {devices=} {master_port=} {inf_wrkr_id=}"
+                f"\nCPU Head Module: Created new inf-wrkr. {hostname=} {cpu_worker_pid=} {devices=} {inf_wrkr_id=}"
             )
             my_inf_workers.append((inf_wrkr_down_ev, inf_wrkr_pg, inf_wrkr_id))
             inf_wrkr_id += 1
@@ -226,7 +225,7 @@ class CPUWorker:
         :type cpu_worker_pid: int
         :param inf_wrkr_input_queue: Input queue from which inference workers pull user prompts.
         :type inf_wrkr_input_queue: mp.Queue
-        :param inf_wrkr_manager_q: Queue of tuples of the form ``(hostname, devices, master_port, inf_wrkr_id)`` describing
+        :param inf_wrkr_manager_q: Queue of tuples of the form ``(hostname, devices, inf_wrkr_id)`` describing
             potential inference workers.
         :type inf_wrkr_manager_q: mp.Queue
         :param num_input_prompts_since_last_idle: Number of input prompts received since the last idle period.
@@ -252,7 +251,7 @@ class CPUWorker:
         if idle_time_seconds < self.spin_up_threshold_seconds:
             if num_input_prompts_since_last_idle >= self.spin_up_prompt_threshold:
                 try:
-                    hostname, devices, master_port, inf_wrkr_id = inf_wrkr_manager_q.get(timeout=0.1)
+                    hostname, devices, inf_wrkr_id = inf_wrkr_manager_q.get(timeout=0.1)
                     # Define barrier to initialize all inf-workers before starting infrencing.
                     # 3: One each for head cpu-worker, pre-processing worker, and llm worker.
                     num_barriers = 3 if self.preprocessing_needed else 2
@@ -270,7 +269,6 @@ class CPUWorker:
                         hostname,
                         cpu_worker_pid,
                         devices,
-                        master_port,
                         inf_wrkr_input_queue,
                         dynamic_inf_wrkr_barrier,
                         inf_wrkr_down_ev,
@@ -294,7 +292,7 @@ class CPUWorker:
 
         :param hostname: Current process hostname.
         :type hostname: str
-        :param inf_wrkr_config: List of tuples of the form ``(devices, master_port)`` for each inference worker.
+        :param inf_wrkr_config: List of device lists for each inference worker.
         :type inf_wrkr_config: list
         """
         # Re-initialize mp dragon within process.
@@ -398,7 +396,6 @@ class CPUWorker:
         hostname,
         cpu_worker_pid,
         devices,
-        master_port,
         inf_worker_queue,
         inf_wrkr_barrier,
         inf_wrkr_down_ev,
@@ -415,8 +412,6 @@ class CPUWorker:
         :type cpu_worker_pid: int
         :param devices: List of GPU ranks for the current inference worker.
         :type devices: list[int]
-        :param master_port: Master port assigned to the inference worker.
-        :type master_port: str
         :param inf_worker_queue: Input queue from which the inference worker pulls user prompts.
         :type inf_worker_queue: mp.Queue
         :param inf_wrkr_barrier: Barrier used to wait until all inference worker modules are spun up and ready.
@@ -425,7 +420,7 @@ class CPUWorker:
         :type inf_wrkr_down_ev: mp.Event
         :param inf_wrkr_id: Unique identifier for the current inference worker.
         :type inf_wrkr_id: int
-        :param inf_wrkr_manager_q: Queue of tuples of the form ``(hostname, devices, master_port, inf_wrkr_id)`` used to manage
+        :param inf_wrkr_manager_q: Queue of tuples of the form ``(hostname, devices, inf_wrkr_id)`` used to manage
             available inference workers.
         :type inf_wrkr_manager_q: mp.Queue
         :param output_queue: Output queue where the inference worker pushes LLM responses.
@@ -443,7 +438,7 @@ class CPUWorker:
 
         # Build complete InferenceWorker args including all runtime parameters.
         # Both preprocessing and LLM workers use the same args structure.
-        # Preprocessing worker ignores LLM-specific fields (master_port, inf_wrkr_down_ev, inf_wrkr_manager_q).
+        # Preprocessing worker ignores LLM-specific fields (inf_wrkr_down_ev, inf_wrkr_manager_q).
         inference_worker_args = {
             # Config objects
             "end_event": self.end_event,
@@ -461,7 +456,6 @@ class CPUWorker:
             "preprocessing_output_queue": output_queue,
             "inf_wrkr_barrier": inf_wrkr_barrier,
             "llm_proc_end_ev": llm_proc_end_ev,
-            "master_port": master_port,
             "inf_wrkr_down_ev": inf_wrkr_down_ev,
             "inf_wrkr_manager_q": inf_wrkr_manager_q,
         }

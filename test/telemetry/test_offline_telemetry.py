@@ -2,20 +2,20 @@ import unittest
 from unittest.mock import patch, mock_open, MagicMock
 import os
 import yaml
-from dragon.telemetry.mini_telemetry import MiniTelemetry
+from dragon.telemetry.offline_telemetry import OfflineTelemetry
 from telemetry.telemetry_data import SAMPLE_DATA
 import tempfile
 import shutil
 import sqlite3
 import json
 
-class TestDragonTelemetryMiniTelemetry(unittest.TestCase):
+class TestDragonTelemetryOfflineTelemetry(unittest.TestCase):
     @patch.dict(os.environ, {}, clear=True)
     def test_init_no_env_var(self):
         """Test initialization when DRAGON_TELEMETRY_CONFIG is not set."""
         # Should raise ValueError because telemetry_cfg defaults to {} and validation fails
         with self.assertRaises(ValueError) as cm:
-            MiniTelemetry()
+            OfflineTelemetry()
         self.assertIn("Missing required telemetry configuration keys", str(cm.exception))
     
     @patch.dict(os.environ, {"DRAGON_TELEMETRY_CONFIG": "/path/to/config.yaml"})
@@ -23,7 +23,7 @@ class TestDragonTelemetryMiniTelemetry(unittest.TestCase):
     def test_init_config_file_not_found(self, mock_file):
         """Test initialization when config file does not exist."""
         with self.assertRaises(RuntimeError) as cm:
-            MiniTelemetry()
+            OfflineTelemetry()
         self.assertIn("Failed to load telemetry config", str(cm.exception))
 
     @patch.dict(os.environ, {"DRAGON_TELEMETRY_CONFIG": "/path/to/config.yaml"})
@@ -32,7 +32,7 @@ class TestDragonTelemetryMiniTelemetry(unittest.TestCase):
     def test_init_yaml_error(self, mock_yaml, mock_file):
         """Test initialization when config file contains invalid YAML."""
         with self.assertRaises(RuntimeError) as cm:
-            MiniTelemetry()
+            OfflineTelemetry()
         self.assertIn("Failed to load telemetry config", str(cm.exception))
 
 
@@ -42,7 +42,7 @@ class TestDragonTelemetryMiniTelemetry(unittest.TestCase):
     def test_init_missing_keys(self, mock_yaml, mock_file):
         """Test initialization with missing required keys in config."""
         with self.assertRaises(ValueError) as cm:
-            MiniTelemetry()
+            OfflineTelemetry()
         self.assertIn("Missing required telemetry configuration keys", str(cm.exception))
 
     @patch.dict(os.environ, {"DRAGON_TELEMETRY_CONFIG": "/path/to/config.yaml"})
@@ -52,7 +52,7 @@ class TestDragonTelemetryMiniTelemetry(unittest.TestCase):
     def test_init_dump_dir_not_exist(self, mock_exists, mock_yaml, mock_file):
         """Test initialization when dump_dir does not exist."""
         with self.assertRaises(FileNotFoundError) as cm:
-            MiniTelemetry()
+            OfflineTelemetry()
         self.assertIn("Configured dump_dir does not exist", str(cm.exception))
 
     @patch.dict(os.environ, {"DRAGON_TELEMETRY_CONFIG": "/path/to/config.yaml"})
@@ -63,7 +63,7 @@ class TestDragonTelemetryMiniTelemetry(unittest.TestCase):
     def test_init_dump_dir_not_directory(self, mock_isdir, mock_exists, mock_yaml, mock_file):
         """Test initialization when dump_dir is not a directory."""
         with self.assertRaises(NotADirectoryError) as cm:
-            MiniTelemetry()
+            OfflineTelemetry()
         self.assertIn("Configured dump_dir is not a directory", str(cm.exception))
 
     @patch.dict(os.environ, {"DRAGON_TELEMETRY_CONFIG": "/path/to/config.yaml"})
@@ -75,7 +75,7 @@ class TestDragonTelemetryMiniTelemetry(unittest.TestCase):
     def test_init_dump_dir_no_permission(self, mock_access, mock_isdir, mock_exists, mock_yaml, mock_file):
         """Test initialization when dump_dir is not writable."""
         with self.assertRaises(PermissionError) as cm:
-            MiniTelemetry()
+            OfflineTelemetry()
         self.assertIn("No write permission for dump_dir", str(cm.exception))
 
     @patch.dict(os.environ, {"DRAGON_TELEMETRY_CONFIG": "/path/to/config.yaml"})
@@ -85,12 +85,12 @@ class TestDragonTelemetryMiniTelemetry(unittest.TestCase):
     @patch("os.path.isdir", return_value=True)
     @patch("os.access", return_value=True)
     def test_init_success(self, mock_access, mock_isdir, mock_exists, mock_yaml, mock_file):
-        mt = MiniTelemetry()
+        mt = OfflineTelemetry()
         self.assertEqual(mt.telemetry_cfg["dump_node"], "node1")
         self.assertEqual(mt.telemetry_cfg["dump_dir"], "/tmp/dump")
 
-class TestMiniTelemetryMerge(unittest.TestCase):
-    """Tests for MiniTelemetry.merge_ts_dbs"""
+class TestOfflineTelemetryMerge(unittest.TestCase):
+    """Tests for OfflineTelemetry.merge_ts_dbs"""
 
     @classmethod
     def setUpClass(cls):
@@ -165,7 +165,7 @@ class TestMiniTelemetryMerge(unittest.TestCase):
 
     def test_merge_ts_dbs_success(self):
         """Test that databases are merged correctly and tables are identified."""
-        mt = MiniTelemetry()
+        mt = OfflineTelemetry()
         
         # Run merge
         tables, db_name = mt.merge_ts_dbs()
@@ -216,7 +216,7 @@ class TestMiniTelemetryMerge(unittest.TestCase):
         # Update mock to point to empty dir
         self.mock_yaml.return_value = {"dump_node": "test_node", "dump_dir": empty_dir}
         
-        mt = MiniTelemetry()
+        mt = OfflineTelemetry()
         tables, db_name = mt.merge_ts_dbs()
         
         self.assertEqual(tables, [])

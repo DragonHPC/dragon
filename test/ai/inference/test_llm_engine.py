@@ -49,14 +49,12 @@ class TestLLMInferenceEngine(TestCase):
             batching_config=self.batching_config,
             hostname="test-host",
             devices=[0, 1],
-            master_port="29500",
         )
 
         self.assertEqual(engine.model_config, self.model_config)
         self.assertEqual(engine.batching_config, self.batching_config)
         self.assertEqual(engine.hostname, "test-host")
         self.assertEqual(engine.devices, [0, 1])
-        self.assertEqual(engine.master_port, "29500")
         self.assertIsNone(engine.llm)
         self.assertIsNone(engine.sampling_params)
 
@@ -67,7 +65,6 @@ class TestLLMInferenceEngine(TestCase):
             batching_config=self.batching_config,
             hostname="test-host",
             devices=[0, 1],
-            master_port="29500",
         )
 
         with self.assertRaises(RuntimeError) as context:
@@ -82,7 +79,6 @@ class TestLLMInferenceEngine(TestCase):
             batching_config=self.batching_config,
             hostname="test-host",
             devices=[0, 1],
-            master_port="29500",
         )
 
         # Create simple output objects to simulate vLLM outputs
@@ -121,7 +117,6 @@ class TestLLMInferenceEngine(TestCase):
             batching_config=self.batching_config,
             hostname="test-host",
             devices=[0, 1],
-            master_port="29500",
         )
 
         class MockOutput:
@@ -145,7 +140,6 @@ class TestLLMInferenceEngine(TestCase):
             batching_config=self.batching_config,
             hostname="test-host",
             devices=[0, 1],
-            master_port="29500",
         )
 
         class MockOutputObj:
@@ -175,7 +169,6 @@ class TestLLMInferenceEngine(TestCase):
             batching_config=self.batching_config,
             hostname="test-host",
             devices=[0, 1],
-            master_port="29500",
         )
 
         # Should not raise any error
@@ -214,7 +207,6 @@ class TestLLMInferenceEngineConfig(TestCase):
             batching_config=batching_config,
             hostname="node1",
             devices=[0, 1, 2, 3],
-            master_port="30000",
         )
 
         self.assertEqual(engine.model_config.model_name, "custom-model")
@@ -239,7 +231,6 @@ class TestLLMInferenceEngineConfig(TestCase):
             batching_config=batching_config,
             hostname="node1",
             devices=[0],
-            master_port="29500",
         )
         self.assertEqual(len(engine_single.devices), 1)
 
@@ -249,7 +240,6 @@ class TestLLMInferenceEngineConfig(TestCase):
             batching_config=batching_config,
             hostname="node1",
             devices=[0, 1, 2, 3, 4, 5, 6, 7],
-            master_port="29501",
         )
         self.assertEqual(len(engine_multi.devices), 8)
 
@@ -278,7 +268,6 @@ class TestLLMInferenceEngineMetrics(TestCase):
             batching_config=self.batching_config,
             hostname="test-host",
             devices=[0],
-            master_port="29500",
         )
 
     def test_metrics_rounding(self):

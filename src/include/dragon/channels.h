@@ -399,6 +399,18 @@ typedef enum dragonGatewayMessageKind_st {
 } dragonGatewayMessageKind_t;
 
 /**
+ * @brief Associates a host ID with an IP address.
+ *
+ * This structure assoicates a host ID with an IP address, and is used to send
+ * an array of node mappings to HSTA.
+ *
+ **/
+typedef struct dragonNodeMap_st {
+    dragonULInt host_id; /*!< The host ID */
+    dragonUInt ip_addr;  /*!< The IPv4 address to be associated with the host ID */
+} dragonNodeMap_t;
+
+/**
  * @brief The Gateway Message Header
  *
  * This is provided here but used internally in the channels
@@ -599,6 +611,9 @@ dragon_channel_barrier_is_broken(const dragonChannelDescr_t* ch);
 
 bool
 dragon_channel_is_local(const dragonChannelDescr_t* ch);
+
+dragonError_t
+dragon_channel_ta_update_nodes(dragonNodeMap_t *node_mappings, int num_mappings);
 
 dragonError_t
 dragon_chsend_open(dragonChannelSendh_t* ch_sh);

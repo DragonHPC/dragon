@@ -4,7 +4,12 @@ import subprocess
 
 from .base import BaseWLM
 from ...infrastructure.node_desc import NodeDescriptor
-from ...infrastructure.facts import DEFAULT_TRANSPORT_NETIF, DEFAULT_OVERLAY_NETWORK_PORT, DEFAULT_PORT_RANGE
+from ...infrastructure.facts import (
+    DEFAULT_TRANSPORT_NETIF,
+    DEFAULT_OVERLAY_NETWORK_PORT,
+    DEFAULT_PORT_RANGE,
+    TransportAgentOptions,
+)
 from ...utils import host_id_from_k8s
 
 
@@ -93,6 +98,7 @@ class KubernetesNetworkConfig(BaseWLM):
         fe_host_id: str,
         frontend_sdesc: str,
         network_prefix: str,
+        overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
     ) -> list[str]:
@@ -121,6 +127,7 @@ class KubernetesNetworkConfig(BaseWLM):
         fe_host_id: str,
         frontend_sdesc: str,
         network_prefix: str,
+        overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
     ) -> subprocess.Popen:
