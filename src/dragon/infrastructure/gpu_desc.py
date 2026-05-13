@@ -77,9 +77,17 @@ def find_nvidia() -> list:
     :return: list of GPUs with IDs.
     :rtype: list
     """
+    # If a mask is set, return GPUs in mask
+    mask = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if mask:
+        devices = []
+        for device in mask.split(","):
+            devices.append(str_to_num(device))
+        return devices
+
     try:
         output = check_output(["nvidia-smi", "-L"], stderr=DEVNULL).decode("utf-8").splitlines()
-        return output
+        return list(range(len(output)))
     except:
         return None
 
@@ -179,7 +187,7 @@ def find_accelerators() -> AcceleratorDescriptor:
     devices = find_nvidia()
     if devices is not None:
         acc = AcceleratorDescriptor(
-            vendor=AccVendor.NVIDIA, device_list=list(range(len(devices))), env_str=AccEnvStr.NVIDIA
+            vendor=AccVendor.NVIDIA, device_list=devices, env_str=AccEnvStr.NVIDIA
         )
         return acc
 
