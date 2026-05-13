@@ -109,6 +109,14 @@ def find_amd() -> list:
     :return: a list of cards that can be iterated over
     :rtype: list
     """
+    # If a mask is set, return GPUs in mask
+    mask = os.environ.get("ROCR_VISIBLE_DEVICES", "")
+    if mask:
+        devices = []
+        for device in mask.split(","):
+            devices.append(str_to_num(device))
+        return devices
+
     try:
         output = (
             check_output(["rocm-smi", "--showuniqueid", "--csv"], stderr=DEVNULL)
@@ -116,7 +124,7 @@ def find_amd() -> list:
             .strip("\n")
             .splitlines()
         )
-        return output[1:]
+        return list(range(len(output[1:])))
     except:
         return None
 
@@ -193,7 +201,7 @@ def find_accelerators() -> AcceleratorDescriptor:
 
     devices = find_amd()
     if devices is not None:
-        acc = AcceleratorDescriptor(vendor=AccVendor.AMD, device_list=list(range(len(devices))), env_str=AccEnvStr.AMD)
+        acc = AcceleratorDescriptor(vendor=AccVendor.AMD, device_list=devices, env_str=AccEnvStr.AMD)
         return acc
 
     devices = find_intel()
