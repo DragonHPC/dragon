@@ -19,7 +19,6 @@ from dragon.ai.inference.config import (
 )
 from dragon.ai.inference.inference_worker_utils import InferenceWorker
 from dragon.ai.inference.batching import DynamicBatcher
-
 from ..mocks import MockTelemetry
 
 

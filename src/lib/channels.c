@@ -1226,7 +1226,7 @@ _release_message_block_and_trigger_bcasts(dragonChannel_t* channel, dragonPriori
 static dragonError_t
 _send_msg(dragonChannel_t* channel, const dragonUUID sendhid, const dragonMessage_t* msg_send, void* msg_ptr,
           size_t msg_bytes, dragonMemoryDescr_t* dest_mem_descr, const timespec_t* end_time_ptr,
-          bool blocking)
+          bool blocking, dragonULInt debug)
 {
     dragonError_t err;
     dragonError_t uterr;
@@ -1905,12 +1905,16 @@ _peek_msg(dragonChannel_t* channel, dragonMessage_t* msg_peek)
         mem_ser.data = (uint8_t*)channel->msg_blks_ptrs[mblk];
 
         err = dragon_memory_attach(&msg_mem_descr, &mem_ser);
-        if (err != DRAGON_SUCCESS)
+        if (err != DRAGON_SUCCESS) {
+            _release_ot_lock(channel);
             append_err_return(err, "cannot attach to payload memory");
+        }
 
         err = dragon_memory_get_pointer(&msg_mem_descr, &src_ptr);
-        if (err != DRAGON_SUCCESS)
+        if (err != DRAGON_SUCCESS) {
+            _release_ot_lock(channel);
             append_err_return(err, "invalid memory descriptor for payload");
+        }
 
         err = dragon_memory_get_size(&msg_mem_descr, (size_t*)&src_bytes);
         if (err != DRAGON_SUCCESS) {
@@ -1966,6 +1970,7 @@ _peek_msg(dragonChannel_t* channel, dragonMessage_t* msg_peek)
         err = _copy_payload(cached_mem, src_ptr, (size_t)src_bytes);
         if (err != DRAGON_SUCCESS) {
             free(cached_mem);
+            _release_ot_lock(channel);
             append_err_return(err, "unable to copy payload data from message into new message");
         }
 
@@ -1974,22 +1979,29 @@ _peek_msg(dragonChannel_t* channel, dragonMessage_t* msg_peek)
         /* if the caller did provide destination memory, we must copy into that */
         void* dest_ptr = NULL;
         err = dragon_memory_get_pointer(msg_peek->_mem_descr, &dest_ptr);
-        if (err != DRAGON_SUCCESS)
+        if (err != DRAGON_SUCCESS) {
+            _release_ot_lock(channel);
             append_err_return(err, "cannot get pointer to message destination");
+        }
 
         if (dest_ptr != src_ptr) {
             /* We have some copying to do. */
             err = _fast_copy((size_t)src_bytes, src_ptr, dest_ptr);
 
-            if (err != DRAGON_SUCCESS)
+            if (err != DRAGON_SUCCESS) {
+                _release_ot_lock(channel);
                 append_err_return(err, "unable to copy payload data from "
                                        "message into provided message");
+                }
 
             err = dragon_memory_modify_size(msg_peek->_mem_descr, src_bytes, NULL);
 
-            if (err != DRAGON_SUCCESS)
+            if (err != DRAGON_SUCCESS) {
+                _release_ot_lock(channel);
                 append_err_return(err, "failed to modify size of memory descriptor");
+            }
         } else {
+            _release_ot_lock(channel);
             err_return(DRAGON_CHANNEL_BUFFER_ERROR, "user-provided destination buffer is the same as buffer from message block");
         }
     }
@@ -4074,10 +4086,11 @@ dragon_chsend_send_msg(const dragonChannelSendh_t* ch_sh, const dragonMessage_t*
 
         for (int i = 0; i < DRAGON_CHANNEL_PRE_SPINS; i++) {
             err = _send_msg(channel, ch_sh->_attrs.sendhid, msg_send, msg_ptr, msg_bytes, dest_mem_descr,
-                            &no_wait, false);
+                            &no_wait, false, ch_sh->_attrs.debug);
 
             if (err == DRAGON_SUCCESS)
                 no_err_return(DRAGON_SUCCESS);
+
             if (err != DRAGON_CHANNEL_FULL && err != DRAGON_DYNHEAP_REQUESTED_SIZE_NOT_AVAILABLE) {
                 char msg[200];
                 snprintf(msg, 199, "failed to send msg on channel %" PRIu64, ch_sh->_ch._idx);
@@ -4144,7 +4157,7 @@ dragon_chsend_send_msg(const dragonChannelSendh_t* ch_sh, const dragonMessage_t*
                 _release_ut_lock(channel);
 
             err = _send_msg(channel, ch_sh->_attrs.sendhid, msg_send, msg_ptr, msg_bytes, dest_mem_descr,
-                            end_time_ptr, true);
+                            end_time_ptr, true, ch_sh->_attrs.debug);
         }
 
         if (err != DRAGON_SUCCESS)
@@ -4406,10 +4419,7 @@ dragon_chrecv_get_msg_blocking(const dragonChannelRecvh_t* ch_rh, dragonMessage_
                 err = dragon_bcast_wait(&channel->recv_bcast, ch_rh->_attrs.wait_mode, remaining_time_ptr,
                                         NULL, 0, (dragonReleaseFun)dragon_unlock, &channel->ot_lock);
                 if (err != DRAGON_SUCCESS)
-                    // A little ambiguous if ot lock is still locked or not. If it
-                    // is a timeout, it is unlocked for sure. But anything else
-                    // would be a bad error anyway. So assume unlocked in all
-                    // cases.
+                    // Even when an error, the dragon_unlock will have been called.
                     append_err_return(err, "Timeout or unexpected error.");
             } else
                 _release_ot_lock(channel);

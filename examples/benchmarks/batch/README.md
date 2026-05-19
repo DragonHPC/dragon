@@ -30,13 +30,14 @@ callable that submits typed tasks with pre-declared data dependencies:
 ```python
 from dragon.workflows.batch import Batch
 
-batch = Batch()
+# Increase or decrease the internal results DDict size in bytes as needed.
+batch = Batch(results_ddict_mem=2 * 1024**3)
 run_task = batch.import_func("ptd/my_task.yml", my_func, base_dir, get_file)
 
 for i in range(1000):
     run_task(arg1, arg2)  # enqueues a task; dispatched automatically in the background
 
 batch.fence()  # wait for all submitted tasks to complete
-batch.close()
 batch.join()
+batch.destroy()
 ```

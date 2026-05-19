@@ -19,7 +19,6 @@ from dragon.ai.inference.config import (
     GuardrailsConfig,
     DynamicWorkerConfig,
 )
-
 from ..mocks import MockTelemetry
 
 
@@ -101,7 +100,9 @@ class TestCPUWorkerBasicOrchestration(unittest.TestCase):
         cpu_worker2 = CPUWorker(
             input_queue=input_queue,
             model_config=self.model_config,
-            batching_config=BatchingConfig(enabled=True, batch_type="dynamic", max_batch_size=4),
+            batching_config=BatchingConfig(
+                enabled=True, batch_type="dynamic", max_batch_size=4
+            ),
             guardrails_config=GuardrailsConfig(enabled=False),
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=1,
@@ -129,7 +130,9 @@ class TestCPUWorkerBasicOrchestration(unittest.TestCase):
         cpu_worker4 = CPUWorker(
             input_queue=input_queue,
             model_config=self.model_config,
-            batching_config=BatchingConfig(enabled=True, batch_type="pre-batch", max_batch_size=4),
+            batching_config=BatchingConfig(
+                enabled=True, batch_type="pre-batch", max_batch_size=4
+            ),
             guardrails_config=GuardrailsConfig(enabled=False),
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=1,
@@ -195,7 +198,9 @@ class TestCPUWorkerBasicOrchestration(unittest.TestCase):
             )
 
             # Forward to inference worker queue
-            cpu_worker.inf_wrkr_input_queue.put((user_prompt, formatted_input, q, tuple_latency_metric))
+            cpu_worker.inf_wrkr_input_queue.put(
+                (user_prompt, formatted_input, q, tuple_latency_metric)
+            )
 
         # Verify prompts were forwarded to inference worker queue
         item1 = cpu_worker.inf_wrkr_input_queue.get(timeout=1)
@@ -308,7 +313,9 @@ class TestCPUWorkerDynamicWorkerManagement(unittest.TestCase):
 
     @patch("dragon.ai.inference.cpu_worker_utils.setup_logging")
     @patch("dragon.ai.inference.cpu_worker_utils.ProcessGroup")
-    def test_dynamic_inf_workers_removes_shutdown_workers(self, mock_pg_class, mock_logging):
+    def test_dynamic_inf_workers_removes_shutdown_workers(
+        self, mock_pg_class, mock_logging
+    ):
         """Test that dynamic_inf_workers removes workers that have shut down."""
         mock_logger = MagicMock()
         mock_logging.return_value = mock_logger
@@ -384,8 +391,10 @@ class TestCPUWorkerDynamicWorkerManagement(unittest.TestCase):
 
     @patch("dragon.ai.inference.cpu_worker_utils.setup_logging")
     @patch("dragon.ai.inference.cpu_worker_utils.CPUWorker.create_inf_worker")
-    @patch("dragon.ai.inference.cpu_worker_utils.mp.Barrier")
-    def test_dynamic_spinup_on_high_load(self, mock_barrier_class, mock_create_inf_worker, mock_logging):
+    @patch("dragon.ai.inference.cpu_worker_utils.Barrier")
+    def test_dynamic_spinup_on_high_load(
+        self, mock_barrier_class, mock_create_inf_worker, mock_logging
+    ):
         """Test that a new worker is spun up when load exceeds thresholds."""
         mock_logger = MagicMock()
         mock_logging.return_value = mock_logger
@@ -435,7 +444,7 @@ class TestCPUWorkerDynamicWorkerManagement(unittest.TestCase):
         inf_wrkr_manager_q = mp.Queue()
 
         # Put available worker slot in manager queue
-        inf_wrkr_manager_q.put(("node-0", [0], "29600", 2))
+        inf_wrkr_manager_q.put(("node-0", [0], 2))
 
         # Call with high load: short idle time and high prompt count
         updated_workers, updated_count = cpu_worker.dynamic_inf_workers(

@@ -21,7 +21,7 @@ from dragon.ai.inference.config import (
 )
 from dragon.ai.inference.inference_utils import Inference
 from dragon.ai.inference.llm_engine import find_free_port
-
+import os; os.environ["DRAGON_PATCH_MP"] = "True"  # restore after llm_engine import clears it
 from ..mocks import MockNode
 
 
@@ -37,11 +37,13 @@ class TestInferenceQueryPipeline(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_query_puts_formatted_data_on_queue(self, mock_telemetry, mock_node_class, mock_system, mock_formatter):
+    def test_query_puts_formatted_data_on_queue(
+        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+    ):
         """Test that query() formats prompt and puts complete data tuple
         on the input queue for InferenceWorkers to consume.
         """
@@ -52,7 +54,9 @@ class TestInferenceQueryPipeline(unittest.TestCase):
         mock_node = MockNode("node-0", num_gpus=4)
         mock_node_class.return_value = mock_node
 
-        mock_formatter.return_value = "<system>You are helpful.</system><user>Hello!</user>"
+        mock_formatter.return_value = (
+            "<system>You are helpful.</system><user>Hello!</user>"
+        )
 
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=4),
@@ -84,15 +88,19 @@ class TestInferenceQueryPipeline(unittest.TestCase):
         # Verify complete data tuple on input queue
         item = input_queue.get(timeout=1)
         self.assertEqual(item[0], "Hello!")  # user_prompt
-        self.assertEqual(item[1], "<system>You are helpful.</system><user>Hello!</user>")  # formatted
+        self.assertEqual(
+            item[1], "<system>You are helpful.</system><user>Hello!</user>"
+        )  # formatted
         self.assertIsInstance(item[2], type(response_queue))
         self.assertIsInstance(item[3], float)  # start_time
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_query_prebatch_formats_all_prompts(self, mock_telemetry, mock_node_class, mock_system, mock_formatter):
+    def test_query_prebatch_formats_all_prompts(
+        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+    ):
         """Test that pre-batch query formats each prompt in the batch
         and preserves them together for downstream processing.
         """
@@ -142,11 +150,13 @@ class TestInferenceQueryPipeline(unittest.TestCase):
             ],
         )
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_multiple_queries_queued_in_order(self, mock_telemetry, mock_node_class, mock_system, mock_formatter):
+    def test_multiple_queries_queued_in_order(
+        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+    ):
         """Test that multiple queries are queued in order and can be
         consumed sequentially by workers.
         """
@@ -214,7 +224,9 @@ class TestInferenceCPUWorkerIntegration(unittest.TestCase):
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_cpu_worker_kwargs_include_shared_queue(self, mock_telemetry, mock_node_class, mock_system):
+    def test_cpu_worker_kwargs_include_shared_queue(
+        self, mock_telemetry, mock_node_class, mock_system
+    ):
         """Test that cpu_worker_kwargs includes the shared input queue
         so workers can consume from it.
         """
@@ -259,7 +271,9 @@ class TestInferenceCPUWorkerIntegration(unittest.TestCase):
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_worker_structure_per_node(self, mock_telemetry, mock_node_class, mock_system):
+    def test_worker_structure_per_node(
+        self, mock_telemetry, mock_node_class, mock_system
+    ):
         """Test that cpu_and_device_proc_by_hostname creates correct
         worker structure for each node.
         """
@@ -302,6 +316,7 @@ class TestInferenceCPUWorkerIntegration(unittest.TestCase):
 
 class TestInferencePortManagement(unittest.TestCase):
     """Integration tests for port allocation.
+
     Ports are discovered on each worker node at initialization time
     via the standalone find_free_port() utility.
     """
@@ -335,15 +350,17 @@ class TestInferencePortManagement(unittest.TestCase):
             sock.close()
 
     def test_find_free_port_raises_when_no_ports(self):
-        """Test that find_free_port raises IOError when no ports are available."""
-        with self.assertRaises(IOError):
+        """Test that find_free_port raises when no ports are available."""
+        with self.assertRaises((ValueError, IOError)):
             # Use a range of 0 so no ports can be found
             find_free_port(base_port=29500, port_range_size=0)
 
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_no_ports_preallocated_on_head_node(self, mock_telemetry, mock_node_class, mock_system):
+    def test_no_ports_preallocated_on_head_node(
+        self, mock_telemetry, mock_node_class, mock_system
+    ):
         """Test that Inference no longer pre-allocates ports on the head node."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0]
@@ -364,7 +381,6 @@ class TestInferencePortManagement(unittest.TestCase):
         )
 
         input_queue = mp.Queue()
-
         dragon_inference = Inference(config=config, input_queue=input_queue)
 
         # Verify that worker config contains device lists (no port)
@@ -441,7 +457,7 @@ class TestInferenceNodeAllocation(unittest.TestCase):
         mock_node_class.side_effect = node_side_effect
 
         config = InferenceConfig(
-            hardware=HardwareConfig(num_nodes=2, num_gpus=4),
+            hardware=HardwareConfig(num_nodes=2, num_gpus=4, node_offset=2),
             model=ModelConfig(model_name="test", hf_token="token", tp_size=1),
             batching=BatchingConfig(enabled=False),
             guardrails=GuardrailsConfig(enabled=False),

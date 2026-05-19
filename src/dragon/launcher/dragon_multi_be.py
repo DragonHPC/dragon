@@ -10,10 +10,10 @@ from .launchargs import NETWORK_HELP, OVERLAY_TRANSPORT_HELP, OVERLAY_PORT_HELP
 from ..utils import B64
 from ..infrastructure.facts import (
     DEFAULT_OVERLAY_NETWORK_PORT,
-    DEFAULT_TRANSPORT_AGENT,
     DEFAULT_TRANSPORT_NETIF,
     PROCNAME_LA_BE,
     TRANSPORT_TEST_ENV,
+    OVERLAY_TRANSPORT_VAR,
     TransportAgentOptions,
 )
 from ..dlogging.util import setup_BE_logging
@@ -41,6 +41,15 @@ def main(transport_test_env: bool = False):
 
     parser = ArgumentParser(description="Run Dragon backend")
 
+    overlay_transport_default = TransportAgentOptions.TCP
+    overlay_transport_env = os.environ.get(OVERLAY_TRANSPORT_VAR)
+
+    if overlay_transport_env is not None:
+        try:
+            overlay_transport_default = TransportAgentOptions.from_str(overlay_transport_env)
+        except ValueError:
+            parser.error(f"invalid {OVERLAY_TRANSPORT_VAR} value: {overlay_transport_env}")
+
     parser.add_argument(
         "--ip-addr", metavar="FRONTEND_IP", dest="ip_addrs", type=str, help="IP address to connect to frontend"
     )
@@ -65,7 +74,7 @@ def main(transport_test_env: bool = False):
     parser.set_defaults(
         transport_test=bool(strtobool(os.environ.get(TRANSPORT_TEST_ENV, str(transport_test_env)))),
         network_prefix=DEFAULT_TRANSPORT_NETIF,
-        overlay_transport=DEFAULT_TRANSPORT_AGENT,
+        overlay_transport=overlay_transport_default,
         overlay_port=DEFAULT_OVERLAY_NETWORK_PORT,
         backend_ip_addr=None,
         backend_hostname=None,

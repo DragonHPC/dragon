@@ -1,5 +1,5 @@
 """
-Unit tests for the Dragon inference utilities module.
+Unit tests for the Dragon inference utilities module (inference/inference_utils.py).
 
 Tests the Inference class.
 """
@@ -8,8 +8,10 @@ import dragon
 import multiprocessing as mp
 from unittest import TestCase, main
 from unittest.mock import patch
+import copy
 
 from dragon.native.machine import System, Node
+
 from dragon.ai.inference.inference_utils import Inference
 from dragon.ai.inference.config import (
     InferenceConfig,
@@ -20,7 +22,12 @@ from dragon.ai.inference.config import (
     DynamicWorkerConfig,
 )
 
-from .mocks import MockTelemetry
+
+class MockTelemetry:
+    """Mock for dragon telemetry."""
+
+    def add_data(self, key, value):
+        pass
 
 
 class MockCPUWorker:
@@ -74,7 +81,7 @@ def create_test_config():
 
 
 @patch("dragon.ai.inference.inference_utils.Telemetry")
-@patch("dragon.ai.inference.inference_utils.mp.Process")
+@patch("dragon.ai.inference.inference_utils.Process")
 @patch("dragon.ai.inference.inference_utils.CPUWorker")
 class TestInferenceUtils(TestCase):
     """Unit tests for Inference class."""
@@ -104,6 +111,7 @@ class TestInferenceUtils(TestCase):
         config = create_test_config()
         config.hardware.num_nodes = 0
         with self.assertRaises(ValueError) as context:
+            # Inference(config, input_queue)
             Inference(config, input_queue)
         self.assertIn("num_nodes must be >= 1", str(context.exception))
 
@@ -136,6 +144,7 @@ class TestInferenceUtils(TestCase):
         input_queue = mp.Queue()
         config = create_test_config()
         config.hardware.num_nodes = 1
+        # New signature: Inference(config, input_queue)
         pipeline = Inference(config, input_queue)
         nodes = pipeline.nodes
         self.assertEqual(len(nodes.keys()), 1)  # Assert number of nodes is 1
@@ -147,6 +156,7 @@ class TestInferenceUtils(TestCase):
             input_queue = mp.Queue()
             config = create_test_config()
             config.hardware.num_gpus = 4
+            # Use -1 for num_nodes to use all nodes
             config.hardware.num_nodes = -1  # Use all nodes
             pipeline = Inference(config, input_queue)
             nodes = pipeline.nodes

@@ -214,4 +214,4 @@ if __name__ == "__main__":
     metrics = tac.get_metrics()
     print(f"All available telmetery metrics: {metrics}", flush=True)
 
-    dt.finalize()
+    dt.shutdown()

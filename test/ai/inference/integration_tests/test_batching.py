@@ -19,7 +19,6 @@ from dragon.ai.inference.config import (
     DynamicWorkerConfig,
 )
 from dragon.ai.inference.inference_worker_utils import InferenceWorker
-
 from ..mocks import MockTelemetry
 
 
@@ -125,7 +124,9 @@ class TestBatcherToInferenceWorkerPipeline(unittest.TestCase):
         # Verify LLM received the complete batch
         result = llm_input_queue.get(timeout=1)
         self.assertEqual(result[0], ["Hello", "World", "Test"])
-        self.assertEqual(result[1], ["<user>Hello</user>", "<user>World</user>", "<user>Test</user>"])
+        self.assertEqual(
+            result[1], ["<user>Hello</user>", "<user>World</user>", "<user>Test</user>"]
+        )
         self.assertEqual(len(result[2]), 3)  # 3 response queues
         self.assertEqual(result[4], 0.05)  # preprocessing_time
 
@@ -171,10 +172,14 @@ class TestBatcherToInferenceWorkerPipeline(unittest.TestCase):
         response_queue = mp.Queue()
 
         # Add only 2 items (less than max_batch_size)
-        batcher.add_item("Prompt1", "<Prompt1>", response_queue, (time.time(), 0.01, 0.02))
-        batcher.add_item("Prompt2", "<Prompt2>", response_queue, (time.time(), 0.01, 0.02))
+        batcher.add_item(
+            "Prompt1", "<Prompt1>", response_queue, (time.time(), 0.01, 0.02)
+        )
+        batcher.add_item(
+            "Prompt2", "<Prompt2>", response_queue, (time.time(), 0.01, 0.02)
+        )
 
-        # Wait for timeout
+        # Wait for timeout to expire
         time.sleep(batch_timeout * 1.5)
 
         # Timeout should have expired
@@ -286,7 +291,9 @@ class TestBatcherToInferenceWorkerPipeline(unittest.TestCase):
 
         llm_input_queue = mp.Queue()
 
-        batching_config = BatchingConfig(enabled=True, batch_type="dynamic", max_batch_size=2)
+        batching_config = BatchingConfig(
+            enabled=True, batch_type="dynamic", max_batch_size=2
+        )
         worker = InferenceWorker(
             end_event=self.end_event,
             model_config=self.model_config,

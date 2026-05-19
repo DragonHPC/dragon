@@ -98,6 +98,10 @@ Tutorials
             <h3>Running multi-system workflows</h3>
             <p>Connect and run workflows across multiple systems</p>
         </a>
+        <a href="uses/agent.html" class="tile_item">
+            <h3>Building AI Agents</h3>
+            <p>Multi-agent LLM pipelines with tools, HITL, and tracing</p>
+        </a>
         <a href="uses/batch.html" class="tile_item">
             <h3>Batch</h3>
             <p>Use batch processing with Dragon</p>
@@ -131,3 +135,4 @@ Tutorials
     uses/grafana.rst
     uses/workflow.rst
     uses/proxy.rst
+    uses/agent.rst

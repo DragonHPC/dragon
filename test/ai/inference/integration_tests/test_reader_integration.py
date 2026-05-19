@@ -246,7 +246,9 @@ class TestMetricsConsolidatorIntegration(unittest.TestCase):
         read_event.set()
 
         # Run consolidator
-        consolidator_proc = mp.Process(target=consolidator.read_and_compute, args=(num_responses,))
+        consolidator_proc = mp.Process(
+            target=consolidator.read_and_compute, args=(num_responses,)
+        )
         consolidator_proc.start()
         consolidator_proc.join(timeout=10)
 
@@ -310,7 +312,9 @@ class TestMetricsConsolidatorIntegration(unittest.TestCase):
         # Verify derived metric: non_model_inference_latency
         df = pd.read_excel(excel_file, sheet_name=sheet_name)
         expected_non_model = 0.05 + 0.10 + 0.02 + 0.08
-        self.assertAlmostEqual(df["non_model_inference_latency"].iloc[0], expected_non_model, places=2)
+        self.assertAlmostEqual(
+            df["non_model_inference_latency"].iloc[0], expected_non_model, places=2
+        )
 
     def test_metrics_consolidator_waits_for_read_event(self):
         """Test that MetricsConsolidator waits for read_event before completing."""

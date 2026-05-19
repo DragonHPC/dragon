@@ -36,7 +36,7 @@ def get_jwt_token():
 
     Returns:
         Bearer Token
-    """ 
+    """
     telem_key = request.json.get("auth_key", None)
     if telem_key == app.config["auth_key"]:
         access_token = create_access_token(identity=telem_key)
@@ -72,7 +72,7 @@ def post_query() -> object:
 
     if app.config["auth_key"] is not None:
         jwt_optional()
-    
+
     query = request.json
     uid = str(int(time.time() * 100)) + "_" + str(get_ident())
     query["req_id"] = uid
@@ -149,7 +149,7 @@ def suggest() -> list:
 
 @app.route("/api/telemetry_shutdown", methods=["GET"])
 @jwt_required(optional=True)
-# Stays optional because telemetry_shutdown is called through Telemetry finalize
+# Stays optional because telemetry_shutdown is called through Telemetry shutdown
 def set_telemetry_shutdown() -> object:
     """GET /api/shutdown
     Signal shutdown sequence in Aggregator

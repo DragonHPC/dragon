@@ -18,7 +18,6 @@ from dragon.ai.inference.config import (
     DynamicWorkerConfig,
 )
 from dragon.ai.inference.inference_worker_utils import InferenceWorker
-
 from ..mocks import MockTelemetry
 
 
@@ -50,7 +49,9 @@ class TestGuardrailsWithInferenceWorker(unittest.TestCase):
 
     @patch("dragon.ai.inference.inference_worker_utils.GuardrailsProcessor")
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
-    def test_guardrails_filters_malicious_prompts(self, mock_logging, mock_guardrails_class):
+    def test_guardrails_filters_malicious_prompts(
+        self, mock_logging, mock_guardrails_class
+    ):
         """Test that guardrails correctly filters malicious prompts."""
         mock_logger = MagicMock()
         mock_logging.return_value = mock_logger
@@ -84,7 +85,9 @@ class TestGuardrailsWithInferenceWorker(unittest.TestCase):
             [1],  # malicious_indices (middle prompt)
             0.05,  # preprocessing_time
         )
-        mock_guardrails.get_malicious_response.return_value = "Your input has been categorized as malicious."
+        mock_guardrails.get_malicious_response.return_value = (
+            "Your input has been categorized as malicious."
+        )
 
         # Input batch with 3 prompts (middle one is malicious)
         formatted_prompts = [
@@ -107,6 +110,7 @@ class TestGuardrailsWithInferenceWorker(unittest.TestCase):
             safe_queues,
             safe_metrics,
             preprocessing_time,
+            malicious_indices,
         ) = worker.filter_with_guardrails(
             formatted_prompts=formatted_prompts,
             user_prompts=user_prompts,
@@ -155,6 +159,7 @@ class TestGuardrailsWithInferenceWorker(unittest.TestCase):
             safe_queues,
             safe_metrics,
             preprocessing_time,
+            malicious_indices,
         ) = worker.filter_with_guardrails(
             formatted_prompts=formatted_prompts,
             user_prompts=user_prompts,
@@ -202,7 +207,9 @@ class TestGuardrailsWithBatching(unittest.TestCase):
 
     @patch("dragon.ai.inference.inference_worker_utils.GuardrailsProcessor")
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
-    def test_guard_and_forward_batch_integration(self, mock_logging, mock_guardrails_class):
+    def test_guard_and_forward_batch_integration(
+        self, mock_logging, mock_guardrails_class
+    ):
         """Test _guard_and_forward_batch with both guardrails and batching."""
         mock_logger = MagicMock()
         mock_logging.return_value = mock_logger

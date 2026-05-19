@@ -14,13 +14,13 @@ from queue import Empty, Full
 
 from dragon.ai.inference.inference_worker_utils import InferenceWorker
 from dragon.ai.inference.llm_engine import LLMInferenceEngine
+import os; os.environ["DRAGON_PATCH_MP"] = "True"  # restore after llm_engine import clears it
 from dragon.ai.inference.config import (
     ModelConfig,
     BatchingConfig,
     GuardrailsConfig,
     DynamicWorkerConfig,
 )
-
 from ..mocks import MockTelemetry
 
 
@@ -325,7 +325,9 @@ class TestInvalidInputHandling(unittest.TestCase):
 
         worker = InferenceWorker(
             end_event=mp.Event(),
-            model_config=ModelConfig(model_name="test-model", hf_token="token", tp_size=1),
+            model_config=ModelConfig(
+                model_name="test-model", hf_token="token", tp_size=1
+            ),
             batching_config=BatchingConfig(enabled=False),
             guardrails_config=GuardrailsConfig(enabled=False),
             dynamic_worker_config=DynamicWorkerConfig(enabled=False),
@@ -362,7 +364,9 @@ class TestInvalidInputHandling(unittest.TestCase):
 
         worker = InferenceWorker(
             end_event=mp.Event(),
-            model_config=ModelConfig(model_name="test-model", hf_token="token", tp_size=1),
+            model_config=ModelConfig(
+                model_name="test-model", hf_token="token", tp_size=1
+            ),
             batching_config=BatchingConfig(enabled=False),
             guardrails_config=GuardrailsConfig(enabled=False),
             dynamic_worker_config=DynamicWorkerConfig(enabled=False),
@@ -412,7 +416,9 @@ class TestRecoveryScenarios(unittest.TestCase):
 
         worker = InferenceWorker(
             end_event=mp.Event(),
-            model_config=ModelConfig(model_name="test-model", hf_token="token", tp_size=1),
+            model_config=ModelConfig(
+                model_name="test-model", hf_token="token", tp_size=1
+            ),
             batching_config=BatchingConfig(enabled=False),
             guardrails_config=GuardrailsConfig(enabled=False),
             dynamic_worker_config=DynamicWorkerConfig(enabled=False),

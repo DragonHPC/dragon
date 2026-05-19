@@ -262,7 +262,7 @@ dragonError_t test_new_tasks_and_task_done_and_join(const char * queue_ser) {
     return DRAGON_SUCCESS;
 }
 
-dragonError_t test_custom_pickler_dump(const char * queue_ser) {
+dragonError_t test_custom_matrix_pickler_dump(const char * queue_ser) {
     Queue<SerializableDouble2DVector> q(queue_ser, nullptr);
     std::vector<std::vector<double>> expected_vals_from_py = {{0.12, 0.31, 3.4}, {4.579, 5.98, 6.54}};
     SerializableDouble2DVector ser_vals_from_py = q.get();
@@ -275,11 +275,56 @@ dragonError_t test_custom_pickler_dump(const char * queue_ser) {
     return DRAGON_SUCCESS;
 }
 
-dragonError_t test_custom_pickler_load(const char * queue_ser) {
+dragonError_t test_custom_matrix_pickler_load(const char * queue_ser) {
     Queue<SerializableDouble2DVector> q(queue_ser, nullptr);
     std::vector<std::vector<double>> vec = {{0.12, 0.31, 3.4}, {4.579, 5.98, 6.54}};
     SerializableDouble2DVector ser_vec(vec);
     q.put(ser_vec);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_custom_int_pickler_dump(const char * queue_ser) {
+    Queue<SerializableInt> q(queue_ser, nullptr);
+
+    SerializableInt x = q.get();
+    assert (x.getVal() == 42);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_custom_int_pickler_load(const char * queue_ser) {
+    Queue<SerializableInt> q(queue_ser, nullptr);
+    SerializableInt x(42);
+    q.put(x);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_custom_double_pickler_dump(const char * queue_ser) {
+    Queue<SerializableDouble> q(queue_ser, nullptr);
+
+    SerializableDouble x = q.get();
+    assert (x.getVal() == 42.0);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_custom_double_pickler_load(const char * queue_ser) {
+    Queue<SerializableDouble> q(queue_ser, nullptr);
+    SerializableDouble x(42.0);
+    q.put(x);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_custom_str_pickler_dump(const char * queue_ser) {
+    Queue<SerializableString> q(queue_ser, nullptr);
+
+    SerializableString x = q.get();
+    assert (x.getVal() == "hello world");
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_custom_str_pickler_load(const char * queue_ser) {
+    Queue<SerializableString> q(queue_ser, nullptr);
+    SerializableString x("hello world");
+    q.put(x);
     return DRAGON_SUCCESS;
 }
 
@@ -351,10 +396,22 @@ int main(int argc, char* argv[]) {
             err = test_multiple_new_tasks(queue_descr, num_puts);
         } else if (test.compare("test_new_tasks_and_task_done_and_join") == 0) {
             err = test_new_tasks_and_task_done_and_join(queue_descr);
-        } else if (test.compare("test_custom_pickler_dump") == 0) {
-            err = test_custom_pickler_dump(queue_descr);
-        } else if (test.compare("test_custom_pickler_load") == 0) {
-            err = test_custom_pickler_load(queue_descr);
+        } else if (test.compare("test_custom_matrix_pickler_dump") == 0) {
+            err = test_custom_matrix_pickler_dump(queue_descr);
+        } else if (test.compare("test_custom_matrix_pickler_load") == 0) {
+            err = test_custom_matrix_pickler_load(queue_descr);
+        } else if (test.compare("test_custom_int_pickler_dump") == 0) {
+            err = test_custom_int_pickler_dump(queue_descr);
+        } else if (test.compare("test_custom_int_pickler_load") == 0) {
+            err = test_custom_int_pickler_load(queue_descr);
+        } else if (test.compare("test_custom_double_pickler_dump") == 0) {
+            err = test_custom_double_pickler_dump(queue_descr);
+        } else if (test.compare("test_custom_double_pickler_load") == 0) {
+            err = test_custom_double_pickler_load(queue_descr);
+        } else if (test.compare("test_custom_str_pickler_dump") == 0) {
+            err = test_custom_str_pickler_dump(queue_descr);
+        } else if (test.compare("test_custom_str_pickler_load") == 0) {
+            err = test_custom_str_pickler_load(queue_descr);
         } else if (test.compare("test_2d_vector_put") == 0) {
             err = test_2d_vector_put(queue_descr);
         } else {

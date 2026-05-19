@@ -286,4 +286,4 @@ if __name__ == "__main__":
     # destroy the ddict without restart
     dd.destroy()
     # shutdown telemetry
-    dt.finalize()
+    dt.shutdown()

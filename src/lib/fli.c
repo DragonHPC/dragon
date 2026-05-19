@@ -153,7 +153,7 @@ static dragonError_t _validate_attr(const dragonFLIAttr_t* attr) {
 
 static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t* mem, uint64_t arg,
                         bool transfer_ownership, bool no_copy_read_only, bool turbo_mode, bool flush,
-                        dragonMemoryPoolDescr_t* dest_pool, timespec_t* deadline) {
+                        dragonMemoryPoolDescr_t* dest_pool, timespec_t* deadline, dragonULInt debug) {
 
     dragonError_t err;
     timespec_t remaining_time;
@@ -241,7 +241,7 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
 
     err = dragon_chsend_send_msg(sendh, &msg, dest, timeout);
     if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not add serialized stream channel to manager channel.");
+        append_err_return(err, "Error on sending message from internal _send_mem.");
 
     if (transfer_ownership && turbo_mode) {
         /* We now restore original mode */
@@ -274,7 +274,7 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
 }
 
 static dragonError_t _send_bytes(dragonChannelSendh_t* chan_sendh, dragonMemoryPoolDescr_t* pool, uint8_t* bytes,
-                        size_t num_bytes, uint64_t arg, bool turbo_mode, bool flush, dragonMemoryPoolDescr_t* dest_pool, timespec_t* deadline) {
+                        size_t num_bytes, uint64_t arg, bool turbo_mode, bool flush, dragonMemoryPoolDescr_t* dest_pool, timespec_t* deadline, dragonULInt debug) {
     dragonError_t err;
     dragonMemoryDescr_t mem_descr;
     void* mem_ptr;
@@ -306,7 +306,7 @@ static dragonError_t _send_bytes(dragonChannelSendh_t* chan_sendh, dragonMemoryP
         memcpy(mem_ptr, bytes, num_bytes);
     }
 
-    err = _send_mem(chan_sendh, &mem_descr, arg, true, false, turbo_mode, flush, dest_pool, deadline);
+    err = _send_mem(chan_sendh, &mem_descr, arg, true, false, turbo_mode, flush, dest_pool, deadline, debug);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Error when calling internal _send_mem.");
 
@@ -342,7 +342,7 @@ static dragonError_t _get_buffered_bytes(dragonFLISendHandle_t* sendh, dragonMem
         pool_err = dragon_memory_pool_muid(&sendh->adapter->pool, &muid);
         if (pool_err != DRAGON_SUCCESS)
             append_err_return(pool_err, "Got this error while getting the pool muid");
-        snprintf(msg, 199, "Could not get shared memory for message from pool with muid=%lu", muid);
+        snprintf(msg, 199, "Could not get shared memory for message from pool with muid=%" PRIu64, muid);
         append_err_return(err, msg);
     }
 
@@ -400,7 +400,7 @@ static dragonError_t _send_buffered_bytes(dragonFLISendHandle_t* sendh, bool flu
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not send buffered bytes.");
 
-    err = _send_mem(&sendh->chan_sendh, &mem_descr, buffered_arg, true, false, sendh->turbo_mode, flush, dest_pool, deadline);
+    err = _send_mem(&sendh->chan_sendh, &mem_descr, buffered_arg, true, false, sendh->turbo_mode, flush, dest_pool, deadline, sendh->debug);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Error when calling internal _send_mem.");
 
@@ -962,10 +962,7 @@ static dragonError_t _send_stream_channel(const dragonChannelDescr_t* strm_ch, u
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not serialize stream channel.");
 
-    /* The send_bytes cannot use turbo mode (first false below) because if it does,
-       then off-node we experience corruption and this is very hard to trace back to
-       turbo_mode here. */
-    err = _send_bytes(&sendh, pool, ser.data, ser.len, type, false, false, NULL, deadline);
+    err = _send_bytes(&sendh, pool, ser.data, ser.len, type, true, false, NULL, deadline, 0);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not send stream channel.");
 
@@ -979,6 +976,24 @@ static dragonError_t _send_stream_channel(const dragonChannelDescr_t* strm_ch, u
 
     no_err_return(DRAGON_SUCCESS);
 }
+
+static dragonError_t _send_stream_channel_when_primed(dragonFLISendHandle_t* sendh_obj, bool closing, timespec_t* deadline) {
+    dragonError_t err;
+    dragonFLI_t* obj = sendh_obj->adapter;
+
+    if (!closing)
+        sendh_obj->num_sends += 1;
+
+    if (!sendh_obj->strm_channel_deposited && ((sendh_obj->num_sends == sendh_obj->strm_channel_primes) || closing)) {
+        err = _send_stream_channel(&sendh_obj->strm_channel, sendh_obj->strm_type, &obj->main_ch, &obj->pool, deadline);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not deposit stream channel into main channel.");
+        sendh_obj->strm_channel_deposited = true;
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
 
 static dragonError_t _recv_stream_channel(dragonChannelDescr_t* from_chan, dragonChannelDescr_t* strm_ch, uint64_t* type, dragonFLIRecvHandle_t* fli_recvh, timespec_t* deadline) {
     dragonError_t err;
@@ -1255,6 +1270,10 @@ dragonError_t _fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, size_t nu
             append_err_return(err, "Could not send data.");
     }
 
+    err = _send_stream_channel_when_primed(sendh_obj, false, deadline);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not deposit the stream channel for some reason.");
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -1292,13 +1311,16 @@ dragonError_t dragon_fli_attr_init(dragonFLIAttr_t* attr) {
  * FLI adapters may be created in one of several modes.
  *
  * When the main channel is provided the FLI adapter will be use in one of
- * three modes.
+ * four modes.
  *
  * 1. In buffered mode the main channel is used to communicate on a many
  * to many style connection where each send conversation is a complete conversation
  * between a sender and a receiver. In this mode, if multiple sends are done, they
  * are buffered before sending. In buffered mode receivers will receive the sent
- * message as one receive operation, even if multiple sends were performed.
+ * message as one receive operation, even if multiple sends were performed. However,
+ * if recv_bytes is used and less bytes than were sent is specified to read, there
+ * may be multiple recv_bytes to read the entire message. It is still sent as one
+ * message when in buffered mode, but may be read in chunks.
  *
  * 2. In non-buffered mode the main channel is a channel of stream channels and the
  * API manages allocating a stream channel to an open send handle and providing that
@@ -1310,8 +1332,17 @@ dragonError_t dragon_fli_attr_init(dragonFLIAttr_t* attr) {
  * there is a manager channel which manages a set of stream channels to be used when
  * sending data, OR a sender may provide a stream channel when opening the send handle.
  *
- * 3. There is one special case when a main channel is used in non-buffered mode
- * and it is known that there is a single sender and single receiver using the FLI
+ * 3. A sender may open a send handle on a streaming (non-buffered) main channel
+ * with a special constant for the stream channel that indicates that no stream
+ * channel is being provided and wants to send the data in buffered mode instead. The special
+ * stream channel constant used to select this mode is STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND.
+ * The sender may do as many send_bytes as desired. The data will be buffered until
+ * the send handle is closed when it will be packaged up and sent. In this mode of
+ * operation the receiver does not need to know that the data was sent this way.
+ * The FLI will automatically detect this and handle it accordingly.
+ *
+ * 4. The main channel may be used in non-buffered (i.e. streaming) mode if it is
+ * known that there is a single sender and single receiver using the FLI
  * adapter. In this case, both the sender and receiver must specify a special
  * constant of STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION for the stream channel
  * argument when opening the send handle and when opening the receive handle.
@@ -1320,10 +1351,10 @@ dragonError_t dragon_fli_attr_init(dragonFLIAttr_t* attr) {
  * ways. Please note: When creating an FLI adapter using the buffered protocol
  * no manager channel should be specified.
  *
- * 1. When created in non-buffered mode, the manager channel contains a set
+ * 1. When created in non-buffered mode, the manager channel may contain a set
  * of serialized descriptors for stream channels that will be provided
  * to send handles when they are opened. If no main channel exists, then
- * the stream channel must be provided when the receiver opens a receive
+ * a stream channel must be provided when the receiver opens a receive
  * handle. If stream channels are provided when the receive handle is opened
  * then no main channel is required.
  *
@@ -1331,7 +1362,7 @@ dragonError_t dragon_fli_attr_init(dragonFLIAttr_t* attr) {
  * a manager channel, and a set of stream channels. In this case, the fli
  * adapter will maintain the stream channels and dole them out and re-use them
  * as send and receive handles are opened and closed, always guaranteeing that
- * any conversation between sender and receiver is will not be interleaved with
+ * any conversation between sender and receiver will not be interleaved with
  * data from other processes.
  *
  * If desired, a stream channel can be provided on either send handle open or
@@ -1348,9 +1379,9 @@ dragonError_t dragon_fli_attr_init(dragonFLIAttr_t* attr) {
  * re-creating an adapter by calling this function, the strm_channels should
  * only be provided on the initial call to create. Providing them a second
  * time will result in the channels being added more than once into the
- * adapter which could lead to unpredictable results.
+ * adapter which would lead to unpredictable results.
  *
- * @param adapter is a descriptor and opaque handle to the FLI adapter and is
+ * @param adapter is a descriptor and opaque handle to the FLI adapter that is
  * initialized by this call.
  *
  * @param main_ch is a channel descriptor for the main channel of this FLI
@@ -1361,7 +1392,7 @@ dragonError_t dragon_fli_attr_init(dragonFLIAttr_t* attr) {
  * touched by user code during the life of the adapter. After the life of the
  * adapter it is up to user code to clean up this channel. Supplying a NULL
  * mgr_ch argument indicates this is either a buffered FLI adapter and must be
- * accompanied by a value of 0 for the num_fli_chs argument or a stream channel
+ * accompanied by a value of 0 for the num_strm_chs argument or a stream channel
  * will be supplied on all send operations.
  *
  * @param pool is a pool to use for internal allocations necessary for the
@@ -1381,7 +1412,7 @@ dragonError_t dragon_fli_attr_init(dragonFLIAttr_t* attr) {
  *
 * @param use_buffered_protocol if true then only a main channel should be provided and no
  * manager channel or stream channels are required. In this case all sent data is
- * buffered into one message for all file write operations (all writes on an open send
+ * buffered into one message for all send operations (all sends on an open send
  * handle). The receiving side receives one message per conversation.
  *
  * @param attr is a pointer to the attributes structure that was previously
@@ -1431,8 +1462,8 @@ dragonError_t dragon_fli_create(dragonFLIDescr_t* adapter, dragonChannelDescr_t*
  * touched by user code during the life of the adapter. It is used, and must
  * be created as, a semaphore. The channel attributes are used to specify that
  * the channel is a semaphore channel when it is created. Call attr_init first
- * for the channel, then set the semaphore attribute and create this channel
- * before calling this FLI create function.
+ * for the channel attributes, then set the semaphore attribute and create this
+ * channel before calling this FLI create function.
  *
  * @param pool is a pool to use for internal allocations necessary for the
  * operation of the pool. If pool is NULL, then the pool of the
@@ -1670,8 +1701,8 @@ dragonError_t dragon_fli_destroy(dragonFLIDescr_t* adapter) {
 /**
  * @brief Serialize a FLI adapter
  *
- * This enable sharing with another process. When sharing
- * an FLI adapter with another process  you may use this function to create a
+ * This enables sharing with another process. When sharing
+ * an FLI adapter with another process you may use this function to create a
  * shareable serialized descriptor. This creates a binary string which may not
  * be ASCII compliant. Before sharing, if ASCII compliance is required, call a
  * base64 encoder like the dragon_base64_encode found in dragon/utils.h before
@@ -2032,6 +2063,11 @@ dragon_fli_get_available_streams(dragonFLIDescr_t* adapter, uint64_t* num_stream
     if (adapter == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Invalid fli adapter descriptor");
 
+    if (num_streams == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "Invalid num_streams. It cannot be NULL");
+
+    *num_streams = 0;
+
     err = _fli_from_descr(adapter, &obj);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not resolve adapter to internal fli object");
@@ -2080,7 +2116,7 @@ dragonError_t dragon_fli_is_buffered(const dragonFLIDescr_t* adapter, bool* is_b
 }
 
 /**
- * @brief Indicate a new task if being tracked on the FLI.
+ * @brief Indicate a new task is being tracked on the FLI.
  *
  * Increments the number of tasks on a task FLI. This should only
  * be called after a successful send operation on the FLI, either bytes or
@@ -2332,6 +2368,7 @@ dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandle
            to maintain ordering of anything sent on the FLI, especially when it is a buffered FLI.
            So, we just copy in the opened send handle here so we can use it in fli methods. */
         sendh_obj->chan_sendh = obj->main_sendh;
+        sendh_obj->strm_channel_deposited = true; // indicates we don't need to/already deposited strm channel.
     } else {
         if (strm_ch == STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION) {
             if (!obj->has_main_ch)
@@ -2400,13 +2437,20 @@ dragon_fli_open_send_handle(const dragonFLIDescr_t* adapter, dragonFLISendHandle
 
         if (obj->has_main_ch && strm_ch != STREAM_CHANNEL_IS_MAIN_FOR_1_1_CONNECTION) {
             /* If it has no main channel, then the stream channel was receiver supplied. In
-               all other cases (when not buffered or not the special case of a 1:1 connection)
-               the stream channel is written into the main
-               channel so a receiver can receive it and start reading while writing is occurring. */
-            err = _send_stream_channel(strm_ch, sendh_obj->strm_type, &obj->main_ch, &obj->pool, deadline);
-            if (err != DRAGON_SUCCESS)
-                append_err_return(err, "Could not deposit stream channel into main channel.");
+               all other cases (when not buffered or not the special case of a
+               1:1 connection) the stream channel is written into
+               the main channel so a receiver can receive it and
+               start reading while writing is occurring. However, we wait until the
+               sender has primed the channel with a few sends so the receiver isn't
+               immediately receiving on an empty channel and battling the sender for
+               access to the channel. */
+
+            sendh_obj->strm_channel_primes = FLI_DEFAULT_PRIMES;
+            sendh_obj->num_sends = 0;
+            sendh_obj->strm_channel_deposited = false;
         }
+        else
+            sendh_obj->strm_channel_deposited = true;
     }
 
     /* This is wrong to do this here. Attributes should be supplied when the channel send handle
@@ -2484,6 +2528,10 @@ dragonError_t dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_hand
     if (sendh_obj->tid != 0)
         err_return(DRAGON_INVALID_OPERATION, "You must close the created file descriptor and call dragon_finalize_writable_fd first.");
 
+    err = _send_stream_channel_when_primed(sendh_obj, true, deadline);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not deposit the stream channel for some reason.");
+
     if (sendh_obj->buffered_allocations != NULL) {
         /* buffered bytes remain to send on close of send handle. If
            buffering was requested, then this is the last/only send to the buffered
@@ -2497,7 +2545,7 @@ dragonError_t dragon_fli_close_send_handle(dragonFLISendHandleDescr_t* send_hand
 
     if (!sendh_obj->buffered_send) {
         /* sending the EOT indicator for the stream. */
-        err = _send_bytes(&sendh_obj->chan_sendh, &sendh_obj->adapter->pool, &dummy, 1, FLI_EOT, sendh_obj->turbo_mode, sendh_obj->flush, NULL, deadline);
+        err = _send_bytes(&sendh_obj->chan_sendh, &sendh_obj->adapter->pool, &dummy, 1, FLI_EOT, sendh_obj->turbo_mode, sendh_obj->flush, NULL, deadline, 0);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not send the end of stream indicator down the stream channel.");
 
@@ -2565,7 +2613,7 @@ dragon_fli_recv_attr_init(dragonFLIRecvAttr_t* attrs) {
  * @param strm_ch is a stream channel to be used as a direct connection to a
  * receiving process. A stream channel can only be specified for a receiver or
  * a sender, but not both. When using the buffered protocol it is not valid to
- * use a stream channel. When not providing a stream channel, NULL should be
+ * provide a stream channel. When not providing a stream channel, NULL should be
  * specified.
  *
  * As a special case, when there is a known single receiver and single sending
@@ -2712,7 +2760,7 @@ dragonError_t dragon_fli_open_recv_handle(const dragonFLIDescr_t* adapter, drago
 
         if (!recvh_obj->buffered_receive) {
             /* The value of buffered receive could change as a result of calling _recv_stream_channel
-               because it may have not received a stream channel in which case this has become
+               because it may have not have received a stream channel in which case this has become
                a buffered receive. If so, then don't do these steps since there is no stream
                channel. */
             err = dragon_channel_recvh(&recvh_obj->strm_channel, &recvh_obj->chan_recvh, NULL);
@@ -3183,8 +3231,8 @@ dragonError_t dragon_fli_finalize_readable_fd(dragonFLIRecvHandleDescr_t* recv_h
  * received by the receiving side. It does not affect the message itself. When using
  * the buffered protocol, only the first write into an open send handle will allow
  * this arg to be passed along. All other values of this arg on subsequent writes
- * to an open send handle are ignored. The value of 0xFFFFFFFFFFFFFFFF is used
- * internally and is not allowed.
+ * to an open send handle are ignored. Values of 0xFFFFFFFFFFFFFF00 and above are used
+ * internally and are not allowed.
  *
  * @param buffer is a constant of either false (or 0 or NULL), which means use
  * the default behavior, or true in which case it buffers the data until
@@ -3218,21 +3266,28 @@ dragonError_t dragon_fli_send_bytes(dragonFLISendHandleDescr_t* send_handle, siz
 }
 
 /**
- * @brief Get the bytes buffered for sending
+ * @brief Send shared memory through the FLI adapter.
  *
- * If data was buffered before sending, then calling this will return the bytes
- * that were buffered for sending in a memory descriptor AND remove them from the
- * buffered bytes of the FLI send handle. To send them, the user should subsequently
- * call dragon_fli_send_mem.
+ * All send operations between an open and a close of a send handle are guaranteed to
+ * be received by one receiver in the order they were sent.
  *
- * @param send_handle is an open send handle.
+ * @param mem is a memory descriptor pointer to Dragon managed memory to be sent.
  *
- * @param mem_descr is a pointer to space for a memory descriptor that will be initialized
- * by this call. If there are no bytes buffered to send, then calling this function will
- * return a zero-byte allocation in the memory descriptor.
+ * @param arg is meta-data assigned in a 64-bit field that can be set and will be
+ * received by the receiving side. It does not affect the message itself. When using
+ * the buffered protocol, only the first write into an open send handle will allow
+ * this arg to be passed along. All other values of this arg on subsequent writes
+ * to an open send handle are ignored. Values of 0xFFFFFFFFFFFFFF00 and above are used
+ * internally and are not allowed.
  *
- * @param arg is a pointer to space to hold the buffered arg value. NULL can be provided
- * if the user does not need the arg value associated with the buffered data.
+ * @param transfer_ownership is true if ownership of the managed memory should
+ * be transferred to the receiver. Passing false means the ownership remains
+ * with the sender. This also implies a copy is made on sending.
+ *
+ * @param no_copy_read_only is true when the original memory allocation should
+ * be sent, but will not be cleaned up by anything receiving it due to the
+ * read-only nature of the memory being sent. The receiver must be aware of this
+ * read-only nature. It will not be notified of this attribute by the sender.
  *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and
@@ -3296,41 +3351,34 @@ dragonError_t dragon_fli_send_mem(dragonFLISendHandleDescr_t* send_handle, drago
 
     /* sending mem on stream channel */
 
-    err = _send_mem(&sendh_obj->chan_sendh, mem, arg, transfer_ownership, no_copy_read_only, sendh_obj->turbo_mode, false, dest_pool, deadline);
+    err = _send_mem(&sendh_obj->chan_sendh, mem, arg, transfer_ownership, no_copy_read_only, sendh_obj->turbo_mode, false, dest_pool, deadline, sendh_obj->debug);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not send the managed memory down the stream channel.");
+
+    err = _send_stream_channel_when_primed(sendh_obj, false, deadline);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not deposit the stream channel for some reason.");
 
     no_err_return(DRAGON_SUCCESS);
 }
 
-/**
- * @brief Send shared memory through the FLI adapter.
+
+ /**
+ * @brief Get the bytes buffered for sending
  *
- * All send operations between an open and a close of a send handle are guaranteed to
- * be received by one receiver in the order they were sent.
+ * If data was buffered before sending, then calling this will return the bytes
+ * that were buffered for sending in a memory descriptor AND remove them from the
+ * buffered bytes of the FLI send handle. To send them, the user should subsequently
+ * call dragon_fli_send_mem.
  *
- * @param mem is a memory descriptor pointer to Dragon managed memory to be sent.
+ * @param send_handle is an open send handle.
  *
- * @param arg is meta-data assigned in a 64-bit field that can be set and will be
- * received by the receiving side. It does not affect the message itself. When using
- * the buffered protocol, only the first write into an open send handle will allow
- * this arg to be passed along. All other values of this arg on subsequent writes
- * to an open send handle are ignored. The value of 0xFFFFFFFFFFFFFFFF is used
- * internally and is not allowed.
+ * @param mem_descr is a pointer to space for a memory descriptor that will be initialized
+ * by this call. If there are no bytes buffered to send, then calling this function will
+ * return a zero-byte allocation in the memory descriptor.
  *
- * @param transfer_ownership is true if ownership of the managed memory should
- * be transferred to the receiver. Passing false means the ownership remains
- * with the sender. This also implies a copy is made on sending.
- *
- * @param no_copy_read_only is true when the original memory allocation should
- * be sent, but will not be cleaned up by anything receiving it due to the
- * read-only nature of the memory being sent. The receiver must be aware of this
- * read-only nature. It will not be notified of this attribute by the sender.
- *
- * @param no_copy_read_only is true when the original memory allocation should
- * be sent, but will not be cleaned up by anything receiving it due to the
- * read-only nature of the memory being sent. The receiver must be aware of this
- * read-only nature. It will not be notified of this attribute by the sender.
+ * @param arg is a pointer to space to hold the buffered arg value. NULL can be provided
+ * if the user does not need the arg value associated with the buffered data.
  *
  * @param timeout is a pointer to a timeout structure. If NULL, then wait forever
  * with no timeout. If not NULL, then wait for the specified amount of time and

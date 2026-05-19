@@ -324,6 +324,7 @@ def handle_teardown(
     timeout_overlay=False,
     gs_head_exit=True,
     abort_shteardown=None,
+    abnormal_termination=False
 ):
     """Do full teardown from perspective of backend"""
 
@@ -352,8 +353,16 @@ def handle_teardown(
 
     # Recv SHTeardown and send shhaltbe
     for index, node in enumerate(nodes.values()):
-        sh_teardown_msg = dmsg.parse(node["conn"].recv())
-        assert isinstance(sh_teardown_msg, dmsg.SHTeardown), "SHTeardown from fe expected"
+
+        sh_teardown_msg = None
+
+        # Under normal circumstances we send the SHTeardown message twice
+        # but when in abnormal termination mode we only expect to see it once
+        count = 2 if not abnormal_termination else 1
+        for _ in range(count):
+            sh_teardown_msg = dmsg.parse(node["conn"].recv())
+            assert isinstance(sh_teardown_msg, dmsg.SHTeardown), "SHTeardown from fe expected"
+
         if abort_shteardown is not None and index == abort_shteardown:
             node["conn"].send(dmsg.AbnormalTermination(tag=next_tag()).serialize())
         node["conn"].send(dmsg.SHHaltBE(tag=next_tag()).serialize())
@@ -361,7 +370,7 @@ def handle_teardown(
     # Recv BEHalted
     for node in nodes.values():
         be_halted_msg = dmsg.parse(node["conn"].recv())
-        assert isinstance(be_halted_msg, dmsg.BEHalted), "BEHalted from fe expected"
+        assert isinstance(be_halted_msg, dmsg.BEHalted), f"BEHalted from fe expected got {type(be_halted_msg)}"
 
     # Recv FE's LAHaltOverlay for overlay and then tell it we've shut down our mocked up overlay tree
     if not timeout_overlay:

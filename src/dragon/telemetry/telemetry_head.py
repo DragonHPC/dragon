@@ -2,6 +2,7 @@ import dragon
 from dragon.native.process_group import ProcessGroup
 from dragon.native.process import ProcessTemplate, Process
 from dragon.native.queue import Queue
+from dragon.native.event import Event
 from dragon.native.machine import System, Node
 from dragon.infrastructure.policy import Policy
 from dragon.infrastructure.parameters import this_process
@@ -16,7 +17,7 @@ import logging
 import socket
 from dragon.dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 from dragon.utils import set_local_kv
-from dragon.telemetry.analysis import AnalysisServer, LS_TAS_KEY
+from dragon.telemetry.analysis_server import AnalysisServer, LS_TAS_KEY
 import yaml
 import subprocess
 
@@ -165,13 +166,13 @@ def _register_with_local_services(serialized_slow_node_channel):
 
 def start_server(queue_discovery, slow_node_discovery, return_queue_dict, shutdown_event, telemetry_cfg: object, offline_telemetry_args: tuple = None):
     from dragon.telemetry.dragon_server import DragonServer
-    
+
     ds_queue = Queue()
     hostname = os.uname().nodename
     queue_discovery.put((hostname, ds_queue))
     # if slow_node_service:
     # TODO: should consider a long timeout here maybe - keep off for offline_telemetry
-    if offline_telemetry_args is None: # We don't have slow node service for offline telemetry 
+    if offline_telemetry_args is None: # We don't have slow node service for offline telemetry
         slow_node_channel_sdesc = slow_node_discovery.get()
         _register_with_local_services(slow_node_channel_sdesc)
 
@@ -194,10 +195,11 @@ def k8s_telemetry_service():
     kubernetes.k8s_api_v1.patch_namespaced_pod(pod_name, namespace=kubernetes.namespace, body=patch_labels)
 
 
-def start_telemetry():
+def start_telemetry(telemetry_level=None):
 
+    if telemetry_level is not None:
+        os.environ["DRAGON_TELEMETRY_LEVEL"] = str(telemetry_level)
     setup_logging()
-    mp.set_start_method("dragon")
     queue_dict = {}
     alloc = System()
     nodes = [Node(id) for id in alloc.nodes]
@@ -208,7 +210,7 @@ def start_telemetry():
         if node.is_primary:
             primary_node_hostname = node.hostname
 
-    shutdown_event = mp.Event()
+    shutdown_event = Event()
     queue_discovery = Queue()
     as_discovery = Queue()
     return_queue_aggregator = Queue()

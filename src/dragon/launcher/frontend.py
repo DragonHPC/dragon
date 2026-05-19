@@ -388,7 +388,7 @@ class LauncherFrontEnd:
             try:
                 self.logging_queue.destroy()
                 self.logging_queue = None
-            except (Exception):
+            except Exception:
                 pass
 
         # And raise error
@@ -498,7 +498,9 @@ class LauncherFrontEnd:
         except Exception:
             pass
         finally:
-            self.conn_in.close()
+            if self.conn_in is not None:
+                self.conn_in.close()
+                self.conn_in = None
 
         # Close the overlay tree agent
         try:
@@ -803,7 +805,9 @@ class LauncherFrontEnd:
                 try:
                     be_sdesc = B64.from_str(forwarding[str(idx)].overlay_cd)
                     be_ch = Channel.attach(be_sdesc.decode(), mem_pool=self.fe_mpool)
-                    conn_options = ConnectionOptions(default_pool=self.fe_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23)
+                    conn_options = ConnectionOptions(
+                        default_pool=self.fe_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23
+                    )
                     conn_out = Connection(outbound_initializer=be_ch, options=conn_options, policy=conn_policy)
                     conn_out.ghost = True
 
@@ -1198,6 +1202,9 @@ Performance may be suboptimal."""
                 be_job_config_str = be_job_config_str.replace(
                     "{{temp_log_value}}", os.environ["DRAGON_LOG_DEVICE_ACTOR_FILE"]
                 )
+
+                # Replace the placeholder for the overlay transport with the actual value
+                be_job_config_str = be_job_config_str.replace("{{temp_overlay_transport}}", str(self.overlay_transport))
 
                 # Do the same for the gateway channel env variable
                 be_job_config_str = be_job_config_str.replace(

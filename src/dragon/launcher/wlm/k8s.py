@@ -2,7 +2,7 @@ import os
 import yaml
 import subprocess
 
-from .base import BaseWLM
+from .base import WLM, BaseWLM
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.facts import (
     DEFAULT_TRANSPORT_NETIF,
@@ -30,7 +30,7 @@ class KubernetesNetworkConfig(BaseWLM):
         if hostlist is None:
             hostlist = []
 
-        super().__init__("k8s", network_prefix, port, len(hostlist))
+        super().__init__(WLM.K8S.value, network_prefix, port, len(hostlist))
 
         # Load the in-cluster config
         config.load_incluster_config()

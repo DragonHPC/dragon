@@ -1,5 +1,5 @@
 """
-Unit tests for the CPU worker utilities module.
+Unit tests for the CPU worker utilities module (inference/cpu_worker_utils.py).
 
 Tests the CPUWorker class.
 
@@ -12,8 +12,10 @@ from unittest import TestCase, main
 from unittest.mock import patch, MagicMock
 
 from dragon.infrastructure.policy import Policy
+from dragon.native.event import Event as DragonNativeEvent
 from dragon.native.process_group import ProcessGroup
 from dragon.native.process import ProcessTemplate, Popen
+
 from dragon.ai.inference.cpu_worker_utils import CPUWorker
 from dragon.ai.inference.config import (
     ModelConfig,
@@ -21,7 +23,6 @@ from dragon.ai.inference.config import (
     GuardrailsConfig,
     DynamicWorkerConfig,
 )
-
 from .mocks import MockTelemetry
 
 
@@ -482,38 +483,23 @@ class TestCPUWorkerStartInfWorkers(TestCase):
     def test_start_inf_workers_creates_workers(self, mock_create_inf):
         """Test start_inf_workers creates the correct number of workers."""
 
-        # Use threading to prevent barrier hang
         def mock_create_worker_impl(*args, **kwargs):
-            """Mock that returns a minimal ProcessGroup and participates in barrier."""
-            # Create a minimal real ProcessGroup
-            policy = Policy()
-            mock_pg = ProcessGroup(restart=False, policy=policy)
+            """Create a real ProcessGroup whose process participates in the Dragon barrier."""
+            # args[4] is inf_wrkr_barrier (Dragon native Barrier)
+            barrier = args[4]
 
-            def dummy_process():
-                pass
+            def dummy_process(b):
+                """Dragon process that satisfies its barrier slot then exits."""
+                b.wait()
 
-            mock_pg.add_process(nproc=1, template=ProcessTemplate(target=dummy_process))
-            mock_pg.init()
-            mock_pg.start()
-
-            # Participate in the barrier (simulating what real workers would do)
-            # The barrier is passed in args[5] (inf_wrkr_barrier)
-            barrier = args[5]
-
-            def wait_on_barrier():
-                try:
-                    barrier.wait()
-                except:
-                    pass
-
-            # Start a thread to wait on the barrier (simulating worker process)
-            import threading
-
-            t = threading.Thread(target=wait_on_barrier)
-            t.daemon = True
-            t.start()
-
-            return mock_pg
+            pg = ProcessGroup(restart=False, policy=Policy())
+            pg.add_process(
+                nproc=1,
+                template=ProcessTemplate(target=dummy_process, args=(barrier,)),
+            )
+            pg.init()
+            pg.start()
+            return pg
 
         mock_create_inf.side_effect = mock_create_worker_impl
 
@@ -560,7 +546,7 @@ class TestCPUWorkerStartInfWorkers(TestCase):
         # Verify structure of worker tuples
         for worker_tuple in my_inf_workers:
             self.assertEqual(len(worker_tuple), 3)  # (event, pg, id)
-            self.assertIsInstance(worker_tuple[0], type(mp.Event()))  # event
+            self.assertIsInstance(worker_tuple[0], DragonNativeEvent)  # event
             self.assertIsInstance(worker_tuple[1], ProcessGroup)  # pg
             self.assertIsInstance(worker_tuple[2], int)  # id
 

@@ -40,7 +40,9 @@ class PromptGuard:
         model = AutoModelForSequenceClassification.from_pretrained(
             pretrained_model_name_or_path=model_name, token=hf_token
         )
-        tokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path=model_name, token=hf_token)
+        tokenizer = AutoTokenizer.from_pretrained(
+            pretrained_model_name_or_path=model_name, token=hf_token
+        )
         return model, tokenizer
 
     def preprocess_text_for_promptguard(self, text: str) -> str:
@@ -102,7 +104,9 @@ class PromptGuard:
         if preprocess:
             text = self.preprocess_text_for_promptguard(text)
         # Encode the text
-        inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        inputs = self.tokenizer(
+            text, return_tensors="pt", padding=True, truncation=True, max_length=512
+        )
         inputs = {key: value.to(device) for key, value in inputs.items()}
 
         # Get logits from the model
@@ -140,7 +144,9 @@ class PromptGuard:
         :rtype: tuple[float, float]
         """
         start_time = time.time()
-        probabilities = self.get_class_probabilities(text, temperature, device, preprocess)
+        probabilities = self.get_class_probabilities(
+            text, temperature, device, preprocess
+        )
         return probabilities[0, 2].item(), round(time.time() - start_time, 2)
 
     def get_indirect_injection_score(
@@ -170,8 +176,12 @@ class PromptGuard:
         :rtype: tuple[float, float]
         """
         start_time = time.time()
-        probabilities = self.get_class_probabilities(text, temperature, device, preprocess)
-        return (probabilities[0, 1] + probabilities[0, 2]).item(), round(time.time() - start_time, 2)
+        probabilities = self.get_class_probabilities(
+            text, temperature, device, preprocess
+        )
+        return (probabilities[0, 1] + probabilities[0, 2]).item(), round(
+            time.time() - start_time, 2
+        )
 
     def process_text_batch(
         self,
@@ -196,7 +206,9 @@ class PromptGuard:
         """
         if preprocess:
             texts = [self.preprocess_text_for_promptguard(text) for text in texts]
-        inputs = self.tokenizer(texts, return_tensors="pt", padding=True, truncation=True, max_length=512)
+        inputs = self.tokenizer(
+            texts, return_tensors="pt", padding=True, truncation=True, max_length=512
+        )
         inputs = {key: value.to(device) for key, value in inputs.items()}
 
         with torch.no_grad():
@@ -247,7 +259,9 @@ class PromptGuard:
         for i in range(0, len(all_chunks), max_batch_size):
             batch_chunks = all_chunks[i : i + max_batch_size]
             batch_indices = text_indices[i : i + max_batch_size]
-            probabilities = self.process_text_batch(batch_chunks, temperature, device, preprocess)
+            probabilities = self.process_text_batch(
+                batch_chunks, temperature, device, preprocess
+            )
             scores = probabilities[:, score_indices].sum(dim=1).tolist()
 
             for idx, score in zip(batch_indices, scores):
@@ -281,7 +295,9 @@ class PromptGuard:
         :rtype: tuple[list[float], float]
         """
         start_time = time.time()
-        response = self.get_scores_for_texts(texts, [2], temperature, device, max_batch_size, preprocess)
+        response = self.get_scores_for_texts(
+            texts, [2], temperature, device, max_batch_size, preprocess
+        )
         return response, round(time.time() - start_time, 2)
 
     def get_indirect_injection_scores_for_texts(
@@ -311,5 +327,7 @@ class PromptGuard:
         :rtype: tuple[list[float], float]
         """
         start_time = time.time()
-        response = self.get_scores_for_texts(texts, [1, 2], temperature, device, max_batch_size, preprocess)
+        response = self.get_scores_for_texts(
+            texts, [1, 2], temperature, device, max_batch_size, preprocess
+        )
         return response, round(time.time() - start_time, 2)

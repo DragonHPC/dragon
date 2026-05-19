@@ -1996,7 +1996,14 @@ class ProcessGroup:
         return self._mgr.state
 
     def __setstate__(self, state):
-        self._mgrq, self._mgr_p_uid, self._exq = state
+        if len(state) == 4:
+            self._mgrq, self._mgr_p_uid, self._exq, props_dict = state
+            self._props = PGProperties()
+            self._props.from_dict(props_dict)
+        else:
+            self._mgrq, self._mgr_p_uid, self._exq = state
+            self._props = PGProperties()
+        self._registered = False
         try:
             self._update_mgr()
             self._register()
@@ -2008,7 +2015,7 @@ class ProcessGroup:
             self._mgrq.size()
         except Exception as ex:
             raise ValueError("Cannot pickle ProcessGroup before init() method is called") from ex
-        return (self._mgrq, self._mgr_p_uid, self._exq)
+        return (self._mgrq, self._mgr_p_uid, self._exq, asdict(self._props))
 
     def __enter__(self):
         return self
@@ -2315,7 +2322,6 @@ class ProcessGroup:
         :param patience: Number of seconds to wait between successive signals are sent to bring down processes
         :type float: defaults to 5 seconds
         """
-
         self._stop_no_decorator(patience=patience)
 
     def _close_no_decorator(self, patience: float = 5.0) -> None:

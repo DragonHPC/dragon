@@ -251,6 +251,7 @@ cdef extern from "<dragon/channels.h>":
         dragonULInt hints
         dragonULInt clientid
         dragonUUID sendhid
+        dragonULInt debug
 
     ctypedef struct dragonMessage_t:
         dragonMessageAttr_t _attr

@@ -10,6 +10,7 @@ from dragon.launcher.launch_selector import determine_environment
 from dragon.launcher.frontend import LauncherFrontEnd
 from dragon.launcher.util import next_tag, SRQueue, get_with_timeout
 from dragon.launcher.launchargs import get_args
+from dragon.launcher.wlm import SlurmWLM
 
 from dragon.infrastructure.process_desc import ProcessDescriptor
 from dragon.infrastructure.node_desc import NodeDescriptor
@@ -455,6 +456,7 @@ class SigIntTest(unittest.TestCase):
         if self.be_mpool is not None:
             self.be_mpool.destroy()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_clean_exit(self, mock_overlay, mock_be_launch):
@@ -476,61 +478,62 @@ class SigIntTest(unittest.TestCase):
 
         mock_procs.start()
 
-        fe_server = LauncherFrontEnd(args_map=self.args_map)
-        fe_server.run_startup()
-        fe_server.run_app()
-        fe_server.run_msg_server()
+        with LauncherFrontEnd(args_map=self.args_map) as fe_server:
+            fe_server.run_startup()
+            fe_server.run_app()
+            fe_server.run_msg_server()
 
         mock_procs.join()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sig_0(self, mock_overlay, mock_be_launch):
         """Test SIGINT being raised at case 0 in launcher"""
 
         sigint_trigger = 0
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sig_1(self, mock_overlay, mock_be_launch):
         """Test SIGINT being raised at case 1 in launcher"""
 
         sigint_trigger = 1
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     def test_sig_1_no_mock(self):
         """Test SIGINT with full runtime being raised at case 1 in launcher"""
 
         if self.multi_mode:
             sigint_trigger = 1
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                 self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     def test_sig_minus_1(self):
         """Test SIGINT with full runtime being raised at case -1 in launcher"""
 
         if self.multi_mode:
 
             sigint_trigger = -1
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                 self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
@@ -538,13 +541,13 @@ class SigIntTest(unittest.TestCase):
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     def test_sig_minus_2(self):
         """Test SIGINT with full runtime being raised at case -2 in launcher"""
         if self.multi_mode:
             sigint_trigger = -2
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
@@ -552,30 +555,31 @@ class SigIntTest(unittest.TestCase):
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sig_2(self, mock_overlay, mock_be_launch):
         """Test SIGINT being raised at case 2 in launcher"""
 
         sigint_trigger = 2
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     def test_sig_2_no_mock(self):
         """Test SIGINT with full runtime being raised at case 2 in launcher"""
         if self.multi_mode:
             sigint_trigger = 2
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                 self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sig_3(self, mock_overlay, mock_be_launch):
@@ -598,26 +602,26 @@ class SigIntTest(unittest.TestCase):
         mock_procs.start()
 
         sigint_trigger = 3
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
 
         mock_procs.join()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     def test_sig_3_no_mock(self):
         """Test SIGINT with full runtime being raised at case 3 in launcher"""
         if self.multi_mode:
             sigint_trigger = 3
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                 self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sig_4(self, mock_overlay, mock_be_launch):
@@ -640,28 +644,28 @@ class SigIntTest(unittest.TestCase):
         mock_procs.start()
 
         sigint_trigger = 4
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()
 
         mock_procs.join()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     def test_sig_4_no_mock(self):
         """Test SIGINT with full runtime being raised at case 4 in launcher"""
         if self.multi_mode:
             sigint_trigger = 4
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                 self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sig_5(self, mock_overlay, mock_be_launch):
@@ -685,9 +689,8 @@ class SigIntTest(unittest.TestCase):
         mock_procs.start()
 
         sigint_trigger = 5
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()
@@ -695,19 +698,20 @@ class SigIntTest(unittest.TestCase):
         self.exit_queue.send(dmsg.LAExit(tag=next_tag()).serialize())
         mock_procs.join()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     def test_sig_5_no_mock(self):
         """Test SIGINT with full runtime being raised at case 5 in launcher"""
         if self.multi_mode:
             sigint_trigger = 5
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                 self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sig_6(self, mock_overlay, mock_be_launch):
@@ -730,9 +734,8 @@ class SigIntTest(unittest.TestCase):
         mock_procs.start()
 
         sigint_trigger = 6
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()
@@ -740,19 +743,20 @@ class SigIntTest(unittest.TestCase):
         self.exit_queue.send(dmsg.LAExit(tag=next_tag()).serialize())
         mock_procs.join()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     def test_sig_6_no_mock(self):
         """Test SIGINT with full runtime being raised at case 6 in launcher"""
         if self.multi_mode:
             sigint_trigger = 6
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                 self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sig_7(self, mock_overlay, mock_be_launch):
@@ -775,11 +779,10 @@ class SigIntTest(unittest.TestCase):
         mock_procs.start()
 
         sigint_trigger = 7
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
         log = logging.getLogger("test_sig_7")
         log.debug("entering main test")
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()
@@ -791,15 +794,15 @@ class SigIntTest(unittest.TestCase):
         """Test SIGINT with full runtime being raised at case 7 in launcher"""
         if self.multi_mode:
             sigint_trigger = 7
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
         else:
             print("Unable to run. Requires WLM job allocation")
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sigint_hung_backend(self, mock_overlay, mock_be_launch):
@@ -824,9 +827,8 @@ class SigIntTest(unittest.TestCase):
         mock_procs.start()
 
         sigint_trigger = 7
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()
@@ -838,6 +840,7 @@ class SigIntTest(unittest.TestCase):
 
         mock_procs.join()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sigint_hung_overlay(self, mock_overlay, mock_be_launch):
@@ -862,9 +865,8 @@ class SigIntTest(unittest.TestCase):
         mock_procs.start()
 
         sigint_trigger = 7
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()
@@ -877,6 +879,7 @@ class SigIntTest(unittest.TestCase):
     @unittest.skip(
         "Skipped pending fix of problem outlined in CIRRUS-1922. This test terminates too much and sometimes kills Docker container."
     )
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_rapid_sigint(self, mock_overlay, mock_be_launch):
@@ -900,10 +903,9 @@ class SigIntTest(unittest.TestCase):
         mock_procs.start()
 
         sigint_trigger = 8
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
         start = time()
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()
@@ -921,9 +923,8 @@ class SigIntTest(unittest.TestCase):
 
         if self.multi_mode:
             sigint_trigger = 8
-            fe_server = LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger)
-
-            with self.assertRaises(KeyboardInterrupt):
+            with LauncherFrontEnd(args_map=self.wlm_args_map, sigint_trigger=sigint_trigger) as fe_server, \
+                 self.assertRaises(KeyboardInterrupt):
                 fe_server.run_startup()
                 fe_server.run_app()
                 fe_server.run_msg_server()
@@ -933,6 +934,7 @@ class SigIntTest(unittest.TestCase):
     @unittest.skip(
         "Skipped pending fix of problem outlined in CIRRUS-1922. This test terminates too much and sometimes kills Docker container."
     )
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_teardown_with_hung_backend_sigint(self, mock_overlay, mock_be_launch):
@@ -954,10 +956,9 @@ class SigIntTest(unittest.TestCase):
         mock_procs.start()
 
         sigint_trigger = 9
-        fe_server = LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger)
-
         start = time()
-        with self.assertRaises(KeyboardInterrupt):
+        with LauncherFrontEnd(args_map=self.args_map, sigint_trigger=sigint_trigger) as fe_server, \
+             self.assertRaises(KeyboardInterrupt):
             fe_server.run_startup()
             fe_server.run_app()
             fe_server.run_msg_server()

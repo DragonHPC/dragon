@@ -71,10 +71,12 @@ def test_main(fli1, fli2, channel_host, same):
     proc.start()
 
     sendh = fli1.sendh()
-    recvh = fli2.recvh()
 
     sendh.send_bytes(b"hello", 42)
     sendh.close()
+
+    recvh = fli2.recvh()
+
     x, hint = recvh.recv_bytes()
 
     try:

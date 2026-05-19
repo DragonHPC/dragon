@@ -147,8 +147,8 @@ multinode-tests: c_ddict cpp_ddict $(TESTS_DRAGON_MULTI_NODE) resiliency test_hs
 .PHONY: resiliency
 resiliency: $(TESTS_DRAGON_RUNTIME_REBOOT)
 
+test_batch.py: MULTI_NODE_TEST_PREFIX = module unload cray-mpich > /dev/null 2>&1 && module load cray-mpich-abi > /dev/null 2>&1 &&
 test_batch.py: $(BATCH_MY_DUMB_PROC) $(BATCH_MPI_JOB)
-	module load cray-mpich-abi && $(PYTHON) -m dragon $(WLM_OPTS) $(DEF_NODES) $@ -v -f
 
 $(BATCH_MY_DUMB_PROC): $(BATCH_UTILS_DIR)/my_dumb_proc.c
 	$(CC) $(CFLAGS) -o $@ $<
@@ -164,7 +164,7 @@ test_hsta: $(TESTS_DRAGON_HSTA)
 
 .PHONY: $(TESTS_DRAGON_MULTI_NODE)
 $(TESTS_DRAGON_MULTI_NODE):
-	$(PYTHON) -m dragon $(WLM_OPTS) $(DEF_NODES) $@ -v -f
+	$(MULTI_NODE_TEST_PREFIX) $(PYTHON) -m dragon $(WLM_OPTS) $(DEF_NODES) $@ -v -f
 
 .PHONY: $(TESTS_DRAGON_RUNTIME_REBOOT)
 $(TESTS_DRAGON_RUNTIME_REBOOT):

@@ -1,19 +1,16 @@
-import dragon
-import multiprocessing as mp
 import os
-import sys
-import math
-import time
-from pprint import pprint
-
 from ...infrastructure.policy import Policy
 from ...native.process_group import ProcessGroup
-from ...native.process import ProcessTemplate, Popen
+from ...native.process import Process, ProcessTemplate, Popen
 from ...native.machine import System, Node
+from ...native.event import Event
+from ...native.barrier import Barrier
 from ...telemetry.telemetry import Telemetry
+import sys
+import time
 from .cpu_worker_utils import CPUWorker
 from .config import InferenceConfig
-from .llm_engine import chat_template_formatter
+from pprint import pprint
 
 
 class Inference:
@@ -32,7 +29,7 @@ class Inference:
         :type config: InferenceConfig
         :param input_queue: Input queue that feeds user prompts into the
             backend service.
-        :type input_queue: mp.Queue
+        :type input_queue: dragon.native.Queue
         """
 
         # Store config for access by other methods
@@ -45,33 +42,51 @@ class Inference:
         self.run_type = config.run_type
 
         # Initialize user-prompt input queue
-        self.end_event = mp.Event()
+        self.end_event = Event()
         self.input_queue = input_queue
 
         # Input batching args - extracted from BatchingConfig
         self.batch_toggle = config.batching.enabled
         self.batch_type = config.batching.batch_type
-        self.batch_wait_time = config.batching.batch_wait_seconds if self.batch_toggle else 0.1
-        self.batch_limit_max = config.batching.max_batch_size if self.batch_toggle else 1
+        self.batch_wait_time = (
+            config.batching.batch_wait_seconds if self.batch_toggle else 0.1
+        )
+        self.batch_limit_max = (
+            config.batching.max_batch_size if self.batch_toggle else 1
+        )
 
         # Prompt Guard Module parameters - extracted from GuardrailsConfig
         self.prompt_guard_toggle = config.guardrails.enabled
-        self.prompt_guard_sensitivity = config.guardrails.prompt_guard_sensitivity if self.prompt_guard_toggle else None
-        self.prompt_guard_model = config.guardrails.prompt_guard_model if self.prompt_guard_toggle else None
+        self.prompt_guard_sensitivity = (
+            config.guardrails.prompt_guard_sensitivity
+            if self.prompt_guard_toggle
+            else None
+        )
+        self.prompt_guard_model = (
+            config.guardrails.prompt_guard_model if self.prompt_guard_toggle else None
+        )
 
         # Dynamic inf-worker args - extracted from DynamicWorkerConfig
         self.dynamic_inf_wrkr_toggle = config.dynamic_worker.enabled
         self.min_active_inf_workers_per_cpu_head = (
-            config.dynamic_worker.min_active_workers_per_cpu if self.dynamic_inf_wrkr_toggle else None
+            config.dynamic_worker.min_active_workers_per_cpu
+            if self.dynamic_inf_wrkr_toggle
+            else None
         )
         self.spin_down_threshold = (
-            config.dynamic_worker.spin_down_threshold_seconds if self.dynamic_inf_wrkr_toggle else None
+            config.dynamic_worker.spin_down_threshold_seconds
+            if self.dynamic_inf_wrkr_toggle
+            else None
         )
         self.spin_up_threshold_seconds = (
-            config.dynamic_worker.spin_up_threshold_seconds if self.dynamic_inf_wrkr_toggle else None
+            config.dynamic_worker.spin_up_threshold_seconds
+            if self.dynamic_inf_wrkr_toggle
+            else None
         )
         self.spin_up_prompt_threshold = (
-            config.dynamic_worker.spin_up_prompt_threshold if self.dynamic_inf_wrkr_toggle else None
+            config.dynamic_worker.spin_up_prompt_threshold
+            if self.dynamic_inf_wrkr_toggle
+            else None
         )
 
         # LLM Module parameters - extracted from ModelConfig
@@ -101,14 +116,16 @@ class Inference:
         self.nodes = self.maybe_subset_nodes_gpus()
 
         # Create cpu and device dict by hostname affinity.
-        self.cpu_and_device_proc_by_hostname, self.cpu_nprocs = self.create_cpu_device_workers_by_node()
+        self.cpu_and_device_proc_by_hostname, self.cpu_nprocs = (
+            self.create_cpu_device_workers_by_node()
+        )
 
         # Create cpu workers process-group
         self.cpu_wrks_pg = ProcessGroup(restart=False)
 
         # Define barrier to initialize all cpu-workers before starting inferencing
         num_barriers = 1 + self.cpu_nprocs
-        self.cpu_barrier = mp.Barrier(num_barriers)
+        self.cpu_barrier = Barrier(num_barriers)
 
         # Create dragon telemetry procs.
         self.dt = Telemetry()
@@ -163,7 +180,9 @@ class Inference:
             )
             start = self.node_offset
             end = self.node_offset + self.nnodes
-            all_nodes = {key: all_nodes[key] for key in list(all_nodes.keys())[start:end]}
+            all_nodes = {
+                key: all_nodes[key] for key in list(all_nodes.keys())[start:end]
+            }
 
         # Maybe subset gpus
         my_nodes = {}
@@ -211,7 +230,9 @@ class Inference:
             cpu_wrkr_id = 0
             cpu_and_device_proc_by_hostname[hostname] = {}
             inf_wrkr_config = []
-            for i in range(0, len(devices) - (len(devices) % self.tp_size), self.tp_size):
+            for i in range(
+                0, len(devices) - (len(devices) % self.tp_size), self.tp_size
+            ):
 
                 if num_inf_wrkrs >= self.num_inf_workers_for_each_cpu_head:
                     cpu_wrkr_id += 1
@@ -243,7 +264,7 @@ class Inference:
 
         :param q_item: Tuple of the form ``(user_input, response_queue)``
             where ``user_input`` is a string or list of strings and
-            ``response_queue`` is an ``mp.Queue`` used to receive responses.
+            ``response_queue`` is an ``dragon.native.Queue`` used to receive responses.
         :type q_item: tuple
         """
         start_time = time.time()
@@ -251,14 +272,22 @@ class Inference:
         prompt = q_item[0]
         response_q = q_item[1]
 
+        from .llm_engine import chat_template_formatter
+
         # No batching or single inputs that are dynamically batched in the backend.
         # Format them individually.
         if self.batch_toggle is False or self.batch_type == "dynamic":
-            formatted_prompt = chat_template_formatter(self.system_prompt, prompt, [], self.model_name)
+            formatted_prompt = chat_template_formatter(
+                self.system_prompt, prompt, [], self.model_name
+            )
         elif self.batch_type == "pre-batch":  # Already pre-batched list of inputs.
             formatted_prompt = []
             for item in prompt:
-                formatted_prompt.append(chat_template_formatter(self.system_prompt, item, [], self.model_name))
+                formatted_prompt.append(
+                    chat_template_formatter(
+                        self.system_prompt, item, [], self.model_name
+                    )
+                )
         item = (prompt, formatted_prompt, response_q, start_time)
         self.input_queue.put(item)
 
@@ -268,7 +297,9 @@ class Inference:
             num_cpu_procs_per_hostname = len(my_dict)
 
             # Assign each cpu-head process to its localized node for faster communication with GPU devices.
-            cpu_hostname_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=hostname)
+            cpu_hostname_policy = Policy(
+                placement=Policy.Placement.HOST_NAME, host_name=hostname
+            )
 
             for cpu_wrkr_id in range(1, num_cpu_procs_per_hostname + 1):
 
@@ -286,7 +317,6 @@ class Inference:
                         target=CPUWorker.entry_point,
                         args=(cpu_args,),
                         cwd=self.run_dir,
-                        stdout=Popen.PIPE,
                         policy=cpu_hostname_policy,
                     ),
                 )

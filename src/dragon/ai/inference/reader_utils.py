@@ -1,5 +1,3 @@
-import dragon
-import multiprocessing as mp
 from queue import Empty
 import time
 import pandas as pd
@@ -33,6 +31,13 @@ class ReadWorker:
                 response_info = self.q.get(timeout=0.1)
                 response_info["counter"] = str(counter + 1)
                 counter += 1
+            except KeyboardInterrupt:
+                print(
+                    f"The user has chosen to terminate the backend inference instance. Terminating read worker with pid {os.getpid()}.",
+                    flush=True,
+                )
+                self.end_ev.set()
+                break
             except Empty:
                 if counter == num_prompts:
                     # if the queue is empty and the end event is set then we shut down
@@ -128,9 +133,15 @@ class MetricsConsolidator:
                 batch_size.append(response_info["batch_size"])
 
                 # Latency
-                cpu_head_network_latency.append(response_info["cpu_head_network_latency"])
-                guardrails_inference_latency.append(response_info["guardrails_inference_latency"])
-                guardrails_network_latency.append(response_info["guardrails_network_latency"])
+                cpu_head_network_latency.append(
+                    response_info["cpu_head_network_latency"]
+                )
+                guardrails_inference_latency.append(
+                    response_info["guardrails_inference_latency"]
+                )
+                guardrails_network_latency.append(
+                    response_info["guardrails_network_latency"]
+                )
                 model_inference_latency.append(response_info["model_inference_latency"])
                 model_network_latency.append(response_info["model_network_latency"])
                 end_to_end_latency.append(response_info["end_to_end_latency"])
@@ -138,7 +149,9 @@ class MetricsConsolidator:
                 # Throughput
                 requests_per_second.append(response_info["requests_per_second"])
                 total_tokens_per_second.append(response_info["total_tokens_per_second"])
-                total_output_tokens_per_second.append(response_info["total_output_tokens_per_second"])
+                total_output_tokens_per_second.append(
+                    response_info["total_output_tokens_per_second"]
+                )
 
                 counter += 1
             except Empty:
@@ -189,7 +202,9 @@ class MetricsConsolidator:
         df["all_inputs_combined_processing_time"] = self.total_proc_time
 
         # Output metrics to excel workbook
-        if os.path.exists(self.excel_workbook):  # Workbook already exists. Create sheet only
+        if os.path.exists(
+            self.excel_workbook
+        ):  # Workbook already exists. Create sheet only
             with pd.ExcelWriter(
                 self.excel_workbook,
                 engine="openpyxl",

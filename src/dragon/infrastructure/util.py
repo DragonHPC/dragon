@@ -28,6 +28,7 @@ import re
 import selectors
 import sys
 import time
+import threading
 from warnings import warn
 from .parameters import this_process
 from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM, gethostname, inet_aton
@@ -601,61 +602,3 @@ def rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr):
     head_node_int = struct.unpack("!L", head_node_packed_ip)[0]
 
     return (fe_ext_int << 32) | head_node_int
-
-
-class TimeKeeper:
-    def __init__(self, recording=False):
-        self._recording = recording
-        self.reset_all()
-
-    class Recorder:
-        def __init__(self, timekeeper, id, start=None):
-            self._timekeeper = timekeeper
-            self._id = id
-            self._tic = start
-
-        def __enter__(self):
-            if self._tic is None:
-                self._tic = time.perf_counter()
-
-        def __exit__(self, exc_type, exc_value, traceback):
-            toc = time.perf_counter()
-            self._timekeeper.add(self._id, self._tic, toc)
-
-    def record(self, id, start=None):
-        return TimeKeeper.Recorder(self, id, start=start)
-
-    def now(self):
-        return time.perf_counter()
-
-    def add(self, id, start, end=None):
-        if not self._recording:
-            return
-        if end is None:
-            end = time.perf_counter()
-        self._timings[id] = self._timings.get(id, 0) + (end - start)
-
-    def reset(self, id):
-        self._timings[id] = 0
-
-    def reset_all(self):
-        self._timings = {}
-
-    def empty(self):
-        return len(self._timings) == 0
-
-    def get_timings(self):
-        return dict(self._timings)
-
-    def __str__(self):
-        if self.empty():
-            return "Nothing was recorded.\nTurn on recording by creating TimeKeeper with recording=True.\n"
-
-        result = ""
-        result += "TimeKeeper Timings\n"
-        result += "==================\n"
-        for key in self._timings:
-            duration = self._timings[key]
-            result+=f"{key}:  {duration}\n"
-
-        return result

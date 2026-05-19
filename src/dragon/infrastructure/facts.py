@@ -1,7 +1,6 @@
 """Specified constants and names used in the Dragon runtime."""
 
 import os
-import shlex
 import enum
 import socket
 import sys
@@ -738,9 +737,6 @@ TRANSPORT_AGENT_ALIASES = {
     # TODO agents.
     #'tcp+tls': console_script_args(PROCNAME_TCP_TA, '--cafile', CA, '--certfile', CERT, '--keyfile', KEY)),
 }
-
-DEFAULT_TRANSPORT_AGENT = shlex.split(str(TransportAgentOptions.HSTA))
-
 
 # Inheriting from str first makes this trivially serializable when used in a dataclass object
 @enum.unique

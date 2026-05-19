@@ -86,6 +86,7 @@ Development Topics
    devguide/runtime/index.rst
    devguide/multiprocessing.rst
    devguide/ddict.rst
+   devguide/agent.rst
    devguide/glossary.rst
 
 ..   devguide/intro.rst

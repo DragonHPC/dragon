@@ -141,19 +141,19 @@ def find_intel() -> list:
 def find_accelerators() -> AcceleratorDescriptor:
     """Scan for accelerators across all supported vendors"""
     devices = find_nvidia()
-    if devices is not None:
+    if devices:
         acc = AcceleratorDescriptor(
             vendor=AccVendor.NVIDIA, device_list=list(range(len(devices))), env_str=AccEnvStr.NVIDIA
         )
         return acc
 
     devices = find_amd()
-    if devices is not None:
+    if devices:
         acc = AcceleratorDescriptor(vendor=AccVendor.AMD, device_list=list(range(len(devices))), env_str=AccEnvStr.AMD)
         return acc
 
     devices = find_intel()
-    if devices is not None:
+    if devices:
         intel_device_list = []
         for i in range(len(devices)):
             intel_device_list.append(i + 0.0)

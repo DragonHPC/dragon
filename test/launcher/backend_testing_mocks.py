@@ -29,6 +29,7 @@ def get_args_map(network_config, frontend_sdesc, host_id, ip_addrs):
         "frontend_sdesc": frontend_sdesc,
         "network_prefix": f"{network_prefix}",
         "transport_test": False,
+        "overlay_transport": "hsta",
         "overlay_port": 6565,
     }
     return args_map
@@ -36,13 +37,21 @@ def get_args_map(network_config, frontend_sdesc, host_id, ip_addrs):
 
 def mock_start_localservices_wrapper(func):
     def wrapper(*args, **kwargs):
-        def mocked_start_localservices(*args, **kwargs):
-            return MagicMock(), stdin_w_fd, stdout_r_fd
-
         from dragon.infrastructure.util import NewlineStreamWrapper
 
         stdin_r_fd, stdin_w_fd = os.pipe()
         stdout_r_fd, stdout_w_fd = os.pipe()
+
+        def mocked_start_localservices(*args, **kwargs):
+            # The backend now takes ownership of ls_proc.stdin/ls_proc.stdout
+            # directly (rather than calling os.fdopen on the raw fd integers)
+            # to avoid Python 3.13 double-close EBADF errors. The mock proc
+            # must therefore carry real IO objects on those attributes, just
+            # as a real Popen object would.
+            mock_proc = MagicMock()
+            mock_proc.stdin = os.fdopen(stdin_w_fd, "wb", buffering=0)
+            mock_proc.stdout = os.fdopen(stdout_r_fd, "rb", buffering=0)
+            return mock_proc, stdin_w_fd, stdout_r_fd
 
         ls_stdin_r = NewlineStreamWrapper(
             os.fdopen(stdin_r_fd, "rb", buffering=0), read_intent=True, write_intent=False

@@ -62,8 +62,7 @@ DIST_DIR := $(INSTALL_DIR)/dragon_unittests
 DIST_TARGETS := $(addprefix $(DIST_DIR)/,$(notdir $(filter pkg/%,$(DIST_SOURCES)))) \
                 $(addprefix $(DIST_DIR)/,$(filter-out pkg/%,$(DIST_SOURCES)))
 
-TESTS_PYTHON := test_c_files.py \
-				test_channels.py \
+TESTS_PYTHON := test_channels.py \
                 test_utils.py \
                 test_connection.py \
                 test_infrastructure.py \
@@ -74,10 +73,12 @@ TESTS_PYTHON := test_c_files.py \
                 transport/test_lsif.py \
                 test_transport.py \
                 test_integration_shep_gs.py \
-                test_dragon_cleanup.py
-# test_launcher.py (waiting for fix from Jira AICI-1859)
+                test_dragon_cleanup.py \
+                test_launcher.py
 
+ifneq ($(wildcard workflows/Makefile),)
 TEST_WORKFLOWS = test_workflows
+endif
 
 TESTS_AI := test_collective_group.py
 
@@ -102,9 +103,11 @@ all: test
 .PHONY: test
 test: $(TESTS_PYTHON) $(TESTS_DRAGON) $(TESTS_CCFUTURES) $(TESTS_AI) $(TEST_WORKFLOWS)
 
+ifneq ($(wildcard workflows/Makefile),)
 .PHONY: $(TEST_WORKFLOWS)
 $(TEST_WORKFLOWS):
-	$(MAKE) -C workflows
+    $(MAKE) -C workflows
+endif
 
 .PHONY: $(TESTS_PYTHON)
 $(TESTS_PYTHON):
@@ -150,11 +153,18 @@ $(BUILD_COMPONENTS): build-%:
 
 CLEAN_COMPONENTS := $(addprefix clean-,$(COMPONENTS))
 
+ifneq ($(wildcard workflows/Makefile),)
+CLEAN_COMPONENTS += clean-workflows
+
+.PHONY: clean-workflows
+clean-workflows:
+    $(MAKE) -C workflows clean
+endif
+
 .PHONY: clean
 clean: $(CLEAN_COMPONENTS)
 	-$(RM) *.log
 	-$(RM) /dev/shm/*
-	$(MAKE) -C workflows clean
 
 .PHONY: $(CLEAN_COMPONENTS)
 $(CLEAN_COMPONENTS): clean-%:

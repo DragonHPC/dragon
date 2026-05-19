@@ -37,11 +37,15 @@ class GuardrailsProcessor:
         self.prompt_guard: Optional[PromptGuard] = None
         if self.enabled:
             self.prompt_guard = PromptGuard(config.prompt_guard_model, hf_token)
-            log.info(f"GuardrailsProcessor initialized with model: {config.prompt_guard_model}")
+            log.info(
+                f"GuardrailsProcessor initialized with model: {config.prompt_guard_model}"
+            )
         else:
             log.info("GuardrailsProcessor disabled")
 
-    def check_prompts(self, prompts: List[str]) -> Tuple[List[bool], List[float], float]:
+    def check_prompts(
+        self, prompts: List[str]
+    ) -> Tuple[List[bool], List[float], float]:
         """Check a list of prompts for jailbreak attempts.
 
         :param prompts: List of user prompts to check.
@@ -58,12 +62,17 @@ class GuardrailsProcessor:
             return [True] * len(prompts), [0.0] * len(prompts), 0.0
 
         # Get jailbreak scores
-        jailbreak_scores, processing_time = self.prompt_guard.get_jailbreak_scores_for_texts(prompts)
+        jailbreak_scores, processing_time = (
+            self.prompt_guard.get_jailbreak_scores_for_texts(prompts)
+        )
 
         # Determine which prompts are safe (below sensitivity threshold)
         is_safe = [score < self.sensitivity for score in jailbreak_scores]
 
-        log.debug(f"Checked {len(prompts)} prompts: " f"{sum(is_safe)} safe, {len(prompts) - sum(is_safe)} malicious")
+        log.debug(
+            f"Checked {len(prompts)} prompts: "
+            f"{sum(is_safe)} safe, {len(prompts) - sum(is_safe)} malicious"
+        )
 
         return is_safe, jailbreak_scores, processing_time
 
@@ -73,7 +82,9 @@ class GuardrailsProcessor:
         formatted_prompts: List[str],
         response_queues: List,
         latency_metrics: List[Tuple[float, float, float]],
-    ) -> Tuple[List[str], List[str], List, List[Tuple[float, float, float]], List[int], float]:
+    ) -> Tuple[
+        List[str], List[str], List, List[Tuple[float, float, float]], List[int], float
+    ]:
         """Filter a batch of prompts, separating safe from malicious ones.
 
         :param prompts: List of user prompts.

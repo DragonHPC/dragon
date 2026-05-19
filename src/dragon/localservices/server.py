@@ -1638,7 +1638,8 @@ class LocalServer:
             if msg.initial_stdin is not None and msg.initial_stdin != "":
                 # we are asked to provide a string to the started process.
                 log.info("Writing %s to newly created process" % msg.initial_stdin)
-                proc_stdin = os.fdopen(the_proc.stdin.fileno(), "wb")
+                proc_stdin = the_proc.stdin
+                the_proc.stdin = None  # transfer ownership; avoids double-close of same fd (Python 3.13)
                 proc_stdin_send = dutil.NewlineStreamWrapper(proc_stdin, read_intent=False)
                 proc_stdin_send.send(msg.initial_stdin)
                 log.info("The provided string was written to stdin of the process by local services.")

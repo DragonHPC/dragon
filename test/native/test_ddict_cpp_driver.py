@@ -6,13 +6,10 @@ from dragon.data.ddict.ddict import DDict, PosixCheckpointPersister
 from dragon.native.machine import System, Node
 from dragon.infrastructure.policy import Policy
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
-from dragon.utils import b64encode
+from dragon.utils import b64encode, XNumPy2DPickler, XScalarPickler
 import multiprocessing as mp
-import cloudpickle
 import pathlib
 import numpy as np
-import sys
-import math
 import ctypes
 
 test_dir = pathlib.Path(__file__).resolve().parent
@@ -21,74 +18,6 @@ os.system(f"cd {test_dir}; make --silent")
 ENV = dict(os.environ)
 ENV["LD_LIBRARY_PATH"] = str(DRAGON_LIB_DIR) + ":" + str(ENV.get("LD_LIBRARY_PATH", ""))
 ENV["DYLD_FALLBACK_LIBRARY_PATH"] = str(DRAGON_LIB_DIR) + ":" + str(ENV.get("DYLD_FALLBACK_LIBRARY_PATH", ""))
-
-class numPy2dValuePickler:
-
-    def __init__(self, shape: tuple, data_type: np.dtype, chunk_size=0):
-        self._shape = shape
-        self._data_type = data_type
-        self._chunk_size = chunk_size
-
-    def dump(self, nparr, file) -> None:
-
-        # write the dimension of the array
-        num_bytes = ctypes.sizeof(ctypes.c_size_t)
-        nrow = nparr.shape[0]
-        ncol = nparr.shape[1]
-        bytes_nrow = nrow.to_bytes(num_bytes, byteorder=sys.byteorder)
-        bytes_ncol = ncol.to_bytes(num_bytes, byteorder=sys.byteorder)
-        file.write(bytes_nrow)
-        file.write(bytes_ncol)
-
-        # write array
-        mv = memoryview(nparr)
-        bobj = mv.tobytes()
-        # print(f"Dumping {bobj=}", file=sys.stderr, flush=True)
-        if self._chunk_size == 0:
-            chunk_size = len(bobj)
-        else:
-            chunk_size = self._chunk_size
-
-        for i in range(0, len(bobj), chunk_size):
-            file.write(bobj[i : i + chunk_size])
-
-    def load(self, file):
-
-        obj = None
-
-        # read the dimension of the array
-        num_bytes = ctypes.sizeof(ctypes.c_size_t)
-        nrow = file.read(num_bytes)
-        ncol = file.read(num_bytes)
-
-        try:
-            while True:
-                data = file.read(self._chunk_size)
-                if obj is None:
-                    # convert bytes to bytearray
-                    view = memoryview(data)
-                    obj = bytearray(view)
-                else:
-                    obj.extend(data)
-        except EOFError:
-            pass
-
-        ret_arr = np.frombuffer(obj, dtype=self._data_type).reshape(self._shape)
-
-        return ret_arr
-
-
-class intKeyPickler:
-
-    def __init__(self, num_bytes=ctypes.sizeof(ctypes.c_int)):
-        self._num_bytes = num_bytes
-
-    def dumps(self, val: int) -> bytearray:
-        return val.to_bytes(self._num_bytes, byteorder=sys.byteorder)
-
-    def loads(self, val: bytearray) -> int:
-        return int.from_bytes(val, byteorder=sys.byteorder)
-
 
 class TestDDictCPP(unittest.TestCase):
 
@@ -290,8 +219,7 @@ class TestDDictCPP(unittest.TestCase):
     def test_local_keys(self):
         exe = "cpp_ddict"
         ddict = DDict(2, 1, 3000000)
-        INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)
-        with ddict.pickler(intKeyPickler(INT_NUM_BYTES), None) as type_dd:
+        with ddict.pickler(XScalarPickler(np.int32), None) as type_dd:
             type_dd[1] = 2
             type_dd[0] = 1
 
@@ -381,8 +309,6 @@ class TestDDictCPP(unittest.TestCase):
         ddict = DDict(2, 1, 3000000)
         ser_ddict = ddict.serialize()
 
-        INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)  # number of bytes for a C++ integer, typically 4, depending on system and compiler
-
         # Write the numpy array through C++ client API
         proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_write_np_arr"], env=ENV)
         proc.wait()
@@ -392,7 +318,7 @@ class TestDDictCPP(unittest.TestCase):
         key = 32
         arr = [[1.5, 2.5, 3.5], [4.5, 5.5, 6.5]]
         value = np.array(arr)
-        with ddict.pickler(intKeyPickler(INT_NUM_BYTES), numPy2dValuePickler((2, 3), np.double)) as type_dd:
+        with ddict.pickler(XScalarPickler(np.int32), XNumPy2DPickler(np.float64)) as type_dd:
             data = type_dd[key]
             print(f"NumPy array written from C++ client: \n{data}", flush=True)
             self.assertTrue(np.array_equal(data, value))
@@ -407,10 +333,8 @@ class TestDDictCPP(unittest.TestCase):
         ddict = DDict(2, 1, 3000000)
         ser_ddict = ddict.serialize()
 
-        INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)  # number of bytes for a C++ integer, typically 4, depending on system and compiler
-
         # Write numpy through python ddict client API and read from C++ client
-        with ddict.pickler(intKeyPickler(INT_NUM_BYTES), numPy2dValuePickler((2, 3), np.double)) as type_dd:
+        with ddict.pickler(XScalarPickler(np.int32), XNumPy2DPickler(np.float64)) as type_dd:
             key = 2048
             arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
             value = np.array(arr)
@@ -429,8 +353,6 @@ class TestDDictCPP(unittest.TestCase):
         ddict = DDict(2, 1, 3000000)
         ser_ddict = ddict.serialize()
 
-        INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)  # number of bytes for a C++ integer, typically 4, depending on system and compiler
-
         # Write the array through C++ client API
         proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_keys_read_from_py"], env=ENV)
         proc.wait()
@@ -438,7 +360,7 @@ class TestDDictCPP(unittest.TestCase):
 
         # Get list of integer keys written by C++ client and Python client
         expected_keys = {32, 1024, 9876, 2048}
-        with ddict.pickler(intKeyPickler(INT_NUM_BYTES), None) as type_dd:
+        with ddict.pickler(XScalarPickler(np.int32), None) as type_dd:
             type_dd[32] = 0
             keys = type_dd.keys()
             received_keys = set(keys)

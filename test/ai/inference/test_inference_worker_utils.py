@@ -1,5 +1,5 @@
 """
-Unit tests for the inference worker utilities module.
+Unit tests for the inference worker utilities module (inference/inference_worker_utils.py).
 
 Tests the InferenceWorker class.
 
@@ -19,7 +19,6 @@ from dragon.ai.inference.config import (
     GuardrailsConfig,
     DynamicWorkerConfig,
 )
-
 from .mocks import MockTelemetry
 
 
@@ -197,8 +196,13 @@ class TestInferenceWorkerGuardrailsFiltering(TestCase):
         self.dt = MockTelemetry()
 
     @patch("dragon.ai.inference.inference_worker_utils.GuardrailsProcessor")
-    def test_filter_with_guardrails_disabled(self, mock_guardrails_class):
+    @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
+    def test_filter_with_guardrails_disabled(self, mock_logging, mock_guardrails_class):
         """Test filter_with_guardrails when guardrails is None."""
+        # Mock logger to avoid AttributeError
+        mock_logger = MagicMock()
+        mock_logging.return_value = mock_logger
+
         worker = InferenceWorker(
             end_event=self.end_event,
             model_config=self.model_config,
@@ -207,6 +211,8 @@ class TestInferenceWorkerGuardrailsFiltering(TestCase):
             dynamic_worker_config=self.dynamic_worker_config,
             dt=self.dt,
         )
+
+        worker.log = mock_logger  # Set logger attribute
 
         formatted_prompts = ["<user>Hello</user>", "<user>World</user>"]
         user_prompts = ["Hello", "World"]
@@ -219,6 +225,7 @@ class TestInferenceWorkerGuardrailsFiltering(TestCase):
             safe_queues,
             safe_metrics,
             preprocessing_time,
+            malicious_indices,
         ) = worker.filter_with_guardrails(
             formatted_prompts=formatted_prompts,
             user_prompts=user_prompts,
@@ -236,7 +243,9 @@ class TestInferenceWorkerGuardrailsFiltering(TestCase):
 
     @patch("dragon.ai.inference.inference_worker_utils.GuardrailsProcessor")
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
-    def test_filter_with_guardrails_malicious_prompts(self, mock_logging, mock_guardrails_class):
+    def test_filter_with_guardrails_malicious_prompts(
+        self, mock_logging, mock_guardrails_class
+    ):
         """Guardrails path should send malicious responses and keep safe ones."""
         # Mock logger to avoid AttributeError
         mock_logger = MagicMock()
@@ -280,6 +289,7 @@ class TestInferenceWorkerGuardrailsFiltering(TestCase):
             safe_queues,
             safe_metrics,
             preprocessing_time,
+            malicious_indices,
         ) = worker.filter_with_guardrails(
             formatted_prompts=formatted_prompts,
             user_prompts=user_prompts,
@@ -360,7 +370,6 @@ class TestInferenceWorkerEntryPoints(TestCase):
             "devices": [0],
             "head_cpu_pid": 1234,
             "inf_wrkr_id": 1,
-            "master_port": "29500",
         }
 
         InferenceWorker.llm_inference_entry_point(inference_worker_args)
@@ -396,7 +405,6 @@ class TestInferenceWorkerSendResponses(TestCase):
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
     def test_send_responses_single(self, mock_logging):
         """Test _send_responses with single response."""
-        # Mock logger to avoid AttributeError
         mock_logger = MagicMock()
         mock_logging.return_value = mock_logger
 
@@ -412,7 +420,7 @@ class TestInferenceWorkerSendResponses(TestCase):
             inf_wrkr_id=1,
         )
 
-        worker.log = mock_logger
+        worker.log = mock_logger  # Set logger attribute
 
         queue = mp.Queue()
         user_prompts = ["Hello"]
@@ -452,7 +460,6 @@ class TestInferenceWorkerSendResponses(TestCase):
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
     def test_send_responses_batch(self, mock_logging):
         """Test _send_responses with batch of responses."""
-        # Mock logger to avoid AttributeError
         mock_logger = MagicMock()
         mock_logging.return_value = mock_logger
 
@@ -468,7 +475,7 @@ class TestInferenceWorkerSendResponses(TestCase):
             inf_wrkr_id=2,
         )
 
-        worker.log = mock_logger
+        worker.log = mock_logger  # Set logger attribute
 
         queue_1 = mp.Queue()
         queue_2 = mp.Queue()
@@ -518,7 +525,6 @@ class TestInferenceWorkerSendResponses(TestCase):
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
     def test_send_responses_records_telemetry(self, mock_logging):
         """Test that _send_responses records telemetry data."""
-        # Mock logger to avoid AttributeError
         mock_logger = MagicMock()
         mock_logging.return_value = mock_logger
 
@@ -533,8 +539,7 @@ class TestInferenceWorkerSendResponses(TestCase):
             devices=[0],
             inf_wrkr_id=1,
         )
-
-        worker.log = mock_logger
+        worker.log = mock_logger  # Set logger attribute
 
         queue = mp.Queue()
         user_prompts = ["Test"]
@@ -571,7 +576,6 @@ class TestInferenceWorkerSendResponses(TestCase):
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
     def test_send_responses_with_fallback_metrics(self, mock_logging):
         """_send_responses should handle dicts missing some metric keys."""
-        # Mock logger to avoid AttributeError
         mock_logger = MagicMock()
         mock_logging.return_value = mock_logger
 
@@ -586,8 +590,7 @@ class TestInferenceWorkerSendResponses(TestCase):
             devices=[0],
             inf_wrkr_id=1,
         )
-
-        worker.log = mock_logger
+        worker.log = mock_logger  # Set logger attribute
 
         queue = mp.Queue()
         user_prompts = ["Hello"]
@@ -733,7 +736,8 @@ class TestInferenceWorkerForwardToLLM(TestCase):
         )
 
         # Verify output queue received the data as a tuple
-        # Format: (user_prompts, formatted_prompts, response_queues, latency_metrics, preprocessing_time, timestamp)
+        # Format: (user_prompts, formatted_prompts, response_queues, latency_metrics,
+        #          preprocessing_time, timestamp, tools_list, json_schema_list, continue_final_message_list)
         result = output_queue.get(timeout=1)
         self.assertEqual(result[0], user_prompts)
         self.assertEqual(result[1], formatted_prompts)
@@ -815,8 +819,7 @@ class TestInferenceWorkerLLMErrorPath(TestCase):
             head_cpu_pid=1234,
             inf_wrkr_id=1,
         )
-
-        worker.log = mock_logger
+        worker.log = mock_logger  # Set logger attribute
 
         # Test the _send_responses method directly with error scenario
         response_queue = mp.Queue()

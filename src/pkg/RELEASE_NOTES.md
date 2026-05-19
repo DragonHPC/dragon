@@ -1,3 +1,33 @@
+# Dragon 0.14.0 Release Summary
+
+We're excited to announce the release of Dragon v0.14.0, which includes several updates, additions and fixes. Here are the highlights:
+
+### Changed
+
+    - Enable the DataLoader to use pinned GPU memory
+
+### Added
+
+    - Initial Dragon release agent orchestration layer
+    - Add tool calling support to inference for dragon agent
+    - Create new Dragon DDict tutorials and examples
+    - Dragon now supports Python 3.13
+    - Introduced new TimeKeeper class to aid in application profiling
+    - Add Hierarchical job/process/function scheduler for Batch
+    - Added new Telemetry widget
+    - Add Return When Immediate Support to HSTA
+    - Added new python ExceptionalThread support
+    - Added support for RoCE networks in HSTA
+
+### Fixed
+
+    - Bug Fix for the overlay transport for Kubernetes
+    - Fixed various unit test errors
+    - Fixed deadlock or race condition in Batch running MPI apps
+    - Fixed an issue the the HSTA overlay network
+
+NOTE: The DragonHPC project is planning to discontinue packaged releases targeting Python 3.10 as Python 3.10 approaches its official end-of-life in October 2026. Consequently, future updates will prioritize more recent Python releases to ensure continued security and compatibility.
+
 # Dragon 0.13.2 Release Summary
 
 We're excited to announce the release of Dragon v0.13.2, which includes several updates, additions and fixes. Here are the highlights:

@@ -12,7 +12,7 @@ from ...infrastructure.config import dragon_config
 from ...infrastructure.facts import TransportAgentOptions
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.parameters import this_process
-from .base import BaseWLM
+from .base import WLM, BaseWLM
 
 SSH_OPTIONS = "ssh-options"
 
@@ -220,7 +220,7 @@ class SSHWLM(BaseWLM):
 
     def __init__(self, network_prefix, port, hostlist):
         nhosts = len(hostlist) if hostlist is not None else 0
-        super().__init__("ssh", network_prefix, port, nhosts)
+        super().__init__(WLM.SSH.value, network_prefix, port, nhosts)
         self.hostlist = hostlist
         self.ENV_VARS = None
 

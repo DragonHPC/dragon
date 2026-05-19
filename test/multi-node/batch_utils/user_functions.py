@@ -1,13 +1,14 @@
 import os
 import shutil
 import sys
+import time
+import cloudpickle
 from uuid import uuid4
 
 from dragon.data.ddict import DDict
-from dragon.native.machine import System
+from dragon.workflows.batch import Batch
 from pathlib import Path
 from typing import Optional
-
 
 hi = "Hi-diddly-ho, neighborino!!!"
 supersingular_primes = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 41, 47, 59, 71]
@@ -23,7 +24,7 @@ class FileUtils:
         self.base_dir = Path(f"{os.getcwd()}/{dir_name}")
 
         if use_ddict:
-            self.ddict = get_ddict(batch, self.num_tasks)
+            self.ddict = get_ddict(batch)
         else:
             os.makedirs(dir_name, exist_ok=True)
 
@@ -51,15 +52,17 @@ class FileUtils:
             shutil.rmtree(self.base_dir, ignore_errors=True)
 
 
-def get_ddict(batch, num_tasks: int) -> DDict:
-    # reserve 1MB per task
-    bytes_per_task = 1 << 20
-    num_bytes = int(num_tasks * bytes_per_task)
-    # we want at least one node, and we'll try to limit the memory footprint per node
-    # to be under 8GB (mostly arbitrary choice)
-    eight_gb = 8 * (1 << 30)
-    num_nodes = min(1 + num_bytes // eight_gb, System().nnodes)
-    return DDict(2, num_nodes, num_bytes, wait_for_keys=True, working_set_size=2, name=str(uuid4()))
+def get_ddict(batch) -> DDict:
+    batch_nodes = batch.topology().total_nodes
+    bytes_per_node = 1 << 25
+    return DDict(
+        1,
+        batch_nodes,
+        batch_nodes * bytes_per_node,
+        wait_for_keys=True,
+        working_set_size=2,
+        name=str(uuid4()),
+    )
 
 
 def fib(fs: FileUtils, i: int) -> int:
@@ -79,6 +82,106 @@ def fib(fs: FileUtils, i: int) -> int:
 
 def div_by_zero(x: int) -> int:
     return x / 0
+
+
+def sleep_and_return(value, delay: float):
+    time.sleep(delay)
+    return value
+
+
+def signal_start_and_sleep(marker_path: str, value, delay: float):
+    with open(marker_path, "w", encoding="utf-8") as marker_file:
+        marker_file.write("started\n")
+    time.sleep(delay)
+    return value
+
+
+def return_constant(value):
+    return value
+
+
+def add_values(a, b):
+    return a + b
+
+
+def submit_batch_value_from_client(batch, output_queue, value):
+    try:
+        task = batch.function(return_constant, value, name=f"remote-client-{value}")
+        output_queue.put({"client_id": batch.client_id, "result": task.get(), "value": value})
+    finally:
+        batch.join()
+
+
+def submit_batch_value_from_serialized_client(serialized_batch, output_queue, value):
+    batch = cloudpickle.loads(serialized_batch)
+    submit_batch_value_from_client(batch, output_queue, value)
+
+
+def submit_batch_value_from_batch_worker(serialized_batch, output_queue, value):
+    from dragon.native.process import Process
+
+    proc = Process(target=submit_batch_value_from_serialized_client, args=(serialized_batch, output_queue, value))
+    proc.start()
+    return proc.puid
+
+
+def create_joined_batch_and_send(batch_queue, output_queue, values):
+    batch = Batch(num_nodes=1, scheduler_workers=1)
+    creator_client_id = batch.client_id
+    output_queue.put({"role": "creator", "stage": "created", "client_id": creator_client_id})
+
+    try:
+        # The creating client detaches before handing the handle to another
+        # process so the consumer proves it is not relying on creator ownership.
+        batch.join()
+        output_queue.put({"role": "creator", "stage": "joined", "client_id": creator_client_id})
+        batch_queue.put(batch)
+        output_queue.put(
+            {
+                "role": "creator",
+                "stage": "handed_off",
+                "client_id": creator_client_id,
+                "values": tuple(values),
+            }
+        )
+    except Exception as exc:
+        output_queue.put({"role": "creator", "stage": "error", "client_id": creator_client_id, "error": repr(exc)})
+        raise
+    finally:
+        batch_queue.close()
+        output_queue.close()
+
+
+def consume_batch_from_queue_and_destroy(batch_queue, output_queue, values):
+    batch = batch_queue.get(timeout=20)
+    consumer_client_id = batch.client_id
+    output_queue.put({"role": "consumer", "stage": "acquired", "client_id": consumer_client_id})
+
+    try:
+        values = tuple(values)
+        tasks = [batch.function(return_constant, value, name=f"handoff-client-{value}") for value in values]
+        results = [task.get() for task in tasks]
+        batch.join()
+        batch.destroy()
+        output_queue.put(
+            {
+                "role": "consumer",
+                "stage": "destroyed",
+                "consumer_client_id": consumer_client_id,
+                "results": results,
+                "values": values,
+            }
+        )
+    except Exception as exc:
+        output_queue.put({"role": "consumer", "stage": "error", "client_id": consumer_client_id, "error": repr(exc)})
+        raise
+    finally:
+        batch_queue.close()
+        output_queue.close()
+
+
+def raise_runtime_error(message: str):
+    raise RuntimeError(message)
 
 
 def get_fib_sequence(batch, use_ddict) -> list:
@@ -147,6 +250,28 @@ def check_gpu_affinity() -> bool:
         return False
 
 
+def record_process_placement(output_queue) -> None:
+    import socket
+
+    gpu_env_name = None
+    gpu_env_value = None
+
+    for env_name in ("CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "ZE_AFFINITY_MASK"):
+        env_value = os.getenv(env_name)
+        if env_value is not None:
+            gpu_env_name = env_name
+            gpu_env_value = env_value
+            break
+
+    payload = {
+        "hostname": socket.gethostname(),
+        "gpu_env_name": gpu_env_name,
+        "gpu_env_value": gpu_env_value,
+    }
+
+    output_queue.put(payload)
+
+
 def get_prime(i: int) -> Optional[int]:
     if i < len(supersingular_primes):
         return supersingular_primes[i]
@@ -207,5 +332,48 @@ def mpi_f(i, secs):
     MPI.Init()
     time.sleep(secs)
     MPI.Finalize()
+
+    return True
+
+
+def producer_value(idx: int, prev_first_codes: Optional[list] = None):
+    """Producer function that returns a tuple (idx, value).
+
+    The value is derived from the index and the sum of previous first
+    job exit codes when provided. This allows jobs to validate that the
+    values passed from producers are correct across iterations.
+    """
+    sum_prev = sum(prev_first_codes) if prev_first_codes else 0
+    return (idx, idx + sum_prev)
+
+
+def mpi_job_arg_checker(*args):
+    """Job function that accepts an arbitrary number of args.
+
+    The last argument is expected to be the list of previous first-job
+    exit codes (or None). The preceding arguments are expected to be
+    tuples of the form (idx, value) produced by `producer_value`.
+
+    Raises an Exception if any value does not match the expected value.
+    Returns True on success.
+    """
+    if len(args) == 0:
+        return True
+
+    # last arg is prev codes (may be None)
+    prev_codes = args[-1]
+    data_args = args[:-1]
+
+    sum_prev = sum(prev_codes) if prev_codes else 0
+
+    for item in data_args:
+        try:
+            idx, val = item
+        except Exception:
+            raise Exception(f"mpi_job_arg_checker expected (idx, val) tuple, got: {item}")
+
+        expected = idx + sum_prev
+        if val != expected:
+            raise Exception(f"Value mismatch for idx {idx}: got {val}, expected {expected}")
 
     return True

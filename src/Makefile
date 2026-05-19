@@ -1,5 +1,18 @@
+ENVIRONMENT ?= dev
+
 ifneq ("$(wildcard $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk)","")
     include $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk
+endif
+
+OS := $(shell uname)
+
+# These don't hurt to set here.
+# For older Mac OS replace with MACOSX_DEPLOYMENT_TARGET=10.13 and MACOSX_DEPLOYMENT_NAME=10_13
+ifeq "$(OS)" "Darwin"
+	export MACOSX_DEPLOYMENT_TARGET=26.0
+	export MACOSX_DEPLOYMENT_NAME=26_0
+	export _PYTHON_HOST_PLATFORM=macosx-11.0-arm64
+	export ARCHFLAGS=-arch arm64
 endif
 
 export INSTALL = install
@@ -72,6 +85,8 @@ CY_FILES := dragon/pydragon_rc.pyx \
 all: build
 
 OS = $(shell uname -s)
+
+
 
 .PHONY: build
 build: $(EXTERNAL) $(LIBRARIES) $(CYFILES) dragon-popen $(BINARIES) install-pythondeps
@@ -181,14 +196,15 @@ release:
 	cp ../test/multi-node/test_barrier.py  release/dragon/examples/dragon_native/multi-node_tests
 	cp ../src/dragon/telemetry/imports/*.yaml  release/dragon/examples/dragon_telemetry
 	cp ../src/dragon/telemetry/imports/*.json  release/dragon/examples/dragon_telemetry
-# Repair the wheel to use manylinux tag before copying it to release and remove the un-tagged version
-	@if [ "$(OS)" != "Darwin" ]; then \
+# If Linux then repair the wheel to use manylinux tag before copying it to release and remove the un-tagged version
+# If MacOS then use delocate-wheel to put it in the right state. Also rename wheel file to something sensible.
+	if [ "$(OS)" != "Darwin" ]; then \
 		patchelf --version; \
 		auditwheel repair -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-linux_*.whl; \
 		rm -rf $(abspath release/dragon)/dragonhpc*-linux_*whl; \
 	else \
 		DYLD_LIBRARY_PATH=lib delocate-wheel -w $(abspath release/dragon) $(abspath release/dragon)/dragonhpc*-macosx_*.whl; \
-		rm -rf $(abspath release/dragon)/dragonhpc*-macosx_*whl; \
+        mv $(abspath release/dragon)/dragonhpc*-macosx_*.whl $(abspath release/dragon)/dragonhpc-$(DRAGON_VERSION)-cp$(PYTHON_MAJOR_VERSION)$(PYTHON_MINOR_VERSION)-cp$(PYTHON_MAJOR_VERSION)$(PYTHON_MINOR_VERSION)-macosx_$(MACOSX_DEPLOYMENT_NAME)_arm64.whl; \
 	fi
 	mv release/dragon release/dragon-$(DRAGON_VERSION)
 	cd release && tar -czvf dragon-$(DRAGON_VERSION)-$(GITHASH).tar.gz dragon-$(DRAGON_VERSION)

@@ -139,6 +139,7 @@ class DragonLoggingServices(str, enum.Enum):
         :PERF: 'PERF'
         :PG: 'PG'
         :TELEM: 'TELEM'
+        :AI_AGENT: 'AI_AGENT'
     """
 
     LA_FE = "LA_FE"
@@ -154,6 +155,7 @@ class DragonLoggingServices(str, enum.Enum):
     PG = "PG"
     TELEM = "TELEM"
     BATCH = "BATCH"
+    AI_AGENT = "AI_AGENT"
 
     def __str__(self):
         return str(self.value)
@@ -529,11 +531,9 @@ def _get_logging_mpool(node_index: int):
     for i in range(10):
         try:
             logging_mpool = MemoryPool(lps, lpn + "_" + str(i), lp_muid, None)
-            break
+            return logging_mpool
         except DragonPoolCreateFail:
             raise
-    return logging_mpool
-
 
 def setup_dragon_logging(node_index: int):
     """Create a :class:`dragon.native.Queue` instance

@@ -1,5 +1,5 @@
 """
-Unit tests for the guardrails module.
+Unit tests for the guardrails module (inference/guardrails.py).
 
 Tests the GuardrailsProcessor class.
 
@@ -18,7 +18,9 @@ from dragon.ai.inference.config import GuardrailsConfig
 class MockPromptGuard:
     """Mock for PromptGuard ML model (external dependency)."""
 
-    def __init__(self, model_name=None, token=None, jailbreak_scores=None, processing_time=0.05):
+    def __init__(
+        self, model_name=None, token=None, jailbreak_scores=None, processing_time=0.05
+    ):
         self.model_name = model_name
         self.token = token
         self._jailbreak_scores = jailbreak_scores or [0.1, 0.2]
@@ -52,7 +54,9 @@ class TestGuardrailsProcessor(TestCase):
 
         self.assertTrue(processor.enabled)
         self.assertEqual(processor.sensitivity, 0.5)
-        mock_prompt_guard.assert_called_once_with("meta-llama/Prompt-Guard-86M", "test-token")
+        mock_prompt_guard.assert_called_once_with(
+            "meta-llama/Prompt-Guard-86M", "test-token"
+        )
 
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_init_disabled(self, mock_prompt_guard):
@@ -81,7 +85,9 @@ class TestGuardrailsProcessor(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_check_prompts_all_safe(self, mock_prompt_guard):
         """Test check_prompts when all prompts are safe."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.1, 0.2], processing_time=0.05)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.1, 0.2], processing_time=0.05
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         config = GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.5)
@@ -97,7 +103,9 @@ class TestGuardrailsProcessor(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_check_prompts_some_malicious(self, mock_prompt_guard):
         """Test check_prompts when some prompts are malicious."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.1, 0.8, 0.3], processing_time=0.08)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.1, 0.8, 0.3], processing_time=0.08
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         config = GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.5)
@@ -112,7 +120,9 @@ class TestGuardrailsProcessor(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_check_prompts_all_malicious(self, mock_prompt_guard):
         """Test check_prompts when all prompts are malicious."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.9, 0.95], processing_time=0.1)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.9, 0.95], processing_time=0.1
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         config = GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.5)
@@ -127,7 +137,9 @@ class TestGuardrailsProcessor(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_check_prompts_edge_case_at_threshold(self, mock_prompt_guard):
         """Test check_prompts when scores are exactly at threshold."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.5, 0.49, 0.51], processing_time=0.05)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.5, 0.49, 0.51], processing_time=0.05
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         config = GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.5)
@@ -159,7 +171,9 @@ class TestGuardrailsProcessor(TestCase):
             safe_metrics,
             malicious_indices,
             processing_time,
-        ) = processor.filter_batch(prompts, formatted_prompts, response_queues, latency_metrics)
+        ) = processor.filter_batch(
+            prompts, formatted_prompts, response_queues, latency_metrics
+        )
 
         self.assertEqual(safe_prompts, prompts)
         self.assertEqual(safe_formatted, formatted_prompts)
@@ -171,7 +185,9 @@ class TestGuardrailsProcessor(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_filter_batch_all_safe(self, mock_prompt_guard):
         """Test filter_batch when all prompts are safe."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.1, 0.2], processing_time=0.05)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.1, 0.2], processing_time=0.05
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         config = GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.5)
@@ -189,7 +205,9 @@ class TestGuardrailsProcessor(TestCase):
             safe_metrics,
             malicious_indices,
             processing_time,
-        ) = processor.filter_batch(prompts, formatted_prompts, response_queues, latency_metrics)
+        ) = processor.filter_batch(
+            prompts, formatted_prompts, response_queues, latency_metrics
+        )
 
         self.assertEqual(safe_prompts, prompts)
         self.assertEqual(safe_formatted, formatted_prompts)
@@ -201,7 +219,9 @@ class TestGuardrailsProcessor(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_filter_batch_some_malicious(self, mock_prompt_guard):
         """Test filter_batch when some prompts are malicious."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.1, 0.9, 0.2, 0.8], processing_time=0.08)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.1, 0.9, 0.2, 0.8], processing_time=0.08
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         config = GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.5)
@@ -224,7 +244,9 @@ class TestGuardrailsProcessor(TestCase):
             safe_metrics,
             malicious_indices,
             processing_time,
-        ) = processor.filter_batch(prompts, formatted_prompts, response_queues, latency_metrics)
+        ) = processor.filter_batch(
+            prompts, formatted_prompts, response_queues, latency_metrics
+        )
 
         self.assertEqual(safe_prompts, ["Safe 1", "Safe 2"])
         self.assertEqual(safe_formatted, ["<user>Safe 1</user>", "<user>Safe 2</user>"])
@@ -235,7 +257,9 @@ class TestGuardrailsProcessor(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_filter_batch_all_malicious(self, mock_prompt_guard):
         """Test filter_batch when all prompts are malicious."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.9, 0.95], processing_time=0.1)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.9, 0.95], processing_time=0.1
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         config = GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.5)
@@ -253,7 +277,9 @@ class TestGuardrailsProcessor(TestCase):
             safe_metrics,
             malicious_indices,
             processing_time,
-        ) = processor.filter_batch(prompts, formatted_prompts, response_queues, latency_metrics)
+        ) = processor.filter_batch(
+            prompts, formatted_prompts, response_queues, latency_metrics
+        )
 
         self.assertEqual(safe_prompts, [])
         self.assertEqual(safe_formatted, [])
@@ -277,7 +303,9 @@ class TestGuardrailsProcessor(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_sensitivity_custom_value(self, mock_prompt_guard):
         """Test that custom sensitivity threshold is applied correctly."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.3, 0.6], processing_time=0.05)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.3, 0.6], processing_time=0.05
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         # Test with lower sensitivity (0.25) - both should be marked as malicious
@@ -290,7 +318,9 @@ class TestGuardrailsProcessor(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_sensitivity_high_value(self, mock_prompt_guard):
         """Test with high sensitivity threshold."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.3, 0.6, 0.9], processing_time=0.05)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.3, 0.6, 0.9], processing_time=0.05
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         # Test with higher sensitivity (0.95) - all should be safe except 0.9
@@ -315,7 +345,9 @@ class TestGuardrailsProcessorIntegration(TestCase):
     @patch("dragon.ai.inference.guardrails.PromptGuard")
     def test_filter_batch_preserves_queue_order(self, mock_prompt_guard):
         """Test that filter_batch preserves the order of safe prompts and queues."""
-        mock_pg_instance = MockPromptGuard(jailbreak_scores=[0.1, 0.9, 0.2, 0.8, 0.15], processing_time=0.08)
+        mock_pg_instance = MockPromptGuard(
+            jailbreak_scores=[0.1, 0.9, 0.2, 0.8, 0.15], processing_time=0.08
+        )
         mock_prompt_guard.return_value = mock_pg_instance
 
         config = GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.5)
@@ -336,11 +368,15 @@ class TestGuardrailsProcessorIntegration(TestCase):
             safe_metrics,
             malicious_indices,
             _,
-        ) = processor.filter_batch(prompts, formatted_prompts, response_queues, latency_metrics)
+        ) = processor.filter_batch(
+            prompts, formatted_prompts, response_queues, latency_metrics
+        )
 
         # Check that safe prompts are in correct order (A, C, E)
         self.assertEqual(safe_prompts, ["A", "C", "E"])
-        self.assertEqual(safe_formatted, ["<user>A</user>", "<user>C</user>", "<user>E</user>"])
+        self.assertEqual(
+            safe_formatted, ["<user>A</user>", "<user>C</user>", "<user>E</user>"]
+        )
 
         # Check that 3 queues correspond to safe prompts
         self.assertEqual(len(safe_queues), 3)

@@ -52,6 +52,20 @@ extensions = [
 
 tls_verify = False
 
+# we need this for now in order to build the documentation, until we have a unified requirements.txt file
+# dragon.ai.inference has its own requirements that are separate from the rest of the project
+autodoc_mock_imports = [
+    "torch",
+    "transformers",
+    "vllm",
+    "pandas",
+    "pydantic",
+    "msgspec",
+    "zmq",
+    "packaging",
+    "setuptools",
+]
+
 # autodoc_typehints = 'description'
 autodoc_typehints_format = "short"
 autodoc_class_signature = "separated"

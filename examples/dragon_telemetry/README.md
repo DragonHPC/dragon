@@ -94,6 +94,53 @@ This will run the offline telemetry analysis on only 1 node from your allocation
 
 Metrics can be accessed using Grafana as they are for telemetry.
 
+### Usage PyTorch Matrix Multiply vs. Allreduce Example
+
+This example launches a Dragon process group of PyTorch worker processes.
+Each rank independently times two phases per iteration:
+
+- **matmul** – local `C = A @ B` where `A`, `B` are `matrix_size × matrix_size` (float32)
+- **allreduce** – `dist.all_reduce` collective on a 1-D tensor of `comm_size` float32 elements
+
+Both phases are accumulated in separate `TimeKeeper` slots.  When launched with
+`--telemetry-level ≥ 1` the `TimeKeeper` background thread automatically streams
+per-phase timing data to the telemetry TSDB on the local node.  The metric name
+is `matmul_vs_allreduce`; the phase (`matmul` or `allreduce`) is the `id` tag
+and the local hostname is the `hostname` tag, so results from every rank on every
+node can be visualised independently in Grafana.
+
+**Goal:** by sweeping `--matrix_size` you can find the crossover point at which
+local compute dominates over collective communication.  Because matmul scales as
+O(N³) and the allreduce data volume scales as O(N), compute will always win for
+sufficiently large N.
+
+```
+dragon pytorch_matmul_comm.py [-h] [--matrix_size N] [--comm_size N]
+                               [--iterations N] [--burns N]
+                               [--num_workers N] [--collection_window SECS]
+```
+
+Run on two nodes with four workers and telemetry enabled:
+
+```
+> salloc --nodes=2 --exclusive
+> dragon --telemetry-level=1 pytorch_matmul_comm.py --num_workers 4 --matrix_size 2048
+```
+
+Sweep matrix sizes across a range to find the crossover point:
+
+```
+> salloc --nodes=2 --exclusive
+> for S in 256 512 1024 2048 4096; do
+>     echo "--- matrix_size=$S ---"
+>     dragon pytorch_matmul_comm.py --num_workers 4 --matrix_size $S
+> done
+```
+
+Use `--comm_size` to decouple the communication tensor size from the matrix size
+(defaults to `matrix_size`).  A smaller `comm_size` shifts the crossover to a
+lower `matrix_size`; a larger `comm_size` shifts it higher.
+
 ### Setting up Grafana
 
 Please refer to the Installation section in the Dragon Telemetry cookbook.

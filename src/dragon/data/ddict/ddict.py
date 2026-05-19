@@ -51,12 +51,11 @@ try:
 except:
     DAOS_EXISTS = False
 
-from ...utils import b64decode, b64encode, hash as dragon_hash, get_local_kv, host_id
+from ...utils import b64decode, b64encode, hash as dragon_hash, get_local_kv, host_id, TimeKeeper
 from ...infrastructure.parameters import this_process
 from ...infrastructure import messages as dmsg
-from ...infrastructure import util as dutil
 from ...infrastructure import policy
-from ...channels import Channel
+from ...channels import Channel, ChannelDestroyed
 from ...native.process import Popen, Process
 from ...native.event import Event
 from ...native.queue import Queue
@@ -202,7 +201,7 @@ class DDictManagerStats:
     timekeeper_stats: dict
 
 
-# A SentinelQueue is a queue that raise EOFError when end of
+# A SentinelQueue is a queue that raises EOFError when end of
 # file is reached. It knows to do this by writing a sentinel
 # into the queue when the queue is closed. A SentinelQueue
 # contains a multiprocessing Queue. Other methods could
@@ -213,19 +212,53 @@ class SentinelQueue:
 
     def __init__(self):
         self._queue = Queue()
-        self._put_called = False
-        self._get_called = False
+        self._init_properties()
+
+    def _init_properties(self):
         self._sentinel_sent = False
         self._closed = False
         self._sentinel_received = False
+        self._putter = False
+        self._getter = False
+
+    def __setstate__(self, state):
+        self._queue = state
+        self._init_properties()
+
+    def __getstate__(self):
+        return self._queue
+
+    def putter(self):
+        if self._putter:
+            return
+
+        if self._getter:
+            raise RuntimeError("SentinelQueue object cannot be both putter and getter.")
+
+        self._shutdown_event = Event()
+        self._queue.put(self._shutdown_event)
+        self._putter = True
+
+    def getter(self):
+        if self._getter:
+            return
+
+        if self._putter:
+            raise RuntimeError("SentinelQueue object cannot be both getter and putter.")
+
+        try:
+            self._shutdown_event = self._queue.get()
+        except ChannelDestroyed as ex:
+            self._shutdown_event = None
+        self._getter = True
+
 
     def get(self):
         if self._closed:
             raise RuntimeError("Cannot get an item from a closed SentinelQueue")
 
-        if not self._get_called:
-            self._shutdown_event = self._queue.get()
-            self._get_called = True
+        if not self._getter:
+            raise RuntimeError("Called get without calling getter first on SentinelQueue.")
 
         item = self._queue.get()
         if item == SentinelQueue._SENTINEL:
@@ -238,10 +271,8 @@ class SentinelQueue:
         if self._closed:
             raise RuntimeError("Cannot put an item on a closed SentinelQueue")
 
-        if not self._put_called:
-            self._shutdown_event = Event()
-            self._queue.put(self._shutdown_event)
-            self._put_called = True
+        if not self._putter:
+            raise RuntimeError("Called put without calling putter first on SentinelQueue.")
 
         if self._shutdown_event.is_set():
             raise EOFError("SentinelQueue receiving end closed.")
@@ -252,14 +283,25 @@ class SentinelQueue:
         if self._closed:
             return
 
-        if self._put_called and not self._sentinel_sent:
+        if self._putter and not self._sentinel_sent:
             self._sentinel_sent = True
             self._queue.put(SentinelQueue._SENTINEL)
+            try:
+                self._shutdown_event.destroy()
+            except:
+                pass
 
-        if self._get_called and not self._sentinel_received:
+        if self._getter and not self._sentinel_received:
             # This is a receiving end of a SentinelQueue,
             # so set the event and empty the queue.
-            self._shutdown_event.set()
+            try:
+                # It will be None if the event was already destroyed before it could be received.
+                # In that case, things are cleaning up and the event does not need to be set.
+                if self._shutdown_event is not None:
+                    self._shutdown_event.set()
+            except:
+                pass
+
             try:
                 while True:
                     self.get()
@@ -316,6 +358,7 @@ def filter_manager(dd, pickled_src_code, pickled_src_args, out_queue, manager_id
         src_args = cloudpickle.loads(pickled_src_args)
         my_manager = dd.manager(manager_id)
         args = (my_manager, out_queue) + src_args
+        out_queue.putter()
         src_code(*args)
     except Exception as ex:
         tb = traceback.format_exc()
@@ -332,6 +375,7 @@ def filter_aggregator(
 
     try:
         comparator = cloudpickle.loads(pickled_comparator)
+        out_queue.putter()
         # managers_hosts is a list of tuples (manager_id, hostname)
         if len(managers_hosts) == 1:
             # It was already a in a process started on the manager node, so just call
@@ -413,6 +457,9 @@ def filter_aggregator(
 
         try:
             for i in range(len(filter_queues)):
+                filter_queues[i].getter()
+
+            for i in range(len(filter_queues)):
                 try:
                     item = filter_queues[i].get()
                     heapq.heappush(priority_queue, PQEntry(item, i, comparator))
@@ -465,6 +512,7 @@ def filter_aggregator(
 
 class FilterIterator:
     def __init__(self, out_queue):
+        out_queue.getter()
         self._queue = out_queue
 
     def __iter__(self):
@@ -1756,7 +1804,7 @@ class DDict:
         random.seed()
 
         self._managers = dict()
-        self._timekeeper = dutil.TimeKeeper(True)
+        self._timekeeper = TimeKeeper(recording=True, timekeeper_name="DDictClient")
         self._start_tic = self._timekeeper.now()
         self._tag = 0
         self._chkpt_id = chkpt_id
@@ -3858,9 +3906,7 @@ class DDict:
         ret_list.sort()
         return ret_list
 
-    def filter(
-        self, mgr_code: FunctionType, mgr_code_args: tuple, comparator: FunctionType, branching_factor: int = 5
-    ) -> FilterContextManager:
+    def filter(self, mgr_code: FunctionType, mgr_code_args: tuple, comparator: FunctionType, branching_factor: int = 5) -> FilterContextManager:
         """
 
         Calling this instantiates a tree of process groups where mgr_code is

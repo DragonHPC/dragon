@@ -664,6 +664,8 @@ _spin_wait(dragonBCast_t * handle, void * num_waiting_ptr, timespec_t* end_time,
         atomic_fetch_add(handle->header.num_waiting, -1L);
         atomic_store(&handle->header.spin_list[idx], 0UL);
         atomic_fetch_add(handle->header.spin_list_count, -1L);
+        if (release_fun != NULL)
+            (release_fun)(release_arg);
         err_return(DRAGON_INVALID_OPERATION, "There cannot be more waiters than the specified sync number on a synchronized bcast");
     }
 

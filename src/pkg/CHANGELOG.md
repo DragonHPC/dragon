@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.14.0] - 2026-05-18
+
+### Changed
+
+    [AICI-2083] - Integrate GPU pinned memory into the DataLoader
+
+### Added
+
+    [AICI-1892] - Create more DDict tutorials and examples
+    [AICI-1949] - Add Python 3.13 build and support for Dragon
+    [AICI-1954] - Add macOS support
+    [AICI-2078] - Update TimeKeeper to allow data to be added to Telemetry
+    [AICI-2097] - Hierarchical job/process/function scheduler for Batch
+    [AICI-2109] - Add Telemetry Widget
+    [AICI-2087] - Add Return When Immediate Support to HSTA
+    [AICI-2095] - Initial release agent orchestration layer
+    [AICI-2116] - Add tool calling support to inference for dragon agent
+
+### Fixed
+
+    [AICI-2122] - Bug Fix for the overlay transport for Kubernetes
+    [AICI-1950] - Unit test error in test_stream_transport dragon with Python 3.13
+    [AICI-1951] - Unit test error in test_abnormal_restart_exhaust_resources with Python 3.13
+    [AICI-2076] - Deadlock or race condition in Batch running MPI apps
+    [AICI-2106] - Dragon launch broken with `'set' object is not subscriptable`
+    [AICI-2094] - Fix pea2k nightly tests
+
 ## [0.13.2] - 2026-03-30
 
 ### Changed

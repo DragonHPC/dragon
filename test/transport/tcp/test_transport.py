@@ -27,23 +27,27 @@ class TestMessages:
 
     @classmethod
     def setUpClass(cls):
-        cls.SendRequest = partial(
-            messages.SendRequest,
-            seqno=None,
-            timeout=0.5,
-            channel_sd=b"channel desc",
-            return_mode=messages.SendReturnMode.WHEN_BUFFERED,
-            sendhid=uuid4(),
-            payload=tcp_io.Payload(GWMessageStub(b"payload")),
-            clientid=0,
-            hints=0,
+        cls.SendRequest = staticmethod(
+            partial(
+                messages.SendRequest,
+                seqno=None,
+                timeout=0.5,
+                channel_sd=b"channel desc",
+                return_mode=messages.SendReturnMode.WHEN_BUFFERED,
+                sendhid=uuid4(),
+                payload=tcp_io.Payload(GWMessageStub(b"payload")),
+                clientid=0,
+                hints=0,
+            )
         )
 
-        cls.RecvRequest = partial(
-            messages.RecvRequest,
-            seqno=None,
-            timeout=0.5,
-            channel_sd=b"channel desc",
+        cls.RecvRequest = staticmethod(
+            partial(
+                messages.RecvRequest,
+                seqno=None,
+                timeout=0.5,
+                channel_sd=b"channel desc",
+            )
         )
 
 

@@ -26,7 +26,8 @@ class PBSWLM(BaseWLM):
 Resubmit as part of a 'qsub' execution"""
             raise RuntimeError(msg)
 
-        super().__init__("pbs+pals", network_prefix, port, get_nodefile_node_count(os.environ.get("PBS_NODEFILE")))
+        from . import WLM
+        super().__init__(WLM.PBS.value, network_prefix, port, get_nodefile_node_count(os.environ.get("PBS_NODEFILE")))
 
         self.job_id = os.environ.get(self.ENV_PBS_JOB_ID)
 

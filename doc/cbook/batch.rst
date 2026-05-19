@@ -16,6 +16,11 @@ the task completes. Use :py:meth:`~dragon.workflows.batch.Batch.fence` to wait f
 submitted tasks to finish before proceeding, and :py:meth:`~dragon.workflows.batch.Batch.clear_results`
 to free the memory used to hold task results (implicitly calls :py:meth:`~dragon.workflows.batch.Batch.fence`).
 
+Batch always creates and owns its internal results DDict. By default it allocates one gibibyte
+per requested node for that store. For result-heavy workloads or tighter memory budgets, pass
+``results_ddict_mem`` in bytes when constructing the Batch, for example
+``Batch(results_ddict_mem=8 * 1024**3)``.
+
 Below is a simple example using :py:class:`~dragon.workflows.batch.Batch` to parallelize a list of
 functions. In this example, file-based dependencies force the functions to execute in order, but it
 demonstrates the basics of the API.
@@ -31,8 +36,9 @@ demonstrates the basics of the API.
 
     import numpy as np
 
-    # A base directory, and files in it, will be used for communication of results
-    batch = Batch()
+    # A base directory, and files in it, will be used for communication of results.
+    # Optionally size the internal results DDict explicitly in bytes.
+    batch = Batch(results_ddict_mem=2 * 1024**3)
     base_dir = Path("/some/path/to/base_dir")
 
     a = np.array([j for j in range(100)])
@@ -57,8 +63,8 @@ demonstrates the basics of the API.
         except Exception as e:
             print(f"gpu_matmul failed with the following exception: {e}")
 
-    batch.close()
     batch.join()
+    batch.destroy()
 
 
 Notice that the call to :py:meth:`~dragon.workflows.batch.Batch.import_func` requires a file called
@@ -147,8 +153,9 @@ And here is the same example as above, but done without a PTD file.
 
     import numpy as np
 
-    # A base directory, and files in it, will be used for communication of results
-    batch = Batch()
+    # A base directory, and files in it, will be used for communication of results.
+    # Optionally size the internal results DDict explicitly in bytes.
+    batch = Batch(results_ddict_mem=2 * 1024**3)
     base_dir = Path("/some/path/to/base_dir")
 
     # Knowledge of reads and writes to files is used by Batch to infer data dependencies
@@ -171,19 +178,18 @@ And here is the same example as above, but done without a PTD file.
         except Exception as e:
             print(f"gpu_matmul failed with the following exception: {e}")
 
-    batch.close()
     batch.join()
+    batch.destroy()
 
 
 Tasks are submitted continuously (although batched in the background for better performance). Calls to
 :py:meth:`~dragon.workflows.batch.Batch.function`, :py:meth:`~dragon.workflows.batch.Batch.process`, and
 :py:meth:`~dragon.workflows.batch.Batch.job` return immediately and :py:class:`~dragon.workflows.batch.Batch`
-batches and dispatches submitted tasks to workers in the background. The functions :py:meth:`~dragon.workflows.batch.Batch.close`
-and :py:meth:`~dragon.workflows.batch.Batch.join` are similar to the functions in
-:py:meth:`~dragon.mpbridge.context.DragonContext.Pool` with the same names:
-:py:meth:`~dragon.workflows.batch.Batch.close` indicates that no more work will be submitted, and
-:py:meth:`~dragon.workflows.batch.Batch.join` waits for all work to complete and for
-:py:class:`~dragon.workflows.batch.Batch` to shut down.
+batches and dispatches submitted tasks to workers in the background. The lifecycle methods are:
+:py:meth:`~dragon.workflows.batch.Batch.close`, which is deprecated and retained as a no-op for compatibility;
+:py:meth:`~dragon.workflows.batch.Batch.join`, which waits only for work started by the calling client and then detaches that client from the shared runtime; and
+:py:meth:`~dragon.workflows.batch.Batch.destroy`, which shuts down the shared
+:py:class:`~dragon.workflows.batch.Batch` runtime after all clients have joined and all in-flight work completes.
 
 Any mix of Python functions, executables, and parallel jobs can be submitted to
 :py:class:`~dragon.workflows.batch.Batch` simultaneously, and dependencies can exist between tasks
@@ -204,10 +210,10 @@ objects can be passed between processes to allow multiple clients.
 Unpickling a :py:class:`~dragon.workflows.batch.Batch` object at a destination
 process will register the new :py:class:`~dragon.workflows.batch.Batch` client
 and allow the user to submit tasks to it. All clients must call
-:py:meth:`~dragon.workflows.batch.Batch.close` to indicate that they are done.
-Only the primary client (which created the initial :py:class:`~dragon.workflows.batch.Batch` object)
-needs to call :py:meth:`~dragon.workflows.batch.Batch.join`. Note that :py:meth:`~dragon.workflows.batch.Batch.join`
-will block until all clients have called :py:meth:`~dragon.workflows.batch.Batch.close`.
+:py:meth:`~dragon.workflows.batch.Batch.join` when they are done.
+Calling :py:meth:`~dragon.workflows.batch.Batch.close` is optional and has no effect beyond a deprecation warning.
+Any client can also call :py:meth:`~dragon.workflows.batch.Batch.destroy` to shut down the shared runtime;
+it will block until all active clients have called :py:meth:`~dragon.workflows.batch.Batch.join` and all work completes.
 
 Data Dependencies
 =================
@@ -274,8 +280,8 @@ example:
 
     # prints: "Hi-diddly-ho!!!"
 
-    batch.close()
     batch.join()
+    batch.destroy()
 
 
 In the above example, the function ``bar`` will not run until ``foo``
@@ -349,8 +355,8 @@ Dictionary. The only change needed is in the task definitions - the rest of the 
         except Exception as e:
             print(f"gpu_matmul failed with the following exception: {e}")
 
-    batch.close()
     batch.join()
+    batch.destroy()
 
 
 Inspecting the Topology
@@ -359,8 +365,9 @@ Inspecting the Topology
 :py:meth:`~dragon.workflows.batch.Batch.topology` returns a
 :py:class:`~dragon.workflows.batch.BatchTopology` object that describes how
 :py:class:`~dragon.workflows.batch.Batch` has mapped managers and worker pools onto
-the nodes of the allocation. This is useful for understanding how work will be
-distributed before submitting tasks.
+the nodes of the allocation. The reported topology includes the dedicated
+scheduler host separately from the pool-backed subnode managers. This is useful
+for understanding how work will be distributed before submitting tasks.
 
 The example below creates several :py:class:`~dragon.workflows.batch.Batch` instances
 with different configurations, prints a summary of each resulting topology, and

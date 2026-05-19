@@ -12,6 +12,7 @@ from unittest.mock import MagicMock, patch, Mock
 import time
 
 from dragon.ai.inference.llm_engine import LLMInferenceEngine
+import os; os.environ["DRAGON_PATCH_MP"] = "True"  # restore after llm_engine import clears it
 from dragon.ai.inference.config import (
     ModelConfig,
     BatchingConfig,
@@ -19,7 +20,6 @@ from dragon.ai.inference.config import (
     DynamicWorkerConfig,
 )
 from dragon.ai.inference.inference_worker_utils import InferenceWorker
-
 from ..mocks import MockTelemetry
 
 
@@ -84,12 +84,20 @@ class TestLLMEngineWithQueuePipeline(unittest.TestCase):
             response_queues,  # response_queues
             [(time.time(), 0.01, 0.02)] * 3,  # latency_metrics
             0.05,  # preprocessing_time
+            time.time(),  # timestamp
+            [None, None, None],  # tools_list
+            [None, None, None],  # json_schema_list
+            [False, False, False],  # continue_final_message_list
         )
         llm_input_queue.put(batch_data)
 
         # Engine retrieves batch from queue
         received_batch = llm_input_queue.get(timeout=1)
-        user_prompts, formatted_prompts, resp_queues, latency_metrics, preproc_time = received_batch
+        user_prompts = received_batch[0]
+        formatted_prompts = received_batch[1]
+        resp_queues = received_batch[2]
+        latency_metrics = received_batch[3]
+        preproc_time = received_batch[4]
 
         # Engine generates responses
         responses, metrics = engine.generate(formatted_prompts)
@@ -144,7 +152,9 @@ class TestLLMEngineWithQueuePipeline(unittest.TestCase):
         # Simulate telemetry recording (as would happen in actual pipeline)
         telemetry = MockTelemetry()
         telemetry.add_data("model_inference_latency", metrics["inference_time"])
-        telemetry.add_data("total_tokens_per_second", metrics["total_tokens_per_second"])
+        telemetry.add_data(
+            "total_tokens_per_second", metrics["total_tokens_per_second"]
+        )
         telemetry.add_data("requests_per_second", metrics["requests_per_second"])
 
         # Verify telemetry received correct metrics
@@ -258,6 +268,9 @@ class TestLLMEngineInferenceWorkerIntegration(unittest.TestCase):
             latency_metrics,
             preproc_time,
             timestamp,
+            tools_list,
+            json_schema_list,
+            continue_final_message_list,
         ) = batch_data
 
         # LLMEngine generates responses
@@ -268,7 +281,9 @@ class TestLLMEngineInferenceWorkerIntegration(unittest.TestCase):
         self.assertEqual(responses[1], "LLM Response 2")
 
         # Send responses back to callers
-        for user_prompt, response, resp_queue in zip(user_prompts, responses, response_queues):
+        for user_prompt, response, resp_queue in zip(
+            user_prompts, responses, response_queues
+        ):
             resp_queue.put({"user": user_prompt, "assistant": response})
 
         # Verify callers receive correct responses
@@ -282,7 +297,9 @@ class TestLLMEngineInferenceWorkerIntegration(unittest.TestCase):
 
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
     @patch("vllm.LLM")
-    def test_multiple_batches_processed_sequentially(self, mock_llm_class, mock_logging):
+    def test_multiple_batches_processed_sequentially(
+        self, mock_llm_class, mock_logging
+    ):
         """
         Test that multiple batches are processed sequentially through the pipeline.
         """
@@ -430,7 +447,9 @@ class TestEngineResponseQueuePreservation(unittest.TestCase):
         responses, metrics = engine.generate(formatted_prompts)
 
         # Dispatch responses to correct queues
-        for user_prompt, response, resp_queue in zip(user_prompts, responses, response_queues):
+        for user_prompt, response, resp_queue in zip(
+            user_prompts, responses, response_queues
+        ):
             resp_queue.put({"user": user_prompt, "assistant": response})
 
         # Verify each caller gets their own response

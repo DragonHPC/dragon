@@ -344,7 +344,7 @@ class LauncherBackEnd:
             try:
                 self.logging_queue.destroy()
                 self.logging_queue = None
-            except (Exception):
+            except Exception:
                 pass
 
         try:
@@ -516,7 +516,9 @@ class LauncherBackEnd:
 
         log.info(f"{self.node_idx} forward to nodes {ids_to_forward}")
 
-        conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23)
+        conn_options = ConnectionOptions(
+            default_pool=self.be_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23
+        )
         conn_policy = POLICY_INFRASTRUCTURE
         for idx in ids_to_forward:
             outbound = Channel.attach(
@@ -637,7 +639,9 @@ class LauncherBackEnd:
             self.be_inbound = Channel(self.be_mpool, be_cuid)
             self.local_ch_in = Channel(self.be_mpool, local_cuid_in)
             self.local_ch_out = Channel(self.be_mpool, local_cuid_out)
-            conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23)
+            conn_options = ConnectionOptions(
+                default_pool=self.be_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23
+            )
             conn_policy = POLICY_INFRASTRUCTURE
             self.local_inout = Connection(
                 inbound_initializer=self.local_ch_in,
@@ -736,6 +740,8 @@ class LauncherBackEnd:
         assert isinstance(ping_back, dmsg.OverlayPingBE)
         log.debug(f"comm tree initialized with {type(ping_back)} with pid {self.tree_proc.pid}")
 
+        log.debug(f"Overlay transport is {self.overlay_transport}.")
+
         # Send BEIsUP msg to FE
         # Send my serialized descriptor and host_id to the frontend
         be_ch_desc = str(B64(self.be_inbound.serialize()))
@@ -751,7 +757,9 @@ class LauncherBackEnd:
         log.info("la_be recv FENodeIdxBE")
         self.node_idx = fe_node_idx_msg.node_index
 
-        # Update the k8s labels to use with the k8s Service for Jupyter
+        # Update the k8s labels to use with the k8s Service for exposing the primary node,
+        # when we're in k8s. This is needed to make sure the Service can find the primary node
+        # to route to and make the API Server accessible.
         if is_k8s and self.node_idx == 0:
             pod_name = os.getenv("POD_NAME")
             patch_labels = {"metadata": {"labels": {"node_index": f"{os.getenv('BACKEND_JOB_LABEL')}_pod_0"}}}
@@ -841,13 +849,18 @@ class LauncherBackEnd:
 
         # Now start local services....
         self._state = BackendState.LS_STARTING
-        self.ls_proc, stdin_fd, stdout_fd = self._start_localservices()
-        self.ls_stdin = NewlineStreamWrapper(
-            os.fdopen(stdin_fd, "wb", buffering=0), read_intent=False, write_intent=True
-        )
-        self.ls_stdout = NewlineStreamWrapper(
-            os.fdopen(stdout_fd, "rb", buffering=0), read_intent=True, write_intent=False
-        )
+        self.ls_proc, _, _ = self._start_localservices()
+        # Transfer ownership of Popen's pipe streams to NewlineStreamWrapper directly,
+        # then null out Popen's references. This avoids a double-close of the same FD:
+        # previously os.fdopen(ls_proc.stdin.fileno()) created a second FileIO wrapping
+        # the same FD that ls_proc.stdin already owned, causing EBADF errors during
+        # interpreter finalization in Python 3.13 (bpo-104090).
+        _ls_stdin = self.ls_proc.stdin
+        _ls_stdout = self.ls_proc.stdout
+        self.ls_proc.stdin = None
+        self.ls_proc.stdout = None
+        self.ls_stdin = NewlineStreamWrapper(_ls_stdin, read_intent=False, write_intent=True)
+        self.ls_stdout = NewlineStreamWrapper(_ls_stdout, read_intent=True, write_intent=False)
 
         # Let local services know we're up and give it everything it needs to get going
         if is_k8s:
@@ -880,9 +893,13 @@ class LauncherBackEnd:
         # switch to comms with local services over channels and proceed with bring up
         self.ls_channel = Channel.attach(B64.from_str(sh_ping_be_msg.shep_cd).decode())
         self.la_channel = Channel.attach(B64.from_str(sh_ping_be_msg.be_cd).decode())
-        self.ls_queue = Connection(outbound_initializer=self.ls_channel, options=conn_options, policy=POLICY_INFRASTRUCTURE)
+        self.ls_queue = Connection(
+            outbound_initializer=self.ls_channel, options=conn_options, policy=POLICY_INFRASTRUCTURE
+        )
         self.la_queue = Connection(inbound_initializer=self.la_channel, policy=POLICY_INFRASTRUCTURE)
-        self.la_queue_bd = Connection(outbound_initializer=self.la_channel, options=conn_options, policy=POLICY_INFRASTRUCTURE)
+        self.la_queue_bd = Connection(
+            outbound_initializer=self.la_channel, options=conn_options, policy=POLICY_INFRASTRUCTURE
+        )
         log.info("la_be attached to ls created channels - a7")
 
         # Start the channel monitor thread
@@ -1239,8 +1256,12 @@ class LauncherBackEnd:
         # global services channel, so now we can attach to that channel.
         if self.is_primary and (not self.transport_test_env):
             self.gs_channel = Channel.attach(B64.from_str(msg.gs_cd).decode())
-            conn_options = ConnectionOptions(default_pool=self.be_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23)
-            self.gs_queue = Connection(outbound_initializer=self.gs_channel, options=conn_options, policy=POLICY_INFRASTRUCTURE)
+            conn_options = ConnectionOptions(
+                default_pool=self.be_mpool, min_block_size=2**21, large_block_size=2**22, huge_block_size=2**23
+            )
+            self.gs_queue = Connection(
+                outbound_initializer=self.gs_channel, options=conn_options, policy=POLICY_INFRASTRUCTURE
+            )
             self.msg_log.debug(f"Primary la_be created gs_queue: {self.gs_queue}")
 
         # Forward the message to my leaves

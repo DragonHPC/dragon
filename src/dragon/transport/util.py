@@ -181,6 +181,18 @@ def create_hsta_env(nic_idx, user_initiated, oob_connect):
     if is_k8s:
         env["DRAGON_HSTA_UCX_NO_MEM_REGISTER"] = "1"
 
+    # Sanitize env for subprocess.Popen:
+    # - Popen encodes values (os.fsencode) and raises on None.
+    # - get_fabric_backend() may return None; omitting the key lets
+    #   the C++ HSTA agent fall back to its defaults (see select_fabric()).
+    # - Coerce non-str/bytes/PathLike values to str to avoid fsencode errors.
+    for k in list(env.keys()):
+        v = env.get(k)
+        if v is None:
+            del env[k]
+        elif not isinstance(v, (str, bytes, os.PathLike)):
+            env[k] = str(v)
+
     return env
 
 
