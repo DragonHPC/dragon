@@ -67,7 +67,6 @@ class DragonServer:
     def telemetry_handler(self):
         """Starts Dragon Server on each compute node"""
         mp.set_start_method("dragon")
-        print(f'Dragon Server on {os.uname().nodename}', flush=True)
         if self.offline_telemetry_args is None:
             collector_start_event = mp.Event()
             try:
@@ -104,7 +103,7 @@ class DragonServer:
                     ds_proc.start()
                     ds_proc.join()
             except Exception as e:
-                LOG.warn(f"Error in DragonServer Offline Telemetry: {e}")  
+                LOG.warn(f"Error in DragonServer Offline Telemetry: {e}")
 
     def _listen(self):
         """Check request queue for new requests
@@ -289,7 +288,9 @@ class DragonServer:
                     else:
                         placeholders = ",".join("?" * len(self.offline_telemetry_args[0]))
                         sql_query = f"SELECT dps.table_name, dps.metric, dps.timestamp, dps.value, json_each.key as tag_key, json_each.value as tag_value FROM datapoints as dps, json_each(dps.tags) WHERE dps.metric = ? AND CAST(timestamp as INTEGER) >= ? AND CAST(timestamp as INTEGER) <= ? AND dps.table_name IN ({placeholders}) ORDER BY tag_value"
-                        tsdb = cursor.execute(sql_query, [q["metric"], start_time, end_time, *self.offline_telemetry_args[0]]).fetchall()
+                        tsdb = cursor.execute(
+                            sql_query, [q["metric"], start_time, end_time, *self.offline_telemetry_args[0]]
+                        ).fetchall()
 
                 else:
                     if self.offline_telemetry_args is None:
@@ -298,7 +299,9 @@ class DragonServer:
                     else:
                         placeholders = ",".join("?" * len(self.offline_telemetry_args[0]))
                         sql_query = f"SELECT dps.table_name, dps.metric, dps.timestamp, dps.value, json_each.key as tag_key, json_each.value as tag_value FROM datapoints as dps, json_each(dps.tags) WHERE dps.metric = ? AND tag_key = ? AND CAST(timestamp as INTEGER) >= ? AND CAST(timestamp as INTEGER) <= ? AND dps.table_name IN ({placeholders}) ORDER BY tag_value"
-                        tsdb = cursor.execute(sql_query, [q["metric"], tagk, start_time, end_time, *self.offline_telemetry_args[0]]).fetchall()
+                        tsdb = cursor.execute(
+                            sql_query, [q["metric"], tagk, start_time, end_time, *self.offline_telemetry_args[0]]
+                        ).fetchall()
 
                 tsdb = create_dps_tags(tsdb, hostname)
 

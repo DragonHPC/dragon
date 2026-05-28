@@ -15,11 +15,11 @@ from dragon.launcher.network_config import NetworkConfig
 
 from dragon.infrastructure import facts as dfacts
 from dragon.infrastructure import messages as dmsg
-from dragon.launcher.wlm import WLM
+from dragon.launcher.wlm import WLM, SlurmWLM, pbs
 from dragon.channels import ChannelError
 from dragon.managed_memory import DragonMemoryError
 from dragon.utils import B64
-from dragon.infrastructure.facts import DEFAULT_TRANSPORT_NETIF, DEFAULT_OVERLAY_NETWORK_PORT, TransportAgentOptions
+from dragon.infrastructure.facts import DEFAULT_OVERLAY_NETWORK_PORT, TransportAgentOptions
 
 from .launcher_testing_utils import catch_thread_exceptions
 
@@ -73,12 +73,16 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
     def tearDown(self):
 
         try:
-            self.fe_ta_conn.close()
+            if self.fe_ta_conn is not None:
+                self.fe_ta_conn.close()
+                self.fe_ta_conn = None
         except (ConnectionError, AttributeError):
             pass
 
         try:
-            self.be_ch_out.detach()
+            if self.be_ch_out is not None:
+                self.be_ch_out.detach()
+                self.be_ch_out = None
         except (ChannelError, AttributeError):
             pass
 
@@ -98,18 +102,24 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
             pass
 
         try:
-            self.ta_ch_out.detach()
+            if self.ta_ch_out is not None:
+                self.ta_ch_out.detach()
+                self.ta_ch_out = None
         except (AttributeError, ChannelError):
             pass
 
         try:
-            self.ta_ch_in.detach()
+            if self.ta_ch_in is not None:
+                self.ta_ch_in.detach()
+                self.ta_ch_in = None
         except (AttributeError, ChannelError):
             pass
 
         try:
-            self.be_mpool.destroy()
-            del self.be_mpool
+            if self.be_mpool is not None:
+                self.be_mpool.destroy()
+                del self.be_mpool
+                self.be_mpool = None
         except (AttributeError, DragonMemoryError):
             pass
 
@@ -140,6 +150,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         self.be_nodes = overlay["be_nodes"]
         self.overlay_inout = overlay["overlay_inout"]
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_clean_exit(self, mock_overlay, mock_launch):
@@ -171,6 +182,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         fe_proc.join()
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_error_launching_head_process(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -203,6 +215,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert exceptions_caught_in_threads["Frontend Server"]["exception"]["type"] == RuntimeError
         assert str(exceptions_caught_in_threads["Frontend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_clean_exit_with_hsta_launch(self, mock_overlay, mock_launch):
@@ -233,6 +246,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         # Join on the frontend thread
         fe_proc.join()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_clean_exit_with_tcp_launch(self, mock_overlay, mock_launch):
@@ -260,6 +274,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         # Join on the frontend thread
         fe_proc.join()
 
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_default_transport(self, mock_overlay, mock_launch):
@@ -285,6 +300,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         fe_proc.join()
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_bad_network_config(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -308,6 +324,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         )
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_launch_backend_exception(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -350,6 +367,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         )
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_launch_overlay_exception(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -376,8 +394,8 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
             == "Overlay transport agent launch failed on launcher frontend"
         )
 
-    @unittest.skip("Skipped pending fix of problem outlined in CIRRUS-1922. This test sporadically fails.")
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_message_out_of_order(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -441,6 +459,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert str(exceptions_caught_in_threads["Frontend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_garbled_beisup(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -476,13 +495,14 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert str(exceptions_caught_in_threads["Frontend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._kill_backend")
     @patch("dragon.launcher.frontend.LauncherFrontEnd._wait_on_wlm_proc_exit")
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_sigkill_to_wlm(self, exceptions_caught_in_threads, mock_overlay, mock_launch, mock_wait, mock_kill):
         """Test that we transmit a SIGKILL for a non-responsive backend"""
-        mock_wait.side_effect = TimeoutExpired(None, "raising a fake timeout")
+        mock_wait.side_effect = TimeoutExpired("", 0, "raising a fake timeout")
 
         log = logging.getLogger("sigkill_to_wlm")
         args_map = get_args_map(self.network_config)
@@ -516,6 +536,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         mock_kill.assert_called_once()
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_garbled_taup(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -569,6 +590,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert str(exceptions_caught_in_threads["Frontend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_term_in_app_exec(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -593,7 +615,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
                 send_abnormal_term(node["conn"])
 
         # Proceed with teardown
-        handle_teardown(self.be_nodes, self.primary_conn, self.fe_ta_conn, gs_head_exit=False)
+        handle_teardown(self.be_nodes, self.primary_conn, self.fe_ta_conn, gs_head_exit=False, abnormal_termination=True)
 
         # Join on the frontend thread
         fe_proc.join()
@@ -603,6 +625,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert str(exceptions_caught_in_threads["Frontend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_backend_timeout_in_abnormal_teardown(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -637,6 +660,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert str(exceptions_caught_in_threads["Frontend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_overlay_timeout_in_abnormal_teardown(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -661,7 +685,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
                 send_abnormal_term(node["conn"])
 
         # Proceed with teardown
-        handle_teardown(self.be_nodes, self.primary_conn, self.fe_ta_conn, gs_head_exit=False, timeout_overlay=True)
+        handle_teardown(self.be_nodes, self.primary_conn, self.fe_ta_conn, gs_head_exit=False, timeout_overlay=True, abnormal_termination=True)
 
         # Join on the frontend thread
         fe_proc.join()
@@ -671,6 +695,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert str(exceptions_caught_in_threads["Frontend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_term_in_teardown(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -699,7 +724,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         assert exceptions_caught_in_threads["Frontend Server"]["exception"]["type"] == RuntimeError
         assert str(exceptions_caught_in_threads["Frontend Server"]["exception"]["value"]) == "Abnormal exit detected"
 
-    @unittest.skip("Skipped pending fix of problem outlined in AICI-1632")
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.network_config.NetworkConfig.from_wlm")
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
@@ -735,19 +760,29 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         fe_proc.join()
 
         # Check the config mock actually use slurm
-        assert mock_config.called_with(
+        mock_config.assert_called_with(
             workload_manager=WLM.SLURM,
             port=DEFAULT_OVERLAY_NETWORK_PORT,
-            network_prefix=DEFAULT_TRANSPORT_NETIF,
+            network_prefix="^(eth|hsn)",
+            hostlist=None,
             sigint_trigger=None,
         )
 
     @catch_thread_exceptions
+    @patch("dragon.launcher.wlm.ssh.SSHWLM.check_for_wlm_support")
+    @patch("dragon.launcher.wlm.k8s.KubernetesNetworkConfig.check_for_wlm_support")
+    @patch("dragon.launcher.wlm.pbs.PBSWLM.check_for_wlm_support")
+    @patch("dragon.launcher.wlm.slurm.SlurmWLM.check_for_wlm_support")
     @patch("dragon.launcher.network_config.NetworkConfig.from_wlm")
-    def test_wlm_ssh_auto_detect(self, exceptions_caught_in_threads, mock_config):
-        """Test we throw an error if a user doesn't specify a WLM, and we only detect ssh"""
+    def test_wlm_drun_auto_detect(self, exceptions_caught_in_threads, mock_config, slurm_check_mock, pbs_check_mock, k8s_check_mock, ssh_check_mock):
+        """Test we throw an error if a user doesn't specify a WLM, and we only detect drun"""
         parser = get_parser()
         arg_list = ["-l", "dragon_file=DEBUG", "--network-prefix", "^(eth|hsn)", "hello_world.py"]
+
+        slurm_check_mock.return_value = False
+        pbs_check_mock.return_value = False
+        k8s_check_mock.return_value = False
+        ssh_check_mock.return_value = False
 
         args = parser.parse_args(args=arg_list)
         if args.basic_label or args.verbose_label:
@@ -764,19 +799,20 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         fe_proc.start()
         fe_proc.join()
 
-        log = logging.getLogger("auto_ssh")
+        log = logging.getLogger("auto_drun")
         log.error(f"exception: {exceptions_caught_in_threads}")
         assert "Frontend Server" in exceptions_caught_in_threads  # there was an exception in thread  1
         assert exceptions_caught_in_threads["Frontend Server"]["exception"]["type"] == RuntimeError
-        assert "SSH was only supported launcher found" in str(
+        assert "DRun was the only supported launcher found." in str(
             exceptions_caught_in_threads["Frontend Server"]["exception"]["value"]
         )
 
-    @unittest.skip("Skipped pending fix of problem outlined in AICI-1632")
+    @patch.dict(os.environ, {"PBS_NODEFILE": "/tmp/pbs_nodefile.txt"})
+    @patch("dragon.launcher.wlm.pbs.get_nodefile_node_count")
     @patch("dragon.launcher.network_config.NetworkConfig.from_wlm")
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
-    def test_pbs_slurm_launch_selection(self, mock_overlay, mock_launch, mock_config):
+    def test_pbs_slurm_launch_selection(self, mock_overlay, mock_launch, mock_config, node_count_mock):
         """Test that we honor user's pbs+pals WLM selection rather than auto detect"""
         args_map = get_args_map(self.network_config, arg1=["--wlm", "slurm"])
 
@@ -791,6 +827,8 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         # Give the net conf a correct object so that rest of this test can complete
         net_config_obj = NetworkConfig.from_file(self.network_config)
         mock_config.side_effect = [net_config_obj]
+
+        node_count_mock.return_value = 4
 
         # get startup going in another thread. Note: need to do threads in order to use
         # all our mocks
@@ -810,10 +848,11 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         fe_proc.join()
 
         # Check the config mock actually use slurm
-        assert mock_config.called_with(
-            workload_manager=WLM.SLURM,
+        mock_config.assert_called_with(
+            workload_manager=WLM.PBS,
             port=DEFAULT_OVERLAY_NETWORK_PORT,
-            network_prefix=DEFAULT_TRANSPORT_NETIF,
+            network_prefix="^(eth|hsn)",
+            hostlist=None,
             sigint_trigger=None,
         )
 

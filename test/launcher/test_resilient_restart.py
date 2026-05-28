@@ -11,6 +11,7 @@ from dragon.launcher.launchargs import get_parser
 
 from dragon.infrastructure.node_desc import NodeDescriptor
 from dragon.launcher.network_config import NetworkConfig
+from dragon.launcher.wlm.slurm import SlurmWLM
 from dragon.channels import ChannelError
 from dragon.managed_memory import DragonMemoryError
 
@@ -127,6 +128,7 @@ class FrontendRestartTest(unittest.TestCase):
         self.overlay_inout = overlay["overlay_inout"]
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "3"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_no_promotion(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -182,6 +184,7 @@ class FrontendRestartTest(unittest.TestCase):
         fe_proc.join()
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_with_promotion(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -252,13 +255,13 @@ class FrontendRestartTest(unittest.TestCase):
         fe_proc.join()
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_with_promotion_and_idle_nodes(
         self, exceptions_caught_in_threads, mock_overlay, mock_launch
     ):
         """Test the ability of frontend to restart from an Abnormal Term, excluding the node that sent the signal with a replacement"""
-
         nnodes = 4
         idle_nodes = 12
         self.network_config = self.big_network_config
@@ -286,6 +289,7 @@ class FrontendRestartTest(unittest.TestCase):
 
         # Get backend up
         self.do_bringup(mock_overlay, mock_launch, net_conf=net_conf)
+
 
         # Receive GSProcessCreate
         handle_gsprocesscreate(self.primary_conn)
@@ -320,12 +324,14 @@ class FrontendRestartTest(unittest.TestCase):
             self.assertNotEqual(host_id, dropped_host_id)
 
         handle_gsprocesscreate(self.primary_conn)
+
         handle_teardown(self.be_nodes, self.primary_conn, self.fe_ta_conn)
 
         # Join on the frontend thread
         fe_proc.join()
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_rapid_abnormal_restart(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -397,6 +403,7 @@ class FrontendRestartTest(unittest.TestCase):
         self.assertTrue("Dragon runtime is in an unrecoverable state. Exiting." in captured_stdout.getvalue())
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_kill_global_services(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -472,8 +479,8 @@ class FrontendRestartTest(unittest.TestCase):
         # Join on the frontend thread
         fe_proc.join()
 
-    @unittest.skip("Test Hangs. Waiting for fix. Jira AICI-1859.")
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "3"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_exhaust_resources(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -568,6 +575,7 @@ class FrontendRestartTest(unittest.TestCase):
         )
 
     @catch_thread_exceptions
+    @patch.dict(os.environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "2"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_abnormal_restart_min_nodes(self, exceptions_caught_in_threads, mock_overlay, mock_launch):

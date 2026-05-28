@@ -14,7 +14,7 @@ Installing Dragon
 ------------------------
 
 Dragon currently requires a minimum python version of 3.10 with support
-for 3.11 and 3.12. Otherwise, just do a `pip install`:
+for 3.11, 3.12 and 3.13. Otherwise, just do a `pip install`:
 
     pip install dragonhpc
 
@@ -160,9 +160,11 @@ DRAGON_DEFAULT_SEG_SZ - Set to the number of bytes for the default Managed Memor
 Requirements
 ------------
 
-- Python 3.10 
+- Python >= 3.10
 - GCC 9 or later
 - Slurm or PBS+PALS (for multi-node Dragon)
+
+NOTE: The DragonHPC project is planning to discontinue packaged releases targeting Python 3.10 as Python 3.10 approaches its official end-of-life in October 2026. Consequently, future updates will prioritize more recent Python releases to ensure continued security and compatibility.
 
 Known Issues
 ------------

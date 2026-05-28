@@ -1,4 +1,5 @@
 import os
+import enum
 from abc import ABC, abstractmethod
 import json
 import logging
@@ -12,6 +13,38 @@ from ...infrastructure.facts import PROCNAME_LA_BE, TransportAgentOptions
 from ...infrastructure.parameters import this_process
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.util import NewlineStreamWrapper
+
+
+@enum.unique
+class WLM(enum.Enum):
+    """Enumerated list of supported workload manager"""
+
+    SLURM = "slurm"
+    PBS = "pbs+pals"
+    SSH = "ssh"
+    K8S = "k8s"
+    DRUN = "drun"
+
+    def __str__(self):
+        return self.value
+
+    @staticmethod
+    def from_str(s):
+        """Obtain enum value from WLM string
+
+        Args:
+            s (str): name of WLM (eg: 'slurm', 'pbs', etc.)
+
+        Raises:
+            ValueError: invalid string input
+
+        Returns:
+            WLM: enumerated value associated with string WLM
+        """
+        try:
+            return WLM(s)
+        except KeyError:
+            raise ValueError()
 
 
 class NetworkConfigState(Enum):
@@ -64,6 +97,10 @@ class BaseWLM(ABC):
 
         self._state = NetworkConfigState.NONE
 
+    @property
+    def name(self) -> str:
+        return self.wlm
+
     @classmethod
     def check_for_wlm_support(cls) -> bool:
         raise NotImplementedError
@@ -86,7 +123,7 @@ class BaseWLM(ABC):
         stdout_stream = NewlineStreamWrapper(self.config_helper.stdout)
         stderr_stream = NewlineStreamWrapper(self.config_helper.stderr)
         node_returns = 0
-        temp_uniqueness_guarantee = {}
+        temp_uniqueness_guarantee = set()
         while node_returns != self.NNODES:
 
             lines = []
@@ -132,15 +169,22 @@ class BaseWLM(ABC):
                 node_index, node_desc = line.split(": ", maxsplit=1)
                 if " " in node_index:
                     node_index = node_index.split(" ")[-1]
-                if str(node_index) not in temp_uniqueness_guarantee.keys():
+                if str(node_index) not in temp_uniqueness_guarantee:
                     self.LOGGER.debug(json.loads(node_desc))
                     node = NodeDescriptor.from_sdict(json.loads(node_desc))
                     assert node is not None
                     if len(node.ip_addrs) > 0:  # type: ignore
-                        self.node_descriptors[str(node_returns)] = node
-                        temp_uniqueness_guarantee[str(node_index)] = node_returns
+                        # Preserve the helper-reported node index rather than the
+                        # arrival order. Helper output can arrive out of order, and
+                        # later launcher code treats these keys as stable network-
+                        # configuration indices.
+                        self.node_descriptors[str(node_index)] = node
+                        temp_uniqueness_guarantee.add(str(node_index))
                     node_returns += 1
 
+        # Keep iteration deterministic after asynchronous helper output so
+        # downstream code sees network-config entries in node-index order.
+        self.node_descriptors = dict(sorted(self.node_descriptors.items(), key=lambda item: int(item[0])))
         self.LOGGER.debug(f"received {self.NNODES} of {self.NNODES} expected NodeDescriptors")
 
     def _sigint_teardown(self):

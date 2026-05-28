@@ -65,31 +65,48 @@ def detect_wlm():
     """Detect a supported WLM"""
     from .network_config import NetworkConfig
 
-    wlm = None
+    available_wlms = []
     try:
-        for wlm, cls in wlm_cls_dict.items():
+        for _wlm, cls in wlm_cls_dict.items():
             if cls.check_for_wlm_support():
-                break
-
+                available_wlms.append(_wlm)
     except Exception:
         raise RuntimeError("Error searching for supported WLM")
 
-    if wlm is None:
+    if len(available_wlms) == 0:
         raise RuntimeError("No supported WLM found")
-    elif wlm is WLM.SSH:
+    elif len(available_wlms) > 1:
+        ssh_drun = set([WLM.SSH, WLM.DRUN])
+
+        if len(available_wlms) == 2 and ssh_drun == set(available_wlms):
+            msg = """DRun and SSH lauchers were the only supported launchers found. To select one of thse, specify `--wlm drun` or `--wlm ssh` as input to the dragon launcher.
+Both drun and ssh launch require passwordless SSH to all backend compute nodes and a list of hosts. Please see documentation
+and `dragon --help` for more information.
+"""
+            raise RuntimeError(msg)
+
+        not_ssh_drun = set(available_wlms) - ssh_drun
+        if len(not_ssh_drun) == 1:
+            return list(not_ssh_drun)[0]
+
+        raise RuntimeError(f"Multiple supported WLMs found: {available_wlms}. Please specify one with `--wlm <wlm>`. Please see documentation and `dragon --help` for more information.")
+
+    elif available_wlms[0] == WLM.SSH:
         msg = """
 SSH was only supported launcher found. To use it, specify `--wlm ssh` as input to the dragon launcher.
 It requires passwordless SSH to all backend compute nodes and a list of hosts. Please see documentation
 and `dragon --help` for more information.
 """
         raise RuntimeError(msg)
-    elif wlm is WLM.DRUN:
-        msg = """DRun was the only supported launcher found. To use it, specify `--wlm drun` as input to the dragon launcher.
+    elif available_wlms[0] == WLM.DRUN:
+        msg = """
+DRun was the only supported launcher found. To use it, specify `--wlm drun` as input to the dragon launcher.
 It requires passwordless SSH to all backend compute nodes and a list of hosts. Please see documentation
 and `dragon --help` for more information.
 """
+        raise RuntimeError(msg)
 
-    return wlm
+    return available_wlms[0]
 
 
 def queue_monitor(func: Callable, *, log_test_queue=None):

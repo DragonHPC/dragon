@@ -1,5 +1,5 @@
 """
-Unit tests for the LLM engine module.
+Unit tests for the LLM engine module (inference/llm_engine.py).
 
 Tests the LLMInferenceEngine class.
 
@@ -9,8 +9,10 @@ These tests use Dragon multiprocessing primitives.
 import dragon
 import multiprocessing as mp
 from unittest import TestCase, main
+from unittest.mock import patch
 
 from dragon.ai.inference.llm_engine import LLMInferenceEngine
+import os; os.environ["DRAGON_PATCH_MP"] = "True"  # restore after llm_engine import clears it
 from dragon.ai.inference.config import ModelConfig, BatchingConfig
 
 

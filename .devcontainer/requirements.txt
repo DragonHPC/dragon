@@ -35,3 +35,6 @@ zarr==2.18.3
 paramiko>=3.5.1
 networkx
 nvidia-ml-py
+delocate>=0.13.0
+pydantic
+fastmcp

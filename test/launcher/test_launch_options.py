@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import unittest
-import time
 import logging
 import threading
 from os import environ, path
@@ -8,6 +7,7 @@ from io import StringIO
 from unittest.mock import patch
 from dragon.launcher.launchargs import get_parser
 from dragon.launcher import launch_selector as dls
+from dragon.launcher.wlm import SlurmWLM
 
 from .launcher_testing_utils import catch_thread_exceptions
 from .frontend_testing_mocks import run_frontend
@@ -49,6 +49,7 @@ class LaunchSelectionTest(unittest.TestCase):
 
     @patch("sys.argv", ["dragon", "dummy.py"])
     @patch("shutil.which")
+    @patch.dict(environ, {k: v for k, v in dict(environ).items() if k != "SLURM_JOB_ID"}, clear=True)
     def test_multinode_auto_without_allocation_slurm(self, mock_which):
         """Raise exception due to slurm being present with no job allocation"""
         mock_which.side_effect = ["/opt/slurm/bin/qstat", "/usr/bin/srun"]
@@ -131,6 +132,7 @@ class LaunchOptionsTest(unittest.TestCase):
         self.big_network_config = path.join(self.test_dir, "slurm_big.yaml")
 
     @catch_thread_exceptions
+    @patch.dict(environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_too_many_nodes_requested(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -152,6 +154,7 @@ class LaunchOptionsTest(unittest.TestCase):
         )
 
     @catch_thread_exceptions
+    @patch.dict(environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_resilient_launch_no_nodes_requested(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -173,6 +176,7 @@ class LaunchOptionsTest(unittest.TestCase):
         )
 
     @catch_thread_exceptions
+    @patch.dict(environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_resilient_launch_bad_nidle_requested(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -191,6 +195,7 @@ class LaunchOptionsTest(unittest.TestCase):
         assert "is greater than available" in str(exceptions_caught_in_threads["Frontend Server"]["exception"]["value"])
 
     @catch_thread_exceptions
+    @patch.dict(environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     def test_resilient_launch_bad_nidle_nnodes_requested(self, exceptions_caught_in_threads, mock_overlay, mock_launch):
@@ -233,6 +238,7 @@ class LaunchOptionsTest(unittest.TestCase):
             get_args_map(self.network_config, arg1=["--port", "abcdef"])
         self.assertTrue("invalid valid_port_int value" in mock_stderr.getvalue())
 
+    @patch.dict(environ, {SlurmWLM.ENV_SLURM_JOB_ID: "1234", SlurmWLM.ENV_SLURM_NUM_NODES: "4"})
     @patch("dragon.launcher.frontend.LauncherFrontEnd._launch_backend")
     @patch("dragon.launcher.frontend.start_overlay_network")
     @patch("sys.stderr", new_callable=StringIO)
@@ -243,8 +249,9 @@ class LaunchOptionsTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             run_frontend(args_map)
 
-        self.assertTrue("No NICs found for" in mock_stderr.getvalue())
-        self.assertTrue("with regex pattern garbage-prefix" in mock_stderr.getvalue())
+        val = mock_stderr.getvalue()
+        self.assertTrue("No NICs found for" in val)
+        self.assertTrue("with regex pattern garbage-prefix" in val)
 
 
 if __name__ == "__main__":

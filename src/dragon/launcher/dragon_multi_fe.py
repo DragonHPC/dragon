@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 """Simple multi-node dragon infrastructure startup"""
+
 import os
 import logging
 
@@ -40,6 +41,7 @@ def main(args_map=None):
     restart = False
     last_avail_nodes = None
     use_progress_bar = args_map["progress_bar"]
+    resilient = args_map["resilient"]
 
     while not execution_complete:
         # Try to run the launcher
@@ -56,12 +58,16 @@ def main(args_map=None):
         # Handle an obvious exception as well as what to do if we're trying a resilient runtime
         except Exception as err:
             log.exception(f"Error in launcher frontend: {err}")
-            if not fe_server.resilient:
+            if not resilient:
+                print(f"Dragon launcher frontend encountered an error during execution. {err!s}", flush=True)
                 return LAUNCHER_FAIL_EXIT
 
             # pass testing mode along to the backend if set
             if os.getenv("_DRAGON_HSTA_TESTING_MODE", None):
                 os.environ["_DRAGON_HSTA_TESTING_MODE"] = str(int(os.environ["_DRAGON_HSTA_TESTING_MODE"]) + 1)
+
+            if not net_conf:
+                net_conf = dict()
 
             # Check if the sum of active and idle nodes is > 0:
             if last_avail_nodes is None:

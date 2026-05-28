@@ -96,7 +96,7 @@ class ChannelBarrierReady(ChannelError):
 class ChannelRemoteOperationNotSupported(ChannelError):
     pass
 
-class ChannelDestroyed(ChannelError, dtypes.DragonObjectDestroyed, EOFError):
+class ChannelDestroyed(ChannelError, dtypes.DragonObjectDestroyed):
     pass
 
 class ChannelSetError(dtypes.DragonException):
@@ -831,6 +831,9 @@ cdef class Channel:
         self._is_serialized = C_FALSE
 
         derr = dragon_channel_attach(&_serial, &self._channel)
+        if derr == DRAGON_OBJECT_DESTROYED:
+            raise ChannelDestroyed("The channel was destroyed and cannot be attached.", derr)
+
         if derr != DRAGON_SUCCESS:
             raise ChannelError("Could not attach to Channel", derr)
 

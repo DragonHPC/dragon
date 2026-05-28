@@ -14,6 +14,13 @@ from utils.test_pyheap import PHeapTest
 from utils.test_logging import TestLogHandler
 from utils.test_logging import TestLoggingSubprocesses
 
+import doctest
+import dragon.utils
+def load_tests(loader, tests, ignore):
+    # Add anything with a doctest in its docstring to the tests to be run.
+    tests.addTests(doctest.DocTestSuite(dragon.utils))
+    return tests
+
 # TEMPORARY HACK: somehow the use of parameterized in these tests
 # seem to be interfering with unittests's discovery on import.
 # This brutal method solves it for the time being but:

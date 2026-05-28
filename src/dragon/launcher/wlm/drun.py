@@ -1,7 +1,7 @@
 import os
 import subprocess
 
-from .base import BaseWLM
+from .base import WLM, BaseWLM
 from dragon.infrastructure.facts import TransportAgentOptions
 from dragon.tools.dragon_run.src import DragonRunPopen, PIPE
 from typing import Optional
@@ -11,7 +11,7 @@ class DRunWLM(BaseWLM):
 
     def __init__(self, network_prefix, port, hostlist):
         nhosts = len(hostlist) if hostlist is not None else 0
-        super().__init__("drun", network_prefix, port, nhosts)
+        super().__init__(WLM.DRUN.value, network_prefix, port, nhosts)
         self.hostlist = hostlist
 
     @classmethod

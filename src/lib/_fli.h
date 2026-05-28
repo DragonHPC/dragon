@@ -7,11 +7,17 @@
 #include <dragon/managed_memory.h>
 
 #define DRAGON_FLI_UMAP_SEED 1605
+
+/* bit masks for FLI type */
 #define FLI_HAS_MAIN_CHANNEL 1
 #define FLI_HAS_MANAGER_CHANNEL 2
 #define FLI_USING_BUFFERED_PROTOCOL 4
 #define FLI_HAS_TASK_SEM 8
 
+/* Default Values */
+#define FLI_DEFAULT_PRIMES 1
+
+/* Hint/Arg Values */
 #define FLI_EOT                      0xFFFFFFFFFFFFFFFF
 #define FLI_TERMINATOR               0xFFFFFFFFFFFFFFFE
 #define FLI_INTERNAL_STRM_CHANNEL    0xFFFFFFFFFFFFFFFD
@@ -72,6 +78,8 @@ typedef struct dragonFLISendHandle_st {
     dragonMemoryPoolDescr_t dest_pool;
     dragonFLISendBufAlloc_t* buffered_allocations;
     dragonChannelDescr_t terminate_stream_channel;
+    uint64_t strm_channel_primes;
+    uint64_t num_sends;
     uint64_t buffered_arg;
     uint64_t strm_type;
     size_t total_bytes;
@@ -80,6 +88,7 @@ typedef struct dragonFLISendHandle_st {
     bool buffered_send;
     bool turbo_mode;
     bool flush;
+    bool strm_channel_deposited;
     bool close_required;
     dragonULInt debug; /* internal use only debug constant */
     pthread_t tid; /* used to keep track of send or receive file descriptors */

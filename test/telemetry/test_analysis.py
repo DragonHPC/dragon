@@ -13,11 +13,11 @@ import glob
 from dragon.utils import set_local_kv, B64
 from dragon.telemetry.analysis import (
     AnalysisClient,
-    AnalysisServer,
-    LS_TAS_KEY,
-    CollectorDetectorGroup,
     Detector,
     CollectorGroup,
+)
+from dragon.telemetry.analysis_server import (
+    AnalysisServer,
 )
 from dragon.telemetry.telemetry_head import _register_with_local_services
 from dragon.data import DDict
@@ -169,6 +169,9 @@ class TestDragonTelemetryDetector(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
+        # the ddict now has a TimeKeeper in it so we need to set the telemetry level to 0 to avoid it trying to start telemetry when we create the ddict. We can set it back to what it was before at the end of the tests for completeness.
+        cls._previous_telemetry_level = os.getenv("DRAGON_TELEMETRY_LEVEL", None)
+        os.environ["DRAGON_TELEMETRY_LEVEL"] = "0"
         cls.server_queue = mp.Queue()
         cls.test_queue = mp.Queue()
         cls.test_ddict = DDict(n_nodes=1, managers_per_node=1, total_mem=10 * 1024 * 1024)
@@ -177,6 +180,8 @@ class TestDragonTelemetryDetector(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
+        if cls._previous_telemetry_level is not None:
+            os.environ["DRAGON_TELEMETRY_LEVEL"] = cls._previous_telemetry_level
         # need to cleanup ddict that was destroyed with restart_allowed=True
         for filename in glob.glob("/dev/shm/_dragon_dragon_dict_pool*"):
             try:

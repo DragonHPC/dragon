@@ -12,9 +12,14 @@ from ..utils import B64
 
 
 def resolve_args(args=None):
-    # If no transport agent settings are set in launch parameters
     if not args:
-        args = facts.DEFAULT_TRANSPORT_AGENT
+        raise ValueError("transport agent args must be provided by launcher state")
+
+    if isinstance(args, str):
+        raise TypeError("transport agent args must be a sequence of argv tokens, not a string")
+
+    args = list(args)
+
     alias = facts.TRANSPORT_AGENT_ALIASES.get(args[0].lower())
     if alias:
         args = alias + args[1:]
@@ -43,8 +48,7 @@ def start_transport_agent(
     :type in_ch_sdesc: B64
     :param log_ch_sdesc: Channel to be used for logging to the Frontend, defaults to None
     :type log_ch_sdesc: B64, optional
-    :param args: Command args for starting Transport Agents, defaults to None in which
-                 case the TCP transport agent is initiated as default
+    :param args: Command args for starting Transport Agents supplied by launcher state
     :type args: list[str], optional
     :param env: Environment variables, defaults to None
     :type env: dict[str, str], optional

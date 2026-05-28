@@ -5,6 +5,7 @@ from dragon.native.process import Popen
 from dragon.native.queue import Queue
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
 from dragon.channels import Channel
+from dragon.utils import XNumPy2DPickler, XScalarPickler, XStringPickler
 import multiprocessing as mp
 import pathlib
 import numpy as np
@@ -32,62 +33,6 @@ def _multiple_puts_and_join(q, num_puts, item):
 def _task_done_and_join(q):
     q.task_done()
     q.join()
-
-
-class numPy2dPickler:
-
-    def __init__(self, shape: tuple, data_type: np.dtype, chunk_size=0):
-        self._shape = shape
-        self._data_type = data_type
-        self._chunk_size = chunk_size
-
-    def dump(self, nparr, file) -> None:
-
-        # write the dimension of the array
-        num_bytes = ctypes.sizeof(ctypes.c_size_t)
-        nrow = nparr.shape[0]
-        ncol = nparr.shape[1]
-        bytes_nrow = nrow.to_bytes(num_bytes, byteorder=sys.byteorder)
-        bytes_ncol = ncol.to_bytes(num_bytes, byteorder=sys.byteorder)
-        file.write(bytes_nrow)
-        file.write(bytes_ncol)
-
-        # write array
-        mv = memoryview(nparr)
-        bobj = mv.tobytes()
-        # print(f"Dumping {bobj=}", file=sys.stderr, flush=True)
-        if self._chunk_size == 0:
-            chunk_size = len(bobj)
-        else:
-            chunk_size = self._chunk_size
-
-        for i in range(0, len(bobj), chunk_size):
-            file.write(bobj[i : i + chunk_size])
-
-    def load(self, file):
-
-        obj = None
-
-        # read the dimension of the array
-        num_bytes = ctypes.sizeof(ctypes.c_size_t)
-        nrow = file.read(num_bytes)
-        ncol = file.read(num_bytes)
-
-        try:
-            while True:
-                data = file.read(self._chunk_size)
-                if obj is None:
-                    # convert bytes to bytearray
-                    view = memoryview(data)
-                    obj = bytearray(view)
-                else:
-                    obj.extend(data)
-        except EOFError:
-            pass
-
-        ret_arr = np.frombuffer(obj, dtype=self._data_type).reshape(self._shape)
-
-        return ret_arr
 
 
 class TestQueueCPP(unittest.TestCase):
@@ -342,28 +287,91 @@ class TestQueueCPP(unittest.TestCase):
         self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
         q.destroy()
 
-    def test_custom_pickler_dump(self):
+    def test_custom_matrix_pickler_dump(self):
         exe = "cpp_queue"
-        q = Queue(buffered=False, pickler=numPy2dPickler((2, 3), np.double), num_streams=1)
+        q = Queue(buffered=False, pickler=XNumPy2DPickler(np.float64), num_streams=1)
         arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
         value = np.array(arr)
         q.put(value)
         ser_q = q.serialize()
-        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_pickler_dump"], env=ENV)
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_matrix_pickler_dump"], env=ENV)
         cpp_proc.wait()
         self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
         q.destroy()
 
-    def test_custom_pickler_load(self):
+    def test_custom_matrix_pickler_load(self):
         exe = "cpp_queue"
-        q = Queue(buffered=False, pickler=numPy2dPickler((2, 3), np.double), num_streams=1)
+        q = Queue(buffered=False, pickler=XNumPy2DPickler(np.float64), num_streams=1)
         arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
         ser_q = q.serialize()
-        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_pickler_load"], env=ENV)
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_matrix_pickler_load"], env=ENV)
         cpp_proc.wait()
         self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
         recv_arr = q.get()
         self.assertTrue(np.array_equal(arr, recv_arr))
+        q.destroy()
+
+    def test_custom_int_pickler_dump(self):
+        exe = "cpp_queue"
+        q = Queue(buffered=False, pickler=XScalarPickler(np.int32), num_streams=1)
+        q.put(42)
+        ser_q = q.serialize()
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_int_pickler_dump"], env=ENV)
+        cpp_proc.wait()
+        self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
+        q.destroy()
+
+    def test_custom_int_pickler_load(self):
+        exe = "cpp_queue"
+        q = Queue(buffered=False, pickler=XScalarPickler(np.int32), num_streams=1)
+        ser_q = q.serialize()
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_int_pickler_load"], env=ENV)
+        cpp_proc.wait()
+        self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
+        x = q.get()
+        self.assertTrue(x, 42)
+        q.destroy()
+
+    def test_custom_double_pickler_dump(self):
+        exe = "cpp_queue"
+        q = Queue(buffered=False, pickler=XScalarPickler(np.float64), num_streams=1)
+        q.put(42.0)
+        ser_q = q.serialize()
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_double_pickler_dump"], env=ENV)
+        cpp_proc.wait()
+        self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
+        q.destroy()
+
+    def test_custom_double_pickler_load(self):
+        exe = "cpp_queue"
+        q = Queue(buffered=False, pickler=XScalarPickler(np.float64), num_streams=1)
+        ser_q = q.serialize()
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_double_pickler_load"], env=ENV)
+        cpp_proc.wait()
+        self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
+        x = q.get()
+        self.assertTrue(x, 42.0)
+        q.destroy()
+
+    def test_custom_str_pickler_dump(self):
+        exe = "cpp_queue"
+        q = Queue(buffered=False, pickler=XStringPickler(), num_streams=1)
+        q.put("hello world")
+        ser_q = q.serialize()
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_str_pickler_dump"], env=ENV)
+        cpp_proc.wait()
+        self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
+        q.destroy()
+
+    def test_custom_str_pickler_load(self):
+        exe = "cpp_queue"
+        q = Queue(buffered=False, pickler=XStringPickler(), num_streams=1)
+        ser_q = q.serialize()
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_str_pickler_load"], env=ENV)
+        cpp_proc.wait()
+        self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
+        x = q.get()
+        self.assertTrue(x, "hello world")
         q.destroy()
 
     def test_2d_vector_put(self):
@@ -375,6 +383,13 @@ class TestQueueCPP(unittest.TestCase):
         self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
         q.destroy()
 
+    def test_custom_matrix_dumps_loads(self):
+        arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
+        value = np.array(arr)
+        pickler = XNumPy2DPickler(np.float64)
+        value_bytes = pickler.dumps(value)
+        arr2 = pickler.loads(value_bytes)
+        self.assertTrue(np.array_equal(arr, arr2))
 
 if __name__ == "__main__":
     mp.set_start_method("dragon")

@@ -49,6 +49,7 @@ from dragon.data.ddict import (
     PosixCheckpointPersister,
     DAOSCheckpointPersister,
     NULLCheckpointPersister,
+    SentinelQueue
 )
 from dragon.rc import DragonError
 from dragon.native.machine import System, Node
@@ -901,6 +902,19 @@ def sort_keys(dd, out_queue):
 def sort_keys_comparator(x, y):
     return x < y
 
+def flood(dd, out_queue):
+    try:
+        for i in range(1000):
+            out_queue.put(i)
+    except EOFError:
+        pass
+
+    except Exception as ex:
+        tb = traceback.format_exc()
+        print(
+            "There was an exception in flood: %s\n Traceback: %s" % (ex, tb),
+            flush=True,
+        )
 
 def test_sync_proc_func(d, bar, keys):
 
@@ -918,7 +932,9 @@ def test_sync_proc_func(d, bar, keys):
 
     d.detach()
 
-
+def putter_proc(q):
+    q.putter()
+    q.close()
 
 class TestDDict(unittest.TestCase):
     def setUp(self):
@@ -2462,6 +2478,20 @@ class TestDDict(unittest.TestCase):
 
         ddict.destroy()
 
+    def test_sentinel_queue(self):
+        q = SentinelQueue()
+
+        proc = mp.Process(target=putter_proc, args=(q,))
+        proc.start()
+
+        try:
+            q.getter()
+            q.get()
+        except EOFError:
+            pass
+
+        proc.join()
+
     def test_filter(self):
         d = DDict(2, 1, 3000000)
 
@@ -2482,6 +2512,34 @@ class TestDDict(unittest.TestCase):
         keys.sort()
         self.assertEqual(candidate_list, keys)
         d.destroy()
+
+    def test_filter_flood(self):
+        # Tests that a filter that likely blocks because a channel is full (i.e. an FLI)
+        # while filtering can still be terminated successfully when it is finished.
+
+        def_pool = dmem.MemoryPool.attach_default()
+        before_free_space = def_pool.free_space
+        d = DDict(5, 1, 30000000)
+
+        d["test"] = "ddict"
+        d["hello"] = "world"
+        d["dragon"] = "runtime"
+
+        d["test2"] = "ddict"
+        d["hello2"] = "world"
+        d["dragon2"] = "runtime"
+
+        candidate_list = []
+        i = 0
+        # This tests that the filter works even when no candidates are read from
+        # the iterator. The sleep allows for processes to fill up their respective
+        # channels before exiting the context.
+        with d.filter(flood, (), sort_keys_comparator) as candidates:
+            time.sleep(5)
+
+        d.destroy()
+        after_free_space = def_pool.free_space
+        self.assertEqual(before_free_space, after_free_space)
 
     def test_custom_pickler(self):
         ddict = DDict(2, 1, 3000000)

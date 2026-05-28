@@ -1,5 +1,5 @@
 """
-Unit tests for the configuration module.
+Unit tests for the configuration module (inference/config.py).
 
 Tests the InferenceConfig dataclasses and their validation logic.
 
@@ -152,14 +152,18 @@ class TestModelConfig(TestCase):
 
     def test_validate_max_tokens_invalid(self):
         """Test validation fails for invalid max_tokens."""
-        config = ModelConfig(model_name="test-model", hf_token="test-token", tp_size=1, max_tokens=0)
+        config = ModelConfig(
+            model_name="test-model", hf_token="test-token", tp_size=1, max_tokens=0
+        )
         with self.assertRaises(ValueError) as context:
             config.validate(gpus_per_node=8)
         self.assertIn("max_tokens must be > 0", str(context.exception))
 
     def test_validate_top_p_out_of_range(self):
         """Test validation fails for top_p out of [0, 1] range."""
-        config = ModelConfig(model_name="test-model", hf_token="test-token", tp_size=1, top_p=1.5)
+        config = ModelConfig(
+            model_name="test-model", hf_token="test-token", tp_size=1, top_p=1.5
+        )
         with self.assertRaises(ValueError) as context:
             config.validate(gpus_per_node=8)
         self.assertIn("top_p must be in [0, 1]", str(context.exception))
@@ -199,7 +203,9 @@ class TestBatchingConfig(TestCase):
         config = BatchingConfig(batch_type="invalid")
         with self.assertRaises(ValueError) as context:
             config.validate()
-        self.assertIn("batch_type must be 'dynamic' or 'pre-batch'", str(context.exception))
+        self.assertIn(
+            "batch_type must be 'dynamic' or 'pre-batch'", str(context.exception)
+        )
 
     def test_validate_batch_wait_seconds_invalid(self):
         """Test validation fails for invalid batch_wait_seconds."""
@@ -250,12 +256,16 @@ class TestGuardrailsConfig(TestCase):
         config = GuardrailsConfig(prompt_guard_sensitivity=1.5)
         with self.assertRaises(ValueError) as context:
             config.validate()
-        self.assertIn("prompt_guard_sensitivity must be in [0, 1]", str(context.exception))
+        self.assertIn(
+            "prompt_guard_sensitivity must be in [0, 1]", str(context.exception)
+        )
 
         config = GuardrailsConfig(prompt_guard_sensitivity=-0.1)
         with self.assertRaises(ValueError) as context:
             config.validate()
-        self.assertIn("prompt_guard_sensitivity must be in [0, 1]", str(context.exception))
+        self.assertIn(
+            "prompt_guard_sensitivity must be in [0, 1]", str(context.exception)
+        )
 
 
 class TestDynamicWorkerConfig(TestCase):
@@ -295,7 +305,9 @@ class TestDynamicWorkerConfig(TestCase):
         config = DynamicWorkerConfig(spin_down_threshold_seconds=0)
         with self.assertRaises(ValueError) as context:
             config.validate()
-        self.assertIn("spin_down_threshold_seconds must be >= 1", str(context.exception))
+        self.assertIn(
+            "spin_down_threshold_seconds must be >= 1", str(context.exception)
+        )
 
     def test_validate_spin_up_threshold_invalid(self):
         """Test validation fails for invalid spin_up_threshold_seconds."""

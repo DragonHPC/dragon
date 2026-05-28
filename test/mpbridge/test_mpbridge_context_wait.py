@@ -555,9 +555,9 @@ class TestDragonContextWait(unittest.TestCase):
         self.assertTrue(t1.is_alive())
         self.assertTrue(t0.is_alive())
         t1.join()
-        self.assertTrue(t0.is_alive())
         self.assertFalse(t1.is_alive())
         t0.join()
+        self.assertFalse(t0.is_alive())
 
         # check that waiting on the same objects a second time with a longer timeout works
         t0 = threading.Thread(
@@ -579,9 +579,9 @@ class TestDragonContextWait(unittest.TestCase):
         self.assertTrue(t1.is_alive())
         self.assertTrue(t0.is_alive())
         t0.join()
-        self.assertTrue(t1.is_alive())
         self.assertFalse(t0.is_alive())
         t1.join()
+        self.assertFalse(t1.is_alive())
 
         # the following is related to PE-44688
         # calling close() on the queues is useful when combined with

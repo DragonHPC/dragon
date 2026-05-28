@@ -1,5 +1,6 @@
 """Dragon local services"""
 
+import io
 import json
 import logging
 import os
@@ -197,13 +198,19 @@ def mk_inf_resources(node_index):
 
 def get_shepherd_msg_queue(stdin=None, stdout=None):
     if stdin is None:
-        bin_stdin = os.fdopen(sys.stdin.fileno(), "rb", buffering=0)
+        # detach() transfers the BufferedReader out of the TextIOWrapper so only
+        # one object owns FD 0 (avoids EBADF double-close in Python 3.13).
+        # Replace sys.stdin with a harmless dummy so Python's shutdown finalizer
+        # doesn't raise "underlying buffer has been detached".
+        bin_stdin = sys.stdin.detach()
+        sys.stdin = io.StringIO()
         shep_stdin_msg = dutil.NewlineStreamWrapper(bin_stdin, write_intent=False)
     else:
         shep_stdin_msg = stdin
 
     if stdout is None:
-        bin_stdout = os.fdopen(sys.stdout.fileno(), "wb", buffering=0)
+        bin_stdout = sys.stdout.detach()
+        sys.stdout = io.StringIO()
         shep_stdout_msg = dutil.NewlineStreamWrapper(bin_stdout, write_intent=True)
     else:
         shep_stdout_msg = stdout
@@ -521,7 +528,8 @@ def multinode(
                 else:
                     log.info("gs up")
 
-                gs_stdin = os.fdopen(gs.stdin.fileno(), "wb")
+                gs_stdin = gs.stdin
+                gs.stdin = None  # transfer ownership; avoids double-close of same fd (Python 3.13)
                 gs_stdin_send = dutil.NewlineStreamWrapper(gs_stdin, read_intent=False)
                 gs_stdin_send.send(la_channels_info.serialize())
                 log.info("transmitted la_channels_info to gs")

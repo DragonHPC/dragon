@@ -2,7 +2,7 @@ import os
 import shutil
 import subprocess
 
-from .base import BaseWLM
+from .base import WLM, BaseWLM
 
 
 class SlurmWLM(BaseWLM):
@@ -24,7 +24,7 @@ Resubmit as part of a 'salloc' or 'sbatch' execution."""
             msg = f"{self.ENV_SLURM_NUM_NODES} environment variable is not set"
             raise RuntimeError(msg)
 
-        super().__init__("slurm", network_prefix, port, nnodes=int(nnodes))
+        super().__init__(WLM.SLURM.value, network_prefix, port, nnodes=int(nnodes))
 
         self.SRUN_ARGS = self.SRUN_COMMAND_LINE.format(nnodes=self.NNODES).split()
 

@@ -20,7 +20,6 @@ from dragon.ai.inference.config import (
     InferenceConfig,
     HardwareConfig,
 )
-
 from ..mocks import (
     MockTelemetry,
     MockNode,

@@ -1,7 +1,10 @@
 """Graph-based distributed scheduling for functions, executables, and parallel applications"""
 
+import copy
+import heapq
 import io
 import logging
+import math
 import networkx as nx
 import queue
 import random
@@ -9,7 +12,9 @@ import sys
 import threading
 import time
 import traceback
+import warnings
 import yaml
+import cloudpickle
 
 from collections import namedtuple
 from collections.abc import Callable
@@ -19,10 +24,11 @@ from ...infrastructure.facts import PMIBackend
 from ...infrastructure.policy import Policy
 from ...native.machine import current, Node, System
 from ...native.pool import Pool
-from ...native.process_group import ProcessGroup
+from ...native.process_group import ProcessGroup, DragonUserCodeError
 from ...native.process import ProcessTemplate, Process, Popen
 from ...native.queue import Queue
 from ...telemetry.telemetry import Telemetry as dt
+from ...utils import ExceptionalThread
 from enum import Enum, IntEnum
 from .facts import (
     default_timeout,
@@ -30,18 +36,14 @@ from .facts import (
     default_block_size,
     manager_work_queue_max_batch_size,
     manager_work_queue_maxsize,
-    primary_client_id,
     return_queue_maxsize,
 )
 from functools import singledispatchmethod
 from pathlib import Path
 from .proxy import ProxyObj
-from queue import Empty, Queue as LocalQueue
+from queue import Queue as LocalQueue
 from typing import Any, Iterable, Optional, TYPE_CHECKING
 from uuid import uuid1
-
-if TYPE_CHECKING:
-    from ...fli import FLInterface
 
 
 def _next_pow_of_2(x: int) -> int:
@@ -54,9 +56,15 @@ def _next_pow_of_2(x: int) -> int:
         return 1 << (x - 1).bit_length()
 
 
-def _setup_logging(context: str = None) -> logging.Logger:
+def _setup_logging(context: Optional[str] = None) -> logging.Logger:
     """
-    Set up logging for a manager.
+    Set up a batch-service logger.
+
+    :param context: Optional suffix used to distinguish manager/client log files.
+    :type context: str
+
+    :return: Configured logger for the batch service.
+    :rtype: logging.Logger
     """
     if context is None:
         file_name = f"{dls.BATCH}_{current().hostname}.log"
@@ -107,28 +115,73 @@ CompiledResultWrapper = namedtuple(
 )
 AsyncWrapper = namedtuple("AsyncWrapper", ["async_result", "async_stdout", "async_stderr"])
 ManagerException = namedtuple("ManagerException", ["tuid", "exception", "traceback", "err_message"])
-DepSat = namedtuple("DepSat", ["source_tuid", "tuid", "compiled_tuid", "arg_dep_updates"])
+DepSat = namedtuple(
+    "DepSat",
+    ["source_tuid", "source_manager_idx", "tuid", "compiled_tuid", "arg_dep_updates", "cancel_reason"],
+)
 DepSatRequest = namedtuple(
     "DepSatRequest",
-    ["upstream_tuid", "tuid", "compiled_tuid", "arg_dep_updates", "reply_q", "client_id"],
+    ["upstream_tuid", "tuid", "compiled_tuid", "arg_dep_updates", "reply_q", "client_id", "is_raw"],
 )
 ArgDepUpdate = namedtuple("ArgDepUpdate", ["template_idx", "arg_idx"])
-HostInfo = namedtuple("HostInfo", ["tuid", "hostname"])
-FollowerDone = namedtuple("FollowerDone", ["tuid", "compiled_tuid"])
-CompletionNotification = tuple[str, str] | FollowerDone
+LogicalDependency = namedtuple("LogicalDependency", ["upstream_tuid", "arg_dep_updates", "origin", "is_raw"])
+DependencyNotificationRoute = namedtuple(
+    "DependencyNotificationRoute", ["queue", "downstream_tuid", "arg_dep_updates", "is_raw"]
+)
+DependencyRequestRoute = namedtuple("DependencyRequestRoute", ["queue", "upstream_tuid", "arg_dep_updates", "is_raw"])
+TaskComplete = namedtuple("TaskComplete", ["tuid", "compiled_tuid", "raised"])
+CompletedTaskInfo = namedtuple("CompletedTaskInfo", ["manager_idx", "raised"])
+CompletionNotification = TaskComplete
+StartedTaskInfo = namedtuple("StartedTaskInfo", ["control_q", "reserved_cores"])
 RegisterClient = namedtuple("RegisterClient", ["ret_q", "client_id"])
 UnregisterClient = namedtuple("UnregisterClient", ["client_id"])
-JoinCalled = namedtuple("JoinCalled", [])
-FenceRequest = namedtuple("FenceRequest", ["client_id", "reply_q", "done_event"])
-ManagerFenceRequest = namedtuple("ManagerFenceRequest", ["client_id", "reply_q"])
+DestroyCalled = namedtuple("DestroyCalled", [])
+FenceRequest = namedtuple("FenceRequest", ["client_id", "reply_q"])
 FenceComplete = namedtuple("FenceComplete", ["client_id"])
-DataAccess = namedtuple("DataAccess", ["access_type", "kvs", "keys"])
+ClientFenceRequest = namedtuple("ClientFenceRequest", ["reply_q"])
+ClientFlushRequest = namedtuple("ClientFlushRequest", ["reply_q"])
+ClientStopRequest = namedtuple("ClientStopRequest", ["reply_q"])
+ClientCancelRequest = namedtuple("ClientCancelRequest", ["task", "reply_q"])
+CancelRequest = namedtuple("CancelRequest", ["client_id", "tuid", "manager_idx", "reply_q"])
+CancelResponse = namedtuple("CancelResponse", ["tuid", "cancelled"])
+CancelJob = namedtuple("CancelJob", [])
+DataAccess = namedtuple("DataAccess", ["access_type", "kvs", "keys", "disable_fast_path"], defaults=[False])
 FrontierInfo = namedtuple("FrontierInfo", ["task_list", "access_type", "write_before_read"])
+SubnodeAllocRequest = namedtuple(
+    "SubnodeAllocRequest", ["manager_idx", "hostnames", "client_ids", "reply_q", "priority_weight"]
+)
+SubnodeAllocResponse = namedtuple("SubnodeAllocResponse", ["manager_idx"])
+SubnodeFreeRequest = namedtuple("SubnodeFreeRequest", ["manager_idx", "client_ids", "task_tuids"])
+PendingAllocInfo = namedtuple("PendingAllocInfo", ["hostnames", "num_nodes", "client_ids", "priority_weight"])
+ClearFenceState = namedtuple("ClearFenceState", ["client_id"])
+MultiNodeJobComplete = namedtuple("MultiNodeJobComplete", ["tuid", "compiled_tuid", "node_hostnames"])
 
 
 class AccessType(Enum):
     READ = 0
     WRITE = 1
+
+
+class DependencyOrigin(Enum):
+    ARGUMENT = 0
+    DATA_ACCESS = 1
+
+
+class TaskCancellationReason(Enum):
+    NONE = 0
+    USER_REQUESTED = 1
+    UPSTREAM_RAW_FAILURE = 2
+
+
+SCHEDULER_MANAGER_IDX = -1
+
+
+def _ddict_manager_idx_for_task_manager(manager_idx: int) -> int:
+    """Map a task's logical manager_idx to the Batch-owned results-ddict manager id."""
+    if manager_idx == SCHEDULER_MANAGER_IDX:
+        return 0
+
+    return manager_idx
 
 
 class BatchError(Exception):
@@ -148,7 +201,14 @@ class BatchError(Exception):
 
 class SubmitAfterCloseError(BatchError):
     """
-    Exception for submitting work to a batch instance after it's been closed.
+    Deprecated compatibility exception for submitting work through a detached
+    Batch client handle.
+
+    Historically this was raised after :py:meth:`Batch.close`. Now
+    :py:meth:`Batch.close` is deprecated and is a no-op, so this exception is
+    raised when work is submitted after :py:meth:`Batch.join`,
+    :py:meth:`Batch.destroy`, or :py:meth:`Batch.terminate` has detached the
+    client from the shared runtime.
     """
 
     def __init__(self, message):
@@ -174,6 +234,45 @@ class TaskNotReadyError(BatchError):
 
     def __str__(self):
         """Return the message for this exception."""
+        return f"{self.message}"
+
+
+class TaskCancelledError(BatchError):
+    """Exception raised when a task is cancelled before producing a result."""
+
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+    def __str__(self):
+        return f"{self.message}"
+
+
+class _FunctionTaskCancelled(Exception):
+    """Internal exception injected into function worker threads on cancellation."""
+
+
+class _FunctionTaskTimedOut(TimeoutError):
+    """Internal exception injected into function worker threads on timeout."""
+
+
+def _cancel_requested(control_q: Queue) -> bool:
+    try:
+        control_msg = control_q.get_nowait()
+    except queue.Empty:
+        return False
+
+    return isinstance(control_msg, CancelJob)
+
+
+class ReadAfterWriteDependencyError(BatchError):
+    """Exception raised when a read-after-write dependency completed with failure."""
+
+    def __init__(self, message):
+        super().__init__(message)
+        self.message = message
+
+    def __str__(self):
         return f"{self.message}"
 
 
@@ -221,11 +320,15 @@ def _str_to_task_type(input_string: str) -> TaskType:
 # not where it should be. Could the remaining perf loss be coming from an increased amount
 # of data returning to the clients?
 class TaskCore:
-    def __init__(self, client_id: int, name: str, timeout: float) -> None:
+    def __init__(self, tuid: Optional[str], client_id: int, name: str, timeout: float) -> None:
         """
         Initializes a the core of the task, which is a lean representation of the task that
         is sent to the managers.
 
+        :param tuid: Optional task ID assigned by the owner creating this task core.
+            Client-created tasks pass in their base tuid; scheduler-created compiled
+            tasks assign their internal tuid separately.
+        :type tuid: Optional[str]
         :param client_id: The unique of of the client that created this task.
         :type client_id: int
         :param name: The user-supplied name for this task.
@@ -239,19 +342,36 @@ class TaskCore:
         self.client_id = client_id
         self.name = name
         self.timeout = timeout
-        self.tuid = str(uuid1())
-        self.compiled_tuid = self.tuid
+        self.tuid = tuid
+        self.manager_idx: Optional[int] = None
+        self.compiled_tuid = None
         self.cached_queue = None
-        self.downstream_queues = []
-        self.downstream_tuids = []
-        self.upstream_queues = []
-        self.upstream_tuids = []
-        # for cross-compiled dependencies, keep parallel list of arg dep updates
-        # corresponding to entries in `upstream_tuids` / `upstream_queues`
-        self.upstream_arg_dep_updates = []
-        self.downstream_arg_dep_updates = []
+
+        # Runtime routing state populated by Manager.compile() for the current
+        # compiled batch only. These routes tell an upstream task where to send
+        # direct DepSat notifications when both ends of the dependency are part
+        # of the same compiled task.
+        self.downstream_routes: list[DependencyNotificationRoute] = []
+        self.upstream_routes: list[DependencyRequestRoute] = []
+
+        # Durable logical dependency state recorded when dependencies are
+        # declared. This survives until compile-time, where it is used to
+        # rebuild the live dependency DAG and to build the runtime queue
+        # routing above. Multiplicity is preserved because a downstream task
+        # can depend on the same upstream task more than once for different
+        # reasons.
+        self.dependencies: list[LogicalDependency] = []
         self.num_dep_sat = 0
         self.num_dep_tot = 0
+        # HEFTY metadata is assigned at compile time and then reused both for
+        # partitioning and for ready-task launch order on subnode managers.
+        self.weight = 0
+        self.heft_topo_order: int | float = math.inf
+        self.is_cancelled = TaskCancellationReason.NONE
+        self.cancel_source_tuid: Optional[str] = None
+        self.cancel_source_manager_idx: Optional[int] = None
+        # True when this task should not use the manager-owned thread fast path.
+        self.disable_fast_path = False
 
     def __repr__(self) -> str:
         """
@@ -266,7 +386,11 @@ class TaskCore:
         """
         Get an id string for this task indicating its client, tuid, and any associated compiled tuid.
         """
-        return f"name={self.name}, client_id={self.client_id}, tuid={self.tuid}, compiled_tuid={self.compiled_tuid}"
+        return (
+            f"name={self.name}, client_id={self.client_id}, tuid={self.tuid}, "
+            f"manager_idx={self.manager_idx}, "
+            f"compiled_tuid={self.compiled_tuid}"
+        )
 
     def _notify_dep_tasks(self, result) -> None:
         """
@@ -275,15 +399,24 @@ class TaskCore:
         :return: Returns None.
         :rtype: None
         """
-        if len(self.downstream_queues) > 0:
+        if len(self.downstream_routes) > 0:
             compiled_tuid = self.compiled_tuid
+            task_failed = isinstance(result, BaseException)
 
-            for q, tuid, arg_dep_update_list in zip(
-                self.downstream_queues, self.downstream_tuids, self.downstream_arg_dep_updates
-            ):
-                arg_dep_updates = arg_dep_update_list if arg_dep_update_list is not None else []
-                dep_sat = DepSat(self.tuid, tuid, compiled_tuid, arg_dep_updates)
-                q.put(dep_sat)
+            for route in self.downstream_routes:
+                arg_dep_updates = route.arg_dep_updates if route.arg_dep_updates is not None else []
+                cancel_reason = TaskCancellationReason.NONE
+                if route.is_raw and task_failed:
+                    cancel_reason = TaskCancellationReason.UPSTREAM_RAW_FAILURE
+                dep_sat = DepSat(
+                    self.tuid,
+                    self.manager_idx,
+                    route.downstream_tuid,
+                    compiled_tuid,
+                    arg_dep_updates,
+                    cancel_reason,
+                )
+                route.queue.put(dep_sat)
 
 
 class Task:
@@ -312,17 +445,21 @@ class Task:
         :return: Returns None.
         :rtype: None
         """
-        batch.log.debug(f"initializing task with core={task_core}, reads={reads}, writes={writes}, compiled={compiled}")
+        if batch is not None:
+            batch.log.debug(
+                f"initializing task with core={task_core}, reads={reads}, writes={writes}, compiled={compiled}"
+            )
 
         self.core = task_core
         # non-core attributes are only needed by client code (i.e., can be deleted
         # when sending a work chunk to a manager)
         self._compiled_task = None
         self._batch = batch
+        self._results_ddict = batch.results_ddict if batch is not None else None
         self.accesses = {}
-        self.work_chunks = []
+        self.subnode_work_chunks = []  # Work chunks for subnode managers
+        self.mnj_work_chunk = None  # Single scheduler-owned Work chunk for multi-node jobs
         self._manager_offset = None
-        self._started = False
         self._ready = False
         self.exception = None
         self.traceback = None
@@ -330,11 +467,6 @@ class Task:
         self._result = None
         self._stdout = None
         self._stderr = None
-
-        if compiled:
-            self.dep_dag = nx.DiGraph()
-        else:
-            self.dep_dag = None
 
         if reads is not None:
             for read in reads:
@@ -344,62 +476,51 @@ class Task:
             for write in writes:
                 self._access(write)
 
-        # individual tasks should be thought of as singleton compiled tasks
-        if compiled:
-            self._compiled_task = self
+    def get_manager_idx(self, block: bool = True, timeout: float = default_timeout) -> int:
+        if self.core.manager_idx is not None:
+            return self.core.manager_idx
+
+        if self._batch is None:
+            raise RuntimeError(f"task has no batch reference: {self.core._get_id_str()}")
+
+        if not block:
+            raise TaskNotReadyError(f"manager idx not yet available: {self.core._get_id_str()}")
+
+        self._batch._flush_client_request_worker(timeout=timeout)
+
+        if self.core.manager_idx is None:
+            raise RuntimeError(f"manager idx not set after compile: {self.core._get_id_str()}")
+
+        return self.core.manager_idx
 
     def _depends_on(
         self,
         task: "Task",
-        compiled_task: "Task",
+        dep_dag: Optional[nx.DiGraph] = None,
         arg_dep_update: Optional[list[ArgDepUpdate]] = None,
+        origin: DependencyOrigin = DependencyOrigin.DATA_ACCESS,
+        is_raw: bool = False,
     ) -> None:
         """
         Sets a dependency for this task, which will be blocked until the completion of ``task``.
 
         :param task: The task that this one will be dependent on.
-        :param compiled_task: The compiled task (sequence of tasks with possible dependencies) that
-        these tasks and dependency belong to.
+        :param dep_dag: Optional dependency DAG. Accepted for call-site
+            compatibility; compile-time code reconstructs the live DAG from the
+            stored logical dependency record.
+        :type dep_dag: Optional[nx.DiGraph]
+        :param origin: Metadata describing why this dependency exists.
+        :type origin: DependencyOrigin
 
         :return: Returns None.
         :rtype: None
         """
         self.core.num_dep_tot += 1
 
-        # Two cases based on whether the upstream task belongs to the same compiled task as self:
-        #
-        # 1. Same compiled_tuid: both tasks were submitted together in one `compile()` call.
-        #    The compiled task's DAG is partitioned across managers, so the two tasks may end up
-        #    on different managers. The upstream task_core tracks intra-compiled dependencies via
-        #    `downstream_tuids` / `downstream_arg_dep_updates`, and calls `_notify_dep_tasks` (which puts a
-        #    DepSat directly on the downstream task's manager queue) when the upstream one completes.
-        #
-        # 2. Different compiled_tuid: the upstream task belongs to a different (already-dispatched)
-        #    compiled task, possibly on a different manager. Self records the upstream tuid in
-        #    `upstream_tuids` and sends a DepSatRequest to the upstream manager when its Work chunk
-        #    is dispatched; the upstream manager replies with a DepSat when that task finishes.
-
-        if task.core.compiled_tuid == self.core.compiled_tuid:
-            task.core.downstream_tuids.append(self.core.tuid)
-            # `downstream_arg_dep_updates` is a parallel list to `downstream_tuids`, so we always append
-            # to keep them in sync — even when there's no arg-passing dep (None means "no update
-            # needed", and `_notify_dep_tasks` handles None by passing an empty list).
-            task.core.downstream_arg_dep_updates.append(arg_dep_update)
-
-            # TODO: this if-statement prevents arg-passing deps from being represented in
-            # networkx dependency dag (this only really impacts visualization of the dag,
-            # since DepSat messages are based on the downstream_tuids list in the task_core)
-            if compiled_task is not None:
-                if compiled_task.dep_dag is None:
-                    compiled_task.dep_dag = nx.DiGraph()
-
-                compiled_task.dep_dag.add_edge(task.core, self.core)
-        else:
-            self.core.upstream_tuids.append(task.core.tuid)
-            # record arg_dep_update (may be None) for this upstream tuid so we can
-            # create DepSatRequest messages to upstream managers containing the
-            # arg-update indices (the actual values will be fetched from results_ddict)
-            self.core.upstream_arg_dep_updates.append(arg_dep_update)
+        # Record the logical dependency on the downstream task. Compile-time
+        # code later turns this durable record into live dep_dag edges and
+        # manager-to-manager routing state.
+        self.core.dependencies.append(LogicalDependency(task.core.tuid, arg_dep_update, origin, is_raw))
 
     def _handle_arg_passing_deps(self, list_of_arg_lists: Optional[list]) -> None:
         """
@@ -431,7 +552,12 @@ class Task:
         # associated with the argument to this task, and associate the list of output indexes
         # with this dependency
         for arg, arg_dep_update_list in arg_dep_updates.items():
-            self._depends_on(arg, arg._compiled_task, arg_dep_update_list)
+            self._depends_on(
+                arg,
+                arg_dep_update=arg_dep_update_list,
+                origin=DependencyOrigin.ARGUMENT,
+                is_raw=True,
+            )
 
     def _access(self, data_access: DataAccess) -> None:
         """
@@ -446,6 +572,9 @@ class Task:
         kvs = data_access.kvs
         keys = data_access.keys
 
+        if data_access.disable_fast_path:
+            self.core.disable_fast_path = True
+
         for key in keys:
             # if we haven't seen this access before, or if the previous access was a read,
             # then update the accesses dict. the check for previous read accesses is necessary
@@ -456,48 +585,6 @@ class Task:
             if access_key not in self.accesses or self.accesses[access_key][1] == AccessType.READ:
                 self.accesses[access_key] = (self, access_type)
 
-    def _start(self) -> None:
-        """
-        Start this task by sending its work chunks to the managers. Currently, a task can only
-        be started once and cannot be restarted after it completes. If a task is a subtask of
-        a compiled task, then ``start`` must be called for the compiled task and not the subtask.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        compiled_task = self._compiled_task
-
-        # this is a program with multiple work chunks, so round-robin them
-        # across managers
-        manager_qs = compiled_task._batch.manager_qs
-        num_managers = len(manager_qs)
-        idx = compiled_task._manager_offset
-
-        for work in compiled_task.work_chunks:
-            manager_q = manager_qs[idx]
-            manager_q.put(work)
-            idx = (idx + 1) % num_managers
-
-        compiled_task._started = True
-
-    def _run(self, timeout: float = default_timeout) -> Any:
-        """
-        Starts a task and waits for it to complete. Currently, a task can only
-        be started once and cannot be restarted after it completes.
-
-        :param float timeout: The timeout for waiting. Defaults to 1e9.
-
-        :raises TimeoutError: If the specified timeout is exceeded.
-        :raises Exception: If this Task raised an exception while running. The exception raised by the
-            task is propagated back to the host that started the task so it can be raised here.
-
-        :return: Returns the result of the operation being waited on.
-        :rtype: Any
-        """
-        self._start()
-        return self.get(timeout)
-
-    # TODO: add other options for checking completions, and take inspiration from Pool
     def get(self, block: bool = True, timeout: float = default_timeout) -> None:
         """
         Wait for this Task to complete. This function returns the task's result and prints
@@ -516,14 +603,21 @@ class Task:
         :return: Returns the result of the task.
         :rtype: Any
         """
+        if self._results_ddict is None:
+            raise RuntimeError(f"task has no results_ddict reference: {self.core._get_id_str()}")
+
+        manager_idx = self.get_manager_idx(block=block, timeout=timeout)
+        ddict_manager_idx = _ddict_manager_idx_for_task_manager(manager_idx)
+        results_ddict = self._results_ddict.manager(ddict_manager_idx)
+
         if not block:
-            if self.core.tuid not in self._batch.results_ddict:
+            if self.core.tuid not in results_ddict:
                 raise TaskNotReadyError(f"result not yet available: {self.core._get_id_str()}")
 
         try:
             # we're using wait_for_keys in the ddict, so this will wait for the
             # result to be ready
-            result, tb, raised, stdout, stderr = self._batch.results_ddict[self.core.tuid]
+            result, tb, raised, stdout, stderr = results_ddict[self.core.tuid]
         except KeyError:
             raise RuntimeError(f"no return value found for task: {self.core._get_id_str()}")
 
@@ -535,10 +629,47 @@ class Task:
 
         if raised:
             message = f"task with {self.core._get_id_str()} failed with the following traceback:\n{tb}"
-            e = type(result)
-            raise e(message)
+            # `result` is expected to be the exception instance raised by
+            # the worker. Re-raise it directly rather than attempting to
+            # reconstruct by type (some exception types have non-standard
+            # constructors and will fail if instantiated with a single
+            # message argument).
+            if isinstance(result, BaseException):
+                if self.core.is_cancelled == TaskCancellationReason.USER_REQUESTED and isinstance(
+                    result, DragonUserCodeError
+                ):
+                    raise _build_cancelled_error(self.core, results_ddict) from None
+                raise result
+            else:
+                raise RuntimeError(message)
         else:
             return result
+
+    def cancel(self, timeout: float = default_timeout) -> bool:
+        """Best-effort cancellation request for this task.
+
+        Returns ``True`` when the scheduler accepted the cancellation and the
+        task will complete with ``TaskCancelledError``. Returns ``False`` when
+        the task cannot be cancelled or already completed.
+        """
+        cancelled = self._batch._cancel_task(self, timeout=timeout)
+        if cancelled and self.core.is_cancelled == TaskCancellationReason.NONE:
+            self.core.is_cancelled = TaskCancellationReason.USER_REQUESTED
+        return cancelled
+
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        # DDict objects cannot be deserialized in the same process that created
+        # them (process-local channel restriction). The scheduler runs as a thread
+        # in the client process, so strip _results_ddict before pickling. The
+        # original client-side task object is never pickled and retains the ref.
+        state.pop("_batch", None)
+        state.pop("_results_ddict", None)
+        return state
+
+    def __setstate__(self, state) -> None:
+        self.__dict__.update(state)
+        self._results_ddict = None
 
     @property
     def uid(self):
@@ -547,27 +678,22 @@ class Task:
         """
         return self.core.tuid
 
-    def dump_dag(self, file_name: str) -> None:
+    @property
+    def weight(self):
         """
-        Dump a PNG image of the dependency DAG associated with a compiled program.
-
-        :param file_name: Name for the new PNG file.
-
-        :return: Returns None.
-        :rtype: None
+        Provides the HEFTY weight for this task.
         """
-        if self.dep_dag is None:
-            raise RuntimeError(
-                "no dependency DAG found for this task (only tasks with Kernighan-Lin scheduling have dumpable DAGs)"
-            )
+        return self.core.weight
 
-        pydot_graph = nx.drawing.nx_pydot.to_pydot(self.dep_dag)
-        pydot_graph.write_png(f"{file_name}")
+    @weight.setter
+    def weight(self, value) -> None:
+        self.core.weight = value
 
 
 class FunctionCore(TaskCore):
     def __init__(
         self,
+        tuid: str,
         client_id: int,
         name: str,
         timeout: float,
@@ -594,7 +720,7 @@ class FunctionCore(TaskCore):
         :return: Returns None.
         :rtype: None
         """
-        super().__init__(client_id, name, timeout)
+        super().__init__(tuid, client_id, name, timeout)
 
         self.func = target
         self.args = args
@@ -619,15 +745,22 @@ class FunctionCore(TaskCore):
         save_stderr = sys.stderr
         stderr = sys.stderr = io.StringIO()
 
+        result = None
+        exc = None
+
         try:
             result = self.func(*self.args, **self.kwargs)
+        except Exception as err:
+            exc = err
         finally:
+            stdout_val = stdout.getvalue()
+            stderr_val = stderr.getvalue()
             sys.stdout = save_stdout
             sys.stderr = save_stderr
 
-        output.extend([result, stdout, stderr])
+        output.extend([result, stdout_val, stderr_val, exc])
 
-    def run(self) -> Any:
+    def run(self, control_q: Queue) -> Any:
         """
         Runs the function associated with a function task.
 
@@ -635,19 +768,42 @@ class FunctionCore(TaskCore):
         :rtype: Any
         """
         output = []
+        worker = ExceptionalThread(target=self._func_wrapper, args=(output,))
+        timeout_deadline = None if self.timeout >= default_timeout else time.monotonic() + self.timeout
 
-        if self.timeout >= default_timeout:
-            # Fast path: no finite timeout requested, so skip thread creation and
-            # call the wrapper directly. Thread spawn/join overhead (~50-100µs) would
-            # otherwise dominate execution time for fast functions.
-            self._func_wrapper(output)
-        else:
-            t = threading.Thread(target=self._func_wrapper, args=(output,))
-            t.start()
-            t.join(timeout=self.timeout)
+        worker.start()
 
-        result, stdout, stderr = output
-        return result, stdout.getvalue(), stderr.getvalue()
+        while worker.is_alive():
+            worker.join(timeout=0.1)
+            if not worker.is_alive():
+                break
+
+            try:
+                control_msg = control_q.get_nowait()
+            except queue.Empty:
+                control_msg = None
+
+            if isinstance(control_msg, CancelJob):
+                worker.kill_by_exception(_FunctionTaskCancelled)
+
+            if timeout_deadline is not None and time.monotonic() >= timeout_deadline:
+                worker.kill_by_exception(_FunctionTaskTimedOut)
+                timeout_deadline = None
+
+        worker.join()
+
+        if len(output) != 4:
+            raise RuntimeError(f"function worker exited without producing output: {self._get_id_str()}")
+
+        result, stdout_val, stderr_val, exc = output
+        if isinstance(exc, _FunctionTaskCancelled):
+            raise TaskCancelledError(f"task was cancelled before completing: {self._get_id_str()}")
+        if isinstance(exc, _FunctionTaskTimedOut):
+            raise TimeoutError(f"task timed out before completing: {self._get_id_str()}")
+        if exc is not None:
+            raise exc
+
+        return result, stdout_val, stderr_val
 
 
 class Function(Task):
@@ -687,7 +843,7 @@ class Function(Task):
         # by the manager after the dependency is satisfied
         sanitized_args = tuple(None if isinstance(arg, Task) else arg for arg in args)
         super().__init__(
-            FunctionCore(batch.client_id, name, timeout, target, sanitized_args, kwargs),
+            FunctionCore(batch._next_tuid(), batch.client_id, name, timeout, target, sanitized_args, kwargs),
             batch,
             reads=reads,
             writes=writes,
@@ -698,6 +854,7 @@ class Function(Task):
 class JobCore(TaskCore):
     def __init__(
         self,
+        tuid: str,
         client_id: int,
         name: str,
         timeout: float,
@@ -726,7 +883,7 @@ class JobCore(TaskCore):
         :return: Returns None.
         :rtype: None
         """
-        super().__init__(client_id, name, timeout)
+        super().__init__(tuid, client_id, name, timeout)
 
         self.num_procs = None
         self.process_templates = process_templates
@@ -734,7 +891,7 @@ class JobCore(TaskCore):
         self.is_parallel = True
         self.pmi = pmi
 
-    def run(self) -> None:
+    def run(self, control_q: Queue) -> tuple[Any, str, str]:
         """
         Runs the job associated with a job task.
 
@@ -750,70 +907,142 @@ class JobCore(TaskCore):
 
         grp = ProcessGroup(restart=False, pmi=pmi, walltime=self.timeout)
 
-        proc_count = 0
-        template_idx = 0
-
-        for hostname in self.hostname_list:
-            nprocs_this_template, template = self.process_templates[template_idx]
-            base_policy = template.policy if template.policy is not None else Policy()
-            template.policy = Policy.merge(
-                base_policy, Policy(placement=Policy.Placement.HOST_NAME, host_name=hostname)
+        if self.hostname_list is None:
+            raise RuntimeError(f"no hostname list available for job: {self._get_id_str()}")
+        if len(self.hostname_list) != self.num_procs:
+            raise RuntimeError(
+                f"invalid hostname list for job: expected {self.num_procs} entries, got {len(self.hostname_list)}"
             )
 
-            template.stdout = Popen.PIPE
+        # Check whether any template requests stdout/stderr capture. Avoid
+        # O(num_procs) GS round-trips when no output capture was requested.
+        needs_output = any(t.stdout == Popen.PIPE or t.stderr == Popen.PIPE for _, t in self.process_templates)
 
-            # TODO: support access to stdin/stdout/stderr
-            grp.add_process(nproc=1, template=template)
+        # Build one add_process call per (template, hostname) pair, using the
+        # nproc replica count instead of one call per rank. This keeps the
+        # number of templates sent to GS at O(num_templates × num_nodes) rather
+        # than O(num_procs).
+        hostname_idx = 0
+        for nprocs_this_template, template in self.process_templates:
+            template_hostnames = self.hostname_list[hostname_idx : hostname_idx + nprocs_this_template]
+            if len(template_hostnames) != nprocs_this_template:
+                raise RuntimeError(
+                    f"invalid hostname list for template: expected {nprocs_this_template} entries, got {len(template_hostnames)}"
+                )
+            hostname_idx += nprocs_this_template
 
-            proc_count += 1
-            if proc_count == nprocs_this_template:
-                template_idx += 1
-                proc_count = 0
+            # Count how many ranks land on each node for this template. Nodes
+            # do not need to receive the same number of ranks.
+            counts: dict[str, int] = {}
+            for h in template_hostnames:
+                counts[h] = counts.get(h, 0) + 1
 
-        # TODO: is it possible to avoid global services in the single local process case?
-        grp.init()
-        grp.start()
-        grp.join()
+            base_policy = template.policy if template.policy is not None else Policy()
+            requested_host_name = base_policy.placement == Policy.Placement.HOST_NAME
+            requested_host_id = base_policy.placement == Policy.Placement.HOST_ID
 
-        # get puids and exit codes
-        puids = []
-        exit_codes = []
-        proc_resources = []
-        stdout = ""  # captures output from all batch jobs
-        stderr = ""
+            if requested_host_name and not base_policy.host_name:
+                raise RuntimeError(
+                    "invalid process template policy: placement=HOST_NAME requires a non-empty host_name"
+                )
+            if requested_host_id and base_policy.host_id == -1:
+                raise RuntimeError("invalid process template policy: placement=HOST_ID requires a valid host_id")
 
-        for puid, exit_code in grp.inactive_puids:
-            puids.append(puid)
-            exit_codes.append(exit_code)
-            proc_resources.append(Process(None, ident=puid))
+            for hostname, count in counts.items():
+                t = copy.copy(template)
+                explicit_host_requested = requested_host_name
+                explicit_host_id_requested = requested_host_id
 
-        for proc_idx in range(self.num_procs):
-            conn_stdout = proc_resources[proc_idx].stdout_conn
-            conn_stderr = proc_resources[proc_idx].stderr_conn
+                if explicit_host_requested or explicit_host_id_requested:
+                    t.policy = copy.copy(base_policy)
+                else:
+                    runtime_policy = copy.copy(base_policy)
+                    runtime_policy.placement = Policy.Placement.HOST_NAME
+                    runtime_policy.host_name = hostname
+                    runtime_policy.host_id = -1
+                    t.policy = runtime_policy
+                grp.add_process(nproc=count, template=t)
 
-            if conn_stdout is not None:
+        cancelled = False
+
+        try:
+            # TODO: is it possible to avoid global services in the single local process case?
+            grp.init()
+            grp.start()
+
+            while True:
+                if _cancel_requested(control_q):
+                    cancelled = True
+                    grp._stop_no_decorator()
+                    break
+
                 try:
-                    while True:
-                        stdout += conn_stdout.recv()
-                except EOFError:
-                    pass
+                    grp.join(timeout=0.1)
+                    break
+                except TimeoutError:
+                    continue
 
-            if conn_stderr is not None:
-                try:
-                    while True:
-                        stderr += conn_stderr.recv()
-                except EOFError:
-                    pass
+            if cancelled:
+                raise TaskCancelledError(f"task was cancelled before completing: {self._get_id_str()}")
 
-        grp.close()
+            # get puids and exit codes
+            puids = []
+            exit_codes = []
+            proc_resources = []
+            stdout = ""
+            stderr = ""
 
-        # TODO: Is this the right thing to do? Since we implement Process as a Job with a
-        # single process, it makes things more intuitive for the user. The downside is that
-        # it might lead to surprising results if the user creates a Job with a single process.
-        if len(exit_codes) == 1:
-            exit_codes = exit_codes[0]
+            for puid, exit_code in grp.inactive_puids:
+                puids.append(puid)
+                exit_codes.append(exit_code)
+                if needs_output:
+                    proc_resources.append(Process(None, ident=puid))
 
-        return exit_codes, stdout, stderr
+            if needs_output:
+                for proc_idx in range(self.num_procs):
+                    conn_stdout = proc_resources[proc_idx].stdout_conn
+                    conn_stderr = proc_resources[proc_idx].stderr_conn
+
+                    if conn_stdout is not None:
+                        try:
+                            while True:
+                                stdout += conn_stdout.recv()
+                        except EOFError:
+                            pass
+
+                    if conn_stderr is not None:
+                        try:
+                            while True:
+                                stderr += conn_stderr.recv()
+                        except EOFError:
+                            pass
+
+            # Preserve process() ergonomics by returning a scalar exit code for
+            # the single-process case, even though jobs internally track one
+            # exit code per launched process.
+            if len(exit_codes) == 1:
+                exit_codes = exit_codes[0]
+
+            return exit_codes, stdout, stderr
+        except DragonUserCodeError:
+            # Cancellation stops a running ProcessGroup by signalling its
+            # workers, which ProcessGroup reports back as DragonUserCodeError.
+            # Translate that shutdown path to TaskCancelledError so callers see
+            # the Batch-level cancellation contract instead of a process-group
+            # implementation detail.
+            if cancelled or _cancel_requested(control_q):
+                cancelled = True
+                raise TaskCancelledError(f"task was cancelled before completing: {self._get_id_str()}") from None
+            raise
+        finally:
+            try:
+                if cancelled:
+                    grp._close_no_decorator()
+                else:
+                    grp.close()
+            except DragonUserCodeError:
+                if not (cancelled or _cancel_requested(control_q)):
+                    raise
 
 
 class Job(Task):
@@ -860,15 +1089,29 @@ class Job(Task):
         # TODO: handle kwargs for arg-passing deps (probably changes elsewhere too)
         for nprocs_this_template, template in process_templates:
             total_procs += nprocs_this_template
-            list_of_arg_lists.append(template.args)
 
-            # replace Task argument with None, since the actual value will be filled in
-            # by the manager after the dependency is satisfied
-            sanitized_args = tuple(None if isinstance(arg, Task) else arg for arg in template.args)
-            template.args = sanitized_args
+            if getattr(template, "is_python", False):
+                # For Python-callable templates the user-visible args (including
+                # any Task handles) are serialized into `argdata` by
+                # ProcessTemplate.__init__; `template.args` only holds the
+                # subprocess CLI flags (["-c", "..."]) and never contains Task
+                # instances. We must extract the original user args from
+                # `argdata` so that _handle_arg_passing_deps can register
+                # dependencies, and then write back a sanitized argdata with
+                # Task placeholders replaced by None. `template.args` (CLI
+                # flags) must be left untouched.
+                orig_target, orig_args, orig_kwargs = template.get_original_python_parameters()
+                list_of_arg_lists.append(tuple(orig_args))
+                sanitized_orig_args = tuple(None if isinstance(a, Task) else a for a in orig_args)
+                template.argdata = cloudpickle.dumps((orig_target, sanitized_orig_args, orig_kwargs))
+            else:
+                # Binary templates: user args are directly in template.args.
+                list_of_arg_lists.append(template.args)
+                sanitized_args = tuple(None if isinstance(arg, Task) else arg for arg in template.args)
+                template.args = sanitized_args
 
         super().__init__(
-            JobCore(batch.client_id, name, timeout, process_templates, pmi=pmi),
+            JobCore(batch._next_tuid(), batch.client_id, name, timeout, process_templates, pmi=pmi),
             batch,
             reads=reads,
             writes=writes,
@@ -879,7 +1122,14 @@ class Job(Task):
 
 
 class Work:
-    def __init__(self, task_set: set, client_id: int, compiled_tuid: str) -> None:
+    def __init__(
+        self,
+        task_set: set,
+        client_id: int,
+        compiled_tuid: str,
+        manager_q: Optional[Queue] = None,
+        manager_idx: Optional[int] = None,
+    ) -> None:
         """
         Initialize a new work object for a program.
 
@@ -889,11 +1139,18 @@ class Work:
         :type client_id: int
         :param compiled_tuid: The tuid of the compiled task for this work object.
         :type tuid: str
+        :param manager_q: Optional queue to send this work to (destination manager queue).
+        :type manager_q: Optional[Queue]
+        :param manager_idx: Optional logical destination manager index used by the scheduler to route this work.
+            Scheduler-owned work uses ``-1``.
+        :type manager_idx: Optional[int]
 
         :return: Returns None.
         :rtype: None
         """
         self._client_id = client_id
+        self.manager_q = manager_q
+        self.manager_idx = manager_idx
 
         # divide tasks in this partition into a list of tasks with no dependencies,
         # and a dictionary mapping tuids to tasks
@@ -927,6 +1184,17 @@ class Work:
         return len(self._ready_task_cores)
 
 
+def _is_multi_node_job(task_core: TaskCore, physical_cores_per_node: int) -> bool:
+    num_procs = getattr(task_core, "num_procs", 0) or 0
+    return isinstance(task_core, JobCore) and num_procs > physical_cores_per_node
+
+
+def _task_heft_priority_key(task_core: TaskCore) -> tuple[int, int | float, str]:
+    """Return the deterministic HEFTY priority key shared by placement and launch ordering."""
+    task_tuid = task_core.tuid if task_core.tuid is not None else ""
+    return (-task_core.weight, task_core.heft_topo_order, task_tuid)
+
+
 def _bootstrap_manager(work_q: Queue) -> None:
     """
     Receive manager object from origin and start the manager's work loop.
@@ -942,7 +1210,34 @@ def _bootstrap_manager(work_q: Queue) -> None:
     manager._run()
 
 
-def _do_task_impl(task_core: TaskCore, results_ddict: DDict) -> tuple[str, str]:
+def _get_result_tuple(results_ddict: DDict, tuid: str, manager_idx: Optional[int]) -> tuple:
+    ddict_manager_idx = _ddict_manager_idx_for_task_manager(manager_idx)
+    return results_ddict.manager(ddict_manager_idx)[tuid]
+
+
+def _build_cancelled_error(task_core: TaskCore, results_ddict: DDict) -> BatchError:
+    if task_core.is_cancelled == TaskCancellationReason.UPSTREAM_RAW_FAILURE:
+        source_tuid = task_core.cancel_source_tuid if task_core.cancel_source_tuid is not None else "<unknown>"
+        dep_error = ReadAfterWriteDependencyError(
+            f"task with {task_core._get_id_str()} could not run because it has a read-after-write dependency "
+            f"on upstream task tuid={source_tuid}, and that upstream task failed or was cancelled."
+        )
+
+        if task_core.cancel_source_tuid is not None and task_core.cancel_source_manager_idx is not None:
+            upstream_result, _, upstream_raised, _, _ = _get_result_tuple(
+                results_ddict,
+                task_core.cancel_source_tuid,
+                task_core.cancel_source_manager_idx,
+            )
+            if upstream_raised and isinstance(upstream_result, BaseException):
+                raise dep_error from upstream_result
+
+        return dep_error
+
+    return TaskCancelledError(f"task was cancelled before completing: {task_core._get_id_str()}")
+
+
+def _do_task_impl(task_core: TaskCore, results_ddict: DDict, control_q: Queue) -> TaskComplete:
     """
     Start a specified task and write results directly to the distributed dict.
 
@@ -951,101 +1246,50 @@ def _do_task_impl(task_core: TaskCore, results_ddict: DDict) -> tuple[str, str]:
     :param results_ddict: Distributed dict to store results keyed by tuid.
     :type results_ddict: DDict
 
-    :return: Returns tuple of (tuid, compiled_tuid) as completion notification.
-    :rtype: tuple[str, str]
+    :return: Returns task completion metadata for the finished task.
+    :rtype: TaskComplete
     """
+    tb = None
+    raised = False
+    stdout_val = ""
+    stderr_val = ""
+
     try:
-        result, stdout, stderr = task_core.run()
-        raised = False
-        tb = None
-        stdout_val = stdout.removesuffix("\n")
-        stderr_val = stderr.removesuffix("\n")
+        if task_core.is_cancelled != TaskCancellationReason.NONE:
+            raise _build_cancelled_error(task_core, results_ddict)
+        result, stdout_val, stderr_val = task_core.run(control_q=control_q)
     except Exception as e:
         result = e
-        raised = True
         tb = _get_traceback()
-        stdout_val = None
-        stderr_val = None
+        raised = True
 
     task_core._notify_dep_tasks(result)
 
-    # Write result directly to the distributed dict
-    results_ddict[task_core.tuid] = (result, tb, raised, stdout_val, stderr_val)
+    # Write results directly to the task's assigned ddict manager.
+    ddict_manager_idx = _ddict_manager_idx_for_task_manager(task_core.manager_idx)
 
-    return (task_core.tuid, task_core.compiled_tuid)
+    local_results_ddict = results_ddict.manager(ddict_manager_idx)
+    with local_results_ddict:
+        local_results_ddict[task_core.tuid] = (result, tb, raised, stdout_val, stderr_val)
+
+    return TaskComplete(task_core.tuid, task_core.compiled_tuid, raised)
 
 
-def _get_hostname_for_job(
-    task_core: TaskCore,
-    work_q: Queue,
-    job_done_q: Queue,
-    results_ddict: DDict,
-) -> CompletionNotification:
+def _do_task(task_and_args) -> TaskComplete:
     """
-    This function (1) gets the hostname of the worker and sends it back to the manager,
-    which uses it to help set the policy for an MPI job; and (2) it sleeps until the
-    MPI job completes, reserving the core used by the worker for an MPI rank. This helps
-    prevent oversubscription of nodes when running MPI jobs as tasks.
+    Run one task on a worker.
 
-    :param task_core: The core of the task associated with the MPI job.
-    :type task_core: TaskCore
-    :param work_q: The work queue for the manager.
-    :type work_q: Queue
-    :param job_done_q: The queue used to wait for a "job complete" message, as well as the full list of hostnames for the job.
-    :type job_done_q: Queue
-    :param results_ddict: Distributed dict to store results keyed by tuid.
-    :type results_ddict: DDict
-
-    :return: Returns tuple of (tuid, compiled_tuid) if the job is launched, otherwise a
-        ``FollowerDone`` sentinel for follower slots.
-    :rtype: CompletionNotification
-    """
-    hostname = current().hostname
-
-    if task_core.num_procs > 1:
-        host_info = HostInfo(task_core.tuid, hostname)
-        work_q.put(host_info)
-
-        # get either (1) a list of hostnames for the MPI job (only one worker
-        # receives this), or (2) a message indicating completion of the MPI job
-        # (num_procs - 1 workers receive this)
-        # TODO: since this is blocking, make sure we can't end up in a deadlock
-        # situation where multiple MPI jobs are waiting for resources, and none
-        # can make forward progress
-        item = job_done_q.get()
-    else:
-        # there's only one rank, so just use this local host
-        item = [hostname]
-
-    if isinstance(item, list):
-        task_core.hostname_list = item
-        tuid_compiled_tuid = _do_task_impl(task_core, results_ddict)
-
-        for _ in range(task_core.num_procs - 1):
-            # put 0 onto all other "job done" queues just to indicate that the job
-            # has completed and we can exit this function
-            job_done_q.put(0)
-
-        return tuid_compiled_tuid
-    else:
-        # Return a sentinel so the manager knows this follower slot is done and
-        # can safely recycle the job_done_q once all followers have reported back.
-        return FollowerDone(task_core.tuid, task_core.compiled_tuid)
-
-
-def _do_task(task_and_args) -> CompletionNotification:
-    """
-    Wrapper around the user's task that is called by the workers.
-    Returns either a task completion tuple or a ``FollowerDone`` sentinel.
+    Host placement is resolved before dispatch. A JobCore that reaches this
+    wrapper without ``hostname_list`` set indicates a manager-side routing bug,
+    not something the worker should recover from.
     """
     task_core, args = task_and_args
-    if isinstance(task_core, JobCore):
-        # For jobs, args is (work_q, job_done_queue, results_ddict)
-        tuid_compiled_tuid = _get_hostname_for_job(task_core, *args)
-    else:
-        # For regular tasks, args is (results_ddict,)
-        results_ddict = args[0]
-        tuid_compiled_tuid = _do_task_impl(task_core, results_ddict)
+    results_ddict, control_q = args
+
+    if isinstance(task_core, JobCore) and task_core.hostname_list is None:
+        raise RuntimeError(f"job task reached worker without assigned hostnames: {task_core._get_id_str()}")
+
+    tuid_compiled_tuid = _do_task_impl(task_core, results_ddict, control_q=control_q)
 
     return tuid_compiled_tuid
 
@@ -1061,11 +1305,15 @@ class Manager:
         pool_node_huids: Optional[list[int]] = None,
         physical_cores_per_node: int = 1,
         disable_telem: bool = False,
+        is_scheduler: bool = False,
+        all_node_hostnames: Optional[list[str]] = None,
+        subnode_manager_qs: Optional[list] = None,
     ) -> None:
         """
         Initialize a manager.
 
-        :param idx: This manager's index.
+        :param idx: This manager's logical index. The scheduler uses ``-1`` and
+            subnode managers use ``0..n-1``.
         :type idx: int
         :param num_workers: Number of workers for this manager.
         :type num_workers: int
@@ -1077,13 +1325,23 @@ class Manager:
         :type results_ddict: DDict
         :param pool_node_huids: List of Dragon node h_uids whose cores make up this manager's
             worker pool.  Workers are pinned to these nodes via placement policy.  When
-            ``None`` the pool is created without hostname placement (legacy behaviour).
+            ``None`` the manager falls back to local placement as a defensive default,
+            but normal Batch bringup always provides explicit pool nodes.
         :type pool_node_huids: Optional[list[int]]
         :param physical_cores_per_node: Number of physical CPU cores per node (hyperthreads // 2).
             Used to determine how many workers to launch on each pool node.
         :type physical_cores_per_node: int
         :param disable_telem: Disables telemetry for the managers.
         :type disable_telem: bool
+        :param is_scheduler: If True this is the top-level scheduler,
+            which handles node allocation, multi-node jobs, and fence coordination.
+        :type is_scheduler: bool
+        :param all_node_hostnames: Hostnames of all nodes in the Batch allocation.
+            Only used when ``is_scheduler=True``.
+        :type all_node_hostnames: Optional[list[str]]
+        :param subnode_manager_qs: Work queues for logical subnode managers ``0..n-1``.
+            Only used when ``is_scheduler=True``.
+        :type subnode_manager_qs: Optional[list]
 
         :return: Returns None.
         :rtype: None
@@ -1093,40 +1351,39 @@ class Manager:
         self.pool = None
         self.work = None
         self.work_q = work_q
-        self.ret_q = {0: ret_q}
+        self.ret_q = {}
         self.results_ddict = results_ddict
         self.cached_queues = []
-        self.primary_client_id = 0
-        self.client_ctr = 1
+        self.client_ctr = 0
         self.work_backlog = {}
         self.unexpected_dep_sat = {}
-        self.job_hostname_lists = {}
-        self._pending_followers = {}
-        self.active_clients = {0}
-        # Per-client sets of completed subtask tuids. Used to answer DepSatRequest
-        # queries that arrive after completion. Keyed by client_id so each client's
-        # set can be cleared independently when a fence completes for that client.
-        self._completed_tuids: dict[int, set] = {}
+        self.active_clients = set()
+        # Per-client mapping of completed subtask tuids to the manager idx that
+        # owns their result in results_ddict plus whether the task completed by
+        # raising. Used only to answer DepSatRequest queries that arrive after
+        # completion without needing another ddict read.
+        self._completed_tuids: dict[int, dict[str, CompletedTaskInfo]] = {}
         # Mapping from upstream_tuid -> list of
-        # (reply_q, downstream_tuid, downstream_compiled_tuid, downstream_arg_dep_updates)
+        # (reply_q, downstream_tuid, downstream_compiled_tuid, arg_dep_updates, is_raw)
         # where reply_q is the queue to notify when upstream_tuid completes.
         self._dep_request_reply_map = {}
         # Number of in-flight Work chunks per client (client_id -> count). Incremented
         # when a Work chunk is accepted by this manager, decremented when it completes.
         self._pending_task_counts = {}
-        # Fence requests waiting for a client's pending count to reach zero
-        # (client_id -> reply_q).
-        self._fence_requests = {}
-        self._map_args_list = []
+        self._pool_launch_args_list = []
+        self._direct_launch_args_list = []
         self._compiled_task_list = []
         self._queued_task_count = 0
         self._async_queue = None
-        self.join_called = False
+        self.destroy_called = False
         self.dbg_start_time = None
         self.dbg_update_start = False
         self.dispatch = None
         self.pool_node_huids = pool_node_huids if pool_node_huids is not None else []
         self.physical_cores_per_node = physical_cores_per_node
+        # Fast-path state for manager-owned function execution threads.
+        self._function_fast_path_enabled = False
+        self._direct_task_threads: dict[str, ExceptionalThread] = {}
 
         # telemetry stuff
         self.dragon_telem = None
@@ -1135,6 +1392,79 @@ class Manager:
         if not disable_telem:
             self.num_running_tasks = 0
             self.num_completed_tasks = 0
+
+        # scheduler (manager 0)
+        # ---------------------
+        self.is_scheduler = is_scheduler
+        if not self.is_scheduler and len(self.pool_node_huids) == 1:
+            self._function_fast_path_enabled = True
+        # Pool of hostnames available for node allocation (multi-node jobs and
+        # subnode manager pool locking). Populated only on the scheduler.
+        self._available_nodes: list[str] = sorted(all_node_hostnames) if all_node_hostnames else []
+        # Allocation handle counter: incremented for each request_nodes() call.
+        self._alloc_handle_ctr: int = 0
+        # Maps active allocation handles to their allocated hostname lists.
+        # {handle: [hostname, ...]}
+        self._alloc_handles: dict[int, list[str]] = {}
+        # Pending (deferred) allocation requests that cannot yet be satisfied.
+        # {handle: PendingAllocInfo}
+        self._pending_alloc_requests: dict[int, "PendingAllocInfo"] = {}
+        # Allocation completions produced by free_nodes(); drained each loop iteration.
+        # [(handle, [hostname, ...]), ...]
+        self._newly_satisfied_allocs: list = []
+        # Deferred subnode alloc replies, keyed by allocation handle.
+        # {handle: (manager_idx, reply_q)}
+        self._subnode_alloc_reply_qs: dict[int, tuple] = {}
+        # Maps subnode manager index to its current allocation handle.
+        # {manager_idx: handle}
+        self._subnode_alloc_handle: dict[int, int] = {}
+        # Deferred MNJ submissions waiting for a node allocation.
+        # {handle: (task_core, client_id)}
+        self._pending_mnj_tasks: dict[int, tuple] = {}
+        # Per-client count of subnode Work outstanding from scheduler routing
+        # until subnode manager allocation release. This spans the entire lifecycle
+        # where fence() must wait for the client to reach quiescence.
+        # {client_id: int}
+        self._subnode_outstanding: dict[int, int] = {}
+        # Per-client count of in-flight multi-node jobs.
+        # {client_id: int}
+        self._mnj_pending_counts: dict[int, int] = {}
+        # Fence requests pending on manager 0. Stored as {client_id: reply_q}.
+        self._scheduler_fence_requests: dict[int, Queue] = {}
+        # Work queues for subnode managers 1-n (set on scheduler only).
+        self._subnode_manager_qs: list = list(subnode_manager_qs) if subnode_manager_qs else []
+        # Map tuid -> hostname_list for running multi-node jobs (to return nodes on completion).
+        self._mnj_running: dict[str, list[str]] = {}
+        # Map tuid -> client_id for running multi-node jobs (to check fences on completion).
+        self._mnj_client_ids: dict[str, int] = {}
+        # Control queues and reserved-core bookkeeping for tasks that have been
+        # submitted to workers and can still observe cancellation.
+        self._running_task_state: dict[str, StartedTaskInfo] = {}
+
+        # subnode manager state
+        # ---------------------
+        # True while this subnode manager holds a node allocation from manager 0.
+        self._subnode_has_alloc: bool = False
+        # True while a SubnodeAllocRequest is in flight (sent but not yet replied to).
+        self._subnode_alloc_pending: bool = False
+        # Work chunks covered by the current pending allocation request.
+        self._pending_work_chunks: list = []
+        # Work chunks that arrived while a subnode allocation request was already in flight.
+        self._queued_work_chunks: list = []
+        # Client IDs that submitted work during the current allocation phase. Populated
+        # as Work chunks are processed (past the alloc guard) and cleared when the
+        # SubnodeFreeRequest is sent.
+        self._alloc_phase_clients: set = set()
+        # Task tuids that were accepted for execution during the current allocation phase.
+        self._alloc_phase_tuids: set[str] = set()
+        # Ready subnode tasks for the current allocation phase, ordered by HEFT priority.
+        self._subnode_ready_heap: list[tuple[int, int | float, str, TaskCore]] = []
+        # Number of node-local physical cores still available for active
+        # subnode work on this manager. This is the shared capacity limiter
+        # for both pool-launched tasks and manager-owned direct function
+        # threads, so the total active work on the node never exceeds the
+        # physical core budget.
+        self._subnode_available_cores: int = physical_cores_per_node
 
     def __setstate__(self, state) -> None:
         """
@@ -1148,9 +1478,33 @@ class Manager:
         """
         self.__dict__.update(state)
 
+        # Pool hostnames: used by subnode managers to send hostname-based alloc requests.
+        self._pool_hostnames: list[str] = (
+            [Node(h).hostname for h in self.pool_node_huids] if self.pool_node_huids else []
+        )
+
         policy_list = []
 
-        if self.pool_node_huids:
+        if self.is_scheduler:
+            # Scheduler manager (manager 0) runs on the client node.  Create
+            # one worker per requested scheduler_workers, all on the local node.
+            local_hostname = current().hostname
+            my_alloc = System()
+            node = Node(my_alloc.nodes[0])
+            num_gpus = node.num_gpus
+            for _ in range(self.num_workers):
+                if num_gpus > 0:
+                    device_idx = random.randint(0, num_gpus - 1)
+                else:
+                    device_idx = []
+                policy_list.append(
+                    Policy(
+                        placement=Policy.Placement.HOST_NAME,
+                        host_name=local_hostname,
+                        gpu_affinity=[device_idx],
+                    )
+                )
+        elif self.pool_node_huids:
             # Pin each worker to one of the designated pool nodes, distributing
             # physical_cores_per_node workers across each node.
             for h_uid in self.pool_node_huids:
@@ -1170,7 +1524,8 @@ class Manager:
                         )
                     )
         else:
-            # Legacy fallback: no hostname placement, use first node for GPU discovery.
+            # Defensive fallback for non-Batch callers that construct a Manager
+            # without explicit pool nodes.
             my_alloc = System()
             node = Node(my_alloc.nodes[0])
             num_gpus = node.num_gpus
@@ -1195,6 +1550,541 @@ class Manager:
 
         if not self.disable_telem:
             self.dragon_telem = dt()
+
+    ###############################################
+    # Scheduler (manager 0) node allocation helpers
+    ###############################################
+
+    def _is_multi_node_job(self, task_core: TaskCore) -> bool:
+        return _is_multi_node_job(task_core, self.physical_cores_per_node)
+
+    def _sort_available_nodes(self) -> None:
+        """Keep the free-node list in lexicographic order."""
+        self._available_nodes.sort()
+
+    def _claim_requested_nodes(self, hostnames: list[str]) -> Optional[list[str]]:
+        """Claim a specific set of nodes if they are all currently free."""
+        if not all(hostname in self._available_nodes for hostname in hostnames):
+            return None
+
+        for hostname in hostnames:
+            self._available_nodes.remove(hostname)
+
+        return hostnames
+
+    def _claim_contiguous_nodes(self, num_nodes: int) -> Optional[list[str]]:
+        """Claim the first contiguous slice from the free-node list.
+
+        Invariant: ``self._available_nodes`` is kept in lexicographic order.
+        It is initialized sorted, resorted in :py:meth:`free_nodes` after
+        nodes are returned, and the other mutation paths here only remove
+        elements or take ordered slices, which preserve that ordering.
+        """
+        if len(self._available_nodes) < num_nodes:
+            return None
+
+        allocated = self._available_nodes[:num_nodes]
+        self._available_nodes = self._available_nodes[num_nodes:]
+        return allocated
+
+    def _build_contiguous_hostname_list(self, hostnames: list[str], num_procs: int) -> list[str]:
+        """Pack ranks contiguously onto nodes, allowing the final node to be partial."""
+        if len(hostnames) == 0:
+            raise RuntimeError("cannot assign ranks without allocated hostnames")
+
+        hostname_list = []
+        remaining = num_procs
+        ranks_per_node = self.physical_cores_per_node
+
+        for hostname in hostnames:
+            nranks = min(ranks_per_node, remaining)
+            hostname_list.extend([hostname] * nranks)
+            remaining -= nranks
+            if remaining == 0:
+                break
+
+        if remaining != 0:
+            raise RuntimeError(
+                f"insufficient node allocation for job: need {num_procs} ranks, only placed {num_procs - remaining}"
+            )
+
+        return hostname_list
+
+    def _get_subnode_alloc_request_metadata(self, work_chunks: list[Work]) -> tuple[set[int], int]:
+        """
+        Return the client set and max task weight for a fixed work snapshot.
+
+        The scheduler only needs a scalar priority for subnode allocation
+        requests, but the tie-break policy should match the ready-task launch
+        order used once the allocation is granted.
+        """
+        client_ids = {work._client_id for work in work_chunks}
+        task_cores = (
+            task_core
+            for work in work_chunks
+            for task_dict in (work._ready_task_cores, work._blocked_task_cores)
+            for task_core in task_dict.values()
+        )
+        best_task_core = min(task_cores, key=_task_heft_priority_key, default=None)
+
+        priority_weight = best_task_core.weight if best_task_core is not None else 0
+        return client_ids, priority_weight
+
+    def _send_subnode_alloc_request(self) -> None:
+        """Send one allocation request for the current snapshot of pending subnode work."""
+        if self._subnode_has_alloc or self._subnode_alloc_pending or len(self._pending_work_chunks) == 0:
+            return
+
+        scheduler_q = self._subnode_manager_qs[0] if self._subnode_manager_qs else None
+        if scheduler_q is None:
+            return
+
+        client_ids, priority_weight = self._get_subnode_alloc_request_metadata(self._pending_work_chunks)
+        scheduler_q.put(
+            SubnodeAllocRequest(
+                self.idx,
+                self._pool_hostnames,
+                client_ids,
+                self.work_q,
+                priority_weight,
+            )
+        )
+        self._subnode_alloc_pending = True
+        self.log.debug(f"subnode manager {self.idx}: SubnodeAllocRequest sent with priority_weight={priority_weight}")
+
+    def _pending_alloc_sort_key(self, handle: int) -> tuple[int, int]:
+        """Sort deferred alloc requests by descending priority weight, then FIFO."""
+        request = self._pending_alloc_requests[handle]
+        priority = request.priority_weight
+        return (-priority, handle)
+
+    def _submit_mnj_task(self, task_core: "TaskCore", client_id: int, hostnames: list[str]) -> None:
+        """Queue a multi-node job after its nodes have been allocated."""
+        task_core.hostname_list = self._build_contiguous_hostname_list(hostnames, task_core.num_procs)
+        self._mnj_running[task_core.tuid] = hostnames
+        self._mnj_client_ids[task_core.tuid] = client_id
+        cancel_q = self._get_queue_for_task(task_core)
+        self._register_running_task(task_core, cancel_q)
+        self._queue_task_for_launch(task_core, cancel_q)
+        self._queued_task_count += 1
+
+    def _build_alloc_request(
+        self,
+        num_nodes: int = 0,
+        hostnames: Optional[list[str]] = None,
+        client_ids: Optional[set[int]] = None,
+        priority_weight: int = 0,
+    ) -> PendingAllocInfo:
+        """Normalize a node-allocation request into the shared internal form."""
+        frozen_client_ids = frozenset(client_ids) if client_ids else frozenset()
+        if hostnames is not None:
+            return PendingAllocInfo(
+                hostnames=sorted(hostnames),
+                num_nodes=None,
+                client_ids=frozen_client_ids,
+                priority_weight=priority_weight,
+            )
+
+        return PendingAllocInfo(
+            hostnames=None,
+            num_nodes=num_nodes,
+            client_ids=frozen_client_ids,
+            priority_weight=priority_weight,
+        )
+
+    def _try_allocate_request(self, request: PendingAllocInfo) -> Optional[list[str]]:
+        """Attempt to satisfy a normalized allocation request from the free-node pool."""
+        if request.hostnames is not None:
+            return self._claim_requested_nodes(request.hostnames)
+
+        return self._claim_contiguous_nodes(request.num_nodes)
+
+    def _record_allocation(self, handle: int, hostnames: list[str], deferred: bool = False) -> None:
+        """Record a satisfied allocation and optionally queue it for deferred processing."""
+        self._alloc_handles[handle] = hostnames
+        if deferred:
+            self._newly_satisfied_allocs.append((handle, hostnames))
+
+    def request_nodes(
+        self,
+        num_nodes: int = 0,
+        hostnames: Optional[list[str]] = None,
+        client_ids: Optional[set[int]] = None,
+        priority_weight: int = 0,
+    ) -> int:
+        """
+        Request an allocation of nodes, returning an integer handle immediately.
+        If *hostnames* is given, those specific nodes are requested; otherwise
+        *num_nodes* arbitrary nodes are requested from the front of
+        ``_available_nodes``. If the requested nodes are currently available they
+        are removed from ``_available_nodes`` and stored in
+        ``_alloc_handles[handle]``. If not, the request is queued in
+        ``_pending_alloc_requests`` and ``free_nodes`` will satisfy it later,
+        appending the result to ``_newly_satisfied_allocs``.
+
+        :param num_nodes: Number of nodes for a count-based request.
+        :type num_nodes: int
+        :param hostnames: Specific hostnames for a hostname-based request.
+        :type hostnames: Optional[list[str]]
+        :param client_ids: Clients whose work is covered by this allocation request.
+        :type client_ids: Optional[set[int]]
+        :param priority_weight: Priority weight used to order deferred requests.
+        :type priority_weight: int
+
+        :return: Allocation handle.
+        :rtype: int
+        """
+        handle = self._alloc_handle_ctr
+        self._alloc_handle_ctr += 1
+
+        request = self._build_alloc_request(
+            num_nodes=num_nodes,
+            hostnames=hostnames,
+            client_ids=client_ids,
+            priority_weight=priority_weight,
+        )
+        allocated = self._try_allocate_request(request)
+        if allocated is not None:
+            self._record_allocation(handle, allocated)
+        else:
+            self._pending_alloc_requests[handle] = request
+
+        return handle
+
+    def free_nodes(self, hostnames: list[str]) -> None:
+        """
+        Return previously-allocated nodes to the available pool and satisfy any
+        pending allocation requests that can now be served. Satisfied requests are
+        appended to ``_newly_satisfied_allocs``; the main loop processes them via
+        ``_process_alloc_completions``.
+
+        :param hostnames: Hostnames to return.
+        :type hostnames: list[str]
+        """
+        self._available_nodes.extend(hostnames)
+        self._sort_available_nodes()
+
+        satisfied = []
+        for handle in sorted(self._pending_alloc_requests, key=self._pending_alloc_sort_key):
+            request = self._pending_alloc_requests[handle]
+            allocated = self._try_allocate_request(request)
+            if allocated is not None:
+                self._record_allocation(handle, allocated, deferred=True)
+                satisfied.append(handle)
+
+        for handle in satisfied:
+            del self._pending_alloc_requests[handle]
+
+    def _try_satisfy_scheduler_fence(self, client_id: int) -> None:
+        """
+        Check whether the fence for *client_id* can be satisfied on manager 0.
+        A scheduler fence is complete when:
+          (1) All multi-node jobs for the client have completed.
+          (2) No subnode Work is outstanding (routed but not yet released by a
+              subnode manager's allocation).
+
+        If all conditions hold and a fence is pending, send ``FenceComplete``
+        to the client's return queue.
+        """
+        if client_id not in self._scheduler_fence_requests:
+            return
+
+        mnj_done = self._mnj_pending_counts.get(client_id, 0) == 0
+        subnode_outstanding = self._subnode_outstanding.get(client_id, 0) == 0
+
+        if mnj_done and subnode_outstanding:
+            reply_q = self._scheduler_fence_requests.pop(client_id)
+
+            # Fence boundary: clear per-client completion/dependency state on all managers
+            # before acknowledging fence completion to the client.
+            for subnode_q in self._subnode_manager_qs:
+                subnode_q.put(ClearFenceState(client_id))
+
+            self._completed_tuids.pop(client_id, None)
+
+            reply_q.put(FenceComplete(client_id))
+            self.log.debug(f"scheduler fence complete for client {client_id}")
+
+    def _process_alloc_completions(self) -> None:
+        """
+        Drain ``_newly_satisfied_allocs`` and act on each completed allocation.
+        Called each iteration of the scheduler's ``_run`` loop after draining
+        the work queue.
+
+        - For subnode alloc handles: send ``SubnodeAllocResponse`` to the waiting
+          subnode manager.
+        - For MNJ alloc handles: submit the deferred task to the worker pool.
+        """
+        if not self._newly_satisfied_allocs:
+            return
+
+        for handle, hostnames in self._newly_satisfied_allocs:
+            if handle in self._subnode_alloc_reply_qs:
+                manager_idx, reply_q = self._subnode_alloc_reply_qs.pop(handle)
+                self._subnode_alloc_handle[manager_idx] = handle
+                reply_q.put(SubnodeAllocResponse(manager_idx))
+                self.log.debug(f"scheduler: deferred SubnodeAllocResponse sent to manager {manager_idx}")
+            elif handle in self._pending_mnj_tasks:
+                task_core, client_id = self._pending_mnj_tasks.pop(handle)
+                self._submit_mnj_task(task_core, client_id, hostnames)
+                self.log.debug(f"scheduler: deferred MNJ submitted tuid={task_core.tuid}")
+
+        self._newly_satisfied_allocs = []
+
+    def _handle_subnode_alloc_request(self, req: SubnodeAllocRequest) -> None:
+        """
+        Handle a ``SubnodeAllocRequest`` from a subnode manager.  Calls
+        ``request_nodes`` with the manager's pool hostnames.  If the allocation
+        is immediately satisfied, sends ``SubnodeAllocResponse`` right away.
+        Otherwise the reply is deferred to ``_process_alloc_completions``.
+
+        Work accounting for these client_ids already began when the scheduler
+        routed subnode Work chunks to this manager; no additional accounting
+        is needed at allocation request time.
+
+        :param req: The allocation request.
+        :type req: SubnodeAllocRequest
+        """
+        manager_idx = req.manager_idx
+        self.log.debug(f"scheduler: SubnodeAllocRequest from manager {manager_idx}, clients={req.client_ids}")
+
+        handle = self.request_nodes(
+            hostnames=req.hostnames,
+            client_ids=req.client_ids,
+            priority_weight=req.priority_weight,
+        )
+        if handle in self._alloc_handles:
+            # Immediately satisfied: reply now.
+            self._subnode_alloc_handle[manager_idx] = handle
+            req.reply_q.put(SubnodeAllocResponse(manager_idx))
+            self.log.debug(f"scheduler: immediate SubnodeAllocResponse sent to manager {manager_idx}")
+        else:
+            # Deferred: store reply info keyed by handle.
+            self._subnode_alloc_reply_qs[handle] = (manager_idx, req.reply_q)
+
+    def _handle_subnode_free_request(self, req: SubnodeFreeRequest) -> None:
+        """
+        Handle a ``SubnodeFreeRequest`` from a subnode manager.  Looks up the
+        current allocation handle for this manager, returns the associated nodes
+        to the available pool (potentially satisfying other pending requests),
+        and decrements outstanding work count for each client that was active
+        during this allocation phase.
+
+        :param req: The free request.
+        :type req: SubnodeFreeRequest
+        """
+        manager_idx = req.manager_idx
+        client_ids = req.client_ids
+        task_tuids = req.task_tuids
+        self.log.debug(
+            f"scheduler: SubnodeFreeRequest from manager {manager_idx}, clients={client_ids}, num tasks={len(task_tuids)}"
+        )
+
+        handle = self._subnode_alloc_handle.pop(manager_idx, None)
+        if handle is not None:
+            hostnames = self._alloc_handles.pop(handle, [])
+            self.free_nodes(hostnames)
+
+        # Decrement the outstanding work counter for each client whose work
+        # was covered by this allocation. This completes the Work lifecycle
+        # that began when the scheduler routed those chunks.
+        for client_id in client_ids:
+            new_count = self._subnode_outstanding.get(client_id, 0) - len(task_tuids)
+            if new_count <= 0:
+                self._subnode_outstanding.pop(client_id, None)
+            else:
+                self._subnode_outstanding[client_id] = new_count
+            self._try_satisfy_scheduler_fence(client_id)
+
+    def _handle_scheduler_fence_request(self, fence_request: FenceRequest) -> None:
+        """
+        Handle a fence request on the scheduler (manager 0).
+
+        A scheduler fence completes only after manager 0 has observed all
+        of its client-scoped scheduler states reach quiescence: no pending
+        multi-node jobs, no scheduler-routed subnode Work chunks awaiting
+        completion, and no outstanding subnode allocations for the client.
+
+        :param fence_request: Contains the client_id and the queue to reply on.
+        :type fence_request: FenceRequest
+        """
+        client_id = fence_request.client_id
+        reply_q = fence_request.reply_q
+        self.log.debug(f"scheduler: received fence request for client {client_id}")
+
+        self._scheduler_fence_requests[client_id] = reply_q
+        self._try_satisfy_scheduler_fence(client_id)
+
+    def _handle_mnj_complete(self, mnj: MultiNodeJobComplete) -> None:
+        """
+        Handle a ``MultiNodeJobComplete`` notification (manager 0 only).
+        Returns the allocated nodes and checks for pending fences.
+
+        :param mnj: Completion sentinel for a multi-node job.
+        :type mnj: MultiNodeJobComplete
+        """
+        tuid = mnj.tuid
+        compiled_tuid = mnj.compiled_tuid
+        hostnames = mnj.node_hostnames
+
+        self.log.debug(f"scheduler: multi-node job complete tuid={tuid}, freeing {len(hostnames)} node(s)")
+
+        # Return nodes to the available pool.
+        self.free_nodes(hostnames)
+        self._mnj_running.pop(tuid, None)
+
+        # Update in-flight count for the owning client.
+        # The Work object for this compiled task was already removed from
+        # work_backlog by _handle_results; we need the client_id from there.
+        # We stored it in _mnj_client_ids during _handle_mnj_task.
+        client_id = self._mnj_client_ids.pop(tuid, None)
+        if client_id is not None:
+            new_count = self._mnj_pending_counts.get(client_id, 1) - 1
+            if new_count <= 0:
+                self._mnj_pending_counts.pop(client_id, None)
+            else:
+                self._mnj_pending_counts[client_id] = new_count
+            self._try_satisfy_scheduler_fence(client_id)
+
+    def _request_mnj_alloc(self, task_core: "TaskCore", client_id: int) -> None:
+        """
+        Request a node allocation for a ready multi-node job and, if immediately
+        granted, submit the job to the worker pool.  If deferred, store the job
+        in ``_pending_mnj_tasks`` to be submitted by ``_process_alloc_completions``.
+
+        ``_mnj_pending_counts`` is incremented immediately so fence checks
+        correctly see the job as in-flight even when the allocation is deferred.
+
+        :param task_core: JobCore for the multi-node job.
+        :param client_id: Client that owns this task.
+        """
+        # Track in-flight MNJ count immediately for fence purposes.
+        self._mnj_pending_counts[client_id] = self._mnj_pending_counts.get(client_id, 0) + 1
+
+        num_nodes = math.ceil(task_core.num_procs / self.physical_cores_per_node)
+        handle = self.request_nodes(num_nodes=num_nodes, client_ids={client_id}, priority_weight=task_core.weight)
+        if handle in self._alloc_handles:
+            # Immediately satisfied: submit to pool now.
+            hostnames = self._alloc_handles[handle]
+            self._submit_mnj_task(task_core, client_id, hostnames)
+            self.log.debug(f"scheduler: immediate MNJ submission tuid={task_core.tuid}")
+        else:
+            # Deferred: wait for nodes to become available.
+            self._pending_mnj_tasks[handle] = (task_core, client_id)
+            self.log.debug(f"scheduler: deferred MNJ tuid={task_core.tuid}, handle={handle}")
+
+    def _handle_subnode_alloc_response(self, resp: SubnodeAllocResponse) -> None:
+        """
+        Handle a ``SubnodeAllocResponse`` on a subnode manager.  Records that the
+        allocation has been granted and processes all work chunks that were queued
+        while waiting for the allocation.
+
+        :param resp: The allocation response from manager 0.
+        :type resp: SubnodeAllocResponse
+        """
+        self._subnode_has_alloc = True
+        self._subnode_alloc_pending = False
+        if self._queued_work_chunks:
+            # Work that arrived while the allocation request was in flight must
+            # be processed under this grant as well. Leaving it parked until a
+            # later allocation phase can deadlock when currently blocked work is
+            # waiting on one of those queued tasks to run.
+            self._pending_work_chunks.extend(self._queued_work_chunks)
+            self._queued_work_chunks = []
+        self.log.debug(
+            f"subnode manager {self.idx}: allocation granted, processing {len(self._pending_work_chunks)} queued chunk(s)"
+        )
+        pending = self._pending_work_chunks
+        self._pending_work_chunks = []
+        for work in pending:
+            self._handle_compiled_task(work)
+
+    def _mark_task_cancelled(self, task_core: TaskCore) -> bool:
+        if task_core.is_cancelled == TaskCancellationReason.NONE:
+            task_core.is_cancelled = TaskCancellationReason.USER_REQUESTED
+        return True
+
+    def _find_waiting_task_in_work_chunks(self, tuid: str, work_chunks: list[Work]) -> Optional[TaskCore]:
+        for work in work_chunks:
+            task_core = work._blocked_task_cores.get(tuid)
+            if task_core is not None:
+                return task_core
+
+            task_core = work._ready_task_cores.get(tuid)
+            if task_core is not None:
+                return task_core
+
+        return None
+
+    def _task_is_queued_for_launch(self, tuid: str) -> bool:
+        if any(task_core.tuid == tuid for task_core, _ in self._pool_launch_args_list):
+            return True
+
+        return any(task_core.tuid == tuid for task_core, _ in self._direct_launch_args_list)
+
+    def _task_is_queued_in_ready_heap(self, tuid: str) -> bool:
+        return any(task_core.tuid == tuid for _, _, _, task_core in self._subnode_ready_heap)
+
+    def _handle_cancel_request(self, req: CancelRequest) -> None:
+        tuid = req.tuid
+
+        if self.is_scheduler and req.manager_idx not in (None, SCHEDULER_MANAGER_IDX):
+            if req.manager_idx < 0 or req.manager_idx >= len(self._subnode_manager_qs):
+                req.reply_q.put(CancelResponse(tuid, False))
+                return
+
+            # Forward subnode-owned cancellation to the manager that holds the
+            # pre-launch state. Sending it from the scheduler preserves queue
+            # ordering relative to the preceding Work dispatch.
+            self._subnode_manager_qs[req.manager_idx].put(req)
+            return
+
+        # Completed tasks cannot be cancelled.
+        completed_task_info = self._completed_tuids.get(req.client_id, {})
+        if tuid in completed_task_info:
+            req.reply_q.put(CancelResponse(tuid, False))
+            return
+
+        # Ready/blocked tasks are still cancellable only while they are waiting
+        # in manager-owned state: either parked in a subnode allocation queue,
+        # waiting in a Work backlog entry, queued for worker launch, staged in
+        # the subnode ready heap, or waiting for MNJ node allocation.
+        task_core = self._find_waiting_task_in_work_chunks(tuid, self._pending_work_chunks)
+        if task_core is not None:
+            req.reply_q.put(CancelResponse(tuid, self._mark_task_cancelled(task_core)))
+            return
+
+        task_core = self._find_waiting_task_in_work_chunks(tuid, self._queued_work_chunks)
+        if task_core is not None:
+            req.reply_q.put(CancelResponse(tuid, self._mark_task_cancelled(task_core)))
+            return
+
+        queued_for_launch = self._task_is_queued_for_launch(tuid)
+        pending_mnj_alloc = any(task_core.tuid == tuid for task_core, _ in self._pending_mnj_tasks.values())
+        queued_in_ready_heap = self._task_is_queued_in_ready_heap(tuid)
+
+        for work in self.work_backlog.values():
+            task_core = work._blocked_task_cores.get(tuid)
+            if task_core is not None:
+                req.reply_q.put(CancelResponse(tuid, self._mark_task_cancelled(task_core)))
+                return
+
+            task_core = work._ready_task_cores.get(tuid)
+            if task_core is not None and (pending_mnj_alloc or queued_for_launch or queued_in_ready_heap):
+                req.reply_q.put(CancelResponse(tuid, self._mark_task_cancelled(task_core)))
+                return
+
+        # Tasks already submitted to workers are cancelled via their per-task
+        # control queue. If the task completes first, queue recycling drains
+        # any stale cancel request before the queue is reused.
+        started_task = self._running_task_state.get(tuid)
+        if started_task is not None:
+            started_task.control_q.put(CancelJob())
+            req.reply_q.put(CancelResponse(tuid, True))
+            return
+
+        # Everything else has already started and is best-effort only.
+        req.reply_q.put(CancelResponse(tuid, False))
 
     def _is_active_client(self, client_id: int) -> None:
         """
@@ -1222,65 +2112,141 @@ class Manager:
         :return: Returns the queue.
         :rtype: Queue
         """
-        try:
-            task_core.cached_queue = self.cached_queues.pop()
-        except:
-            task_core.cached_queue = Queue(block_size=default_block_size)
+        if task_core.cached_queue is None:
+            task_core.cached_queue = self._borrow_cached_queue()
 
         return task_core.cached_queue
 
-    def _setup_job(self, task_core: TaskCore) -> None:
-        """
-        Queue up map args for each rank in the job.
-
-        :param task_core: The core of the task for the job.
-        :type task_core: TaskCore
-
-        :return: Returns None.
-        :rtype: None
-        """
-        self.log.debug(f"setting up map args for a job with {task_core._get_id_str()}")
-        job_done_queue = self._get_queue_for_task(task_core)
-
-        for _ in range(task_core.num_procs):
-            self._map_args_list.append(
-                (
-                    task_core,
-                    (self.work_q, job_done_queue, self.results_ddict),
-                )
+    def _borrow_cached_queue(self) -> Queue:
+        """Borrow a manager-local queue, reusing a drained queue when possible."""
+        try:
+            return self.cached_queues.pop()
+        except IndexError:
+            return Queue(
+                block_size=default_block_size,
+                policy=Policy(
+                    placement=Policy.Placement.HOST_NAME,
+                    host_name=current().hostname,
+                ),
             )
 
-        self.job_hostname_lists[task_core.tuid] = (
-            task_core.num_procs,
-            job_done_queue,
-            [],
-        )
+    def _subnode_cores_for_task(self, task_core: TaskCore) -> int:
+        if isinstance(task_core, JobCore):
+            return task_core.num_procs
 
-        if task_core.num_procs > 1:
-            # Register the pending-follower count now, before any worker is
-            # dispatched to the pool. This prevents the race where follower
-            # workers return FollowerDone before the leader's ResultWrapper is
-            # processed by the manager, which would cause _handle_follower_done
-            # to silently drop the sentinel (tuid not yet in _pending_followers).
-            self._pending_followers[task_core.tuid] = [task_core.num_procs - 1, job_done_queue]
+        return 1
 
-    def _add_to_map_args_list(self, task_core: TaskCore) -> None:
+    def _subnode_has_capacity_for_task(self, task_core: TaskCore) -> bool:
+        """Return True when the shared node-local core budget can admit this task."""
+        return self._subnode_cores_for_task(task_core) <= self._subnode_available_cores
+
+    def _register_running_task(self, task_core: TaskCore, control_q: Queue, reserved_cores: int = 0) -> None:
+        self._running_task_state[task_core.tuid] = StartedTaskInfo(control_q, reserved_cores)
+        if reserved_cores > 0:
+            self._subnode_available_cores -= reserved_cores
+
+    def _release_running_task(self, tuid: str) -> None:
+        started_task = self._running_task_state.pop(tuid, None)
+        if started_task is not None and started_task.reserved_cores > 0:
+            self._subnode_available_cores += started_task.reserved_cores
+
+    def _recycle_queue(self, queue_to_recycle: Queue) -> None:
+        """Drain and cache a queue for reuse by a later task."""
+        try:
+            while True:
+                queue_to_recycle.get_nowait()
+        except queue.Empty:
+            pass
+
+        self.cached_queues.append(queue_to_recycle)
+
+    def _setup_subnode_task(self, task_core: TaskCore) -> None:
+        """Queue a subnode-owned task with a per-task control queue.
+
+        All non-multi-node work runs through this path, including node-local
+        jobs and single-process ``process()`` tasks.
         """
-        Add a map argument for this task, or one argument for each rank if the task is a job.
+        reserved_cores = self._subnode_cores_for_task(task_core)
+        control_q = self._get_queue_for_task(task_core)
+        self._register_running_task(task_core, control_q, reserved_cores=reserved_cores)
 
-        :param task_core: The core of the task that is being set up to be run via map_async.
+        if isinstance(task_core, JobCore):
+            task_core.hostname_list = [current().hostname] * reserved_cores
+
+        self._queue_task_for_launch(task_core, control_q)
+        self._queued_task_count += 1
+
+    def _queue_task_for_launch(self, task_core: TaskCore, control_q: Queue) -> None:
+        """Append task launch args to the selected backend queue.
+
+        Core budget was already reserved by ``_register_running_task``, so the
+        backend split here does not change node-level concurrency.
+        """
+        task_and_args = (task_core, (self.results_ddict, control_q))
+
+        if self._should_use_direct_function_launch(task_core):
+            self._direct_launch_args_list.append(task_and_args)
+        else:
+            self._pool_launch_args_list.append(task_and_args)
+
+    def _prepare_task_for_launch(self, task_core: TaskCore) -> None:
+        """
+        Prepare a ready task for launch on this manager.
+
+        Scheduler-owned multi-node jobs are routed into the allocation path.
+        Subnode-owned tasks go through local setup, core reservation, and then
+        backend-specific launch queueing.
+
+        :param task_core: The core of the task being prepared for launch.
         :type task_core: TaskCore
 
         :return: Returns None.
         :rtype: None
         """
-        if isinstance(task_core, JobCore):
-            self._setup_job(task_core)
-        else:
-            # For regular tasks, include results_ddict as argument
-            self._map_args_list.append((task_core, (self.results_ddict,)))
+        if self.is_scheduler:
+            # Only multi-node jobs should reach the scheduler.
+            if not self._is_multi_node_job(task_core):
+                raise RuntimeError(f"scheduler received non-multi-node task unexpectedly: {task_core._get_id_str()}")
 
-        self._queued_task_count += 1
+            self._request_mnj_alloc(task_core, task_core.client_id)
+        else:
+            self._setup_subnode_task(task_core)
+            self._queued_task_count += 1
+
+    def _enqueue_ready_task(self, task_core: TaskCore) -> None:
+        """
+        Queue a ready task for launch on this manager.
+
+        Subnode managers stage ready work in a HEFT-ordered heap so each
+        allocation phase prepares the highest-priority tasks first.
+        """
+        if self.is_scheduler:
+            self._prepare_task_for_launch(task_core)
+        else:
+            self._queue_subnode_ready_task(task_core)
+
+    def _queue_subnode_ready_task(self, task_core: TaskCore) -> None:
+        """Insert a ready subnode task into the current allocation phase heap."""
+        heapq.heappush(self._subnode_ready_heap, (*_task_heft_priority_key(task_core), task_core))
+
+    def _drain_subnode_ready_tasks(self) -> None:
+        """Materialize the current phase's HEFT order into launch-ready queues."""
+        # Tasks that exceed the current local core budget stay in the heap for
+        # the next allocation phase, so we preserve the existing HEFT order
+        # without oversubscribing the node.
+        deferred_tasks = []
+
+        while self._subnode_ready_heap:
+            item = heapq.heappop(self._subnode_ready_heap)
+            task_core = item[-1]
+
+            if self._subnode_has_capacity_for_task(task_core):
+                self._prepare_task_for_launch(task_core)
+            else:
+                deferred_tasks.append(item)
+
+        for item in deferred_tasks:
+            heapq.heappush(self._subnode_ready_heap, item)
 
     def _handle_manager_exception(
         self,
@@ -1292,9 +2258,9 @@ class Manager:
         """
         Handle a general "manager exception" unrelated to any task.
 
-        :param e: The exception to be returned to the primary client.
+        :param e: The exception to be returned to the requesting client.
         :type e: Exception
-        :param err_msg: The error message to be returned to the primary client.
+        :param err_msg: The error message to be returned to the requesting client.
         :type err_msg: str
 
         :return: Returns None.
@@ -1309,8 +2275,6 @@ class Manager:
         :param work: The work chunk for the compiled task handled by this manager.
         :type work: Work
 
-        :raises RuntimeError: If the client is not active.
-
         :return: Returns None.
         :rtype: None
         """
@@ -1318,26 +2282,45 @@ class Manager:
             f"received work from client {work._client_id}: {len(work._ready_task_cores)} ready tasks, {len(work._blocked_task_cores)} blocked tasks"
         )
 
-        # make sure this client is active
-        self._is_active_client(work._client_id)
+        # Work that was already submitted before a client closes must still be
+        # accepted and completed, so only reject truly unknown clients.
+        if work._client_id not in self.ret_q:
+            raise RuntimeError(f"received work for unknown client_id={work._client_id}")
 
-        # count this Work chunk as in-flight for the client so fence() knows when
-        # all of the client's work has completed on this manager
+        if not self.is_scheduler:
+            if len(work._ready_task_cores) == 0 and len(work._blocked_task_cores) == 0:
+                return
+
+            # Subnode managers must hold a node allocation before processing work.
+            # Once a request is in flight, its work snapshot is fixed; later arrivals
+            # wait for the next allocation phase.
+            if not self._subnode_has_alloc:
+                if self._subnode_alloc_pending:
+                    self._queued_work_chunks.append(work)
+                else:
+                    self._pending_work_chunks.append(work)
+                    self._send_subnode_alloc_request()
+                return
+
+        # count this Work chunk as in-flight on this manager; subnode managers use
+        # this for allocation-phase bookkeeping and state cleanup.
         client_id = work._client_id
         self._pending_task_counts[client_id] = self._pending_task_counts.get(client_id, 0) + 1
+        self._alloc_phase_clients.add(client_id)
+        self._alloc_phase_tuids.update(task_core.tuid for task_core in work._ready_task_cores.values())
+        self._alloc_phase_tuids.update(task_core.tuid for task_core in work._blocked_task_cores.values())
 
         compiled_tuid = work._compiled_result_wrapper.tuid
         self.work_backlog[compiled_tuid] = work
 
         for _, task_core in work._ready_task_cores.items():
-            self._add_to_map_args_list(task_core)
+            self._enqueue_ready_task(task_core)
 
         for _, task_core in work._blocked_task_cores.items():
-            # send DepSatRequest messages to the managers that own each upstream tuid
-            for upstream_tuid, upstream_q, upstream_arg_dep_updates in zip(
-                task_core.upstream_tuids, task_core.upstream_queues, task_core.upstream_arg_dep_updates
-            ):
-                arg_dep_updates = upstream_arg_dep_updates if upstream_arg_dep_updates is not None else []
+            # send DepSatRequest messages to the managers that own each upstream dependency
+            for upstream_route in task_core.upstream_routes:
+                upstream_tuid = upstream_route.upstream_tuid
+                arg_dep_updates = upstream_route.arg_dep_updates if upstream_route.arg_dep_updates is not None else []
 
                 # reply queue for DepSat is this manager's work_q so DepSat messages
                 # arrive as regular work-queue items and are handled by _handle_dep_sat
@@ -1348,9 +2331,10 @@ class Manager:
                     arg_dep_updates,
                     self.work_q,
                     work._client_id,
+                    upstream_route.is_raw,
                 )
 
-                upstream_q.put(dep_sat_req)
+                upstream_route.queue.put(dep_sat_req)
 
         self._compiled_task_list.append((work._client_id, compiled_tuid))
 
@@ -1372,7 +2356,11 @@ class Manager:
             pass
 
     def _update_task_args(
-        self, task_core: TaskCore, arg_dep_updates: list[ArgDepUpdate], source_tuid: Optional[str] = None
+        self,
+        task_core: TaskCore,
+        arg_dep_updates: list[ArgDepUpdate],
+        source_tuid: Optional[str] = None,
+        source_manager_idx: Optional[int] = None,
     ) -> None:
         """
         Update task args using dep_sat.arg_dep_updates. ArgDepUpdate contains only
@@ -1384,7 +2372,7 @@ class Manager:
         # fetch the result value from the distributed dict
         if source_tuid is not None:
             try:
-                result_tuple = self.results_ddict[source_tuid]
+                result_tuple = _get_result_tuple(self.results_ddict, source_tuid, source_manager_idx)
                 new_arg = result_tuple[0]
             except Exception:
                 raise
@@ -1411,12 +2399,34 @@ class Manager:
             for template_idx, nprocs_and_template in enumerate(task_core.process_templates):
                 _, process_template = nprocs_and_template
                 new_args_list = template_idx_to_new_args.get(template_idx, [])
-                args_list = list(process_template.args)
 
-                for new_arg_val, arg_idx in new_args_list:
-                    args_list[arg_idx] = new_arg_val
+                # If the process template represents a Python callable, the
+                # serialized payload is stored in `argdata`. Updating
+                # `process_template.args` alone is insufficient because
+                # `Process.from_template` for Python targets uses
+                # `get_original_python_parameters()` (which reads `argdata`) to
+                # reconstruct the callable and its arguments. Replace the
+                # relevant arguments in the original payload and reserialize
+                # back into `argdata` so workers receive the updated values.
+                if getattr(process_template, "is_python", False):
+                    orig_target, orig_args, orig_kwargs = process_template.get_original_python_parameters()
 
-                process_template.args = tuple(args_list)
+                    args_list = list(orig_args)
+                    for new_arg_val, arg_idx in new_args_list:
+                        args_list[arg_idx] = new_arg_val
+
+                    # For Python-callable templates, `process_template.args` holds
+                    # the subprocess CLI flags (["-c", "..."]) and must NOT be
+                    # modified. Only `argdata` (the cloudpickled user payload) needs
+                    # to be updated with the resolved dependency values.
+                    process_template.argdata = cloudpickle.dumps((orig_target, tuple(args_list), orig_kwargs))
+                else:
+                    args_list = list(process_template.args)
+
+                    for new_arg_val, arg_idx in new_args_list:
+                        args_list[arg_idx] = new_arg_val
+
+                    process_template.args = tuple(args_list)
 
     def _handle_dep_sat(self, dep_sat: DepSat) -> None:
         """
@@ -1431,8 +2441,10 @@ class Manager:
         :rtype: None
         """
         source_tuid = dep_sat.source_tuid
+        source_manager_idx = dep_sat.source_manager_idx
         tuid = dep_sat.tuid
         compiled_tuid = dep_sat.compiled_tuid
+        cancel_reason = dep_sat.cancel_reason
 
         try:
             # if the try succeeds, we have a compiled task that we are already working on
@@ -1441,9 +2453,14 @@ class Manager:
             # update the number of satisfied dependencies for this individual task
             # (which is part of a larger compiled task)
             task_core = work._blocked_task_cores[tuid]
-            task_core.num_dep_sat += 1
 
-            self._update_task_args(task_core, dep_sat.arg_dep_updates, source_tuid)
+            self._update_task_args(task_core, dep_sat.arg_dep_updates, source_tuid, source_manager_idx)
+            if cancel_reason == TaskCancellationReason.UPSTREAM_RAW_FAILURE:
+                if task_core.is_cancelled == TaskCancellationReason.NONE:
+                    task_core.is_cancelled = cancel_reason
+                    task_core.cancel_source_tuid = source_tuid
+                    task_core.cancel_source_manager_idx = source_manager_idx
+            task_core.num_dep_sat += 1
 
             self.log.debug(
                 f"received update for task with {task_core._get_id_str()} about a satisfied dependency: satisfied={task_core.num_dep_sat}, total={task_core.num_dep_tot}"
@@ -1462,10 +2479,10 @@ class Manager:
                 self.unexpected_dep_sat[compiled_tuid] = [dep_sat]
             return
 
-        # if all dependencies have been satisfied for this task, launch it and
-        # decrement the number of unstarted sub-tasks for this compiled task
+        # Once every dependency is satisfied, move the task into the ready set
+        # and queue it for launch using the manager's normal ready-task path.
         if task_core.num_dep_sat == task_core.num_dep_tot:
-            self._add_to_map_args_list(task_core)
+            self._enqueue_ready_task(task_core)
 
             work._ready_task_cores[tuid] = task_core
             del work._blocked_task_cores[tuid]
@@ -1480,14 +2497,27 @@ class Manager:
             downstream_compiled_tuid = dep_sat_request.compiled_tuid
             arg_dep_updates = dep_sat_request.arg_dep_updates
             client_id = dep_sat_request.client_id
+            is_raw = dep_sat_request.is_raw
 
-            if upstream_tuid in self._completed_tuids.get(client_id, set()):
+            completed_task_info = self._completed_tuids.get(client_id, {})
+            if upstream_tuid in completed_task_info:
+                completion_info = completed_task_info[upstream_tuid]
                 # The upstream task is already complete; reply immediately.
                 self.log.debug(
                     f"DepSatRequest: upstream {upstream_tuid} already complete, "
                     f"replying immediately for downstream {downstream_tuid} ({downstream_compiled_tuid})"
                 )
-                dep_sat = DepSat(upstream_tuid, downstream_tuid, downstream_compiled_tuid, arg_dep_updates)
+                cancel_reason = TaskCancellationReason.NONE
+                if is_raw and completion_info.raised:
+                    cancel_reason = TaskCancellationReason.UPSTREAM_RAW_FAILURE
+                dep_sat = DepSat(
+                    upstream_tuid,
+                    completion_info.manager_idx,
+                    downstream_tuid,
+                    downstream_compiled_tuid,
+                    arg_dep_updates,
+                    cancel_reason,
+                )
                 reply_q.put(dep_sat)
                 return
             else:
@@ -1497,7 +2527,7 @@ class Manager:
                     f"DepSatRequest: upstream {upstream_tuid} pending, "
                     f"registered downstream {downstream_tuid} ({downstream_compiled_tuid})"
                 )
-                entry = (reply_q, downstream_tuid, downstream_compiled_tuid, arg_dep_updates)
+                entry = (reply_q, downstream_tuid, downstream_compiled_tuid, arg_dep_updates, is_raw)
                 try:
                     self._dep_request_reply_map[upstream_tuid].append(entry)
                 except Exception:
@@ -1505,51 +2535,6 @@ class Manager:
                 return
         except Exception as e:
             self._handle_manager_exception(e, "failed to handle DepSatRequest")
-
-    def _handle_follower_done(self, follower_done: FollowerDone) -> None:
-        """
-        Handle a ``FollowerDone`` sentinel returned by a job follower worker.
-        Decrements the pending-follower count for the job and recycles the
-        job_done_q only after every follower slot has been released, preventing
-        the queue from being handed to a new job while old followers might still
-        hold a reference to it.
-
-        :param follower_done: Contains the ``tuid`` of the completed follower's job.
-        :type follower_done: FollowerDone
-
-        :return: Returns None.
-        :rtype: None
-        """
-        tuid = follower_done.tuid
-        entry = self._pending_followers.get(tuid)
-        if entry is not None:
-            entry[0] -= 1
-            self.log.debug(f"follower done for job tuid={tuid}, {entry[0]} followers pending")
-            if entry[0] == 0:
-                self.cached_queues.append(entry[1])
-                del self._pending_followers[tuid]
-
-    def _handle_host_info(self, host_info: HostInfo) -> None:
-        """
-        A "host info" message lets the manager know that a specific node is available
-        for a job. This function handles the host-info message by adding the hostname
-        to a list of hostnames for the job, and sending the list of hostnames to a worker
-        if all hostnames have been received.
-
-        :param host_info: Contains an availabele``hostname`` and ``tuid`` for a job.
-        :type host_info: HostInfo
-
-        :return: Returns None.
-        :rtype: None
-        """
-        self.log.debug(f"received hostname={host_info.hostname} for task with {host_info.tuid}")
-
-        num_procs, job_done_q, hostname_list = self.job_hostname_lists[host_info.tuid]
-        hostname_list.append(host_info.hostname)
-
-        if len(hostname_list) == num_procs:
-            self.log.debug(f"sending {num_procs} hostnames to worker to start job")
-            job_done_q.put(hostname_list)
 
     def _handle_register_client(self, register_client: RegisterClient) -> None:
         """
@@ -1573,10 +2558,14 @@ class Manager:
         self.log.debug(f"received a registration request")
 
         if client_id in self.active_clients:
-            # each manager should receive this message only once per (non-primary)
+            # each manager should receive this message only once per cloned
             # batch instance, so return an exception back to the client
             e = RuntimeError("cannot register client more than once")
             me = ManagerException(None, e, _get_traceback(), f"client {client_id} is already registered")
+            ret_q.put(me)
+        elif self.destroy_called:
+            e = RuntimeError("cannot register client after destroy has been requested")
+            me = ManagerException(None, e, _get_traceback(), "batch runtime is shutting down")
             ret_q.put(me)
         else:
             self.log.debug(f"registering client {client_id}")
@@ -1599,19 +2588,19 @@ class Manager:
             self.log.debug(f"unregistering client {client_id}")
             self.active_clients.remove(client_id)
 
-    def _handle_join_called(self, join_called: JoinCalled) -> None:
+    def _handle_destroy_called(self, destroy_called: DestroyCalled) -> None:
         """
-        Sets a flag indicating that join has been called by the client.
+        Sets a flag indicating that destroy has been called by some client.
 
-        :param join_called: An empty namedtuple that simply helps dispatch the correct method.
-        :type join_called: JoinCalled
+        :param destroy_called: An empty namedtuple that simply helps dispatch the correct method.
+        :type destroy_called: DestroyCalled
 
         :return: Returns None.
         :rtype: None
         """
-        if not self.join_called:
-            self.log.debug(f"join called")
-            self.join_called = True
+        if not self.destroy_called:
+            self.log.debug("destroy called")
+            self.destroy_called = True
 
     @singledispatchmethod
     def _handle_request(self, item):
@@ -1621,7 +2610,17 @@ class Manager:
     @_handle_request.register
     def _(self, work: Work) -> None:
         try:
-            self._handle_compiled_task(work)
+            if self.is_scheduler and work.manager_idx not in (None, SCHEDULER_MANAGER_IDX):
+                if work.manager_idx < 0 or work.manager_idx >= len(self._subnode_manager_qs):
+                    raise RuntimeError(f"invalid destination manager_idx for work: {work.manager_idx}")
+
+                # Account subnode Work at scheduler routing time so fence()
+                # cannot complete until allocation is released.
+                client_id = work._client_id
+                self._subnode_outstanding[client_id] = self._subnode_outstanding.get(client_id, 0) + 1
+                self._subnode_manager_qs[work.manager_idx].put(work)
+            else:
+                self._handle_compiled_task(work)
         except Exception as e:
             self._handle_manager_exception(
                 e,
@@ -1629,6 +2628,18 @@ class Manager:
                 self.ret_q[work._client_id],
                 work._compiled_result_wrapper.tuid,
             )
+
+    @_handle_request.register
+    def _(self, task: Task) -> None:
+        try:
+            if self.is_scheduler:
+                raise RuntimeError(
+                    "scheduler received unexpected raw Task; client worker should dispatch compiled Work"
+                )
+            else:
+                self.log.debug("subnode manager received unexpected raw Task; ignoring")
+        except Exception as e:
+            self._handle_manager_exception(e, "manager got exception when handling new task")
 
     @_handle_request.register
     def _(self, dep_sat: DepSat) -> None:
@@ -1667,20 +2678,6 @@ class Manager:
             )
 
     @_handle_request.register
-    def _(self, host_info: HostInfo) -> None:
-        try:
-            self._handle_host_info(host_info)
-        except Exception as e:
-            compiled_tuid = host_info.tuid
-            work = self.work_backlog[compiled_tuid]
-            self._handle_manager_exception(
-                e,
-                "manager got exception when handling host-info message",
-                self.ret_q[work._client_id],
-                compiled_tuid,
-            )
-
-    @_handle_request.register
     def _(self, register_client: RegisterClient) -> None:
         try:
             self._handle_register_client(register_client)
@@ -1703,42 +2700,121 @@ class Manager:
             )
 
     @_handle_request.register
-    def _(self, join_called: JoinCalled) -> None:
+    def _(self, destroy_called: DestroyCalled) -> None:
         try:
-            self._handle_join_called(join_called)
+            self._handle_destroy_called(destroy_called)
         except Exception as e:
-            self._handle_manager_exception(e, "manager got exception when handling join-called message")
+            self._handle_manager_exception(e, "manager got exception when handling destroy-called message")
 
     @_handle_request.register
-    def _(self, fence_request: ManagerFenceRequest) -> None:
+    def _(self, fence_request: FenceRequest) -> None:
         try:
-            self._handle_fence_request(fence_request)
+            if self.is_scheduler:
+                self._handle_scheduler_fence_request(fence_request)
+            else:
+                self.log.debug("subnode manager received unexpected FenceRequest; ignoring")
         except Exception as e:
             self._handle_manager_exception(e, "manager got exception when handling fence request")
 
-    def _handle_fence_request(self, fence_request: ManagerFenceRequest) -> None:
-        """
-        Handle a fence request from a client. If the client has no in-flight Work
-        chunks on this manager, reply immediately with FenceComplete; otherwise,
-        record the request and reply when the last Work chunk for this client finishes.
+    @_handle_request.register
+    def _(self, req: CancelRequest) -> None:
+        try:
+            self._handle_cancel_request(req)
+        except Exception as e:
+            self._handle_manager_exception(e, "manager got exception when handling cancel request")
 
-        :param fence_request: Contains the client_id and the queue to reply on.
-        :type fence_request: ManagerFenceRequest
+    @_handle_request.register
+    def _(self, req: SubnodeAllocRequest) -> None:
+        try:
+            if self.is_scheduler:
+                self._handle_subnode_alloc_request(req)
+            else:
+                self.log.debug("subnode manager received unexpected SubnodeAllocRequest; ignoring")
+        except Exception as e:
+            self._handle_manager_exception(e, "manager got exception when handling SubnodeAllocRequest")
 
-        :return: Returns None.
-        :rtype: None
-        """
-        client_id = fence_request.client_id
-        reply_q = fence_request.reply_q
+    @_handle_request.register
+    def _(self, resp: SubnodeAllocResponse) -> None:
+        try:
+            if not self.is_scheduler:
+                self._handle_subnode_alloc_response(resp)
+            else:
+                self.log.debug("scheduler received unexpected SubnodeAllocResponse; ignoring")
+        except Exception as e:
+            self._handle_manager_exception(e, "manager got exception when handling SubnodeAllocResponse")
 
-        if self._pending_task_counts.get(client_id, 0) == 0:
-            reply_q.put(FenceComplete(client_id))
-        else:
-            self._fence_requests[client_id] = reply_q
+    @_handle_request.register
+    def _(self, req: SubnodeFreeRequest) -> None:
+        try:
+            if self.is_scheduler:
+                self._handle_subnode_free_request(req)
+            else:
+                self.log.debug("subnode manager received unexpected SubnodeFreeRequest; ignoring")
+        except Exception as e:
+            self._handle_manager_exception(e, "manager got exception when handling SubnodeFreeRequest")
 
-    def _add_to_async_queue(self, tuid_notification: CompletionNotification) -> None:
-        """Add completion notification (tuid) to the async queue."""
-        self._async_queue.put(tuid_notification)
+    @_handle_request.register
+    def _(self, mnj: MultiNodeJobComplete) -> None:
+        try:
+            if self.is_scheduler:
+                self._handle_mnj_complete(mnj)
+            else:
+                self.log.debug("subnode manager received unexpected MultiNodeJobComplete; ignoring")
+        except Exception as e:
+            self._handle_manager_exception(e, "manager got exception when handling MultiNodeJobComplete")
+
+    @_handle_request.register
+    def _(self, req: ClearFenceState) -> None:
+        try:
+            # These per-client caches are fence-epoch state. Once the client has
+            # observed the fence completion, later fences should start from a
+            # clean view of completed tasks and in-flight work.
+            self._completed_tuids.pop(req.client_id, None)
+            self._pending_task_counts.pop(req.client_id, None)
+        except Exception as e:
+            self._handle_manager_exception(e, "manager got exception when handling ClearFenceState")
+
+    def _add_to_async_queue(self, completion_batch: list[CompletionNotification]) -> None:
+        """Add a completion batch to the async queue."""
+        self._async_queue.put(completion_batch)
+
+    def _should_use_direct_function_launch(self, task_core: TaskCore) -> bool:
+        """Return True when this task should run via manager-owned thread fast-path."""
+        return (
+            self._function_fast_path_enabled
+            and isinstance(task_core, FunctionCore)
+            and not task_core.disable_fast_path
+        )
+
+    def _run_direct_task(self, task_and_args) -> None:
+        """Run one task in a manager-owned thread and enqueue completion."""
+        task_core, args = task_and_args
+        results_ddict, _ = args
+
+        try:
+            completion = _do_task(task_and_args)
+        except Exception as e:
+            tb = _get_traceback()
+
+            # Best effort fallback so manager state can still progress on
+            # unexpected direct-launch failures.
+            try:
+                ddict_manager_idx = _ddict_manager_idx_for_task_manager(task_core.manager_idx)
+                local_results_ddict = results_ddict.manager(ddict_manager_idx)
+                with local_results_ddict:
+                    local_results_ddict[task_core.tuid] = (e, tb, True, "", "")
+            except Exception as write_err:
+                self._handle_manager_exception(
+                    write_err,
+                    "failed to write fast-path task failure result",
+                    self.ret_q.get(task_core.client_id, None),
+                    task_core.tuid,
+                )
+
+            completion = TaskComplete(task_core.tuid, task_core.compiled_tuid, True)
+
+        # Reuse the same ingestion path as pool.map_async callbacks.
+        self._add_to_async_queue([completion])
 
     def _launch_tasks(self) -> None:
         """
@@ -1747,10 +2823,16 @@ class Manager:
         :return: Returns None.
         :rtype: None
         """
-        if len(self._map_args_list) == 0:
+        if not self.is_scheduler:
+            # The pool API still consumes a flat list, so subnode managers drain
+            # the current allocation phase's HEFTY-ordered heap immediately
+            # before dispatch.
+            self._drain_subnode_ready_tasks()
+
+        if len(self._pool_launch_args_list) == 0 and len(self._direct_launch_args_list) == 0:
             return
 
-        num_tasks = len(self._map_args_list)
+        num_tasks = len(self._pool_launch_args_list) + len(self._direct_launch_args_list)
         # chunk_size=1 ensures each task is dispatched to a worker individually, so completed
         # tasks are reported back (via _add_to_async_queue) as soon as possible. A larger
         # chunk_size would bundle multiple tasks onto one worker and execute them sequentially,
@@ -1759,13 +2841,20 @@ class Manager:
         # cost of the user-defined work (functions, processes, MPI jobs).
         chunk_size = 1
 
+        for task_and_args in self._direct_launch_args_list:
+            task_core, _ = task_and_args
+            worker = ExceptionalThread(target=self._run_direct_task, args=(task_and_args,))
+            self._direct_task_threads[task_core.tuid] = worker
+            worker.start()
+
         self.log.debug(f"starting {num_tasks} tasks")
-        self.pool.map_async(
-            _do_task,
-            self._map_args_list,
-            chunk_size,
-            self._add_to_async_queue,
-        )
+        if self._pool_launch_args_list:
+            self.pool.map_async(
+                _do_task,
+                self._pool_launch_args_list,
+                chunk_size,
+                self._add_to_async_queue,
+            )
 
         if not self.disable_telem:
             self.num_running_tasks += self._queued_task_count
@@ -1785,25 +2874,28 @@ class Manager:
         """
         num_tasks = 0
 
-        for tuid_compiled_tuid in tuid_compiled_tuid_list:
-            # FollowerDone sentinels are returned by follower workers (all ranks of an
-            # MPI job except the one that actually ran the ProcessGroup). Defer recycling
-            # the job_done_q until every follower has reported back to avoid the race
-            # where a recycled queue is assigned to a new job while old followers still
-            # hold a reference to it.
-            if isinstance(tuid_compiled_tuid, FollowerDone):
-                self._handle_follower_done(tuid_compiled_tuid)
-                continue
-
+        for completion in tuid_compiled_tuid_list:
             num_tasks += 1
 
-            tuid, compiled_tuid = tuid_compiled_tuid
+            tuid = completion.tuid
+            compiled_tuid = completion.compiled_tuid
             self.log.debug(f"individual task complete: tuid={tuid}, compiled_tuid={compiled_tuid}")
+
+            direct_worker = self._direct_task_threads.pop(tuid, None)
+            if direct_worker is not None:
+                direct_worker.join()
 
             work = self.work_backlog[compiled_tuid]
             task_core = work._ready_task_cores[tuid]
             del work._ready_task_cores[tuid]
             work_client_id = work._client_id
+
+            # On the scheduler, a completed multi-node job means we can return the allocated
+            # nodes to the available pool and check pending fences.
+            if self.is_scheduler and self._is_multi_node_job(task_core):
+                self._handle_mnj_complete(MultiNodeJobComplete(tuid, compiled_tuid, self._mnj_running.get(tuid, [])))
+
+            self._release_running_task(tuid)
 
             if len(work._ready_task_cores) == 0 and len(work._blocked_task_cores) == 0:
                 self.log.debug(f"compiled task complete: {compiled_tuid=}")
@@ -1811,45 +2903,49 @@ class Manager:
                 # notify client that the compiled task is complete
                 del self.work_backlog[compiled_tuid]
 
-                # decrement in-flight count for this client; if it reaches zero and
-                # a fence is pending, clear the per-client completed tuids (the client
-                # will clear dep_frontier / tuid_to_manager_q, so no new DepSatRequests
-                # will reference these tuids) and send FenceComplete back to the client
+                # Decrement this manager's per-client in-flight Work chunk counter.
                 new_count = self._pending_task_counts.get(work_client_id, 1) - 1
                 if new_count == 0:
                     del self._pending_task_counts[work_client_id]
-                    if work_client_id in self._fence_requests:
-                        self._completed_tuids.pop(work_client_id, None)
-                        reply_q = self._fence_requests.pop(work_client_id)
-                        reply_q.put(FenceComplete(work_client_id))
                 else:
                     self._pending_task_counts[work_client_id] = new_count
 
-            # Recycle the queue used for this task. For multi-rank jobs the
-            # job_done_q was already registered in _setup_job so _handle_follower_done
-            # will recycle it once all followers report back; don't touch it here.
+            # task_core.cached_queue is the per-task control queue used for
+            # cancellation. Recycle it after completion so later tasks can
+            # reuse the queue object without inheriting stale cancel messages.
             if task_core.cached_queue is not None:
-                num_procs = getattr(task_core, "num_procs", 1) or 1
-                if num_procs == 1:
-                    self.cached_queues.append(task_core.cached_queue)
+                self._recycle_queue(task_core.cached_queue)
+
+            # Record completion before replying to any late DepSatRequest so
+            # those request handlers can safely reply immediately.
+            if work_client_id not in self._completed_tuids:
+                self._completed_tuids[work_client_id] = {}
+            self._completed_tuids[work_client_id][tuid] = CompletedTaskInfo(
+                task_core.manager_idx,
+                completion.raised,
+            )
 
             # notify any other managers that had requested DepSat for this tuid
             try:
                 reply_list = self._dep_request_reply_map.pop(tuid)
-                for reply_q, downstream_tuid, downstream_compiled_tuid, arg_dep_updates in reply_list:
+                for reply_q, downstream_tuid, downstream_compiled_tuid, arg_dep_updates, is_raw in reply_list:
                     try:
-                        ds = DepSat(tuid, downstream_tuid, downstream_compiled_tuid, arg_dep_updates)
+                        cancel_reason = TaskCancellationReason.NONE
+                        if is_raw and completion.raised:
+                            cancel_reason = TaskCancellationReason.UPSTREAM_RAW_FAILURE
+                        ds = DepSat(
+                            tuid,
+                            task_core.manager_idx,
+                            downstream_tuid,
+                            downstream_compiled_tuid,
+                            arg_dep_updates,
+                            cancel_reason,
+                        )
                         reply_q.put(ds)
                     except Exception:
                         self.log.debug(f"failed to send DepSat for {tuid=} to waiting manager")
             except Exception:
                 pass
-
-            # record that this subtask has completed, keyed by client so each
-            # client's set can be cleared independently when its fence completes
-            if work_client_id not in self._completed_tuids:
-                self._completed_tuids[work_client_id] = set()
-            self._completed_tuids[work_client_id].add(tuid)
 
         if not self.disable_telem:
             self.num_running_tasks -= num_tasks
@@ -1870,9 +2966,11 @@ class Manager:
         """
         self.log.debug(f"+     {task_core._get_id_str()}")
         if isinstance(task_core, JobCore):
-            num_procs, _, hostname_list = self.job_hostname_lists[task_core.tuid]
-            hosts_str = _compress_hostnames(hostname_list)
-            self.log.debug(f"+     --> {len(hostname_list)} out of {num_procs} hosts reserved: {hosts_str}")
+            if task_core.hostname_list is not None:
+                hosts_str = _compress_hostnames(task_core.hostname_list)
+                self.log.debug(f"+     --> {len(task_core.hostname_list)} hosts assigned: {hosts_str}")
+            else:
+                self.log.debug("+     --> hostname assignment pending")
         if task_core.num_dep_tot > 0:
             self.log.debug(f"+     --> deps: {task_core.num_dep_sat}/{task_core.num_dep_tot} satisfied")
 
@@ -1901,7 +2999,7 @@ class Manager:
         self.log.debug(divider)
         self.log.debug(f"| size of backlog={len(self.work_backlog)}")
         self.log.debug(divider)
-        self.log.debug(f"| join called={self.join_called}")
+        self.log.debug(f"| destroy called={self.destroy_called}")
         self.log.debug(divider)
         self.log.debug(f"| pending DepSatRequests={len(self._dep_request_reply_map)}")
 
@@ -1940,6 +3038,10 @@ class Manager:
         :return: Returns None.
         :rtype: None
         """
+        # Subnode managers (idx > 0) use _subnode_has_alloc (an instance attribute)
+        # to track whether they currently hold a node allocation from manager 0.
+        subnode_has_work = False  # True if we queued at least one task this phase
+
         while True:
             # pull items off of the work queue until we either (1) drain the queue, or
             # (2) hit our batch size limit
@@ -1955,9 +3057,25 @@ class Manager:
             except Exception as e:
                 self._handle_manager_exception(e, "failed to get item from work queue")
 
-            # start any queued tasks in the worker pool
+            if self.is_scheduler:
+                try:
+                    self._process_alloc_completions()
+                except Exception as e:
+                    self._handle_manager_exception(e, "failed to process allocation completions")
+
+            # start any queued tasks in the worker pool (subnode managers must hold
+            # an allocation before launching; tasks arriving before then are queued
+            # in _pending_work_chunks by _handle_compiled_task). Subnode managers
+            # stage ready tasks in _subnode_ready_heap until _launch_tasks drains
+            # them into launch queues, so both containers mean the current
+            # allocation phase has performed work and must later release it.
+            if (self._pool_launch_args_list or self._direct_launch_args_list) or (
+                not self.is_scheduler and self._subnode_ready_heap
+            ):
+                subnode_has_work = True
             try:
-                self._launch_tasks()
+                if self.is_scheduler or self._subnode_has_alloc:
+                    self._launch_tasks()
             except Exception as e:
                 for client, compiled_tuid in self._compiled_task_list:
                     self._handle_manager_exception(
@@ -1967,7 +3085,8 @@ class Manager:
                         compiled_tuid,
                     )
             finally:
-                self._map_args_list = []
+                self._pool_launch_args_list = []
+                self._direct_launch_args_list = []
                 self._compiled_task_list = []
                 self._queued_task_count = 0
 
@@ -1982,7 +3101,37 @@ class Manager:
             except Exception as e:
                 self._handle_manager_exception(e, "failed to get item from async results queue")
 
-            if self.join_called and len(self.active_clients) == 0 and len(self.work_backlog) == 0:
+            # Subnode managers: once all in-flight work is done and there are no
+            # more ready tasks, release the node allocation back to manager 0.
+            if (
+                not self.is_scheduler
+                and self._subnode_has_alloc
+                and subnode_has_work
+                and not self._has_ready_work()
+                and len(self.work_backlog) == 0
+            ):
+                try:
+                    scheduler_q = self._subnode_manager_qs[0] if self._subnode_manager_qs else None
+                    if scheduler_q is not None:
+                        phase_client_ids = self._alloc_phase_clients
+                        phase_tuids = self._alloc_phase_tuids
+                        self._alloc_phase_clients = set()
+                        self._alloc_phase_tuids = set()
+                        scheduler_q.put(SubnodeFreeRequest(self.idx, phase_client_ids, phase_tuids))
+                        self._subnode_has_alloc = False
+                        self._subnode_ready_heap.clear()
+                        subnode_has_work = False
+                        self.log.debug(
+                            f"subnode manager {self.idx}: node allocation released, clients={phase_client_ids}, tasks={len(phase_tuids)}"
+                        )
+                        if self._queued_work_chunks:
+                            self._pending_work_chunks = self._queued_work_chunks
+                            self._queued_work_chunks = []
+                            self._send_subnode_alloc_request()
+                except Exception as e:
+                    self._handle_manager_exception(e, "failed to release subnode allocation")
+
+            if self.destroy_called and len(self.active_clients) == 0 and len(self.work_backlog) == 0:
                 break
 
             try:
@@ -1994,9 +3143,22 @@ class Manager:
 
         if not self.disable_telem:
             try:
-                self.dragon_telem.finalize()
+                self.dragon_telem.shutdown()
             except Exception as e:
                 self._handle_manager_exception(e, f"failed to shut down telemetry")
+
+        # Expected invariant: direct-task threads should normally be consumed
+        # by _handle_results; this is a defensive drain for exceptional exits.
+        if self._direct_task_threads:
+            self.log.debug(
+                f"manager {self.idx}: draining {len(self._direct_task_threads)} leftover direct-task thread(s) at shutdown"
+            )
+        for tuid, worker in list(self._direct_task_threads.items()):
+            try:
+                worker.join()
+            except Exception as e:
+                self._handle_manager_exception(e, "failed to join direct-task worker", tuid=tuid)
+        self._direct_task_threads.clear()
 
         try:
             self.log.debug(f"manager shutting down pool")
@@ -2009,7 +3171,428 @@ class Manager:
             try:
                 q.close()
             except Exception as e:
-                self._handle_manager_exception(e, f"failed to close cached job_done queue")
+                self._handle_manager_exception(e, f"failed to close cached queue")
+
+    def _has_ready_work(self) -> bool:
+        """Return True if there are any tasks with ready task cores in the work backlog."""
+        for _, work in self.work_backlog.items():
+            if len(work._ready_task_cores) > 0:
+                return True
+        return False
+
+
+class ClientCompiler:
+    def __init__(
+        self,
+        num_managers: int,
+        manager_qs: list[Queue],
+        physical_cores_per_node: int,
+        log: logging.Logger,
+    ) -> None:
+        self.num_managers = num_managers
+        self.manager_qs = list(manager_qs)
+        self.physical_cores_per_node = physical_cores_per_node
+        self.log = log
+        self._compiled_task_ctr = 0
+        self.dep_frontier: dict = {}
+        self.tuid_to_manager_q: dict[str, Queue] = {}
+
+    def reset(self) -> None:
+        """Clear compile-time state that is carried across batches for one client."""
+        self.dep_frontier = {}
+        self.tuid_to_manager_q = {}
+
+    def _build_current_batch_dep_dag(self, tasks_to_compile: list["Task"]) -> nx.DiGraph:
+        """Build the dependency DAG for the tasks being compiled in the current batch."""
+        dep_dag = nx.DiGraph()
+        current_batch_task_core_index: dict[str, TaskCore] = {}
+
+        for task in tasks_to_compile:
+            dep_dag.add_node(task.core)
+            current_batch_task_core_index[task.core.tuid] = task.core
+
+        for task in tasks_to_compile:
+            for dep_record in task.core.dependencies:
+                upstream_tuid = dep_record.upstream_tuid
+                upstream_task_core = current_batch_task_core_index.get(upstream_tuid)
+                if upstream_task_core is not None:
+                    dep_dag.add_edge(upstream_task_core, task.core)
+                elif upstream_tuid not in self.tuid_to_manager_q:
+                    self.log.debug(
+                        f"failed to add HEFT edge for upstream_tuid={upstream_tuid} downstream_tuid={task.core.tuid}: upstream node not found"
+                    )
+
+        return dep_dag
+
+    def _subnode_manager_idx_for_partition(self, part_idx: int, subnode_offset: int, num_subnode_managers: int) -> int:
+        """Map a partition index to a concrete subnode manager, honoring the batch offset."""
+        return (subnode_offset + part_idx) % num_subnode_managers
+
+    def _manager_idx_for_queue(self, manager_q) -> Optional[int]:
+        """Resolve a manager queue back to its stable manager index, if known."""
+        for queue_idx, queue in enumerate(self.manager_qs):
+            if queue is manager_q or queue == manager_q:
+                return SCHEDULER_MANAGER_IDX if queue_idx == 0 else queue_idx - 1
+
+        return None
+
+    def _task_compute_cost(self, task_core: TaskCore) -> int:
+        """Return the coarse HEFT compute-cost estimate used for placement and weighting."""
+        if isinstance(task_core, FunctionCore):
+            return 1
+
+        if isinstance(task_core, JobCore):
+            if getattr(task_core, "is_parallel", True):
+                num_procs = getattr(task_core, "num_procs", 0) or 1
+                return 100 * num_procs
+
+            return 1
+
+        return 1
+
+    def assign_heft_weights(self, dep_dag: nx.DiGraph) -> None:
+        """
+        Assign HEFTY weights and deterministic topological tie-break order.
+
+        The forward pass records a stable topological index for each task. The
+        reverse pass then computes the critical-path weight used by both
+        partitioning/task placement and subnode ready-task launch order.
+        """
+        if dep_dag.number_of_nodes() == 0:
+            return
+
+        topological_order = list(nx.lexicographical_topological_sort(dep_dag, key=lambda tc: tc.tuid))
+        for order_idx, task_core in enumerate(topological_order):
+            task_core.heft_topo_order = order_idx
+
+        for task_core in reversed(topological_order):
+            successor_weights = [successor.weight for successor in dep_dag.successors(task_core)]
+            task_core.weight = self._task_compute_cost(task_core) + (max(successor_weights) if successor_weights else 0)
+
+    def hefty_partition(
+        self, tasks_to_compile: list["Task"], dep_dag: nx.DiGraph, subnode_offset: int = 0
+    ) -> list[set["TaskCore"]]:
+        # Partition only the work that can run on subnode managers. Multi-node
+        # jobs stay on the scheduler path and are handled separately later in
+        # compile(), so they must not consume subnode partition slots here.
+        num_subnode_managers = self.num_managers - 1
+        if num_subnode_managers <= 0:
+            raise RuntimeError("Batch requires at least one subnode manager")
+
+        subnode_task_cores = [
+            task.core for task in tasks_to_compile if not _is_multi_node_job(task.core, self.physical_cores_per_node)
+        ]
+
+        if not subnode_task_cores:
+            return []
+
+        # Use at most one partition per available subnode manager, but avoid
+        # creating more partitions than tasks. Empty trailing partitions are
+        # removed later once placement finishes.
+        num_partitions = min(len(subnode_task_cores), num_subnode_managers)
+        partitions = [set() for _ in range(num_partitions)]
+
+        # Track the running compute load assigned to each partition. HEFT-style
+        # placement here is intentionally approximate: we do not simulate exact
+        # worker timelines, we just keep a cheap scalar load estimate that can
+        # balance critical-path work across managers.
+        partition_loads = [0 for _ in range(num_partitions)]
+
+        # Remember where tasks from this compile batch were placed so children
+        # can prefer the same manager and avoid unnecessary result-lookup hops.
+        placed_partitions: dict[str, int] = {}
+
+        # Multi-node jobs in the current compile batch are scheduler-owned. We
+        # treat them as upstream parents on the scheduler when computing the
+        # communication penalty for subnode tasks that depend on them.
+        current_batch_mnj_tuids = {
+            task.core.tuid for task in tasks_to_compile if _is_multi_node_job(task.core, self.physical_cores_per_node)
+        }
+
+        # Place higher-priority tasks first so that critical-path work gets the
+        # first choice of managers. _task_heft_priority_key already bakes in the
+        # reverse-pass HEFT weight plus deterministic tie-break information.
+        ordered_task_cores = sorted(
+            subnode_task_cores,
+            key=_task_heft_priority_key,
+        )
+
+        def _manager_idx_for_parent(upstream_tuid: str) -> Optional[int]:
+            # Prefer placements decided in this compile pass, because those are
+            # the most accurate and let same-batch parent/child pairs cluster on
+            # one manager when possible.
+            placed_partition = placed_partitions.get(upstream_tuid)
+            if placed_partition is not None:
+                return self._subnode_manager_idx_for_partition(
+                    placed_partition, subnode_offset, num_subnode_managers=num_subnode_managers
+                )
+
+            # Current-batch multi-node jobs are started by the scheduler, not a subnode
+            # manager, so treat them as coming from the scheduler.
+            if upstream_tuid in current_batch_mnj_tuids:
+                return SCHEDULER_MANAGER_IDX
+
+            # Otherwise fall back to the remembered placement from a prior batch
+            # compile, if one exists.
+            manager_q = self.tuid_to_manager_q.get(upstream_tuid)
+            if manager_q is None:
+                return None
+
+            return self._manager_idx_for_queue(manager_q)
+
+        for task_core in ordered_task_cores:
+            # The partition score combines three ideas:
+            # 1. current estimated load on that partition,
+            # 2. compute cost of the task itself,
+            # 3. a simple communication penalty for upstream argument producers
+            #    that live on other managers.
+            #
+            # This is intentionally lightweight. We want something that respects
+            # critical-path order and preserves locality without turning compile()
+            # into a full scheduling simulation.
+            # Only argument dependencies need result locality here. Pure data
+            # access dependencies affect execution ordering, but they do not
+            # require the downstream task to fetch an upstream Python result
+            # tuple for argument substitution.
+            arg_parent_tuids = {
+                dep_record.upstream_tuid
+                for dep_record in task_core.dependencies
+                if dep_record.origin == DependencyOrigin.ARGUMENT
+            }
+            best_partition = None
+            best_key = None
+            base_cost = self._task_compute_cost(task_core)
+
+            for part_idx in range(num_partitions):
+                manager_idx = self._subnode_manager_idx_for_partition(
+                    part_idx, subnode_offset, num_subnode_managers=num_subnode_managers
+                )
+                comm_penalty = 0
+                ddict_manager_idx = _ddict_manager_idx_for_task_manager(manager_idx)
+
+                # Penalize managers that would force this task to consume
+                # upstream argument values from elsewhere. The penalty is coarse
+                # by design: a simple per-parent increment is enough to bias
+                # placement toward colocated argument-passing chains without
+                # overfitting to uncertain runtime costs. Compare in results-ddict
+                # space rather than raw logical-manager space: scheduler-owned
+                # multi-node jobs still publish results through ddict manager 0.
+                if arg_parent_tuids:
+                    for upstream_tuid in arg_parent_tuids:
+                        parent_manager_idx = _manager_idx_for_parent(upstream_tuid)
+                        if parent_manager_idx is not None and (
+                            _ddict_manager_idx_for_task_manager(parent_manager_idx) != ddict_manager_idx
+                        ):
+                            comm_penalty += 1
+
+                load = partition_loads[part_idx]
+                # Compare candidate partitions lexicographically so we first
+                # minimize estimated finish cost, then communication, then raw
+                # load, and finally use partition index as a deterministic tie
+                # breaker.
+                candidate_key = (load + base_cost + comm_penalty, comm_penalty, load, part_idx)
+                if best_key is None or candidate_key < best_key:
+                    best_partition = part_idx
+                    best_key = candidate_key
+
+            if best_partition is None:
+                raise RuntimeError(f"failed to place subnode task {task_core.tuid}")
+
+            # Commit the winning placement and update the partition's running
+            # load so later tasks see the new balance state.
+            partitions[best_partition].add(task_core)
+            partition_loads[best_partition] += base_cost
+            placed_partitions[task_core.tuid] = best_partition
+
+            self.log.debug(
+                f"placed subnode task tuid={task_core.tuid} on manager={self._subnode_manager_idx_for_partition(best_partition, subnode_offset, num_subnode_managers=num_subnode_managers)} "
+                f"load={partition_loads[best_partition]} score={best_key[0]}"
+            )
+
+        # Drop any unused partitions at the tail so callers only see the
+        # manager groups that actually received work.
+        while partitions and not partitions[-1]:
+            partitions.pop()
+
+        self.log.debug(
+            "HEFTY partition loads: "
+            + ", ".join(
+                f"manager {self._subnode_manager_idx_for_partition(part_idx, subnode_offset, num_subnode_managers=num_subnode_managers)}={partition_loads[part_idx]}"
+                for part_idx in range(len(partitions))
+            )
+        )
+
+        return partitions
+
+    def compile(self, tasks_to_compile: list["Task"], client_id: int, name: Optional[str] = None) -> "Task":
+        if not isinstance(tasks_to_compile, list):
+            raise RuntimeError(f"tasks_to_compile must be a list of tasks: {tasks_to_compile=}")
+        else:
+            num_tasks = len(tasks_to_compile)
+            if num_tasks == 0:
+                raise RuntimeError("cannot compile an empty list of tasks")
+            elif not isinstance(tasks_to_compile[0], Task):
+                raise RuntimeError(f"tasks_to_compile must be a list of tasks: {tasks_to_compile[0]=}")
+
+        compiled_task_tuid = f"compiled-{client_id}-{self._compiled_task_ctr}"
+        self._compiled_task_ctr += 1
+        compiled_task_core = TaskCore(compiled_task_tuid, client_id, name, None)
+        compiled_task = Task(compiled_task_core, None, compiled=True)
+        current_batch_task_cores: set[TaskCore] = set()
+
+        for task in tasks_to_compile:
+            compiled_task.num_subtasks += 1
+            task.core.compiled_tuid = compiled_task.core.tuid
+            task._compiled_task = compiled_task
+            current_batch_task_cores.add(task.core)
+
+            for kvs_and_key, task_and_access_type in task.accesses.items():
+                task_obj, access_type = task_and_access_type
+
+                if kvs_and_key not in self.dep_frontier:
+                    if access_type == AccessType.WRITE:
+                        write_before_read = task_obj
+                    else:
+                        write_before_read = None
+
+                    self.dep_frontier[kvs_and_key] = FrontierInfo([task_obj], access_type, write_before_read)
+                    continue
+
+                frontier_info = self.dep_frontier[kvs_and_key]
+                prev_task_list, prev_access_type, write_before_read = frontier_info
+
+                if prev_access_type == AccessType.READ:
+                    if access_type == AccessType.READ:
+                        if write_before_read is not None:
+                            task_obj._depends_on(
+                                task=write_before_read,
+                                origin=DependencyOrigin.DATA_ACCESS,
+                                is_raw=True,
+                            )
+
+                        prev_task_list.append(task_obj)
+                    elif access_type == AccessType.WRITE:
+                        for prev_read in prev_task_list:
+                            task_obj._depends_on(
+                                task=prev_read,
+                                origin=DependencyOrigin.DATA_ACCESS,
+                                is_raw=False,
+                            )
+
+                        self.dep_frontier[kvs_and_key] = FrontierInfo([task_obj], access_type, task_obj)
+                else:
+                    if prev_access_type != AccessType.WRITE:
+                        raise RuntimeError("invalid access mode")
+
+                    if access_type == AccessType.READ:
+                        task_obj._depends_on(
+                            task=prev_task_list[0],
+                            origin=DependencyOrigin.DATA_ACCESS,
+                            is_raw=True,
+                        )
+                        self.dep_frontier[kvs_and_key] = FrontierInfo([task_obj], access_type, write_before_read)
+                    else:
+                        task_obj._depends_on(
+                            task=prev_task_list[0],
+                            origin=DependencyOrigin.DATA_ACCESS,
+                            is_raw=False,
+                        )
+                        self.dep_frontier[kvs_and_key] = FrontierInfo([task_obj], access_type, task_obj)
+
+        current_batch_dep_dag = self._build_current_batch_dep_dag(tasks_to_compile)
+        self.assign_heft_weights(current_batch_dep_dag)
+        num_subnode_managers = self.num_managers - 1
+        if num_subnode_managers <= 0:
+            raise RuntimeError("Batch requires at least one subnode manager")
+
+        # Batch startup always provisions one scheduler plus one subnode manager
+        # per requested node. The compiler relies on that invariant so every
+        # non-multi-node task can be placed onto a concrete subnode manager.
+        subnode_offset = random.randrange(num_subnode_managers)
+        compiled_task._manager_offset = subnode_offset
+
+        self.log.debug("partitioning the dependency graph")
+        subnode_partitions = self.hefty_partition(
+            tasks_to_compile, current_batch_dep_dag, subnode_offset=subnode_offset
+        )
+        mnj_partition: set["TaskCore"] = {
+            task.core for task in tasks_to_compile if _is_multi_node_job(task.core, self.physical_cores_per_node)
+        }
+
+        self.log.debug(
+            f"compiled_tuid={compiled_task.core.tuid}: {len(tasks_to_compile)} task(s) "
+            f"-> {len(subnode_partitions)} subnode partition(s)"
+            + (f", {len(mnj_partition)} multi-node job(s)" if mnj_partition else "")
+        )
+
+        scheduler_q = self.manager_qs[0]
+
+        for part_idx, task_set in enumerate(subnode_partitions):
+            subnode_idx = self._subnode_manager_idx_for_partition(part_idx, subnode_offset, num_subnode_managers)
+            manager_q = self.manager_qs[subnode_idx + 1]
+            for task_core in task_set:
+                task_core.manager_idx = subnode_idx
+                self.tuid_to_manager_q[task_core.tuid] = manager_q
+
+        for task_core in mnj_partition:
+            task_core.manager_idx = SCHEDULER_MANAGER_IDX
+            self.tuid_to_manager_q[task_core.tuid] = scheduler_q
+
+        current_batch_task_core_index = {task_core.tuid: task_core for task_core in current_batch_task_cores}
+        for task_core in current_batch_task_cores:
+            task_core.upstream_routes = []
+            task_core.downstream_routes = []
+
+        for task in tasks_to_compile:
+            task_core = task.core
+            downstream_q = self.tuid_to_manager_q.get(task_core.tuid)
+            if downstream_q is None:
+                raise RuntimeError(f"failed to find manager queue for task {task_core.tuid}")
+
+            for dep_record in task_core.dependencies:
+                upstream_tuid = dep_record.upstream_tuid
+                arg_dep_updates = dep_record.arg_dep_updates
+                upstream_q = self.tuid_to_manager_q.get(upstream_tuid)
+                if upstream_q is None:
+                    raise RuntimeError(
+                        f"failed to find manager queue for upstream task {upstream_tuid} while compiling dependency for task {task_core.tuid}"
+                    )
+
+                upstream_task_core = current_batch_task_core_index.get(upstream_tuid)
+                is_raw = dep_record.is_raw
+                if upstream_task_core is not None:
+                    upstream_task_core.downstream_routes.append(
+                        DependencyNotificationRoute(downstream_q, task_core.tuid, arg_dep_updates, is_raw)
+                    )
+                else:
+                    task_core.upstream_routes.append(
+                        DependencyRequestRoute(upstream_q, upstream_tuid, arg_dep_updates, is_raw)
+                    )
+
+        compiled_task.subnode_work_chunks = []
+        for part_idx, task_set in enumerate(subnode_partitions):
+            subnode_idx = self._subnode_manager_idx_for_partition(part_idx, subnode_offset, num_subnode_managers)
+            manager_q = self.manager_qs[subnode_idx + 1]
+            work = Work(
+                task_set,
+                client_id,
+                compiled_task.core.tuid,
+                manager_q=manager_q,
+                manager_idx=subnode_idx,
+            )
+            compiled_task.subnode_work_chunks.append(work)
+
+        compiled_task.mnj_work_chunk = None
+        if mnj_partition:
+            compiled_task.mnj_work_chunk = Work(
+                mnj_partition,
+                client_id,
+                compiled_task.core.tuid,
+                manager_q=scheduler_q,
+                manager_idx=SCHEDULER_MANAGER_IDX,
+            )
+
+        return compiled_task
 
 
 def _get_timeout_val(timeout_dict: Optional[dict]) -> float:
@@ -2650,8 +4233,9 @@ class BatchTopology:
 
     Returned by :py:meth:`Batch.topology`.
 
-    Each manager process is co-located on the first node of its worker pool.
-    All physical cores on every pool node are available as workers; no core is
+    The scheduler runs separately on the client host. Each requested
+    node contributes one worker pool and one colocated subnode manager. All
+    physical cores on every pool node are available as workers; no core is
     reserved for the manager process.
 
     Hostnames in the string representation are compressed into Slurm-style
@@ -2663,24 +4247,32 @@ class BatchTopology:
     def __init__(
         self,
         total_nodes: int,
+        scheduler_hostname: str,
         manager_hostnames: list[str],
         pool_hostnames: list[list[str]],
         workers_per_pool: list[int],
     ) -> None:
         self.total_nodes = total_nodes
         """Total number of nodes used by this Batch instance."""
+        self.scheduler_hostname = scheduler_hostname
+        """Hostname where the dedicated scheduler runs."""
         self.manager_hostnames = manager_hostnames
-        """Hostname of the pool node where each manager process is co-located
-        (the first node of the respective pool)."""
+        """Hostname of each subnode manager's colocated pool node."""
         self.pool_hostnames = pool_hostnames
         """List of hostname-lists, one inner list per worker pool."""
         self.workers_per_pool = workers_per_pool
         """Per-pool worker counts (physical cores x nodes in that pool)."""
+        self.total_managers = 1 + len(manager_hostnames)
+        """Total number of managers, including the dedicated scheduler."""
 
     def __str__(self) -> str:
         lines = ["Batch Topology:"]
         lines.append(f"  Total nodes  : {self.total_nodes}")
-        lines.append(f"  Worker pools : {len(self.pool_hostnames)} pool(s) (manager co-located on first pool node)")
+        lines.append(
+            f"  Managers     : {self.total_managers} total (1 scheduler + {len(self.manager_hostnames)} subnode)"
+        )
+        lines.append(f"  Scheduler    : {self.scheduler_hostname}")
+        lines.append(f"  Worker pools : {len(self.pool_hostnames)} pool(s) (1 dedicated subnode manager per pool)")
         for i, (hostnames, wpp, mgr_host) in enumerate(
             zip(self.pool_hostnames, self.workers_per_pool, self.manager_hostnames)
         ):
@@ -2692,6 +4284,7 @@ class BatchTopology:
         total_workers = sum(self.workers_per_pool)
         return (
             f"BatchTopology(total_nodes={self.total_nodes}, "
+            f"total_managers={self.total_managers}, "
             f"num_pools={len(self.pool_hostnames)}, "
             f"total_workers={total_workers})"
         )
@@ -2707,6 +4300,8 @@ class Batch:
         num_nodes: Optional[int] = None,
         pool_nodes: Optional[int] = None,
         disable_telem: bool = False,
+        scheduler_workers: Optional[int] = None,
+        results_ddict_mem: Optional[int] = None,
     ) -> None:
         """
         Create a Batch instance for orchestrating functions, executables, and parallel applications
@@ -2715,13 +4310,19 @@ class Batch:
         :param num_nodes: Number of nodes to use for this Batch instance.  Defaults to all nodes
             in the allocation.  Values larger than the allocation are silently clamped.
         :type num_nodes: Optional[int]
-        :param pool_nodes: Number of nodes in each worker pool (one pool per manager).  Defaults
-            to 1.  Each pool node contributes ``node.num_cpus // 2`` workers (one per physical
-            core).  The manager process for each pool is co-located on the pool's first node
-            and does not reserve a core from the pool.
+        :param pool_nodes: Reserved for future worker-pool grouping support. The current
+            implementation overrides this to ``1`` so each requested node gets its own
+            subnode manager and worker pool.
         :type pool_nodes: Optional[int]
         :param disable_telem: Indicates if telemetry should be disabled for this Batch instance. Defaults to False.
         :type disable_telem: bool
+        :param scheduler_workers: Number of workers in the scheduler (manager 0)'s local
+            worker pool. Defaults to the total number of nodes in the allocation (one worker per
+            node). Increase this to allow more concurrent multi-node jobs.
+        :type scheduler_workers: Optional[int]
+        :param results_ddict_mem: Total memory in bytes to allocate for the Batch-owned results
+            DDict. When omitted, Batch allocates one gibibyte per requested node.
+        :type results_ddict_mem: Optional[int]
 
         .. highlight:: python
         .. code-block:: python
@@ -2760,13 +4361,16 @@ class Batch:
                 except Exception as e:
                     print(f"gpu_matmul failed with the following exception: {e}")
 
-            batch.close()
             batch.join()
+            batch.destroy()
 
 
         :return: Returns None.
         :rtype: None
         """
+        if results_ddict_mem is not None and results_ddict_mem <= 0:
+            raise ValueError("results_ddict_mem must be a positive integer number of bytes")
+
         # ------------------------------------------------------------------ #
         # Node discovery and placement decisions                             #
         # ------------------------------------------------------------------ #
@@ -2778,6 +4382,8 @@ class Batch:
         # Clamp requested node count to what is actually available.
         if num_nodes is None or num_nodes > total_available:
             num_nodes = total_available
+        # Batch always keeps at least one requested node in play, which in turn
+        # guarantees one subnode manager alongside the dedicated scheduler.
         num_nodes = max(1, num_nodes)
 
         node_objs = all_node_objs[:num_nodes]
@@ -2786,71 +4392,75 @@ class Batch:
         # all nodes; dividing each node's logical CPU count by 2 gives physical cores.
         cpus_per_node = max(1, node_objs[0].num_cpus // 2)
 
-        # pool_nodes: how many nodes form one worker pool.
+        # pool_nodes is intentionally forced to one node per pool for now.
+        # The current topology promises one dedicated subnode manager per
+        # requested node, plus a separate scheduler colocated with the Batch
+        # allocation rather than the creating client.
+        # Keeping the parameter but overriding it avoids exposing partially
+        # implemented multi-node pool semantics through the public API.
         if pool_nodes is None:
             pool_nodes = 1
-        pool_nodes = max(1, pool_nodes)
-
-        # All nodes are pool nodes.  Each manager process is co-located on the
-        # first node of its own pool and does not reserve a core from the pool.
-        pool_nodes_eff = min(pool_nodes, num_nodes)
-        num_managers = max(1, num_nodes // pool_nodes_eff)
-
-        # Distribute any remainder nodes to the first pools so every node is used.
-        remainder = num_nodes - num_managers * pool_nodes_eff
+        pool_nodes = 1
 
         # Each pool node contributes cpus_per_node workers; no core reservation.
         workers_per_node_in_pool = cpus_per_node
 
-        pool_node_huids_list: list[list[int]] = []
-        node_offset = 0
-        for pm_idx in range(num_managers):
-            this_pool_nodes = pool_nodes_eff + (1 if pm_idx < remainder else 0)
-            pool_node_huids_list.append([n.h_uid for n in node_objs[node_offset : node_offset + this_pool_nodes]])
-            node_offset += this_pool_nodes
-
-        # Each manager runs on the first node of its own pool.
-        manager_node_objs = [Node(pool[0]) for pool in pool_node_huids_list]
+        # The scheduler is a dedicated extra manager process that runs on the
+        # first Batch node. Each requested node gets its own one-node worker
+        # pool and subnode manager.
+        num_managers = num_nodes + 1
+        pool_node_huids_list: list[list[int]] = [[]]
+        pool_node_huids_list.extend([[n.h_uid] for n in node_objs])
+        subnode_manager_node_objs = [Node(pool[0]) for pool in pool_node_huids_list[1:]]
+        scheduler_node_obj = node_objs[0]
+        self._scheduler_hostname = scheduler_node_obj.hostname
+        self._scheduler_node_huid = scheduler_node_obj.h_uid
 
         # Publish node topology for use by _setup_managers and topology().
         self._node_objs = node_objs
-        self._manager_node_objs = manager_node_objs
+        self._subnode_manager_node_objs = subnode_manager_node_objs
         self._pool_node_huids_list = pool_node_huids_list
         self._cpus_per_node = cpus_per_node
         self._workers_per_node_in_pool = workers_per_node_in_pool
 
-        # Use the first pool's node count as the representative worker count.
-        self.num_workers = workers_per_node_in_pool * (len(pool_node_huids_list[0]) if pool_node_huids_list else 1)
+        # One worker pool per requested node.
+        self.num_workers = workers_per_node_in_pool
         self.num_managers = num_managers
 
-        self.work_q = LocalQueue(maxsize=manager_work_queue_max_batch_size)
+        # All node hostnames, used by the scheduler for node allocation.
+        self._all_node_hostnames: list[str] = [n.hostname for n in node_objs]
 
-        # this is the primary client and responsible for cleanup
-        self.client_id = 0
+        # Scheduler workers: number of workers in manager 0's pool. Defaults to
+        # total node count (one worker per node for concurrent multi-node jobs).
+        self._scheduler_workers: int = scheduler_workers if scheduler_workers is not None else num_nodes
+
+        # Work submission queue; bound to manager 0's queue in _setup_managers().
+        self.work_q = None
+
+        # Every Batch handle registers through the same client path. The
+        # shared runtime stays alive until some client explicitly calls
+        # destroy().
+        self.client_id: Optional[int] = None
         self.manager_qs = []
-        self.tuid_to_manager_q = {}
         self.grp = None
-        self.dep_frontier = {}
+        self._serialized_grp = None
 
-        self.stop_event = threading.Event()
-        self.work_q_handler_thread = threading.Thread(target=self._handle_work_requests, daemon=True)
-        self.work_q_handler_thread.start()
-
-        # these flags are only used by the primary client, which is responsible for bringup and teardown
+        # These flags are local to this client handle.
         self.closed = False
+        self.destroyed = False
         self.terminated = False
-        self.joined = False
 
         self.disable_telem = disable_telem
 
         # Create a distributed dict to store task results keyed by tuid.
-        # One DDict manager per Batch node, with one gigabyte of memory each.
+        # One DDict manager per Batch node, with one gigabyte of memory each by default.
         one_gig = 1024**3
+        results_ddict_total_mem = results_ddict_mem if results_ddict_mem is not None else (num_nodes * one_gig)
 
         self.results_ddict = DDict(
             n_nodes=num_nodes,
             managers_per_node=1,
-            total_mem=(num_nodes * one_gig),
+            total_mem=results_ddict_total_mem,
             wait_for_keys=True,
             working_set_size=2,
             name=str(uuid1()),
@@ -2861,19 +4471,27 @@ class Batch:
         self.log.debug(str(self.topology()))
 
         self._setup_managers()
+        self._init_client_compiler()
+        self._register()
+        self._start_client_request_worker()
 
     def __del__(self) -> None:
         """
-        Non-primary clients must close the batch if they haven't already done so.
+        Close this client handle if it has not already been closed.
 
         :return: Returns None.
         :rtype: None
         """
-        if not self.closed:
-            self._unregister()
+        if getattr(self, "closed", True):
+            return
 
-        if self.client_id == primary_client_id and not (self.joined or self.terminated):
-            self.terminate()
+        if not self.closed:
+            try:
+                self._flush_client_request_worker()
+                self._stop_client_request_worker()
+            except Exception:
+                pass
+            self._unregister()
 
     def __setstate__(self, state) -> None:
         """
@@ -2887,32 +4505,62 @@ class Batch:
 
         # update attributes that are unique to this batch instance
         self._set_unique_attrs()
+        self._init_client_compiler()
 
         # register this client with the managers
         self._register()
+        self._start_client_request_worker()
+
+    def __getstate__(self) -> dict:
+        state = self.__dict__.copy()
+        state.pop("ret_q", None)
+        state.pop("_client_request_q", None)
+        state.pop("_client_request_thread", None)
+        state.pop("_client_request_worker_exc", None)
+        state.pop("client_compiler", None)
+        state.pop("log", None)
+        return state
 
     def _setup_managers(self) -> None:
         """
-        Creates the managers for a batch, along with the process group for them.
-        This should only be called by the primary client.
+        Creates the managers for a batch.
+
+        The scheduler queue lives at ``manager_qs[0]``. Logical task
+        ``manager_idx`` values use ``-1`` for scheduler-owned work and
+        ``0..n-1`` for subnode managers. This should only be called by the
+        handle that owns runtime bringup.
 
         :return: Returns None.
         :rtype: None
         """
         self.log.debug(f"setting up managers")
 
+        # We need manager_qs[0] to exist so that subnode managers can reference
+        # it when sending SubnodeAllocRequest messages. The scheduler queue and
+        # process are placed on the first Batch allocation node so the runtime
+        # does not depend on the creating client's host.
+        scheduler_hostname = self._scheduler_hostname
+        scheduler_q = Queue(
+            maxsize=manager_work_queue_maxsize,
+            block_size=default_block_size,
+            policy=Policy(
+                placement=Policy.Placement.HOST_NAME,
+                host_name=scheduler_hostname,
+            ),
+        )
+
+        # First pass: allocate work queues for logical subnode managers 0..n-1
+        subnode_managers = []
+        subnode_manager_qs: list[Queue] = []
+
         self.grp = ProcessGroup(restart=False)
-        managers = []
 
-        for idx in range(self.num_managers):
-            pool_node_huids = self._pool_node_huids_list[idx]
-
-            # Manager process is co-located on the first node of its pool.
+        for queue_idx in range(1, self.num_managers):
+            manager_idx = queue_idx - 1
+            pool_node_huids = self._pool_node_huids_list[queue_idx]
             manager_hostname = Node(pool_node_huids[0]).hostname
             manager_node_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=manager_hostname)
 
-            # Place the manager's work queue on the same node as the manager process
-            # so that queue operations stay local and avoid cross-node traffic.
             manager_q = Queue(
                 maxsize=manager_work_queue_maxsize,
                 block_size=default_block_size,
@@ -2922,11 +4570,10 @@ class Batch:
                 ),
             )
 
-            # Worker count for this manager is determined by its pool's node count.
             num_workers_this_manager = len(pool_node_huids) * self._workers_per_node_in_pool
 
-            manager = Manager(
-                idx,
+            subnode_manager = Manager(
+                manager_idx,
                 num_workers_this_manager,
                 manager_q,
                 self.ret_q,
@@ -2934,42 +4581,86 @@ class Batch:
                 pool_node_huids=pool_node_huids,
                 physical_cores_per_node=self._workers_per_node_in_pool,
                 disable_telem=self.disable_telem,
+                is_scheduler=False,
+                # Pass the scheduler queue so the subnode manager can send
+                # SubnodeAllocRequest / SubnodeFreeRequest messages.
+                subnode_manager_qs=[scheduler_q],
             )
-            managers.append(manager)
-            self.manager_qs.append(manager.work_q)
+            subnode_managers.append(subnode_manager)
+            subnode_manager_qs.append(manager_q)
 
             self.grp.add_process(
                 nproc=1,
                 template=ProcessTemplate(
                     target=_bootstrap_manager,
-                    args=(manager.work_q,),
+                    args=(manager_q,),
                     policy=manager_node_policy,
                 ),
             )
+
+        # Build the scheduler (scheduler queue is manager_qs[0])
+        # ------------------------------------------------------
+        # Publish manager_qs: index 0 = scheduler queue, indices 1-n = subnode queues.
+        manager_qs = [scheduler_q] + subnode_manager_qs
+
+        scheduler_manager = Manager(
+            SCHEDULER_MANAGER_IDX,
+            self._scheduler_workers,
+            scheduler_q,
+            self.ret_q,
+            self.results_ddict,
+            pool_node_huids=[self._scheduler_node_huid],
+            physical_cores_per_node=self._workers_per_node_in_pool,
+            disable_telem=self.disable_telem,
+            is_scheduler=True,
+            all_node_hostnames=self._all_node_hostnames,
+            subnode_manager_qs=subnode_manager_qs,
+        )
+        self.manager_qs = manager_qs
+        self.work_q = scheduler_q
+
+        # Start the ProcessGroup for all managers (including scheduler)
+        # -------------------------------------------------------------
+        # Add the scheduler as a process placed on the first Batch node so the
+        # scheduler runs independently of the creating client process.
+        scheduler_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=scheduler_hostname)
+        self.grp.add_process(
+            nproc=1,
+            template=ProcessTemplate(
+                target=_bootstrap_manager,
+                args=(scheduler_q,),
+                policy=scheduler_policy,
+            ),
+        )
 
         self.log.debug(f"initializing and starting the process group of managers")
         self.grp.init()
         self.grp.start()
 
-        # send the manager objects to start the bootstrap
-        for manager, manager_q in zip(managers, self.manager_qs):
-            manager_q.put(manager)
+        # Bootstrap each subnode manager by sending it to its own work queue.
+        for subnode_mgr, mgr_q in zip(subnode_managers, subnode_manager_qs):
+            mgr_q.put(subnode_mgr)
 
             if self.log.isEnabledFor(logging.DEBUG):
-                pool_node_huids = self._pool_node_huids_list[manager.idx]
+                pool_node_huids = self._pool_node_huids_list[subnode_mgr.idx + 1]
                 mgr_host = Node(pool_node_huids[0]).hostname
                 pool_hosts = _compress_hostnames([Node(h).hostname for h in pool_node_huids])
-
                 self.log.debug(
-                    f"  manager {manager.idx}: process on {mgr_host}, "
-                    f"pool={pool_hosts} ({manager.num_workers} workers)"
+                    f"  subnode manager {subnode_mgr.idx}: process on {mgr_host}, "
+                    f"pool={pool_hosts} ({subnode_mgr.num_workers} workers)"
                 )
+
+        # Bootstrap the scheduler by sending it to its scheduler queue.
+        scheduler_q.put(scheduler_manager)
+        self.log.debug(f"scheduler: {self._scheduler_workers} worker(s) on {scheduler_hostname} (process)")
 
     def _set_unique_attrs(self) -> None:
         """
         Set manager attributes that are unique to this client (most are generic and apply to all clients).
         """
         self.closed = False
+        self._task_ctr = 0
+        self.client_id = None
         # Pin the return queue to the node where this client is running so that
         # managers sending results back incur only a single hop.
         client_hostname = current().hostname
@@ -2981,7 +4672,212 @@ class Batch:
                 host_name=client_hostname,
             ),
         )
+        self._client_request_q = LocalQueue()
+        self._client_request_thread = None
+        self._client_request_worker_exc = None
+        self.client_compiler = None
         self.log = _setup_logging("client")
+
+    def _init_client_compiler(self) -> None:
+        if not self.manager_qs:
+            return
+
+        self.client_compiler = ClientCompiler(
+            num_managers=self.num_managers,
+            manager_qs=self.manager_qs,
+            physical_cores_per_node=self._workers_per_node_in_pool,
+            log=self.log,
+        )
+
+    def _detach_group_client(self) -> None:
+        grp = getattr(self, "grp", None)
+        if grp is None:
+            return
+
+        self._serialized_grp = cloudpickle.dumps(grp)
+        with grp:
+            pass
+        self.grp = None
+
+    def _ensure_group_client_attached(self) -> None:
+        if self.grp is not None or self._serialized_grp is None:
+            return
+
+        self.grp = cloudpickle.loads(self._serialized_grp)
+
+    def _start_client_request_worker(self) -> None:
+        if self._client_request_thread is not None:
+            return
+
+        self._client_request_thread = threading.Thread(
+            target=self._run_client_request_worker,
+            name=f"batch-client-{self.client_id}-requests",
+            daemon=True,
+        )
+        self._client_request_thread.start()
+
+    def _raise_client_request_worker_error(self) -> None:
+        if self._client_request_worker_exc is not None:
+            raise RuntimeError("client request worker failed") from self._client_request_worker_exc
+
+    def _run_client_request_worker(self) -> None:
+        deferred_item = None
+
+        while True:
+            if deferred_item is not None:
+                item = deferred_item
+                deferred_item = None
+            else:
+                item = self._client_request_q.get()
+
+            try:
+                if isinstance(item, Task):
+                    task_batch = [item]
+
+                    while True:
+                        try:
+                            next_item = self._client_request_q.get_nowait()
+                        except queue.Empty:
+                            break
+
+                        if isinstance(next_item, Task):
+                            task_batch.append(next_item)
+                        else:
+                            deferred_item = next_item
+                            break
+
+                    self._compile_and_dispatch_client_tasks(task_batch)
+                    continue
+
+                if isinstance(item, ClientStopRequest):
+                    item.reply_q.put(None)
+                    return
+
+                if isinstance(item, ClientFlushRequest):
+                    item.reply_q.put(None)
+                    continue
+
+                if isinstance(item, ClientFenceRequest):
+                    fence_reply_q = Queue()
+                    self.work_q.put(FenceRequest(self.client_id, fence_reply_q))
+                    fence_complete = fence_reply_q.get()
+
+                    if not isinstance(fence_complete, FenceComplete) or fence_complete.client_id != self.client_id:
+                        raise RuntimeError(
+                            f"expected FenceComplete for client_id={self.client_id}, got {fence_complete!r}"
+                        )
+
+                    self._reset_client_compile_state()
+                    item.reply_q.put(fence_complete)
+                    continue
+
+                if isinstance(item, ClientCancelRequest):
+                    self.work_q.put(
+                        CancelRequest(self.client_id, item.task.core.tuid, item.task.core.manager_idx, item.reply_q)
+                    )
+                    continue
+
+                self.work_q.put(item)
+            except Exception as e:
+                self._client_request_worker_exc = e
+                if isinstance(item, (ClientFenceRequest, ClientFlushRequest, ClientStopRequest, ClientCancelRequest)):
+                    item.reply_q.put(e)
+                return
+
+    def _wait_for_client_request(self, request_type, timeout: float = default_timeout) -> object:
+        self._raise_client_request_worker_error()
+        reply_q = LocalQueue()
+        self._client_request_q.put(request_type(reply_q))
+        item = reply_q.get(timeout=timeout)
+        if isinstance(item, Exception):
+            raise RuntimeError("client request worker failed") from item
+        self._raise_client_request_worker_error()
+        return item
+
+    def _flush_client_request_worker(self, timeout: float = default_timeout) -> None:
+        self._wait_for_client_request(ClientFlushRequest, timeout=timeout)
+
+    def _stop_client_request_worker(self, timeout: float = default_timeout) -> None:
+        thread = self._client_request_thread
+        if thread is None:
+            return
+
+        self._wait_for_client_request(ClientStopRequest, timeout=timeout)
+        thread.join(timeout=timeout)
+        self._client_request_thread = None
+
+    def _enqueue_client_request(self, item) -> None:
+        self._raise_client_request_worker_error()
+        self._client_request_q.put(item)
+
+    def _wait_for_client_completion(self, timeout: float = default_timeout) -> None:
+        if self.client_id is None:
+            raise RuntimeError("client is not registered with this batch")
+
+        if self.closed:
+            return
+
+        if self._client_request_thread is None:
+            raise RuntimeError("client request worker is not running")
+
+        self._flush_client_request_worker(timeout=timeout)
+
+        self._wait_for_client_request(ClientFenceRequest, timeout=timeout)
+
+    def _detach_client(self, timeout: float = default_timeout) -> None:
+        if self.closed:
+            return
+
+        self._wait_for_client_completion(timeout=timeout)
+        self._stop_client_request_worker(timeout=timeout)
+        self._unregister()
+
+    def _cancel_task(self, task: Task, timeout: float = default_timeout) -> bool:
+        """Send a cancellation request and wait for the scheduler's response."""
+        self._raise_client_request_worker_error()
+        reply_q = Queue(block_size=default_block_size)
+
+        try:
+            self._enqueue_client_request(ClientCancelRequest(task, reply_q))
+            item = reply_q.get(timeout=timeout)
+            if isinstance(item, Exception):
+                raise RuntimeError("client request worker failed") from item
+            self._raise_client_request_worker_error()
+
+            if not isinstance(item, CancelResponse) or item.tuid != task.core.tuid:
+                raise RuntimeError(f"expected CancelResponse for tuid={task.core.tuid}, got {item!r}")
+
+            return item.cancelled
+        finally:
+            try:
+                reply_q.close()
+            except Exception:
+                pass
+
+    def _compile_and_dispatch_client_tasks(self, tasks_to_compile: list["Task"]) -> None:
+        if not tasks_to_compile:
+            return
+
+        if self.client_compiler is None:
+            raise RuntimeError("client compiler not initialized")
+
+        compiled_task = self.client_compiler.compile(tasks_to_compile, self.client_id)
+
+        for work in compiled_task.subnode_work_chunks:
+            self.work_q.put(work)
+
+        if compiled_task.mnj_work_chunk is not None:
+            self.work_q.put(compiled_task.mnj_work_chunk)
+
+    def _reset_client_compile_state(self) -> None:
+        if self.client_compiler is not None:
+            self.client_compiler.reset()
+
+    def _next_tuid(self) -> str:
+        """Return the next client-local base task tuid."""
+        task_seq = self._task_ctr
+        self._task_ctr += 1
+        return f"{self.client_id}-{task_seq}"
 
     def _register(self) -> None:
         """
@@ -2996,93 +4892,22 @@ class Batch:
         register_client = RegisterClient(self.ret_q, None)
         primary_manager = 0
         self.manager_qs[primary_manager].put(register_client)
-        self.client_id = self.ret_q.get()
+        # Registration happens before the client request worker exists, so
+        # manager-side bootstrap failures still have to come back directly on
+        # the return queue rather than through the normal worker-exception path.
+        item = self.ret_q.get()
+        if isinstance(item, ManagerException):
+            raise RuntimeError(item.err_message) from item.exception
+        if not isinstance(item, int):
+            raise RuntimeError(f"expected client_id from scheduler, got {item!r}")
+
+        self.client_id = item
         self.log.debug(f"received new client_id={self.client_id}")
 
         # use the client_id to register with the remaining managers
         register_client = RegisterClient(self.ret_q, self.client_id)
         for manager_q in self.manager_qs[1:]:
             manager_q.put(register_client)
-
-    def _handle_work_requests(self) -> None:
-        """
-        Get new work requests and compile and start them. This is meant to be run in a background
-        thread for each client.
-
-        :return: Returns None.
-        :rtype: None
-        """
-        new_tasks = []
-        pending_fence_req = None
-
-        while not self.stop_event.is_set():
-            if pending_fence_req is None:
-                try:
-                    task = self.work_q.get(timeout=5)
-                except Empty:
-                    continue
-            else:
-                task = pending_fence_req
-                pending_fence_req = None
-
-            if isinstance(task, FenceRequest):
-                # Flush any tasks accumulated so far before starting the fence, so
-                # that all work submitted before fence() is dispatched to the managers.
-                if new_tasks:
-                    try:
-                        compiled_task = self.compile(new_tasks)
-                        compiled_task._start()
-                    except Exception as e:
-                        self.log.exception(f"failed to compile/start background tasks: {e}")
-                        raise
-                    new_tasks = []
-
-                # Send FenceRequest messages to all managers and wait for all
-                # FenceComplete replies before resuming normal work processing.
-                fence_request = task
-                manager_fence_request = ManagerFenceRequest(fence_request.client_id, fence_request.reply_q)
-                for manager_q in self.manager_qs:
-                    manager_q.put(manager_fence_request)
-
-                num_responses = 0
-                num_managers = len(self.manager_qs)
-                while num_responses < num_managers:
-                    try:
-                        item = self.ret_q.get(timeout=1)
-                        if not isinstance(item, FenceComplete):
-                            self.log.debug(f"expected FenceComplete but got {item}")
-                            raise RuntimeError(f"expected FenceComplete but got {item}")
-                        num_responses += 1
-                    except Empty:
-                        pass
-
-                # Clear client-side dependency state so the next batch of work
-                # starts from a clean slate, then signal fence() that we're done.
-                self.dep_frontier.clear()
-                self.tuid_to_manager_q.clear()
-                fence_request.done_event.set()
-                continue
-
-            new_tasks.append(task)
-
-            while True:
-                try:
-                    task = self.work_q.get_nowait()
-                    if isinstance(task, FenceRequest):
-                        # Save it and stop draining; handle it on the next outer iteration.
-                        pending_fence_req = task
-                        break
-                    new_tasks.append(task)
-                except Empty:
-                    break
-
-            try:
-                compiled_task = self.compile(new_tasks)
-                compiled_task._start()
-            except Exception as e:
-                self.log.exception(f"failed to compile/start background tasks: {e}")
-                raise
-            new_tasks = []
 
     def _unregister(self) -> None:
         """
@@ -3119,32 +4944,22 @@ class Batch:
         :param obj: The communication object being accessed.
         :param *channels: A tuple of channels on the communcation object that will be writtent o.
 
+        If ``obj`` is a :py:class:`DDict`, mark this access so function tasks
+        that include it skip the manager-owned thread fast path. This avoids
+        running concurrent same-process DDict writes through the fast path.
+
         :return: Returns an descriptor for the data access that can be passed to (in a list) when creating a new task.
         :rtype: DataAccess
         """
-        return DataAccess(AccessType.WRITE, obj, channels)
-
-    def dump_background_dag(self, file_name: str | Path) -> None:
-        """
-        Compiles all background tasks for this batch and dumps a DAG for the compiled program.
-
-        :param file_name: Filename for the dumped DAG.
-        :type file_name: str | Path
-
-        :return: Returns None.
-        :rtype: None
-        """
-        task = self.compile(tasks_to_compile=None)
-        task.dump_dag(file_name)
+        disable_fast_path = isinstance(obj, DDict)
+        return DataAccess(AccessType.WRITE, obj, channels, disable_fast_path)
 
     def fence(self, timeout: float = default_timeout) -> None:
         """
         Wait for all tasks submitted by this client to complete. Tasks submitted after
-        the :class:`FenceRequest` is enqueued will be compiled and dispatched after the
-        fence finishes. After all managers confirm that the client's work is done, the
-        accumulated dependency state (``dep_frontier``, ``tuid_to_manager_q``, and each
-        manager's per-client set of completed tuids) is cleared so that the next batch of
-        work starts from a clean slate.
+        the :class:`FenceRequest` is enqueued will be handled after the fence finishes.
+        The client-side compile worker clears per-client compile state after the
+        scheduler acknowledges the fence.
 
         :param timeout: Timeout in seconds for each blocking operation. Defaults to 1e9.
         :type timeout: float
@@ -3152,36 +4967,37 @@ class Batch:
         :return: Returns None.
         :rtype: None
         """
-        # Put the FenceRequest on the work queue. The background compiler thread
-        # (_handle_work_requests) will flush any pending tasks, coordinate with the
-        # managers, clear dep_frontier / tuid_to_manager_q, and set done_event
-        # when the fence completes.
-        done_event = threading.Event()
-        fence_request = FenceRequest(self.client_id, self.ret_q, done_event)
-        self.work_q.put(fence_request)
-        done_event.wait(timeout=timeout)
+        self._wait_for_client_request(ClientFenceRequest, timeout=timeout)
 
     def close(self) -> None:
         """
-        Indicates to the Batch service that no more work will be submitted to it. All clients
-        must call this function, although it will be called by the ``__del__`` method of Batch
-        if not called by the user. This should only be called once per client.
+        Deprecated no-op retained for API compatibility.
+
+        Client detachment is now handled by :py:meth:`Batch.join`, which flushes
+        pending local submissions, waits for this client's work to complete, and
+        unregisters the client from the shared runtime.
 
         :return: Returns None.
         :rtype: None
-        """
-        if self.closed:
-            return
 
-        self._unregister()
+        .. deprecated::
+           ``Batch.close()`` no longer changes Batch state. Use
+           :py:meth:`Batch.join` when a client is done submitting work.
+        """
+        warnings.warn(
+            "Batch.close() is deprecated and is now a no-op; use Batch.join() instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
     def join(self, timeout: float = default_timeout) -> None:
         """
-        Wait for the completion of a Batch instance. This function will block until all work
-        submitted to the Batch service by all clients is complete, and all clients have called
-        ``close``. Only the primary client (i.e., the one that initially created this Batch
-        instance) should call ``join``, and it should be called after ``close``. This should
-        only be called once by the primary client.
+        Wait for the completion of all operations started by this client, then
+        detach this client from the shared Batch runtime.
+
+        After ``join()`` returns, this handle can no longer submit additional
+        work. If this handle is the one that will tear down the shared runtime,
+        call :py:meth:`Batch.destroy` afterwards.
 
         :param float: A timeout value for waiting on batch completion. Defaults to 1e9.
         :type timeout: float
@@ -3189,38 +5005,55 @@ class Batch:
         :return: Returns None.
         :rtype: None
         """
-        # sanity checks
-        if not self.client_id == 0:
-            raise RuntimeError("only primary client can call join")
-
-        if self.joined or self.terminated:
+        if self.destroyed or self.terminated or self.closed:
             return
 
-        # indicate that join has been called so the manager know to begin shutdown
-        join_called = JoinCalled()
+        self._detach_client(timeout=timeout)
+        self._detach_group_client()
+
+    def destroy(self, timeout: float = default_timeout) -> None:
+        """
+        Gracefully destroy the shared Batch runtime.
+
+        The calling client is joined if needed, then the scheduler and managers
+        are asked to shut down once all currently active clients have
+        joined and all in-flight work has completed.
+
+        :param timeout: Timeout in seconds for waiting on manager shutdown.
+        :type timeout: float
+
+        :return: Returns None.
+        :rtype: None
+        """
+        if self.destroyed or self.terminated:
+            return
+
+        if not self.closed:
+            self.join(timeout=timeout)
+
+        destroy_called = DestroyCalled()
         for manager_q in self.manager_qs:
-            manager_q.put(join_called)
+            manager_q.put(destroy_called)
 
-        self.grp.join(timeout=timeout)
-        self.grp.close()
+        grp = getattr(self, "grp", None)
+        if grp is None:
+            self._ensure_group_client_attached()
+            grp = self.grp
 
-        self.stop_event.set()
-        self.work_q_handler_thread.join(timeout=timeout)
+        if grp is not None:
+            grp.join(timeout=timeout)
+            grp.close()
 
-        # clean up ddict and queues
         self.results_ddict.destroy()
         for manager_q in self.manager_qs:
             manager_q.close()
         self.ret_q.close()
 
-        self.joined = True
+        self.destroyed = True
 
     def terminate(self) -> None:
         """
-        Force the termination of a Batch instance. This should only be called by the primary
-        client (i.e., the one that initially created this Batch instance), and it should only
-        be called once. This will be called when the primary Batch object is garbage collected
-        if the user has not called ``join`` or ``terminate``.
+        Force the termination of a Batch instance.
 
         :return: Returns None.
         :rtype: None
@@ -3229,9 +5062,15 @@ class Batch:
         if self.terminated:
             return
 
-        if self.grp is not None:
-            self.grp.stop()
-            self.grp.close()
+        try:
+            self._stop_client_request_worker()
+        except Exception:
+            pass
+
+        grp = getattr(self, "grp", None)
+        if grp is not None:
+            grp.stop()
+            grp.close()
 
         self.terminated = True
 
@@ -3255,24 +5094,28 @@ class Batch:
         The returned object reports:
 
         * the total number of nodes used,
-        * the hostname of the pool node where each manager process runs (first node of the pool), and
+        * the hostname where the dedicated scheduler runs,
+        * the hostname of the pool node where each subnode manager process runs, and
         * for each worker pool, the hostnames of the nodes that make up that pool.
 
-        Each manager process is co-located on the first node of its own worker pool.  All
-        physical cores on every pool node are available as workers; no core is reserved for
-        the manager.
+        Each requested node gets its own worker pool and its own subnode manager. The scheduler
+        manager is an extra process colocated with the first Batch node and is not counted as one
+        of the worker pools. All physical cores on every pool node are available as workers; no
+        core is reserved for the manager.
 
         Example::
 
-            batch = Batch(num_nodes=8, pool_nodes=2)
+            batch = Batch(num_nodes=8)
             print(batch.topology())
             # Batch Topology:
             #   Total nodes  : 8
-            #   Worker pools : 4 pool(s) (manager co-located on first pool node)
-            #     Pool 0 (2 node(s), 64 worker(s)): hotlum[0001-0002]  [mgr: hotlum0001]
-            #     Pool 1 (2 node(s), 64 worker(s)): hotlum[0003-0004]  [mgr: hotlum0003]
-            #     Pool 2 (2 node(s), 64 worker(s)): hotlum[0005-0006]  [mgr: hotlum0005]
-            #     Pool 3 (2 node(s), 64 worker(s)): hotlum[0007-0008]  [mgr: hotlum0007]
+            #   Managers     : 9 total (1 scheduler + 8 subnode)
+            #   Scheduler    : hotlum0001
+            #   Worker pools : 8 pool(s) (1 dedicated subnode manager per pool)
+            #     Pool 0 (1 node(s), 32 worker(s)): hotlum0001  [mgr: hotlum0001]
+            #     Pool 1 (1 node(s), 32 worker(s)): hotlum0002  [mgr: hotlum0002]
+            #     Pool 2 (1 node(s), 32 worker(s)): hotlum0003  [mgr: hotlum0003]
+            #     ...
 
         .. tip::
 
@@ -3284,14 +5127,19 @@ class Batch:
         :return: A :py:class:`BatchTopology` object describing the placement.
         :rtype: BatchTopology
         """
-        manager_hostnames = [n.hostname for n in self._manager_node_objs]
+        manager_hostnames = [n.hostname for n in self._subnode_manager_node_objs]
 
-        pool_hostnames = [[Node(h_uid).hostname for h_uid in pool_huids] for pool_huids in self._pool_node_huids_list]
+        pool_hostnames = [
+            [Node(h_uid).hostname for h_uid in pool_huids] for pool_huids in self._pool_node_huids_list[1:]
+        ]
 
-        workers_per_pool_list = [len(huids) * self._workers_per_node_in_pool for huids in self._pool_node_huids_list]
+        workers_per_pool_list = [
+            len(huids) * self._workers_per_node_in_pool for huids in self._pool_node_huids_list[1:]
+        ]
 
         return BatchTopology(
             total_nodes=len(self._node_objs),
+            scheduler_hostname=self._scheduler_hostname,
             manager_hostnames=manager_hostnames,
             pool_hostnames=pool_hostnames,
             workers_per_pool=workers_per_pool_list,
@@ -3324,13 +5172,15 @@ class Batch:
         :param name: A human-readable name for the task.
         :type name: Optional[str]
 
-        :raises :py:exc:`SubmitAfterCloseError`: If the batch has already been closed.
+        :raises :py:exc:`SubmitAfterCloseError`: If this client handle has already
+            been detached from the Batch runtime by :py:meth:`Batch.join`,
+            :py:meth:`Batch.destroy`, or :py:meth:`Batch.terminate`.
 
         :return: The new function task.
         :rtype: Function
         """
-        if self.closed:
-            raise SubmitAfterCloseError("cannot submit work after batch has been closed")
+        if self.closed or self.destroyed or self.terminated:
+            raise SubmitAfterCloseError("cannot submit work after this Batch client has joined or terminated")
 
         task = Function(
             self,
@@ -3345,7 +5195,7 @@ class Batch:
             timeout=timeout,
         )
 
-        self.work_q.put(task)
+        self._enqueue_client_request(task)
 
         return task
 
@@ -3372,13 +5222,15 @@ class Batch:
         :param name: A human-readable name for the task.
         :type name: Optional[str]
 
-        :raises :py:exc:`SubmitAfterCloseError`: If the batch has already been closed.
+        :raises :py:exc:`SubmitAfterCloseError`: If this client handle has already
+            been detached from the Batch runtime by :py:meth:`Batch.join`,
+            :py:meth:`Batch.destroy`, or :py:meth:`Batch.terminate`.
 
         :return: The new process task.
         :rtype: Job
         """
-        if self.closed:
-            raise SubmitAfterCloseError("cannot submit work after batch has been closed")
+        if self.closed or self.destroyed or self.terminated:
+            raise SubmitAfterCloseError("cannot submit work after this Batch client has joined or terminated")
 
         job = self.job(
             [(1, process_template)],
@@ -3420,13 +5272,15 @@ class Batch:
             Set to ``PMIBackend.PMIX`` for systems using PMIx, or ``None`` to disable PMI.
         :type pmi: PMIBackend
 
-        :raises :py:exc:`SubmitAfterCloseError`: If the batch has already been closed.
+        :raises :py:exc:`SubmitAfterCloseError`: If this client handle has already
+            been detached from the Batch runtime by :py:meth:`Batch.join`,
+            :py:meth:`Batch.destroy`, or :py:meth:`Batch.terminate`.
 
         :return: The new job task.
         :rtype: Job
         """
-        if self.closed:
-            raise SubmitAfterCloseError("cannot submit work after batch has been closed")
+        if self.closed or self.destroyed or self.terminated:
+            raise SubmitAfterCloseError("cannot submit work after this Batch client has joined or terminated")
 
         task = Job(
             self,
@@ -3438,224 +5292,9 @@ class Batch:
             pmi=pmi,
         )
 
-        self.work_q.put(task)
+        self._enqueue_client_request(task)
 
         return task
-
-    def kernighan_lin_partition(self, tasks_to_compile: list[Task], dep_dag) -> list[set[TaskCore]]:
-        """
-        Partition tasks across managers using the Kernighan-Lin algorithm.
-
-        Managers are treated as the partitions in the KL model. The resulting partition list
-        contains one task-core set per manager, and may contain empty sets for managers that
-        receive no work.
-
-        :param tasks_to_compile: Tasks in the compiled DAG.
-        :type tasks_to_compile: list[Task]
-        :param dep_dag: The dependency DAG built by :py:meth:`compile`.
-
-        :return: A list of task-core sets, one per manager partition.
-        :rtype: list[set[TaskCore]]
-        """
-        # partition the dependency graph for the managers, subdiving partitions
-        # until there is one partition per manager, or until it doesn't make sense
-        # to keep partitioning
-
-        self.log.debug("partitioning the dependency graph")
-
-        if self.num_managers > 1 and len(tasks_to_compile) > 1:
-            dep_graph = dep_dag.to_undirected()
-
-            # If all inter-task dependencies are cross-compiled (inter-batch), dep_dag will
-            # have no edges. kernighan_lin_bisection requires at least one edge, so fall back
-            # to using round-robin across partitions in that case.
-            if dep_graph.number_of_edges() > 0:
-                partitions = list(nx.community.kernighan_lin_bisection(dep_graph))
-            else:
-                # No intra-batch edges: distribute tasks round-robin.
-                # Cap at len(tasks_to_compile) to avoid creating empty partitions,
-                # which would leave stale entries in work_backlog and prevent managers
-                # from ever reaching the shutdown condition.
-                n = min(len(tasks_to_compile), self.num_managers)
-                partitions = [set() for _ in range(n)]
-                for i, task in enumerate(tasks_to_compile):
-                    partitions[i % n].add(task.core)
-
-            while len(partitions) < self.num_managers:
-                try:
-                    new_partitions = []
-                    made_progress = False
-                    for part in partitions:
-                        g = dep_graph.subgraph(part)
-                        # only bisect partitions with >1 node and at least one edge;
-                        # edgeless subgraphs arise when all deps in the partition are
-                        # inter-batch and were not captured as edges in dep_dag
-                        if len(part) > 1 and g.number_of_edges() > 0:
-                            new_partitions.extend(nx.community.kernighan_lin_bisection(g))
-                            made_progress = True
-                        else:
-                            new_partitions.append(part)
-
-                    partitions = new_partitions
-
-                    if not made_progress:
-                        break
-                except Exception:
-                    raise RuntimeError("failure occurred while trying to bisect dependency graph")
-
-            # A bisection step can overshoot num_managers (each bisect() adds 2 at
-            # once, so going from num_managers-1 to num_managers+1 is possible).
-            # Redistribute round-robin so each manager gets at most one Work chunk
-            # for this compiled_tuid; sending two to the same manager would
-            # overwrite work_backlog and permanently block tasks.
-            if len(partitions) > self.num_managers:
-                merged = [set() for _ in range(self.num_managers)]
-                for i, part in enumerate(partitions):
-                    merged[i % self.num_managers] |= part
-                partitions = merged
-        else:
-            task_core_set = {task.core for task in tasks_to_compile}
-            partitions = [task_core_set]
-
-        return partitions
-
-    def compile(
-        self,
-        tasks_to_compile: list[Task],
-        name: Optional[str] = None,
-    ) -> Task:
-        """
-        Generate a single compiled task from a list of tasks. :py:class:`Batch` calls this method
-        internally to batch and dispatch tasks submitted via :py:meth:`function`,
-        :py:meth:`process`, and :py:meth:`job`. The ordering of ``tasks_to_compile`` is treated as
-        a valid sequential execution order; dependencies are inferred from data accesses to produce
-        a DAG that maximizes parallelism.
-
-        :param tasks_to_compile: List of tasks to compile.
-        :type tasks_to_compile: list
-
-        :raises RuntimeError: If there is an issue while setting up the dependency graph
-
-        :return: The compiled task.
-        :rtype: Task
-        """
-        # check that tasks_to_compile is a non-empty list of tasks
-        if not isinstance(tasks_to_compile, list):
-            raise RuntimeError(f"tasks_to_compile must be a list of tasks: {tasks_to_compile=}")
-        else:
-            num_tasks = len(tasks_to_compile)
-            if num_tasks == 0:
-                raise RuntimeError("cannot compile an empty list of tasks")
-            elif not isinstance(tasks_to_compile[0], Task):
-                raise RuntimeError(f"tasks_to_compile must be a list of tasks: {tasks_to_compile[0]=}")
-
-        compiled_task_core = TaskCore(self.client_id, name, None)
-        compiled_task = Task(compiled_task_core, self, compiled=True)
-
-        for task in tasks_to_compile:
-            # NOTE: this assumes all subtasks of a compiled task are unique
-            compiled_task.dep_dag.add_node(task.core)
-
-            compiled_task.num_subtasks += 1
-
-            task.core.compiled_tuid = compiled_task.core.tuid
-            task._compiled_task = compiled_task
-
-            # compare each task's accesses to a access frontier to determine inter-task dependencies
-
-            for kvs_and_key, task_and_access_type in task.accesses.items():
-                task, access_type = task_and_access_type
-
-                # if key isn't in dep_frontier, then there are no previous accesses to
-                # this key, so we don't need to add any dependencies
-                if kvs_and_key not in self.dep_frontier:
-                    if access_type == AccessType.WRITE:
-                        write_before_read = task
-                    else:
-                        write_before_read = None
-
-                    self.dep_frontier[kvs_and_key] = FrontierInfo([task], access_type, write_before_read)
-                    continue
-
-                frontier_info = self.dep_frontier[kvs_and_key]
-                prev_task_list, prev_access_type, write_before_read = frontier_info
-
-                if prev_access_type == AccessType.READ:
-                    if access_type == AccessType.READ:
-                        # prev=READ, curr=READ
-                        if write_before_read is not None:
-                            task._depends_on(write_before_read, compiled_task)
-
-                        prev_task_list.append(task)
-                    elif access_type == AccessType.WRITE:
-                        # prev=READ, curr=WRITE
-                        for prev_read in prev_task_list:
-                            task._depends_on(prev_read, compiled_task)
-
-                        self.dep_frontier[kvs_and_key] = FrontierInfo([task], access_type, task)
-                else:
-                    if prev_access_type != AccessType.WRITE:
-                        raise RuntimeError("invalid access mode")
-
-                    if access_type == AccessType.READ:
-                        # prev=WRITE, curr=READ
-                        task._depends_on(prev_task_list[0], compiled_task)
-                        self.dep_frontier[kvs_and_key] = FrontierInfo([task], access_type, write_before_read)
-                    else:
-                        # prev=WRITE, curr=WRITE
-                        task._depends_on(prev_task_list[0], compiled_task)
-                        self.dep_frontier[kvs_and_key] = FrontierInfo([task], access_type, task)
-
-        # partition the dependency graph for the managers
-        self.log.debug("partitioning the dependency graph")
-        partitions = self.kernighan_lin_partition(tasks_to_compile, compiled_task.dep_dag)
-        self.log.debug(
-            f"compiled_tuid={compiled_task.core.tuid}: {len(tasks_to_compile)} task(s) "
-            f"-> {len(partitions)} partition(s): " + ", ".join(f"{len(p)} task(s)" for p in partitions)
-        )
-
-        # establish mapping between tasks and managers/queues
-
-        self.log.debug("setting up the mapping between tasks and managers")
-
-        compiled_task._manager_offset = random.randrange(self.num_managers)
-
-        for base_idx, task_set in enumerate(partitions):
-            idx = (base_idx + compiled_task._manager_offset) % self.num_managers
-            manager_q = self.manager_qs[idx]
-
-            for task_core in task_set:
-                self.tuid_to_manager_q[task_core.tuid] = manager_q
-
-        # now that we know the mapping between tasks and managers/queues, we can
-        # update the list of dependent tuids to make it a list of dependent queues
-
-        self.log.debug("setting up dependency queues")
-
-        for task_set in partitions:
-            for task_core in task_set:
-                for downstream_tuid in task_core.downstream_tuids:
-                    q = self.tuid_to_manager_q[downstream_tuid]
-                    task_core.downstream_queues.append(q)
-
-                for upstream_tuid in task_core.upstream_tuids:
-                    q = self.tuid_to_manager_q.get(upstream_tuid, None)
-                    if q is None:
-                        raise RuntimeError(
-                            f"failed to find manager queue for upstream task {upstream_tuid} while compiling inter-compiled dependency"
-                        )
-                    task_core.upstream_queues.append(q)
-
-        # create a work item for each manager
-        for task_set in partitions:
-            work = Work(
-                task_set,
-                self.client_id,
-                compiled_task.core.tuid,
-            )
-            compiled_task.work_chunks.append(work)
-
-        return compiled_task
 
     def import_func(self, ptd_file: str, *real_import_args, **real_import_kwargs) -> MakeTask:
         """

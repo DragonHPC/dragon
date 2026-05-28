@@ -55,8 +55,8 @@ def main():
         except Exception as e:
             print(f"Job failed with exception {e}", flush=True)
 
-    batch.close()
     batch.join()
+    batch.destroy()
 
 
 if __name__ == "__main__":

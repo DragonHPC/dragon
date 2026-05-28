@@ -20,8 +20,7 @@ from dragon.ai.inference.config import (
     GuardrailsConfig,
     DynamicWorkerConfig,
 )
-
-from ..mocks import MockNode, MockTelemetry
+from ..mocks import MockTelemetry, MockNode
 
 
 class TestConfigWithInferenceWorker(unittest.TestCase):
@@ -199,14 +198,18 @@ class TestConfigWithLLMEngine(unittest.TestCase):
         )
 
         # Verify config is accessible
-        self.assertEqual(engine.model_config.model_name, "meta-llama/Llama-3.2-1B-Instruct")
+        self.assertEqual(
+            engine.model_config.model_name, "meta-llama/Llama-3.2-1B-Instruct"
+        )
         self.assertEqual(engine.model_config.tp_size, 2)
         self.assertEqual(engine.model_config.dtype, "bfloat16")
         self.assertEqual(engine.batching_config.max_batch_size, 32)
 
     @patch("torch.cuda.synchronize")
     @patch("vllm.LLM")
-    def test_engine_uses_config_for_batch_processing(self, mock_llm_class, mock_torch_sync):
+    def test_engine_uses_config_for_batch_processing(
+        self, mock_llm_class, mock_torch_sync
+    ):
         """Test that LLMInferenceEngine uses batching config when processing
         and returns responses to queues.
         """
@@ -268,11 +271,13 @@ class TestConfigWithInference(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_config_flows_to_dragon_inference(self, mock_telemetry, mock_node_class, mock_system, mock_formatter):
+    def test_config_flows_to_dragon_inference(
+        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+    ):
         """Test that config flows through Inference and reaches input queue."""
         from dragon.ai.inference.inference_utils import Inference
 
@@ -293,7 +298,9 @@ class TestConfigWithInference(unittest.TestCase):
                 tp_size=2,
                 system_prompt=["You are helpful."],
             ),
-            batching=BatchingConfig(enabled=True, batch_type="dynamic", max_batch_size=16),
+            batching=BatchingConfig(
+                enabled=True, batch_type="dynamic", max_batch_size=16
+            ),
             guardrails=GuardrailsConfig(enabled=True, prompt_guard_sensitivity=0.7),
             dynamic_worker=DynamicWorkerConfig(enabled=True),
             flask_secret_key="secret",
@@ -326,7 +333,9 @@ class TestConfigWithInference(unittest.TestCase):
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_config_creates_cpu_worker_kwargs(self, mock_telemetry, mock_node_class, mock_system):
+    def test_config_creates_cpu_worker_kwargs(
+        self, mock_telemetry, mock_node_class, mock_system
+    ):
         """Test that config is correctly packaged into cpu_worker_kwargs."""
         from dragon.ai.inference.inference_utils import Inference
 

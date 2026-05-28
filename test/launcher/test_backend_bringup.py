@@ -33,7 +33,7 @@ def start_backend(args):
     for key, value in args.items():
         if value is not None:
             log.info(f"args: {key}: {value}")
-    with LauncherBackEnd(args["transport_test"], args["network_prefix"], args["overlay_port"]) as be_server:
+    with LauncherBackEnd(args["transport_test"], args["network_prefix"], args["overlay_transport"], args["overlay_port"]) as be_server:
         be_server.run_startup(args["ip_addrs"], args["host_ids"], args["frontend_sdesc"], level, fname)
         be_server.run_msg_server()
 

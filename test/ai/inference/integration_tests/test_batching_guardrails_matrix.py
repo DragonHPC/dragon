@@ -29,7 +29,6 @@ from dragon.ai.inference.config import (
 )
 from dragon.ai.inference.inference_worker_utils import InferenceWorker
 from dragon.ai.inference.batching import DynamicBatcher
-
 from ..mocks import MockTelemetry
 
 
@@ -1055,12 +1054,15 @@ class TestConfigurationMatrix(unittest.TestCase):
                 guardrails_config = GuardrailsConfig(enabled=guardrails_enabled)
 
                 # Calculate expected preprocessing_needed
-                preprocessing_needed = guardrails_enabled or (batch_enabled and batch_type == "dynamic")
+                preprocessing_needed = guardrails_enabled or (
+                    batch_enabled and batch_type == "dynamic"
+                )
 
                 self.assertEqual(
                     preprocessing_needed,
                     expected,
-                    f"Failed for batch={batch_enabled}, type={batch_type}, " f"guard={guardrails_enabled}",
+                    f"Failed for batch={batch_enabled}, type={batch_type}, "
+                    f"guard={guardrails_enabled}",
                 )
 
 

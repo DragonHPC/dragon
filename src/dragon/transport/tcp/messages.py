@@ -2,7 +2,6 @@ import asyncio
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import cache
-from inspect import isclass
 from ipaddress import IPv4Address, IPv6Address
 import logging
 import math
@@ -374,15 +373,13 @@ def _get_io_annotations(cls):
     """
     D = {}
     for name, hints in get_type_hints(cls, include_extras=True).items():
-        origin = get_origin(hints)
-        if not isclass(origin):
-            continue
-        if not issubclass(origin, Annotated):
-            continue
-        _, *annotations = get_args(hints)
-        for obj in annotations:
-            if isinstance(obj, FixedBytesIO):
-                D[name] = obj
+        try:
+            _, *annotations = get_args(hints)
+            for obj in annotations:
+                if isinstance(obj, FixedBytesIO):
+                    D[name] = obj
+        except ValueError:
+            pass
     return D
 
 

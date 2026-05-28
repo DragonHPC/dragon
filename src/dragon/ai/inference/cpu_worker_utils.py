@@ -1,23 +1,24 @@
-import dragon
-import multiprocessing as mp
-import time
 import os
-from queue import Empty
-import socket
-import logging
-
 from ...infrastructure.policy import Policy
 from ...native.process_group import ProcessGroup
 from ...native.process import Process, ProcessTemplate, Popen
-from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
-from ...infrastructure.parameters import this_process
+from ...native.queue import Queue
+from ...native.event import Event
+from ...native.barrier import Barrier
 from .config import (
     ModelConfig,
     BatchingConfig,
     GuardrailsConfig,
     DynamicWorkerConfig,
 )
-from .inference_worker_utils import InferenceWorker
+import time
+from queue import Empty
+
+# Logging imports
+import logging
+from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
+import socket
+from ...infrastructure.parameters import this_process
 
 
 def setup_logging(type: str) -> logging.Logger:
@@ -67,7 +68,7 @@ class CPUWorker:
         """Initialize a CPU worker.
 
         :param input_queue: Input queue to feed user-prompts into the backend service.
-        :type input_queue: mp.Queue
+        :type input_queue: dragon.native.Queue
         :param model_config: Model configuration including name, dtype, tokens, etc.
         :type model_config: ModelConfig
         :param batching_config: Batching configuration.
@@ -79,9 +80,9 @@ class CPUWorker:
         :param num_inf_workers_per_cpu: Number of inference workers to be assigned per CPU head.
         :type num_inf_workers_per_cpu: int
         :param end_event: Primary event that terminates all processes.
-        :type end_event: mp.Event
+        :type end_event: dragon.native.Event
         :param cpu_barrier: Barrier used to wait until each CPU process spins up.
-        :type cpu_barrier: mp.Barrier
+        :type cpu_barrier: dragon.native.Barrier
         :param dt: Dragon telemetry object.
         :type dt: dragon.telemetry.telemetry.Telemetry
         """
@@ -100,7 +101,9 @@ class CPUWorker:
         # Extract frequently used values for convenience
         self.dynamic_inf_wrkr_toggle = dynamic_worker_config.enabled
         self.spin_down_threshold = dynamic_worker_config.spin_down_threshold_seconds
-        self.min_active_inf_workers_per_cpu_head = dynamic_worker_config.min_active_workers_per_cpu
+        self.min_active_inf_workers_per_cpu_head = (
+            dynamic_worker_config.min_active_workers_per_cpu
+        )
         self.spin_up_threshold_seconds = dynamic_worker_config.spin_up_threshold_seconds
         self.spin_up_prompt_threshold = dynamic_worker_config.spin_up_prompt_threshold
 
@@ -127,7 +130,9 @@ class CPUWorker:
         self.top_p = model_config.top_p
 
         # Determine if preprocessing worker is needed: either guardrails or dynamic batching is enabled
-        self.preprocessing_needed = self.prompt_guard_toggle or (self.batch_toggle and self.batch_type == "dynamic")
+        self.preprocessing_needed = self.prompt_guard_toggle or (
+            self.batch_toggle and self.batch_type == "dynamic"
+        )
 
     def start_inf_workers(
         self,
@@ -146,10 +151,10 @@ class CPUWorker:
         :param cpu_worker_pid: Current CPU worker PID.
         :type cpu_worker_pid: int
         :param inf_wrkr_input_queue: Input queue from which inference workers pull user prompts.
-        :type inf_wrkr_input_queue: mp.Queue
+        :type inf_wrkr_input_queue: dragon.native.Queue
         :param inf_wrkr_manager_q: Queue of tuples of the form ``(hostname, devices, inf_wrkr_id)`` that describe
             available inference worker slots.
-        :type inf_wrkr_manager_q: mp.Queue
+        :type inf_wrkr_manager_q: dragon.native.Queue
         :param hostname: Hostname of the current CPU worker process.
         :type hostname: str
         :param inf_wrkr_config: List of device lists defining each inference worker.
@@ -162,22 +167,26 @@ class CPUWorker:
         # breakdown of num_barriers as follows:
         # 1 = Barrier for this CPU head.
         # len(inf_wrkr_config) * 2 = Each inference worker is comprised of a pre-processing worker and gpu worker.
-        num_barriers = 1 + len(inf_wrkr_config) * 2 if self.preprocessing_needed else 1 + len(inf_wrkr_config)
+        num_barriers = (
+            1 + len(inf_wrkr_config) * 2
+            if self.preprocessing_needed
+            else 1 + len(inf_wrkr_config)
+        )
         self.log.info(f"\nCPU Head Module: Number of barriers created: {num_barriers=}")
 
-        self.init_inf_wrkr_barrier = mp.Barrier(num_barriers)
+        self.init_inf_wrkr_barrier = Barrier(num_barriers)
         self.inf_wrkr_down_events = []
 
         # Create inference worker.
         inf_wrkr_id = 1
         for devices in inf_wrkr_config:
-            llm_proc_end_ev = mp.Event()
+            llm_proc_end_ev = Event()
             self.llm_proc_end_events.append(llm_proc_end_ev)
 
-            output_queue = mp.Queue(maxsize=2)
+            output_queue = Queue(maxsize=2)
             self.inf_wrkr_output_queues.append(output_queue)
 
-            inf_wrkr_down_ev = mp.Event()
+            inf_wrkr_down_ev = Event()
             self.inf_wrkr_down_events.append(
                 inf_wrkr_down_ev
             )  # make sure that the refcount to each event is maintained
@@ -224,10 +233,10 @@ class CPUWorker:
         :param cpu_worker_pid: Current CPU worker PID.
         :type cpu_worker_pid: int
         :param inf_wrkr_input_queue: Input queue from which inference workers pull user prompts.
-        :type inf_wrkr_input_queue: mp.Queue
+        :type inf_wrkr_input_queue: dragon.native.Queue
         :param inf_wrkr_manager_q: Queue of tuples of the form ``(hostname, devices, inf_wrkr_id)`` describing
             potential inference workers.
-        :type inf_wrkr_manager_q: mp.Queue
+        :type inf_wrkr_manager_q: dragon.native.Queue
         :param num_input_prompts_since_last_idle: Number of input prompts received since the last idle period.
         :type num_input_prompts_since_last_idle: int
         :param idle_time_seconds: Number of seconds since the last prompt.
@@ -243,7 +252,11 @@ class CPUWorker:
                 pg.close()
 
         # Remove inf-workers from list if it has spun-down.
-        my_inf_workers = [(ev, pg, inf_worker_id) for ev, pg, inf_worker_id in my_inf_workers if not ev.is_set()]
+        my_inf_workers = [
+            (ev, pg, inf_worker_id)
+            for ev, pg, inf_worker_id in my_inf_workers
+            if not ev.is_set()
+        ]
 
         # If more user-prompts have been received in the last 'n' seconds than the defaults defined,
         # spin up a new inf-wrkr.
@@ -251,17 +264,19 @@ class CPUWorker:
         if idle_time_seconds < self.spin_up_threshold_seconds:
             if num_input_prompts_since_last_idle >= self.spin_up_prompt_threshold:
                 try:
-                    hostname, devices, inf_wrkr_id = inf_wrkr_manager_q.get(timeout=0.1)
+                    hostname, devices, inf_wrkr_id = (
+                        inf_wrkr_manager_q.get(timeout=0.1)
+                    )
                     # Define barrier to initialize all inf-workers before starting infrencing.
                     # 3: One each for head cpu-worker, pre-processing worker, and llm worker.
                     num_barriers = 3 if self.preprocessing_needed else 2
-                    dynamic_inf_wrkr_barrier = mp.Barrier(num_barriers)
-                    inf_wrkr_down_ev = mp.Event()
+                    dynamic_inf_wrkr_barrier = Barrier(num_barriers)
+                    inf_wrkr_down_ev = Event()
 
-                    llm_proc_end_ev = mp.Event()
+                    llm_proc_end_ev = Event()
                     self.llm_proc_end_events.append(llm_proc_end_ev)
 
-                    output_queue = mp.Queue(maxsize=2)
+                    output_queue = Queue(maxsize=2)
                     self.inf_wrkr_output_queues.append(output_queue)
 
                     # Create inference worker.
@@ -295,11 +310,9 @@ class CPUWorker:
         :param inf_wrkr_config: List of device lists for each inference worker.
         :type inf_wrkr_config: list
         """
-        # Re-initialize mp dragon within process.
-        mp.set_start_method("dragon")
-        self.inf_wrkr_input_queue = mp.Queue()
+        self.inf_wrkr_input_queue = Queue()
         cpu_worker_pid = os.getpid()
-        self.inf_wrkr_manager_q = mp.Queue()
+        self.inf_wrkr_manager_q = Queue()
         my_inf_workers = []
 
         # Maintain a list of all output queues for each inference worker.
@@ -341,6 +354,12 @@ class CPUWorker:
                 q = q_item[2]
                 input_entry_timestamp = q_item[3]
 
+                # Optional per-request chat/tool fields from
+                # DragonQueueLLMProxy.chat() — absent for plain text queries.
+                tools = q_item[4] if len(q_item) > 4 else None
+                json_schema_override = q_item[5] if len(q_item) > 5 else None
+                continue_final_message = q_item[6] if len(q_item) > 6 else False
+
                 # Latency metrics.
                 cpu_head_network_latency = round(time.time() - input_entry_timestamp, 2)
                 tuple_latency_metric = (
@@ -350,20 +369,25 @@ class CPUWorker:
                 )
 
                 # Forward pass user-prompt to inference worker(s).
-                self.inf_wrkr_input_queue.put((user_prompt, formatted_input, q, tuple_latency_metric))
+                self.inf_wrkr_input_queue.put(
+                    (user_prompt, formatted_input, q, tuple_latency_metric,
+                     tools, json_schema_override, continue_final_message)
+                )
 
                 if self.dynamic_inf_wrkr_toggle:
                     num_input_prompts_since_last_idle += 1
                     cur_idle_time = idle_end_time - idle_start_time
 
                     # Dynamically manage spinning-up new inf workers (if available)
-                    my_inf_workers, num_input_prompts_since_last_idle = self.dynamic_inf_workers(
-                        my_inf_workers,
-                        cpu_worker_pid,
-                        self.inf_wrkr_input_queue,
-                        self.inf_wrkr_manager_q,
-                        num_input_prompts_since_last_idle,
-                        cur_idle_time,
+                    my_inf_workers, num_input_prompts_since_last_idle = (
+                        self.dynamic_inf_workers(
+                            my_inf_workers,
+                            cpu_worker_pid,
+                            self.inf_wrkr_input_queue,
+                            self.inf_wrkr_manager_q,
+                            num_input_prompts_since_last_idle,
+                            cur_idle_time,
+                        )
                     )
                     idle_start_time = time.time()
 
@@ -413,28 +437,32 @@ class CPUWorker:
         :param devices: List of GPU ranks for the current inference worker.
         :type devices: list[int]
         :param inf_worker_queue: Input queue from which the inference worker pulls user prompts.
-        :type inf_worker_queue: mp.Queue
+        :type inf_worker_queue: dragon.native.Queue
         :param inf_wrkr_barrier: Barrier used to wait until all inference worker modules are spun up and ready.
-        :type inf_wrkr_barrier: mp.Barrier
+        :type inf_wrkr_barrier: dragon.native.Barrier
         :param inf_wrkr_down_ev: Event used to signal that the inference worker should spin down.
-        :type inf_wrkr_down_ev: mp.Event
+        :type inf_wrkr_down_ev: dragon.native.Event
         :param inf_wrkr_id: Unique identifier for the current inference worker.
         :type inf_wrkr_id: int
         :param inf_wrkr_manager_q: Queue of tuples of the form ``(hostname, devices, inf_wrkr_id)`` used to manage
             available inference workers.
-        :type inf_wrkr_manager_q: mp.Queue
+        :type inf_wrkr_manager_q: dragon.native.Queue
         :param output_queue: Output queue where the inference worker pushes LLM responses.
-        :type output_queue: mp.Queue
+        :type output_queue: dragon.native.Queue
         :param llm_proc_end_ev: Event used to denote that the LLM process has ended.
-        :type llm_proc_end_ev: mp.Event
+        :type llm_proc_end_ev: dragon.native.Event
         :returns: Process group comprising the inference worker (pre-processing process and tensor-parallel GPU process(es)).
         :rtype: ProcessGroup
         """
 
         # Create inference-worker process group
-        placement_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=hostname)
+        placement_policy = Policy(
+            placement=Policy.Placement.HOST_NAME, host_name=hostname
+        )
         inf_worker_grp = ProcessGroup(restart=False, policy=placement_policy)
         run_dir = os.getcwd()
+
+        from .inference_worker_utils import InferenceWorker
 
         # Build complete InferenceWorker args including all runtime parameters.
         # Both preprocessing and LLM workers use the same args structure.
@@ -469,7 +497,6 @@ class CPUWorker:
                     target=InferenceWorker.preprocessing_entry_point,
                     args=(inference_worker_args,),
                     cwd=run_dir,
-                    stdout=Popen.PIPE,
                 ),
             )
 
@@ -482,7 +509,6 @@ class CPUWorker:
                 target=InferenceWorker.llm_inference_entry_point,
                 args=(inference_worker_args,),
                 cwd=run_dir,
-                stdout=Popen.DEVNULL,
                 policy=local_policy,
             ),
         )

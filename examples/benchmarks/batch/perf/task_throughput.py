@@ -73,5 +73,5 @@ if __name__ == "__main__":
 
     run_bench(batch, args.min_tasks, args.max_tasks)
 
-    batch.close()
     batch.join()
+    batch.destroy()

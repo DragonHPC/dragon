@@ -23,7 +23,7 @@ import pickle
 import threading
 from queue import SimpleQueue
 
-from ...utils import b64decode, b64encode, set_local_kv, host_id, B64, hash as dragon_hash
+from ...utils import b64decode, b64encode, set_local_kv, host_id, B64, hash as dragon_hash, TimeKeeper
 from ... import managed_memory as dmem
 from ...globalservices import channel
 from ...globalservices import pool
@@ -1528,7 +1528,7 @@ class Manager:
         self._manager_id = manager_id
         self._tag = 0
         self._manager_pool_full_thresh = 100.0 * self._manager_pool_full_thresh
-        self._time_keeper = dutil.TimeKeeper(recording=True)
+        self._time_keeper = TimeKeeper(recording=True, timekeeper_name="DDictManager")
 
         self.iterators = {}
         self._iter_id = 0

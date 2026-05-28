@@ -5,25 +5,34 @@ This module provides independent, well-defined batching functionality
 that collects prompts over a time window and forwards batched inputs
 for processing.
 """
-
+import os
 import time
-import multiprocessing as mp
+from ...native.queue import Queue
 from queue import Empty
-from typing import List, Tuple, Any, Optional
+from typing import List, Tuple, Any, Dict, Optional, Union
 import logging
 
 log = logging.getLogger(__name__)
 
 
 class BatchItem:
-    """A single item to be batched."""
+    """A single item to be batched.
+
+    Handles both plain-text prompts and chat-format conversations.
+    Chat items carry optional ``tools``, ``json_schema_override``,
+    and ``continue_final_message``; plain-text items leave them at
+    their defaults.
+    """
 
     def __init__(
         self,
-        user_prompt: str,
-        formatted_prompt: str,
-        response_queue: mp.Queue,
+        user_prompt: Union[str, List[Dict[str, Any]]],
+        formatted_prompt: Union[str, List[Dict[str, Any]]],
+        response_queue: Queue,
         latency_metrics: Tuple[float, float, float],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        json_schema_override: Optional[dict] = None,
+        continue_final_message: bool = False,
     ):
         """Initialize a BatchItem instance.
 
@@ -31,28 +40,41 @@ class BatchItem:
         :type user_prompt: str
         :param formatted_prompt: Formatted prompt with system instructions.
         :type formatted_prompt: str
-        :param response_queue: Queue used to send the response.
-        :type response_queue: mp.Queue
+        :param response_queue: dragon.native.Queue used to send the response.
+        :type response_queue: dragon.native.Queue
         :param latency_metrics: Tuple of (entry_time, cpu_latency, guard_latency).
         :type latency_metrics: tuple[float, float, float]
+        :param tools: Optional tool definitions for chat requests.
+        :type tools: list[dict[str, Any]] | None
+        :param json_schema_override: Per-request JSON schema for guided decoding.
+        :type json_schema_override: dict | None
+        :param continue_final_message: Whether to continue the final
+            assistant message instead of adding a generation prompt.
+        :type continue_final_message: bool
         """
         self.user_prompt = user_prompt
         self.formatted_prompt = formatted_prompt
         self.response_queue = response_queue
         self.latency_metrics = latency_metrics
+        self.tools = tools
+        self.json_schema_override = json_schema_override
+        self.continue_final_message = continue_final_message
 
     def __repr__(self):
-        return f"BatchItem(user_prompt={self.user_prompt!r}, formatted_prompt={self.formatted_prompt!r}, response_queue={self.response_queue!r}, latency_metrics={self.latency_metrics!r})"
+        return (
+            f"BatchItem(user_prompt={self.user_prompt!r}, "
+            f"formatted_prompt={self.formatted_prompt!r}, "
+            f"response_queue={self.response_queue!r}, "
+            f"latency_metrics={self.latency_metrics!r}, "
+            f"tools={'yes' if self.tools else 'no'}, "
+            f"json_schema_override={'yes' if self.json_schema_override else 'no'}, "
+            f"continue={self.continue_final_message})"
+        )
 
     def __eq__(self, other):
         if not isinstance(other, BatchItem):
             return NotImplemented
-        return (
-            self.user_prompt == other.user_prompt
-            and self.formatted_prompt == other.formatted_prompt
-            and self.response_queue == other.response_queue
-            and self.latency_metrics == other.latency_metrics
-        )
+        return self.__dict__ == other.__dict__
 
     def __getstate__(self):
         return self.__dict__.copy()
@@ -124,11 +146,11 @@ class Batch:
         return [item.formatted_prompt for item in self.items]
 
     @property
-    def response_queues(self) -> List[mp.Queue]:
+    def response_queues(self) -> List[Queue]:
         """Extract response queues from batch items.
 
         :returns: List of response queues.
-        :rtype: list[mp.Queue]
+        :rtype: list[dragon.native.Queue]
         """
         return [item.response_queue for item in self.items]
 
@@ -140,6 +162,21 @@ class Batch:
         :rtype: list[tuple[float, float, float]]
         """
         return [item.latency_metrics for item in self.items]
+
+    @property
+    def tools_list(self) -> List[Optional[List[Dict[str, Any]]]]:
+        """Per-request tool definitions."""
+        return [item.tools for item in self.items]
+
+    @property
+    def json_schema_list(self) -> List[Optional[dict]]:
+        """Per-request JSON schema overrides for guided decoding."""
+        return [item.json_schema_override for item in self.items]
+
+    @property
+    def continue_final_message_list(self) -> List[bool]:
+        """Per-request ``continue_final_message`` flags."""
+        return [item.continue_final_message for item in self.items]
 
 
 class DynamicBatcher:
@@ -175,10 +212,13 @@ class DynamicBatcher:
 
     def add_item(
         self,
-        user_prompt: str,
-        formatted_prompt: str,
-        response_queue: mp.Queue,
+        user_prompt: Union[str, List[Dict[str, Any]]],
+        formatted_prompt: Union[str, List[Dict[str, Any]]],
+        response_queue: Queue,
         latency_metrics: Tuple[float, float, float],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        json_schema_override: Optional[dict] = None,
+        continue_final_message: bool = False,
     ) -> Optional[Batch]:
         """Add an item to the current batch.
 
@@ -186,15 +226,18 @@ class DynamicBatcher:
         (either the time window has expired or the maximum batch size has
         been reached); otherwise ``None`` is returned.
 
-        :param user_prompt: Raw user input.
-        :type user_prompt: str
-        :param formatted_prompt: Formatted prompt with system instructions.
-        :type formatted_prompt: str
+        :param user_prompt: Raw user input (str for text, list for chat).
+        :param formatted_prompt: Formatted prompt (str) or conversation
+            (list of message dicts).
         :param response_queue: Queue used to send the response.
-        :type response_queue: mp.Queue
+        :type response_queue: dragon.native.Queue
         :param latency_metrics: Tuple of
             ``(entry_time, cpu_latency, guard_latency)``.
-        :type latency_metrics: tuple[float, float, float]
+        :param tools: Optional tool definitions for chat requests.
+        :param json_schema_override: Per-request JSON schema for
+            guided decoding.
+        :param continue_final_message: Whether to continue the final
+            assistant message.
         :returns: A :class:`Batch` if ready to process, otherwise ``None``.
         :rtype: Optional[Batch]
         """
@@ -203,6 +246,9 @@ class DynamicBatcher:
             formatted_prompt=formatted_prompt,
             response_queue=response_queue,
             latency_metrics=latency_metrics,
+            tools=tools,
+            json_schema_override=json_schema_override,
+            continue_final_message=continue_final_message,
         )
 
         self._current_batch.append(item)

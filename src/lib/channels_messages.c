@@ -156,9 +156,14 @@ _assign_gateway_message_header_send(dragonGatewayMessage_t * gmsg, dragonULInt t
     *(gmsg->_header.client_puid) = _get_my_puid();
     *(gmsg->_header.debug) = debug;
 
-    if (payload_nbytes < payload_ser_nbytes)
+    if (payload_nbytes < payload_ser_nbytes) {
         *(gmsg->_header.send_payload_buffered) = 1UL;
-    else
+        if (return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED)
+            /* If the payload is in the gateway message, and return_mode
+               buffered, then it might as well be return immediate since
+               that requires less (i.e. no) synchronization on completion. */
+            return_mode = DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY;
+    } else
         *(gmsg->_header.send_payload_buffered) = 0UL;
 
     /* On a send, if dest_mem_ser_nbytes is greater than 0 then there is a supplied
@@ -889,8 +894,17 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
     }
 
     dragonChannelSendReturnWhen_t return_mode = send_attr->return_mode;
+
+    if (return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED &&
+        send_msg->_attr.send_transfer_ownership) {
+        /* If it is return when_buffered and transfer of ownership then
+           return immediately can be applied because the effect for the client
+           is the same except the client gets done faster for off-node communication. */
+        return_mode = DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY;
+    }
+
     if (deadline!=NULL && deadline->tv_sec == 0 && deadline->tv_nsec == 0 &&
-        send_attr->return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED) {
+        return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED) {
         /* You can't have a try-once (indicated by zero timeout) with
            RETURN_WHEN_BUFFERED. It doesn't make sense to do a send
            and not know whether it worked or not. */
@@ -1556,48 +1570,40 @@ dragon_channel_gatewaymessage_transport_start_send_cmplt(dragonGatewayMessage_t 
     if (deadline == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "deadline cannot be NULL.");
 
-    if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_DEPOSITED ||
-        gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_RECEIVED ||
-        (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED && *(gmsg->_header.send_payload_buffered) == 0UL)) {
-
-        if ((*(gmsg->_header.client_cmplt)) != 0UL)
-            err_return(DRAGON_INVALID_OPERATION, "Gateway transport send complete already called. Operation ignored.");
-
-        /* DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY and DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED
-           don't wait for the transport service to complete the send action so in those two cases
-           we skip this step. DRAGON_CHANNEL_SEND_RETURN_WHEN_NONE is only valid for get and event
-           gateway messages, so it is not checked here */
-
-        /* Store the return code in the shared gateway message object */
-        *(gmsg->_header.op_rc) = op_err;
-
-        /* Here we get the time for debugging purposes. We want to know the amount of time
-        from when the transport calls this trigger_all to when the client actually wakes
-        up and signals completion of the gateway message interaction. */
-        double time_val = dragon_get_current_time_as_double();
-        *((double*)gmsg->_header.transport_cmplt_timestamp) = time_val;
-
-        err = dragon_bcast_trigger_all(&gmsg->_cmplt_bcast, NULL, NULL, 0);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not trigger the completion bcast for the gateway message on behalf of the transport service.");
-    } else {
-
-        if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED &&
-            op_err != DRAGON_SUCCESS) {
-            /* If the message was buffered inside the gateway message, and
-               return when buffered was specified, then the transport agent
-               cannot communicate a non-zero return code back to the user
-               so the transport agent must report the error in that case. */
+    if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY) {
+        /* Return when buffered with either transfer of ownership or
+           when the payload is in the gateway message (not a side-buffer)
+           are both handled by this immediate return mode because the send
+           create uses return immediate for these two cases, too. The client
+           will not look at the gateway message after sending it with this
+           return mode so there is nothing for the transport to do. */
+       if (op_err != DRAGON_SUCCESS) {
+            /* For these return modes there is no error communicated back to the
+               client. The transport agent must report the error in that case. */
             char err_str[200];
-            snprintf(err_str, 199, "The return code of %u was ignored by the channels gateway library because DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED was specified.", op_err);
+            snprintf(err_str, 199, "The return code of %u was ignored by the channels gateway library because WHEN_BUFFERED or RETURN_IMMEDIATELY was specified.", op_err);
             err_return(DRAGON_INVALID_OPERATION, err_str);
-        }
+       }
 
-        if (gmsg->_send_immediate_buffered_complete)
-            err_return(DRAGON_INVALID_OPERATION, "Gateway transport send complete already called in this process. Operation ignored.");
-
-        gmsg->_send_immediate_buffered_complete = true;
+        no_err_return(DRAGON_SUCCESS);
     }
+
+    /* A return mode was specified (buffered, deposited, received) which requires a return code to the sender. */
+    if ((*(gmsg->_header.client_cmplt)) != 0UL)
+        err_return(DRAGON_INVALID_OPERATION, "Gateway transport send complete already called. Operation ignored.");
+
+    /* Store the return code in the shared gateway message object */
+    *(gmsg->_header.op_rc) = op_err;
+
+    /* Here we get the time for debugging purposes. We want to know the amount of time
+    from when the transport calls this trigger_all to when the client actually wakes
+    up and signals completion of the gateway message interaction. */
+    double time_val = dragon_get_current_time_as_double();
+    *((double*)gmsg->_header.transport_cmplt_timestamp) = time_val;
+
+    err = dragon_bcast_trigger_all(&gmsg->_cmplt_bcast, NULL, NULL, 0);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not trigger the completion bcast for the gateway message on behalf of the transport service.");
 
     _get_deadline_for_cmplt(deadline);
 
@@ -1635,6 +1641,11 @@ dragon_channel_gatewaymessage_transport_check_send_cmplt(dragonGatewayMessage_t 
 
     if (gmsg->_header.client_pid == NULL || gmsg->_header.client_puid == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "client pid and puid info are NULL.");
+
+    if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY)
+        /* The client will not look at the gateway message after sending it
+           with this return mode. So nothing to do here for transport either. */
+        no_err_return(DRAGON_SUCCESS);
 
     /* When the gmsg->_header.client_cmplt is set, the client has detached from the gateway message and we
        can safely destroy the message */
@@ -1679,6 +1690,11 @@ dragon_channel_gatewaymessage_transport_send_cmplt(dragonGatewayMessage_t * gmsg
     dragonError_t err = DRAGON_SUCCESS;
     timespec_t deadline;
 
+    if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY)
+        /* The client will not look at the gateway message after sending it
+           with this return mode. */
+        no_err_return(DRAGON_SUCCESS);
+
     err = dragon_channel_gatewaymessage_transport_start_send_cmplt(gmsg, op_err, &deadline);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not start the completion of the gateway request.");
@@ -1720,28 +1736,21 @@ dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, c
     if (gmsg == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "The gateway message cannot be NULL");
 
-    /* This check is global. The processing was already done */
-    if ((*(gmsg->_header.client_cmplt)) != 0UL)
-        err_return(DRAGON_INVALID_OPERATION, "Gateway client send complete already called. Operation ignored.");
-
     if (gmsg->msg_kind != DRAGON_GATEWAY_MESSAGE_SEND)
         err_return(DRAGON_INVALID_ARGUMENT, "Attempt to call client send complete on non-send kind of gateway message");
 
-    if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_DEPOSITED ||
-        gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_RECEIVED ||
-        (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED && *(gmsg->_header.send_payload_buffered) == 0UL)) {
-
-        /* DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY and DRAGON_CHANNEL_SEND_RETURN_WHEN_BUFFERED (when the
-           message was buffered inside the gateway message) don't wait for the transport service to complete
-           the send action so in those two cases we skip this step. DRAGON_CHANNEL_SEND_RETURN_WHEN_NONE is
-           only valid for get and event gateway messages, so it is not checked here */
-
-        err = dragon_bcast_wait(&gmsg->_cmplt_bcast, wait_mode, NULL, NULL, NULL, NULL, NULL);
-
-        send_err = *(gmsg->_header.op_rc); /* get the return code from the send operation to return to client */
-    } else {
-        send_err = DRAGON_SUCCESS;
+    if (gmsg->send_return_mode == DRAGON_CHANNEL_SEND_RETURN_IMMEDIATELY) {
+        /* The client will not look at the gateway message after sending it
+           with this return mode. */
+        dragon_channel_gatewaymessage_detach(gmsg);
+        no_err_return(DRAGON_SUCCESS);
     }
+
+    /* When we get to this point the client requested a send return code. We wait on the
+       bcast for that return code and communicate it back to the caller. */
+    err = dragon_bcast_wait(&gmsg->_cmplt_bcast, wait_mode, NULL, NULL, NULL, NULL, NULL);
+
+    send_err = *(gmsg->_header.op_rc); /* get the return code from the send operation to return to client */
 
     if (send_err != DRAGON_SUCCESS)
         err_noreturn("The transport signaled a non-successful completion to the send request.");
@@ -1753,6 +1762,7 @@ dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, c
         has not quit waiting. If it has, then we may not be able to trust the data. */
         if (atomic_exchange(gmsg->_header.client_cmplt, desired) != 0UL)
             err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
+
     } else if (err == DRAGON_OBJECT_DESTROYED)
         err = DRAGON_CHANNEL_GATEWAY_TRANSPORT_WAIT_TIMEOUT;
 
@@ -1772,7 +1782,6 @@ dragon_channel_gatewaymessage_client_send_cmplt(dragonGatewayMessage_t * gmsg, c
     dragonError_t derr = dragon_channel_gatewaymessage_detach(gmsg);
     if (send_err == DRAGON_SUCCESS && err == DRAGON_SUCCESS && derr != DRAGON_SUCCESS)
         append_err_return(derr, "The client send completion could not detach from the gateway message for some reason.");
-
 
     return send_err;
 }

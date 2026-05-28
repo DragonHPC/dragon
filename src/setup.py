@@ -193,5 +193,6 @@ if __name__ == "__main__":
             "flask-jwt-extended>=4.7.1",
             "networkx",
             "setuptools>=75.6.0",
+            "numpy",
         ],
     )

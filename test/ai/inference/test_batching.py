@@ -1,14 +1,17 @@
 """
-Unit tests for the batching module.
+Unit tests for the batching module (inference/batching.py).
 
 Tests the DynamicBatcher, BatchItem, and Batch classes.
 
 These tests use Dragon multiprocessing primitives.
+
 """
 
 import dragon
 import multiprocessing as mp
+import queue
 import time
+import traceback
 from unittest import TestCase, main
 
 from dragon.ai.inference.batching import DynamicBatcher, BatchItem, Batch
@@ -90,7 +93,9 @@ class TestBatch(TestCase):
 
         batch = Batch(items=items, batch_id=1, created_at=time.time())
 
-        self.assertEqual(batch.formatted_prompts, ["<user>Hello</user>", "<user>World</user>"])
+        self.assertEqual(
+            batch.formatted_prompts, ["<user>Hello</user>", "<user>World</user>"]
+        )
 
     def test_batch_response_queues_property(self):
         """Test response_queues property."""
@@ -131,7 +136,9 @@ class TestDynamicBatcher(TestCase):
 
     def test_init_default_values(self):
         """Test initialization with default values."""
-        batcher = DynamicBatcher(batch_wait_seconds=0.1, max_batch_size=10, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=0.1, max_batch_size=10, enabled=True
+        )
 
         self.assertEqual(batcher.batch_wait_seconds, 0.1)
         self.assertEqual(batcher.max_batch_size, 10)
@@ -140,7 +147,9 @@ class TestDynamicBatcher(TestCase):
 
     def test_add_item_batching_disabled(self):
         """Test that items are returned immediately when batching is disabled."""
-        batcher = DynamicBatcher(batch_wait_seconds=0.1, max_batch_size=10, enabled=False)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=0.1, max_batch_size=10, enabled=False
+        )
 
         queue = mp.Queue()
         batch = batcher.add_item(
@@ -177,7 +186,9 @@ class TestDynamicBatcher(TestCase):
 
     def test_add_item_max_batch_size_reached(self):
         """Test that batch is returned when max batch size is reached."""
-        batcher = DynamicBatcher(batch_wait_seconds=10.0, max_batch_size=3, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=10.0, max_batch_size=3, enabled=True
+        )
 
         queue = mp.Queue()
 
@@ -238,7 +249,9 @@ class TestDynamicBatcher(TestCase):
 
     def test_flush_batch_with_items(self):
         """Test flushing batch when items are present."""
-        batcher = DynamicBatcher(batch_wait_seconds=10.0, max_batch_size=100, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=10.0, max_batch_size=100, enabled=True
+        )
 
         queue = mp.Queue()
 
@@ -265,7 +278,9 @@ class TestDynamicBatcher(TestCase):
 
     def test_flush_batch_empty(self):
         """Test flushing batch when no items are present."""
-        batcher = DynamicBatcher(batch_wait_seconds=10.0, max_batch_size=100, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=10.0, max_batch_size=100, enabled=True
+        )
 
         batch = batcher.flush_batch()
 
@@ -273,13 +288,17 @@ class TestDynamicBatcher(TestCase):
 
     def test_should_check_batch_no_items(self):
         """Test should_check_batch returns False when no items."""
-        batcher = DynamicBatcher(batch_wait_seconds=0.01, max_batch_size=100, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=0.01, max_batch_size=100, enabled=True
+        )
 
         self.assertFalse(batcher.should_check_batch())
 
     def test_should_check_batch_time_not_expired(self):
         """Test should_check_batch returns False when time not expired."""
-        batcher = DynamicBatcher(batch_wait_seconds=10.0, max_batch_size=100, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=10.0, max_batch_size=100, enabled=True
+        )
 
         queue = mp.Queue()
         batcher.add_item(
@@ -293,7 +312,9 @@ class TestDynamicBatcher(TestCase):
 
     def test_should_check_batch_time_expired(self):
         """Test should_check_batch returns True when time expired."""
-        batcher = DynamicBatcher(batch_wait_seconds=0.01, max_batch_size=100, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=0.01, max_batch_size=100, enabled=True
+        )
 
         queue = mp.Queue()
         batcher.add_item(
@@ -310,7 +331,9 @@ class TestDynamicBatcher(TestCase):
 
     def test_batch_counter_increments(self):
         """Test that batch counter increments correctly."""
-        batcher = DynamicBatcher(batch_wait_seconds=10.0, max_batch_size=1, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=10.0, max_batch_size=1, enabled=True
+        )
 
         queue = mp.Queue()
 
@@ -334,7 +357,9 @@ class TestDynamicBatcher(TestCase):
 
     def test_current_batch_age(self):
         """Test current_batch_age property."""
-        batcher = DynamicBatcher(batch_wait_seconds=10.0, max_batch_size=100, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=10.0, max_batch_size=100, enabled=True
+        )
 
         queue = mp.Queue()
 
@@ -356,7 +381,9 @@ class TestDynamicBatcher(TestCase):
 
     def test_batch_start_time_starts_on_first_item(self):
         """Batch timer should start when first item is added."""
-        batcher = DynamicBatcher(batch_wait_seconds=0.5, max_batch_size=10, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=0.5, max_batch_size=10, enabled=True
+        )
 
         # Immediately after init, there should be no active batch
         # and current_batch_age should be ~0 when first item arrives.
@@ -422,7 +449,9 @@ class TestDynamicBatcherIntegration(TestCase):
 
     def test_mixed_batching_and_flushing(self):
         """Test mixed batching with intermediate flushes."""
-        batcher = DynamicBatcher(batch_wait_seconds=10.0, max_batch_size=100, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=10.0, max_batch_size=100, enabled=True
+        )
 
         queue = mp.Queue()
 
@@ -468,7 +497,9 @@ def process_batch_worker(input_q, output_q, worker_id):
             break
 
 
-def batch_producer_worker(batch_queue: mp.Queue, num_batches: int, items_per_batch: int, worker_id: int):
+def batch_producer_worker(
+    batch_queue: mp.Queue, num_batches: int, items_per_batch: int, worker_id: int
+):
     """Worker function that produces batches and puts them in a queue.
 
     :param batch_queue: Queue to put batches into
@@ -480,8 +511,10 @@ def batch_producer_worker(batch_queue: mp.Queue, num_batches: int, items_per_bat
     :param worker_id: Unique identifier for this worker
     :type worker_id: int
     """
+    # response_queue is not used by consumers in this test, so we pass None.
+    # Creating a real Dragon queue here would cause DRAGON_OBJECT_DESTROYED
+    # when consumers deserialize batches after producer processes exit.
     for batch_idx in range(num_batches):
-        response_queue = mp.Queue()
         items = []
 
         for item_idx in range(items_per_batch):
@@ -489,7 +522,7 @@ def batch_producer_worker(batch_queue: mp.Queue, num_batches: int, items_per_bat
             item = BatchItem(
                 user_prompt=prompt,
                 formatted_prompt=f"<user>{prompt}</user>",
-                response_queue=response_queue,
+                response_queue=None,
                 latency_metrics=(time.time(), 0.1, 0.05),
             )
             items.append(item)
@@ -502,7 +535,9 @@ def batch_producer_worker(batch_queue: mp.Queue, num_batches: int, items_per_bat
         batch_queue.put(batch)
 
 
-def batch_consumer_worker(batch_queue: mp.Queue, result_queue: mp.Queue, worker_id: int):
+def batch_consumer_worker(
+    batch_queue: mp.Queue, result_queue: mp.Queue, worker_id: int
+):
     """Worker function that consumes batches from a queue and processes them.
 
     Args:
@@ -633,7 +668,9 @@ class TestMultiprocessBatchSharing(TestCase):
         self.assertEqual(retrieved_batch.batch_id, original_batch.batch_id)
         self.assertEqual(retrieved_batch.size, original_batch.size)
         self.assertEqual(retrieved_batch.user_prompts, original_batch.user_prompts)
-        self.assertEqual(retrieved_batch.formatted_prompts, original_batch.formatted_prompts)
+        self.assertEqual(
+            retrieved_batch.formatted_prompts, original_batch.formatted_prompts
+        )
 
     def test_concurrent_batch_processing_pipeline(self):
         """Test a complete pipeline with batch creation, queuing, and parallel processing."""
@@ -641,7 +678,9 @@ class TestMultiprocessBatchSharing(TestCase):
         output_queue = mp.Queue()
 
         # Create batches with a batcher
-        batcher = DynamicBatcher(batch_wait_seconds=0.01, max_batch_size=3, enabled=True)
+        batcher = DynamicBatcher(
+            batch_wait_seconds=0.01, max_batch_size=3, enabled=True
+        )
 
         response_queue = mp.Queue()
 

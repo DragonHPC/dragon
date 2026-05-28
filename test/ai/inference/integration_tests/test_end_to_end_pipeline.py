@@ -20,7 +20,6 @@ from dragon.ai.inference.config import (
     GuardrailsConfig,
     DynamicWorkerConfig,
 )
-
 from ..mocks import MockNode
 
 
@@ -42,11 +41,13 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_query_creates_data_on_input_queue(self, mock_telemetry, mock_node_class, mock_system, mock_formatter):
+    def test_query_creates_data_on_input_queue(
+        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+    ):
         """Test that Inference.query() puts properly formatted data on input queue."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0]
@@ -99,11 +100,13 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
         received = response_queue.get(timeout=1)
         self.assertEqual(received, test_response)
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_inference_creates_cpu_workers(self, mock_telemetry, mock_node_class, mock_system, mock_formatter):
+    def test_inference_creates_cpu_workers(
+        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+    ):
         """Test that Inference correctly initializes CPU worker infrastructure."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0]
@@ -143,11 +146,13 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
         self.assertIsNotNone(dragon_inference.cpu_barrier)
         self.assertTrue(hasattr(dragon_inference.cpu_barrier, "wait"))
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_multiple_queries_preserve_order(self, mock_telemetry, mock_node_class, mock_system, mock_formatter):
+    def test_multiple_queries_preserve_order(
+        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+    ):
         """Test that multiple queries maintain order through the input queue."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0]
@@ -208,11 +213,13 @@ class TestEndToEndBatchedPrompts(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_prebatch_query_formats_all_prompts(self, mock_telemetry, mock_node_class, mock_system, mock_formatter):
+    def test_prebatch_query_formats_all_prompts(
+        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+    ):
         """Test that pre-batched queries format all prompts correctly."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0]
@@ -229,7 +236,9 @@ class TestEndToEndBatchedPrompts(unittest.TestCase):
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=1),
             model=ModelConfig(model_name="test", hf_token="token", tp_size=1),
-            batching=BatchingConfig(enabled=True, batch_type="pre-batch", max_batch_size=10),
+            batching=BatchingConfig(
+                enabled=True, batch_type="pre-batch", max_batch_size=10
+            ),
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="secret",
@@ -260,11 +269,13 @@ class TestEndToEndBatchedPrompts(unittest.TestCase):
             ],
         )
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_dynamic_batching_config_propagates(self, mock_telemetry, mock_node_class, mock_system, mock_formatter):
+    def test_dynamic_batching_config_propagates(
+        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+    ):
         """Test that dynamic batching configuration propagates to workers."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0]
@@ -314,7 +325,7 @@ class TestEndToEndWithGuardrails(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.inference_utils.chat_template_formatter")
+    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
@@ -354,7 +365,9 @@ class TestEndToEndWithGuardrails(unittest.TestCase):
         # Verify guardrails config flows to cpu_worker_kwargs
         guardrails_config = dragon_inference.cpu_worker_kwargs["guardrails_config"]
         self.assertTrue(guardrails_config.enabled)
-        self.assertEqual(guardrails_config.prompt_guard_model, "meta-llama/Prompt-Guard-86M")
+        self.assertEqual(
+            guardrails_config.prompt_guard_model, "meta-llama/Prompt-Guard-86M"
+        )
         self.assertEqual(guardrails_config.prompt_guard_sensitivity, 0.75)
 
 
@@ -371,7 +384,9 @@ class TestEndToEndMultiNode(unittest.TestCase):
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_multi_node_worker_structure(self, mock_telemetry, mock_node_class, mock_system):
+    def test_multi_node_worker_structure(
+        self, mock_telemetry, mock_node_class, mock_system
+    ):
         """Test that multi-node configuration creates correct worker structure."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0, 1, 2]
@@ -427,7 +442,7 @@ class TestEndToEndMultiNode(unittest.TestCase):
         mock_node_class.side_effect = node_side_effect
 
         config = InferenceConfig(
-            hardware=HardwareConfig(num_nodes=2, num_gpus=4),
+            hardware=HardwareConfig(num_nodes=2, num_gpus=4, node_offset=2),
             model=ModelConfig(model_name="test", hf_token="token", tp_size=1),
             batching=BatchingConfig(enabled=False),
             guardrails=GuardrailsConfig(enabled=False),
@@ -467,7 +482,9 @@ class TestEndToEndPortManagement(unittest.TestCase):
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
-    def test_unique_ports_allocated_across_workers(self, mock_telemetry, mock_node_class, mock_system):
+    def test_unique_ports_allocated_across_workers(
+        self, mock_telemetry, mock_node_class, mock_system
+    ):
         """Test that each inference worker gets None for port (discovered on worker node)."""
         mock_system_instance = MagicMock()
         mock_system_instance.nodes = [0]

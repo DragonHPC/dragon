@@ -90,3 +90,21 @@ Jupyter Examples
 
     ../cbook/basic_pandarallel_demo.rst
     ../cbook/bioinfo_alignment_pandarallel_demo.rst
+
+
+Telemetry from a Jupyter Notebook
+---------------------------------
+
+Telemetry can be started from a Jupyter notebook. To do so, import the `Telemetry` class and then call the `start` method. This will start the telemetry server and allow you to see the telemetry data in the Dragon dashboard.
+
+It's also possible to display telemetry data from the notebook by using the `DragonTelemetryWidget()`. After instantiating the object, the `connect` method needs to be called to connect the widget to the telemetry infrastructure. Once it is connected, the widget can be rendered in the notebook using the following block of code:
+
+.. code-block:: python
+    :linenos:
+    out = ipywidgets.Output()
+
+    @out.capture(clear_output=True)
+    def render(metric_name, percentage_window):
+        display(widget.render(metric_name, percentage_window))
+
+    interact(render, metric_name=list(widget.get_metrics()), percentage_window=widget.custom_slider())

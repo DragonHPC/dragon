@@ -352,15 +352,19 @@ class Pool:
         self._cache = {}
 
         # thread that handles getting results from outqueue and putting in dict
-        self._results_handler = threading.Thread(
-            target=self._handle_results, args=(self._outqueue, self._cache, self._end_threading_event)
-        )
-        self._results_handler.start()
+        self._start_result_handler_thread()
 
         # thread used by map_async to chunk input list
         self._map_launch_thread = None
         # thread used by close to wait for results before sending shutdown signals
         self._close_thread = None
+
+    def _start_result_handler_thread(self):
+        self._results_handler = threading.Thread(
+            target=self._handle_results, args=(self._outqueue, self._cache, self._end_threading_event)
+        )
+        self._results_handler.start()
+
 
     def _check_running(self):
         if self._pg_closed:
