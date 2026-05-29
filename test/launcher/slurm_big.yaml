@@ -1,0 +1,288 @@
+'0':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 9555388855352840172
+    host_name: pinoak0019
+    ip_addrs:
+    - 10.150.0.84:6565
+    - 10.150.0.87:6565
+    - 10.150.0.85:6565
+    - 10.150.0.86:6565
+    is_primary: true
+    name: pinoak0019
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'1':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 12533491927761989908
+    host_name: pinoak0014
+    ip_addrs:
+    - 10.150.0.66:6565
+    - 10.150.0.64:6565
+    - 10.150.0.65:6565
+    - 10.150.0.52:6565
+    is_primary: false
+    name: pinoak0014
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'10':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 12810521104317446107
+    host_name: pinoak0023
+    ip_addrs:
+    - 10.150.0.98:6565
+    - 10.150.0.97:6565
+    - 10.150.0.99:6565
+    - 10.150.0.100:6565
+    is_primary: false
+    name: pinoak0023
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'11':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 11791745478168178748
+    host_name: pinoak0024
+    ip_addrs:
+    - 10.150.0.108:6565
+    - 10.150.0.109:6565
+    - 10.150.0.105:6565
+    - 10.150.0.106:6565
+    is_primary: false
+    name: pinoak0024
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'12':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 11887869611103826773
+    host_name: pinoak0025
+    ip_addrs:
+    - 10.150.0.103:6565
+    - 10.150.0.107:6565
+    - 10.150.0.110:6565
+    - 10.150.0.104:6565
+    is_primary: false
+    name: pinoak0025
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'13':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 11429804208641850389
+    host_name: pinoak0026
+    ip_addrs:
+    - 10.150.0.112:6565
+    - 10.150.0.113:6565
+    - 10.150.0.115:6565
+    - 10.150.0.114:6565
+    is_primary: false
+    name: pinoak0026
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'14':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 12138584579173682678
+    host_name: pinoak0027
+    ip_addrs:
+    - 10.150.0.116:6565
+    - 10.150.0.117:6565
+    - 10.150.0.118:6565
+    - 10.150.0.119:6565
+    is_primary: false
+    name: pinoak0027
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'15':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 12476220481471440359
+    host_name: pinoak0028
+    ip_addrs:
+    - 10.150.0.111:6565
+    - 10.150.0.120:6565
+    - 10.150.0.121:6565
+    - 10.150.0.130:6565
+    is_primary: false
+    name: pinoak0028
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'2':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 12401196674856057593
+    host_name: pinoak0015
+    ip_addrs:
+    - 10.150.0.69:6565
+    - 10.150.0.70:6565
+    - 10.150.0.72:6565
+    - 10.150.0.71:6565
+    is_primary: false
+    name: pinoak0015
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'3':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 11113062785457620995
+    host_name: pinoak0016
+    ip_addrs:
+    - 10.150.0.73:6565
+    - 10.150.0.74:6565
+    - 10.150.0.75:6565
+    - 10.150.0.76:6565
+    is_primary: false
+    name: pinoak0016
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'4':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 13634311004798939788
+    host_name: pinoak0017
+    ip_addrs:
+    - 10.150.0.77:6565
+    - 10.150.0.67:6565
+    - 10.150.0.78:6565
+    - 10.150.0.68:6565
+    is_primary: false
+    name: pinoak0017
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'5':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 10312278666553090270
+    host_name: pinoak0018
+    ip_addrs:
+    - 10.150.0.80:6565
+    - 10.150.0.82:6565
+    - 10.150.0.83:6565
+    - 10.150.0.81:6565
+    is_primary: false
+    name: pinoak0018
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'6':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 12224412918854258471
+    host_name: pinoak0013
+    ip_addrs:
+    - 10.150.0.61:6565
+    - 10.150.0.57:6565
+    - 10.150.0.62:6565
+    - 10.150.0.63:6565
+    is_primary: false
+    name: pinoak0013
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'7':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 10158260064294485126
+    host_name: pinoak0020
+    ip_addrs:
+    - 10.150.0.90:6565
+    - 10.150.0.89:6565
+    - 10.150.0.79:6565
+    - 10.150.0.88:6565
+    is_primary: false
+    name: pinoak0020
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'8':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 10007355517454728825
+    host_name: pinoak0021
+    ip_addrs:
+    - 10.150.0.91:6565
+    - 10.150.0.92:6565
+    - 10.150.0.93:6565
+    - 10.150.0.94:6565
+    is_primary: false
+    name: pinoak0021
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
+'9':
+    accelerators: null
+    cpu_devices: null
+    h_uid: null
+    host_id: 12583076385421469932
+    host_name: pinoak0022
+    ip_addrs:
+    - 10.150.0.96:6565
+    - 10.150.0.95:6565
+    - 10.150.0.101:6565
+    - 10.150.0.102:6565
+    is_primary: false
+    name: pinoak0022
+    num_cpus: 0
+    overlay_cd: ''
+    physical_mem: 0
+    shep_cd: ''
+    state: 4
