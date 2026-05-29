@@ -1,4 +1,0 @@
-apples
-bananas
-rodents
-stop
