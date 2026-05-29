@@ -6,7 +6,7 @@ For development effort involving new features, you must refer to that presentati
 process for design discussions and review prior to contributing any code.
 
 For code development of any kind, we always start from the Jira ticket originating the work.
-Create a branch from Jira off of master so the branch name can be easily tracked back to the
+Create a branch from Jira off of main so the branch name can be easily tracked back to the
 work description.  We always require pull requests with review before code can be merged into
 master.  It is your repsonsibility to assign 2-3 reviewers on any of your PRs.  If you need
 help identifying the right reviewers, ask the Dragon team lead.
