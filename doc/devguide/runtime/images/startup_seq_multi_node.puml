@@ -1,0 +1,124 @@
+@startuml
+skinparam style strictuml
+
+' Make sure the SVG scales in the rst correctly
+skinparam svgDimensionStyle false
+
+' Style crap
+skinparam sequenceMessageAlign direction
+skinparam LifelineStrategy nosolid
+skinparam ParticipantBackgroundColor Khaki
+skinparam NoteBackgroundColor PaleGreen
+skinparam ParticipantBorderColor Black
+skinparam NoteBorderColor Black
+skinparam ArrowColor Black
+skinparam SequenceLifeLineBorderColor Black
+
+participant "Launcher Frontend" as LA
+participant "Compute Backend" as CE
+participant "TCP Overlay Front End" as OF
+participant "Launcher Backend" as BE
+participant "TCP Overlay Backend" as OB
+participant "Local Services" as LS
+participant "Transport Agent" as TA
+participant "Global Services" as GS
+participant "User Program Entry" as UP
+
+autonumber "<b>[M0]"
+
+' function to keep track of action numbering
+!global $action_count = 0
+!function $action()
+!global $action_count = $action_count + 1
+!return "<b>[A" + $action_count + "]</b>"
+!endfunction
+
+' Do network config
+activate LA
+activate CE
+rnote over LA: $action() [[#launch-net-config {optional if user has already done this and supplied via YAML} launch network configurator]]
+LA->CE: [[#wlm-launch WLM launch]]
+rnote over CE: $action() line buffer JSON network\nconfig to stdout
+LA<-CE: [[#wlm-launch Exit]]
+deactivate CE
+
+' Start overlay on frontend
+create OF
+rnote over LA: $action() [[#launch-frontend-overlay {Popen as a child proc. Could be thread in future} OS-spawn overlay TCP agent]]
+LA->OF: [[#overlay-init CLI\nnetwork config\n& CTRL ch]]
+activate OF
+LA<-OF: [[../infrastructure/messages_api.html#overlaypingla CTRL ch\nOverlayPingLA]]
+
+' Start backend
+create BE
+rnote over LA: $action() [[#launch-backend {one instance per compute node} launch backend]]
+LA->BE: [[#wlm-launch WLM launch]]
+activate BE
+create OB
+rnote over BE: $action() [[#start-transport OS-spawn overlay TCP agent]]
+BE->OB: [[#overlay-init CLI\nnetwork config\n& CTRL ch]]
+activate OB
+OB->BE: [[../infrastructure/messages_api.html#overlaypingbe CTRL ch\nOverlayPingBE]]
+rnote over BE: $action() connect to frontend channel
+LA<-BE: [[../infrastructure/messages_api.html#beisup LA ch\nBEIsUp]]
+LA->BE: [[#give-node-id {communicated over Channels using Overlay Network} BE ch\nFENodeIdxBE]]
+
+' Start local services
+create LS
+rnote over BE: $action() [[#start-local-services OS spawn local services]]
+BE->LS: [[../infrastructure/messages_api.html#benodeidxsh stdin\nBENodeIdxSH]]
+activate LS
+rnote over LS: $action() make shared memory \nsegments and channels
+BE<-LS: [[../infrastructure/messages_api.html#shpingbe stdout\nSHPingBE]]
+rnote over BE: $action() attach to LS channel
+BE->LS: [[../infrastructure/messages_api.html#bepingsh LS ch\nBEPingSH]]
+BE<-LS: [[../infrastructure/messages_api.html#shchannelsup BE ch\nSHChannelsUp]]
+LA<-BE: [[#many-to-one LA ch\nSHChannelsUp #N]]
+rnote over LA: $action() [[#transmit-lachannelsinfo gather channels-up]]
+LA->BE: [[#one-to-many BE ch\nLAChannelsInfo #N]]
+BE->LS: [[../infrastructure/messages_api.html#lachannelsinfo LS ch\nLAChannelsInfo]]
+
+' Start transport agent
+create TA
+rnote over LS: $action() [[#start-transport OS spawn transport agent]]
+LS->TA: [[#transport-cli CLI+env\nTA,GW chs.]]
+activate TA
+LS->TA: [[../infrastructure/messages_api.html#lachannelsinfo TA ch\nLAChannelsInfo]]
+rnote over TA: $action() notify LS up
+LS<-TA: [[../infrastructure/messages_api.html#lachannelsinfo LS ch\nTAPingSH]]
+BE<-LS: [[../infrastructure/messages_api.html#taup BE ch\nTAUp]]
+LA<-BE: [[#many-to-one LA ch\nTAUp node #N]]
+
+' Start Global Services
+rnote over LS: $action() [[#start-global-services OS spawn global services]]\n on primary node
+create GS
+LS->GS: stdin\nLAChannelsInfo
+activate GS
+rnote over GS: $action() attach to channels\n$action() ping all LS
+LS<-GS: [[../infrastructure/messages_api.html#gspingsh LS ch\nGSPingSH]]
+LS->GS: [[../infrastructure/messages_api.html#shpinggs {every LS pings back to GS} GS ch\nSHPingGS #N]]
+rnote over GS: $action() notify runtime up
+BE<-GS: [[../infrastructure/messages_api.html#gsisup {only primary sends this} prime BE ch\nGSIsUp]]
+LA<-BE: [[../infrastructure/messages_api.html#gsisup {only primary sends this} prime LA ch\nGSIsUp]]
+
+== Dragon Runtime is up ==
+
+' Start user process
+rnote over LA: $action() [[#start-user-program launch head proc]]\npython3 my.py parms
+LA->BE: [[../infrastructure/messages_api.html#gsprocesscreate {only primary node receives this} prime BE ch\nGSProcessCreate my.py, parms]]
+BE->GS: prime GS ch\nGSProcessCreate my.py, parms
+BE<-GS: [[../infrastructure/messages_api.html#gsprocesscreateresponse prime BE ch\nGSProcessCreateResponse]]
+rnote over GS: $action() register head process\n$action() start on selected LS
+BE->LA: [[../infrastructure/messages_api.html#gsprocesscreateresponse {only sent to primary node} prime LA ch\nGSProcessCreateResponse]]
+LS<-GS: [[../infrastructure/messages_api.html#shprocesscreate {only selected head LS receives this} LS ch\nSHProcessCreate my.py, parms]]
+LS->GS: [[../infrastructure/messages_api.html#shprocesscreateresponse GS ch\nSHProcessCreateResponse]]
+create UP
+LS->UP: spawn my.py process
+activate UP
+rnote over UP: $action() [[#route-stdout example: print('foo')]]
+LS<-UP: stdout\n'foo'
+BE<-LS: [[../infrastructure/messages_api.html#shfwdoutput BE ch\nSHFwdOutput 'foo']]
+LA<-BE: LA ch\nSHFwdOutput 'foo'
+rnote over LA: $action() print `SHFwdOutput` contents to stdout
+... Main output continues ...
+@enduml

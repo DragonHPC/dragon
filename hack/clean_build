@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Set basic environment variables
+HACK_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";
+source ${HACK_DIR}/VARIABLES
+
+# Try deactivating any active environment. Move on if unable
+cd $HACK_DIR/..
+deactivate || true
+
+# Make a clean virtual environment
+python3 -m venv --clear _env
+. _env/bin/activate
+python3 -m pip install -U pip
+python3 -m pip install -r src/requirements.txt
+
+
+# Make a clean src directory
+make -C src distclean
+
+echo "Building source code."
+make -C src build
