@@ -16,6 +16,7 @@ __pycache__/
 *.a
 *.o
 *.srms*.png
+*.d
 /src/build
 doc/internal/adapters/images/dragon_with_python_multiprocessing.png
 doc/internal/adapters/images/python_multiprocessing.png
