@@ -3,7 +3,6 @@ When the wait is lowered into dragon.native, these tests should move along.
 """
 
 import unittest
-from test.support import socket_helper
 
 import socket
 import time
@@ -292,11 +291,6 @@ class TestDragonContextWait(unittest.TestCase):
         chan_pipes = [impbridge_ctx.Pipe(duplex=False) for _ in range(num_channels)]
         chan_writers = [chan_pipes[i][1] for i in range(num_channels)]
         chan_readers = [chan_pipes[i][0] for i in range(num_channels)]
-
-        # socket_server = socket.create_server((socket_helper.HOST, 0))
-        # addr = socket_server.getsockname()
-        # mp_writers = [addr for _ in range(num_mp_objects)]
-        # mp_readers = []
 
         proc_handles = pseudo_sentinels + writers + queues  # + mp_writers  # + chan_writers + faker_writers
         events = [dragon.native.event.Event() for _ in range(num_workers // 4)]  # that'll make it pretty messy ...

@@ -40,10 +40,10 @@ class TestDDict(unittest.TestCase):
         newmsg = dmsg.parse(ser)
         self.assertIsInstance(newmsg, dmsg.GSHalted)
         newser = "eJyrVoovSVayUjA21lFQKklMBzItawE+xQWS"
-        from_str = dmsg.parse(newser)
+        from_str = dmsg.parse(b64decode(newser))
         self.assertIsInstance(from_str, dmsg.GSHalted)
         newser = "eJyrVoovSVayUjA21lFQKklMBzItawE+xQWS\n"
-        from_str = dmsg.parse(newser)
+        from_str = dmsg.parse(b64decode(newser))
         self.assertIsInstance(from_str, dmsg.GSHalted)
         newline = b"\n\n\n\n"
         encoded = b64encode(newline)

@@ -190,6 +190,9 @@ def main():
             force_multi_node=args["force_multi_node"],
             exec_on_fe=args["include_fe"],
             fanout=args["fanout"],
+            ssh_config_path=args.get("ssh_config_path"),
+            private_key=args.get("private_key"),
+            passphrase=args.get("passphrase"),
             log_level=args.get("log_level"),  # type: ignore
         )
     except (DragonRunMissingAllocation, DragonRunNoSupportedWLM, DragonRunSingleNodeUnsupported) as exc:

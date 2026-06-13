@@ -17,7 +17,7 @@ from dragon.launcher.util import next_tag, get_with_blocking
 from dragon.launcher.network_config import NetworkConfig
 from dragon.localservices.local_svc import mk_inf_resources
 from dragon.managed_memory import MemoryPool, DragonPoolError, DragonMemoryError
-from dragon.utils import B64
+from dragon.utils import B64, b64decode, b64encode
 
 
 def get_args_map(network_config, frontend_sdesc, host_id, ip_addrs):
@@ -745,11 +745,13 @@ class LocalServices:
             default_pd=this_process.default_pd,
             inf_pd=this_process.inf_pd,
         )
-        self.ls_stdout_queue.send(be_ping.serialize())
+        self.ls_stdout_queue.send(b64encode(be_ping.serialize()))
         self.log.debug(f"send_SHPingBE sent {be_ping=}")
 
     def recv_BENodeIdxSH(self):
-        self.be_node_idx_sh = dmsg.parse(self.ls_stdin_queue.recv())
+        raw_msg = self.ls_stdin_queue.recv()
+        b64_decoded = b64decode(raw_msg)
+        self.be_node_idx_sh = dmsg.parse(b64_decoded)
         assert isinstance(self.be_node_idx_sh, dmsg.BENodeIdxSH), "expected BENodeIdxSH"
         self.log.debug(f"recv_BENodeIdxSH got {self.be_node_idx_sh=}")
 
@@ -857,7 +859,7 @@ class LocalServices:
         self.log.debug(f"send_SHHaltBE sent {sh_halt_be=}")
 
     def recv_BEHalted(self):
-        be_halted = dmsg.parse(self.ls_stdin_queue.recv())
+        be_halted = dmsg.parse(b64decode(self.ls_stdin_queue.recv()))
         assert isinstance(be_halted, dmsg.BEHalted), "expected BEHalted"
         self.log.debug(f"recv_BEHalted got {be_halted=}")
 

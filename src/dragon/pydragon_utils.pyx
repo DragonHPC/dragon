@@ -1,13 +1,14 @@
 from dragon.dtypes_inc cimport *
 from dragon.return_codes cimport *
 import ctypes
-import numpy as np
 import os
 import sys
 import time
 import threading
 from socket import gethostname
-#import cython
+from .infrastructure.facts import lazy_import
+
+np = lazy_import("numpy")
 
 cpdef host_id_from_k8s(str pod_uid):
     """This is used to get a hostid based on the k8s pod uid.
@@ -492,19 +493,128 @@ class ExceptionalThread(threading.Thread):
             ctypes.pythonapi.PyThreadState_SetAsyncExc(thread_id, None)
         return retval
 
+cpdef enum SerType:
+    TY_NONE = SERTYPE_NONE
+    TY_STR = SERTYPE_STR
+    TY_INT = SERTYPE_INT
+    TY_DOUBLE = SERTYPE_DOUBLE
+    TY_INTVECTOR = SERTYPE_INTVECTOR
+    TY_DOUBLEVECTOR = SERTYPE_DOUBLEVECTOR
+    TY_INTMATRIX = SERTYPE_INTMATRIX
+    TY_DOUBLEMATRIX = SERTYPE_DOUBLEMATRIX
+    TY_BYTEBUFFER = SERTYPE_BYTEBUFFER
 
-class XNumPy2DPickler:
+class XNumPyVectorPickler:
     """A Pickler that has X-language support and is compatible with the C++
-    SerializableDouble2DVector. Pickling a numpy array with this pickler can
-    be read in C++ by deserializing using the SerializableDouble2DVector.
-    Likewise, a C++ matrix serialized with the SerializableDouble2DVector can
+    SerializableVector<Type>. Pickling a numpy array with this pickler can
+    be read in C++ by deserializing using the SerializableVector<Type>.
+    Likewise, a C++ matrix serialized with the SerializableVector<Type> can
+    be unpickled into a numpy array as well. This is meant to be an
+    efficient implementation for passing arrays/vectors to and from other
+    languages (at present that means C++) through a pickling/unpickling
+    interface like native Queue or DDict. """
+
+    def __init__(self, data_type: np.dtype, type_val = TY_NONE):
+        self._ty_val = type_val
+        self._data_type = data_type
+
+    @property
+    def ty_val(self):
+        """
+        This is the type value to identify the particular type of value
+        to be unpickled. It is one of the SerType values.
+        """
+        return self._ty_val
+
+    def byte_size(self, nparr):
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        item_size = np.dtype(self._data_type).itemsize
+        return size_t_size + item_size * len(nparr)
+
+    def dumps(self, nparr) -> bytes:
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        try:
+            ncol, = nparr.shape
+        except:
+            raise ValueError("The array must be a 1-dimensional array")
+
+        bytes_ncol = ncol.to_bytes(size_t_size, byteorder=sys.byteorder)
+        mv = memoryview(nparr)
+        bobj = mv.tobytes()
+        rv = bytes_ncol
+        rv += bobj
+        return rv
+
+    def loads(self, val):
+        obj = None
+        total_size = len(val)
+        # read the number of rows in the matrix
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        ncol = int.from_bytes(val[:size_t_size], sys.byteorder)
+        idx = size_t_size
+        item_size = np.dtype(self._data_type).itemsize
+
+        # then grab the array
+        data_size = ncol*item_size
+        data = val[idx:idx+data_size]
+        view = memoryview(data)
+        obj = bytearray(view)
+        idx+=data_size
+
+        ret_arr = np.frombuffer(obj, dtype=self._data_type).reshape((ncol,))
+        return ret_arr
+
+    def dump(self, nparr, file) -> None:
+
+        # write the dimension of the array
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        ncol, = nparr.shape
+        bytes_ncol = ncol.to_bytes(size_t_size, byteorder=sys.byteorder)
+        file.write(bytes_ncol)
+
+        mv = memoryview(nparr)
+        bobj = mv.tobytes()
+        file.write(bobj)
+
+    def load(self, file):
+
+        # read the dimension of the array
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        ncol = int.from_bytes(file.read(size_t_size), sys.byteorder)
+        item_size = np.dtype(self._data_type).itemsize
+
+        data = file.read(ncol*item_size)
+        # convert bytes to bytearray
+        view = memoryview(data)
+        obj = bytearray(view)
+
+        ret_arr = np.frombuffer(obj, dtype=self._data_type).reshape((ncol,))
+
+        return ret_arr
+
+class XNumPy2DMatrixPickler:
+    """A Pickler that has X-language support and is compatible with the C++
+    Serializable2DMatrix<Type>. Pickling a numpy array with this pickler can
+    be read in C++ by deserializing using the Serializable2DMatrix<Type>.
+    Likewise, a C++ matrix serialized with the Serializable2DMatrix<Type> can
     be unpickled into a numpy matrix was well. This is meant to be an
     efficient implementation for passing 2D matrices to and from other
     languages (at present that means C++) through a pickling/unpickling
     interface like native Queue or DDict. """
 
-    def __init__(self, data_type: np.dtype):
+    def __init__(self, data_type: np.dtype, type_val = TY_NONE):
+        self._ty_val = type_val
         self._data_type = data_type
+        self._arr_pickler = XNumPyVectorPickler(data_type)
+
+    @property
+    def ty_val(self):
+        return self._ty_val
+
+    def byte_size(self, nparr):
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        nrow, ncol = nparr.shape
+        return size_t_size + nrow * XNumPyVectorPickler.byte_size(nparr[0])
 
     def dumps(self, nparr) -> bytes:
         size_t_size = ctypes.sizeof(ctypes.c_size_t)
@@ -513,10 +623,7 @@ class XNumPy2DPickler:
         bytes_ncol = ncol.to_bytes(size_t_size, byteorder=sys.byteorder)
         rv = bytes_nrow
         for i in range(nrow):
-            mv = memoryview(nparr[i])
-            bobj = mv.tobytes()
-            rv += bytes_ncol
-            rv += bobj
+            rv += self._arr_pickler.dumps(nparr[i])
 
         return rv
 
@@ -530,28 +637,16 @@ class XNumPy2DPickler:
         item_size = np.dtype(self._data_type).itemsize
         total_size = len(val)
 
-        try:
-            for i in range(nrow):
-                # read the number of columns in the row.
-                ncol = int.from_bytes(val[idx:idx+size_t_size], sys.byteorder)
-                idx += size_t_size
-                # then grab the row and extend the bytearray with it
-                data = val[idx:idx+ncol*item_size]
-                idx += ncol*item_size
-                if obj is None:
-                    # convert bytes to bytearray
-                    view = memoryview(data)
-                    obj = bytearray(view)
-                else:
-                    obj.extend(data)
-        except EOFError:
-            pass
+        ret_arr = np.array([])
+        ncol = 0
 
-        if (idx != total_size):
-            raise RuntimeError(f"The computed length from loads was {idx} and the actual length was {total_size}")
+        for i in range(nrow):
+            arr = self._arr_pickler.loads(val[idx:])
+            ncol = len(arr)
+            idx += self._arr_pickler.byte_size(arr)
+            ret_arr = np.append(ret_arr, arr)
 
-        ret_arr = np.frombuffer(obj, dtype=self._data_type).reshape((nrow, ncol))
-
+        ret_arr = ret_arr.reshape((nrow, ncol))
         return ret_arr
 
     def dump(self, nparr, file) -> None:
@@ -571,10 +666,7 @@ class XNumPy2DPickler:
         # default numpy matrices.
 
         for i in range(nrow):
-            mv = memoryview(nparr[i])
-            bobj = mv.tobytes()
-            file.write(bytes_ncol) # The C++ (de)serialization for vector 1D expects this.
-            file.write(bobj)
+            self._arr_pickler.dump(nparr[i], file)
 
 
     def load(self, file):
@@ -585,52 +677,117 @@ class XNumPy2DPickler:
         size_t_size = ctypes.sizeof(ctypes.c_size_t)
         nrow = int.from_bytes(file.read(size_t_size), sys.byteorder)
         item_size = np.dtype(self._data_type).itemsize
+        ret_arr = np.array([])
+        ncol = 0
 
-        try:
-            while True:
-                ncol = int.from_bytes(file.read(size_t_size), sys.byteorder)
-                data = file.read(ncol*item_size)
-                if obj is None:
-                    # convert bytes to bytearray
-                    view = memoryview(data)
-                    obj = bytearray(view)
-                else:
-                    obj.extend(data)
-        except EOFError:
-            pass
+        for i in range(nrow):
+            arr = self._arr_pickler.load(file)
+            ncol = len(arr)
+            ret_arr = np.append(ret_arr, arr)
 
-        ret_arr = np.frombuffer(obj, dtype=self._data_type).reshape((nrow, ncol))
+        ret_arr = ret_arr.reshape((nrow, ncol))
 
         return ret_arr
+
+class XByteBufferPickler:
+    """A Pickler that has X-language support and is compatible with the C++
+    SerializableByteBuffer. Pickling a byte buffer with this pickler can
+    be read in C++ by deserializing using the SerializableByteBuffer class.
+    Likewise, a C++ byte buffer serialized with the SerializableByteBuffer can
+    be unpickled into a bytes object as well. This is meant to be used by code
+    that wishes to access the bytes and perhaps provide code that interprets them
+    in an application specific way. """
+
+    def __init__(self):
+        pass
+
+    @property
+    def ty_val(self):
+        """
+        This is the type value to identify the particular type of value
+        to be unpickled. It is one of the SerType values.
+        """
+        return TY_BYTEBUFFER
+
+    def byte_size(self, val: bytes) -> int:
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        item_size = 1 # byte
+        return size_t_size + item_size * len(val)
+
+    def dumps(self, val: bytes) -> bytes:
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        num_bytes = len(val)
+        size_bytes = num_bytes.to_bytes(size_t_size, byteorder=sys.byteorder)
+        rv = size_bytes
+        rv += val
+        return rv
+
+    def loads(self, val: bytes) -> bytes:
+        total_size = len(val)
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        data_size = int.from_bytes(val[:size_t_size], sys.byteorder)
+
+        # then grab the data
+        idx = size_t_size
+        stop_idx = idx + data_size
+        data = val[idx:stop_idx]
+
+        if total_size != stop_idx:
+            raise ValueError(f"The bytes size was {total_size} and the encoded size was {stop_idx}. They should match.")
+
+        return data
+
+    def dump(self, val:bytes, file) -> None:
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        num_bytes = len(val)
+        size_bytes = num_bytes.to_bytes(size_t_size, byteorder=sys.byteorder)
+        file.write(size_bytes)
+        file.write(val)
+
+    def load(self, file):
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        data_size = int.from_bytes(file.read(size_t_size), sys.byteorder)
+        data = file.read(data_size)
+        return data
 
 
 class XScalarPickler:
     """A Pickler that has X-language support and is compatible with the C++
     Scalars like int and double. Pickling a scalar with this pickler can be
     read in C++ by deserializing using the SeralizableInt or
-    SerializableDouble class. Likewise, a C++ int/double serialized with
-    SeralizableInt or SerializableDouble can be unpickled into a int/float
+    SerializableScalar class. Likewise, a C++ int/double serialized with
+    SeralizableScalar and SerializableScalar can be unpickled into a int/float
     was well, enabling cross language communication between Python and other
     languages (at present that means C++) through a pickling/unpickling
     interface like native Queue or DDict. """
 
-    def __init__(self, data_type: np.dtype):
+    def __init__(self, data_type: np.dtype, type_val = TY_NONE):
+        self._ty_val = type_val
         self._data_type = data_type
         self._num_bytes = np.dtype(self._data_type).itemsize
+
+    @property
+    def ty_val(self):
+        return self._ty_val
+
+    def byte_size(self, val):
+        return self._num_bytes
 
     def dumps(self, val) -> bytes:
         val = self._data_type(val)
         return val.tobytes()
 
     def loads(self, val: bytes) -> object:
-        return np.frombuffer(val, dtype=self._data_type)[0].item()
+        try:
+            return np.frombuffer(val, dtype=self._data_type)[0].item()
+        except Exception as ex:
+            raise ValueError(f"The value {val} was not decodable as a scalar of type {self._data_type}")
 
     def dump(self, val, file) -> None:
         file.write(self.dumps(val))
 
     def load(self, file) -> object:
         return self.loads(file.read(self._num_bytes))
-
 
 class XStringPickler:
     """A Pickler that has X-language support and is compatible with the C++
@@ -643,6 +800,15 @@ class XStringPickler:
 
     def __init__(self):
         pass
+
+    @property
+    def ty_val(self):
+        return TY_STR
+
+    def byte_size(self, val):
+        size_t_size = ctypes.sizeof(ctypes.c_size_t)
+        strlen = len(val)
+        return size_t_size + strlen
 
     def dumps(self, val) -> bytes:
         size_t_size = ctypes.sizeof(ctypes.c_size_t)
@@ -666,3 +832,93 @@ class XStringPickler:
         val = file.read(strlen)
         rv = val.decode('utf-8')
         return rv
+
+class XPickler:
+    """A Pickler that has X-language support and is compatible with the C++
+    Serializables. Objects to be shared between Python and C++ must be supported
+    by XPickler on the Python side and the Serializable class on the C++ side.
+    Pickling a supported object with this pickler can be read in
+    C++ by deserializing using the Seralizable class. Likewise, a C++
+    Serializable object can be unpickled into its corresponding Python object,
+    enabling cross communication between Python and other languages (at
+    present that means C++) through a pickling/unpickling interface like
+    native Queue or DDict. """
+
+    def __init__(self):
+        self._str_pickler = XStringPickler()
+        self._int_pickler = XScalarPickler(np.int32, TY_INT)
+        self._double_pickler = XScalarPickler(np.float64, TY_DOUBLE)
+        self._intvector_pickler = XNumPyVectorPickler(np.int32, TY_INTVECTOR)
+        self._doublevector_pickler = XNumPyVectorPickler(np.float64, TY_DOUBLEVECTOR)
+        self._intmatrix_pickler = XNumPy2DMatrixPickler(np.int32, TY_INTMATRIX)
+        self._doublematrix_pickler = XNumPy2DMatrixPickler(np.float64, TY_DOUBLEMATRIX)
+        self._bytebuffer_pickler = XByteBufferPickler()
+
+        self._ty_pickler = {
+            TY_STR: self._str_pickler,
+            TY_INT: self._int_pickler,
+            TY_DOUBLE: self._double_pickler,
+            TY_INTVECTOR: self._intvector_pickler,
+            TY_DOUBLEVECTOR: self._doublevector_pickler,
+            TY_INTMATRIX: self._intmatrix_pickler,
+            TY_DOUBLEMATRIX: self._doublematrix_pickler,
+            TY_BYTEBUFFER: self._bytebuffer_pickler
+        }
+
+
+    def choose_pickler(self, val):
+        if isinstance(val, str):
+            return self._str_pickler
+
+        if isinstance(val, int):
+            return self._int_pickler
+
+        if isinstance(val, float):
+            return self._double_pickler
+
+        if isinstance(val, bytes):
+            return self._bytebuffer_pickler
+
+        if isinstance(val, np.ndarray):
+            if isinstance(val[0], int):
+                return self._intvector_pickler
+
+            if isinstance(val[0], float):
+                return self._doublevector_pickler
+
+            if isinstance(val[0], np.ndarray):
+                if isinstance(val[0][0], int):
+                    return self._intmatrix_pickler
+
+                if isinstance(val[0][0], float):
+                    return self._doublematrix_pickler
+
+
+        raise ValueError(f"Value {val} of unknown type {type(val)} cannot be pickled by XPickler.")
+
+    @classmethod
+    def ty_bytes(cls, pickler):
+        int_size = ctypes.sizeof(ctypes.c_int)
+        return pickler.ty_val.to_bytes(int_size, byteorder=sys.byteorder)
+
+    def dumps(self, val) -> bytes:
+        pickler = self.choose_pickler(val)
+        ty_bytes = XPickler.ty_bytes(pickler)
+        return ty_bytes + pickler.dumps(val)
+
+    def loads(self, val: bytes) -> object:
+        int_size = ctypes.sizeof(ctypes.c_int)
+        ty_val = np.frombuffer(val[:int_size], dtype=np.int32)[0].item()
+        if ty_val not in self._ty_pickler:
+            raise ValueError("The bytes are not XPickled and could not be decoded.")
+        pickler = self._ty_pickler[ty_val]
+        return pickler.loads(val[int_size:])
+
+    def dump(self, val, file) -> None:
+        file.write(self.dumps(val))
+
+    def load(self, file) -> object:
+        int_size = ctypes.sizeof(ctypes.c_int)
+        ty_val = int.from_bytes(file.read(int_size), sys.byteorder)
+        pickler = self._ty_pickler[ty_val]
+        return pickler.load(file)

@@ -3,26 +3,25 @@ CXX = g++
 export CXXFLAGS = -fPIC
 export CPPFLAGS = -fPIC
 
-ROOT_DIR:=$(shell dirname $(realpath $(firstword $(MAKEFILE_LIST))))
+CAPNP_INSTALL_DIR ?= $(shell pwd)/../src
 
-ifeq ($(VIRTUAL_ENV),)
-	VIRTUAL_ENV = $(CONDA_PREFIX)
-endif
-CAPNP_INSTALL_DIR:=$(shell echo ${VIRTUAL_ENV})
+CAPNP_TARGETS = $(CAPNP_INSTALL_DIR)/bin/capnp \
+			    $(CAPNP_INSTALL_DIR)/include/capnp/message.h
 
-# Don't add to main build target. This is targeted directly in src/Makefile.
-build-capnproto:
-ifeq ($(wildcard capnproto/c++/capnp), )
-	rm -rf capnproto || true
+capnproto:
 	git clone https://github.com/capnproto/capnproto.git
+
+capnproto/c++/Makefile: capnproto
 	cd capnproto && git checkout b34ec28   # Stick to a defined commit in master, v1.1.0
 	cd capnproto/c++ && autoreconf -i && ./configure --prefix=$(CAPNP_INSTALL_DIR) --disable-shared
-	cd capnproto/c++ && make && make install
-	ln -sf $(CAPNP_INSTALL_DIR)/include/* ../src/include/
-endif
+
+$(CAPNP_TARGETS): capnproto/c++/Makefile
+	cd capnproto/c++ && $(MAKE) && $(MAKE) install
+
+build-capnproto: $(CAPNP_TARGETS)
 
 clean-capnproto:
-	rm -rf capnproto
+	cd capnproto/c++ && $(MAKE) clean
 
 .PHONY: build
 build: build-capnproto

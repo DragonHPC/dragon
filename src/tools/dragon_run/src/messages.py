@@ -151,38 +151,44 @@ class HelloAck(InfraMsg):
 class CreateTree(InfraMsg):
     _tc = MessageTypes.CREATE_TREE
 
-    def __init__(self, tag, children, fanout, _tc=None):
+    def __init__(self, tag, children, fanout, private_key, passphrase, ssh_config_path, _tc=None):
         super().__init__(tag, _tc)
         self.children = children
         self.fanout = fanout
+        self.ssh_config_path = ssh_config_path or ""
+        self.private_key = private_key or ""
+        self.passphrase = passphrase or ""
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["children"] = self.children
         rv["fanout"] = self.fanout
+        rv["ssh_config_path"] = self.ssh_config_path
+        rv["private_key"] = self.private_key
+        rv["passphrase"] = self.passphrase
         return rv
 
     def __str__(self):
-        return f"{super().__str__()}, self.children={self.children!r}"
+        return f"{super().__str__()}, self.children={self.children!r}, self.fanout={self.fanout!r}, self.private_key={self.private_key!r}"
 
 
 class AbnormalRuntimeExit(InfraMsg):
     _tc = MessageTypes.ABNORMAL_RUNTIME_EXIT
 
-    def __init__(self, tag, hostname, data, _tc=None):
+    def __init__(self, tag, hostname, reason, _tc=None):
         super().__init__(tag, _tc)
 
         self.hostname = hostname
-        self.data = data
+        self.reason = reason
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["hostname"] = self.hostname
-        rv["data"] = self.data
+        rv["reason"] = self.reason
         return rv
 
     def __str__(self):
-        return f"{super().__str__()}, self.hostname={self.hostname!r} self.data={self.data!r}"
+        return f"{super().__str__()}, self.hostname={self.hostname!r} self.reason={self.reason!r}"
 
 class BackendUp(InfraMsg):
     _tc = MessageTypes.BACKEND_UP

@@ -104,7 +104,7 @@ class TestLogHandler(unittest.TestCase):
         dlog.setup_BE_logging(service=dlog.DragonLoggingServices.TEST, logger_sdesc=serialized_logging_queue)
         py_logger = logging.getLogger(dlog.DragonLoggingServices.TEST)
         py_logger.info(self.info_log_message)
-        msg = dmsg.parse(logging_queue.get(INFO))
+        msg : dmsg.CpLoggingMessage = logging_queue.get() # type: ignore
         self.assertEqual(msg.msg, self.info_log_message)
 
         if logging_queue is not None:
@@ -137,7 +137,7 @@ class TestLoggingSubprocesses(unittest.TestCase):
         msgs = []
         while total != nmsg or niter > iter_max:
             try:
-                msgs.append(dmsg.parse(self.logging_queue.get(level)))
+                msgs.append(self.logging_queue.get())
                 total += 1
             except (DragonLoggingError, ChannelEmpty):
                 pass
@@ -261,9 +261,9 @@ class TestLoggingInfrastructure(unittest.TestCase):
     def flush_logs(self, level, test_queue):
 
         for _ in range(self.logging_queue.num_logs()):
-            msg = self.logging_queue.get(level)
+            msg = self.logging_queue.get()
             if msg is not None:
-                test_queue.send(dmsg.parse(msg).serialize())
+                test_queue.send(msg.serialize())
 
     def send_dummy_msgs(self, n_msgs, test_queue):
 

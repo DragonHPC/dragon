@@ -19,7 +19,7 @@ by using the FLI send and receive operations. See :ref:`The FLI API<DragonFileLi
 Some example Serializables are provided and can be found in the
 `header file <https://github.com/DragonHPC/dragon/blob/main/src/include/dragon/serializable.hpp>`_
 and the `implementation of Serializable <https://github.com/DragonHPC/dragon/blob/main/src/lib/serializable.cpp>`_.
-The template provided here is not mean to be instantiated, but provides an outline of what you
+The template provided here is not meant to be instantiated, but provides an outline of what you
 would want to write. Documentation for Serializables can be found :ref:`here <DragonNativeSerializableC++>`.
 
 .. literalinclude:: ./../../../../src/include/dragon/serializable.hpp
@@ -45,7 +45,7 @@ be stored and retrieved to/from it. Other example code can be found in
       // This demonatrates attaching to a serialized DDict. The ddict_ser
       // would be provided to the program via a command-line argument or some
       // other means (like a Queue).
-      DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+      DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
       manager_id = dd.which_manager(x); // Sample code, not needed here.
       dd[x] = y; // Stores the key x and maps it to y in the DDict dd.
       SerializableInt z = dd[x]; //Looks up key x to find its value.

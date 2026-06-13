@@ -204,14 +204,14 @@ def get_shepherd_msg_queue(stdin=None, stdout=None):
         # doesn't raise "underlying buffer has been detached".
         bin_stdin = sys.stdin.detach()
         sys.stdin = io.StringIO()
-        shep_stdin_msg = dutil.NewlineStreamWrapper(bin_stdin, write_intent=False)
+        shep_stdin_msg = dutil.NewlineStreamWrapper(bin_stdin, write_intent=False, b64_encode_decode=True)
     else:
         shep_stdin_msg = stdin
 
     if stdout is None:
         bin_stdout = sys.stdout.detach()
         sys.stdout = io.StringIO()
-        shep_stdout_msg = dutil.NewlineStreamWrapper(bin_stdout, write_intent=True)
+        shep_stdout_msg = dutil.NewlineStreamWrapper(bin_stdout, write_intent=True, b64_encode_decode=True)
     else:
         shep_stdout_msg = stdout
 
@@ -530,7 +530,7 @@ def multinode(
 
                 gs_stdin = gs.stdin
                 gs.stdin = None  # transfer ownership; avoids double-close of same fd (Python 3.13)
-                gs_stdin_send = dutil.NewlineStreamWrapper(gs_stdin, read_intent=False)
+                gs_stdin_send = dutil.NewlineStreamWrapper(gs_stdin, read_intent=False, b64_encode_decode=True)
                 gs_stdin_send.send(la_channels_info.serialize())
                 log.info("transmitted la_channels_info to gs")
 

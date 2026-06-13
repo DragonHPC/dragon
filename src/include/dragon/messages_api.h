@@ -55,6 +55,27 @@ extern "C" {
 using namespace dragon;
 #endif
 
+#define LOG_LEVEL_DEBUG 10
+#define LOG_LEVEL_INFO 20
+#define LOG_LEVEL_WARNING 30
+#define LOG_LEVEL_ERROR 40
+#define LOG_LEVEL_CRITICAL 50
+
+dragonError_t dragon_logging_attach();
+dragonError_t dragon_log_message(
+    const char* name,
+    const char* msg,
+    const char* time,
+    const char* func,
+    const char* hostname,
+    const char* ipAddress,  //
+    uint16_t port,
+    const char* service,
+    uint8_t level,
+    const timespec_t* timeout
+);
+dragonError_t dragon_logging_detach();
+
 dragonError_t recv_fli_msg(dragonFLIRecvHandleDescr_t* recvh, DragonMsg** msg, const timespec_t* timeout);
 dragonError_t dragon_sh_send_receive(DragonMsg* req_msg, DragonResponseMsg** resp_msg, enum MessageType expected_msg_type, dragonFLIDescr_t* return_fli, const timespec_t* timeout);
 dragonError_t dragon_get_return_sh_fli(dragonFLIDescr_t* return_fli);

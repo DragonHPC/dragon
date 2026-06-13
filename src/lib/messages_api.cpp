@@ -24,6 +24,17 @@ uint64_t inc_sh_tag() {
     return tmp;
 }
 
+static uint64_t logging_tag = 0;
+static dragonFLIDescr_t logging_fli;
+static bool logging_fli_attached = false;
+static const char* DRAGON_LOGGER_SDESC = "DRAGON_LOGGER_SDESC";
+
+uint64_t inc_logging_tag() {
+    uint64_t tmp = logging_tag;
+    logging_tag+=1;
+    return tmp;
+}
+
 using namespace dragon;
 dragonError_t
 recv_fli_msg(dragonFLIRecvHandleDescr_t* recvh, DragonMsg** msg, const timespec_t* timeout)
@@ -201,7 +212,6 @@ dragonError_t _dragon_get_return_sh_fli(dragonFLIDescr_t* return_fli, dragonChan
 
 }
 
-
 dragonError_t dragon_get_return_sh_fli(dragonFLIDescr_t* return_fli)
 {
 
@@ -230,6 +240,106 @@ dragonError_t dragon_get_return_sh_fli(dragonFLIDescr_t* return_fli)
 
 }
 
+dragonError_t
+dragon_logging_attach()
+{
+    if (!logging_fli_attached) {
+        dragonError_t err;
+        char* logger_sdesc = getenv(DRAGON_LOGGER_SDESC);
+        dragonFLISerial_t ser_fli;
+
+        if (logger_sdesc == NULL)
+            err_return(DRAGON_INVALID_ARGUMENT, "The DRAGON_LOGGER_SDESC environment variable must be set to log messages.");
+
+        // Decode Serialized Descriptor and Attach to FLI
+
+        ser_fli.data = dragon_base64_decode(logger_sdesc, &ser_fli.len);
+
+        err = dragon_fli_attach(&ser_fli, NULL, &logging_fli);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not attach to serialized FLI.");
+
+        err = dragon_fli_serial_free(&ser_fli);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not free the serialized FLI structure.");
+
+        logging_fli_attached = true;
+    }
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t
+dragon_log_message(
+    const char* name,
+    const char* msg,
+    const char* time,
+    const char* func,
+    const char* hostname,
+    const char* ipAddress,  //
+    uint16_t port,
+    const char* service,
+    uint8_t level,
+    const timespec_t* timeout
+)
+{
+    dragonError_t err;
+
+    if (!logging_fli_attached)
+        append_err_return(DRAGON_INVALID_OPERATION, "The dragon logging FLI is not attached.");
+
+    // Check inputs
+    if (msg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The message argument cannot be NULL.");
+
+    // Open FLI SendHandle
+    dragonFLISendHandleDescr_t sendh;
+
+    err = dragon_fli_open_send_handle(&logging_fli, &sendh, NULL, NULL, timeout);
+    if (err != DRAGON_SUCCESS) {
+        std::cout << "error opening send handle" << err << std::endl;
+        append_err_return(err, "Could not open send handle.");
+    }
+
+    // Build and Send Message
+    CPLoggingMessage cp_logging_msg(
+        inc_logging_tag(),
+        name == NULL ? "" : name,
+        msg,
+        time == NULL ? "" : time,
+        func == NULL ? "" : func,
+        hostname == NULL ? "" : hostname,
+        ipAddress == NULL ? "" : ipAddress,
+        port,
+        service == NULL ? "" : service,
+        level
+    );
+
+    err = cp_logging_msg.send(&sendh, timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not send DragonMsg.");
+
+    err = dragon_fli_close_send_handle(&sendh, timeout);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not close send handle.");
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+dragonError_t
+dragon_logging_detach()
+{
+    if (logging_fli_attached) {
+        dragonError_t err;
+
+        err = dragon_fli_detach(&logging_fli);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not detach from logging FLI.");
+
+        logging_fli_attached = false;
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
 
 dragonError_t
 dragon_sh_send_receive(DragonMsg* req_msg, DragonResponseMsg** resp_msg, MessageType expected_msg_type,

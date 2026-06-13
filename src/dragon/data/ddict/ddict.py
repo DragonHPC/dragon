@@ -51,7 +51,7 @@ try:
 except:
     DAOS_EXISTS = False
 
-from ...utils import b64decode, b64encode, hash as dragon_hash, get_local_kv, host_id, TimeKeeper
+from ...utils import b64decode, b64encode, hash as dragon_hash, get_local_kv, host_id, TimeKeeper, XPickler
 from ...infrastructure.parameters import this_process
 from ...infrastructure import messages as dmsg
 from ...infrastructure import policy
@@ -2073,7 +2073,7 @@ class DDict:
         if self._chosen_manager is not None:
             return (self._chosen_manager, pickled_key)
 
-        if self._key_pickler is None:
+        if stripped_key is not None:
             # We will try this first if no chosen manager. Might not be instance of
             # one of these. If not we fall down to code below which is what we want
             # when a manager is chosen.
@@ -2112,12 +2112,14 @@ class DDict:
                     # It is a pickled value so don't call serialize.
                     sendh.send_bytes(msg, arg=arg, buffer=buffered, timeout=self._timeout)
 
-    def _recv_resp(self, resp_set, buffered_connector):
+    def _recv_resp(self, resp_set, buffered_connector, timeout=-1):
         self._traceit("About to open receive handle on fli to receive response.")
         done = False
+        if timeout == -1:
+            timeout = self._timeout
         with buffered_connector.recvh(timeout=self._timeout) as recvh:
             while not done:
-                resp_ser_msg, hint = recvh.recv_bytes(timeout=self._timeout)
+                resp_ser_msg, hint = recvh.recv_bytes(timeout=timeout)
                 msg = dmsg.parse(resp_ser_msg)
                 if msg.ref not in resp_set:
                     log.info("Tossing lost/timed out response message in DDict Client: %s", msg)
@@ -2182,7 +2184,7 @@ class DDict:
 
         return resp_msgs
 
-    def _recv_dmsg_and_val(self, req_msg, key, manager_not_local=False):
+    def _recv_dmsg_and_val(self, req_msg, key, manager_not_local=False, pickler=None):
         self._traceit("About to open receive handle on fli to receive response and value.")
         with self._return_connector.recvh(use_main_as_stream_channel=True, timeout=self._timeout) as recvh:
             ref = -1
@@ -2202,7 +2204,12 @@ class DDict:
                 try:
                     free_mem = resp_msg.freeMem or manager_not_local
                     log.debug(f"{free_mem=}")
-                    if self._value_pickler is None:
+                    if pickler is not None:
+                        value = pickler.load(file=PickleReadAdapter(
+                                recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout
+                            )
+                        )
+                    elif self._value_pickler is None:
                         value = cloudpickle.load(
                             file=PickleReadAdapter(
                                 recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout
@@ -2276,12 +2283,12 @@ class DDict:
                 f"The operation timed out. This could be a network failure or an out of memory condition.\n{str(ex)}",
             )
 
-    def _put(self, msg, key, value):
+    def _put(self, msg, key, value, timeout=-1):
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
         self._send_dmsg_and_key_value(manager_id, msg, pickled_key, key, value)
         try:
             with self._timekeeper.record("recv put resp"):
-                resp_msg = self._recv_resp(set([msg.tag]), self._buffered_return_connector)
+                resp_msg = self._recv_resp(set([msg.tag]), self._buffered_return_connector, timeout=timeout)
         except TimeoutError as ex:
             raise DDictTimeoutError(
                 DragonError.TIMEOUT,
@@ -2880,6 +2887,87 @@ class DDict:
         resp_msg = self._send_receive([(msg, None)], connection=self._orc_connector, buffered=True)
         if resp_msg.err != DragonError.SUCCESS:
             raise DDictError(resp_msg.err, f"Failed to mark manager {manager_id} as drained! {resp_msg.errInfo}")
+
+    def get(self, key: object, default=None):
+        """
+        Get a value given a key from the distributed dictionary. If the key is not found, then
+        respond with default. This method never raises KeyError as a result.
+
+        :param key: The key of a key/value pair.
+
+        :param default: The value to return if key is not mapped to a value in the DDict.
+
+        :returns: The key's mapped value or default if it is not mapped.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            return default
+
+    def fetch_add(self, key: object, val:int=1) -> object:
+        """
+
+        Fetch the value that is associated with the given key. As a side-effect
+        the integer val is added (atomically) after fetching it. The val integer
+        may be either positive or negative. A value of 0 would have no effect
+        other than to return the current value.
+
+        On the first call to fetch_add the key/value pair should not already exist and
+        the value returned from the first call to fetch_add will be 0. If the key/value
+        pair does exist, an error will likely occur unless the value had been pickled using
+        the XPickler in Python or the Serializable class in C++ and the value of the pair
+        was an integer.
+
+        If attempting to retrieve the value associated with a fetch_add pair by calling
+        get or the dunder getitem method, then the pickler in Python MUST be an XPickler
+        instance (see the DDict pickler method). In C++ the value must be deserialized using
+        the Serializable class. A simpler approach may be to get the value for a given key
+        by calling d.fetch_add(key,0) which will return the current value and leave it
+        unchanged.
+
+        :param key: The key of a fetch_add key/value pair. If the key is not currently
+        in the DDict, it will be created and 0 will be returned.
+
+        :param val: The amount to atomically add to the value after fetching it. The
+        value can be negative. A default value of 1 is supplied if not provided.
+
+        :returns: The integer value associated with the key before it is changed.
+
+        :raises Exception: Various exceptions can be raised including TimeoutError.
+
+        """
+        pickler = XPickler()
+        manager_id, pickled_key = self._choose_manager_pickle_key(key)
+        msg = dmsg.DDGet(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, key=pickled_key, fetchAdd=True, fetchAddVal=val)
+        self._check_manager_connection(manager_id)
+        self._send([(msg, None)], self._managers[manager_id], buffered=True)
+        manager_not_local = manager_id not in self._local_managers
+        value = self._recv_dmsg_and_val(msg, key, manager_not_local, pickler)
+
+        return value
+
+    def wait_for(self, key: object, value: object, timeout=None) -> None:
+        """
+
+        This sends a DDPut message to the correct manager that won't do a put, but
+        instead will wait for the value to be stored there by some other process.
+        This provides a synchronization primitive that processes can use when they
+        are waiting for a value. If the value is already stored at the key, then
+        this will return immediately.
+
+        This can also terminate with a timeout. The specified timeout overrides
+        any ddict global timeout specified when attaching or creating this ddict.
+
+        :param key: The key.
+
+        :param value: The value to wait for.
+
+        :raises Exception: Various exceptions can be raised including TimeoutError.
+
+        """
+        msg = dmsg.DDPut(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, persist=False, waitFor=True)
+        self._put(msg, key, value, timeout)
+
 
     def pput(self, key: object, value: object) -> None:
         """

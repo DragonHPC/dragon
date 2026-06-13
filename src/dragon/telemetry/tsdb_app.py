@@ -228,5 +228,6 @@ def set_telemetry_shutdown():
     resp = {"shutdown": True}
     return Response(json.dumps(resp), mimetype="application/json"), HTTPStatus.OK
 
+
 if __name__ == "__main__":
     app.run()

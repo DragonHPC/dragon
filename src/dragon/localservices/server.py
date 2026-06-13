@@ -947,7 +947,7 @@ class LocalServer:
             if msg_pre is None:
                 continue
 
-            if isinstance(msg_pre, str) or isinstance(msg_pre, bytearray):
+            if isinstance(msg_pre, (str, bytes, bytearray)):
                 try:
                     msg = dmsg.parse(msg_pre)
                 except (json.JSONDecodeError, KeyError, NotImplementedError, ValueError, TypeError) as err:
@@ -961,7 +961,7 @@ class LocalServer:
                 if resp_msg is not None:
                     self._send_response(target_uid=msg.r_c_uid, msg=resp_msg)
             else:
-                self._abnormal_termination("unexpected msg type: %s" % repr(msg))
+                self._abnormal_termination("unexpected msg type in LocalServices: %s" % repr(msg))
 
         log.info("Main loop has exited. Now cleaning up local channels, pools, and other resources")
 
@@ -2273,13 +2273,14 @@ class LocalServer:
                     EOF = False
                     handled = False
                     str_data = str(ex)
+
                     try:  # did we get a GSHalted?
-                        msg = dmsg.parse(str_data)
+                        msg = dmsg.parse(b64decode(str_data))
                         if isinstance(msg, dmsg.GSHalted):
                             handled = True
                             self._DTBL[dmsg.GSHalted][0](self, msg=msg)
                             EOF = True
-                    except json.JSONDecodeError:
+                    except (ValueError, json.JSONDecodeError):
                         pass
 
                     if not handled:

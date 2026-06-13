@@ -122,7 +122,9 @@ dictionary by using the given serialized dictionary descriptor.
 All data interacting with the Distributed Dictionary C++ API must be in the form
 of serializable objects. Those serializable objects are created from the classes
 defined and implemented in `serializable.hpp` and `serializable.cpp`. These
-classes extend the Serializable interface.
+classes extend the SerializableBase class. A Serializable wrapper class may be used
+to conveniently allow passing any of the pre-defined types through the DDict
+API or the Queue API.
 
 Workers are instances of processes running the program `ddict_pi_sim_train.cpp`.
 They compute local average results of the PI simulation in parallel. There's a

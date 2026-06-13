@@ -1,5 +1,6 @@
 import os
 import subprocess
+import logging
 
 from .base import WLM, BaseWLM
 from dragon.infrastructure.facts import TransportAgentOptions
@@ -35,7 +36,7 @@ class DRunWLM(BaseWLM):
         """
         raise RuntimeError("DRunNetworkConfig does not implement _get_wlm_launch_be_args")
 
-    def _launch_network_config_helper(self) -> subprocess.Popen:
+    def _launch_network_config_helper(self, args_map: dict) -> subprocess.Popen:
         if not self.hostlist:
             raise RuntimeError("DRunWLM requires a non-empty hostlist.")
 
@@ -47,6 +48,9 @@ class DRunWLM(BaseWLM):
             stdout=PIPE,
             stderr=PIPE,
             env=os.environ.copy(),
+            ssh_config_path=args_map.get("ssh_config_path"),
+            private_key=args_map.get("private_key"),
+            passphrase=args_map.get("passphrase"),
         )  # type: ignore
 
     def launch_backend(  # type: ignore
@@ -62,6 +66,7 @@ class DRunWLM(BaseWLM):
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
+        log_level: int = logging.NOTSET,
     ):
         be_args = self._get_dragon_launch_be_args(
             fe_ip_addr=fe_ip_addr,
@@ -79,7 +84,10 @@ class DRunWLM(BaseWLM):
             stdout=PIPE,
             stderr=PIPE,
             env=os.environ.copy(),
-            # log_level=logging.DEBUG,
+            ssh_config_path=args_map.get("ssh_config_path"),
+            private_key=args_map.get("private_key"),
+            passphrase=args_map.get("passphrase"),
+            log_level=log_level,
         )
 
         return wlm_proc

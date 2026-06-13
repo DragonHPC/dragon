@@ -7,7 +7,7 @@ import unittest
 import threading
 import json
 from subprocess import TimeoutExpired
-from unittest.mock import patch
+from unittest.mock import patch, ANY
 
 from dragon.launcher.util import next_tag
 from dragon.launcher.launchargs import get_parser
@@ -615,7 +615,9 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
                 send_abnormal_term(node["conn"])
 
         # Proceed with teardown
-        handle_teardown(self.be_nodes, self.primary_conn, self.fe_ta_conn, gs_head_exit=False, abnormal_termination=True)
+        handle_teardown(
+            self.be_nodes, self.primary_conn, self.fe_ta_conn, gs_head_exit=False, abnormal_termination=True
+        )
 
         # Join on the frontend thread
         fe_proc.join()
@@ -685,7 +687,14 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
                 send_abnormal_term(node["conn"])
 
         # Proceed with teardown
-        handle_teardown(self.be_nodes, self.primary_conn, self.fe_ta_conn, gs_head_exit=False, timeout_overlay=True, abnormal_termination=True)
+        handle_teardown(
+            self.be_nodes,
+            self.primary_conn,
+            self.fe_ta_conn,
+            gs_head_exit=False,
+            timeout_overlay=True,
+            abnormal_termination=True,
+        )
 
         # Join on the frontend thread
         fe_proc.join()
@@ -765,6 +774,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
             port=DEFAULT_OVERLAY_NETWORK_PORT,
             network_prefix="^(eth|hsn)",
             hostlist=None,
+            args_map=ANY,
             sigint_trigger=None,
         )
 
@@ -774,7 +784,15 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
     @patch("dragon.launcher.wlm.pbs.PBSWLM.check_for_wlm_support")
     @patch("dragon.launcher.wlm.slurm.SlurmWLM.check_for_wlm_support")
     @patch("dragon.launcher.network_config.NetworkConfig.from_wlm")
-    def test_wlm_drun_auto_detect(self, exceptions_caught_in_threads, mock_config, slurm_check_mock, pbs_check_mock, k8s_check_mock, ssh_check_mock):
+    def test_wlm_drun_auto_detect(
+        self,
+        exceptions_caught_in_threads,
+        mock_config,
+        slurm_check_mock,
+        pbs_check_mock,
+        k8s_check_mock,
+        ssh_check_mock,
+    ):
         """Test we throw an error if a user doesn't specify a WLM, and we only detect drun"""
         parser = get_parser()
         arg_list = ["-l", "dragon_file=DEBUG", "--network-prefix", "^(eth|hsn)", "hello_world.py"]
@@ -853,6 +871,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
             port=DEFAULT_OVERLAY_NETWORK_PORT,
             network_prefix="^(eth|hsn)",
             hostlist=None,
+            args_map=ANY,
             sigint_trigger=None,
         )
 

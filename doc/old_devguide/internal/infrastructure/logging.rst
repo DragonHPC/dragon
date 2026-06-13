@@ -25,13 +25,13 @@ With that target in mind, the goals are:
 Frontend Services
 =================
 
-The Dragon launcher frontend is the ultimate destination for all the logging messages
-created by backend services. In order to avoid clobbering
-infrastructure messages, the :py:func:`dragon.launcher.util.logging_queue_monitor` decorator
+The Dragon launcher frontend is the ultimate destination for many of the logging messages
+created by backend services. In order to prevent the frontend from being overwhelmed,
+the :py:func:`dragon.launcher.util.logging_queue_monitor` decorator
 pulls any messages received from the callback and puts them in a separate queue so
 the server can write them to log as infrastructure requests allow. All the messages
 received by the frontend server must be an instance of
-:py:class:`dragon.infrastructure.messages.LoggingMsgList`
+:py:class:`dragon.infrastructure.messages.CpLoggingMessage`.
 
 In order to keep management of all the messages sane and easily parsible, the launcher
 frontend has a separate Python log for each service. Each log is referenced by names defined as

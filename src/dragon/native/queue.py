@@ -63,6 +63,7 @@ def _mk_sem_channel(*, pool=None, block_size=None, policy=None):
 
 
 class Queue:
+
     """A Dragon native Queue relying on Dragon Channels.
 
     The interface resembles Python Multiprocessing.Queue. In particular, the
@@ -91,7 +92,7 @@ class Queue:
         mgr_channel: object = None,
         sem_channel: object = None,
         strm_channels: list[object] = None,
-        pickler=cp,
+        pickler = cp,
     ):
         """Init method
 
@@ -233,7 +234,7 @@ class Queue:
 
         self._serialized_fli = b64encode(self._fli.serialize())
 
-        LOG.debug("Created queue {self!r}")
+        LOG.debug("Created queue %s", repr(self))
         self._closed = False
 
     def __getstate__(self):
@@ -614,11 +615,15 @@ class Queue:
         return self._serialized_fli
 
     @classmethod
-    def attach(cls, serialized_bytes, *, mpool: object = None) -> object:
+    def attach(cls, serialized_bytes, *, mpool: object = None, pickler = cp) -> object:
         """Attach to a Dragon native Queue from its serialized descriptor.
 
         :param serialized_bytes: The serialized descriptor of the queue.
         :type serialized_bytes: bytes
+        :param mpool: An optional memory pool to use for the attached queue. If not provided, the default pool on the node will be used.
+        :type mpool: object, optional
+        :param pickler: An optional pickler to use for the attached queue. If not provided, cloudpickle will be used.
+        :type pickler: object, optional
         :return: The attached Queue object.
         :rtype: Queue
         """
@@ -645,7 +650,7 @@ class Queue:
         _strm_channels = []
         _fli = fli.FLInterface.attach(b64decode(serialized_bytes), mpool)
         _node_index = None  # Don't set it here. That way we won't talk to GS unless asked to.
-        _pickler = cp.dumps(cp)
+        _pickler = pickler = cp.dumps(pickler)
 
         new_state = (
             _maxsize,

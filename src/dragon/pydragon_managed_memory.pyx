@@ -1088,6 +1088,15 @@ cdef class MemoryPool:
 
         return mem_alloc_obj
 
+    def alloc_from_bytes(self, bytes_object):
+        """
+        Create an allocation and then copy the bytes_object into it.
+        """
+        alloc = self.alloc(len(bytes_object))
+        alloc.get_memview()[:] = bytes_object
+        return alloc
+
+
     def get_allocations(self, alloc_type=None):
         """
         Get a list of allocations in this pool

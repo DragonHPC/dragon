@@ -86,7 +86,7 @@ class RemoteExecutor:
 
     @util.route(messages.AbnormalRuntimeExit, _DTBL)
     def handleAbnormalRuntimeExit(self, msg: messages.AbnormalRuntimeExit):
-        logger.debug("handleAbnormalRuntimeExit err=%s", msg.err)
+        logger.debug("handleAbnormalRuntimeExit reason=%s", msg.reason)
         self._handleAbnormalRuntimeExit(msg)
 
     @util.route(messages.BackendUp, _DTBL)
@@ -141,7 +141,7 @@ class RemoteExecutor:
             logger.debug("setting backend_tree_destroyed")
             self.backend_tree_destroyed.set()
 
-    def connect(self):
+    def connect(self, ssh_config_path, private_key, passphrase):
         try:
             logger.debug("++connect")
             if not self.num_children:
@@ -163,7 +163,13 @@ class RemoteExecutor:
             for i in range(self.num_children):
                 child_rank: int = self.my_rank * self.fanout + i + 1
                 backend_connector = BackendConnector(
-                    host=SSHHost(hostname=self.hosts[i], rank=child_rank, log_level=self.log_level),
+                    host=SSHHost(
+                        hostname=self.hosts[i],
+                        rank=child_rank, log_level=self.log_level,
+                        ssh_config_path=ssh_config_path,
+                        private_key=private_key,
+                        passphrase=passphrase,
+                    ),
                     child_tree=self.get_child_tree(i),
                     fanout=self.fanout,
                     remote_executor_q=self.msg_q,
@@ -202,12 +208,12 @@ class RemoteExecutor:
         logger.debug("joining main_thread_msg_thread")
         self.main_thread_msg_thread.join()
 
-    def __enter__(self):
-        self.connect()
-        return self
+        logger.debug("joining Transport threads")
+        for thread in threading.enumerate():
+            if thread.__class__.__name__ == "Transport":
+                thread.join(timeout=2)
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.disconnect()
+        logger.debug("--disconnect")
 
     def pool_watcher(self):
         try:
@@ -240,8 +246,8 @@ class FERemoteExecutor(RemoteExecutor):
         self.drun_q = drun_q
 
     def _handleAbnormalRuntimeExit(self, msg: messages.AbnormalRuntimeExit):
-        logger.debug("__handleAbnormalRuntimeExit hostname=%s err=%s", msg.hostname, msg.err)
-        print(msg.data)
+        logger.debug("__handleAbnormalRuntimeExit hostname=%s reason=%s", msg.hostname, msg.reason)
+        print(msg.reason)
         self.drun_q.put(msg)
 
     def _handleFwdOutput(self, msg: messages.FwdOutput):
@@ -259,7 +265,7 @@ class BERemoteExecutor(RemoteExecutor):
         self.drbe_q = drbe_q
 
     def _handleAbnormalRuntimeExit(self, msg: messages.AbnormalRuntimeExit):
-        logger.debug("__handleAbnormalRuntimeExit hostname=%s err=%s", msg.hostname, msg.err)
+        logger.debug("__handleAbnormalRuntimeExit hostname=%s reason=%s", msg.hostname, msg.reason)
         self.drbe_q.put(msg)
 
     def _handleFwdOutput(self, msg: messages.FwdOutput):

@@ -1,19 +1,46 @@
 import os
 from functools import partial
 from pathlib import Path
+import re
+from collections import defaultdict
 import platform
-from sysconfig import get_config_var
+import shutil
+from subprocess import check_call
 
 from setuptools import Extension, find_packages, setup
-from setuptools.command.build import build as _build
-from setuptools.command.build_py import build_py as _build_py
+from setuptools.command.build import build
+from setuptools.command.build_ext import build_ext
+from setuptools.command.build_py import build_py
+from setuptools.command.editable_wheel import editable_wheel
+
 from Cython.Build import cythonize
 
 from dragon.cli import entry_points
 
-
 ROOTDIR = str(Path(__file__).parent)
 LIBRARIES = ["dragon"]
+
+
+def get_extra_requires(path, add_all=True):
+
+    with open(path) as fp:
+        extra_deps = defaultdict(set)
+        for k in fp:
+            if k.strip() and not k.startswith("#"):
+                tags = set()
+                if ":" in k:
+                    k, v = k.split(":")
+                    tags.update(vv.strip() for vv in v.split(","))
+                tags.add(re.split("[<=>]", k)[0])
+                for t in tags:
+                    extra_deps[t].add(k)
+
+        # add tag `all` at the end
+        if add_all:
+            extra_deps["all"] = set(vv for v in extra_deps.values() for vv in v)
+
+    return extra_deps
+
 
 def make_relative_rpath_args(path):
     """Construct platform-appropriate RPATH to support binary
@@ -55,39 +82,90 @@ extensions = [
 ]
 
 
-class build(_build):
-    user_options = _build.user_options + [("cythonize", None, "cythonize packages and modules")]
+def stage_package_dependencies(rootdir: Path):
+    """Stage wheel assets inside dragon/ so setuptools includes them."""
 
-    boolean_options = _build.boolean_options + ["cythonize"]
+    # Include binaries and libraries created by make
+    lib_tempdir = rootdir / "dragon" / "lib"
+    try:
+        # Files included in wheels must appear under the package tree.
+        lib_tempdir.symlink_to(rootdir / "lib")
+    except:
+        if not lib_tempdir.is_symlink():
+            raise
+
+    bin_tempdir = rootdir / "dragon" / "bin"
+    try:
+        bin_tempdir.symlink_to(rootdir / "bin")
+    except:
+        if not bin_tempdir.is_symlink():
+            raise
+
+    # Get the capnp message defs in the wheel
+    message_defs_file = rootdir / "dragon" / "infrastructure" / "message_defs.capnp"
+    try:
+        message_defs_file.unlink(missing_ok=True)  # needed if rebuilding w/different dir structure.
+        message_defs_file.symlink_to(rootdir / "lib" / "message_defs.capnp")
+    except:
+        if not message_defs_file.is_symlink():
+            raise
+
+    # Make sure the capnp include directories get in the correct place
+    # Package up the include subdirectories
+    include_tempdir = rootdir / "dragon" / "include"
+    include_tempdir.mkdir(parents=True, exist_ok=True)
+    for subdir in ("dragon", "kj", "capnp"):
+        src = rootdir / "include" / subdir
+        dst = include_tempdir / subdir
+        if dst.is_symlink() or dst.is_file():
+            dst.unlink()
+        elif dst.is_dir():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst)
+
+
+def run_make_build(rootdir: Path):
+    make_cmd = ["make", "build"]
+    check_call(make_cmd, cwd=rootdir)
+
+
+class DragonBuild(build):
+    def run(self):
+        rootdir = Path(ROOTDIR)
+
+        def compile():
+            run_make_build(rootdir)
+
+        self.execute(compile, [], "Compiling Cython dependencies with make")
+        super().run()
+
+
+class DragonEditableWheel(editable_wheel):
+    def run(self):
+        rootdir = Path(ROOTDIR)
+
+        def compile():
+            run_make_build(rootdir)
+
+        self.execute(compile, [], "Compiling Cython dependencies with make")
+        super().run()
+
+
+class DragonBuild_ext(build_ext):
+    user_options = build.user_options + [("cythonize", None, "cythonize packages and modules")]
+
+    boolean_options = build.boolean_options + ["cythonize"]
 
     def initialize_options(self):
         super().initialize_options()
         self.cythonize = 0
 
     def run(self):
-        rootdir = Path(ROOTDIR)
-        lib_tempdir = rootdir / "dragon" / "lib"
-        try:
-            # In order for setuptools to include files in a wheel, those
-            # files must be in f'{ROOTDIR}/dragon' or a subdirectory; we
-            # create a temporary symlink to point at f'{ROOTDIR}/lib' to
-            # include 'libdragon.so' etc. in the binary wheel.
-            lib_tempdir.symlink_to(rootdir / "lib")
-        except:
-            if not lib_tempdir.is_symlink():
-                raise
-
-        message_defs_file = rootdir / "dragon" / "infrastructure" / "message_defs.capnp"
-        try:
-            message_defs_file.unlink(missing_ok=True) # needed if rebuilding w/different dir structure.
-            message_defs_file.symlink_to(rootdir / "lib" / "message_defs.capnp")
-        except:
-            if not message_defs_file.is_symlink():
-                raise
-
         _cythonize = partial(
             cythonize,
-            nthreads=int(os.environ.get("DRAGON_BUILD_NTHREADS", os.cpu_count() if platform.system() != "Darwin" else 0)),
+            nthreads=int(
+                os.environ.get("DRAGON_BUILD_NTHREADS", os.cpu_count() if platform.system() != "Darwin" else 0)
+            ),
             show_all_warnings=True,
             compiler_directives={"language_level": "3", "boundscheck": False},
             build_dir=self.build_temp,
@@ -114,20 +192,35 @@ class build(_build):
                     force=True,
                 )
             )
-            # build_py_options = self.distribution.command_options.setdefault('build_py', {})
-            # build_py_options['compile'] = ('setup script', 1)
+
             build_ext_options = self.distribution.command_options.setdefault("build_ext", {})
             build_ext_options["inplace"] = ("setup script", 0)
 
         super().run()
-        lib_tempdir.unlink()
 
 
-class build_py(_build_py):
+class DragonBuild_py(build_py):
     # The find_modules() implementation in setuptools (really distutils)
     # automatically adds __init__.py for any non-root package module listed in
     # py_modules. As a result, our implementation is a simplified variant of
     # the original that does not automatically add __init__.py.
+
+    def run(self):
+        stage_package_dependencies(Path(ROOTDIR))
+
+        # Include all staged header files recursively in package data.
+        # We can't add it just via package_data in setup() because setuptools
+        # doesn't support a recursive glob, and we want to avoid hardcoding the list
+        # of header files.
+        dragon_root = Path(ROOTDIR) / "dragon"
+        include_root = dragon_root / "include"
+        package_data = self.distribution.package_data.setdefault("dragon", [])
+        include_files = [p.relative_to(dragon_root).as_posix() for p in include_root.rglob("*") if p.is_file()]
+        for rel_path in include_files:
+            if rel_path not in package_data:
+                package_data.append(rel_path)
+
+        super().run()
 
     def find_modules(self):
         """Finds individually-specified Python modules, ie. those listed by
@@ -170,29 +263,36 @@ class build_py(_build_py):
 
 
 if __name__ == "__main__":
+
     setup(
-        # cmdclass={"build": build, "build_py": build_py, "clean": clean},
-        cmdclass={"build": build, "build_py": build_py},
+        cmdclass={
+            "build": DragonBuild,
+            "build_ext": DragonBuild_ext,
+            "build_py": DragonBuild_py,
+            "editable_wheel": DragonEditableWheel,
+        },
         options={"build_py": {"compile": 1}, "build_ext": {"inplace": 1}},
         name="dragonhpc",
         version=os.environ.get("DRAGON_VERSION", "latest"),
-        packages=find_packages(),
-        package_data={"dragon": ["lib/libdragon.so", "lib/libpmod.so"]},
+        include_package_data=False,
+        packages=find_packages(include=["dragon*"]),
+        package_data={
+            "dragon": [
+                "lib/libdragon.so",
+                "lib/libpmod.so",
+                "bin/dragon-*",
+                "localservices/dragon-popen",
+                "infrastructure/message_defs.capnp",
+            ]
+        },
         ext_modules=extensions,
         entry_points=entry_points,
-        python_requires=">=3.10",
         install_requires=[
             "cloudpickle>=3.0.0",
-            "gunicorn>=22.0.0",
-            "flask>=3.0.3",
             "pyyaml>=6.0.2",
-            "requests>=2.32.2",
             "psutil>=5.9.0",
             "pycapnp>=2.0.0,<2.2.0",
             "paramiko>=3.5.1",
-            "flask-jwt-extended>=4.7.1",
-            "networkx",
-            "setuptools>=75.6.0",
-            "numpy",
         ],
+        extras_require=get_extra_requires("extra-requirements.txt"),
     )

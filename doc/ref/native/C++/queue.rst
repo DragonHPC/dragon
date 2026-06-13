@@ -5,7 +5,8 @@ Queue
 
 The Queue class in C++ is a typed queue of serializables. Queues in C++ send one
 type of :ref:`Serializable <DragonNativeSerializableC++>` through them. The
-Serializable type you write could be a base class of many types of subclasses.
+SerializableBase type is a base class of many types, all of which can be inherited
+from to define additional Serializable types.
 There is a lot of power in this allowing virtually any type of value to be passed
 through the Queue with the proper serialization and deserialization.
 
@@ -17,7 +18,7 @@ through the Queue with the proper serialization and deserialization.
 
     // attach to a queue provided in queue_ser. You would get
     // queue_ser as a command-line argument for intance.
-    Queue<SerializableInt> q(queue_ser);
+    Queue<Serializable> q(queue_ser);
     SerializableInt x(25);
     q.put(x);
     q.put(x);

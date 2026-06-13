@@ -43,7 +43,7 @@ Resubmit as part of a 'salloc' or 'sbatch' execution."""
     def _supports_net_conf_cache(self) -> bool:
         return False
 
-    def _launch_network_config_helper(self) -> subprocess.Popen:
+    def _launch_network_config_helper(self, args_map: dict) -> subprocess.Popen:
         srun_launch_args = self.SRUN_ARGS[:]
         srun_launch_args.extend(list(self.NETWORK_CFG_HELPER_LAUNCH_CMD)) # type: ignore
 

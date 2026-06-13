@@ -15,7 +15,6 @@ import logging
 import stat
 import subprocess
 
-
 LOG = logging.getLogger(__name__)
 
 from dragon.telemetry.tsdb_server import tsdb, ENFORCED_DB_PERMISSIONS

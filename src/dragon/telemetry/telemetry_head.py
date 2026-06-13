@@ -15,6 +15,7 @@ import gunicorn
 import gunicorn.app.base
 import logging
 import socket
+from pathlib import Path
 from dragon.dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 from dragon.utils import set_local_kv
 from dragon.telemetry.analysis_server import AnalysisServer, LS_TAS_KEY
@@ -86,6 +87,7 @@ def aggregator_server(queue_dict: dict, return_queue: object, telemetry_cfg: obj
         telemetry_cfg (object): Telemetry environment config
     """
     import dragon.telemetry.aggregator_app as aggregator_app
+
     result_dict = {}
 
     def when_ready(server):
@@ -164,7 +166,14 @@ def _register_with_local_services(serialized_slow_node_channel):
     set_local_kv(key=LS_TAS_KEY, value=serialized_slow_node_channel)
 
 
-def start_server(queue_discovery, slow_node_discovery, return_queue_dict, shutdown_event, telemetry_cfg: object, offline_telemetry_args: tuple = None):
+def start_server(
+    queue_discovery,
+    slow_node_discovery,
+    return_queue_dict,
+    shutdown_event,
+    telemetry_cfg: object,
+    offline_telemetry_args: tuple = None,
+):
     from dragon.telemetry.dragon_server import DragonServer
 
     ds_queue = Queue()
@@ -172,7 +181,7 @@ def start_server(queue_discovery, slow_node_discovery, return_queue_dict, shutdo
     queue_discovery.put((hostname, ds_queue))
     # if slow_node_service:
     # TODO: should consider a long timeout here maybe - keep off for offline_telemetry
-    if offline_telemetry_args is None: # We don't have slow node service for offline telemetry
+    if offline_telemetry_args is None:  # We don't have slow node service for offline telemetry
         slow_node_channel_sdesc = slow_node_discovery.get()
         _register_with_local_services(slow_node_channel_sdesc)
 
@@ -217,13 +226,19 @@ def start_telemetry(telemetry_level=None):
     return_queue_as = Queue()
     return_queue_dict = {"aggregator": return_queue_aggregator, "analysis-server": return_queue_as}
     cfg_path = os.getenv("DRAGON_TELEMETRY_CONFIG", None)
-    # if cfg is none pass empty dict, else pass actual cfg
     if cfg_path is None:
-        telemetry_cfg = {}
-    else:
-        with open(cfg_path, "r") as file:
-            telemetry_cfg = yaml.safe_load(file)
-    args = (queue_discovery, as_discovery, return_queue_dict, shutdown_event, telemetry_cfg, None) # None since offline_telemetry is not used
+        raise RuntimeError("DRAGON_TELEMETRY_CONFIG must be set before telemetry startup")
+
+    with open(cfg_path, "r") as file:
+        telemetry_cfg = yaml.safe_load(file)
+    args = (
+        queue_discovery,
+        as_discovery,
+        return_queue_dict,
+        shutdown_event,
+        telemetry_cfg,
+        None,
+    )  # None since offline_telemetry is not used
     cwd = os.getcwd()
 
     grp = ProcessGroup(restart=False, pmi=None)

@@ -144,6 +144,30 @@ dragon_ddict_detach(dragonDDictDescr_t* obj);
 dragonError_t
 dragon_ddict_create_request(const dragonDDictDescr_t* obj, dragonDDictRequestDescr_t* req);
 
+/**
+ * @brief Create a request descriptor for making a request to the distributed
+ * dictionary with a specified timeout
+ *
+ * All internal state of the connection to the distributed dictionary is
+ * maintained by this request object. Details of particular operations may be
+ * stored in the private data structure for this object but are not accessible
+ * directly by the user. The user uses associated API calls that use this
+ * object. Not every request requires a request object. Requests that are
+ * accomplished by one API call are not dependent on a request object. When a
+ * request object is required it will be evident in the API.
+ *
+ * @param obj is a valid DDict descriptor that has previously been created or attached.
+ *
+ * @param req is a pointer to a request object that will be initialized by this call.
+ *
+ * @param timeout is a pointer to a timespec_t that contains the timeout. If timeout
+ * is nullptr, then there is no timeout and operations will wait forever.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_ddict_create_request_with_timeout(const dragonDDictDescr_t* obj, dragonDDictRequestDescr_t* req, const timespec_t* timeout);
+
 
 /**
  * @brief Return the DDict request send handle.
@@ -281,8 +305,9 @@ dragon_ddict_write_bytes(const dragonDDictRequestDescr_t* req, size_t num_bytes,
  *
  * If all data has been read, then DRAGON_EOT will be returned as the return
  * code. This should be called after a get operation has been performed by
- * calling dragon_ddict_get. Note that before calling the get operation, the
- * key should have been written using the dragon_ddict_write_bytes operation.
+ * calling dragon_ddict_get or a dragon_ddict_fetch_add. Note that before
+ * calling the get or fetch operation, the key should have been written
+ * using the dragon_ddict_write_bytes operation.
  *
  * @param req is a valid request object that has been used to initiate reading
  * data from the distributed dictionary. For example, a key should have been
@@ -310,13 +335,13 @@ dragon_ddict_write_bytes(const dragonDDictRequestDescr_t* req, size_t num_bytes,
  * Calling this waits to receive streamed data from a distributed
  * dictionary manager. If all data has been read, then DRAGON_EOT will be
  * returned as the return code. This should be called after a get operation
- * has been performed by calling dragon_ddict_get. Note that before calling
- * the get operation, the key should have been written using the
- * dragon_ddict_write_bytes operation.
+ * has been performed by calling dragon_ddict_get or dragon_ddict_fetch_add.
+ * Note that before calling the get operation, the key should have been
+ * written using the dragon_ddict_write_bytes operation.
  *
  * @param req is a valid request object that has been used to initiate reading
  * data from the distributed dictionary. For example, a key should have been
- * written and dragon_ddict_get should have been called.
+ * written and dragon_ddict_get or dragon_ddict_fetch_add should have been called.
  *
  * @param requested_size is the number of requested bytes. The actual size will
  * be equal to or less than the requested_size.
@@ -341,8 +366,9 @@ dragon_ddict_write_bytes(const dragonDDictRequestDescr_t* req, size_t num_bytes,
  * the underlying managed memory object to the user. If all data has been
  * read, then DRAGON_EOT will be returned as the return code. This should be
  * called after a get operation has been performed by calling
- * dragon_ddict_get. Note that before calling the get operation, the key
- * should have been written using the dragon_ddict_write_bytes operation.
+ * dragon_ddict_get or dragon_ddict_fetch_add. Note that before calling
+ * the get or fetch operation, the key should have been written using the
+ * dragon_ddict_write_bytes operation.
  *
  * @param req is a valid request object that has been used to initiate reading
  * data from the distributed dictionary. For example, a key should have been
@@ -403,22 +429,81 @@ dragon_ddict_which_manager(const dragonDDictRequestDescr_t * req_descr, uint64_t
 /**
  * @brief Calling this tells the ddict client to take the key already written via
  * the dragon_ddict_write_bytes call(s) to be posted to the correct manager
- * and wait for a response.
+ * and wait for a response. The key should map to a Serializable integer
+ * value. This operation fetches the current value mapped to by the key and
+ * then atomically adds the val before returning the previous contents to the
+ * caller. This can be used for a number of reasons when an atomic fetch_add
+ * is needed across a number of processes. If the key does not exist, it will
+ * automatically be assigned a value of 0 on the first fetch_add. If it
+ * already exists, but fetch_add did not create it, then the value must be
+ * pickled with the XPickler in Python or the Serializable class in C++.
+ * Subsequent calls return the value before incrementing it atomically.
  *
  * @param req is a valid created request object. It must have already had a key
  * written to it via the dragon_ddict_write_bytes call.
+ *
+ * @param val Is the amount to atomically add to the stored value after it is
+ * fetched.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ **/
+ dragonError_t
+ dragon_ddict_fetch_add(const dragonDDictRequestDescr_t* req, int val);
+
+
+ /**
+ * @brief Calling this tells the ddict client to take the key already written via
+ * the dragon_ddict_write_bytes call(s) to be posted to the correct manager
+ * and wait for a response to obtain the value mapped to by the given key.
+ *
+ * @param req is a valid created request object. It must have already had a key
+ * written to it via the dragon_ddict_write_bytes call.
+ *
+ * @param fetch_inc If true, then this is actually not a get operation, but an
+ * atomic fetch and increment operation on the key. This can be used when a
+ * unique id is needed across a DDict instance. The key should not exist in the
+ * DDict on the first call. It will be created at that time as an atomic value.
+ * Subsequent calls return the value before incrementing it atomically. The first
+ * value returned is 0.
  *
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
  **/
  dragonError_t
  dragon_ddict_get(const dragonDDictRequestDescr_t* req);
 
+
 /**
  * @brief Calling this tells the ddict client to take the key already written via
  * the dragon_ddict_write_bytes call(s) to be posted to the correct manager.
  * The key must be written before calling put. All writes to this request,
  * following the call to this function are written to the correct manager as
- * the value for the put on the distributed dictionary manager.
+ * the value for the put on the distributed dictionary manager. When successfully
+ * completed this operation has stored the key/value pair in the ddict.
+ *
+ * @param req is a valid created request object. It must have already had a key
+ * written to it via the dragon_ddict_write_bytes call.
+ *
+ * @param wait_for If true, then this is actually not a put operation, but a
+ * wait operation for a particular value in the DDict. The wait_for will wait
+ * for the key to appear in the DDict with a mapping to the given value. This is
+ * checkpoint dependent, so if you are using checkpoints, then it applies to a
+ * particular checkpoint. This put operation will block until some other process
+ * has put the value in the DDict.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ **/
+ dragonError_t
+ dragon_ddict_put(const dragonDDictRequestDescr_t* req);
+
+/**
+ * @brief Calling this tells the ddict client to take the key already written via
+ * the dragon_ddict_write_bytes call(s) and wait for the subsequent value to
+ * be stored at that key. In other words, this operation blocks (i.e. does not
+ * complete) until the value has been written to the given key. The wait_for
+ * will wait for the key to appear in the DDict with a mapping to the given
+ * value. This is checkpoint dependent, so if you are using checkpoints, then
+ * it applies to a particular checkpoint. This wait_for operation will block until
+ * some other process has put the value in the DDict.
  *
  * @param req is a valid created request object. It must have already had a key
  * written to it via the dragon_ddict_write_bytes call.
@@ -426,7 +511,7 @@ dragon_ddict_which_manager(const dragonDDictRequestDescr_t * req_descr, uint64_t
  * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
  **/
  dragonError_t
- dragon_ddict_put(const dragonDDictRequestDescr_t* req);
+ dragon_ddict_wait_for(const dragonDDictRequestDescr_t* req);
 
 /**
  * @brief Calling this tells the ddict client to take the key already written via

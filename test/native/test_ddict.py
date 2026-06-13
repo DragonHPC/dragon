@@ -37,7 +37,7 @@ from dragon.native.process_group import ProcessGroup
 from dragon.native.process import ProcessTemplate
 from dragon.globalservices import api_setup
 from dragon.infrastructure.policy import Policy
-from dragon.utils import b64encode, b64decode, hash as dhash, host_id
+from dragon.utils import b64encode, b64decode, hash as dhash, host_id, XPickler
 from dragon.data.ddict import (
     DDict,
     DDictFullError,
@@ -60,54 +60,6 @@ NUM_BUCKETS = 4
 POOL_MUID = 897
 DAOS_POOL_NAME = "testpool"
 
-class numPy2dValuePickler:
-    def __init__(self, shape: tuple, data_type: np.dtype, chunk_size=0):
-        self._shape = shape
-        self._data_type = data_type
-        self._chunk_size = chunk_size
-
-    def dump(self, nparr, file) -> None:
-        mv = memoryview(nparr)
-        bobj = mv.tobytes()
-        # print(f"Dumping {bobj=}", file=sys.stderr, flush=True)
-        if self._chunk_size == 0:
-            chunk_size = len(bobj)
-        else:
-            chunk_size = self._chunk_size
-
-        for i in range(0, len(bobj), chunk_size):
-            file.write(bobj[i : i + chunk_size])
-
-    def load(self, file):
-        obj = None
-        try:
-            while True:
-                data = file.read(self._chunk_size)
-                if obj is None:
-                    # convert bytes to bytearray
-                    view = memoryview(data)
-                    obj = bytearray(view)
-                else:
-                    obj.extend(data)
-        except EOFError:
-            pass
-
-        ret_arr = np.frombuffer(obj, dtype=self._data_type).reshape(self._shape)
-
-        return ret_arr
-
-
-class intKeyPickler:
-    def __init__(self, num_bytes=ctypes.sizeof(ctypes.c_int)):
-        self._num_bytes = num_bytes
-
-    def dumps(self, val: int) -> bytearray:
-        return val.to_bytes(self._num_bytes, byteorder=sys.byteorder)
-
-    def loads(self, val: bytearray) -> int:
-        return int.from_bytes(val, byteorder=sys.byteorder)
-
-
 def batch_put(d, key, val):
     d.start_batch_put(persist=False)
     for i in range(len(key)):
@@ -123,6 +75,11 @@ def fillit(d):
         d[key] = key
         i += 1
         key += "abc" * i
+
+
+def wait_for(d):
+    d["hello"] = "there"
+    d.detach()
 
 
 def client_func_1_get_newest_chkpt_id(d):
@@ -1073,10 +1030,10 @@ class TestDDict(unittest.TestCase):
         newmsg = dmsg.parse(ser)
         self.assertIsInstance(newmsg, dmsg.GSHalted)
         newser = "eJyrVoovSVayUjA21lFQKklMBzItawE+xQWS"
-        from_str = dmsg.parse(newser)
+        from_str = dmsg.parse(b64decode(newser))
         self.assertIsInstance(from_str, dmsg.GSHalted)
         newser = "eJyrVoovSVayUjA21lFQKklMBzItawE+xQWS\n"
-        from_str = dmsg.parse(newser)
+        from_str = dmsg.parse(b64decode(newser))
         self.assertIsInstance(from_str, dmsg.GSHalted)
         newline = b"\n\n\n\n"
         encoded = b64encode(newline)
@@ -1197,6 +1154,51 @@ class TestDDict(unittest.TestCase):
         x1 = d["abc"]
         self.assertEqual(x1, "def")
         d.destroy()
+
+    def test_fetch_add(self):
+        d = DDict(2, 1, 3000000, trace=True)
+        x = d.fetch_add("hello")
+        self.assertEqual(x, 0)
+        y = d.fetch_add("hello")
+        self.assertEqual(y, 1)
+
+        d.destroy()
+
+    def test_fetch_add_with_init(self):
+        d = DDict(2, 1, 3000000, trace=True)
+        xp = XPickler()
+        xd = d.pickler(xp, xp)
+        xd["hello"] = 40
+        x = xd.fetch_add("hello", 2)
+        self.assertEqual(x, 40)
+        y = xd.fetch_add("hello", 3)
+        self.assertEqual(y, 42)
+
+        d.destroy()
+
+    def test_fetch_add_bad_init(self):
+        d = DDict(2, 1, 3000000, trace=True)
+        d["hello"] = 40
+        with self.assertRaises(DDictError) as ex:
+            x = d.fetch_add("hello", 2)
+
+        d.destroy()
+
+    def test_wait_for(self):
+        d = DDict(2, 1, 3000000, trace=True)
+        d["hello"] = "there"
+        d.wait_for("hello", "there")
+
+    def test_wait_for_2(self):
+        d = DDict(2, 1, 3000000, trace=True)
+        proc = mp.Process(target=wait_for, args=(d,))
+        proc.start()
+        d.wait_for("hello", "there")
+
+    def test_wait_for_3(self):
+        d = DDict(2, 1, 3000000, trace=True, timeout=10)
+        with self.assertRaises(TimeoutError) as ex:
+            d.wait_for("hello", "there", 1)
 
     def test_keys_values_lookup(self):
         d = DDict(1, 1, 3000000, trace=True)
@@ -2548,10 +2550,24 @@ class TestDDict(unittest.TestCase):
         key = 2048
         arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
         value = np.array(arr)
-        with ddict.pickler(intKeyPickler(INT_NUM_BYTES), numPy2dValuePickler((2, 3), np.double)) as type_dd:
+        pickler = XPickler()
+        with ddict.pickler(pickler, pickler) as type_dd:
             type_dd[key] = value
             get_val = type_dd[key]
             self.assertTrue(np.array_equal(value, get_val))
+
+        ddict.destroy()
+
+    def test_custom_pickler_bytes(self):
+        ddict = DDict(2, 1, 3000000)
+
+        value = bytes.fromhex('deadbeef')
+        key = 'my_key'
+        pickler = XPickler()
+        with ddict.pickler(pickler, pickler) as type_dd:
+            type_dd[key] = value
+            get_val = type_dd[key]
+            self.assertTrue(value == get_val)
 
         ddict.destroy()
 

@@ -1120,6 +1120,335 @@
         }
       ],
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "opentsdb",
+        "uid": "${DS_OPENTSDB-1}"
+      },
+      "collapsed": true,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 200
+      },
+      "id": 201,
+      "panels": [
+        {
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 8,
+            "y": 201
+          },
+          "id": 200,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "aggregator": "avg",
+              "downsampleAggregator": "avg",
+              "downsampleFillPolicy": "none",
+              "filters": [
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "host",
+                  "type": "wildcard"
+                },
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "source",
+                  "type": "wildcard"
+                }
+              ],
+              "metric": "req_completion_rate",
+              "refId": "A"
+            }
+          ],
+          "title": "Request completion rate (requests/s)",
+          "type": "timeseries"
+        },
+        {
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 16,
+            "y": 201
+          },
+          "id": 202,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "aggregator": "avg",
+              "downsampleAggregator": "avg",
+              "downsampleFillPolicy": "none",
+              "filters": [
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "host",
+                  "type": "wildcard"
+                },
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "source",
+                  "type": "wildcard"
+                }
+              ],
+              "metric": "pending_channel_operations",
+              "refId": "A"
+            }
+          ],
+          "title": "Pending target channel operations",
+          "type": "timeseries"
+        },
+        {
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 0,
+            "y": 201
+          },
+          "id": 203,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "aggregator": "avg",
+              "downsampleAggregator": "avg",
+              "downsampleFillPolicy": "none",
+              "filters": [
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "host",
+                  "type": "wildcard"
+                },
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "source",
+                  "type": "wildcard"
+                }
+              ],
+              "metric": "pending_work_requests",
+              "refId": "A"
+            }
+          ],
+          "title": "Pending work requests",
+          "type": "timeseries"
+        },
+        {
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 8,
+            "y": 211
+          },
+          "id": 204,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "aggregator": "avg",
+              "downsampleAggregator": "avg",
+              "downsampleFillPolicy": "none",
+              "filters": [
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "host",
+                  "type": "wildcard"
+                },
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "source",
+                  "type": "wildcard"
+                }
+              ],
+              "metric": "rendezvous_bandwidth",
+              "refId": "A"
+            }
+          ],
+          "title": "Rendezvous bandwidth (MB/s)",
+          "type": "timeseries"
+        },
+        {
+          "fieldConfig": {
+            "defaults": {
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green",
+                    "value": null
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            }
+          },
+          "gridPos": {
+            "h": 9,
+            "w": 8,
+            "x": 0,
+            "y": 211
+          },
+          "id": 205,
+          "options": {
+            "legend": {
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "mode": "single"
+            }
+          },
+          "targets": [
+            {
+              "aggregator": "avg",
+              "downsampleAggregator": "avg",
+              "downsampleFillPolicy": "none",
+              "filters": [
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "host",
+                  "type": "wildcard"
+                },
+                {
+                  "filter": "*",
+                  "groupBy": false,
+                  "tagk": "source",
+                  "type": "wildcard"
+                }
+              ],
+              "metric": "channel_operations_per_second",
+              "refId": "A"
+            }
+          ],
+          "title": "Target channel ops completion rate (ops/s)",
+          "type": "timeseries"
+        }
+      ],
+      "title": "HSTA Metrics (telemetry_level=2)",
+      "type": "row",
+      "collapsed": true
     }
   ],
   "refresh": "10s",

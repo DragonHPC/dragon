@@ -41,7 +41,7 @@ class LoadHostFile(argparse.Action):
             raise argparse.ArgumentError(self, f"Could not find hostfile {values}")
 
 
-def add_common_args(parser, add_mode_group=True):
+def add_common_args(parser, add_mode_group=True, add_ssh_args=True):
     parser.add_argument(
         "--wlm",
         metavar="WORKLOAD_MANAGER",
@@ -86,6 +86,26 @@ def add_common_args(parser, add_mode_group=True):
             default=False,
         )
 
+    if add_ssh_args:
+        parser.add_argument(
+            "--ssh-config-path",
+            type=str,
+            help="Path to SSH config file. If not provided, the default SSH config path ~/.ssh/config will be used.",
+        )
+
+        parser.add_argument(
+            "--private-key",
+            type=str,
+            help="Path to private key file for SSH authentication. If not provided, default SSH keys will be used.",
+        )
+
+        parser.add_argument(
+            "--passphrase",
+            type=str,
+            help="Passphrase for the private key file, if it is encrypted. If not provided, it is assumed that the private key is not encrypted or that an SSH agent is being used.",
+        )
+
     parser.set_defaults(
-        host_list=[]
+        host_list=[],
+        ssh_config_path="~/.ssh/config",
     )

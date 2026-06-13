@@ -2,6 +2,7 @@ import shutil
 import subprocess
 import selectors
 import json
+import logging
 from itertools import groupby
 from io import BufferedIOBase, TextIOBase
 from os import environ, getcwd
@@ -238,7 +239,7 @@ class SSHWLM(BaseWLM):
     def _supports_net_conf_cache(self) -> bool:
         return False
 
-    def _launch_network_config_helper(self) -> subprocess.Popen:
+    def _launch_network_config_helper(self, args_map: dict) -> subprocess.Popen:
         popen_dict = {}
 
         if not self.hostlist:
@@ -328,6 +329,7 @@ class SSHWLM(BaseWLM):
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
+        log_level: int = logging.NOTSET,
     ):
         try:
             popen_dict = {}

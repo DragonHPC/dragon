@@ -301,8 +301,6 @@ class MessageTypes(enum.Enum):
     GS_NODE_QUERY_RESPONSE = enum.auto()  #:
     GS_NODE_QUERY_ALL = enum.auto()  #:
     GS_NODE_QUERY_ALL_RESPONSE = enum.auto()  #:
-    LOGGING_MSG = enum.auto()  #:
-    LOGGING_MSG_LIST = enum.auto()  #:
     LOG_FLUSHED = enum.auto()  #:
     GS_NODE_LIST = enum.auto()  #:
     GS_NODE_LIST_RESPONSE = enum.auto()  #:
@@ -444,6 +442,7 @@ class MessageTypes(enum.Enum):
     PG_STOP = enum.auto()  #:
     PG_CLOSE = enum.auto()  #:
     PMIX_FENCE_MSG = enum.auto()  #:
+    CP_LOGGING_MESSAGE = enum.auto()  #:
 
 
 @enum.unique
@@ -600,7 +599,7 @@ class InfraMsg(object):
         return json.dumps(self.get_sdict())
 
     def serialize(self):
-        return b64encode(zlib.compress(json.dumps(self.get_sdict()).encode("utf-8")))
+        return zlib.compress(json.dumps(self.get_sdict()).encode("utf-8"))
 
     def __str__(self):
         cn = self.__class__.__name__
@@ -1760,17 +1759,19 @@ class DDDestroyManagerResponse(CapNProtoResponseMsg):
 class DDPut(CapNProtoMsg):
     _tc = MessageTypes.DD_PUT
 
-    def __init__(self, tag, clientID, chkptID=0, persist=True):
+    def __init__(self, tag, clientID, chkptID=0, persist=True, waitFor=False):
         super().__init__(tag)
         self._clientID = clientID
         self._chkptID = chkptID
         self._persist = persist
+        self._waitFor = waitFor
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["clientID"] = self._clientID
         rv["chkptID"] = self._chkptID
         rv["persist"] = self._persist
+        rv["waitFor"] = self._waitFor
         return rv
 
     def builder(self):
@@ -1779,6 +1780,7 @@ class DDPut(CapNProtoMsg):
         client_msg.clientID = self._clientID
         client_msg.chkptID = self._chkptID
         client_msg.persist = self._persist
+        client_msg.waitFor = self._waitFor
         return cap_msg
 
     @property
@@ -1793,6 +1795,9 @@ class DDPut(CapNProtoMsg):
     def persist(self):
         return self._persist
 
+    @property
+    def waitFor(self):
+        return self._waitFor
 
 class DDPutResponse(CapNProtoResponseMsg):
     _tc = MessageTypes.DD_PUT_RESPONSE
@@ -1804,17 +1809,21 @@ class DDPutResponse(CapNProtoResponseMsg):
 class DDGet(CapNProtoMsg):
     _tc = MessageTypes.DD_GET
 
-    def __init__(self, tag, clientID, chkptID, key):
+    def __init__(self, tag, clientID, chkptID, key, fetchAdd=False, fetchAddVal=1):
         super().__init__(tag)
         self._clientID = clientID
         self._chkptID = chkptID
         self._key = key
+        self._fetchAdd = fetchAdd
+        self._fetchAddVal = fetchAddVal
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["clientID"] = self._clientID
         rv["chkptID"] = self._chkptID
         rv["key"] = self._key
+        rv["fetchAdd"] = self._fetchAdd
+        rv["fetchAddVal"] = self._fetchAddVal
         return rv
 
     def builder(self):
@@ -1823,6 +1832,8 @@ class DDGet(CapNProtoMsg):
         client_msg.clientID = self._clientID
         client_msg.chkptID = self._chkptID
         client_msg.key = self._key
+        client_msg.fetchAdd = self._fetchAdd
+        client_msg.fetchAddVal = self._fetchAddVal
         return cap_msg
 
     @property
@@ -1836,6 +1847,14 @@ class DDGet(CapNProtoMsg):
     @property
     def key(self):
         return self._key
+
+    @property
+    def fetchAdd(self):
+        return self._fetchAdd
+
+    @property
+    def fetchAddVal(self):
+        return self._fetchAddVal
 
 
 class DDGetResponse(CapNProtoResponseMsg):
@@ -4320,12 +4339,17 @@ class GSGroupCreate(InfraMsg):
     def __init__(self, tag, p_uid, r_c_uid, items=None, policy=None, user_name="", pmix_desc=None, _tc=None):
         super().__init__(tag)
 
-        if items is None:
-            items = []
-
         self.p_uid = p_uid
         self.r_c_uid = int(r_c_uid)
-        self.items = list(items)
+
+        items = list(items) if items is not None else []
+        self.items = [
+            (num, b64decode(msg))
+            if isinstance(msg, str)
+            else (num, msg)
+            for (num, msg) in items
+        ]
+
         self.user_name = user_name
         self.pmix_desc = pmix_desc
 
@@ -4345,7 +4369,13 @@ class GSGroupCreate(InfraMsg):
 
         rv["p_uid"] = self.p_uid
         rv["r_c_uid"] = self.r_c_uid
-        rv["items"] = self.items
+
+        rv["items"] = [
+            (num, b64encode(msg))
+            if isinstance(msg, bytes)
+            else (num, msg)
+            for (num, msg) in self.items
+        ]
         if self.policy:
             rv["policy"] = self.policy.get_sdict()
         rv["user_name"] = self.user_name
@@ -4849,14 +4879,18 @@ class GSGroupCreateAddTo(InfraMsg):
     def __init__(self, tag, p_uid, r_c_uid, g_uid=None, user_name="", items=None, policy=None, _tc=None):
         super().__init__(tag)
 
-        if items is None:
-            items = []
-
         self.p_uid = p_uid
         self.r_c_uid = int(r_c_uid)
         self.g_uid = g_uid
         self.user_name = user_name
-        self.items = list(items)
+
+        items = list(items) if items is not None else []
+        self.items = [
+            (num, b64decode(msg))
+            if isinstance(msg, str)
+            else (num, msg)
+            for (num, msg) in items
+        ]
 
         if policy is None:
             self.policy = None
@@ -4877,7 +4911,13 @@ class GSGroupCreateAddTo(InfraMsg):
         else:
             rv["user_name"] = self.user_name
 
-        rv["items"] = self.items
+        rv["items"] = [
+            (num, b64encode(msg))
+            if isinstance(msg, bytes)
+            else (num, msg)
+            for (num, msg) in self.items
+        ]
+
         rv["policy"] = self.policy.get_sdict()
 
         return rv
@@ -4950,7 +4990,7 @@ class GSGroupRemoveFrom(InfraMsg):
         self.r_c_uid = int(r_c_uid)
         self.g_uid = g_uid
         self.user_name = user_name
-        self.items = list(items)
+        self.items = items
 
     def get_sdict(self):
         rv = super().get_sdict()
@@ -7706,23 +7746,17 @@ class LAChannelsInfo(InfraMsg):
         return rv
 
 
-class LoggingMsg(InfraMsg):
-    """
-    Refer to :ref:`Common Fields<cfs>` for a description of the
-    message structure.
+class CpLoggingMessage(CapNProtoMsg):
+    _tc = MessageTypes.CP_LOGGING_MESSAGE
 
-    """
-
-    _tc = MessageTypes.LOGGING_MSG
-
-    def __init__(self, tag, name, msg, time, func, hostname, ip_address, port, service, level, _tc=None):
+    def __init__(self, tag, name, msg, time, func, hostname, ipAddress, port, service, level, _tc=None):
         super().__init__(tag)
         self.name = name
         self.msg = msg
         self.time = time
         self.func = func
         self.hostname = hostname
-        self.ip_address = ip_address
+        self.ipAddress = ipAddress
         self.port = port
         self.service = service
         self.level = level
@@ -7734,58 +7768,36 @@ class LoggingMsg(InfraMsg):
         rv["time"] = self.time
         rv["func"] = self.func
         rv["hostname"] = self.hostname
-        rv["ip_address"] = self.ip_address
+        rv["ipAddress"] = self.ipAddress
         rv["port"] = self.port
         rv["service"] = self.service
         rv["level"] = self.level
-
         return rv
 
-    # Extra method to cleanly generate the dictionary needed for logging
-    # which requires omitting names that match attributes in LogRecord
     def get_logging_dict(self):
         rv = super().get_sdict()
         rv["time"] = self.time
         rv["hostname"] = self.hostname
-        rv["ip_address"] = self.ip_address
+        rv["ipAddress"] = self.ipAddress
         rv["port"] = self.port
         rv["service"] = self.service
         rv["level"] = self.level
 
         return rv
 
-
-class LoggingMsgList(InfraMsg):
-    """
-    Refer to :ref:`Common Fields<cfs>` for a description of the
-    message structure.
-
-    """
-
-    _tc = MessageTypes.LOGGING_MSG_LIST
-
-    def __init__(self, tag, records, _tc=None):
-        super().__init__(tag)
-        self.records = records
-
-    @property
-    def records(self):
-        return self._records
-
-    @records.setter
-    def records(self, value):
-        if isinstance(value, list):
-            self._records = value
-        elif (value, dict):
-            self._records = [LoggingMsg(**v) for v in value.values()]
-        else:
-            msg = "LoggingMsgList records attributes requires a list or dict of LoggingMsg"
-            raise AttributeError(msg)
-
-    def get_sdict(self):
-        rv = super().get_sdict()
-        rv["records"] = {i: v.get_sdict() for i, v in enumerate(self._records)}
-        return rv
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.name = self.name
+        client_msg.msg = self.msg
+        client_msg.time = self.time
+        client_msg.func = self.func
+        client_msg.hostname = self.hostname
+        client_msg.ipAddress = self.ipAddress
+        client_msg.port = self.port
+        client_msg.service = self.service
+        client_msg.level = self.level
+        return cap_msg
 
 
 class LogFlushed(InfraMsg):
@@ -8568,14 +8580,9 @@ def parse(serialized, restrict=None):
     try:
         # if a compressed message, decompress to get the service message
         try:
-            decoded = b64decode(serialized)
-        except Exception:
-            decoded = serialized
-
-        try:
-            jstring = zlib.decompress(decoded)
+            jstring = zlib.decompress(serialized)
         except zlib.error:
-            jstring = decoded
+            jstring = serialized
 
         sdict = json.loads(jstring)
         typecode = sdict["_tc"]
@@ -8600,3 +8607,36 @@ def parse(serialized, restrict=None):
             raise TypeError(
                 f'The message "{serialized}" could not be parsed.\nJSON Parsing Error Message:{json_exception}\nCapnProto Parsing Error Message:{ex}\n Traceback {tb}'
             )
+
+# Used for sending and receiving infrastructure messages through
+# a Queue.
+class MessagePickler:
+    def load(self, file):
+        message_bytes = file.read()
+        return parse(message_bytes)
+
+    def dump(self, obj, file):
+        serialized_obj = obj.serialize()
+        file.write(serialized_obj)
+
+
+# to prevent circular imports, hide the MessageQueue class behind this facade
+def MessageQueueClassBuilder():
+    from dragon.native.queue import Queue
+    class MessageQueue(Queue):
+        def destroy(self):
+            channel = self._main_channel
+            pool = self._pool
+            super().destroy()
+            try:
+                if channel is not None:
+                    channel.destroy()
+            except:
+                pass
+            try:
+                if pool is not None:
+                    pool.destroy()
+            except:
+                pass
+
+    return MessageQueue

@@ -18,38 +18,48 @@ CC = gcc
 #CFLAGS = -O0 -g -fPIC -Wall
 CFLAGS = -O3 -ffast-math -fomit-frame-pointer -fPIC -Wall
 CXX = g++
-CPPFLAGS = -I ../include -I ./gpu -I $(DEFAULT_PMIX_INCLUDE) -DDRAGON_DEBUG -D_GNU_SOURCE $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
+CPPFLAGS = -MMD -I ../include -I ./gpu -I $(DEFAULT_PMIX_INCLUDE) -DDRAGON_DEBUG -D_GNU_SOURCE $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
 CXXFLAGS = $(CFLAGS) $(CPPFLAGS) -std=c++14
+CAPNP = $(VIRTUAL_ENV)/bin/capnp
+CAPNP-CXX = $(VIRTUAL_ENV)/bin/capnpc-c++
 
-LIBRARIES := libdragon.so libpmod.so $(wildcard libdfabric_*.so)
+CAPNP_DIR = $(shell pwd)/..
+CAPNP = $(CAPNP_DIR)/bin/capnp
+CAPNP-CXX = $(CAPNP_DIR)/bin/capnpc-c++
+
+
+LIBRARIES := libdragon.so libpmod.so
 
 libdragon_HEADERS := $(wildcard *.h) \
                      $(wildcard gpu/*.hpp) \
                      $(wildcard gpu/*.h) \
                      $(filter-out ../include/dragon/return_codes_map.h,$(wildcard ../include/dragon/*.h)) \
                      ../include/dragon/return_codes_map.h \
-					 ../include/dragon/message_tcs.h
+                     ../include/dragon/message_tcs.hpp
 
 libdragon_CAPNP_SOURCES = $(wildcard *.capnp)
 libdragon_SOURCES := $(wildcard *.c) $(wildcard *.cpp) gpu/gpu.cpp $(CONFIG_SOURCES)
-libdragon_OBJECTS := $(addsuffix .o,$(libdragon_CAPNP_SOURCES)) $(addsuffix .o,$(basename $(libdragon_SOURCES)))
-
-
+libdragon_OBJECTS := $(libdragon_CAPNP_SOURCES:.capnp=.o) $(addsuffix .o,$(basename $(libdragon_SOURCES)))
 
 .PHONY: all
-all: message_defs.capnp.o ../include/dragon/message_tcs.h ../include/dragon/return_codes_map.h $(LIBRARIES)
+all: ../include/dragon/message_tcs.hpp ../include/dragon/return_codes_map.h ../include/dragon/message_defs.capnp.h $(LIBRARIES)
 
+message_defs.capnp.c++ message_defs.capnp.h: message_defs.capnp $(CAPNP) $(CAPNP-CXX)
+	@test -x $(CAPNP) || (echo "Error: $(CAPNP) not found"; exit 1)
+	@test -x $(CAPNP-CXX) || (echo "Error: $(CAPNP-CXX) not found"; exit 1)
+	$(CAPNP) compile -o$(CAPNP-CXX) message_defs.capnp
 
-message_defs.capnp.o:
-	capnp compile -oc++ message_defs.capnp
-	cp message_defs.capnp.h ../include/dragon
-	$(CXX) -c $(CXXFLAGS) message_defs.capnp.c++
+message_defs.o: message_defs.capnp.c++ message_defs.capnp.h
+	$(CXX) -c $(CXXFLAGS) -o $@ message_defs.capnp.c++
 
-../include/dragon/message_tcs.h: ../dragon/infrastructure/messages.py
+../include/dragon/message_tcs.hpp: ../dragon/infrastructure/messages.py
 	python3 message_tcs_to_enum.py
 
 ../include/dragon/return_codes_map.h: ../include/%:
 	$(MAKE) -C ../include $*
+
+../include/dragon/message_defs.capnp.h: message_defs.o
+	cp message_defs.capnp.h $@
 
 %.o: %.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $@ $<
@@ -57,17 +67,15 @@ message_defs.capnp.o:
 %.o: %.cpp
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(libdragon_OBJECTS): $(libdragon_SOURCES) $(libdragon_HEADERS)
-
 LDLIBS += -lstdc++ -ldl
 
 OS = $(shell uname -s)
 
 libdragon.so: $(libdragon_OBJECTS)
 	@if [ "$(OS)" != "Darwin" ]; then \
-		$(CC) -L . -L ${VIRTUAL_ENV}/lib -L ${VIRTUAL_ENV}/lib64 -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS) -lrt; \
+		$(CC) -L . -L ${VIRTUAL_ENV}/lib -L ${VIRTUAL_ENV}/lib64 -L $(CAPNP_DIR)/lib -L $(CAPNP_DIR)/lib64 -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS) -lrt; \
 	else \
-		$(CC) -L . -L ${VIRTUAL_ENV}/lib -shared -o $@ $^ -lcapnp -lkj $(LDLIBS); \
+		$(CC) -L . -L ${VIRTUAL_ENV}/lib -L $(CAPNP_DIR)/lib -shared -o $@ $^ -lcapnp -lkj $(LDLIBS); \
 	fi
 
 libpmod.so: libdragon.so
@@ -82,4 +90,6 @@ $(filter-out libpmod.so,$(filter-out libdragon.so,$(LIBRARIES))): lib%.so: ../dr
 
 .PHONY: clean
 clean:
-	$(RM) $(LIBRARIES) *.o libpmod.so *.capnp.c++ *.capnp.h *.capnp.o
+	$(RM) $(LIBRARIES) *.o *.d libpmod.so *.capnp.c++ *.capnp.h
+
+-include $(libdragon_OBJECTS:.o=.d)

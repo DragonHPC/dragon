@@ -63,12 +63,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Python packages required by Dragon
-COPY requirements.txt /usr/src/requirements.txt
-
-# Zarr/numcodecs requires special attention to work around a bug in numcodecs (w/o going to the latest Zarr)
 RUN /usr/local/bin/python3 -m ensurepip \
-    && /usr/local/bin/python3 -m pip install --no-cache-dir --upgrade pip \
-    && /usr/local/bin/python3 -m pip install --no-cache-dir -r /usr/src/requirements.txt
+    && /usr/local/bin/python3 -m pip install --no-cache-dir --upgrade pip
 
 # Packages for building dragon multinode dependencies
 RUN apt-get update \

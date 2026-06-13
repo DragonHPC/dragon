@@ -8,6 +8,7 @@ import signal
 import subprocess
 from enum import Enum
 from functools import total_ordering
+from pathlib import Path
 from typing import Optional, List
 
 from ..utils import B64, host_id
@@ -37,6 +38,36 @@ from .wlm.k8s import KubernetesNetworkConfig
 
 LAUNCHER_FAIL_EXIT = 1
 LAUNCHER_SUCCESS_EXIT = 0
+
+
+def _create_default_telemetry_config(frontend_host: str) -> str:
+    tmdb_dir = Path.home() / "dragon_telemetry"
+    tmdb_dir.mkdir(parents=True, exist_ok=True)
+
+    lines = [
+        "aggregator_port: 4242",
+        "tsdb_server_port: 4243",
+        "remote_tunnel_port: 4242",
+        f'remote_tunnel_node: "{frontend_host}"',
+        "collector_rate: 0.5",
+        "delete_tmdb: 1",
+        "default_tmdb_window: 300",
+        f'default_tmdb_dir: "{tmdb_dir}"',
+        f'default_tmdb_directory: "{tmdb_dir}"',
+    ]
+    return "\n".join(lines) + "\n"
+
+
+def _set_default_telemetry_config() -> None:
+    cfg_path = os.getenv("DRAGON_TELEMETRY_CONFIG")
+    if cfg_path:
+        return
+
+    cfg_dir = Path.home() / ".dragon"
+    cfg_dir.mkdir(parents=True, exist_ok=True)
+    cfg_path = cfg_dir / "telemetry.yaml"
+    cfg_path.write_text(_create_default_telemetry_config(os.uname().nodename))
+    os.environ["DRAGON_TELEMETRY_CONFIG"] = str(cfg_path)
 
 
 class LauncherImmediateExit(Exception):
@@ -215,9 +246,13 @@ class LauncherFrontEnd:
     def __enter__(self):
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback):
+    def __exit__(self, exc_type, exc_value, exc_tb):
         log = logging.getLogger(dls.LA_FE).getChild("_cleanup")
         log.debug("doing __exit__ cleanup")
+        if exc_type is not None:
+            from traceback import print_tb
+            log.debug("Exception type: %s, value: %s", exc_type, exc_value)
+            print_tb(exc_tb)
         self._cleanup()
         log.debug("exiting frontend via __exit__")
 
@@ -474,7 +509,7 @@ class LauncherFrontEnd:
             if self.recv_logs_from_overlaynet_thread.is_alive():
                 # Send it a message to make sure it can get out
                 self._shutdown.set()
-                self.logging_queue.put(halt_logging_msg.serialize())
+                self.logging_queue.put(halt_logging_msg)
             self.recv_logs_from_overlaynet_thread.join()
         log.info("recv_logs_from_overlaynet_thread joined")
 
@@ -997,6 +1032,7 @@ Performance may be suboptimal."""
                         port=self.overlay_port,
                         network_prefix=self.network_prefix,
                         hostlist=self.hostlist,
+                        args_map=self.args_map,
                         sigint_trigger=self._sigint_trigger,
                     )
                 except Exception:
@@ -1177,6 +1213,7 @@ Performance may be suboptimal."""
 
             # we need to put the telemetry level in the env before the backend is launched so that it is in both telemetry and user space
             os.environ["DRAGON_TELEMETRY_LEVEL"] = str(self.telemetry_level)
+            _set_default_telemetry_config()
 
             try:
                 temp_fe_label_selector = os.getenv("FRONTEND_JOB_LABEL")
@@ -1384,6 +1421,7 @@ Performance may be suboptimal."""
 
             # we need to put the telemetry level in the env before the backend is launched so that it is in both telemetry and user space
             os.environ["DRAGON_TELEMETRY_LEVEL"] = str(self.telemetry_level)
+            _set_default_telemetry_config()
 
             try:
                 self.wlm_proc = self._launch_backend(
@@ -1579,7 +1617,7 @@ Performance may be suboptimal."""
                     self._DTBL[type(msg)][0](self, msg=msg)
                 else:
                     # TODO: Make sure handling abnormal termniation works this way
-                    self.msg_log.warning("unexpected msg type: %s", repr(msg))
+                    self.msg_log.warning("unexpected msg type in the Frontend Launcher: %s", repr(msg))
             except LauncherImmediateExit:
                 self.msg_log.debug("completing a sys.exit(%s)", LAUNCHER_FAIL_EXIT)
                 sys.exit(LAUNCHER_FAIL_EXIT)
@@ -1759,7 +1797,7 @@ Performance may be suboptimal."""
                 # signal the end of the logging thread by sending its way
                 # an halt message
                 msg = dmsg.HaltLoggingInfra(tag=dlutil.next_tag())
-                self.logging_queue.put(msg.serialize(), logging.INFO)
+                self.logging_queue.put(msg)
 
                 self.conn_in_bd.send(be_halted.serialize())
                 self.msg_log.info("sent BEHalted to break overlay recv out of loop")
@@ -1782,11 +1820,15 @@ Performance may be suboptimal."""
             # Set timeout to None which allows better interaction with the GIL
             while not self._shutdown.is_set():
                 try:
-                    msg = dmsg.parse(self.logging_queue.get(level, timeout=None))
+                    msg = self.logging_queue.get(level, timeout=None)
                     if isinstance(msg, dmsg.HaltLoggingInfra):
                         break
-                    log = logging.getLogger(msg.name)
-                    log.log(msg.level, msg.msg, extra=msg.get_logging_dict())
+                    elif isinstance(msg, dmsg.CpLoggingMessage):
+                        _log = logging.getLogger(msg.name)
+                        _log.log(msg.level, msg.msg, extra=msg.get_logging_dict())
+                    else:
+                        log.warning("Unexpected message type: %s", type(msg))
+
                 except ChannelEmpty:
                     pass
 
@@ -1854,7 +1896,7 @@ Performance may be suboptimal."""
         # signal the end of the logging thread by sending its way
         # a HaltLoggingInfra message
         msg = dmsg.HaltLoggingInfra(tag=dlutil.next_tag())
-        self.logging_queue.put(msg.serialize(), logging.INFO)
+        self.logging_queue.put(msg)
 
         log.info("overlaynet sending thread exiting ...")
 
@@ -1922,7 +1964,7 @@ Performance may be suboptimal."""
             # signal the end of the logging thread by sending its way
             # a Halt message
             msg = dmsg.HaltLoggingInfra(tag=dlutil.next_tag())
-            self.logging_queue.put(msg.serialize(), logging.INFO)
+            self.logging_queue.put(msg)
 
             log.info("Overlaynet recv thread exiting.")
         except Exception as err:

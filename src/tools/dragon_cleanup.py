@@ -1,5 +1,3 @@
-#! /usr/bin/env python3
-
 import argparse
 import getpass
 import os
@@ -10,7 +8,6 @@ import sys
 
 from functools import partial
 from pathlib import Path
-from typing import Dict
 from psutil import Process, process_iter, TimeoutExpired, ZombieProcess, NoSuchProcess
 
 from dragon.infrastructure.config import hugepages_cleanup
@@ -412,8 +409,9 @@ dragon-cleanup --wlm slurm
     from that allocation.
 """
 
+
 def get_drun_parser():
-    from tools.dragon_run.src.common_args import add_common_args
+    from dragon.tools.dragon_run.src.common_args import add_common_args
 
     parser = argparse.ArgumentParser(
         prog="dragon-cleanup",
@@ -441,16 +439,15 @@ def get_drun_args(args_input=None):
 
 
 def drun():
-    import contextlib
-    import tools.dragon_run.src as drun
-    from tools.dragon_run.src.exceptions import (
+    from .dragon_run import src as drun
+    from .dragon_run.src.exceptions import (
         DragonRunMissingAllocation,
         DragonRunNoSupportedWLM,
         DragonRunSingleNodeUnsupported,
     )
 
     args = get_drun_args()
-    user_command = [__file__]
+    user_command = ["python", __file__]
     if "resilient" in args and args["resilient"]:
         user_command.append("--resilient")
     if "dry_run" in args and args["dry_run"]:
@@ -464,6 +461,9 @@ def drun():
             force_single_node=args["force_single_node"],
             force_multi_node=args["force_multi_node"],
             force_wlm=args["force_wlm"],
+            ssh_config_path=args.get("ssh_config_path"),
+            private_key=args.get("private_key"),
+            passphrase=args.get("passphrase"),
             env=dict(os.environ),
             exec_on_fe=not args.get("only_be"),
         )

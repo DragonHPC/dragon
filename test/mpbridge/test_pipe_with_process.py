@@ -113,7 +113,7 @@ class SendReceiveTest(unittest.TestCase):
         self.assertEqual(num_logs, num_workers, f"expected {num_workers} log entries, but there's only {num_logs}")
         found_worker_log_msg = [False for _ in range(num_workers)]
         for i in range(num_workers):
-            msg = dmsg.parse(logging_queue.get())
+            msg : dmsg.CpLoggingMessageggingMsg = logging_queue.get() # type: ignore
             worker = int(msg.msg.split(":")[0])
             self.assertFalse(found_worker_log_msg[worker - 1], f"duplicate log message received for node {worker}")
             found_worker_log_msg[worker - 1] = True

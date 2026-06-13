@@ -134,6 +134,9 @@ class DragonRunPopen:
         force_wlm: Optional[WLM] = None,
         exec_on_fe: bool = False,
         fanout: int = DEFAULT_FANOUT,
+        ssh_config_path: Optional[str] = None,
+        private_key: Optional[str] = None,
+        passphrase: Optional[str] = None,
         log_level: int = logging.NOTSET,
         stdout: Optional[int] = None,
         stderr: Optional[int] = None,
@@ -147,10 +150,16 @@ class DragonRunPopen:
         self.force_multi_node = force_multi_node
         self.force_wlm = force_wlm
         self.fanout = fanout
+        self.ssh_config_path = ssh_config_path
+        self.private_key = private_key
+        self.passphrase = passphrase
         self.log_level = log_level
         self._stdout: Optional[int] = stdout
         self._stderr: Optional[int] = stderr
         self._stdin: Optional[int] = stdin
+
+        self.abnormal_exit = False
+        self.abnormal_exit_msg = None
 
         self.exec_on_fe = exec_on_fe
         if not self.host_list:
@@ -193,7 +202,7 @@ class DragonRunPopen:
         if self._stdin != None:
             raise NotImplementedError("DragonRunPopen does not support stdin redirection.")
 
-        self._drun_thread: threading.Thread = threading.Thread(target=self._drun_proc, name="DragonRunMainThread")
+        self._drun_thread: threading.Thread = threading.Thread(target=self._drun_proc, name="DragonRunPopenThread")
         self._drun_thread.start()
 
     @property
@@ -221,7 +230,7 @@ class DragonRunPopen:
         """
         Mimics Popen.communicate() to interact with the subprocess.
         """
-        raise NotImplementedError("DragonRunPopen does not support communicate() method.")
+        return "", self.abnormal_exit_msg if self.abnormal_exit else ""
 
     def poll(self):
         """
@@ -235,15 +244,19 @@ class DragonRunPopen:
         """
         Mimics Popen.wait() to wait for the process to terminate.
         """
-        if self._drun_thread:
-            self._drun_thread.join(timeout=timeout)
+        try:
+            if self._drun_thread:
+                logger.debug("DragonRunPopen.wait() - waiting for drun thread to finish.")
+                self._drun_thread.join(timeout=timeout)
+        finally:
+            logger.debug("DragonRunPopen.wait() - done waiting for drun thread to finish.")
 
     @property
     def returncode(self):
         """
         Returns the return code of the subprocess.
         """
-        return 0
+        return 1 if self.abnormal_exit else 0
 
     def send_signal(self, signal):
         """
@@ -287,6 +300,9 @@ class DragonRunPopen:
                 children=self.host_list,
                 fanout=self.fanout,
                 log_level=self.log_level,
+                ssh_config_path=self.ssh_config_path,
+                private_key=self.private_key,
+                passphrase=self.passphrase,
                 stdout_wh=self._stdout_wh,
                 stderr_wh=self._stderr_wh,
             ) as drun:
@@ -296,6 +312,7 @@ class DragonRunPopen:
                     self.cwd,
                     exec_on_fe=self.exec_on_fe,
                 )
+                self.abnormal_exit, self.abnormal_exit_msg = drun.had_abnormal_exit()
         finally:
             logger.debug("--_drun_proc")
 
@@ -310,6 +327,9 @@ def run_wrapper(
     force_wlm: Optional[WLM] = None,
     exec_on_fe: bool = False,
     fanout: int = DEFAULT_FANOUT,
+    ssh_config_path: Optional[str] = None,
+    private_key: Optional[str] = None,
+    passphrase: Optional[str] = None,
     log_level: int = logging.NOTSET,
 ):
     host_list = get_host_list(
@@ -332,6 +352,9 @@ def run_wrapper(
         force_wlm=force_wlm,
         exec_on_fe=exec_on_fe,
         fanout=fanout,
+        ssh_config_path=ssh_config_path,
+        private_key=private_key,
+        passphrase=passphrase,
         log_level=log_level,
         stdout=None,
         stderr=None,

@@ -83,7 +83,7 @@ class BackendConnector:
 
     def abnormalExit(self, ex):
         logger.debug("++host=%s abnormalExit", self.hostname)
-        msg = messages.AbnormalRuntimeExit(util.next_tag(), hostname=self.hostname, data=str(ex))
+        msg = messages.AbnormalRuntimeExit(util.next_tag(), hostname=self.hostname, reason=str(ex))
         self.shutdown_event.set()
         self.remote_executor_q.put(msg)
 
@@ -132,7 +132,10 @@ class BackendConnector:
                 messages.CreateTree(
                     util.next_tag(),
                     children=self.child_tree,
-                    fanout=self.fanout
+                    fanout=self.fanout,
+                    ssh_config_path=self.host.ssh_config_path,
+                    private_key=self.host.private_key,
+                    passphrase=self.host.passphrase
                 )
             )
 
@@ -154,6 +157,7 @@ class BackendConnector:
             raise
         except Exception as ex:
             logger.error("Connect Unhandled exception: %s %s", type(ex), ex)
+            raise
 
     def disconnect(self):
         logger.debug("++host=%s disconnect", self.hostname)

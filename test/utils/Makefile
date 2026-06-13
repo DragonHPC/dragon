@@ -26,12 +26,7 @@ endif
 INCLUDE = $(DRAGON_INCLUDE)
 LIBS = $(DRAGON_LINK)
 
-BIN_FILES = lock_bench test_heap test_mem umap_test ulist_test test_log test_serialized_uid test_blocks test_gpu_mem $(EXTRA_TESTS)
-
-# AICI-2014 - We want to exclude test_log from the default build since it is currently broken and causes CI failures.
-# We will re-enable it once the logging test is fixed.
-TMP_BIN_FILES = $(BIN_FILES)
-BIN_FILES := $(filter-out test_log, $(TMP_BIN_FILES))
+BIN_FILES = lock_bench test_heap test_mem umap_test ulist_test test_serialized_uid test_blocks test_gpu_mem $(EXTRA_TESTS)
 
 %.c.o: %.c
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@
@@ -39,7 +34,7 @@ BIN_FILES := $(filter-out test_log, $(TMP_BIN_FILES))
 default: build
 
 build: test_blocks
-#build: lock_bench test_attach test_heap test_mem test_threaded_lock umap_test ulist_test test_log test_serialized_uid test_blocks
+#build: lock_bench test_attach test_heap test_mem test_threaded_lock umap_test ulist_test test_serialized_uid test_blocks
 
 test_threaded_lock: test_threaded_lock.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_threaded_lock $< $(LIBS) $(OPENMP) -ldl; \
@@ -67,9 +62,6 @@ ulist_test: ulist.c
 
 test_attach: test_attach.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_attach $< $(LIBS) $(OPENMP) -ldl \
-
-# test_log: test_log.c
-# 	$(CC) $(INCLUDE) $(CFLAGS) -o test_log $< $(LIBS) -ldl
 
 test_serialized_uid: test_serialized_uid.c
 	$(CC) $(INCLUDE) $(CFLAGS) -o test_serialized_uid $< $(LIBS) -ldl

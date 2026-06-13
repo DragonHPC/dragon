@@ -17,10 +17,10 @@ static timespec_t TIMEOUT = {0,5000000000}; // Timeouts will be 5 second by defa
  */
 void read_write_erase_metadata(char * ddict_descr, int num_procs) {
 
-    DDict<SerializableString, SerializableInt> dd(ddict_descr, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_descr, &TIMEOUT);
 
     // This dictionary will perform raed/write/erase/get keys operations only on  manager 0.
-    DDict<SerializableString, SerializableInt> dd_manager0 = dd.manager(0);
+    DDict<Serializable, Serializable> dd_manager0 = dd.manager(0);
 
     SerializableString key("num_clients");
     SerializableInt num_clients(num_procs);
@@ -43,7 +43,8 @@ void read_write_erase_metadata(char * ddict_descr, int num_procs) {
     // get all keys from manager 0
     auto keys = dd_manager0.keys();
     for(int i=0 ; i<keys.size() ; i++) {
-        std::string val = keys[i].getVal();
+        SerializableString theKey = keys[i];
+        std::string val = theKey.getVal();
         cout<<val<<endl;
     }
     dd_manager0.erase(key);
@@ -84,7 +85,7 @@ int main(int argc, char* argv[]) {
 
         double avg = 0.0;
         bool done = false;
-        DDict<SerializableInt, SerializableDouble> aggregate_dd(ddict_descr, &TIMEOUT);
+        DDict<Serializable, Serializable> aggregate_dd(ddict_descr, &TIMEOUT);
         while (!done) {
             double sum_of_avgs = 0.0;
             for (int i=0 ; i<num_procs ; i++) {

@@ -464,11 +464,12 @@ class DDPutMsg: public DragonMsg {
     public:
     static const MessageType TC = DD_PUT;
 
-    DDPutMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, bool persist);
+    DDPutMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, bool persist=true, bool waitFor=false);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     uint64_t clientID();
     uint64_t chkptID();
     bool persist();
+    bool waitFor();
 
     protected:
     virtual void builder(MessageDef::Builder& msg);
@@ -477,6 +478,7 @@ class DDPutMsg: public DragonMsg {
     uint64_t mClientID;
     uint64_t mChkptID;
     bool mPersist;
+    bool mWaitFor;
 };
 
 class DDPutResponseMsg: public DragonResponseMsg {
@@ -491,12 +493,14 @@ class DDGetMsg: public DragonMsg {
     public:
     static const MessageType TC = DD_GET;
 
-    DDGetMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen);
+    DDGetMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen, bool fetchAdd=false, int fetchAddVal=1);
     static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
     uint64_t clientID();
     uint64_t chkptID();
     const unsigned char* key();
     size_t keyLen();
+    bool fetchAdd();
+    int fetchAddVal();
 
 
     protected:
@@ -507,6 +511,8 @@ class DDGetMsg: public DragonMsg {
     uint64_t mChkptID;
     const unsigned char* mKey;
     const size_t mKeyLen;
+    bool mFetchAdd;
+    int mFetchAddVal;
 };
 
 class DDGetResponseMsg: public DragonResponseMsg {
@@ -1272,6 +1278,38 @@ class PMIxFenceMsg: public DragonMsg {
     std::string mData;
 };
 
+class CPLoggingMessage: public DragonMsg {
+    public:
+    static const MessageType TC = CP_LOGGING_MESSAGE;
+
+    CPLoggingMessage(uint64_t tag, const char *name, const char* msg, const char *time, const char *func, const char *hostname, const char *ipAddress, uint16_t port, const char *service, uint8_t level);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+
+    const char* name();
+    const char* msg();
+    const char* time();
+    const char* func();
+    const char* hostname();
+    const char* ipAddress();
+    uint8_t port();
+    const char* service();
+    uint8_t level();
+
+  protected:
+    virtual void builder(MessageDef::Builder& msg);
+
+    private:
+    std::string mName;
+    std::string mMsg;
+    std::string mTime;
+    std::string mFunc;
+    std::string mHostname;
+    std::string mIpAddress;
+    uint8_t mPort;
+    std::string mService;
+    uint8_t mLevel;
+};
+
 static unordered_map<MessageType, deserializeFun> deserializeFunctions
 {
     {SH_CREATE_PROCESS_LOCAL_CHANNEL, &SHCreateProcessLocalChannelMsg::deserialize},
@@ -1354,6 +1392,7 @@ static unordered_map<MessageType, deserializeFun> deserializeFunctions
     {DD_RESTORE_RESPONSE, &DDRestoreResponseMsg::deserialize},
     {DD_PERSIST_CHKPTS_RESPONSE, &DDPersistChkptsResponseMsg::deserialize},
     {PMIX_FENCE_MSG, &PMIxFenceMsg::deserialize},
+    {CP_LOGGING_MESSAGE, &CPLoggingMessage::deserialize},
 };
 
 } // end dragon namespace

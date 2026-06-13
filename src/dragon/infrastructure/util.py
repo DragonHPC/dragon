@@ -34,6 +34,7 @@ from .parameters import this_process
 from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM, gethostname, inet_aton
 import struct
 from .facts import FIRST_PUID
+from ..utils import b64encode, b64decode
 
 
 def _get_access_modes(f):
@@ -58,7 +59,7 @@ class NewlineStreamWrapper:
     like something that should only be in a test bench.
     """
 
-    def __init__(self, stream, read_intent=None, write_intent=None):
+    def __init__(self, stream, read_intent=None, write_intent=None, b64_encode_decode=False):
         """
         read_intent and write_intent are used to ensure
         clients are using the right operations on the stream.
@@ -76,6 +77,7 @@ class NewlineStreamWrapper:
         if self.write_intent and not writeable:
             warn(f"Intend to write a stream not open for writing: {stream}")
         self.stream = stream
+        self.b64_encode_decode = b64_encode_decode
 
     def send(self, data):
         """Perform the write operation of the given data into the stream.
@@ -87,6 +89,10 @@ class NewlineStreamWrapper:
         """
         try:
             assert self.write_intent, "sending to a read wrap"
+
+            if self.b64_encode_decode:
+                data = b64encode(data)
+
             assert isinstance(data, str)
             msg_str = data.strip().replace("\n", " ") + "\n"
 
@@ -115,6 +121,9 @@ class NewlineStreamWrapper:
             stuff = line
         else:
             stuff = line.decode()
+
+        if self.b64_encode_decode:
+            stuff = b64decode(stuff[:-1])
 
         return stuff
 
@@ -504,7 +513,7 @@ def range_expr(
 def enable_logging(level=logging.DEBUG):
     logging.basicConfig(stream=sys.stdout, level=level)
 
-
+    
 def user_print(*args, **kwargs):
     if this_process.my_puid >= FIRST_PUID:
         kwargs["flush"] = True

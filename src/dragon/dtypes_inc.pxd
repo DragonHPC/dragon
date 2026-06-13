@@ -609,6 +609,19 @@ cdef extern from "dragon/pmod.h":
     dragonError_t dragon_pmod_send_mpi_data(dragonSendJobParams_t *job_params, dragonChannelDescr_t *child_ch)
     dragonError_t dragon_pmod_pals_get_num_nics(int *nnics)
 
+cdef extern from "dragon/serializable_types.h":
+
+    ctypedef enum DragonSerType:
+        SERTYPE_NONE = 0
+        SERTYPE_STR
+        SERTYPE_INT
+        SERTYPE_DOUBLE
+        SERTYPE_INTVECTOR
+        SERTYPE_DOUBLEVECTOR
+        SERTYPE_INTMATRIX
+        SERTYPE_DOUBLEMATRIX
+        SERTYPE_BYTEBUFFER
+
 cdef extern from "dragon/perf.h":
 
     ctypedef enum dragonChPerfOpcode_t:

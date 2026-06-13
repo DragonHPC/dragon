@@ -13,6 +13,7 @@ from ..infrastructure.messages import AbnormalTerminationError
 from ..infrastructure import messages as dmsg
 from ..infrastructure import facts as dfacts
 from ..infrastructure import process_desc as pdesc
+from ..utils import b64decode
 
 from .wlm import WLM, wlm_cls_dict
 
@@ -132,15 +133,7 @@ def queue_monitor(func: Callable, *, log_test_queue=None):
     def wrapper(*args, **kwargs):
         while True:
             msg = func(*args, **kwargs)
-            if isinstance(msg, dmsg.LoggingMsgList):
-                if log_test_queue:
-                    log_test_queue.put(msg)
-                else:
-                    for record in msg.records:
-                        logger_name = f"{record.hostname}.{record.name}" if record.hostname else record.name
-                        log = logging.getLogger(logger_name)
-                        log.log(record.level, record.msg, extra=record.get_logging_dict())
-            elif isinstance(msg, dmsg.LoggingMsg):
+            if isinstance(msg, dmsg.CpLoggingMessage):
                 if log_test_queue:
                     log_test_queue.put(msg)
                 else:
@@ -178,15 +171,7 @@ def no_error_queue_monitor(func: Callable, *, log_test_queue=None):
     def wrapper(*args, **kwargs):
         while True:
             msg = func(*args, **kwargs)
-            if isinstance(msg, dmsg.LoggingMsgList):
-                if log_test_queue:
-                    log_test_queue.put(msg)
-                else:
-                    for record in msg.records:
-                        logger_name = f"{record.hostname}.{record.name}" if record.hostname else record.name
-                        log = logging.getLogger(logger_name)
-                        log.log(record.level, record.msg, extra=record.get_logging_dict())
-            elif isinstance(msg, dmsg.LoggingMsg):
+            if isinstance(msg, dmsg.CpLoggingMessage):
                 if log_test_queue:
                     log_test_queue.put(msg)
                 else:
@@ -225,6 +210,7 @@ def get_with_blocking(handle):
     """Function for getting messages from the queue while blocking"""
     try:
         msg = handle.recv()
+
         if isinstance(msg, tuple):
             return msg
         else:

@@ -263,22 +263,33 @@ dragonError_t test_new_tasks_and_task_done_and_join(const char * queue_ser) {
 }
 
 dragonError_t test_custom_matrix_pickler_dump(const char * queue_ser) {
-    Queue<SerializableDouble2DVector> q(queue_ser, nullptr);
+    Queue<Serializable2DDoubleMatrix> q(queue_ser, nullptr);
     std::vector<std::vector<double>> expected_vals_from_py = {{0.12, 0.31, 3.4}, {4.579, 5.98, 6.54}};
-    SerializableDouble2DVector ser_vals_from_py = q.get();
+    Serializable2DDoubleMatrix ser_vals_from_py = q.get();
     auto vals_from_py = ser_vals_from_py.getVal();
     for (int i=0 ; i<2 ; i++) {
         for (int j=0 ; j<3 ; j++)
             assert (vals_from_py[i][j] == expected_vals_from_py[i][j]);
     }
-    std::cout << std::endl;
+    return DRAGON_SUCCESS;
+}
+
+
+dragonError_t test_custom_double_vector_pickler_dump(const char * queue_ser) {
+    Queue<SerializableDoubleVector> q(queue_ser, nullptr);
+    std::vector<double> expected_vals_from_py = {0.12, 0.31, 3.4};
+    SerializableDoubleVector ser_vals_from_py = q.get();
+    auto vals_from_py = ser_vals_from_py.getVal();
+    for (int i=0 ; i<2 ; i++)
+            assert(vals_from_py[i] == expected_vals_from_py[i]);
+
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_custom_matrix_pickler_load(const char * queue_ser) {
-    Queue<SerializableDouble2DVector> q(queue_ser, nullptr);
+    Queue<Serializable2DDoubleMatrix> q(queue_ser, nullptr);
     std::vector<std::vector<double>> vec = {{0.12, 0.31, 3.4}, {4.579, 5.98, 6.54}};
-    SerializableDouble2DVector ser_vec(vec);
+    Serializable2DDoubleMatrix ser_vec(vec);
     q.put(ser_vec);
     return DRAGON_SUCCESS;
 }
@@ -298,11 +309,68 @@ dragonError_t test_custom_int_pickler_load(const char * queue_ser) {
     return DRAGON_SUCCESS;
 }
 
+dragonError_t test_custom_xpickler_dump(const char * queue_ser) {
+    Queue<Serializable> q(queue_ser, nullptr);
+    SerializableInt x = q.get();
+    assert (x.getVal() == 42);
+    SerializableDouble y = q.get();
+    assert(y.getVal() == 3.14);
+    SerializableString s = q.get();
+    assert(s.getVal() == "Hello World");
+    std::vector<std::vector<double>> expected_vals_from_py = {{0.12, 0.31, 3.4}, {4.579, 5.98, 6.54}};
+    Serializable2DDoubleMatrix ser_vals_from_py = q.get();
+    auto vals_from_py = ser_vals_from_py.getVal();
+    for (int i=0 ; i<2 ; i++) {
+        for (int j=0 ; j<3 ; j++)
+            assert (vals_from_py[i][j] == expected_vals_from_py[i][j]);
+    }
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_custom_xpickler_load(const char * queue_ser) {
+    Queue<Serializable> q(queue_ser, nullptr);
+    SerializableInt x(42);
+    q.put(x);
+    SerializableDouble y(3.14);
+    q.put(y);
+    SerializableString z("Hello World");
+    q.put(z);
+    std::vector<std::vector<double>> vec = {{0.12, 0.31, 3.4}, {4.579, 5.98, 6.54}};
+    Serializable2DDoubleMatrix ser_vec(vec);
+    q.put(ser_vec);
+    return DRAGON_SUCCESS;
+}
+
 dragonError_t test_custom_double_pickler_dump(const char * queue_ser) {
     Queue<SerializableDouble> q(queue_ser, nullptr);
 
     SerializableDouble x = q.get();
     assert (x.getVal() == 42.0);
+
+    Queue<Serializable> p(queue_ser, nullptr);
+    SerializableString z("hello world");
+    p.put(z);
+
+    // Do some additional testing within C++ only.
+    SerializableString t = p.get();
+    SerializableInt j(6);
+    p.put(j);
+    SerializableInt k = p.get();
+
+    SerializableDouble d(6.2);
+    p.put(d);
+
+    SerializableDouble e = p.get();
+
+    std::vector<double> vec = {0.12, 0.31, 3.4};
+    SerializableDoubleVector v(vec);
+    p.put(v);
+    SerializableDoubleVector w = p.get();
+
+    auto vals_from_queue = w.getVal();
+    for (int i=0 ; i<2 ; i++)
+            assert(vals_from_queue[i] == vec[i]);
+
     return DRAGON_SUCCESS;
 }
 
@@ -310,6 +378,7 @@ dragonError_t test_custom_double_pickler_load(const char * queue_ser) {
     Queue<SerializableDouble> q(queue_ser, nullptr);
     SerializableDouble x(42.0);
     q.put(x);
+
     return DRAGON_SUCCESS;
 }
 
@@ -328,18 +397,17 @@ dragonError_t test_custom_str_pickler_load(const char * queue_ser) {
     return DRAGON_SUCCESS;
 }
 
-dragonError_t test_2d_vector_put(const char * queue_ser) {
-    Queue<SerializableDouble2DVector> q(queue_ser, nullptr);
+dragonError_t test_2d_matrix_put(const char * queue_ser) {
+    Queue<Serializable2DDoubleMatrix> q(queue_ser, nullptr);
     std::vector<std::vector<double>> vec = {{0.12, 0.31, 3.4}, {4.579, 5.98, 6.54}};
-    SerializableDouble2DVector ser_vec(vec);
+    Serializable2DDoubleMatrix ser_vec(vec);
     q.put(ser_vec);
-    SerializableDouble2DVector recv_ser_vals = q.get();
+    Serializable2DDoubleMatrix recv_ser_vals = q.get();
     auto received_val = recv_ser_vals.getVal();
     for (int i=0 ; i<2 ; i++) {
         for (int j=0 ; j<3 ; j++)
             assert (received_val[i][j] == vec[i][j]);
     }
-    std::cout << std::endl;
     return DRAGON_SUCCESS;
 }
 
@@ -398,6 +466,8 @@ int main(int argc, char* argv[]) {
             err = test_new_tasks_and_task_done_and_join(queue_descr);
         } else if (test.compare("test_custom_matrix_pickler_dump") == 0) {
             err = test_custom_matrix_pickler_dump(queue_descr);
+        } else if (test.compare("test_custom_double_vector_pickler_dump") == 0) {
+            err = test_custom_double_vector_pickler_dump(queue_descr);
         } else if (test.compare("test_custom_matrix_pickler_load") == 0) {
             err = test_custom_matrix_pickler_load(queue_descr);
         } else if (test.compare("test_custom_int_pickler_dump") == 0) {
@@ -412,8 +482,12 @@ int main(int argc, char* argv[]) {
             err = test_custom_str_pickler_dump(queue_descr);
         } else if (test.compare("test_custom_str_pickler_load") == 0) {
             err = test_custom_str_pickler_load(queue_descr);
-        } else if (test.compare("test_2d_vector_put") == 0) {
-            err = test_2d_vector_put(queue_descr);
+        } else if (test.compare("test_2d_matrix_put") == 0) {
+            err = test_2d_matrix_put(queue_descr);
+        } else if (test.compare("test_custom_xpickler_load") == 0) {
+            err = test_custom_xpickler_load(queue_descr);
+        } else if (test.compare("test_custom_xpickler_dump") == 0) {
+            err = test_custom_xpickler_dump(queue_descr);
         } else {
             return DRAGON_NOT_IMPLEMENTED;
         }

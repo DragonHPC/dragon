@@ -1,29 +1,36 @@
 [build-system]
 requires = [
-    "setuptools",
-    "Cython~=3.0a"
+    "setuptools>=70.0.0",
+    "Cython>=3.0.12",
+    "pyclean>=3.7.0"
+
 ]
 build-backend = "setuptools.build_meta:__legacy__"
+
+[tool.setuptools]
+include-package-data = false
 
 [project]
 name = "dragonhpc"
 authors = [
     {name="Dragon Team", email="dragonhpc@hpe.com"}
 ]
+
 license-files = ["pkg/LICENSE.md"]
+license = "MIT"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux"
 ]
 description = "Dragon is a composable distributed run-time for managing dynamic processes, memory, and data at scale through high-performance communication objects."
 readme = "pkg/README.md"
+requires-python=">=3.10"
 dynamic = [
     "version",
-    "requires-python",
     "dependencies",
     "entry-points",
-    "scripts"
+    "scripts",
+    "optional-dependencies",
 ]
 
 

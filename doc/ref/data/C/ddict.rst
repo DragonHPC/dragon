@@ -64,7 +64,7 @@ request has been completed and finalized.
 
     /* Calling put selects put as the operation. Notice the key is written first, then
        put it called. */
-    err = dragon_ddict_put(&req);
+    err = dragon_ddict_put(&req, false);
     if (err != DRAGON_SUCCESS)
         throw DragonError(err, "Could not send DDict put message.");
 

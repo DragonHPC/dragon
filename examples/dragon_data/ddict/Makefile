@@ -15,7 +15,7 @@ endif
 ifeq ($(DRAGON_LIB_DIR),)
     DRAGON_LINK = $(shell  dragon-config -l)
 else
-    DRAGON_LINK = -L $(shell echo ${DRAGON_LIB_DIR}) -ldragon
+    DRAGON_LINK = -L $(shell echo ${DRAGON_LIB_DIR}) -l dragon
 endif
 
 INCLUDE = -I ${VIRTUAL_ENV}/include -I . $(DRAGON_INCLUDE)
@@ -31,10 +31,10 @@ default: build
 build: ddict_pi_sim_train ddict_pi_sim_aggregate
 
 ddict_pi_sim_train: ddict_pi_sim_train.cpp
-	g++ $(INCLUDE) -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++14 -o ddict_pi_sim_train $< $(LIBS) -ldragon -ldl
+	g++ $(INCLUDE) -std=c++14 -o ddict_pi_sim_train $< $(LIBS) -ldl
 
 ddict_pi_sim_aggregate: ddict_pi_sim_aggregate.cpp
-	g++ $(INCLUDE) -D_GLIBCXX_USE_CXX11_ABI=0 -std=c++14 -o ddict_pi_sim_aggregate $< $(LIBS) -ldragon -ldl
+	g++ $(INCLUDE) -std=c++14 -o ddict_pi_sim_aggregate $< $(LIBS) -ldl
 
 clean:
 	rm -rf *.o $(BIN_FILES) core __pycache__

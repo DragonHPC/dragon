@@ -354,7 +354,7 @@ class Queue {
      * @throws DragonError if an unexpected error occurs.
      */
 
-    void put(Serializable& value) {
+    void put(const Serializable& value) {
         put(value, STREAM_CHANNEL_IS_MAIN_FOR_BUFFERED_SEND, nullptr, 0, false, nullptr);
     }
 

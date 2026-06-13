@@ -113,6 +113,8 @@ typedef struct dragonDDictReq_st {
     dragonFLIRecvHandleDescr_t recvh; // DDict channel response handle
     dragonFLISendHandleDescr_t key_sendh; // temp send handle used for buffering the key
     size_t num_writes; // Number of nodes in buffered_allocs;
+    timespec_t* timeout;
+    timespec_t timeout_val;
     bool recvh_closed;
     bool free_mem;
     bool free_key_mem;

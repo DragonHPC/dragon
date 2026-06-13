@@ -46,12 +46,20 @@ class DragonRunFE:
         self,
         children: Optional[list[str]],
         fanout: int,
+        ssh_config_path: Optional[str] = None,
+        private_key: Optional[str] = None,
+        passphrase: Optional[str] = None,
         log_level: int = logging.NOTSET,
         stdout_wh: Optional[IO] = None,
         stderr_wh: Optional[IO] = None,
     ):
         self.children: Optional[list[str]] = children
         self.fanout: int = fanout
+
+        self.ssh_config_path: Optional[str] = ssh_config_path
+        self.private_key: Optional[str] = private_key
+        self.passphrase: Optional[str] = passphrase
+
         self.stdout_wh: Optional[IO] = stdout_wh
         self.stderr_wh: Optional[IO] = stderr_wh
 
@@ -68,6 +76,9 @@ class DragonRunFE:
         self.local_executor_thread: Optional[threading.Thread] = None
         self.pending: dict[int, PendingRequest] = dict()  # key = tag, value = Event
 
+        self._abnormal_exit = False
+        self._abnormal_exit_msg = None
+
     def __enter__(self):
         self.start()
         return self
@@ -79,26 +90,33 @@ class DragonRunFE:
         logger.debug("++DragonRunFE.start")
         try:
             if self.remote_executor:
-                self.remote_executor.connect()
+                logger.debug("Calling remote_executor.connect")
+                self.remote_executor.connect(self.ssh_config_path, self.private_key, self.passphrase)
             self.run_thread = threading.Thread(name="DragonRunFE MainThread", target=self.run)
             self.run_thread.start()
         finally:
             logger.debug("--DragonRunFE.start")
 
     def stop(self):
-        if self.run_thread:
-            self.shutdown_event.set()
-            self.run_thread.join()
-            if self.remote_executor:
-                self.remote_executor.disconnect()
-                self.remote_executor = None
-            self.run_thread = None
-        if self.stderr_wh:
-            self.stderr_wh.close()
-            self.stderr_wh = None
-        if self.stdout_wh:
-            self.stdout_wh.close()
-            self.stdout_wh = None
+        try:
+            logger.debug("++DragonRunFE.stop")
+            if self.run_thread:
+                self.shutdown_event.set()
+                self.run_thread.join()
+                if self.remote_executor:
+                    self.remote_executor.disconnect()
+                    self.remote_executor = None
+                self.run_thread = None
+            logger.debug("DragonRunFE.stop - stderr_wh")
+            if self.stderr_wh:
+                self.stderr_wh.close()
+                self.stderr_wh = None
+            logger.debug("DragonRunFE.stop - stdout_wh")
+            if self.stdout_wh:
+                self.stdout_wh.close()
+                self.stdout_wh = None
+        finally:
+            logger.debug("--DragonRunFE.stop")
 
     def run_user_app(self, command, env=None, cwd=None, exec_on_fe=False):
         logger.info("++run_user_app command=%s", command)
@@ -138,10 +156,19 @@ class DragonRunFE:
         self.pending[tag] = pending_req
         logger.debug("run_user_app - 5")
         pending_req.event.wait()
+        logger.debug("run_user_app - 6")
+
+    def had_abnormal_exit(self):
+        return self._abnormal_exit, self._abnormal_exit_msg
 
     @util.route(messages.AbnormalRuntimeExit, _DTBL)
     def handleAbnormalRuntimeExit(self, msg: messages.AbnormalRuntimeExit):
-        pass
+        self._abnormal_exit = True
+        self._abnormal_exit_msg = msg.reason
+        logger.debug("handleAbnormalRuntimeExit - setting shutdown_event")
+        self.shutdown_event.set()
+        for pending in self.pending.values():
+            pending.event.set()
 
     @util.route(messages.FwdOutput, _DTBL)
     def handleFwdOutput(self, msg: messages.FwdOutput):
@@ -332,9 +359,17 @@ class DragonRunBE:
         if msg.children:
             # TODO: Add exception handling about BERemoteExecutor. RemoteProcessError
             self.remote_executor = BERemoteExecutor(
-                self.my_rank, msg.children, msg.fanout, self.send_msg_q, self.log_level
+                self.my_rank,
+                msg.children,
+                msg.fanout,
+                self.send_msg_q,
+                self.log_level
             )
-            self.remote_executor.connect()
+            self.remote_executor.connect(
+                msg.ssh_config_path,
+                msg.private_key,
+                msg.passphrase
+            )
 
         return messages.BackendUp(util.next_tag(), self.my_hostname)
 

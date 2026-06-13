@@ -12,11 +12,6 @@ BIN_FILES = logging ringproc
 
 BASE_DIR = $(PWD)
 
-# AICI-2014 - Exclude logging from the default build since it is currently broken.
-# We will re-enable it once the logging example is fixed.
-TMP_BIN_FILES = $(BIN_FILES)
-BIN_FILES := $(filter-out logging, $(TMP_BIN_FILES))
-
 COMPONENT_DIRS = performance
 
 %.c.o: %.c
@@ -28,10 +23,10 @@ default: $(BIN_FILES)
 ringproc: ringproc.c.o
 	$(CC) $(INCLUDE) $(CFLAGS) -o ringproc $< $(LIBS) -ldragon
 
-# logging: logging.c.o
-# 	$(CC) $(INCLUDE) $(CFLAGS) -o logging $< $(LIBS) -ldragon -lrt
+logging: logging.c.o
+	$(CC) $(INCLUDE) $(CFLAGS) -o logging $< $(LIBS) -ldragon -lrt
 
 clean:
 	$(foreach p,$(COMPONENT_DIRS),cd $(p) && $(MAKE) clean && cd $(BASE_DIR);)
-	rm -rf *.o $(BIN_FILES) core *.bin
-	rm -rf /dev/shm/*
+	-rm -rf *.o $(BIN_FILES) core *.bin
+	-rm -rf /dev/shm/*

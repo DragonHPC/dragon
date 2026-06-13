@@ -23,7 +23,7 @@ import pickle
 import threading
 from queue import SimpleQueue
 
-from ...utils import b64decode, b64encode, set_local_kv, host_id, B64, hash as dragon_hash, TimeKeeper
+from ...utils import b64decode, b64encode, set_local_kv, host_id, B64, hash as dragon_hash, TimeKeeper, XPickler
 from ... import managed_memory as dmem
 from ...globalservices import channel
 from ...globalservices import pool
@@ -45,6 +45,7 @@ from .ddict import (
     DDictManagerStats,
     DDictFutureCheckpointError,
     DDictPersistCheckpointError,
+    DDictError
 )
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
 
@@ -125,6 +126,17 @@ def map_from_ids(aDict, pool, reattach):
 
     return ret_val
 
+def value_to_bytes(value_list):
+    rv = b''
+    for val in value_list:
+        rv += val.get_memview().tobytes()
+
+    return rv
+
+def free_value_mem(value_list):
+    while len(value_list) > 0:
+        value_list.pop().free()
+
 
 class BytesKey:
     def __init__(self, key_bytes):
@@ -138,6 +150,10 @@ class BytesKey:
             return False
 
         return self._key_bytes == other.get_memview()
+
+    @property
+    def bytes(self):
+        return self._key_bytes
 
 
 class Checkpoint:
@@ -255,7 +271,7 @@ class Checkpoint:
     def set_pool_mover(self, move_to_pool):
         self.move_to_pool = move_to_pool
 
-    def _contains(self, msg_key_mem):
+    def contains_key(self, msg_key_mem):
         if msg_key_mem in self.map:
             ec = DragonError.SUCCESS
             key_mem = self.key_allocs[msg_key_mem]
@@ -265,15 +281,8 @@ class Checkpoint:
 
         return ec, key_mem
 
-    def _contains_and_free_msg_key(self, msg_key_mem):
-        ec, key_mem = self._contains(msg_key_mem)
 
-        # We must free the messages key memory
-        self.manager.check_for_key_existence_before_free(msg_key_mem)
-
-        return ec, key_mem
-
-    def contains_put_key(self, client_key_mem):
+    def contains_key_and_free(self, client_key_mem):
         if client_key_mem in self.map:
             key_mem = self.key_allocs[client_key_mem]
             self.manager.check_for_key_existence_before_free(client_key_mem)
@@ -376,11 +385,13 @@ class PutOp(DictOp):
         persist: bool,
         client_key_mem: object,
         val_list: list,
+        waitFor: bool = False
     ):
         super().__init__(manager, client_id, chkpt_id, tag)
         self.persist = persist
         self.client_key_mem = client_key_mem
         self.val_list = val_list
+        self.waitFor = waitFor
 
     def _perform(self) -> bool:
         chkpt = self.manager._working_set.put(self.chkpt_id)
@@ -388,8 +399,33 @@ class PutOp(DictOp):
         if chkpt is None:
             return False
 
+        # This is a piggy-backed wait_for operation.
+        if self.waitFor:
+            rv = False
+
+            with chkpt.lock:
+                ec, key_mem = chkpt.contains_key_and_free(self.client_key_mem)
+                # the underlying memory in the pool needs to be cleaned up if we put the same key-value pair into the dictionary
+                if ec == DragonError.SUCCESS:
+                    current_val_list = chkpt.map[key_mem]
+                    current_val = value_to_bytes(current_val_list)
+                    waitfor_val = value_to_bytes(self.val_list)
+
+                    if current_val == waitfor_val:
+                        rv = True
+
+                    while len(self.val_list) > 0:
+                        try:
+                            val = self.val_list.pop()
+                            val.free()
+                        except Exception as ex:
+                            log.info("There was an exception while freeing the value in a wait_for operation.")
+
+            return rv
+
+        # Here begins the regular put code
         with chkpt.lock:
-            ec, key_mem = chkpt.contains_put_key(self.client_key_mem)
+            ec, key_mem = chkpt.contains_key_and_free(self.client_key_mem)
             # the underlying memory in the pool needs to be cleaned up if we put the same key-value pair into the dictionary
             if ec == DragonError.SUCCESS:
                 old_vals = chkpt.map[key_mem]  # free old value memory
@@ -498,7 +534,7 @@ class BatchPutOp(PutOp):
             )
 
         with chkpt.lock:
-            ec, key_mem = chkpt.contains_put_key(self.client_key_mem)
+            ec, key_mem = chkpt.contains_key_and_free(self.client_key_mem)
             # the underlying memory in the pool needs to be cleaned up if we put the same key-value pair into the dictionary
             if ec == DragonError.SUCCESS:
                 old_vals = chkpt.map[key_mem]  # free old value memory
@@ -658,22 +694,57 @@ class BPutBatchOp(BatchPutOp):
 
 class GetOp(DictOp):
 
-    def __init__(self, manager: object, client_id: int, chkpt_id: int, tag: int, client_key: BytesKey):
+    def __init__(self, manager: object, client_id: int, chkpt_id: int, tag: int, client_key: BytesKey, fetch_add: bool = False, fetch_add_val: int = 1):
         super().__init__(manager, client_id, chkpt_id, tag)
         self.client_key = client_key
+        self.fetch_add = fetch_add
+        self.fetch_add_val = fetch_add_val
 
     def perform(self) -> bool:
         """
         Returns True when it was performed and false otherwise.
         """
         try:
-            chkpt = self.manager._working_set.get(self.client_key, self.chkpt_id)
+            if self.fetch_add:
+                if self.manager._read_only:
+                    return False
 
-            if chkpt is None:
-                # We are waiting for keys or for some other reason
-                # cannot perform this yet.
-                return False
-            ec, key_mem = chkpt._contains(self.client_key)
+                pickler = XPickler()
+                chkpt = self.manager._working_set.put(self.chkpt_id)
+
+                if chkpt is None:
+                    return False
+
+                with chkpt.lock:
+                    ec, key_mem = chkpt.contains_key(self.client_key)
+                    if ec == DragonError.SUCCESS:
+                        old_value_list = chkpt.map[key_mem]
+                        try:
+                            value_bytes = value_to_bytes(old_value_list)
+                            value = pickler.loads(value_bytes)
+                        except Exception as ex:
+                            message = f"\nThere was an error unpickling the fetch_add value {value_bytes}. The value must be XPickled in Python or a Serializable in C++.\nIf left unassigned it will automatically be initialized to a value of 0 when first fetch_added"
+                            raise ValueError(message)
+
+                    else:
+                        ec = DragonError.SUCCESS
+                        key_mem = chkpt.move_to_pool(self.client_key.bytes)
+                        chkpt.persist.add(key_mem)
+                        value = 0
+                        val_bytes = pickler.dumps(value)
+                        val_mem = chkpt.move_to_pool(val_bytes)
+                        old_value_list = [val_mem]
+                        chkpt.map[key_mem] = old_value_list
+                        chkpt.key_allocs[key_mem] = key_mem
+            else:
+
+                chkpt = self.manager._working_set.get(self.client_key, self.chkpt_id)
+
+                if chkpt is None:
+                    # We are waiting for keys or for some other reason
+                    # cannot perform this yet.
+                    return False
+                ec, key_mem = chkpt.contains_key(self.client_key)
 
             free_mem = not self.manager._read_only
             resp_msg = dmsg.DDGetResponse(self.manager._tag_inc(), ref=self.tag, err=ec, freeMem=free_mem)
@@ -687,6 +758,14 @@ class GetOp(DictOp):
                 no_copy_read_only=self.manager._read_only,
             )
             self.manager._working_set.update_writer_checkpoint(self.client_id, self.chkpt_id)
+
+            if self.fetch_add:
+                with chkpt.lock:
+                    value+=self.fetch_add_val
+                    free_value_mem(old_value_list)
+                    val_bytes = pickler.dumps(value)
+                    val_mem = chkpt.move_to_pool(val_bytes)
+                    chkpt.map[key_mem] = [val_mem]
 
             return True
 
@@ -765,7 +844,7 @@ class PopOp(DictOp):
                 # cannot perform this yet.
                 return False
 
-            ec, key_mem = chkpt._contains(self.client_key)
+            ec, key_mem = chkpt.contains_key(self.client_key)
 
             transfer_ownership = True
 
@@ -868,7 +947,7 @@ class ContainsOp(DictOp):
             log.info("Key Not Found because checkpoint is None.")
 
         else:
-            ec, key_mem = chkpt._contains(self.client_key)
+            ec, key_mem = chkpt.contains_key(self.client_key)
             # a future checkpoint shouldn't return a nonpersistent key in newest checkpoint
             if self.chkpt_id > newest_chkpt_id_chkpt and key_mem not in chkpt.persist and self.manager._wait_for_keys:
                 log.info(
@@ -957,7 +1036,6 @@ class ValuesOp(DictOp):
         # a DDict will not necessarily have the right value of read_only. It is up to a client program to finish any
         # iterations (i.e. closing an iteration - breaking a loop for instance - or completing it) before changing the
         # value of read_only.
-        log.debug(f"In ValuesOp with {self.manager._read_only=}")
         t = threading.Thread(
             target=self.manager._send_dmsg_and_values,
             args=(
@@ -1920,20 +1998,24 @@ class Manager:
         self._iter_id += 1
         return iter_id
 
-    def _move_to_pool(self, client_mem):
-        if client_mem.pool.muid != self._pool.muid:
+    def _move_to_pool(self, bytes_mem):
+        if isinstance(bytes_mem, bytes):
+            new_mem = self._pool.alloc_from_bytes(bytes_mem)
+            return new_mem
+
+        if bytes_mem.pool.muid != self._pool.muid:
             # we need to move it - if no room don't wait.
             try:
-                new_mem = client_mem.copy(self._pool, timeout=0)
+                new_mem = bytes_mem.copy(self._pool, timeout=0)
                 log.debug("Manager was required to copy value to pool. This should not happen!")
             except dmem.DragonMemoryError:
                 raise DDictFullError(DragonError.MEMORY_POOL_FULL, "Could not move data to manager pool.")
             finally:
-                client_mem.free()
+                bytes_mem.free()
 
             return new_mem
 
-        return client_mem
+        return bytes_mem
 
     def _defer(self, dictop: DictOp):
         if dictop.chkpt_id not in self._deferred_ops:
@@ -2034,7 +2116,6 @@ class Manager:
                         val_list = chkpt.map[key_mem]
                         if transfer_ownership:
                             chkpt.map[key_mem] = []
-                        log.debug(f"{transfer_ownership=}, {no_copy_read_only=}")
                         for val in val_list:
                             sendh.send_mem(
                                 val,
@@ -2228,10 +2309,11 @@ class Manager:
         self._next_client_id += 1
         return client_id
 
-    def _recover_mem(self, client_key_mem: dmem.MemoryAlloc, val_list: list, recvh):
+    def _recover_mem(self, client_key_mem: dmem.MemoryAlloc, val_list: list, recvh = None):
         # Depending on where we got to, these two free's may fail, that's OK.
         log.info("Attempting to recover memory.")
-        if recvh.is_closed:
+        if recvh is not None and recvh.is_closed:
+            # In this case it is a batch put or bput and we handle that a bit differently.
             log.info("receive handle is already closed. Nothing to recover.")
             return
 
@@ -2248,7 +2330,7 @@ class Manager:
             except:
                 pass
 
-        if not recvh.stream_received:
+        if recvh is not None and not recvh.stream_received:
             try:
                 while True:
                     try:
@@ -3137,14 +3219,10 @@ class Manager:
                         DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                     )
 
-                log.debug("Getting Key")
-
                 # There is likely room for the key/value pair.
                 client_key_mem, hint = recvh.recv_mem(timeout=self._timeout)
 
                 assert hint == KEY_HINT
-
-                log.debug("Got Key")
 
                 try:
                     while True:
@@ -3155,7 +3233,6 @@ class Manager:
                 except EOFError:
                     pass
 
-                log.debug("Received key and value for BPut")
                 recvh.close()
 
                 # broadcast bput to other managers
@@ -3329,15 +3406,11 @@ class Manager:
                     DragonError.MEMORY_POOL_FULL, f"DDict Manager {self._manager_id}: Pool reserve limit exceeded."
                 )
 
-            log.debug("Getting Key")
-
             # There is likely room for the key/value pair.
             with self._time_keeper.record("key_recv"):
                 client_key_mem, hint = recvh.recv_mem(timeout=self._timeout)
 
             assert hint == KEY_HINT
-
-            log.debug("Got Key")
 
             try:
                 while True:
@@ -3352,11 +3425,10 @@ class Manager:
             except EOFError:
                 pass
 
-            log.debug("Completed Put")
             recvh.close()
 
             persist = msg.persist and self._wait_for_keys
-            put_op = PutOp(self, msg.clientID, msg.chkptID, msg.tag, persist, client_key_mem, val_list)
+            put_op = PutOp(self, msg.clientID, msg.chkptID, msg.tag, persist, client_key_mem, val_list, msg.waitFor)
 
             # advance the checkpoint if it is possible to the new checkpoint ID
             if self._working_set.put(msg.chkptID) is not None:
@@ -3369,6 +3441,7 @@ class Manager:
                     self._defer(put_op)
                 else:
                     # if there's any get for this key, then process deferred gets
+                    # or possible wait_for operations.
                     self._process_deferred_ops(msg.chkptID)
 
         except (DDictFullError, fli.DragonFLIOutOfMemoryError) as ex:
@@ -3442,7 +3515,7 @@ class Manager:
             )
 
         key = BytesKey(msg.key)
-        get_op = GetOp(self, msg.clientID, msg.chkptID, msg.tag, key)
+        get_op = GetOp(self, msg.clientID, msg.chkptID, msg.tag, key, msg.fetchAdd, msg.fetchAddVal)
 
         if not get_op.perform():
             self._defer(get_op)

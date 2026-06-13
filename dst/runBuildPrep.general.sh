@@ -73,18 +73,5 @@ cd /usr/local/src/SRMStoFigs \
   && install -D -m 755 srmstofigs srms2pdf srms2png /usr/local/bin \
   && cd -
 
-# Install the common miniconda enviroments
-mkdir miniconda3
-wget https://arti.hpc.amslabs.hpecorp.net/artifactory/dragon-misc-master-local/Miniconda3-latest-Linux-x86_64.sh -O $PWD/miniconda3/miniconda.sh
-bash $PWD/miniconda3/miniconda.sh -b -u -p $PWD/miniconda3
-rm $PWD/miniconda3/miniconda.sh
-rm -rf $PWD/miniconda3/miniconda.sh
-source $PWD/miniconda3/bin/activate
-conda init --all
-source ~/.bashrc
-
-conda config --add channels conda-forge
-conda config --remove channels https://repo.anaconda.com/pkgs/r
-conda config --remove channels https://repo.anaconda.com/pkgs/main
-conda config --file $PWD/miniconda3/.condarc --remove channels https://repo.anaconda.com/pkgs/r
-conda config --file $PWD/miniconda3/.condarc --remove channels https://repo.anaconda.com/pkgs/main
+# Install uv for venv management
+curl -LsSf https://astral.sh/uv/install.sh | sh

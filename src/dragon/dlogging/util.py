@@ -216,7 +216,7 @@ class DragonLoggingHandler(logging.StreamHandler):
         """Logging handler to enable python logging to be sent to the Dragon Logging channel on BE
 
         Ultimately a `logging.StreamHandler` that sends stream output to ``/dev/null`` and also
-        emits log records into a  :ref:`dragon.infrastructure.messages.LoggingMsg <loggingmsg>` object that
+        emits log records into a  :ref:`dragon.infrastructure.messages.CpLoggingMessage <loggingmsg>` object that
         is serialized into a :class:`dragon.native.queue.Queue` instance
 
         :param serialized_log_queue: serialized descriptor from
@@ -235,20 +235,17 @@ class DragonLoggingHandler(logging.StreamHandler):
         :type service: Union[DragonLoggingServices, str], optional
         """
 
-        # To prevent circular imports, we need to import these here.
-        from dragon.native.queue import Queue
-
         with open(os.devnull, "w") as f:
             super().__init__(f)
 
-        self._dlog = Queue.attach(serialized_log_queue, mpool=mpool)
-        self.hostname = hostname
-        self.ip_address = ip_address
-        self.port = port
-        self.service = service
+        self._dlog = logging_queue_attach(serialized_log_queue, mpool)
+        self.hostname = hostname or ""
+        self.ip_address = ip_address or ""
+        self.port = port if isinstance(port, int) else 0
+        self.service = service or ""
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Emit a dragon.insfrauction.messages.LoggingMsg message
+        """Emit a dragon.insfrauction.messages.CpLoggingMessage message
 
         Args:
             record (logging.LogRecord): Record populated by classes format method
@@ -257,19 +254,24 @@ class DragonLoggingHandler(logging.StreamHandler):
             err: DragonLoggingError if message could not be emitted into logging channel
         """
         try:
-            msg = dmsg.LoggingMsg(
+            msg = dmsg.CpLoggingMessage(
                 tag=next_tag(),
                 name=record.name,
                 msg=record.getMessage(),
-                time=record.created,
+                time=time.strftime(
+                    "%Y-%m-%d %H:%M:%S",
+                    time.localtime(
+                        record.created
+                    ),
+                ),
                 func=record.funcName,
                 hostname=self.hostname,
-                ip_address=self.ip_address,
+                ipAddress=self.ip_address,
                 port=self.port,
                 service=self.service,
                 level=record.levelno,
             )
-            self._dlog.put(msg.serialize())
+            self._dlog.put(msg)
         except Exception as err:
                 self.handleError(record)
 
@@ -499,8 +501,13 @@ def setup_FE_logging(
             # Add a filter to all the root handlers to only log on the root if it's a FE service
             for handler in logging.getLogger().handlers:
                 handler.addFilter(DragonFEFilter())
+
+        return root_log_level, full_fn
     else:
         logger.addHandler(logging.NullHandler())
+        return logging.NOTSET, None
+
+
 
 
 def close_FE_logging():
@@ -547,32 +554,20 @@ def setup_dragon_logging(node_index: int):
 
     # To prevent circular imports, we need to import these here.
     import random
-    from dragon.native.queue import Queue
     from dragon.channels import Channel
 
-    class DragonLogger(Queue):
-        def destroy(self):
-            channel = self._main_channel
-            pool = self._pool
-            super().destroy()
-            try:
-                if channel is not None:
-                    channel.destroy()
-            except:
-                pass
-            try:
-                if pool is not None:
-                    pool.destroy()
-            except:
-                pass
+    cls = dmsg.MessageQueueClassBuilder()
 
     l_uid = dfacts.BASE_LOG_CUID + random.randrange(1, 2**10) # Generate semi-random UID
     logging_mpool = _get_logging_mpool(l_uid)
     logging_channel = Channel(mem_pool=logging_mpool, c_uid=l_uid)
-    logging_queue = DragonLogger(main_channel=logging_channel, pool=logging_mpool)
+    logging_queue = cls(main_channel=logging_channel, pool=logging_mpool, pickler=dmsg.MessagePickler())
 
     return logging_queue
 
+def logging_queue_attach(sdesc, mpool=None):
+    cls = dmsg.MessageQueueClassBuilder()
+    return cls.attach(sdesc, mpool=mpool, pickler=dmsg.MessagePickler())
 
 def detach_from_dragon_handler(service: Union[DragonLoggingServices, str]):
     """Detach logger from dragon handler

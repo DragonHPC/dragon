@@ -1,6 +1,7 @@
 import os
 import yaml
 import subprocess
+import logging
 
 from .base import WLM, BaseWLM
 from ...infrastructure.node_desc import NodeDescriptor
@@ -130,5 +131,6 @@ class KubernetesNetworkConfig(BaseWLM):
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
+        log_level: int = logging.NOTSET,
     ) -> subprocess.Popen:
         raise RuntimeError("KubernetesNetworkConfig does not implement launch_backend")

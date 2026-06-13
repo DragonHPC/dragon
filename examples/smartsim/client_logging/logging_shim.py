@@ -8,13 +8,10 @@ from subprocess import Popen, PIPE, TimeoutExpired
 import logging
 
 # Pull in a lot of non-user facing dragon infrastructure to make logging pretty
-from dragon.managed_memory import MemoryPool
 from dragon.infrastructure import messages as dmsg
-from dragon.infrastructure.parameters import this_process
 from dragon.dlogging.util import setup_dragon_logging, setup_FE_logging, setup_BE_logging
 from dragon.dlogging.util import LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING, DragonLoggingServices as dls
 from dragon.native.queue import Queue
-from dragon.utils import B64
 
 
 class Shim:
@@ -101,14 +98,14 @@ def run_logging(logger_sdesc, LOGGING_DEFAULT_DEVICE_LEVEL_MAPPING, use_dragon):
     local_log = logging.getLogger(f'logger_{gethostname()}')
     local_log.info('hello from logging thread')
 
-    logger_queue = Queue.attach(logger_sdesc)
+    logger_queue = Queue.attach(logger_sdesc, pickler=dmsg.MessagePickler())
 
     # Pull messages out of the Queue and log them until told to stop
     while True:
-        msg = dmsg.parse(logger_queue.get(logging.INFO, timeout=None))
+        msg = logger_queue.get(logging.INFO, timeout=None)
         if isinstance(msg, dmsg.HaltLoggingInfra):
             break
-        elif isinstance(msg, dmsg.LoggingMsg):
+        elif isinstance(msg, dmsg.CpLoggingMessage):
             log = logging.getLogger(msg.name)
             log.log(msg.level, msg.msg, extra=msg.get_logging_dict())
 

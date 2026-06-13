@@ -14,10 +14,13 @@ logger = logging.getLogger(__name__)
 
 
 class RemoteHost(ABC):
-    def __init__(self, hostname: str, rank: int, log_level: int):
+    def __init__(self, hostname: str, rank: int, ssh_config_path: Optional[str] = None, private_key: Optional[str] = None, passphrase: Optional[str] = None, log_level: int = logging.NOTSET):
         self.hostname: str = hostname
         self.rank: int = rank
         self.log_level: int = log_level
+        self.ssh_config_path: Optional[str] = ssh_config_path
+        self.private_key: Optional[str] = private_key
+        self.passphrase: Optional[str] = passphrase
 
     def __enter__(self):
         self.connect()
@@ -54,36 +57,40 @@ class SSHHost(RemoteHost):
         "PATH",
     )
 
-    def __init__(self, hostname: str, rank: int, log_level: int = logging.NOTSET):
-        super().__init__(hostname, rank, log_level)
+    def __init__(self, hostname: str, rank: int, ssh_config_path: Optional[str] = None, private_key: Optional[str] = None, passphrase: Optional[str] = None, log_level: int = logging.NOTSET):
+        super().__init__(hostname, rank, ssh_config_path, private_key, passphrase, log_level)
         self.stdin: Optional[paramiko.ChannelFile] = None
         self.stdout: Optional[paramiko.ChannelFile] = None
         self.stderr: Optional[paramiko.ChannelFile] = None
 
     def connect(self):
-        # TODO: Allow user to specify private keyfile
-        self.pkey = paramiko.RSAKey.from_private_key_file(os.path.expanduser("~/.ssh/id_rsa"))
         self.ssh_client = paramiko.SSHClient()
 
-        # TODO Move loading of configfile to a common location
-        config_path = os.path.expanduser("~/.ssh/config")
-        if os.path.exists(config_path):
-            with open(config_path, "r") as f:
-                config = paramiko.SSHConfig()
-                config.parse(f)
-                host_config = config.lookup(self.hostname)
-        else:
-            host_config = {}
+        host_config = {}
+        if self.ssh_config_path:
+            config_path = os.path.expanduser(self.ssh_config_path)
+            if os.path.exists(config_path):
+                with open(config_path, "r") as f:
+                    config = paramiko.SSHConfig()
+                    config.parse(f)
+                    host_config = config.lookup(self.hostname)
 
         connect_params = {
             "hostname": host_config.get("hostname", self.hostname),
             "port": int(host_config.get("port", 22)),
-            "username": host_config.get("user"),
         }
 
-        if "identityfile" in host_config:
+        if "user" in host_config:
+            connect_params["username"] = host_config.get("user")
+
+        if self.private_key:
+            connect_params["key_filename"] = self.private_key
+        elif "identityfile" in host_config:
             key_filename = os.path.expanduser(host_config["identityfile"][0])
             connect_params["key_filename"] = key_filename
+
+        if self.passphrase:
+            connect_params["passphrase"] = self.passphrase
 
         self.policy = paramiko.AutoAddPolicy()  # Security risk
         self.ssh_client.set_missing_host_key_policy(self.policy)
@@ -166,5 +173,7 @@ class SSHHost(RemoteHost):
         return msg
 
     def disconnect(self):
+        logger.debug("++ssh_host=%s disconnect - closing ssh_client", self.hostname)
         self.ssh_client.close()
+        logger.debug("--ssh_host=%s disconnect", self.hostname)
         return True

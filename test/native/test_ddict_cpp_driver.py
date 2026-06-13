@@ -6,7 +6,7 @@ from dragon.data.ddict.ddict import DDict, PosixCheckpointPersister
 from dragon.native.machine import System, Node
 from dragon.infrastructure.policy import Policy
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
-from dragon.utils import b64encode, XNumPy2DPickler, XScalarPickler
+from dragon.utils import XNumPy2DMatrixPickler, XScalarPickler, XPickler
 import multiprocessing as mp
 import pathlib
 import numpy as np
@@ -318,7 +318,7 @@ class TestDDictCPP(unittest.TestCase):
         key = 32
         arr = [[1.5, 2.5, 3.5], [4.5, 5.5, 6.5]]
         value = np.array(arr)
-        with ddict.pickler(XScalarPickler(np.int32), XNumPy2DPickler(np.float64)) as type_dd:
+        with ddict.pickler(XPickler(), XPickler()) as type_dd:
             data = type_dd[key]
             print(f"NumPy array written from C++ client: \n{data}", flush=True)
             self.assertTrue(np.array_equal(data, value))
@@ -334,7 +334,7 @@ class TestDDictCPP(unittest.TestCase):
         ser_ddict = ddict.serialize()
 
         # Write numpy through python ddict client API and read from C++ client
-        with ddict.pickler(XScalarPickler(np.int32), XNumPy2DPickler(np.float64)) as type_dd:
+        with ddict.pickler(XPickler(), XPickler()) as type_dd:
             key = 2048
             arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
             value = np.array(arr)
@@ -360,9 +360,10 @@ class TestDDictCPP(unittest.TestCase):
 
         # Get list of integer keys written by C++ client and Python client
         expected_keys = {32, 1024, 9876, 2048}
-        with ddict.pickler(XScalarPickler(np.int32), None) as type_dd:
+        with ddict.pickler(XPickler(), None) as type_dd:
             type_dd[32] = 0
             keys = type_dd.keys()
+            print(list(keys), flush=True)
             received_keys = set(keys)
             self.assertEqual(expected_keys, received_keys)
 
@@ -380,6 +381,110 @@ class TestDDictCPP(unittest.TestCase):
         proc.wait()
         self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
         d.destroy()
+
+    def test_copy_init(self):
+        # We make a DDict, but not used in this test. Just needed to support
+        # testing framework.
+        exe = "cpp_ddict"
+        d = DDict(2, 1, 3000000, trace=True)
+        ser_ddict = d.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_copy_init"], env=ENV)
+        proc.wait()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+        d.destroy()
+
+    def test_fetch_add(self):
+        exe = "cpp_ddict"
+        pickler=XPickler()
+        d = DDict(2, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        xd = d.pickler(key_pickler=pickler, value_pickler=pickler)
+        ser_ddict = xd.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_fetch_add"], env=ENV)
+        proc.wait()
+        x = xd.fetch_add("Hello")
+        self.assertEqual(x, 2)
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_fetch_add_init(self):
+        exe = "cpp_ddict"
+        pickler=XPickler()
+        d = DDict(2, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        xd = d.pickler(key_pickler=pickler, value_pickler=pickler)
+        ser_ddict = xd.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_fetch_add_init"], env=ENV)
+        proc.wait()
+        x = xd.fetch_add("Hello")
+        self.assertEqual(x, 45)
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_fetch_add_init_2(self):
+        exe = "cpp_ddict"
+        pickler=XPickler()
+        d = DDict(2, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        xd = d.pickler(key_pickler=pickler, value_pickler=pickler)
+        xd["Hello"] = 40
+        ser_ddict = xd.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_fetch_add_init_2"], env=ENV)
+        proc.wait()
+        x = xd.fetch_add("Hello")
+        self.assertEqual(x, 45)
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_xpickler_to_cpp(self):
+        exe = "cpp_ddict"
+        pickler=XPickler()
+        d = DDict(2, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        xd = d.pickler(key_pickler=pickler, value_pickler=pickler)
+        hb = bytes.fromhex('deadbeef')
+        xd["Hello"] = hb
+        self.assertEqual(xd['Hello'], hb)
+        ser_ddict = xd.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_xpickler_to_cpp"], env=ENV)
+        proc.wait()
+        x = xd["Goodbye"]
+        hb2 = bytes.fromhex('deadbeefdeadbeef')
+        self.assertEqual(x, hb2)
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_wait_for(self):
+        exe = "cpp_ddict"
+        pickler=XPickler()
+        d = DDict(2, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        xd = d.pickler(key_pickler=pickler, value_pickler=pickler)
+        ser_ddict = xd.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_wait_for"], env=ENV)
+        xd["hello"] = "there"
+        proc.wait()
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_wait_for_2(self):
+        exe = "cpp_ddict"
+        pickler=XPickler()
+        d = DDict(2, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        xd = d.pickler(key_pickler=pickler, value_pickler=pickler)
+        ser_ddict = xd.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_wait_for_2"], env=ENV)
+        xd.wait_for("hello", "there")
+        proc.wait()
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
+    def test_wait_for_3(self):
+        exe = "cpp_ddict"
+        pickler=XPickler()
+        d = DDict(2, 1, 3000000, working_set_size=2, trace=True, wait_for_keys=True)
+        xd = d.pickler(key_pickler=pickler, value_pickler=pickler)
+        ser_ddict = xd.serialize()
+        proc = Popen(executable=str(test_dir / exe), args=[ser_ddict, "test_wait_for_3"], env=ENV)
+        proc.wait()
+        d.destroy()
+        self.assertEqual(proc.returncode, 0, "CPP client exited with non-zero exit code")
+
 
     def test_batch_put(self):
         exe = "cpp_ddict"

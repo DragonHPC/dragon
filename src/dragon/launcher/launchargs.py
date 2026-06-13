@@ -140,16 +140,6 @@ telemetry. By default, the Dragon runtime disables all telemetry. Passing one of
 1, 2, 3, 4, or 5 to this option, the Dragon runtime will enable the specified
 telemetry verbosity."""
 
-PROGRESS_BAR_HELP = """Enables a progress bar for HSTA request completions vs.
-the total number of expected request completions for the current launch
-configurarion, which is defined using the values in sys.argv and the number of
-nodes used for the launch. The first run with this configuration simply collects
-the necessary information to use a progress bar. Subsequent runs will display the
-application's progress via the progress bar. Data collected during the first run
-will be stored in a file contained in a hidden .dragon directory in the current
-working directory from which the application was launched. This feature currently
-requires the use of a parallel file system such as Lustre or NFS."""
-
 
 def strtobool(value: str) -> bool:
     value = value.lower()
@@ -277,13 +267,20 @@ def get_parser():
         default=0,
         help=TELEMETRY_HELP,
     )
-    parser.add_argument(
-        "-b", "--progress-bar", dest="progress_bar", action="store_true", default=False, help=PROGRESS_BAR_HELP
-    )
 
     parser.add_argument("--no-label", action="store_true", default=True)
     parser.add_argument("--basic-label", action="store_true")
     parser.add_argument("--verbose-label", action="store_true")
+
+    parser.add_argument(
+        "--ssh-config-path", type=str, metavar="SSH_CONFIG_PATH", help="Path to SSH config file for SSH authentication"
+    )
+    parser.add_argument(
+        "--private-key", type=str, metavar="PRIVATE_KEY", help="Path to private key file for SSH authentication"
+    )
+    parser.add_argument(
+        "--passphrase", type=str, metavar="PASSPHRASE", help="Passphrase for private key file for SSH authentication"
+    )
 
     parser.add_argument("--version", action="version", version=VERSION)
     parser.add_argument("prog", type=str, nargs="?", metavar="PROG", help=PROGRAM_HELP)

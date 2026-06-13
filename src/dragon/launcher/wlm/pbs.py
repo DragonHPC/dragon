@@ -74,7 +74,7 @@ Resubmit as part of a 'qsub' execution"""
     def _supports_net_conf_cache(self) -> bool:
         return False
 
-    def _launch_network_config_helper(self) -> subprocess.Popen:
+    def _launch_network_config_helper(self, args_map: dict) -> subprocess.Popen:
         mpiexec_launch_args = self.MPIEXEC_ARGS[:]
         mpiexec_launch_args.extend(self.NETWORK_CFG_HELPER_LAUNCH_CMD)  # type: ignore
 

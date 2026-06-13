@@ -4302,6 +4302,7 @@ class Batch:
         disable_telem: bool = False,
         scheduler_workers: Optional[int] = None,
         results_ddict_mem: Optional[int] = None,
+        managed_lifecycle: bool = False,
     ) -> None:
         """
         Create a Batch instance for orchestrating functions, executables, and parallel applications
@@ -4323,6 +4324,8 @@ class Batch:
         :param results_ddict_mem: Total memory in bytes to allocate for the Batch-owned results
             DDict. When omitted, Batch allocates one gibibyte per requested node.
         :type results_ddict_mem: Optional[int]
+        :param managed_lifecycle: Indicates if the Batch instance will manage its own lifecycle.
+        :type managed_lifecycle: bool
 
         .. highlight:: python
         .. code-block:: python
@@ -4427,6 +4430,8 @@ class Batch:
         self.num_workers = workers_per_node_in_pool
         self.num_managers = num_managers
 
+        self.managed_lifecycle = managed_lifecycle
+
         # All node hostnames, used by the scheduler for node allocation.
         self._all_node_hostnames: list[str] = [n.hostname for n in node_objs]
 
@@ -4482,6 +4487,13 @@ class Batch:
         :return: Returns None.
         :rtype: None
         """
+        # Skip cleanup for managed-lifecycle handles
+        if getattr(self, "managed_lifecycle", False):
+            return
+        
+        if getattr(self, "destroyed", False) or getattr(self, "terminated", False):
+            return
+
         if getattr(self, "closed", True):
             return
 
@@ -4491,34 +4503,81 @@ class Batch:
                 self._stop_client_request_worker()
             except Exception:
                 pass
-            self._unregister()
+            try:
+                self._unregister()
+            except Exception:
+                pass
 
     def __setstate__(self, state) -> None:
         """
-        Set state for a new client, including registering the client with the managers.
+        Set state for a new client handle from a serialized Batch.
+        
+        Deserialized copies are always created with ``managed_lifecycle=True``
+        and must call :py:meth:`destroy` explicitly when done. The new handle
+        registers as a fresh client with the existing managers.
 
         :return: Returns None.
         :rtype: None
         """
+
         # a lot of the state is generic and can just be set using the origin __dict__
         self.__dict__.update(state)
+
+        self.managed_lifecycle = True
+        self.destroyed = False
+        self.grp = None
+        self._serialized_grp = None
+
+        # Rebuild manager_qs from serialized descriptors
+        serialized_qs = state.pop("_serialized_manager_qs", [])
+        self.manager_qs = [Queue.attach(desc) for desc in serialized_qs]
+        self.work_q = self.manager_qs[0] if self.manager_qs else None
 
         # update attributes that are unique to this batch instance
         self._set_unique_attrs()
         self._init_client_compiler()
 
-        # register this client with the managers
-        self._register()
-        self._start_client_request_worker()
+        # Only register if we have queues to register with
+        if self.manager_qs:
+            self._register()
+            self._start_client_request_worker()
 
     def __getstate__(self) -> dict:
+        """
+        Serialize only the remote Batch handle state.
+        
+        Local-only synchronization objects and runtime handles that cannot be
+        safely pickled are excluded. Deserialized copies are always created with
+        ``managed_lifecycle=True`` to prevent accidental cleanup from GC.
+        """
         state = self.__dict__.copy()
-        state.pop("ret_q", None)
-        state.pop("_client_request_q", None)
-        state.pop("_client_request_thread", None)
-        state.pop("_client_request_worker_exc", None)
-        state.pop("client_compiler", None)
-        state.pop("log", None)
+
+        # Strip unpicklable local state
+        for key in (
+            "ret_q",
+            "_client_request_q",
+            "_client_request_thread",
+            "_client_request_worker_exc",
+            "client_compiler",
+            "log",
+            "grp",
+            "_serialized_grp",
+            "work_q",
+        ):
+            state.pop(key, None)
+
+        # Serialize manager queue descriptors for reattachment
+        manager_qs = getattr(self, "manager_qs", [])
+        state["_serialized_manager_qs"] = [q.serialize() for q in manager_qs]
+        state.pop("manager_qs", None)
+
+        # Deserialized copies are managed-lifecycle
+        state["managed_lifecycle"] = True
+        state["client_id"] = None
+        state["closed"] = False
+        state["destroyed"] = False
+        state["terminated"] = False
+
         return state
 
     def _setup_managers(self) -> None:
@@ -5028,26 +5087,74 @@ class Batch:
         if self.destroyed or self.terminated:
             return
 
-        if not self.closed:
-            self.join(timeout=timeout)
+        is_primary = getattr(self, "client_id", None) == 0
 
-        destroy_called = DestroyCalled()
-        for manager_q in self.manager_qs:
-            manager_q.put(destroy_called)
+        if is_primary:
+            # Primary client: join work, then tear down runtime
+            if not self.closed:
+                try:
+                    self.join(timeout=timeout)
+                except Exception:
+                    pass
 
-        grp = getattr(self, "grp", None)
-        if grp is None:
-            self._ensure_group_client_attached()
-            grp = self.grp
+            # Notify managers of shutdown
+            destroy_called = DestroyCalled()
+            for manager_q in getattr(self, "manager_qs", []):
+                try:
+                    manager_q.put(destroy_called)
+                except Exception:
+                    pass
 
-        if grp is not None:
-            grp.join(timeout=timeout)
-            grp.close()
+            # Wait for manager shutdown
+            grp = getattr(self, "grp", None)
+            if grp is None:
+                try:
+                    self._ensure_group_client_attached()
+                    grp = self.grp
+                except Exception:
+                    pass
 
-        self.results_ddict.destroy()
-        for manager_q in self.manager_qs:
-            manager_q.close()
-        self.ret_q.close()
+            if grp is not None:
+                try:
+                    grp.join(timeout=timeout)
+                except Exception:
+                    pass
+                try:
+                    grp.close()
+                except Exception:
+                    pass
+
+            # Destroy shared resources
+            results_ddict = getattr(self, "results_ddict", None)
+            if results_ddict is not None:
+                try:
+                    results_ddict.destroy()
+                except Exception:
+                    pass
+
+            for manager_q in getattr(self, "manager_qs", []):
+                try:
+                    manager_q.close()
+                except Exception:
+                    pass
+        else:
+            # Secondary client: just unregister and clean up local state
+            try:
+                self._stop_client_request_worker()
+            except Exception:
+                pass
+            try:
+                self._unregister()
+            except Exception:
+                pass
+
+        # All clients close their local return queue
+        ret_q = getattr(self, "ret_q", None)
+        if ret_q is not None:
+            try:
+                ret_q.close()
+            except Exception:
+                pass
 
         self.destroyed = True
 

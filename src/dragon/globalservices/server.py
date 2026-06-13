@@ -145,7 +145,7 @@ class GlobalContext(object):
         self._next_guid = dfacts.FIRST_GUID
 
         if test_gs_stdout is None:
-            self.msg_stdout = dutil.NewlineStreamWrapper(sys.stdout)
+            self.msg_stdout = dutil.NewlineStreamWrapper(sys.stdout, b64_encode_decode=True)
         else:
             self.msg_stdout = test_gs_stdout
 
@@ -1564,7 +1564,7 @@ def single():
     the_ctx = GlobalContext()
     log.info("GS context constructed, running startup")
 
-    gs_stdout = dutil.NewlineStreamWrapper(sys.stdout)
+    gs_stdout = dutil.NewlineStreamWrapper(sys.stdout, b64_encode_decode=True)
 
     the_test_conns = {}
 

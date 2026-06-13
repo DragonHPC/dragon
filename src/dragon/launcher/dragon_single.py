@@ -116,7 +116,7 @@ def shutdown_monitor(la_in):
     raise TimeoutError()
 
 
-def send_log_msgs_to_py_logger(my_dragon_logger, level: int, logging_shutdown: threading.Event):
+def send_log_msgs_to_py_logger(logging_queue, level: int, logging_shutdown: threading.Event):
     """This thread forwards any log messages received by the logging queue to
     the single node python logger.
 
@@ -125,21 +125,16 @@ def send_log_msgs_to_py_logger(my_dragon_logger, level: int, logging_shutdown: t
         level (int): minimum log priority of messages to forward
         logging_shutdown (threading.Event): event to signal shutdown of logging thread
     """
+    log = logging.getLogger("send_log_msgs_to_py_logger")
     try:
-        log = logging.getLogger("send_log_msgs_to_py_logger")
         try:
             # Set timeout to None which allows better interaction with the GIL
             while not logging_shutdown.is_set():
                 try:
-                    serialized_msg = my_dragon_logger.get(level, timeout=None)
-                    msg = dmsg.parse(serialized_msg)
+                    msg = logging_queue.get()
                     if isinstance(msg, dmsg.HaltLoggingInfra):
                         break
-                    elif isinstance(msg, dmsg.LoggingMsgList):
-                        for record in msg.records:
-                            log = logging.getLogger(record.name)
-                            log.log(record.level, record.msg, extra=record.get_logging_dict())
-                    elif isinstance(msg, dmsg.LoggingMsg):
+                    elif isinstance(msg, dmsg.CpLoggingMessage):
                         log = logging.getLogger(msg.name)
                         log.log(msg.level, msg.msg, extra=msg.get_logging_dict())
                 except Exception as ex:
@@ -274,7 +269,7 @@ def main():
 
     try:
         logging_shutdown.set()
-        logging_queue.put(dmsg.HaltLoggingInfra(tag=dlutil.next_tag()).serialize())
+        logging_queue.put(dmsg.HaltLoggingInfra(tag=dlutil.next_tag()))
         send_log_msgs_to_py_logger_thread.join()
     except Exception as ex:
         print(f"Exception during logging thread shutdown: {ex}", flush=True)

@@ -23,7 +23,7 @@ void training(char* ddict_descr, int client_id, int num_procs, uint64_t digits, 
     // reseed
     srand(time(NULL) + pid);
     SerializableInt key_client_id(client_id);
-    DDict<SerializableInt, SerializableDouble> child_dd(ddict_descr, &TIMEOUT);
+    DDict<Serializable, Serializable> child_dd(ddict_descr, &TIMEOUT);
 
     double precision = pow(10, digits);
 

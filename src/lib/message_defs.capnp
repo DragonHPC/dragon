@@ -142,12 +142,15 @@ struct DDPutDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
     persist @2: Bool;
+    waitFor @3: Bool;
 }
 
 struct DDGetDef {
     clientID @0: UInt64;
     chkptID @1: UInt64;
     key @2: Data;
+    fetchAdd @3: Bool;
+    fetchAddVal @4: Int64;
 }
 
 struct DDGetResponseDef {
@@ -406,6 +409,18 @@ struct DDGetFreezeResponseDef {
     freeze @0: Bool;
 }
 
+struct CPLoggingMessageDef {
+    name @0: Text;
+    msg @1: Text;
+    time @2: Text;
+    func @3: Text;
+    hostname @4: Text;
+    ipAddress @5: Text;
+    port @6: UInt16;
+    service @7: Text;
+    level @8: UInt8;
+}
+
 struct NoMessageSpecificData {
     none @0: Void;
 }
@@ -506,5 +521,6 @@ struct MessageDef {
         pmIxFenceMsg @83: PMIxFenceMsgDef;
         ddCreateManagerResponse @84: DDCreateManagerResponseDef;
         ddSync @85: DDSyncDef;
+        cpLoggingMessage @86: CPLoggingMessageDef;
     }
 }

@@ -114,7 +114,7 @@ class BaseWLM(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def _launch_network_config_helper(self) -> subprocess.Popen:
+    def _launch_network_config_helper(self, args_map: dict) -> subprocess.Popen:
         raise NotImplementedError
 
     def _parse_network_configuration(self) -> None:
@@ -124,17 +124,17 @@ class BaseWLM(ABC):
         stderr_stream = NewlineStreamWrapper(self.config_helper.stderr)
         node_returns = 0
         temp_uniqueness_guarantee = set()
-        while node_returns != self.NNODES:
+        while node_returns < self.NNODES:
 
             lines = []
             node_descriptor_count = len(self.node_descriptors.keys())
             if last_node_descriptor_count != node_descriptor_count:
-                self.LOGGER.debug(f"received {node_descriptor_count} of {self.NNODES} expected NodeDescriptors")
+                self.LOGGER.debug("received %d of %d expected NodeDescriptors", node_descriptor_count, self.NNODES)
                 last_node_descriptor_count = node_descriptor_count
 
             if self.config_helper.poll():  # Is the helper process still running?
                 if self.config_helper.returncode != 0:  # Did the helper process exit with non-zero error code?
-                    out, err = self.config_helper.communicate()
+                    _, err = self.config_helper.communicate()
                     raise RuntimeError(str(err))
 
             while stdout_stream.poll():
@@ -165,11 +165,11 @@ class BaseWLM(ABC):
                         break
 
             for line in lines:
-                self.LOGGER.debug(f"{line=}")
-                node_index, node_desc = line.split(": ", maxsplit=1)
-                if " " in node_index:
-                    node_index = node_index.split(" ")[-1]
-                if str(node_index) not in temp_uniqueness_guarantee:
+                self.LOGGER.debug("line=%s", line)
+                wlm_id, node_desc = line.split(": ", maxsplit=1)
+                if " " in wlm_id:
+                    wlm_id = wlm_id.split(" ")[-1]
+                if str(wlm_id) not in temp_uniqueness_guarantee:
                     self.LOGGER.debug(json.loads(node_desc))
                     node = NodeDescriptor.from_sdict(json.loads(node_desc))
                     assert node is not None
@@ -178,14 +178,14 @@ class BaseWLM(ABC):
                         # arrival order. Helper output can arrive out of order, and
                         # later launcher code treats these keys as stable network-
                         # configuration indices.
-                        self.node_descriptors[str(node_index)] = node
-                        temp_uniqueness_guarantee.add(str(node_index))
+                        self.node_descriptors[str(node_returns)] = node
+                        temp_uniqueness_guarantee.add(str(wlm_id))
                     node_returns += 1
 
         # Keep iteration deterministic after asynchronous helper output so
         # downstream code sees network-config entries in node-index order.
         self.node_descriptors = dict(sorted(self.node_descriptors.items(), key=lambda item: int(item[0])))
-        self.LOGGER.debug(f"received {self.NNODES} of {self.NNODES} expected NodeDescriptors")
+        self.LOGGER.debug("received %d of %d expected NodeDescriptors", self.NNODES, self.NNODES)
 
     def _sigint_teardown(self):
         """Safely teardown network config infrastructure"""
@@ -244,7 +244,7 @@ class BaseWLM(ABC):
     def get_allocation_node_count(self) -> int:
         return self.NNODES
 
-    def get_network_config(self, sigint_trigger=None) -> dict[str, NodeDescriptor]:
+    def get_network_config(self, args_map : dict, sigint_trigger=None) -> dict[str, NodeDescriptor]:
 
         try:
             self.orig_handler = signal.signal(signal.SIGINT, self._sigint_handler)
@@ -258,7 +258,7 @@ class BaseWLM(ABC):
             # launch the config helper
             if not self.node_descriptors:
                 self.LOGGER.debug("Launching config helper.")
-                self.config_helper = self._launch_network_config_helper()
+                self.config_helper = self._launch_network_config_helper(args_map=args_map)
 
                 if sigint_trigger == -2:
                     signal.raise_signal(signal.SIGINT)
@@ -373,6 +373,7 @@ class BaseWLM(ABC):
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
         transport_test_env: bool,
+        log_level: int = logging.NOTSET,
     ) -> subprocess.Popen:
         try:
             dragon_be_args = self._get_dragon_launch_be_args(

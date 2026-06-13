@@ -50,19 +50,15 @@ Finally, back in the first terminal, by pressing `Enter`, we get the updated dat
 
 ## Simple Logging Demo
 
-This demo showcases the use of Dragon core's logging API.
-
-Run it Python demo with
+This demo showcases the using Dragon core's logging API from a C application.
 
 ```
-python3 py_logging.py
+dragon -l DEBUG ./logging
 ```
 
-To run the C version of the demo with
-
-```
-./c_logging
-```
+The `logging` application will output a log message to the Dragon logging infrastucture. Assuming that the log level on the Dragon
+launcher is at least as high as the messages being outputted, the log message will appear both in the stdout from the dragon launcher
+and the `dragon_*_.log` file.
 
 ## Performance Tests
 

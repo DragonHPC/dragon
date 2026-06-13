@@ -33,11 +33,12 @@ class ConfigOutputType(enum.Enum):
 class NetworkConfig:
     """Class for constructing network configurations for backend compute"""
 
-    def __init__(self):
+    def __init__(self, args_map: Optional[dict] = None):
         """Initializer for class. Assumes a Slurm workload manager presently"""
 
         self.network_config = {}
         self.allocation_nnodes = 0
+        self.args_map = args_map
 
     def get_network_config(self):
         """Get the object's stored network configuration
@@ -175,6 +176,7 @@ class NetworkConfig:
         port: str = DEFAULT_OVERLAY_NETWORK_PORT,
         primary_hostname: Optional[str] = None,
         hostlist: Optional[list[str]] = None,
+        args_map: Optional[dict] = None,
         sigint_trigger=None,
     ):
         """Obtain a network configuration for a given worklaod manager
@@ -191,6 +193,8 @@ class NetworkConfig:
         :type primary_hostname: str, optional
         :param hostlist: list of hosts to use, defaults to None
         :type hostlist: list[str], optional
+        :param args_map: Dictionary of arguments to be used in network config generation, defaults to None
+        :type args_map: dict, optional
         :param sigint_trigger: Conditional location to raise a SIGINT for testing purposes, defaults to None
         :type sigint_trigger: [type], optional
 
@@ -199,9 +203,9 @@ class NetworkConfig:
         obj = cls()
         wlm_generator = wlm_cls_dict.get(workload_manager)(network_prefix, port, hostlist)
         if workload_manager is WLM.K8S:
-            obj.network_config = wlm_generator._launch_network_config_helper()
+            obj.network_config = wlm_generator._launch_network_config_helper(args_map=args_map)
         else:
-            obj.network_config = wlm_generator.get_network_config(sigint_trigger=sigint_trigger)
+            obj.network_config = wlm_generator.get_network_config(args_map=args_map, sigint_trigger=sigint_trigger)
         obj.allocation_nnodes = wlm_generator.get_allocation_node_count()
         # If coming from the workload manager, we need to use the host ID to select the primary
         # node (unless overruled by user input) and assign a node index
@@ -353,6 +357,16 @@ def get_args(inputs=None):
     host_group.add_argument("--hostlist", action=SplitArgsAtComma, metavar="HOSTLIST", type=str, help=HOSTLIST_HELP)
     host_group.add_argument("--hostfile", type=str, metavar="HOSTFILE", help=HOSTFILE_HELP)
 
+    parser.add_argument(
+        "--ssh-config-path", type=str, metavar="SSH_CONFIG_PATH", help="Path to SSH config file for SSH authentication"
+    )
+    parser.add_argument(
+        "--private-key", type=str, metavar="PRIVATE_KEY", help="Path to private key file for SSH authentication"
+    )
+    parser.add_argument(
+        "--passphrase", type=str, metavar="PASSPHRASE", help="Passphrase for private key file for SSH authentication"
+    )
+
     parser.set_defaults(
         port=DEFAULT_OVERLAY_NETWORK_PORT,
         network_prefix=DEFAULT_TRANSPORT_NETIF,
@@ -439,6 +453,7 @@ def main():
             network_prefix=args.network_prefix,
             primary_hostname=args.primary,
             hostlist=args.hostlist,
+            args_map=vars(args),
         )
         if not args.no_stdout:
             config = net.get_network_config()

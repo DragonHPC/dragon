@@ -119,6 +119,12 @@ Tutorials
             <p>Third tutorial for using Dragon</p>
         </a>
     </div>
+    <div class="tiles">
+        <a href="uses/debugging.html" class="tile_item">
+            <h3>Debugging</h3>
+            <p>Debug workflows and applications</p>
+        </a>
+    </div>
 
 .. toctree::
     :maxdepth: 2

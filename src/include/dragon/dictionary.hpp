@@ -53,7 +53,7 @@ class DDict {
          * @brief Construct a KeyRef from a Serializable Key and an
          * asociated DDict.
          */
-        KeyRef(DDict& dict, SerializableKey& key) : mDict(dict), mKey(key) {}
+        KeyRef(DDict& dict, const SerializableKey& key) : mDict(dict), mKey(key) {}
 
         /**
          * @brief Store a new value for the given key reference.
@@ -63,7 +63,7 @@ class DDict {
          * @param value is the new Serializable value to be stored in the
          * DDict.
          */
-        void operator= (SerializableValue& value) {
+        void operator= (const SerializableValue& value) {
             dragonDDictRequestDescr_t req;
             dragonError_t err;
             dragonFLISendHandleDescr_t value_sendh;
@@ -94,14 +94,7 @@ class DDict {
                 throw DragonError(err, "Could not finalize DDict put request.");
         }
 
-        /**
-         * @brief Returns the SerializableValue associated with a KeyRef.
-         *
-         * When a lookup occurs and the C++ code wants to cast it
-         * (i.e. lookup the key in the DDict) this code takes care of the
-         * lookup and returning the associated Serializable value.
-         */
-        operator SerializableValue () const {
+        SerializableValue _read_value() const {
             dragonDDictRequestDescr_t req;
             dragonError_t err;
             dragonFLISendHandleDescr_t key_sendh;
@@ -137,9 +130,44 @@ class DDict {
             return value;
         }
 
+        /**
+         * @brief Returns the SerializableValue associated with a KeyRef.
+         *
+         * When a lookup occurs and the C++ code wants to cast it
+         * (i.e. lookup the key in the DDict) this code takes care of the
+         * lookup and returning the associated Serializable value.
+         */
+        operator SerializableValue () const {
+            SerializableValue value = _read_value();
+            return value;
+        }
+
+        /** @brief Returns a Serializable that can then be converted
+         *  into the correct type automatically by the Serializable
+         *  class. In situations where you have a dictionary declared
+         *  like dd<Serializable, Serializable> and then do something
+         *  like
+         *
+         *     SerializableInt i = dd[x];
+         *
+         *  The compiler won't implicitly chain conversions. In this case
+         *  the compiler would first need to convert to Serializable and then
+         *  the Serializable class has a conversion operator for SerializableInt.
+         *  Since it won't change them automatically, the template below gets
+         *  instantiated by the compiler when it needs a KeyRef to SerializableInt
+         *  conversion. The code in this converter first converts it to a Serializable
+         *  object and the Serializable class takes care of the conversion to
+         *  SerializableInt from Serializable.
+         */
+        template <class T>
+        operator T() const {
+            Serializable value = _read_value();
+            return value;
+        }
+
         private:
         DDict& mDict;
-        SerializableKey& mKey;
+        const SerializableKey& mKey;
     };
 
     public:
@@ -305,7 +333,7 @@ class DDict {
      * be used in either a lookup of a value in the DDict or
      * or used to set a key/value pair in the DDict.
      */
-    KeyRef operator[] (SerializableKey& key) {
+    KeyRef operator[] (const SerializableKey& key) {
         return DDict::KeyRef(*this, key);
     }
 
@@ -316,7 +344,7 @@ class DDict {
      * These pairs remain in the DDict until explicitly deleted.
      */
 
-    void pput(SerializableKey& key, SerializableValue& value) {
+    void pput(const SerializableKey& key, const SerializableValue& value) {
         dragonDDictRequestDescr_t req;
         dragonFLISendHandleDescr_t value_sendh;
         dragonFLISendHandleDescr_t key_sendh;
@@ -355,7 +383,7 @@ class DDict {
      *
      * @returns A bool to indicate membership.
      */
-    bool contains(SerializableKey& key) {
+    bool contains(const SerializableKey& key) {
         dragonDDictRequestDescr_t req;
         dragonFLISendHandleDescr_t key_sendh;
         dragonError_t err;
@@ -394,7 +422,7 @@ class DDict {
      * @param key A serializable key for the DDict
      * @returns the manager_id to be used for this key
      */
-    uint64_t which_manager(SerializableKey& key) {
+    uint64_t which_manager(const SerializableKey& key) {
         dragonDDictRequestDescr_t req;
         dragonFLISendHandleDescr_t key_sendh;
         dragonError_t err;
@@ -422,6 +450,91 @@ class DDict {
     }
 
     /**
+     * @brief Fetch and add (atomically) an integer value
+     *
+     * Given a key, this creates a mapping to 0 if
+     * one does not already exist. If the value is mapped to
+     * an integer calling this returns the integer before adding
+     * the val to the value stored at the key. If the key it is
+     * not mapped to a Serializable integer a DragonError is thrown.
+     *
+     * @param key A DDict Key
+     * @param val The value to atomically add to the value at key
+     * @throws DragonError if the key exists and is not a Serializable
+     * integer.
+     */
+    SerializableValue fetch_add(const SerializableKey& key, int val=1) {
+        dragonDDictRequestDescr_t req;
+        dragonFLISendHandleDescr_t key_sendh;
+        dragonFLIRecvHandleDescr_t recvh;
+        dragonError_t err;
+        uint64_t hint;
+
+        err = dragon_ddict_create_request(&mCDict, &req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not create DDict erase request.");
+
+        err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        /* xkey will be serializable and deserializable in both C++ and Python */
+        Serializable xkey = key;
+        xkey.serialize(&key_sendh, KEY_HINT, true, mTimeout);
+
+        err = dragon_ddict_fetch_add(&req, val);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not issue the DDict fetch_add command.");
+
+        err = dragon_ddict_request_recvh(&req, &recvh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        SerializableInt value = Serializable::deserialize(&recvh, &hint, mTimeout);
+        if (hint != VALUE_HINT)
+            throw DragonError(DRAGON_INVALID_OPERATION, "The value hint when deserializing was not correct.");
+
+        err = dragon_ddict_finalize_request(&req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not finalize the DDict fetch_add request.");
+
+        return value;
+    }
+
+    void wait_for(const SerializableKey& key, const SerializableValue& value, const timespec_t* timeout=nullptr) {
+        dragonDDictRequestDescr_t req;
+        dragonError_t err;
+        dragonFLISendHandleDescr_t value_sendh;
+        dragonFLISendHandleDescr_t key_sendh;
+
+        err = dragon_ddict_create_request_with_timeout(&mCDict, &req, timeout);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not create DDict wait_for request.");
+
+        err = dragon_ddict_request_key_sendh(&req, &key_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request key send handle.");
+
+        key.serialize(&key_sendh, KEY_HINT, true, mTimeout);
+
+        err = dragon_ddict_wait_for(&req);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not send DDict wait_for message.");
+
+        err = dragon_ddict_request_value_sendh(&req, &value_sendh);
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not access the request send handle.");
+
+        value.serialize(&value_sendh, VALUE_HINT, false, mTimeout);
+
+        err = dragon_ddict_finalize_request(&req);
+        if (err == DRAGON_TIMEOUT)
+            throw TimeoutError(err, "The wait_for operation timed out.");
+
+        if (err != DRAGON_SUCCESS)
+            throw DragonError(err, "Could not finalize DDict put request.");
+    }
+    /**
      * @brief Remove a key from the DDict
      *
      * Delete a key/value pair from the DDict. If the key does not exist a
@@ -430,7 +543,7 @@ class DDict {
      * @param A DDict Key
      * @throws DragonError if the key does not exist.
      */
-    SerializableValue erase(SerializableKey& key) {
+    SerializableValue erase(const SerializableKey& key) {
         dragonDDictRequestDescr_t req;
         dragonFLISendHandleDescr_t key_sendh;
         dragonFLIRecvHandleDescr_t recvh;
@@ -834,7 +947,7 @@ class DDict {
      *
      * @param value A serializable value for the DDict.
      */
-    void bput(SerializableKey& key, SerializableValue& value) {
+    void bput(const SerializableKey& key, const SerializableValue& value) {
         dragonDDictRequestDescr_t req;
         dragonFLISendHandleDescr_t value_sendh;
         dragonFLISendHandleDescr_t key_sendh;
@@ -872,7 +985,7 @@ class DDict {
      *
      * @param key A serializable key for the DDict. This key should be written through broadcast put.
      */
-    SerializableValue bget(SerializableKey& key) const {
+    SerializableValue bget(const SerializableKey& key) const {
         dragonDDictRequestDescr_t req;
         dragonError_t err;
         dragonFLISendHandleDescr_t key_sendh;

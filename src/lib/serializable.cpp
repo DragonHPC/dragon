@@ -1,48 +1,65 @@
 #include <cstring>
 #include <sstream>
+#include <iostream>
+#include <utility>
 #include <dragon/serializable.hpp>
 #include <dragon/exceptions.hpp>
+#include <map>
+#include <functional>
 
 namespace dragon {
 
-/**************************************************************/
-/*********       SerializableInt Implementation       *********/
-/**************************************************************/
+std::map<int, Serializable::DeserializeFn> Serializable::sDeserializers = {
+    {DragonSerType::SERTYPE_STR,
+        [](dragonFLIRecvHandleDescr_t* h, uint64_t* a, const timespec_t* t) -> Serializable {
+            return Serializable(SerializableString::deserialize(h, a, t));
+        }},
+    {DragonSerType::SERTYPE_INT,
+        [](dragonFLIRecvHandleDescr_t* h, uint64_t* a, const timespec_t* t) -> Serializable {
+            return Serializable(SerializableInt::deserialize(h, a, t));
+        }},
+    {DragonSerType::SERTYPE_DOUBLE,
+        [](dragonFLIRecvHandleDescr_t* h, uint64_t* a, const timespec_t* t) -> Serializable {
+            return Serializable(SerializableDouble::deserialize(h, a, t));
+        }},
+    {DragonSerType::SERTYPE_INTVECTOR,
+        [](dragonFLIRecvHandleDescr_t* h, uint64_t* a, const timespec_t* t) -> Serializable {
+            return Serializable(SerializableIntVector::deserialize(h, a, t));
+        }},
+    {DragonSerType::SERTYPE_DOUBLEVECTOR,
+        [](dragonFLIRecvHandleDescr_t* h, uint64_t* a, const timespec_t* t) -> Serializable {
+            return Serializable(SerializableDoubleVector::deserialize(h, a, t));
+        }},
+    {DragonSerType::SERTYPE_INTMATRIX,
+        [](dragonFLIRecvHandleDescr_t* h, uint64_t* a, const timespec_t* t) -> Serializable {
+            return Serializable(Serializable2DIntMatrix::deserialize(h, a, t));
+        }},
+    {DragonSerType::SERTYPE_DOUBLEMATRIX,
+        [](dragonFLIRecvHandleDescr_t* h, uint64_t* a, const timespec_t* t) -> Serializable {
+            return Serializable(Serializable2DDoubleMatrix::deserialize(h, a, t));
+        }},
+    {DragonSerType::SERTYPE_BYTEBUFFER,
+        [](dragonFLIRecvHandleDescr_t* h, uint64_t* a, const timespec_t* t) -> Serializable {
+            return Serializable(SerializableByteBuffer::deserialize(h, a, t));
+        }},
+};
 
-SerializableInt::SerializableInt(int x): mVal(x) {}
+/**************************************************************/
+/*********     SerializableBase Code                  *********/
+/**************************************************************/
+SerializableBase::~SerializableBase() {}
 
-void SerializableInt::serialize(dragonFLISendHandleDescr_t* sendh, uint64_t arg, const bool buffer, const timespec_t* timeout) const {
-    dragonError_t err;
-    err = dragon_fli_send_bytes(sendh, sizeof(int), (uint8_t*)&mVal, arg, buffer, timeout);
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not serialize the integer.");
+void SerializableBase::serialize(dragonFLISendHandleDescr_t* sendh, uint64_t arg, const bool buffer, const timespec_t* timeout) const {
+    throw DragonError(DRAGON_INVALID_ARGUMENT, "Cannot serialize a base SerializableBase object.");
 }
 
-SerializableInt SerializableInt::deserialize(dragonFLIRecvHandleDescr_t* recvh, uint64_t* arg, const timespec_t* timeout) {
-    dragonError_t err = DRAGON_SUCCESS;
-    size_t actual_size;
-    int val;
-
-    err = dragon_fli_recv_bytes_into(recvh, sizeof(int), &actual_size, (uint8_t*)&val, arg, timeout);
-    if (err == DRAGON_TIMEOUT)
-        throw TimeoutError(err, "Operation Timeout");
-
-    if (err == DRAGON_EOT)
-        throw EmptyError(err, "EOT of stream");
-
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not deserialize the integer.");
-
-    if (actual_size != sizeof(int)) {
-        std::stringstream msg;
-        msg << "The expected size of the integer was " << sizeof(int) << " and the received size was " << actual_size <<". The size is not correct.";
-        throw DragonError(DRAGON_INVALID_ARGUMENT, msg.str().c_str());
-    }
-
-    return SerializableInt(val); //RVO - Return Value Optimization
+int SerializableBase::type_id() const {
+    throw DragonError(DRAGON_INVALID_ARGUMENT, "Cannot get type of base SerializableBase object.");
 }
 
-int SerializableInt::getVal() const {return mVal;}
+SerializableBase SerializableBase::deserialize(dragonFLIRecvHandleDescr_t* recvh, uint64_t* arg, const timespec_t* timeout) {
+        throw DragonError(DRAGON_INVALID_OPERATION, "This class should not be instantiated. Inherit from SerializableBase instead.");
+}
 
 /**************************************************************/
 /*********     SerializableString Implementation      *********/
@@ -94,27 +111,36 @@ SerializableString SerializableString::deserialize(dragonFLIRecvHandleDescr_t* r
     return SerializableString(std::string(val, actual_size)); //RVO
 }
 
+int SerializableString::type_id() const {
+        return DragonSerType::SERTYPE_STR;
+}
+
 std::string SerializableString::getVal() const {return mVal;}
 
 /**************************************************************/
-/*********     SerializableDouble Implementation      *********/
+/*********    SerializableByteBuffer Implementation   *********/
 /**************************************************************/
 
-SerializableDouble::SerializableDouble(double x): mVal(x) {}
+SerializableByteBuffer::SerializableByteBuffer(size_t size, uint8_t* ptr): size(size), ptr(ptr) {}
 
-void SerializableDouble::serialize(dragonFLISendHandleDescr_t* sendh, uint64_t arg, const bool buffer, const timespec_t* timeout) const {
+void SerializableByteBuffer::serialize(dragonFLISendHandleDescr_t* sendh, uint64_t arg, const bool buffer, const timespec_t* timeout) const {
     dragonError_t err;
-    err = dragon_fli_send_bytes(sendh, sizeof(double), (uint8_t*)&mVal, arg, buffer, timeout);
+    err = dragon_fli_send_bytes(sendh, sizeof(size_t), (uint8_t*)&size, arg, buffer, timeout);
     if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not serialize double.");
+        throw DragonError(err, "Could not serialize the SerializableByteBuffer size.");
+
+    err = dragon_fli_send_bytes(sendh, size, ptr, arg, buffer, timeout);
+    if (err != DRAGON_SUCCESS)
+        throw DragonError(err, "Could not serialize the SerializableByteBuffer data.");
 }
 
-SerializableDouble SerializableDouble::deserialize(dragonFLIRecvHandleDescr_t* recvh, uint64_t* arg, const timespec_t* timeout) {
+SerializableByteBuffer SerializableByteBuffer::deserialize(dragonFLIRecvHandleDescr_t* recvh, uint64_t* arg, const timespec_t* timeout) {
     dragonError_t err = DRAGON_SUCCESS;
+    size_t size = 0;
     size_t actual_size;
-    double val;
+    uint8_t* data;
 
-    err = dragon_fli_recv_bytes_into(recvh, sizeof(double), &actual_size, (uint8_t*)&val, arg, timeout);
+    err = dragon_fli_recv_bytes_into(recvh, sizeof(size_t), &actual_size, (uint8_t*)&size, arg, timeout);
     if (err == DRAGON_TIMEOUT)
         throw TimeoutError(err, "Operation timeout.");
 
@@ -122,124 +148,307 @@ SerializableDouble SerializableDouble::deserialize(dragonFLIRecvHandleDescr_t* r
         throw EmptyError(err, "EOT of stream");
 
     if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not deserialize double");
-
-    if (actual_size != sizeof(double))
-        throw DragonError(DRAGON_INVALID_ARGUMENT, "The size of the double was not correct.");
-
-    return SerializableDouble(val);
-}
-
-double SerializableDouble::getVal() const {return mVal;}
-
-/**************************************************************/
-/********* SerializableDoubleVector Implementation *********/
-/**************************************************************/
-
-SerializableDoubleVector::SerializableDoubleVector(std::vector<double> x): mVal(x) {}
-SerializableDoubleVector::SerializableDoubleVector(size_t size): mVal(std::vector<double>(size, 0.0)) {}
-
-void SerializableDoubleVector::serialize(dragonFLISendHandleDescr_t* sendh, uint64_t arg, const bool buffer, const timespec_t* timeout) const {
-    dragonError_t err;
-    size_t num_items = mVal.size();
-
-    // write the size of the array - needed for efficient deserialization without copies
-    err = dragon_fli_send_bytes(sendh, sizeof(size_t), (uint8_t*)&num_items, arg, buffer, timeout);
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not write vector size to ddict.");
-
-    err = dragon_fli_send_bytes(sendh, sizeof(double)*num_items, (uint8_t*)mVal.data(), arg, buffer, timeout);
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not write vector to ddict.");
-}
-
-SerializableDoubleVector SerializableDoubleVector::deserialize(dragonFLIRecvHandleDescr_t* recvh, uint64_t* arg, const timespec_t* timeout) {
-    dragonError_t err = DRAGON_SUCCESS;
-    size_t received_size = 0;
-    size_t expected_size = 0;
-    size_t num_items = 0;
-
-    err = dragon_fli_recv_bytes_into(recvh, sizeof(size_t), &received_size, (uint8_t*)&num_items, arg, timeout);
-    if (err == DRAGON_TIMEOUT)
-        throw TimeoutError(err, "Operation timeout.");
-
-    if (err == DRAGON_EOT)
-        throw EmptyError(err, "EOT of stream");
-
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not read item count for vector.");
-
-    if (received_size != sizeof(size_t))
-        throw DragonError(DRAGON_INVALID_ARGUMENT, "The size of num_items was not correct.");
-
-    SerializableDoubleVector rv(num_items);
-
-    expected_size = sizeof(double) * num_items;
-
-    err = dragon_fli_recv_bytes_into(recvh, expected_size, &received_size, (uint8_t*)rv.mVal.data(), arg, timeout);
-    if (err == DRAGON_TIMEOUT)
-        throw TimeoutError(err, "Operation timeout.");
-
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not read element of vector.");
-
-    if (received_size != expected_size)
-        throw DragonError(DRAGON_INVALID_ARGUMENT, "The received data did not match the expected size of the vector.");
-
-    return rv; // Relies on RVO for efficiently returning the vector.
-}
-
-const std::vector<double>& SerializableDoubleVector::getVal() const {return mVal;}
-
-/**************************************************************/
-/********* SerializableDouble2DVector Implementation *********/
-/**************************************************************/
-
-SerializableDouble2DVector::SerializableDouble2DVector(std::vector<std::vector<double>> x): mVal(x) {}
-
-void SerializableDouble2DVector::serialize(dragonFLISendHandleDescr_t* sendh, uint64_t arg, const bool buffer, const timespec_t* timeout) const {
-    dragonError_t err;
-    size_t nrows = mVal.size();
-
-    // write the number of rows in the vector
-    err = dragon_fli_send_bytes(sendh, sizeof(size_t), (uint8_t*)&nrows, arg, buffer, timeout);
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not write bytes to ddict.");
-
-    for (auto& row: mVal) {
-        SerializableDoubleVector sVec(row);
-        sVec.serialize(sendh, arg, buffer, timeout);
-    }
-}
-
-SerializableDouble2DVector SerializableDouble2DVector::deserialize(dragonFLIRecvHandleDescr_t* recvh, uint64_t* arg, const timespec_t* timeout) {
-    dragonError_t err = DRAGON_SUCCESS;
-    size_t actual_size;
-    std::vector<std::vector<double>> val;
-
-    size_t nrows = 0;
-
-    err = dragon_fli_recv_bytes_into(recvh, sizeof(size_t), &actual_size, (uint8_t*)&nrows, arg, timeout);
-    if (err == DRAGON_TIMEOUT)
-        throw TimeoutError(err, "Operation timeout.");
-
-    if (err == DRAGON_EOT)
-        throw EmptyError(err, "EOT of stream");
-
-    if (err != DRAGON_SUCCESS)
-        throw DragonError(err, "Could not read row count for vector.");
+        throw DragonError(err, "Could not get the buffer size while deserializing");
 
     if (actual_size != sizeof(size_t))
-        throw DragonError(DRAGON_INVALID_ARGUMENT, "The size of nrows was not correct.");
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The length of the size value was not correct.");
 
-    for (size_t i=0; i<nrows; i++) {
-        SerializableDoubleVector tmp_vec = SerializableDoubleVector::deserialize(recvh, arg, timeout);
-        val.push_back(tmp_vec.getVal());
-    }
+    err = dragon_fli_recv_bytes(recvh, size, &actual_size, (uint8_t**)&data, arg, timeout);
+    if (err == DRAGON_TIMEOUT)
+        throw TimeoutError(err, "Operation timeout.");
 
-    return SerializableDouble2DVector(val); // Relies on RVO for efficiently returning the vector.
+    if (err != DRAGON_SUCCESS)
+        throw DragonError(err, "There was an unexpected error while deserializing the byte buffer.");
+
+    if (actual_size != size)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The size of the buffer was not correct.");
+
+    return SerializableByteBuffer(actual_size, data);
 }
 
-const std::vector<std::vector<double>>& SerializableDouble2DVector::getVal() const {return mVal;}
+uint8_t* SerializableByteBuffer::getPtr() const {
+    return ptr;
+}
+
+size_t SerializableByteBuffer::getSize() const {
+    return size;
+}
+
+int SerializableByteBuffer::type_id() const {
+    return DragonSerType::SERTYPE_BYTEBUFFER;
+}
+
+/**************************************************************/
+/*********     Serializable Implementation      *********/
+/**************************************************************/
+
+Serializable::Serializable(Serializable&& other) {
+    mVal = other.mVal;
+    other.mVal = nullptr;
+}
+
+Serializable::Serializable(const Serializable& other) : mVal(nullptr) {
+    if (other.mVal == nullptr)
+        return;
+
+    switch (other.type_id()) {
+        case DragonSerType::SERTYPE_STR:
+            mVal = new SerializableString(other.asSerializableString().getVal());
+            break;
+        case DragonSerType::SERTYPE_INT:
+            mVal = new SerializableInt(other.asSerializableInt().getVal());
+            break;
+        case DragonSerType::SERTYPE_DOUBLE:
+            mVal = new SerializableDouble(other.asSerializableDouble().getVal());
+            break;
+        case DragonSerType::SERTYPE_INTVECTOR:
+            mVal = new SerializableIntVector(other.asSerializableIntVector().getVal());
+            break;
+        case DragonSerType::SERTYPE_DOUBLEVECTOR:
+            mVal = new SerializableDoubleVector(other.asSerializableDoubleVector().getVal());
+            break;
+        case DragonSerType::SERTYPE_INTMATRIX:
+            mVal = new Serializable2DIntMatrix(other.asSerializable2DIntMatrix().getVal());
+            break;
+        case DragonSerType::SERTYPE_DOUBLEMATRIX:
+            mVal = new Serializable2DDoubleMatrix(other.asSerializable2DDoubleMatrix().getVal());
+            break;
+        case DragonSerType::SERTYPE_BYTEBUFFER:
+            mVal = new SerializableByteBuffer(other.asSerializableByteBuffer().getSize(), other.asSerializableByteBuffer().getPtr());
+            break;
+        default:
+            throw DragonError(DRAGON_INVALID_ARGUMENT, "Unknown Serializable type_id in copy constructor.");
+    }
+}
+
+Serializable& Serializable::operator=(const Serializable& other) {
+    if (this == &other) return *this;
+    Serializable tmp(other);
+    std::swap(mVal, tmp.mVal);
+    return *this;
+}
+
+Serializable& Serializable::operator=(Serializable&& other) {
+    if (this == &other) return *this;
+
+    delete mVal;
+    mVal = other.mVal;
+    other.mVal = nullptr;
+    return *this;
+}
+
+Serializable::Serializable(int i) {
+    mVal = new SerializableInt(i);
+}
+
+Serializable::Serializable(double d) {
+    mVal = new SerializableDouble(d);
+}
+
+Serializable::Serializable(std::initializer_list<int> v) {
+    mVal = new SerializableIntVector(std::vector<int>(v));
+}
+
+Serializable::Serializable(std::initializer_list<double> v) {
+    mVal = new SerializableDoubleVector(std::vector<double>(v));
+}
+
+Serializable::Serializable(std::initializer_list<std::initializer_list<double>> m) {
+    std::vector<std::vector<double>> vals;
+    vals.reserve(m.size());
+    for (auto row : m) {
+        vals.emplace_back(row);
+    }
+    mVal = new Serializable2DDoubleMatrix(vals);
+}
+
+Serializable::Serializable(const char* s) {
+    mVal = new SerializableString(s);
+}
+
+Serializable::Serializable(size_t size, uint8_t* ptr) {
+    mVal = new SerializableByteBuffer(size, ptr);
+}
+
+Serializable::Serializable(const SerializableString& s) {
+    mVal = new SerializableString(s.getVal());
+}
+
+Serializable::Serializable(const SerializableInt& i) {
+    mVal = new SerializableInt(i.getVal());
+}
+
+Serializable::Serializable(const SerializableDouble& d) {
+    mVal = new SerializableDouble(d.getVal());
+}
+
+Serializable::Serializable(const SerializableIntVector& v) {
+    mVal = new SerializableIntVector(v.getVal());
+}
+
+Serializable::Serializable(const SerializableDoubleVector& v) {
+    mVal = new SerializableDoubleVector(v.getVal());
+}
+
+Serializable::Serializable(const Serializable2DIntMatrix& v) {
+    mVal = new Serializable2DIntMatrix(v.getVal());
+}
+
+Serializable::Serializable(const Serializable2DDoubleMatrix& v) {
+    mVal = new Serializable2DDoubleMatrix(v.getVal());
+}
+
+Serializable::Serializable(const SerializableByteBuffer& b) {
+    mVal = new SerializableByteBuffer(b.getSize(), b.getPtr());
+}
+
+
+Serializable::~Serializable() {
+    try {
+        if (mVal != nullptr)
+            delete mVal;
+    } catch (...) {}
+}
+
+void Serializable::serialize(dragonFLISendHandleDescr_t* sendh, uint64_t arg, const bool buffer, const timespec_t* timeout) const {
+    dragonError_t err;
+
+    int ty_val = mVal->type_id();
+    err = dragon_fli_send_bytes(sendh, sizeof(int), (uint8_t*)&ty_val, arg, buffer, timeout);
+    if (err != DRAGON_SUCCESS)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "Could not write type id to FLI.");
+
+    mVal->serialize(sendh, arg, buffer, timeout);
+}
+
+Serializable Serializable::deserialize(dragonFLIRecvHandleDescr_t* recvh, uint64_t* arg, const timespec_t* timeout) {
+    dragonError_t err;
+    size_t actual_size;
+    int ty_val;
+
+    err = dragon_fli_recv_bytes_into(recvh, sizeof(int), &actual_size, (uint8_t*)&ty_val, arg, timeout);
+    if (err == DRAGON_TIMEOUT)
+        throw TimeoutError(err, "Operation timeout.");
+
+    if (err != DRAGON_SUCCESS)
+        throw DragonError(err, "Could not read type of value.");
+
+    if (actual_size != sizeof(int))
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The deserialized value did not have the right size type_id");
+
+    auto it = sDeserializers.find(ty_val);
+    if (it != sDeserializers.end()) {
+        return it->second(recvh, arg, timeout);
+    }
+
+    throw DragonError(DRAGON_INVALID_ARGUMENT, "The value to deserialize has an unknown type_id");
+}
+
+void Serializable::register_deserializer(int ty_val, DeserializeFn fn) {
+    sDeserializers[ty_val] = fn;
+}
+
+int Serializable::type_id() const {
+    return mVal->type_id();
+}
+
+SerializableBase* Serializable::getVal() const {
+    return mVal;
+}
+
+SerializableString Serializable::asSerializableString() const {
+    if (type_id() != DragonSerType::SERTYPE_STR)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The Serializable is not a SerializedString and cannot be converted to one.");
+
+    SerializableString* subPtr = dynamic_cast<SerializableString*>(mVal);
+    return *subPtr;
+}
+
+SerializableInt Serializable::asSerializableInt() const {
+    if (type_id() != DragonSerType::SERTYPE_INT)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The Serializable is not a SerializedInt and cannot be converted to one.");
+
+    SerializableInt* subPtr = dynamic_cast<SerializableInt*>(mVal);
+    return *subPtr;
+}
+
+SerializableDouble Serializable::asSerializableDouble() const {
+    if (type_id() != DragonSerType::SERTYPE_DOUBLE)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The Serializable is not a SerializedDouble and cannot be converted to one.");
+
+    SerializableDouble* subPtr = dynamic_cast<SerializableDouble*>(mVal);
+    return *subPtr;
+}
+
+SerializableIntVector Serializable::asSerializableIntVector() const {
+    if (type_id() != DragonSerType::SERTYPE_INTVECTOR)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The Serializable is not a SerializedIntVector and cannot be converted to one.");
+
+    SerializableIntVector* subPtr = dynamic_cast<SerializableIntVector*>(mVal);
+    return *subPtr;
+}
+
+SerializableDoubleVector Serializable::asSerializableDoubleVector() const {
+    if (type_id() != DragonSerType::SERTYPE_DOUBLEVECTOR)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The Serializable is not a SerializedDoubleVector and cannot be converted to one.");
+
+    SerializableDoubleVector* subPtr = dynamic_cast<SerializableDoubleVector*>(mVal);
+    return *subPtr;
+}
+
+Serializable2DIntMatrix Serializable::asSerializable2DIntMatrix() const {
+    if (type_id() != DragonSerType::SERTYPE_INTMATRIX)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The Serializable is not a SerializedIntMatrix and cannot be converted to one.");
+
+    Serializable2DIntMatrix* subPtr = dynamic_cast<Serializable2DIntMatrix*>(mVal);
+    return *subPtr;
+}
+
+Serializable2DDoubleMatrix Serializable::asSerializable2DDoubleMatrix() const {
+    if (type_id() != DragonSerType::SERTYPE_DOUBLEMATRIX)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The Serializable is not a SerializedDoubleMatrix and cannot be converted to one.");
+
+    Serializable2DDoubleMatrix* subPtr = dynamic_cast<Serializable2DDoubleMatrix*>(mVal);
+    return *subPtr;
+}
+
+SerializableByteBuffer Serializable::asSerializableByteBuffer() const {
+    if (type_id() != DragonSerType::SERTYPE_BYTEBUFFER)
+        throw DragonError(DRAGON_INVALID_ARGUMENT, "The Serializable is not a SerializedByteBuffer and cannot be converted to one.");
+
+    SerializableByteBuffer* subPtr = dynamic_cast<SerializableByteBuffer*>(mVal);
+    return *subPtr;
+}
+
+bool Serializable::operator==(const Serializable& other) const {
+    if (mVal == nullptr || other.mVal == nullptr)
+        return mVal == other.mVal;
+
+    if (type_id() != other.type_id())
+        return false;
+
+    switch (type_id()) {
+        case DragonSerType::SERTYPE_STR:
+            return asSerializableString().getVal() == other.asSerializableString().getVal();
+        case DragonSerType::SERTYPE_INT:
+            return asSerializableInt().getVal() == other.asSerializableInt().getVal();
+        case DragonSerType::SERTYPE_DOUBLE:
+            return asSerializableDouble().getVal() == other.asSerializableDouble().getVal();
+        case DragonSerType::SERTYPE_INTVECTOR:
+            return asSerializableIntVector().getVal() == other.asSerializableIntVector().getVal();
+        case DragonSerType::SERTYPE_DOUBLEVECTOR:
+            return asSerializableDoubleVector().getVal() == other.asSerializableDoubleVector().getVal();
+        case DragonSerType::SERTYPE_INTMATRIX:
+            return asSerializable2DIntMatrix().getVal() == other.asSerializable2DIntMatrix().getVal();
+        case DragonSerType::SERTYPE_DOUBLEMATRIX:
+            return asSerializable2DDoubleMatrix().getVal() == other.asSerializable2DDoubleMatrix().getVal();
+        default:
+            throw DragonError(DRAGON_INVALID_ARGUMENT, "Unknown Serializable type_id while comparing values.");
+    }
+}
+
+bool Serializable::operator!=(const Serializable& other) const {
+    return !(*this == other);
+}
 
 }

@@ -56,7 +56,6 @@ class DragonPopen(multiprocessing.popen_spawn_posix.Popen):
             process_obj._p_p_uid = PUID(this_process.my_puid)
 
             multiprocessing.context.reduction.dump(process_obj, fp)
-            sub_debug(f"{self} finished reduction.dump of process_obj self._fds={self._fds}")
         finally:
             multiprocessing.context.set_spawning_popen(None)
 

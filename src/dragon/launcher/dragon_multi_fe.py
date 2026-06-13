@@ -14,8 +14,6 @@ from ..dlogging.util import setup_FE_logging, DragonLoggingServices as dls
 from ..infrastructure.facts import PROCNAME_LA_FE, FRONTEND_HOSTID
 from ..infrastructure.node_desc import NodeDescriptor
 
-from ..telemetry import progress_bar
-
 
 def main(args_map=None):
 
@@ -40,15 +38,12 @@ def main(args_map=None):
     telemetry_level = args_map["telemetry_level"]
     restart = False
     last_avail_nodes = None
-    use_progress_bar = args_map["progress_bar"]
     resilient = args_map["resilient"]
 
     while not execution_complete:
         # Try to run the launcher
         try:
             with LauncherFrontEnd(args_map=args_map) as fe_server:
-                if use_progress_bar:
-                    handle = progress_bar.start(fe_server)
                 net_conf = fe_server.run_startup(net_conf=net_conf)
                 net_conf = fe_server.run_app(restart=restart)
                 if telemetry_level > 0:
@@ -121,9 +116,6 @@ def main(args_map=None):
         # If everything exited wtihout exception, break out of the loop and exit
         else:
             execution_complete = True
-
-    if use_progress_bar:
-        progress_bar.stop(handle)
 
     log.info("exiting frontend")
     return LAUNCHER_SUCCESS_EXIT

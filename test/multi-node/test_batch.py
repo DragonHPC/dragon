@@ -1365,6 +1365,231 @@ class TestScheduler(unittest.TestCase):
                 break
             n_funcs = min(total_physical_cores, n_funcs * 2)
 
+# Add this test class to test_batch.py
+
+class TestBatchManagedLifecycle(unittest.TestCase):
+    """Tests for managed_lifecycle flag and Batch serialization."""
+
+    def test_default_managed_lifecycle_is_false(self):
+        """New Batch instances should default to managed_lifecycle=False."""
+        batch = Batch()
+        try:
+            self.assertFalse(batch.managed_lifecycle)
+        finally:
+            batch.join()
+            batch.destroy()
+
+    def test_explicit_managed_lifecycle_true(self):
+        """Batch can be created with managed_lifecycle=True."""
+        batch = Batch(managed_lifecycle=True)
+        try:
+            self.assertTrue(batch.managed_lifecycle)
+        finally:
+            batch.join()
+            batch.destroy()
+
+    def test_destroy_is_idempotent(self):
+        """Calling destroy() multiple times should not raise."""
+        batch = Batch()
+        batch.join()
+        batch.destroy()
+        # Second call should be a no-op
+        batch.destroy()
+        batch.destroy()
+
+    def test_serialized_batch_has_managed_lifecycle_true(self):
+        """Deserialized Batch handles should always have managed_lifecycle=True."""
+        batch = Batch()
+        try:
+            # Run a task to ensure the batch is functional
+            task = batch.function(return_constant, 42)
+            self.assertEqual(task.get(), 42)
+
+            # Serialize and deserialize
+            serialized = cloudpickle.dumps(batch)
+            restored = cloudpickle.loads(serialized)
+
+            try:
+                self.assertTrue(restored.managed_lifecycle)
+                self.assertIsNotNone(restored.client_id)  # Should get new client_id on register
+            finally:
+                restored.destroy()
+        finally:
+            batch.join()
+            batch.destroy()
+
+    def test_serialized_batch_can_submit_work_while_owner_alive(self):
+        """A deserialized Batch handle should be able to submit work while the original is alive."""
+        batch = Batch()
+        try:
+            serialized = cloudpickle.dumps(batch)
+            restored = cloudpickle.loads(serialized)
+
+            try:
+                # The restored handle should be able to submit and retrieve work
+                task = restored.function(return_constant, 99)
+                self.assertEqual(task.get(), 99)
+
+                # Original should still work too
+                task2 = batch.function(return_constant, 101)
+                self.assertEqual(task2.get(), 101)
+            finally:
+                restored.destroy()
+        finally:
+            batch.join()
+            batch.destroy()
+
+    def test_serialized_batch_gets_distinct_client_id(self):
+        """A deserialized Batch handle should register as a new client with a distinct ID."""
+        batch = Batch()
+        try:
+            original_client_id = batch.client_id
+
+            serialized = cloudpickle.dumps(batch)
+            restored = cloudpickle.loads(serialized)
+
+            try:
+                # Trigger registration by submitting work
+                task = restored.function(return_constant, 1)
+                task.get()
+
+                self.assertIsNotNone(restored.client_id)
+                self.assertNotEqual(restored.client_id, original_client_id)
+            finally:
+                restored.destroy()
+        finally:
+            batch.join()
+            batch.destroy()
+
+    def test_multiple_serialized_handles_can_coexist(self):
+        """Multiple deserialized Batch handles should be able to work concurrently."""
+        batch = Batch()
+        try:
+            restored_handles = []
+            for i in range(3):
+                serialized = cloudpickle.dumps(batch)
+                restored = cloudpickle.loads(serialized)
+                restored_handles.append(restored)
+
+            try:
+                # All handles should be able to submit work
+                tasks = []
+                for i, handle in enumerate(restored_handles):
+                    task = handle.function(return_constant, i * 10)
+                    tasks.append((i, task))
+
+                for i, task in tasks:
+                    self.assertEqual(task.get(), i * 10)
+
+                # All should have distinct client IDs
+                client_ids = {h.client_id for h in restored_handles}
+                self.assertEqual(len(client_ids), 3)
+                self.assertNotIn(batch.client_id, client_ids)
+            finally:
+                for handle in restored_handles:
+                    handle.destroy()
+        finally:
+            batch.join()
+            batch.destroy()
+
+    def test_serialized_batch_destroy_does_not_affect_owner(self):
+        """Destroying a deserialized handle should not tear down the shared runtime."""
+        batch = Batch()
+        try:
+            serialized = cloudpickle.dumps(batch)
+            restored = cloudpickle.loads(serialized)
+
+            # Destroy the restored handle
+            restored.destroy()
+
+            # Original batch should still be functional
+            task = batch.function(return_constant, 77)
+            self.assertEqual(task.get(), 77)
+        finally:
+            batch.join()
+            batch.destroy()
+
+    def test_getstate_excludes_unpicklable_fields(self):
+        """__getstate__ should exclude thread and local queue objects."""
+        batch = Batch()
+        try:
+            state = batch.__getstate__()
+
+            # These fields should be stripped
+            self.assertNotIn("_client_request_q", state)
+            self.assertNotIn("_client_request_thread", state)
+            self.assertNotIn("log", state)
+            self.assertNotIn("ret_q", state)
+
+            # Serialized queue descriptors should be present
+            self.assertIn("_serialized_manager_qs", state)
+
+            # State flags should be reset for deserialized handle
+            self.assertTrue(state["managed_lifecycle"])
+            self.assertIsNone(state["client_id"])
+            self.assertFalse(state["closed"])
+            self.assertFalse(state["destroyed"])
+            self.assertFalse(state["terminated"])
+        finally:
+            batch.join()
+            batch.destroy()
+
+
+class TestBatchSerializationWithDDict(unittest.TestCase):
+    """Tests for storing and retrieving Batch handles via DDict."""
+
+    def test_store_and_restore_batch_from_ddict_while_alive(self):
+        """A Batch handle stored in DDict should be restorable while the owner is alive."""
+        from dragon.data.ddict.ddict import DDict
+
+        ddict = DDict(1, 1, 50 * 1024**2)
+        batch = Batch(managed_lifecycle=True)
+
+        try:
+            # Store the batch handle
+            ddict["batch"] = batch
+
+            # Retrieve it
+            restored = ddict.pop("batch")
+
+            try:
+                self.assertTrue(restored.managed_lifecycle)
+
+                # Should be able to submit work
+                task = restored.function(return_constant, 123)
+                self.assertEqual(task.get(), 123)
+            finally:
+                restored.destroy()
+        finally:
+            batch.join()
+            batch.destroy()
+            ddict.destroy()
+
+    def test_restore_batch_from_ddict_after_destroy_fails(self):
+        """Restoring a Batch handle from DDict after destroy() should fail gracefully."""
+        from dragon.data.ddict.ddict import DDict
+
+        ddict = DDict(1, 1, 50 * 1024**2)
+        batch = Batch(managed_lifecycle=True)
+
+        try:
+            # Store the batch handle
+            ddict["batch"] = batch
+
+            # Destroy the original batch (tears down results_ddict)
+            batch.join()
+            batch.destroy()
+            batch = None  # Prevent double-destroy in finally
+
+            # Attempting to restore should fail because the underlying
+            # resources (results_ddict) have been destroyed
+            with self.assertRaises(RuntimeError):
+                restored = ddict.pop("batch")
+        finally:
+            if batch is not None:
+                batch.join()
+                batch.destroy()
+            ddict.destroy()
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

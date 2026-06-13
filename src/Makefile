@@ -17,7 +17,12 @@ endif
 
 export INSTALL = install
 export PYTHON = $(shell which python3 | awk '{if ($$1 == "") { print "python" } else { print "python3"}}')
-export PIP = $(shell which pip3 | awk '{if ($$1 == "") { print "pip" } else { print "pip3"}}')
+# Check if UV_AVAILABLE is set to 1, if so use uv pip, otherwise use pip3/pip
+ifeq ($(UV_AVAILABLE),1)
+	export PIP = uv pip install --index-strategy unsafe-best-match
+else
+	export PIP = $(shell which pip3 | awk '{if ($$1 == "") { print "pip install" } else { print "pip3 install"}}')
+endif
 
 MIN_GCC_VERSION=9
 MIN_PYTHON_MAJOR_VERSION=3
@@ -60,7 +65,7 @@ endif
 
 export INSTALL_DIR = $(abspath dist)
 
-LIBRARIES := lib/libdragon.so lib/libpmod.so $(wildcard lib/libdfabric_*.so)
+LIBRARIES := lib/libdragon.so lib/libpmod.so
 
 TOOLS := tools/dragon-cleanup \
          tools/dragon-node-cleanup
@@ -72,14 +77,34 @@ DRAGON_RUN_TOOLS := tools/dragon_cleanup.py \
 
 BINARIES := $(addprefix bin/, $(notdir $(TOOLS)))
 
-export SYMBOLIC_BIN := $(abspath dragon/bin)
-SYMBOLIC_LIB := $(abspath dragon/lib)
+SYMBOLIC_BIN := $(abspath dragon/bin)
 
-EXTERNAL := ../external/capnproto
+EXTERNAL_TARGET := include/capnp/message.h
+EXTERNAL_DIR := ../external/capnproto
 
 CY_FILES := dragon/pydragon_rc.pyx \
             dragon/return_codes.pxd
 
+
+# These are all compiled via python and Cython. We track them
+# here so that we can clean them up as python will not do that for us.
+CY_SRC = dragon/pydragon_channels.pyx        \
+         dragon/pydragon_dpmix.pyx           \
+         dragon/pydragon_dtypes.pyx          \
+         dragon/pydragon_fli.pyx             \
+         dragon/pydragon_heap.pyx            \
+         dragon/pydragon_lock.pyx            \
+         dragon/pydragon_managed_memory.pyx  \
+         dragon/pydragon_perf.pyx            \
+         dragon/pydragon_pmod.pyx            \
+         dragon/pydragon_rc.pyx              \
+         dragon/pydragon_utils.pyx           \
+
+CY_INC = dragon/channels.pxd        \
+         dragon/dtypes_inc.pxd      \
+         dragon/managed_memory.pxd
+
+CY_BUILD_FILES := $(CY_SRC:.pyx=.c) $(CY_INC:.pxd=.h)
 
 .PHONY: all
 all: build
@@ -87,20 +112,15 @@ all: build
 OS = $(shell uname -s)
 
 
-
 .PHONY: build
-build: $(EXTERNAL) $(LIBRARIES) $(CYFILES) dragon-popen $(BINARIES) install-pythondeps
-	# Build cython code
-	$(PYTHON) setup.py build $(SETUP_PY_BUILD_FLAGS)
-	# Build cli entry points
-	$(PYTHON) setup.py develop
-	# Symbolic link to lib. Needs to go here and only used for dev builds. The setup.py step clears it otherwise
-	ln -sf $(abspath lib) $(SYMBOLIC_LIB)
+build: $(EXTERNAL_TARGET) $(LIBRARIES) $(CYFILES) dragon-popen $(BINARIES)
 
 
-.PHONY: $(EXTERNAL)
-$(EXTERNAL):
-	$(MAKE) -C ../external build-capnproto
+.PHONY: $(EXTERNAL_DIR)
+$(EXTERNAL_DIR):
+	$(MAKE) -C ../external build
+
+$(EXTERNAL_TARGET): $(EXTERNAL_DIR)
 
 #lib:
 .PHONY: lib
@@ -115,7 +135,9 @@ dragon-popen: lib/libdragon.so
 include:
 	$(MAKE) -C include
 
-lib/libdragon.so: $(EXTERNAL) include lib
+lib/libdragon.so: $(EXTERNAL_TARGET) include lib
+
+lib/libpmod.so: lib/libdragon.so
 
 # Copy tools dir to bin
 bin/$(notdir $(TOOLS)): $(TOOLS) $(SYMBOLIC_BIN)
@@ -128,12 +150,14 @@ $(SYMBOLIC_BIN):
 	mkdir -p $(abspath bin)
 	ln -sf $(abspath bin) $@
 
+$(BINARIES): lib/libdragon.so
+
 $(CY_FILES):
 	$(MAKE) -C include ../$@
 
 .PHONY: clean
 clean:
-	$(PYTHON) setup.py clean --all
+	pyclean . --debris all
 	$(RM) -r build *.egg-info
 	$(RM) $(LIBRARIES) $(BINARIES) $(CY_FILES)
 	$(MAKE) -C dragon/localservices clean
@@ -143,59 +167,13 @@ clean:
 # create a package for release
 .PHONY: dist
 dist: build
-	$(MAKE) -C include dist
-	$(PYTHON) setup.py clean --all
-	$(PYTHON) setup.py build $(SETUP_PY_BUILD_FLAGS)
-# Prepare the files to be included in the distribution.
-# This code copies necessary files including the dragon-popen,
-# message_defs.capnp, and other files into the wheel file
-# which are needed by dragon at run-time and/or to support
-# compiling C/C++ code that uses the dragon C/C++ API.
-	rm -rf build/dragon_wheel
-	mkdir -p build/dragon_wheel/dragon/localservices
-	cp -f dragon/localservices/dragon-popen build/dragon_wheel/dragon/localservices/
-	mkdir -p build/dragon_wheel/dragon/infrastructure
-	cp -f lib/message_defs.capnp build/dragon_wheel/dragon/infrastructure/
-	mkdir -p build/dragon_wheel/dragon/lib
-	cp -f lib/libdragon.so lib/libpmod.so build/dragon_wheel/dragon/lib
-	mkdir -p build/dragon_wheel/dragon/tools
-	cp -rf $(DRAGON_RUN_TOOLS) build/dragon_wheel/dragon/tools
-	cp -f lib/libdfabric_*.so build/dragon_wheel/dragon/lib || true
-	mkdir -p build/dragon_wheel/dragon/bin
-	cp -f $(BINARIES) build/dragon_wheel/dragon/bin
-	mkdir -p build/dragon_wheel/dragon/include
-	cp -rf include/dragon build/dragon_wheel/dragon/include
-	cp -Lrf include/capnp build/dragon_wheel/dragon/include
-	cp -Lrf include/kj build/dragon_wheel/dragon/include
-	$(PYTHON) setup.py bdist_wheel --skip-build --bdist-dir=$(abspath build/dragon_wheel)
 	$(MAKE) -C pkg dist
 	$(MAKE) -C ../test dist
 	$(MAKE) release
 
 .PHONY: release
 release:
-	test -d dist || $(MAKE) dist
 	mkdir -p release/dragon
-	cp -pr dist/* release/dragon
-	cp -pr ../examples release/dragon
-	rm -rd release/dragon/examples/dragon_native/mpi
-	rm -rf release/dragon/examples/multiprocessing/user_adapter
-	rm -rf release/dragon/examples/dragon_core
-	rm -rf release/dragon/examples/smartsim
-	rm -rf release/dragon/include
-	rm -f release/dragon/examples/multiprocessing/lock_performance.py
-	rm -f release/dragon/examples/multiprocessing/scipy_image_demo.py
-	mkdir -p release/dragon/examples/multiprocessing/multi-node_tests
-	cp ../test/multi-node/test_process.py release/dragon/examples/multiprocessing/multi-node_tests
-	cp ../test/multi-node/test_pool.py release/dragon/examples/multiprocessing/multi-node_tests
-	cp ../test/multi-node/test_queue.py release/dragon/examples/multiprocessing/multi-node_tests
-	cp ../test/multi-node/test_connection.py release/dragon/examples/multiprocessing/multi-node_tests
-	mkdir -p release/dragon/examples/dragon_native/multi-node_tests
-	cp ../test/multi-node/test_lock.py  release/dragon/examples/dragon_native/multi-node_tests
-	cp ../test/multi-node/test_machine.py  release/dragon/examples/dragon_native/multi-node_tests
-	cp ../test/multi-node/test_barrier.py  release/dragon/examples/dragon_native/multi-node_tests
-	cp ../src/dragon/telemetry/imports/*.yaml  release/dragon/examples/dragon_telemetry
-	cp ../src/dragon/telemetry/imports/*.json  release/dragon/examples/dragon_telemetry
 # If Linux then repair the wheel to use manylinux tag before copying it to release and remove the un-tagged version
 # If MacOS then use delocate-wheel to put it in the right state. Also rename wheel file to something sensible.
 	if [ "$(OS)" != "Darwin" ]; then \
@@ -221,16 +199,8 @@ distclean: clean
 	$(MAKE) -C pkg clean || true
 	$(MAKE) -C modulefiles clean || true
 	$(MAKE) -C include clean || true
+	$(RM) $(CY_BUILD_FILES) || true
+	$(RM) dragon/*.so || true
 	$(RM) -r dist || true
-	$(RM) $(SYMBOLIC_BIN)
-
-
-# install Python packages needed to build Dragon if desired
-.PHONY: install-pythondeps
-install-pythondeps:
-	$(PIP) install -r requirements.txt
-
-build-pythondev:
-	$(MAKE) -C ../external
-	$(MAKE) install-pythondeps
-	$(MAKE) build
+	$(RM) $(SYMBOLIC_BIN) || true
+	$(RM) dragon/lib

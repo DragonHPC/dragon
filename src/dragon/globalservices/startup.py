@@ -118,7 +118,7 @@ def startup_multi(the_ctx, gs_input=None, shep_inputs=None, bela_input=None):
     # sys.stdin with a dummy so the shutdown finalizer doesn't complain.
     ls_stdin = sys.stdin.detach()
     sys.stdin = io.StringIO()
-    ls_stdin_recv = dutil.NewlineStreamWrapper(ls_stdin, write_intent=False)
+    ls_stdin_recv = dutil.NewlineStreamWrapper(ls_stdin, write_intent=False, b64_encode_decode=True)
     la_chs_info = dmsg.parse(ls_stdin_recv.recv())
     log.info("received all channels info, LAChannelsInfo - m9")
     log.debug(f"la_channels.nodes_desc: {la_chs_info.nodes_desc}")

@@ -10,7 +10,7 @@ using namespace dragon;
 static timespec_t TIMEOUT = {0,5000000000}; // Timeouts will be 5 second by default
 
 dragonError_t test_serialize(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     const std::string ser_str = dd.serialize();
     const std::string ddict_ser_str = ddict_ser;
     assert (ser_str.compare(ddict_ser_str) == 0);
@@ -18,19 +18,19 @@ dragonError_t test_serialize(const char * ddict_ser) {
 }
 
 dragonError_t test_attach_detach(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     // dd.detach()?
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_length(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     assert (dd.size() == 3);
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_clear(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     dd.clear();
     assert (dd.size() == 0);
     return DRAGON_SUCCESS;
@@ -41,10 +41,11 @@ dragonError_t test_put_and_get(const char * ddict_ser) {
     SerializableInt x(6); // key
     SerializableInt y(42); // value
     // <type of key, type of value>
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     manager_id = dd.which_manager(x); // call this to test it.
     dd[x] = y;
     SerializableInt z = dd[x];
+
     assert (z.getVal() == 42);
 
     return DRAGON_SUCCESS;
@@ -54,7 +55,7 @@ dragonError_t test_pput(const char * ddict_ser) {
     SerializableInt x(6); // key
     SerializableInt y(42); // value
     // <type of key, type of value>
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     dd.pput(x, y);
     SerializableInt z = dd[x];
     assert (z.getVal() == 42);
@@ -66,7 +67,7 @@ dragonError_t test_contains_existing_key(const char * ddict_ser) {
     SerializableInt x(6); // key
     SerializableInt y(42); // value
     // <type of key, type of value>
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     dd[x] = y;
     assert (dd.contains(x));
 
@@ -76,7 +77,7 @@ dragonError_t test_contains_existing_key(const char * ddict_ser) {
 dragonError_t test_contains_non_existing_key(const char * ddict_ser) {
     SerializableInt x(6); // key
     // <type of key, type of value>
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     assert (!dd.contains(x));
 
     return DRAGON_SUCCESS;
@@ -86,7 +87,7 @@ dragonError_t test_erase_existing_key(const char * ddict_ser) {
     SerializableInt x(6); // key
     SerializableInt y(42); // value
 
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     dd[x] = y;
 
     SerializableInt delted_val = dd.erase(x);
@@ -99,7 +100,7 @@ dragonError_t test_erase_existing_key(const char * ddict_ser) {
 dragonError_t test_erase_non_existing_key(const char * ddict_ser) {
     SerializableInt x(8); // key
 
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
 
     try {
         dd.erase(x); // delete a non-existing key, expect an exception here!
@@ -119,7 +120,7 @@ dragonError_t test_keys(const char * ddict_ser) {
     SerializableInt x1(7); // key
     SerializableInt y1(43); // value
 
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<SerializableInt, Serializable> dd(ddict_ser, &TIMEOUT);
     dd[x] = y;
     dd[x1] = y1;
 
@@ -144,14 +145,14 @@ dragonError_t test_keys(const char * ddict_ser) {
 }
 
 dragonError_t test_checkpoint(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     dd.checkpoint();
     assert (dd.checkpoint_id() == 1);
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_rollback(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     dd.rollback(); // should return chkpt 0 when rolling back with chkpt 0
     assert (dd.checkpoint_id() == 0);
     dd.checkpoint(); // chkpt 1
@@ -164,20 +165,20 @@ dragonError_t test_rollback(const char * ddict_ser) {
 }
 
 dragonError_t test_sync_to_newest_checkpoint(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     dd.sync_to_newest_checkpoint();
     assert (dd.checkpoint_id() == 2);
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_checkpoint_id(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     assert (dd.checkpoint_id() == 0);
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_local_manager(const char * ddict_ser, const std::string local_manager) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     uint64_t id = dd.local_manager();
     std::string id_str = to_string(id);
     assert(id_str.compare(local_manager) == 0);
@@ -185,7 +186,7 @@ dragonError_t test_local_manager(const char * ddict_ser, const std::string local
 }
 
 dragonError_t test_main_manager(const char * ddict_ser, const std::string main_manager) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     uint64_t id = dd.main_manager();
     // convert to string for string comparison
     std::string id_str = to_string(id);
@@ -194,9 +195,9 @@ dragonError_t test_main_manager(const char * ddict_ser, const std::string main_m
 }
 
 dragonError_t test_custom_manager(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
-    DDict<SerializableInt, SerializableInt> dd_m0 = dd.manager(0);
-    DDict<SerializableInt, SerializableInt> dd_m1 = dd.manager(1);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd_m0 = dd.manager(0);
+    DDict<Serializable, Serializable> dd_m1 = dd.manager(1);
     std::string dd_ser = dd.serialize();
     std::string dd_m0_ser = dd_m0.serialize();
     std::string dd_m1_ser = dd_m1.serialize();
@@ -217,7 +218,7 @@ dragonError_t test_custom_manager(const char * ddict_ser) {
 }
 
 dragonError_t test_empty_managers(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     std::vector<uint64_t> empty_managers = dd.empty_managers();
     for (size_t i=0 ; i<empty_managers.size() ; i++)
         cout<<"empty_managers["<<i<<"]: "<<empty_managers[i]<<endl;
@@ -225,7 +226,7 @@ dragonError_t test_empty_managers(const char * ddict_ser) {
 }
 
 dragonError_t test_local_managers(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     std::vector<uint64_t> local_managers = dd.local_managers();
     for (size_t i=0 ; i<local_managers.size() ; i++)
         cout<<"local_managers["<<i<<"]: "<<local_managers[i]<<endl;
@@ -233,7 +234,8 @@ dragonError_t test_local_managers(const char * ddict_ser) {
 }
 
 dragonError_t test_local_keys(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    // Testing some serializables
+    DDict<SerializableInt, Serializable> dd(ddict_ser, &TIMEOUT);
     auto local_keys = dd.local_keys();
     SerializableInt key1(1);
     SerializableInt key0(0);
@@ -248,32 +250,188 @@ dragonError_t test_local_keys(const char * ddict_ser) {
 }
 
 dragonError_t test_synchronize(std::vector<std::string>& ser_ddicts) {
-    DDict<SerializableInt, SerializableInt>::synchronize(ser_ddicts);
+    DDict<Serializable, Serializable>::synchronize(ser_ddicts);
     return DRAGON_SUCCESS;
 }
 
 dragonError_t test_clone(const char * ddict_ser, std::vector<std::string>& ser_ddicts) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     dd.clone(ser_ddicts);
     return DRAGON_SUCCESS;
 }
 
+dragonError_t test_copy_init(const char * ddict_ser) {
+    /* This tests various assignment convenience constructors. */
+    SerializableInt x = 6;
+    assert(x.getVal() == 6);
+
+    SerializableDouble f = 6.3;
+
+    Serializable y = 6;
+    SerializableInt z = y;
+    assert(z.getVal() == 6);
+    int my_i = y;
+    assert(my_i == 6);
+
+    Serializable d = 6.0;
+    SerializableDouble e = d;
+    assert(e.getVal() == 6.0);
+    double my_d = d;
+    assert(my_d == 6.0);
+
+    Serializable s = "Hello World";
+    SerializableString t = s;
+    assert(t.getVal() == "Hello World");
+    std::string my_s = s;
+    assert(my_s == "Hello World");
+
+    Serializable v = {0.2, 3.14, 4.0};
+    SerializableDoubleVector w = v;
+    auto wvals = w.getVal();
+    assert(wvals.size() == 3);
+    assert(wvals[0] == 0.2);
+    assert(wvals[1] == 3.14);
+    assert(wvals[2] == 4.0);
+    std::vector<double> my_v = v;
+    assert(my_v.size() == 3);
+    assert(my_v[0] == 0.2);
+    assert(my_v[1] == 3.14);
+    assert(my_v[2] == 4.0);
+
+    Serializable iv = {5, 4, 3};
+    std::vector<int> my_iv = iv;
+    assert(my_iv.size() == 3);
+    assert(my_iv[0] == 5);
+    assert(my_iv[1] == 4);
+    assert(my_iv[2] == 3);
+
+    Serializable m = {{1.2, 3.4}, {2.2, 4.2}};
+    Serializable2DDoubleMatrix n = m;
+    auto nvals = n.getVal();
+    assert(nvals.size() == 2);
+    assert(nvals[0].size() == 2);
+    assert(nvals[1].size() == 2);
+    assert(nvals[0][0] == 1.2);
+    assert(nvals[0][1] == 3.4);
+    assert(nvals[1][0] == 2.2);
+    assert(nvals[1][1] == 4.2);
+    std::vector<std::vector<double>> my_m = m;
+    assert(my_m.size() == 2);
+    assert(my_m[0].size() == 2);
+    assert(my_m[1].size() == 2);
+    assert(my_m[0][0] == 1.2);
+    assert(my_m[0][1] == 3.4);
+    assert(my_m[1][0] == 2.2);
+    assert(my_m[1][1] == 4.2);
+
+    Serializable im = Serializable2DIntMatrix({{1, 3}, {2, 4}});
+    std::vector<std::vector<int>> my_im = im;
+    assert(my_im.size() == 2);
+    assert(my_im[0].size() == 2);
+    assert(my_im[1].size() == 2);
+    assert(my_im[0][0] == 1);
+    assert(my_im[0][1] == 3);
+    assert(my_im[1][0] == 2);
+    assert(my_im[1][1] == 4);
+
+    return DRAGON_SUCCESS;
+}
+
 dragonError_t test_write_np_arr(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableDouble2DVector> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     SerializableInt key(32);
     std::vector<std::vector<double>> vec = {{1.5, 2.5, 3.5}, {4.5, 5.5, 6.5}};
-    SerializableDouble2DVector ser_vec(vec);
+    Serializable2DDoubleMatrix ser_vec(vec);
     dd[key] = ser_vec;
     return DRAGON_SUCCESS;
 }
 
+dragonError_t test_fetch_add(const char * ddict_ser) {
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("Hello");
+    SerializableInt x = dd.fetch_add(key, 1);
+    assert (x.getVal() == 0);
+    SerializableInt y = dd.fetch_add(key, 1);
+    assert (y.getVal() == 1);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_fetch_add_init(const char * ddict_ser) {
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("Hello");
+    Serializable value = 40;
+    dd[key] = value;
+    SerializableInt x = dd.fetch_add(key, 2);
+    assert (x == 40);
+    SerializableInt y = dd.fetch_add(key, 3);
+    assert (y.getVal() == 42);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_fetch_add_init_2(const char * ddict_ser) {
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("Hello");
+    Serializable x = dd.fetch_add(key, 2);
+    assert (x == 40);
+    SerializableInt y = dd.fetch_add(key, 3);
+    assert (y.getVal() == 42);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_xpickler_to_cpp(const char * ddict_ser) {
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("Hello");
+    SerializableByteBuffer x = dd[key];
+    assert (x.getSize() == 4);
+    uint8_t* data = x.getPtr();
+
+    assert (data[0] == 0xde);
+    assert (data[1] == 0xad);
+    assert (data[2] == 0xbe);
+    assert (data[3] == 0xef);
+    uint8_t arr[] = {0xde, 0xad, 0xbe, 0xef, 0xde, 0xad, 0xbe, 0xef};
+    SerializableString key2("Goodbye");
+    SerializableByteBuffer buf(8, arr);
+    dd[key2] = buf;
+    free(data);
+    data = NULL;
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_wait_for(const char * ddict_ser) {
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("hello");
+    SerializableString value("there");
+    dd.wait_for(key, value);
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_wait_for_2(const char * ddict_ser) {
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("hello");
+    SerializableString value("there");
+    dd[key] = value;
+    return DRAGON_SUCCESS;
+}
+
+dragonError_t test_wait_for_3(const char * ddict_ser) {
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
+    SerializableString key("hello");
+    SerializableString value("there");
+    timespec_t timeout = {1,0};
+    try {
+        dd.wait_for(key, value, &timeout);
+    } catch(TimeoutError ex) {}
+    return DRAGON_SUCCESS;
+}
+
 dragonError_t test_read_np_arr(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableDouble2DVector> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     SerializableInt key_from_py(2048);
 
-    // The dimension of the array is baked into the deserialize function of the class SerializableDouble2DVector in this example.
+    // The dimension of the array is baked into the deserialize function of the class Serializable2DDoubleMatrix in this example.
     // While deserializing the data, user is expected to understand the dimension to reform the array.
-    SerializableDouble2DVector ser_vals_from_py = dd[key_from_py];
+    Serializable2DDoubleMatrix ser_vals_from_py = dd[key_from_py];
     auto vals_from_py = ser_vals_from_py.getVal();
 
     std::vector<std::vector<double>> expected_vals_from_py = {{0.12, 0.31, 3.4}, {4.579, 5.98, 6.54}};
@@ -293,7 +451,7 @@ dragonError_t test_read_np_arr(const char * ddict_ser) {
 }
 
 dragonError_t test_keys_read_from_py(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
 
     // write multiple integer keys from C++ client, will read from python client later
     SerializableInt key1(1024);
@@ -307,7 +465,7 @@ dragonError_t test_keys_read_from_py(const char * ddict_ser) {
 }
 
 dragonError_t test_freeze(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     assert(!dd.is_frozen());
     dd.freeze();
     assert(dd.is_frozen());
@@ -317,7 +475,7 @@ dragonError_t test_freeze(const char * ddict_ser) {
 }
 
 dragonError_t test_batch_put(const char * ddict_ser) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
 
     SerializableInt key1(1024);
     SerializableInt key2(9876);
@@ -341,7 +499,7 @@ dragonError_t test_batch_put(const char * ddict_ser) {
 }
 
 dragonError_t test_bput_bget(const char * ddict_ser, uint64_t num_managers) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
 
     SerializableInt key1(1024);
     SerializableInt key2(9876);
@@ -353,7 +511,7 @@ dragonError_t test_bput_bget(const char * ddict_ser, uint64_t num_managers) {
     dd.bput(key3, val);
 
     for (uint64_t i=0 ; i<num_managers ; i++) {
-        DDict<SerializableInt, SerializableInt> dselect = dd.manager(i);
+        DDict<Serializable, Serializable> dselect = dd.manager(i);
         SerializableInt received_val = dselect.bget(key1);
         assert(received_val.getVal() == val.getVal());
         received_val = dselect.bget(key2);
@@ -366,7 +524,7 @@ dragonError_t test_bput_bget(const char * ddict_ser, uint64_t num_managers) {
 }
 
 dragonError_t test_bput_batch(const char * ddict_ser, uint64_t num_managers) {
-    DDict<SerializableInt, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
 
     SerializableInt key1(1024);
     SerializableInt key2(9876);
@@ -380,7 +538,7 @@ dragonError_t test_bput_batch(const char * ddict_ser, uint64_t num_managers) {
     dd.end_batch_put();
 
     for (uint64_t i=0 ; i<num_managers ; i++) {
-        DDict<SerializableInt, SerializableInt> dselect = dd.manager(i);
+        DDict<Serializable, Serializable> dselect = dd.manager(i);
         SerializableInt received_val = dselect[key1];
         assert(received_val.getVal() == val.getVal());
         received_val = dselect[key2];
@@ -394,7 +552,7 @@ dragonError_t test_bput_batch(const char * ddict_ser, uint64_t num_managers) {
 dragonError_t test_bput_multiple_batch(const char * ddict_ser, uint64_t num_managers) {
     uint64_t num_batches = 10;
     uint64_t num_keys = 5;
-    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
 
 
     for (uint64_t i_batch=0 ; i_batch<num_batches ; i_batch++) {
@@ -409,7 +567,7 @@ dragonError_t test_bput_multiple_batch(const char * ddict_ser, uint64_t num_mana
     }
 
     for (uint64_t i=0 ; i<num_managers ; i++) {
-        DDict<SerializableString, SerializableInt> dselect = dd.manager(i);
+        DDict<Serializable, Serializable> dselect = dd.manager(i);
         for(uint64_t j_batch=0 ; j_batch<num_batches ; j_batch++) {
             for (uint64_t j=0 ; j<num_keys ; j++) {
                 std::string s = "dragon_" + std::to_string(j_batch) + "_" + std::to_string(j);
@@ -425,7 +583,7 @@ dragonError_t test_bput_multiple_batch(const char * ddict_ser, uint64_t num_mana
 }
 
 dragonError_t test_write_chkpts_to_disk(const char * ddict_ser) {
-    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     SerializableString key("dragon");
     for (int i=0 ; i<5 ; i++) {
         SerializableInt val(i);
@@ -436,7 +594,7 @@ dragonError_t test_write_chkpts_to_disk(const char * ddict_ser) {
 }
 
 dragonError_t test_advance(const char * ddict_ser) {
-    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     SerializableString key("dragon");
     for (uint64_t i=0 ; i<3 ; i+=2) {
         uint64_t chkptID = dd.checkpoint_id();
@@ -476,7 +634,7 @@ dragonError_t test_restore(const char * ddict_ser) {
 }
 
 dragonError_t test_persisted_ids_0_2_4(const char * ddict_ser) {
-    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     std::vector<uint64_t> ids = dd.persisted_ids();
     assert(ids.size() == 3);
     assert(ids[0] == 0);
@@ -486,7 +644,7 @@ dragonError_t test_persisted_ids_0_2_4(const char * ddict_ser) {
 }
 
 dragonError_t test_no_persisted_ids(const char * ddict_ser) {
-    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     std::vector<uint64_t> ids = dd.persisted_ids();
     assert(ids.size() == 0);
     return DRAGON_SUCCESS;
@@ -494,7 +652,7 @@ dragonError_t test_no_persisted_ids(const char * ddict_ser) {
 
 // // add this to the multi-node c, cpp test as well
 dragonError_t test_local_size(const char * ddict_ser) {
-    DDict<SerializableString, SerializableInt> dd(ddict_ser, &TIMEOUT);
+    DDict<Serializable, Serializable> dd(ddict_ser, &TIMEOUT);
     assert(dd.local_size() == 2);
     return DRAGON_SUCCESS;
 }
@@ -567,6 +725,8 @@ int main(int argc, char* argv[]) {
                 ser_ddicts.push_back(ser_ddict);
             }
             err = test_clone(ddict_descr, ser_ddicts);
+        } else if (test.compare("test_copy_init") == 0) {
+            err = test_copy_init(ddict_descr);
         } else if (test.compare("test_write_np_arr") == 0){
             err = test_write_np_arr(ddict_descr);
         } else if (test.compare("test_read_np_arr") == 0){
@@ -597,6 +757,20 @@ int main(int argc, char* argv[]) {
             err = test_persist(ddict_descr);
         } else if (test.compare("test_restore") == 0){
             err = test_restore(ddict_descr);
+        } else if (test.compare("test_fetch_add") == 0){
+            err = test_fetch_add(ddict_descr);
+        } else if (test.compare("test_fetch_add_init_2") == 0){
+            err = test_fetch_add_init_2(ddict_descr);
+        } else if (test.compare("test_fetch_add_init") == 0){
+            err = test_fetch_add_init(ddict_descr);
+        } else if (test.compare("test_xpickler_to_cpp") == 0){
+            err = test_xpickler_to_cpp(ddict_descr);
+        } else if (test.compare("test_wait_for") == 0){
+            err = test_wait_for(ddict_descr);
+        } else if (test.compare("test_wait_for_2") == 0){
+            err = test_wait_for_2(ddict_descr);
+        } else if (test.compare("test_wait_for_3") == 0){
+            err = test_wait_for_3(ddict_descr);
         } else if (test.compare("test_persisted_ids_0_2_4") == 0){
             err = test_persisted_ids_0_2_4(ddict_descr);
         } else if (test.compare("test_no_persisted_ids") == 0){

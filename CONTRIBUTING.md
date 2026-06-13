@@ -30,7 +30,7 @@ git checkout [branch from Jira]
 
 3. Setup your environment.
 
-Dragon requires GCC version >= 9 and Python versions 3.10 - 3.12. Without these version requirements,
+Dragon requires GCC version >= 9 and Python versions 3.10 - 3.13. Without these version requirements,
 the code will not build. Assuming these requirements are met, we can proceed.
 
 The very first time you want to build after cloning the repository, you'll want to do a
@@ -73,7 +73,7 @@ cd src && make distclean && make
 and to rebuild in the container you can use
 
 ```
-cd src && make
+cd src && pip install -e .
 ```
 
 
@@ -125,7 +125,6 @@ The `src/Makefile` has a number of targets that might be of interest.  They are 
 | dist               | Build Dragon components if-needed and produce a package for release         |
 | clean              | Clean all products from `dist` but do not clean Dragon components           |
 | distclean          | Clean all products from `dist` and all Dragon components                    |
-| install-pythondeps | Do user pip install of required Python packages for tests and documentation |
 
 ## Additional Tools
 
@@ -236,11 +235,11 @@ drwxr-xr-x 119 root root  3808 Mar 29 21:04 test
 ### Build
 
 Once you have a dev container running, you can build as you normally
-would using `make`:
+would using `pip` and `make`:
 
 ```
 root ➜ /workspaces/hpc-pe-dragon-dragon (ubuntu-dev-container ✗) $ cd src
-root ➜ /workspaces/hpc-pe-dragon-dragon/src (ubuntu-dev-container ✗) $ make
+root ➜ /workspaces/hpc-pe-dragon-dragon/src (ubuntu-dev-container ✗) $ pip install -e .
 ```
 
 ### Test

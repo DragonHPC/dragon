@@ -4,7 +4,7 @@ name: call-py313-runner-build
 # Call runner-build.yaml for a python 3.13 dst-workflow or diy-workflow build
 #
   
-on: [push, pull_request]
+on: [pull_request, push] # build python 3.13 for all pulls/pushes
 
 jobs:
   call-build:

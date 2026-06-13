@@ -4,8 +4,11 @@ import os
 import enum
 import socket
 import sys
-from .. import dtypes
+import importlib.util
 from pathlib import Path
+
+from .. import dtypes
+
 
 PREFIX = "DRAGON_"
 
@@ -738,6 +741,7 @@ TRANSPORT_AGENT_ALIASES = {
     #'tcp+tls': console_script_args(PROCNAME_TCP_TA, '--cafile', CA, '--certfile', CERT, '--keyfile', KEY)),
 }
 
+
 # Inheriting from str first makes this trivially serializable when used in a dataclass object
 @enum.unique
 class PMIBackend(str, enum.Enum):
@@ -804,6 +808,31 @@ def get_port(min_port, port_range):
     for port in range(min_port, max_port):
         if port_check((host, port)):
             return port
+
+
+def lazy_import(name):
+    """Lazily imports a module so the module isn't loaded into memory unless it's executed
+
+    :param name: name of module to be imported
+    :type name: str
+    :returns: the imported module
+    :rtype: module
+    """
+    try:
+        return sys.modules[name]
+    except KeyError:
+        pass
+
+    try:
+        spec = importlib.util.find_spec(name)
+        loader = importlib.util.LazyLoader(spec.loader)
+        spec.loader = loader
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        loader.exec_module(module)
+        return module
+    except AttributeError:
+        return None
 
 
 # Port used for out-of-band communication

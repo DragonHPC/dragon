@@ -1216,8 +1216,8 @@ DDRegisterClientIDResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg
 /********************************************************************************************************/
 /* ddict put message */
 
-DDPutMsg::DDPutMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID=0, bool persist=true) :
-    DragonMsg(DDPutMsg::TC, tag), mClientID(clientID), mChkptID(chkptID), mPersist(persist) {}
+DDPutMsg::DDPutMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID=0, bool persist, bool waitFor) :
+    DragonMsg(DDPutMsg::TC, tag), mClientID(clientID), mChkptID(chkptID), mPersist(persist), mWaitFor(waitFor) {}
 
 void
 DDPutMsg::builder(MessageDef::Builder& msg)
@@ -1227,6 +1227,7 @@ DDPutMsg::builder(MessageDef::Builder& msg)
     builder.setClientID(mClientID);
     builder.setChkptID(mChkptID);
     builder.setPersist(mPersist);
+    builder.setWaitFor(mWaitFor);
 }
 
 dragonError_t
@@ -1238,8 +1239,10 @@ DDPutMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
         (*msg) = new DDPutMsg (
             reader.getTag(),
             putReader.getClientID(),
-            putReader.getChkptID()),
-            putReader.getPersist();
+            putReader.getChkptID(),
+            putReader.getPersist(),
+            putReader.getWaitFor());
+
     } catch (...) {
         err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDPut message.");
     }
@@ -1263,6 +1266,12 @@ bool
 DDPutMsg::persist()
 {
     return mPersist;
+}
+
+bool
+DDPutMsg::waitFor()
+{
+    return mWaitFor;
 }
 
 /********************************************************************************************************/
@@ -1294,8 +1303,8 @@ DDPutResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
 /********************************************************************************************************/
 /* ddict get message */
 
-DDGetMsg::DDGetMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen) :
-    DragonMsg(DDGetMsg::TC, tag), mClientID(clientID), mChkptID(chkptID), mKey(key), mKeyLen(keyLen) {}
+DDGetMsg::DDGetMsg(uint64_t tag, uint64_t clientID, uint64_t chkptID, const unsigned char* key, size_t keyLen, bool fetchAdd, int fetchAddVal) :
+    DragonMsg(DDGetMsg::TC, tag), mClientID(clientID), mChkptID(chkptID), mKey(key), mKeyLen(keyLen), mFetchAdd(fetchAdd), mFetchAddVal(fetchAddVal) {}
 
 void
 DDGetMsg::builder(MessageDef::Builder& msg)
@@ -1305,6 +1314,8 @@ DDGetMsg::builder(MessageDef::Builder& msg)
     builder.setClientID(mClientID);
     builder.setChkptID(mChkptID);
     builder.setKey(kj::arrayPtr(mKey, mKeyLen));
+    builder.setFetchAdd(mFetchAdd);
+    builder.setFetchAddVal(mFetchAddVal);
 }
 
 dragonError_t
@@ -1318,7 +1329,9 @@ DDGetMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
             getReader.getClientID(),
             getReader.getChkptID(),
             getReader.getKey().begin(),
-            getReader.getKey().size());
+            getReader.getKey().size(),
+            getReader.getFetchAdd(),
+            getReader.getFetchAddVal());
 
     } catch (...) {
         err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDGet message.");
@@ -1349,6 +1362,18 @@ size_t
 DDGetMsg::keyLen()
 {
     return mKeyLen;
+}
+
+bool
+DDGetMsg::fetchAdd()
+{
+    return mFetchAdd;
+}
+
+int
+DDGetMsg::fetchAddVal()
+{
+    return mFetchAddVal;
 }
 
 /********************************************************************************************************/
@@ -2955,8 +2980,8 @@ DDBatchPutMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
         (*msg) = new DDBatchPutMsg (
             reader.getTag(),
             batchPutReader.getClientID(),
-            batchPutReader.getChkptID()),
-            batchPutReader.getPersist();
+            batchPutReader.getChkptID(),
+            batchPutReader.getPersist());
     } catch (...) {
         err_return(DRAGON_FAILURE, "There was an exception while deserializing the DDBatchPut message.");
     }
@@ -3516,5 +3541,85 @@ const char* PMIxFenceMsg::data() {
     return mData.c_str();
 }
 
-} // end dragon namespace
+/********************************************************************************************************/
+/* CPLoggingMessage */
 
+CPLoggingMessage::CPLoggingMessage(uint64_t tag, const char *name, const char* msg, const char *time, const char *func, const char *hostname, const char *ipAddress, uint16_t port, const char *service, uint8_t level):
+    DragonMsg(CPLoggingMessage::TC, tag), mName(name), mMsg(msg), mTime(time), mFunc(func), mHostname(hostname), mIpAddress(ipAddress), mPort(port), mService(service), mLevel(level) {}
+
+void CPLoggingMessage::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    CPLoggingMessageDef::Builder builder = msg.initCpLoggingMessage();
+    builder.setName(mName);
+    builder.setMsg(mMsg);
+    builder.setTime(mTime);
+    builder.setFunc(mFunc);
+    builder.setHostname(mHostname);
+    builder.setIpAddress(mIpAddress);
+    builder.setPort(mPort);
+    builder.setService(mService);
+    builder.setLevel(mLevel);
+}
+
+dragonError_t CPLoggingMessage::deserialize(MessageDef::Reader& reader, DragonMsg** msg) {
+    try {
+
+        CPLoggingMessageDef::Reader CPLoggingMessageReader = reader.getCpLoggingMessage();
+
+        (*msg) = new CPLoggingMessage(
+            reader.getTag(),
+            CPLoggingMessageReader.getName().cStr(),
+            CPLoggingMessageReader.getMsg().cStr(),
+            CPLoggingMessageReader.getTime().cStr(),
+            CPLoggingMessageReader.getFunc().cStr(),
+            CPLoggingMessageReader.getHostname().cStr(),
+            CPLoggingMessageReader.getIpAddress().cStr(),
+            CPLoggingMessageReader.getPort(),
+            CPLoggingMessageReader.getService().cStr(),
+            CPLoggingMessageReader.getLevel());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the PMIxFenceMsg message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const char* CPLoggingMessage::name() {
+    return mName.c_str();
+}
+
+const char* CPLoggingMessage::msg() {
+    return mMsg.c_str();
+}
+
+const char* CPLoggingMessage::time() {
+    return mTime.c_str();
+}
+
+const char* CPLoggingMessage::func() {
+    return mFunc.c_str();
+}
+
+const char* CPLoggingMessage::hostname() {
+    return mHostname.c_str();
+}
+
+const char* CPLoggingMessage::ipAddress() {
+    return mIpAddress.c_str();
+}
+
+uint8_t CPLoggingMessage::port() {
+    return mPort;
+}
+
+const char* CPLoggingMessage::service() {
+    return mService.c_str();
+}
+
+uint8_t CPLoggingMessage::level() {
+    return mLevel;
+}
+
+} // end dragon namespace

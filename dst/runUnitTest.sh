@@ -13,24 +13,15 @@ cat /etc/os-release
 
 # Setup a release environment
 source ~/.bashrc
-conda activate _env
-conda remove -y libstdcxx || true
-conda remove -y libstdcxx-ng || true
+source _env/bin/activate
+
 python3 --version
 which python3
 
 # Install dependencies needed to run dragon and acceptance tests
 # numpy<1.27 is just to confirm 1.x works with us as it's what TensorFlow
 # requires
-python3 -m pip install --timeout=120 -U pip
-python3 -m pip install --timeout=120  \
-    cloudpickle \
-    cryptography \
-    "numpy<1.27" \
-    parameterized \
-    "scipy<1.17.0" \
-    wheel \
-    pyyaml
+uv pip install -U pip
 
 # Extract release distribution
 GITHASH="$(git rev-parse --short HEAD)"
@@ -40,7 +31,8 @@ PYTHON_MINOR_VERSION=`python -c 'import sys; print(sys.version_info[1])'`
 mkdir -p release
 tar -C release -xvzf /workspace/RPMS/centos7/py${PYTHON_MAJOR_VERSION}.${PYTHON_MINOR_VERSION}/dragon-*-py${PYTHON_VERSION}-${GITHASH}.x86_64.rpm
 
-python3 -m pip install release/dragon-*/dragonhpc-*.whl
+INSTALL_TARGET=$(ls src/dist/dragonhpc-*.whl)[test,batch]
+uv pip install ${INSTALL_TARGET}
 version=$(python -c 'from importlib.metadata import version; print(version("dragonhpc"))')
 
 ROOTDIR="$(realpath release/dragon-${version})"
@@ -52,17 +44,10 @@ dragon-config add --ofi-include=$PWD/ofi/include/ \
 dragon-config add --ucx-include=$PWD/ucx/include \
                   --ucx-build-lib=$PWD/ucx/lib \
                   --ucx-runtime-lib=$PWD/ucx/lib
-dragon-config add --cuda-include=$PWD/cuda/include 
+dragon-config add --cuda-include=$PWD/cuda/include
 
 # Re-run unit tests to verify wheel
 make -C test test
-
-# Run release unit tests
-rm -f /dev/shm/*
-pushd $ROOTDIR/dragon_unittests
-python3 test_utils.py -f -v
-python3 test_channels.py -f -v
-popd
 
 # Run Dragon core API tests
 # TODO: dragon_core was removed from the package for now. We will
@@ -96,7 +81,7 @@ popd
 
 # Run multiproocessing unit tests
 rm -f /dev/shm/*
-pushd $ROOTDIR/examples/multiprocessing/unittests
+pushd ./examples/multiprocessing/unittests
 make
 popd
 

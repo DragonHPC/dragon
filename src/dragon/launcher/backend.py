@@ -218,7 +218,7 @@ class LauncherBackEnd:
             if self.send_log_to_overlaynet_thread.is_alive():
                 # Send it a message to make sure it can get out
                 self._logging_shutdown.set()
-                self.logging_queue.put(halt_logging_msg.serialize())
+                self.logging_queue.put(halt_logging_msg)
             self.send_log_to_overlaynet_thread.join()
         except AttributeError:
             pass
@@ -859,8 +859,8 @@ class LauncherBackEnd:
         _ls_stdout = self.ls_proc.stdout
         self.ls_proc.stdin = None
         self.ls_proc.stdout = None
-        self.ls_stdin = NewlineStreamWrapper(_ls_stdin, read_intent=False, write_intent=True)
-        self.ls_stdout = NewlineStreamWrapper(_ls_stdout, read_intent=True, write_intent=False)
+        self.ls_stdin = NewlineStreamWrapper(_ls_stdin, read_intent=False, write_intent=True, b64_encode_decode=True)
+        self.ls_stdout = NewlineStreamWrapper(_ls_stdout, read_intent=True, write_intent=False, b64_encode_decode=True)
 
         # Let local services know we're up and give it everything it needs to get going
         if is_k8s:
@@ -1022,13 +1022,12 @@ class LauncherBackEnd:
                 # Set timeout to None which allows better interaction with the GIL
                 while logging_queue and not self._logging_shutdown.is_set():
                     try:
-                        serialized_msg = logging_queue.get(timeout=None)
-                        msg = dmsg.parse(serialized_msg)
+                        msg = logging_queue.get(timeout=None)
                         log.debug('got log message of type %s - "%s"', type(msg), msg.msg)
                         if isinstance(msg, dmsg.HaltLoggingInfra):
                             break
-                        elif isinstance(msg, dmsg.LoggingMsg):
-                            self.infra_logging_out.send(serialized_msg)
+                        elif isinstance(msg, dmsg.CpLoggingMessage):
+                            self.infra_logging_out.send(msg.serialize())
                         else:
                             log.debug("unknown message of type %s on logging channel - discarding", type(msg))
                     except Exception as ex:
@@ -1108,7 +1107,7 @@ class LauncherBackEnd:
             if type(msg) in LauncherBackEnd._DTBL:
                 self._DTBL[type(msg)][0](self, msg=msg)
             else:
-                self.msg_log.warning(f"unexpected msg type: {repr(msg)}")
+                self.msg_log.warning(f"unexpected msg type in the Backend Launcher: {repr(msg)}")
 
         # Join on all service threads
         self.msg_log.debug("joining on threads...")

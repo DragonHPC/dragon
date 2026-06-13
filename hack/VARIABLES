@@ -17,6 +17,4 @@ export DYLD_FALLBACK_LIBRARY_PATH=${DRAGON_BASE_DIR}/lib:${DYLD_FALLBACK_LIBRARY
 export DYLD_LIBRARY_PATH=${DRAGON_BASE_DIR}/lib:${DYLD_LIBRARY_PATH}
 export PYTHONPATH=${DRAGON_BASE_DIR}:${PYTHONPATH}
 
-
-
 alias dragon-config="python3 -m dragon.cli dragon-config"

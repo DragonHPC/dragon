@@ -831,5 +831,5 @@ def _dragon_native_python_process_main():
             sys.stderr.flush()
         except (AttributeError, ValueError):
             pass
-    # print("Exiting process main thing")
+
     sys.exit(ecode)

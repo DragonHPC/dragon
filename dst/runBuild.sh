@@ -15,10 +15,7 @@ cc --version
 
 # Create virtual env
 source ~/.bashrc
-conda activate _dev
-conda remove -y zstd || true
-conda install -y libstdcxx libstdcxx-ng || true
-conda remove -y libstdcxx libstdcxx-ng || true
+source _dev/bin/activate
 python3 --version
 which python3
 
@@ -26,10 +23,14 @@ which python3
 # Set up environment variables for building
 source hack/VARIABLES
 
-# Install dependencies
-python3 -m pip install --timeout=240 -U pip
-python3 -m pip install --timeout=240 -r src/requirements.txt
-python3 -m pip install --upgrade setuptools
+# Use uv to do the dependency install. It's a bit faster.
+uv pip install -U pip
+uv pip install --upgrade setuptools
+uv pip install build
+
+# Install the most minimal of large packages that are needed for docs build
+uv pip install torch --index-url https://download.pytorch.org/whl/cpu
+uv pip install cupy-cuda12x
 
 # Configure HSTA for libfabric
 python3 -m dragon.cli dragon-config add --ofi-include=$PWD/ofi/include/ \
@@ -42,20 +43,18 @@ python3 -m dragon.cli dragon-config add --ofi-include=$PWD/ofi/include/ \
 cat ${DRAGON_BASE_DIR}/dragon/.dragon-config.mk
 
 # Build (dev mode)
-make -C src build
+cd src && uv pip install -e .[test,docs] --verbose && cd -
 
 # Run unit tests
 make -C test test
 
-conda install -c conda-forge cupy-core
 
 # Build docs (requires dev build)
 make -C doc -j ${DRAGON_BUILD_NTHREADS} dist
 
-conda remove -y cupy-core || true
-
 # Build release
-rm -fr src/dist && make -C src release
+rm -fr src/dist && cd src && python -m build --wheel --verbose && cd -
+make -C src release
 
 GITHASH="$(git rev-parse --short HEAD)"
 GITBRANCH="$(git branch --show)"

@@ -56,7 +56,7 @@ def get_parser():
         description=DHOSTS_DESCRIPTION,
         formatter_class=RawDescriptionHelpFormatter,
     )
-    add_common_args(parser, add_mode_group=False)
+    add_common_args(parser, add_mode_group=False, add_ssh_args=False)
 
     parser.add_argument('--list', action="store_true", default=False, help=LIST_HELP)
     return parser

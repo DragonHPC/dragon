@@ -5,7 +5,7 @@ from dragon.native.process import Popen
 from dragon.native.queue import Queue
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
 from dragon.channels import Channel
-from dragon.utils import XNumPy2DPickler, XScalarPickler, XStringPickler
+from dragon.utils import XNumPyVectorPickler, XNumPy2DMatrixPickler, XScalarPickler, XStringPickler, XPickler
 import multiprocessing as mp
 import pathlib
 import numpy as np
@@ -289,7 +289,7 @@ class TestQueueCPP(unittest.TestCase):
 
     def test_custom_matrix_pickler_dump(self):
         exe = "cpp_queue"
-        q = Queue(buffered=False, pickler=XNumPy2DPickler(np.float64), num_streams=1)
+        q = Queue(buffered=False, pickler=XNumPy2DMatrixPickler(np.float64), num_streams=1)
         arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
         value = np.array(arr)
         q.put(value)
@@ -299,9 +299,21 @@ class TestQueueCPP(unittest.TestCase):
         self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
         q.destroy()
 
+    def test_custom_double_vector_pickler_dump(self):
+        exe = "cpp_queue"
+        q = Queue(buffered=False, pickler=XNumPyVectorPickler(np.float64), num_streams=1)
+        arr = [0.12, 0.31, 3.4]
+        value = np.array(arr)
+        q.put(value)
+        ser_q = q.serialize()
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_double_vector_pickler_dump"], env=ENV)
+        cpp_proc.wait()
+        self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
+        q.destroy()
+
     def test_custom_matrix_pickler_load(self):
         exe = "cpp_queue"
-        q = Queue(buffered=False, pickler=XNumPy2DPickler(np.float64), num_streams=1)
+        q = Queue(buffered=False, pickler=XNumPy2DMatrixPickler(np.float64), num_streams=1)
         arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
         ser_q = q.serialize()
         cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_matrix_pickler_load"], env=ENV)
@@ -331,6 +343,39 @@ class TestQueueCPP(unittest.TestCase):
         x = q.get()
         self.assertTrue(x, 42)
         q.destroy()
+
+    def test_custom_xpickler_dump(self):
+        exe = "cpp_queue"
+        q = Queue(buffered=False, pickler=XPickler(), num_streams=1)
+        q.put(42)
+        ser_q = q.serialize()
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_xpickler_dump"], env=ENV)
+        q.put(3.14)
+        q.put("Hello World")
+        arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
+        value = np.array(arr)
+        q.put(value)
+        cpp_proc.wait()
+        self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
+        q.destroy()
+
+    def test_custom_xpickler_load(self):
+        exe = "cpp_queue"
+        q = Queue(buffered=False, pickler=XPickler(), num_streams=1)
+        ser_q = q.serialize()
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_custom_xpickler_load"], env=ENV)
+        x = q.get()
+        self.assertTrue(x, 42)
+        x = q.get()
+        self.assertTrue(x, 3.14)
+        x = q.get()
+        self.assertTrue(x, "Hello World")
+        x = q.get()
+        arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
+        self.assertTrue(np.array_equal(x, arr))
+        q.destroy()
+        cpp_proc.wait()
+        self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
 
     def test_custom_double_pickler_dump(self):
         exe = "cpp_queue"
@@ -374,11 +419,11 @@ class TestQueueCPP(unittest.TestCase):
         self.assertTrue(x, "hello world")
         q.destroy()
 
-    def test_2d_vector_put(self):
+    def test_2d_matrix_put(self):
         exe = "cpp_queue"
         q = Queue(buffered=False, num_streams=1)
         ser_q = q.serialize()
-        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_2d_vector_put"], env=ENV)
+        cpp_proc = Popen(executable=str(test_dir / exe), args=[ser_q, "test_2d_matrix_put"], env=ENV)
         cpp_proc.wait()
         self.assertEqual(cpp_proc.returncode, 0, "CPP client exited with non-zero exit code")
         q.destroy()
@@ -386,7 +431,15 @@ class TestQueueCPP(unittest.TestCase):
     def test_custom_matrix_dumps_loads(self):
         arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
         value = np.array(arr)
-        pickler = XNumPy2DPickler(np.float64)
+        pickler = XNumPy2DMatrixPickler(np.float64)
+        value_bytes = pickler.dumps(value)
+        arr2 = pickler.loads(value_bytes)
+        self.assertTrue(np.array_equal(arr, arr2))
+
+    def test_custom_array_dumps_loads(self):
+        arr = [4.579, 5.98, 6.54]
+        value = np.array(arr)
+        pickler = XNumPyVectorPickler(np.float64)
         value_bytes = pickler.dumps(value)
         arr2 = pickler.loads(value_bytes)
         self.assertTrue(np.array_equal(arr, arr2))
