@@ -1,0 +1,12 @@
+#!/bin/bash
+
+HACK_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";
+. $HACK_DIR/setup
+
+export DRAGON_EXTERNAL_DIR=${DRAGON_BASE_DIR}/../external
+
+if [[ -z ${DRAGON_CPYTHON_PATH+x} ]]; then
+    export DRAGON_CPYTHON_PATH=${DRAGON_EXTERNAL_DIR}/cpython_master
+fi
+
+export PATH=${DRAGON_CPYTHON_PATH}/bin:${PATH}
