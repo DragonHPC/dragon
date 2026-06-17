@@ -42,6 +42,23 @@ class AcceleratorDescriptor:
         return AcceleratorDescriptor(**sdict)
 
 
+def str_to_num(s: str) -> int | float:
+    """Return a number from of the correct type from a string
+
+    :param s: GPU ID
+    :type s: str
+    :return: number corresponding to input string
+    :rtype: int or float
+    """
+    try:
+        return int(s)
+    except ValueError:
+        try:
+            return float(s)
+        except ValueError:
+            raise ValueError("GPU mask needs to take ints or floats as the GPU IDs.") from None
+
+
 def find_nvidia() -> list:
     """Return list of Nvidia GPUs returned by nvidia-smi. Expected output from smi:
 
@@ -60,9 +77,17 @@ def find_nvidia() -> list:
     :return: list of GPUs with IDs.
     :rtype: list
     """
+    # If a mask is set, return GPUs in mask
+    mask = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if mask:
+        devices = []
+        for device in mask.split(","):
+            devices.append(str_to_num(device))
+        return devices
+
     try:
         output = check_output(["nvidia-smi", "-L"], stderr=DEVNULL).decode("utf-8").splitlines()
-        return output
+        return list(range(len(output)))
     except:
         return None
 
@@ -84,6 +109,14 @@ def find_amd() -> list:
     :return: a list of cards that can be iterated over
     :rtype: list
     """
+    # If a mask is set, return GPUs in mask
+    mask = os.environ.get("ROCR_VISIBLE_DEVICES", "")
+    if mask:
+        devices = []
+        for device in mask.split(","):
+            devices.append(str_to_num(device))
+        return devices
+
     try:
         output = (
             check_output(["rocm-smi", "--showuniqueid", "--csv"], stderr=DEVNULL)
@@ -91,7 +124,7 @@ def find_amd() -> list:
             .strip("\n")
             .splitlines()
         )
-        return output[1:]
+        return list(range(len(output[1:])))
     except:
         return None
 
@@ -125,14 +158,33 @@ def find_intel() -> list:
     :return: list of tuples with gpu device number and ID
     :rtype: list
     """
+    # If a mask is set, return GPUs in mask
+    mask = os.environ.get("ZE_AFFINITY_MASK", "")
+    if mask:
+        devices = []
+        for device in mask.split(","):
+            devices.append(str_to_num(device))
+        return devices
+
+    # Read the output of xpu-smi (recommended)
     try:
         output = check_output(["xpu-smi", "discovery"], stderr=DEVNULL).decode("utf-8").splitlines()
-        gpu_device = 0
-        devices = []
+        gpu_card = 0
+        cards = []
         for line in output:
             if "SOC UUID:" in line:
-                devices.append((gpu_device, line))
-                gpu_device += 1
+                cards.append((gpu_card, line))
+                gpu_card += 1
+
+        devices = []
+        hierarchy_mode = os.environ.get("ZE_FLAT_DEVICE_HIERARCHY", "COMPOSITE")
+        for i,_ in cards:
+            if hierarchy_mode == "FLAT":
+                devices.append(i * 2)
+                devices.append(i * 2 + 1)
+            elif hierarchy_mode == "COMPOSITE":
+                devices.append(i + 0.0)
+                devices.append(i + 0.1)
         return devices
     except:
         return None
@@ -143,22 +195,18 @@ def find_accelerators() -> AcceleratorDescriptor:
     devices = find_nvidia()
     if devices:
         acc = AcceleratorDescriptor(
-            vendor=AccVendor.NVIDIA, device_list=list(range(len(devices))), env_str=AccEnvStr.NVIDIA
+            vendor=AccVendor.NVIDIA, device_list=devices, env_str=AccEnvStr.NVIDIA
         )
         return acc
 
     devices = find_amd()
-    if devices:
-        acc = AcceleratorDescriptor(vendor=AccVendor.AMD, device_list=list(range(len(devices))), env_str=AccEnvStr.AMD)
+    if devices is not None:
+        acc = AcceleratorDescriptor(vendor=AccVendor.AMD, device_list=devices, env_str=AccEnvStr.AMD)
         return acc
 
     devices = find_intel()
-    if devices:
-        intel_device_list = []
-        for i in range(len(devices)):
-            intel_device_list.append(i + 0.0)
-            intel_device_list.append(i + 0.1)
-        acc = AcceleratorDescriptor(vendor=AccVendor.INTEL, device_list=intel_device_list, env_str=AccEnvStr.INTEL)
+    if devices is not None:
+        acc = AcceleratorDescriptor(vendor=AccVendor.INTEL, device_list=devices, env_str=AccEnvStr.INTEL)
         return acc
 
     try:
