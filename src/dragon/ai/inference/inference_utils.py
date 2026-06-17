@@ -105,6 +105,7 @@ class Inference:
         self.node_offset = config.hardware.node_offset
         self.ngpus = config.hardware.num_gpus
         self.num_inf_workers_for_each_cpu_head = config.hardware.num_inf_workers_per_cpu
+        self.num_instances_per_node = config.hardware.num_instances_per_node
 
         # Get all nodes in allocation
         self.all_nodes = self.get_nodes_in_alloc()
@@ -194,6 +195,20 @@ class Inference:
 
             # Validate tensor-parallel input arg by node
             self.tp_args_validator(len(devices))
+
+            # If user explicitly requested a number of inference engine
+            # instances per node, restrict the device list 
+            if self.num_instances_per_node != -1:
+                requested_gpus = self.num_instances_per_node * self.tp_size
+                if requested_gpus > len(devices):
+                    raise ValueError(
+                        f"{hostname}: requested num_instances_per_node="
+                        f"{self.num_instances_per_node} with tp_size="
+                        f"{self.tp_size} needs {requested_gpus} GPUs, "
+                        f"but only {len(devices)} are available on this node."
+                    )
+                devices = devices[:requested_gpus]
+
             my_nodes[(hostname, node)] = devices
         return my_nodes
 

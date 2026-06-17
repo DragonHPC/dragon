@@ -16,6 +16,7 @@ class HardwareConfig:
     num_nodes: int = -1  # -1 means auto-detect
     num_gpus: int = -1  # -1 means use all available
     num_inf_workers_per_cpu: int = 4
+    num_instances_per_node: int = -1  # -1 means auto: floor(num_gpus / tp_size)
     node_offset: int = 0  # For kubernetes multi-service deployments
 
     def validate(self, all_nodes: dict) -> None:
@@ -52,6 +53,12 @@ class HardwareConfig:
         if self.num_inf_workers_per_cpu < 1:
             raise ValueError(
                 f"num_inf_workers_per_cpu must be >= 1, got {self.num_inf_workers_per_cpu}"
+            )
+
+        if self.num_instances_per_node != -1 and self.num_instances_per_node < 1:
+            raise ValueError(
+                f"num_instances_per_node must be >= 1 (or -1 for auto), "
+                f"got {self.num_instances_per_node}"
             )
 
         if self.node_offset < 0:
@@ -248,7 +255,13 @@ class InferenceConfig:
         )
         cls._validate_section_keys(
             config_dict.get("hardware", {}),
-            {"num_nodes", "num_gpus", "num_inf_wrkrs_per_cpu", "node_offset"},
+            {
+                "num_nodes",
+                "num_gpus",
+                "num_inf_wrkrs_per_cpu",
+                "num_instances_per_node",
+                "node_offset",
+            },
             "hardware",
         )
         cls._validate_section_keys(
@@ -296,6 +309,7 @@ class InferenceConfig:
             num_nodes=hw.get("num_nodes", -1),
             num_gpus=hw.get("num_gpus", -1),
             num_inf_workers_per_cpu=hw.get("num_inf_wrkrs_per_cpu", 4),
+            num_instances_per_node=hw.get("num_instances_per_node", -1),
             node_offset=hw.get("node_offset", 0),
         )
 
