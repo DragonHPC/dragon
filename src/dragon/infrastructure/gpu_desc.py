@@ -59,47 +59,6 @@ def str_to_num(s: str) -> int | float:
             raise ValueError("GPU mask needs to take ints or floats as the GPU IDs.") from None
 
 
-def parse_mask(mask: str) -> list:
-    """Parse a mask string into a list of GPU IDs
-
-    :param mask: GPU mask string
-    :type mask: str
-    :return: list of GPU IDs
-    :rtype: list
-    """
-    devices = []
-    if mask == "":
-        return devices
-    else:
-        for device in mask.split(","):
-            devices.append(str_to_num(device))
-        return devices
-
-
-def merge_masked_detected(mask, detected_devices):
-
-    # if we don't have a mask, we just return the detected devices
-    if mask is None:
-        return detected_devices
-
-    masked_devices = parse_mask(mask)
-    # we masked out all devices and want to return the empty list coming out of parsing
-    if len(masked_devices) == 0:
-        return masked_devices
-
-    # we have a non-empty mask and no detected devices, we return None to indicate that we couldn't detect any devices
-    if detected_devices is None:
-        return None
-
-    # we have a non-empty mask and want to validate it against the detected devices
-    # if there are no detected devices, we return an empty list
-    merged_devices = []
-    for device in masked_devices:
-        if device in detected_devices:
-            merged_devices.append(device)
-    return merged_devices
-
-
 def find_nvidia() -> list:
     """Return list of Nvidia GPUs returned by nvidia-smi. Expected output from smi:
 
@@ -119,11 +78,16 @@ def find_nvidia() -> list:
     :rtype: list
     """
     # If a mask is set, return GPUs in mask
-    mask = os.environ.get(AccEnvStr.NVIDIA, None)
+    mask = os.environ.get("CUDA_VISIBLE_DEVICES", "")
+    if mask:
+        devices = []
+        for device in mask.split(","):
+            devices.append(str_to_num(device))
+        return devices
 
     try:
         output = check_output(["nvidia-smi", "-L"], stderr=DEVNULL).decode("utf-8").splitlines()
-        devices = list(range(len(output)))
+        return list(range(len(output)))
     except:
         devices = None
 
@@ -148,7 +112,12 @@ def find_amd() -> list:
     :rtype: list
     """
     # If a mask is set, return GPUs in mask
-    mask = os.environ.get(AccEnvStr.AMD, None)
+    mask = os.environ.get("ROCR_VISIBLE_DEVICES", "")
+    if mask:
+        devices = []
+        for device in mask.split(","):
+            devices.append(str_to_num(device))
+        return devices
 
     try:
         output = (
@@ -157,12 +126,7 @@ def find_amd() -> list:
             .strip("\n")
             .splitlines()
         )
-        # The first line is a header, so we skip it and return the rest of the lines as a list of devices
-        # we can't slice and expect a raise since slicing an empty list will return an empty list, so we check if the output is empty first
-        if len(output)>0:
-            devices = list(range(len(output[1:])))
-        else:
-            devices = None
+        return list(range(len(output[1:])))
     except:
         devices = None
 
@@ -199,7 +163,12 @@ def find_intel() -> list:
     :rtype: list
     """
     # If a mask is set, return GPUs in mask
-    mask = os.environ.get(AccEnvStr.INTEL, None)
+    mask = os.environ.get("ZE_AFFINITY_MASK", "")
+    if mask:
+        devices = []
+        for device in mask.split(","):
+            devices.append(str_to_num(device))
+        return devices
 
     # Read the output of xpu-smi (recommended)
     try:
@@ -213,13 +182,14 @@ def find_intel() -> list:
 
         devices = []
         hierarchy_mode = os.environ.get("ZE_FLAT_DEVICE_HIERARCHY", "COMPOSITE")
-        for i, _ in cards:
+        for i,_ in cards:
             if hierarchy_mode == "FLAT":
                 devices.append(i * 2)
                 devices.append(i * 2 + 1)
             elif hierarchy_mode == "COMPOSITE":
                 devices.append(i + 0.0)
                 devices.append(i + 0.1)
+        return devices
     except:
         devices = None
 
@@ -229,8 +199,10 @@ def find_intel() -> list:
 def find_accelerators() -> AcceleratorDescriptor:
     """Scan for accelerators across all supported vendors"""
     devices = find_nvidia()
-    if devices is not None:
-        acc = AcceleratorDescriptor(vendor=AccVendor.NVIDIA, device_list=devices, env_str=AccEnvStr.NVIDIA)
+    if devices:
+        acc = AcceleratorDescriptor(
+            vendor=AccVendor.NVIDIA, device_list=devices, env_str=AccEnvStr.NVIDIA
+        )
         return acc
 
     devices = find_amd()
