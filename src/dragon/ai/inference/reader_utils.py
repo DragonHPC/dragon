@@ -1,3 +1,10 @@
+"""Response and metrics readers for inference tests and benchmarks.
+
+The classes in this module are helper utilities used by examples and
+performance tests.  They are not part of the primary chat client path; normal
+agent code should use :class:`dragon.ai.inference.DragonQueueLLMProxy`.
+"""
+
 from queue import Empty
 import time
 import pandas as pd
@@ -5,12 +12,22 @@ import os
 
 
 class ReadWorker:
-    """
-    Handles reading from the response queue and returning the response to the front end.
-    Also terminates reading as soon as the expected number of inputs have been received.
+    """Read raw inference responses from a queue for simple drivers.
+
+    ``ReadWorker`` polls a response queue until the expected number of prompt
+    responses has been observed.  It annotates each response with a monotonically
+    increasing ``counter`` field and sets the supplied end event when reading is
+    complete or when the user interrupts the process.
     """
 
     def __init__(self, q, end_ev):
+        """Initialize a response reader.
+
+        :param q: Queue from which response dictionaries are read.
+        :type q: dragon.native.Queue
+        :param end_ev: Event set when reading completes or is interrupted.
+        :type end_ev: dragon.native.Event
+        """
         self.q = q
         self.end_ev = end_ev
 
@@ -50,8 +67,12 @@ class ReadWorker:
 
 
 class MetricsConsolidator:
-    """Handles reading from the response queue and returning the response to the front end.
-    Also terminates reading as soon as the expected number of inputs have been received.
+    """Read response metrics, aggregate them, and write them to Excel.
+
+    This benchmark helper consumes response dictionaries emitted by inference
+    workers, extracts latency and throughput fields, prints a pandas summary,
+    and stores the data in an Excel worksheet.  It exits after the expected
+    number of responses has been read and the producer has set ``read_ev``.
     """
 
     def __init__(
@@ -66,12 +87,12 @@ class MetricsConsolidator:
     ):
         """Initialize a :class:`MetricsConsolidator` instance.
 
-        :param q: Multiprocessing queue to read metrics from.
-        :type q: mp.Queue
-        :param end_ev: Multiprocessing event to signal the end of reading.
-        :type end_ev: mp.Event
+        :param q: Dragon queue to read response metrics from.
+        :type q: dragon.native.Queue
+        :param end_ev: Dragon event used to signal that the reader has finished.
+        :type end_ev: dragon.native.Event
         :param read_ev: Event that signals when all metrics have been read.
-        :type read_ev: mp.Event
+        :type read_ev: dragon.native.Event
         :param descriptor: Descriptor string used to identify the metrics.
         :type descriptor: str
         :param base_start_time: Base start time used to compute total

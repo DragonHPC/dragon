@@ -19,13 +19,10 @@ def determine_wlm(
     force_wlm: Optional[WLM] = None,
 ) -> Optional[WLMBase]:
     """
-    Determine if dragon_run should be started in multi-node or single-node mode.
+    Determine if dragon_run should be started in multi-node or single-node mode. If multi-node mode,
+    determine the WLM in use.
 
-    Returns a tuple (multi_node, wlm_cls).
-
-    multi_node:
-        False if dragon_run should be started in single-node mode
-        True if dragon_run should be started in multi-node mode
+    Returns the class object for the WLM if multi-node mode is detected, otherwise None.
 
     wlm_cls:
         If multi_node is True, a reference to the WLM class object that
@@ -87,7 +84,10 @@ def determine_wlm(
         raise RuntimeError("Error: Unable to get WLM class object.")
 
     if not wlm_cls.check_for_allocation():
-        msg = f"Executing in a {wlm_cls.NAME} environment, but cannot detect any active jobs or allocated nodes."
+        if wlm_cls is wlm_cls_dict[WLM.DRAGON_SSH]:
+            msg = "DragonRun requires a host list to execute. Please provide a host list or use 'dhosts' to define one."
+        else:
+            msg = f"DragonRun detected the WLM {wlm_cls.NAME} but no allocation was found. Please retry after obtaining an allocation."
         raise DragonRunMissingAllocation(msg)
 
     return wlm_cls
@@ -104,12 +104,12 @@ def get_host_list(
     # If we're being provided with a host_list, then just use those, otherwise figure out our host_list
     if not host_list:
         # Try to determine the wlm and gather our host-list that way.
-        if cls := determine_wlm(
+        if wlm_cls := determine_wlm(
             force_single_node=force_single_node,
             force_multi_node=force_multi_node,
             force_wlm=force_wlm,
         ):
-            host_list = cls.get_host_list()
+            host_list = wlm_cls.get_host_list()
     return host_list
 
 
@@ -145,7 +145,6 @@ class DragonRunPopen:
         self.user_command = user_command
         self.cwd = cwd
         self.env = env
-        self.host_list = host_list
         self.force_single_node = force_single_node
         self.force_multi_node = force_multi_node
         self.force_wlm = force_wlm
@@ -160,6 +159,15 @@ class DragonRunPopen:
 
         self.abnormal_exit = False
         self.abnormal_exit_msg = None
+
+        logger.debug("++DragonRunPopen.__init__")
+        self.host_list = get_host_list(
+            host_list=host_list,
+            force_single_node=force_single_node,
+            force_multi_node=force_multi_node,
+            force_wlm=force_wlm,
+        )
+        logger.debug("--DragonRunPopen.__init__")
 
         self.exec_on_fe = exec_on_fe
         if not self.host_list:
@@ -332,16 +340,6 @@ def run_wrapper(
     passphrase: Optional[str] = None,
     log_level: int = logging.NOTSET,
 ):
-    host_list = get_host_list(
-        host_list=host_list,
-        force_single_node=force_single_node,
-        force_multi_node=force_multi_node,
-        force_wlm=force_wlm,
-    )
-
-    if not host_list:
-        exec_on_fe = True
-
     drun_h = DragonRunPopen(
         user_command=user_command,
         cwd=cwd,

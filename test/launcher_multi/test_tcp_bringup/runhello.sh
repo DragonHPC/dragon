@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd ../../../ && . hack/multinode_config && . _env/bin/activate && cd -
+cd ../../../ && . devtools/multinode_config && . _env/bin/activate && cd -
 
 # Tell CTI where to log to
 echo $PWD

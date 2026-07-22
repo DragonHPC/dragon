@@ -39,8 +39,10 @@ class DAGOrchestrator:
     ``DAGOrchestrator`` owns the lifecycle of the :class:`~dragon.data.ddict.DDict`.
     The caller creates a :class:`~dragon.workflows.batch.Batch` instance and
     passes it to :meth:`run`; the orchestrator uses it to build and execute
-    the DAG.  The caller is responsible for calling ``batch.join()``
-    and ``batch.destroy()``.
+    the DAG.  The caller is responsible for calling ``batch.join()`` when it
+    is done with that client handle; if the Batch runtime was created with
+    ``managed_lifecycle=True``, some client must later call ``batch.destroy()``
+    to shut down the Batch instance shared by those clients.
 
     Construction sets up all shared infrastructure (DDict, HITL bridge,
     trace bridge) so that :attr:`hitl_address`, :attr:`trace_address`,
@@ -86,7 +88,6 @@ class DAGOrchestrator:
         finally:
             orchestrator.destroy()
             batch.join()
-            batch.destroy()
     """
 
     def __init__(self, config: OrchestratorConfig, pipeline: Pipeline) -> None:
@@ -246,8 +247,10 @@ class DAGOrchestrator:
         batch:
             Caller-owned :class:`~dragon.workflows.batch.Batch` instance used
             to build and execute the DAG.  The caller is responsible for
-            ``batch.join()`` and ``batch.destroy()`` after this method
-            returns.
+            ``batch.join()`` after this method returns. If the runtime uses
+            ``managed_lifecycle=True``, some client must later call
+            ``batch.destroy()`` to stop the Batch instance shared by those
+            clients.
 
         Returns
         -------
@@ -400,8 +403,9 @@ class DAGOrchestrator:
 
         Stops the HITL and trace TCP bridges, destroys the HITL queue
         and the shared DDict.  Batch teardown
-        (``batch.join()`` / ``batch.destroy()``) remains the caller's
-        responsibility.
+        remains the caller's responsibility: callers should ``batch.join()``
+        their client handles, and only managed-lifecycle runtimes need a later
+        ``batch.destroy()``.
 
         Safe to call multiple times — each resource is cleaned up at most
         once.

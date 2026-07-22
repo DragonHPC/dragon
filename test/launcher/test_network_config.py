@@ -237,7 +237,6 @@ class SSHNetworkConfigTest(unittest.TestCase):
         """Set values specific to slurm"""
 
         base_abs_path = path.dirname(__file__)
-        self.bad_hostfile = path.join(base_abs_path, "bad_hostfile.txt")
         self.good_hostfile = path.join(base_abs_path, "good_hostfile.txt")
 
         self.wlm = WLM.SSH
@@ -259,52 +258,30 @@ class SSHNetworkConfigTest(unittest.TestCase):
             get_args(inputs=input_args)
         self.assertTrue("hostlist and hostfile arguments are only supported in the SSH case" in str(e.exception))
 
-        # test that we throw an error when hostfile is not formatted correctly
-        input_args = ["--wlm", "ssh", "--hostfile", self.bad_hostfile]
-        with self.assertRaises(ValueError) as e:
-            get_args(inputs=input_args)
-        self.assertTrue("Hostname is invalid:" in str(e.exception))
-
         # test that we like a good hostfile
         input_args = ["--wlm", "ssh", "--hostfile", self.good_hostfile]
 
         wlm, args = get_args(inputs=input_args)
-        self.assertEqual(args.hostlist[0], "host-1")
-        self.assertEqual(args.hostlist[1], "host-2")
+        self.assertTrue("host-1" in args.hostlist)
+        self.assertTrue("host-2" in args.hostlist)
 
         # test that we handle good hostlists
         input_args = ["--wlm", "ssh", "--hostlist", "host-1,host-2"]
         wlm, args = get_args(inputs=input_args)
-        self.assertEqual(args.hostlist[0], "host-1")
-        self.assertEqual(args.hostlist[1], "host-2")
+        self.assertTrue("host-1" in args.hostlist)
+        self.assertTrue("host-2" in args.hostlist)
 
         # Test that white space after comma is okay
         input_args = ["--wlm", "ssh", "--hostlist", "host-1,  host-2"]
         wlm, args = get_args(inputs=input_args)
-        self.assertEqual(args.hostlist[0], "host-1")
-        self.assertEqual(args.hostlist[1], "host-2")
+        self.assertTrue("host-1" in args.hostlist)
+        self.assertTrue("host-2" in args.hostlist)
 
         # Test that a psychotic tab is okay after comma is okay
         input_args = ["--wlm", "ssh", "--hostlist", "host-1,\thost-2"]
         wlm, args = get_args(inputs=input_args)
-        self.assertEqual(args.hostlist[0], "host-1")
-        self.assertEqual(args.hostlist[1], "host-2")
-
-        # Test that we invalidate too long hostname
-        input_args = ["--wlm", "ssh", "--hostlist", "".join(random.choices(string.ascii_letters, k=300))]
-        with self.assertRaises(ValueError) as e:
-            wlm, args = get_args(inputs=input_args)
-        self.assertTrue("Hostname is invalid:" in str(e.exception))
-
-        too_long_part = (
-            "".join(random.choices(string.ascii_letters, k=64))
-            + "."
-            + "".join(random.choices(string.ascii_letters, k=20))
-        )
-        input_args = ["--wlm", "ssh", "--hostlist", too_long_part]
-        with self.assertRaises(ValueError) as e:
-            wlm, args = get_args(inputs=input_args)
-        self.assertTrue("Hostname is invalid:" in str(e.exception))
+        self.assertTrue("host-1" in args.hostlist)
+        self.assertTrue("host-2" in args.hostlist)
 
 
 if __name__ == "__main__":

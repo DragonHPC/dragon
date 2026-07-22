@@ -2,6 +2,7 @@ import os
 import shutil
 import sys
 import time
+import gc
 import cloudpickle
 from uuid import uuid4
 
@@ -100,13 +101,27 @@ def return_constant(value):
     return value
 
 
+def emit_logs(stdout_text: str, stderr_text: str):
+    print(stdout_text, flush=True)
+    print(stderr_text, file=sys.stderr, flush=True)
+    return stdout_text, stderr_text
+
+
+def emit_named_logs(stdout=None, stderr=None):
+    if stdout is not None:
+        print(stdout, flush=True)
+    if stderr is not None:
+        print(stderr, file=sys.stderr, flush=True)
+    return stdout, stderr
+
+
 def add_values(a, b):
     return a + b
 
 
 def submit_batch_value_from_client(batch, output_queue, value):
     try:
-        task = batch.function(return_constant, value, name=f"remote-client-{value}")
+        task = batch.options(name=f"remote-client-{value}").function(return_constant, value)
         output_queue.put({"client_id": batch.client_id, "result": task.get(), "value": value})
     finally:
         batch.join()
@@ -115,6 +130,15 @@ def submit_batch_value_from_client(batch, output_queue, value):
 def submit_batch_value_from_serialized_client(serialized_batch, output_queue, value):
     batch = cloudpickle.loads(serialized_batch)
     submit_batch_value_from_client(batch, output_queue, value)
+
+
+def drop_serialized_batch_without_join(serialized_batch, output_queue, value):
+    batch = cloudpickle.loads(serialized_batch)
+    task = batch.options(name=f"dropped-client-{value}").function(return_constant, value)
+    output_queue.put({"result": task.get(), "value": value})
+    del task
+    del batch
+    gc.collect()
 
 
 def submit_batch_value_from_batch_worker(serialized_batch, output_queue, value):
@@ -126,7 +150,7 @@ def submit_batch_value_from_batch_worker(serialized_batch, output_queue, value):
 
 
 def create_joined_batch_and_send(batch_queue, output_queue, values):
-    batch = Batch(num_nodes=1, scheduler_workers=1)
+    batch = Batch(num_nodes=1, scheduler_workers=1, managed_lifecycle=True)
     creator_client_id = batch.client_id
     output_queue.put({"role": "creator", "stage": "created", "client_id": creator_client_id})
 
@@ -159,7 +183,7 @@ def consume_batch_from_queue_and_destroy(batch_queue, output_queue, values):
 
     try:
         values = tuple(values)
-        tasks = [batch.function(return_constant, value, name=f"handoff-client-{value}") for value in values]
+        tasks = [batch.options(name=f"handoff-client-{value}").function(return_constant, value) for value in values]
         results = [task.get() for task in tasks]
         batch.join()
         batch.destroy()
@@ -195,7 +219,7 @@ def get_fib_sequence(batch, use_ddict) -> list:
     for i in range(num_tasks):
         read = batch.read(fs.base_dir, f"key_{i}", f"key_{i + 1}")
         write = batch.write(fs.base_dir, f"key_{i + 2}")
-        task = batch.function(fib, fs, i, reads=[read], writes=[write])
+        task = batch.options(reads=[read], writes=[write]).function(fib, fs, i)
         program.append(task)
 
     fib_seq = []

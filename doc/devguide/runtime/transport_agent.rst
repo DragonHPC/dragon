@@ -38,8 +38,8 @@ network communication behind the scenes.
 
 
 
-.. figure:: images/channels_hsta.png
-   :scale: 25%
+.. figure:: images/channels_hsta.svg
+   :scale: 75%
    :name: channels-hsta
 
    **Dragon Channels off-node communication via the HSTA transport agent**

@@ -8,7 +8,7 @@ import sys
 
 from functools import partial
 from pathlib import Path
-from psutil import Process, process_iter, TimeoutExpired, ZombieProcess, NoSuchProcess
+from psutil import Process, process_iter, TimeoutExpired, ZombieProcess, NoSuchProcess, AccessDenied
 
 from dragon.infrastructure.config import hugepages_cleanup
 from dragon.infrastructure.facts import DEFAULT_DICT_POOL_NAME_BASE
@@ -107,7 +107,7 @@ class DragonCleanup:
                         "mpiexec" not in cmdline,
                     ]
                 )
-            except (NoSuchProcess, ZombieProcess):
+            except (NoSuchProcess, ZombieProcess, AccessDenied, PermissionError):
                 pass
 
     @staticmethod

@@ -3,7 +3,7 @@
 export DRAGON_TRANSPORT_TEST=1
 export DRAGON_TRANSPORT_AGENT=tcp
 
-cd ../../../ && . hack/multinode_config
+cd ../../../ && . devtools/multinode_config
 cd -
 
 # Remove any cores lying around from the CTI destructor that does

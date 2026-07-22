@@ -11,10 +11,10 @@ Other depedencies are installed during the environment setup or are optional.
 
 ## Environment Setup
 
-The `hack/setup` script does most of the work. Follow these steps:
+The `devtools/setup` script does most of the work. Follow these steps:
 
     export DRAGON_BASE_DIR=$PWD/src
-    . hack/setup
+    . devtools/setup
 
 If the HSTA source is in your tree, you can enable building it by adding in the appropriate communication backends with
 `dragon-config`. For example,
@@ -25,11 +25,11 @@ If the HSTA source is in your tree, you can enable building it by adding in the 
 
 Then to build:
 
-    . hack/clean_build
+    . devtools/clean_build
 
 To rebuild without clean:
 
-    . hack/build
+    . devtools/build
 
 ## Testing
 

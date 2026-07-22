@@ -101,6 +101,7 @@ It's also possible to display telemetry data from the notebook by using the `Dra
 
 .. code-block:: python
     :linenos:
+
     out = ipywidgets.Output()
 
     @out.capture(clear_output=True)

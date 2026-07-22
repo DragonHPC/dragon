@@ -1,20 +1,14 @@
 import argparse
 import os
-import re
-from importlib.metadata import version, PackageNotFoundError
+import shtab
 
 from .wlm import WLM
 from ..dlogging import util as dlogutil
-from ..infrastructure.facts import TransportAgentOptions, PREFIX, QUIET_VAR
-
+from ..infrastructure.facts import TransportAgentOptions
+from ..version import __version__ as DRAGON_VERSION
 
 # The argparse module automatically formats the help strings below so you don't have to
 # worry about formatting them when editing.
-
-try:
-    DRAGON_VERSION = version("dragonhpc")
-except PackageNotFoundError:
-    DRAGON_VERSION = os.environ.get("DRAGON_VERSION", "(unknown)")
 
 VERSION = f"""
 Dragon Version {DRAGON_VERSION}
@@ -167,41 +161,25 @@ def valid_port_int(value):
     return port
 
 
-def is_hostname_valid(hostname):
-    """Confirm hostname conforms to POSIX rules"""
-    if len(hostname) > 255:
-        return False
-    if hostname[-1] == ".":
-        hostname = hostname[:-1]  # strip exactly one dot from the right, if present
-    allowed = re.compile(r"(?!-)[A-Z\d-]{1,63}(?<!-)$", re.IGNORECASE)
-    return all(allowed.match(x) for x in hostname.split("."))
-
-
 def parse_hosts(hostlist, hostfile):
-    """Parse the hostfile if one is given and hostnames are valid"""
+    """Parse the hostfile if one is given"""
 
-    if hostlist is None and hostfile is None:
-        raise argparse.ArgumentError(
-            hostlist, "When using Drun or SSH, hostlist, hostfile, or existing network configuration is required."
-        )
-    else:
-        # parse the hostfile if its set
-        if hostfile is not None:
-            try:
-                with open(hostfile, "r") as f:
-                    hostlist = [line.strip() for line in f.readlines()]
-            except Exception:
-                raise argparse.ArgumentError(hostfile, f"Unable to parse {hostfile}")
+    _hosts = set()
 
-    # Do a basic sanity check that the hostnames make sense
-    try:
-        for host in hostlist:
-            if not is_hostname_valid(host):
-                raise ValueError(f"Hostname is invalid: {host}")
-    except Exception:
-        raise
+    if hostlist:
+        _hosts.update(hostlist)
 
-    return hostlist
+    elif hostfile:
+        try:
+            if not os.path.isfile(hostfile):
+                raise argparse.ArgumentError(hostfile, f"{hostfile} is not a valid file")
+
+            with open(hostfile, "r") as f:
+                _hosts.update([line.strip() for line in f.readlines()])
+        except Exception:
+            raise argparse.ArgumentError(hostfile, f"Unable to parse {hostfile}")
+
+    return list(_hosts)
 
 
 def get_parser():
@@ -283,7 +261,7 @@ def get_parser():
     )
 
     parser.add_argument("--version", action="version", version=VERSION)
-    parser.add_argument("prog", type=str, nargs="?", metavar="PROG", help=PROGRAM_HELP)
+    parser.add_argument("prog", type=str, nargs="?", metavar="PROG", help=PROGRAM_HELP).complete = shtab.FILE
     parser.add_argument("args", type=str, metavar="ARG", nargs=argparse.REMAINDER, default=[], help=ARG_HELP)
 
     parser.set_defaults(

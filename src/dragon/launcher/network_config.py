@@ -332,15 +332,16 @@ def deliver_backend_node_descriptor(network_prefix=DEFAULT_TRANSPORT_NETIF, port
     print(json.dumps(node_info.get_sdict()), flush=True)
 
 
-def get_args(inputs=None):
-    """Parse command line inputs for use in network config generator
-
-    Returns:
-        Namespace: namespace of expressing input arguments
+def get_parser():
+    """
+    Get the ArgumentParser for the network configuration tool.
     """
     from dragon.launcher.launchargs import NETWORK_HELP, valid_port_int
 
-    parser = argparse.ArgumentParser(description="Runs Dragon internal tool for generating network topology")
+    parser = argparse.ArgumentParser(
+        prog="dragon-network-config",
+        description="Runs Dragon internal tool for generating network topology"
+    )
 
     parser.add_argument(
         "-p", "--port", type=valid_port_int, help="Infrastructure listening port (default: %(default)s)"
@@ -378,6 +379,17 @@ def get_args(inputs=None):
         hostlist=None,
         hostfile=None,
     )
+
+    return parser
+
+
+def get_args(inputs=None):
+    """Parse command line inputs for use in network config generator
+
+    Returns:
+        Namespace: namespace of expressing input arguments
+    """
+    parser = get_parser()
 
     if inputs is None:
         args = parser.parse_args()
@@ -424,7 +436,7 @@ def main():
           -p PORT, --port PORT  Infrastructure listening port (default: 6565)
           --network-prefix NETWORK_PREFIX
                                 NETWORK_PREFIX specifies the network prefix the dragon runtime will use to determine which IP addresses it should use to build
-                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth)\\w+$' is used -- the prefix for known HPE-Cray XC
+                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth|en)\\w+$' is used -- the prefix for known HPE-Cray XC
                                 and EX high speed networks. If uncertain which networks are available, the following will return them in pretty formatting: `dragon-
                                 network-ifaddrs --ip --no-loopback --up --running | jq`. Prepending with `srun` may be necessary to get networks available on
                                 backend compute nodes

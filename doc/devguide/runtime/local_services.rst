@@ -18,7 +18,7 @@ the Dragon services uses a channel for communication to and from other services.
 Local Services runs on every node and has responsibility for managing resources on that particular node.  This
 keeps other parts of the runtime from needing to interact directly with operating system resources, and
 provides a single point of contact. The set of services provided by Local Services is identical in the
-ulti-node and single-node cases. The details of these services are provided below.
+multi-node and single-node cases. The details of these services are provided below.
 
 Local Services has responsibility for:
 
@@ -47,7 +47,7 @@ Architecture
 Local Services runs as a separate process that receives its work through a channel. After bringup of the Dragon
 run-time services, Local Services receives messages through the :ref:`Messages` from this channel, processes
 them, and responds to requesters. The handling of these requests is done asynchronously, meaning that
-fullfilling a request may require other interactions with other parts of the Dragon run-time while handling
+fulfilling a request may require other interactions with other parts of the Dragon run-time while handling
 other requests. Local Services maintains state information about the progress of each request as necessary.
 
 .. _tasktypes:
@@ -78,7 +78,7 @@ completes its execution.
 Process Management
 ==================
 
-.. figure:: images/processstates.png
+.. figure:: images/processstates.svg
     :name: processstates
 
     **Process State Transition Diagram**
@@ -111,7 +111,7 @@ process. As implemented, when a user-defined managed process is created, the Lau
 all notifications about output on standard output and error, while the Global Services channel is used for
 notification of the termination of the process.
 
-.. figure:: images/managedservices.png
+.. figure:: images/managedservices.svg
     :name: managedservices
 
     **Managed Process services provided by Local Services**
@@ -147,7 +147,7 @@ on the task. Once cleanup has occurred, the process is deleted from Local Servic
 The Local Services/Global Services Integration
 ==============================================
 
-.. figure:: images/gsmonitor.png
+.. figure:: images/gsmonitor.svg
     :name: gsmonitor
 
     **The Global Services Monitor**

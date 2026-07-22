@@ -1,33 +1,33 @@
 A Custom Dataloader Benchmark for Biological Sequences Using DragonDataset and Dragon DDict
 ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
-This benchmark was altered from a Medium article over a DataLoader benchmark. The benchmark has been altered to utilize Dragon objects. The SeqDataset class was modified to use DragonDataset. DragonDataset is a PyTorch dataset that uses Dragon distributed dictionary to store the training data and labels. 
-Dragon Dataset can handle an iterable for the data or an existing dragon distributed dictionary with a list of its keys. 
+This benchmark was altered from a Medium article over a DataLoader benchmark. The benchmark has been altered to utilize Dragon objects. The SeqDataset class was modified to use DragonDataset. DragonDataset is a PyTorch dataset that uses Dragon distributed dictionary to store the training data and labels.
+Dragon Dataset can handle an iterable for the data or an existing dragon distributed dictionary with a list of its keys.
 The dataloader used is from PyTorch for this example and benchmark and was coded to be compatible with Dragon distributed dictionary (DDict), DragonDataset, and the Dragon runtime.
 
-This article (https://medium.com/swlh/pytorch-dataset-dataloader-b50193dc9855) outlines a developer's journey in creating a custom data-loading framework for biological datasets, emphasizing flexibility, efficiency, and computational resource management. 
-The author highlights how common NLP frameworks like AllenNLP and Fast.ai simplify handling text-based datasets, allowing for easy adaptation of pre-trained models for downstream tasks. 
-However, working with biological sequences, which often lack the structure of natural language, requires building custom tokenizers and data loaders. 
+This article (https://medium.com/swlh/pytorch-dataset-dataloader-b50193dc9855) outlines a developer's journey in creating a custom data-loading framework for biological datasets, emphasizing flexibility, efficiency, and computational resource management.
+The author highlights how common NLP frameworks like AllenNLP and Fast.ai simplify handling text-based datasets, allowing for easy adaptation of pre-trained models for downstream tasks.
+However, working with biological sequences, which often lack the structure of natural language, requires building custom tokenizers and data loaders.
 This need for customization drives the developer to delve deeper into PyTorch's native Dataset and DataLoader classes, which provide the flexibility and control needed for complex data structures.
 
-The Dataset class in PyTorch is essential for data handling and requires implementing two methods, `__len__`` and `__getitem__`, which define the dataset's length and retrieve individual samples, respectively. 
-For biological data, this often means incorporating custom tokenization directly into `__getitem__`, allowing parallelized data processing when used with the DataLoader. 
-PyTorch's DataLoader enables efficient data loading with features like batching, collating, memory pinning, and multiprocessing, which become crucial for managing large biological datasets. 
+The Dataset class in PyTorch is essential for data handling and requires implementing two methods, `__len__`` and `__getitem__`, which define the dataset's length and retrieve individual samples, respectively.
+For biological data, this often means incorporating custom tokenization directly into `__getitem__`, allowing parallelized data processing when used with the DataLoader.
+PyTorch's DataLoader enables efficient data loading with features like batching, collating, memory pinning, and multiprocessing, which become crucial for managing large biological datasets.
 The article contrasts single-processing and multi-processing data loading, detailing how each process affects performance and memory usage.
 
-To test the data loader's efficiency, the author benchmarks a Doc2Vec model on synthetic DNA sequences, evaluating parameters such as GPU usage, pin_memory, batch size, and num_workers. 
-The results reveal that increasing workers and batch size generally improves data loading efficiency, especially on GPUs. 
-The article concludes that while PyTorch's framework offers powerful tools for custom data loading, tuning these parameters for specific hardware setups is essential for achieving optimal performance. 
+To test the data loader's efficiency, the author benchmarks a Doc2Vec model on synthetic DNA sequences, evaluating parameters such as GPU usage, pin_memory, batch size, and num_workers.
+The results reveal that increasing workers and batch size generally improves data loading efficiency, especially on GPUs.
+The article concludes that while PyTorch's framework offers powerful tools for custom data loading, tuning these parameters for specific hardware setups is essential for achieving optimal performance.
 The author's repository provides code examples and further resources to explore efficient data handling in PyTorch for large, complex datasets.
 
-In the context of using PyTorch's DataLoader for biological data, DNA and RNA sequences present unique challenges, especially when scaling data loading processes with multiple workers 
-and varying data file sizes. DNA sequences, typically larger and more stable due to their double-stranded nature, often require substantial storage and processing capacity. 
-RNA sequences, being shorter and single-stranded, are generally more transient but can appear in vast quantities within datasets due to cellular transcription processes. 
-In a multi-worker setup, DNA sequences may benefit from larger batch sizes and higher worker counts to offset their size and reduce I/O latency, ensuring efficient data streaming for model 
-training. Conversely, RNA datasets, while often smaller per sequence, can have higher file counts, benefiting from finer-grained parallelization (i.e., more workers with smaller batch sizes) 
+In the context of using PyTorch's DataLoader for biological data, DNA and RNA sequences present unique challenges, especially when scaling data loading processes with multiple workers
+and varying data file sizes. DNA sequences, typically larger and more stable due to their double-stranded nature, often require substantial storage and processing capacity.
+RNA sequences, being shorter and single-stranded, are generally more transient but can appear in vast quantities within datasets due to cellular transcription processes.
+In a multi-worker setup, DNA sequences may benefit from larger batch sizes and higher worker counts to offset their size and reduce I/O latency, ensuring efficient data streaming for model
+training. Conversely, RNA datasets, while often smaller per sequence, can have higher file counts, benefiting from finer-grained parallelization (i.e., more workers with smaller batch sizes)
 to balance between loading speed and memory efficiency. This tailored approach for DNA versus RNA data maximizes DataLoader efficiency, enabling effective processing of diverse biological datasets across hardware configurations.
 
-The synthetic data for this use case is generated using `generate_synthetic_data.py`. The time to generate the syntehtic data is not factored into the overall runtime for the benchmark.
+The synthetic data for this use case is generated using `generate_synthetic_data.py`. The time to generate the synthetic data is not factored into the overall runtime for the benchmark.
 
 The following code demonstrates the utilization of DragonDataset, DragonDict, and PyTorch Dataloader for the creation of a customized tokenizer:
 .. literalinclude:: ../../examples/dragon_ai/dna_rna_dataloader/dataset.py

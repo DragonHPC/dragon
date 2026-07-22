@@ -297,8 +297,12 @@ class TestDragonQueueLLMProxy(TestCase):
         mock_input_queue.put.side_effect = OSError("queue broken")
         proxy = DragonQueueLLMProxy(mock_input_queue, max_concurrent_requests=2)
 
-        with self.assertRaises(OSError):
-            asyncio.run(proxy.chat([{"role": "user", "content": "hi"}]))
+        # The proxy logs the failure via log.exception(). Capture it with
+        # assertLogs so the expected traceback is not printed to the console
+        # and to assert the error is recorded.
+        with self.assertLogs("dragon.ai.inference.llm_proxy", level="ERROR"):
+            with self.assertRaises(OSError):
+                asyncio.run(proxy.chat([{"role": "user", "content": "hi"}]))
 
         # Queue should still be returned to pool
         self.assertEqual(proxy.pool_available, 1)

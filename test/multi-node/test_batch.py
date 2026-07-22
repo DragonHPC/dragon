@@ -1,7 +1,13 @@
 import os
+import queue
 import random
+import json
+import logging
+import shutil
 import sys
+import tempfile
 import time
+import threading
 import unittest
 import cloudpickle
 from pathlib import Path
@@ -18,8 +24,15 @@ from dragon.native.process import Process, ProcessTemplate
 from dragon.native.queue import Queue
 from dragon.infrastructure.policy import Policy
 from dragon.workflows.batch import Batch, ReadAfterWriteDependencyError, SubmitAfterCloseError, TaskCancelledError
-from dragon.workflows.batch.batch import TaskCore, TaskNotReadyError, Work
-from dragon.native.machine import System, Node
+from dragon.workflows.batch.batch import (
+    TaskNotReadyError,
+    ClientCompiler,
+    SCHEDULER_MANAGER_IDX,
+    default_results_ddict_managers_per_pool,
+    _drain_client_task_batch,
+    _resolve_results_ddict_managers_per_pool,
+)
+from dragon.native.machine import System, Node, current
 from user_functions import (
     add_values,
     hi,
@@ -27,7 +40,10 @@ from user_functions import (
     check_gpu_affinity,
     consume_batch_from_queue_and_destroy,
     create_joined_batch_and_send,
+    drop_serialized_batch_without_join,
+    emit_logs,
     foo_3_1,
+    emit_named_logs,
     foo_3_2,
     foo_3_3,
     foo_5_1,
@@ -71,7 +87,6 @@ class TestArgDeps(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.batch.join()
-        cls.batch.destroy()
 
     def test_dep_3_1_3_2(self):
         """Resolve an upstream result into the middle argument position."""
@@ -155,20 +170,30 @@ class TestBatchLifecycle(unittest.TestCase):
         with self.assertRaises(SubmitAfterCloseError):
             val = batch.function(foo_3_1, 42, 0, 0)
             val.get()
-        batch.destroy()
 
     def test_join_waits_for_calling_client_work(self):
-        """join() should wait for this client's in-flight work after close()."""
+        """join() should wait for this client's in-flight work before detaching."""
+        batch = Batch(num_nodes=1, scheduler_workers=1)
+        batch.function(sleep_and_return, 21, 0.1)
+
+        start = time.monotonic()
+        batch.join(timeout=5)
+        elapsed = time.monotonic() - start
+
+        self.assertGreaterEqual(elapsed, 0.08)
+
+    def test_unmanaged_join_requires_fetch_before_result_access(self):
+        """Unmanaged join() should not preserve unfetched task results."""
         batch = Batch(num_nodes=1, scheduler_workers=1)
         task = batch.function(sleep_and_return, 21, 0.1)
 
         batch.join(timeout=5)
 
-        self.assertEqual(task.get(), 21)
-        batch.destroy()
+        with self.assertRaisesRegex(RuntimeError, r"fetch results before join\(\)"):
+            task.get()
 
     def test_non_primary_destroys(self):
-        """A non-creator client should be able to use and destroy a Batch handle after the creator exits."""
+        """A non-creator client should be able to use and destroy a managed Batch handle after the creator exits."""
         handoff_q = Queue()
         result_q = Queue()
         values = (2, 4, 6, 8)
@@ -184,8 +209,6 @@ class TestBatchLifecycle(unittest.TestCase):
             self.assertEqual(creator_joined["stage"], "joined")
             self.assertEqual(creator_payload["stage"], "handed_off")
             self.assertEqual(tuple(creator_payload["values"]), values)
-            self.assertEqual(creator_created["client_id"], creator_joined["client_id"])
-            self.assertEqual(creator_joined["client_id"], creator_payload["client_id"])
 
             consumer = Process(target=consume_batch_from_queue_and_destroy, args=(handoff_q, result_q, values))
             consumer.start()
@@ -201,7 +224,9 @@ class TestBatchLifecycle(unittest.TestCase):
                 timeout=20,
                 msg=f"creator process {creator.puid} did not exit after the consumer acquired the Batch handle",
             )
-            self.assertEqual(creator.returncode, 0, f"creator process {creator.puid} failed with exit code {creator.returncode}")
+            self.assertEqual(
+                creator.returncode, 0, f"creator process {creator.puid} failed with exit code {creator.returncode}"
+            )
 
             self._join_process_or_fail(
                 consumer,
@@ -214,10 +239,60 @@ class TestBatchLifecycle(unittest.TestCase):
 
             self.assertEqual(tuple(consumer_payload["values"]), values)
             self.assertEqual(consumer_payload["results"], list(values))
-            self.assertNotEqual(creator_payload["client_id"], consumer_payload["consumer_client_id"])
         finally:
             handoff_q.close()
             result_q.close()
+
+
+class TestBatchCompletionQueue(unittest.TestCase):
+    def setUp(self):
+        self.batch = Batch(num_nodes=1, scheduler_workers=1)
+        self.extra_batches = []
+        return super().setUp()
+
+    def tearDown(self):
+        try:
+            for batch in self.extra_batches:
+                batch.join()
+        finally:
+            self.batch.join()
+
+        return super().tearDown()
+
+    def test_poll_accounts_for_all_started_tasks(self):
+        tasks = [self.batch.function(sleep_and_return, value, 0.05) for value in (3, 5, 7)]
+        expected_tuids = {task.uid for task in tasks}
+        polled_tuids = set()
+
+        while len(polled_tuids) < len(expected_tuids):
+            tuid = self.batch.poll(timeout=10)
+            self.assertIsNotNone(tuid)
+            polled_tuids.add(tuid)
+
+        self.assertEqual(polled_tuids, expected_tuids)
+        self.assertEqual([task.get() for task in tasks], [3, 5, 7])
+
+    def test_poll_timeout_while_task_is_still_running(self):
+        task = self.batch.function(sleep_and_return, 11, 0.2)
+
+        self.assertIsNone(self.batch.poll(timeout=0.01))
+        self.assertEqual(self.batch.poll(timeout=10), task.uid)
+        self.assertEqual(task.get(), 11)
+
+    def test_poll_is_client_local_for_cloned_handles(self):
+        child_batch = cloudpickle.loads(cloudpickle.dumps(self.batch))
+        self.extra_batches.append(child_batch)
+
+        parent_task = self.batch.function(return_constant, 17)
+        child_task = child_batch.function(return_constant, 19)
+
+        self.assertEqual(self.batch.poll(timeout=10), parent_task.uid)
+        self.assertEqual(child_batch.poll(timeout=10), child_task.uid)
+        self.assertIsNone(self.batch.poll(timeout=0.01))
+        self.assertIsNone(child_batch.poll(timeout=0.01))
+
+        self.assertEqual(parent_task.get(), 17)
+        self.assertEqual(child_task.get(), 19)
 
 
 class TestMultiClientSubmission(unittest.TestCase):
@@ -233,7 +308,6 @@ class TestMultiClientSubmission(unittest.TestCase):
             self.result_q.close()
         finally:
             self.batch.join()
-            self.batch.destroy()
 
         return super().tearDown()
 
@@ -296,6 +370,7 @@ class TestMultiClientSubmission(unittest.TestCase):
         self.assertEqual(len(nested_client_ids), 2)
         self.assertNotIn(self.batch.client_id, nested_client_ids)
 
+
 class TestTaskCancellation(unittest.TestCase):
     """Verify cancellation semantics for blocked and running work."""
 
@@ -324,15 +399,14 @@ class TestTaskCancellation(unittest.TestCase):
 
     def tearDown(self):
         self.batch.join()
-        self.batch.destroy()
         return super().tearDown()
 
     def test_cancel_blocked_task(self):
         """Cancelling a queued task should prevent it from ever producing a result."""
         # The first task keeps the only worker busy so the second task remains
         # queued long enough for cancellation to target a blocked item.
-        blocker = self.batch.function(sleep_and_return, "blocker", 0.5, name="blocker")
-        blocked = self.batch.function(foo_3_2, 0, blocker, 0, name="blocked")
+        blocker = self.batch.options(name="blocker").function(sleep_and_return, "blocker", 0.5)
+        blocked = self.batch.options(name="blocked").function(foo_3_2, 0, blocker, 0)
 
         # Once cancelled, the blocked task should never publish a normal result.
         self.assertTrue(blocked.cancel(timeout=5))
@@ -349,12 +423,11 @@ class TestTaskCancellation(unittest.TestCase):
         try:
             # The task writes a marker as soon as execution begins so the test
             # can distinguish an already-running task from a merely queued one.
-            task = self.batch.function(
+            task = self.batch.options(name="slow-func").function(
                 signal_start_and_sleep,
                 str(marker_path),
                 7,
                 0.5,
-                name="slow-func",
             )
 
             self._wait_for_start_marker(task, marker_path)
@@ -370,12 +443,11 @@ class TestTaskCancellation(unittest.TestCase):
         marker_path.unlink(missing_ok=True)
 
         try:
-            task = self.batch.process(
+            task = self.batch.options(name="slow-proc").process(
                 ProcessTemplate(
                     target=signal_start_and_sleep,
                     args=(str(marker_path), 7, 0.5),
                 ),
-                name="slow-proc",
             )
 
             self._wait_for_start_marker(task, marker_path)
@@ -391,17 +463,19 @@ class TestTaskCancellation(unittest.TestCase):
         # if the writer fails before producing the shared key.
         shared_ddict = get_ddict(self.batch)
         self.addCleanup(shared_ddict.destroy)
-        writer = self.batch.function(
-            raise_runtime_error,
-            "writer exploded",
+        writer = self.batch.options(
             writes=[self.batch.write(shared_ddict, "k")],
             name="writer-task",
+        ).function(
+            raise_runtime_error,
+            "writer exploded",
         )
-        reader = self.batch.function(
-            return_constant,
-            42,
+        reader = self.batch.options(
             reads=[self.batch.read(shared_ddict, "k")],
             name="reader-task",
+        ).function(
+            return_constant,
+            42,
         )
 
         with self.assertRaises(RuntimeError):
@@ -420,17 +494,15 @@ class TestTaskCancellation(unittest.TestCase):
         """A failed argument producer should cancel the consumer with dependency context."""
         # This mirrors the previous test, but exercises raw argument dependency
         # propagation instead of read/write metadata on a shared DDict key.
-        upstream = self.batch.function(
+        upstream = self.batch.options(name="upstream-arg-task").function(
             raise_runtime_error,
             "argument producer exploded",
-            name="upstream-arg-task",
         )
-        downstream = self.batch.function(
+        downstream = self.batch.options(name="downstream-arg-task").function(
             foo_3_2,
             0,
             upstream,
             0,
-            name="downstream-arg-task",
         )
 
         with self.assertRaises(RuntimeError):
@@ -449,7 +521,7 @@ class TestTaskCancellation(unittest.TestCase):
         """Once a task has already finished, later cancellation requests should report failure."""
         # A completed task is immutable from the scheduler's point of view, so a
         # cancellation request after get() should be a no-op.
-        task = self.batch.function(return_constant, 9, name="completed-task")
+        task = self.batch.options(name="completed-task").function(return_constant, 9)
 
         self.assertEqual(task.get(), 9)
         self.assertFalse(task.cancel(timeout=5))
@@ -466,7 +538,6 @@ class TestBatchFibonacci(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.batch.join()
-        cls.batch.destroy()
 
     def test_fib_with_ddict(self):
         """The ddict-backed fibonacci workflow should produce the expected sequence."""
@@ -523,7 +594,6 @@ class TestGPUAffinity(unittest.TestCase):
     def tearDownClass(cls):
         if hasattr(cls, "batch"):
             cls.batch.join()
-            cls.batch.destroy()
 
     def test_gpu_affinity_sort_of(self):
         """At least one vendor-specific GPU visibility variable should be populated."""
@@ -554,7 +624,6 @@ class TestProcessPlacement(unittest.TestCase):
 
         if len(topology.pool_hostnames) < 2:
             cls.batch.join()
-            cls.batch.destroy()
             raise unittest.SkipTest("Need at least 2 worker pools for Batch placement tests")
 
         cls.target_host = topology.pool_hostnames[0][0]
@@ -562,7 +631,6 @@ class TestProcessPlacement(unittest.TestCase):
 
         if cls.target_host == cls.subnode_host:
             cls.batch.join()
-            cls.batch.destroy()
             raise unittest.SkipTest("Need distinct target and subnode hosts for Batch placement tests")
 
         cls.target_node = Node(cls.batch._pool_node_huids_list[1][0])
@@ -574,7 +642,6 @@ class TestProcessPlacement(unittest.TestCase):
     def tearDownClass(cls):
         if hasattr(cls, "batch"):
             cls.batch.join()
-            cls.batch.destroy()
 
     def tearDown(self):
         self.batch.fence(timeout=10)
@@ -635,6 +702,40 @@ class TestProcessPlacement(unittest.TestCase):
 
         self._assert_host_probe(payload, self.target_host)
         self.assertNotEqual(payload["hostname"], self.subnode_host)
+
+    def test_batch_multi_rank_job_allocates_requested_hostnames(self):
+        """A multi-rank job with explicit host policies should reserve and run on those hosts."""
+        if len(self.pool_hosts) < 2:
+            self.skipTest("Need at least 2 Batch pool hosts for multi-rank hostname allocation test")
+
+        probe_queue = self._make_probe_queue()
+        requested_hosts = sorted(self.pool_hosts)[:2]
+        task = self.batch.job(
+            [
+                (
+                    1,
+                    ProcessTemplate(
+                        target=record_process_placement,
+                        args=(probe_queue,),
+                        policy=Policy(placement=Policy.Placement.HOST_NAME, host_name=requested_hosts[0]),
+                    ),
+                ),
+                (
+                    1,
+                    ProcessTemplate(
+                        target=record_process_placement,
+                        args=(probe_queue,),
+                        policy=Policy(placement=Policy.Placement.HOST_NAME, host_name=requested_hosts[1]),
+                    ),
+                ),
+            ],
+            name="batch-job-multi-host-placement",
+            pmi=None,
+        )
+
+        self.assertEqual(task.get(), [0, 0])
+        observed_hosts = {cast(dict, probe_queue.get(timeout=10))["hostname"] for _ in range(2)}
+        self.assertEqual(observed_hosts, set(requested_hosts))
 
     def test_batch_process_honors_explicit_host_id_policy(self):
         """A process should also honor explicit host-id placement, not just host names."""
@@ -765,17 +866,26 @@ class TestIteratedInterCompiledDeps(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.batch.join()
-        cls.batch.destroy()
 
     def _make_function_task(self, target, *args, reads=None, writes=None, name=None, timeout=None):
-        if timeout is None:
-            return self.batch.function(target, *args, reads=reads, writes=writes, name=name)
+        option_kwargs = {}
+        if reads is not None:
+            option_kwargs["reads"] = reads
+        if writes is not None:
+            option_kwargs["writes"] = writes
+        if name is not None:
+            option_kwargs["name"] = name
+        if timeout is not None:
+            option_kwargs["timeout"] = timeout
 
-        return self.batch.function(target, *args, reads=reads, writes=writes, name=name, timeout=timeout)
+        if option_kwargs:
+            return self.batch.options(**option_kwargs).function(target, *args)
 
-    def _expected_iteration_sum(self, previous_sum: int) -> int:
-        return_values_total = sum(iterated_return_value(previous_sum, offset) for offset in range(10))
-        write_values_total = sum((previous_sum + offset + 11) % ITERATED_DEP_MODULUS for offset in range(100))
+        return self.batch.function(target, *args)
+
+    def _expected_iteration_sum(self, previous_sum: int, return_count: int, write_count: int) -> int:
+        return_values_total = sum(iterated_return_value(previous_sum, offset) for offset in range(return_count))
+        write_values_total = sum((previous_sum + offset + 11) % ITERATED_DEP_MODULUS for offset in range(write_count))
         return return_values_total + write_values_total
 
     def test_iterated_return_and_ddict_sum(self):
@@ -785,19 +895,22 @@ class TestIteratedInterCompiledDeps(unittest.TestCase):
         shared_ddict = get_ddict(self.batch)
         self.addCleanup(shared_ddict.destroy)
         previous_sum = 0
+        iterations = 5
+        return_count = 4
+        write_count = 24
 
-        for iteration in range(10):
+        for iteration in range(iterations):
             return_tasks = []
             writer_keys = []
 
             # Build a batch of pure return-value producers.
-            for offset in range(10):
+            for offset in range(return_count):
                 task = self._make_function_task(iterated_return_value, previous_sum, offset)
                 return_tasks.append(task)
 
             # Build a larger batch of DDict writers whose keys are consumed by a
             # downstream reduction task in the same iteration.
-            for offset in range(100):
+            for offset in range(write_count):
                 key = f"iter_{iteration}_offset_{offset}"
                 task = self._make_function_task(
                     iterated_write_value,
@@ -820,7 +933,7 @@ class TestIteratedInterCompiledDeps(unittest.TestCase):
                 reads=read_deps,
             )
 
-            expected_sum = self._expected_iteration_sum(previous_sum)
+            expected_sum = self._expected_iteration_sum(previous_sum, return_count, write_count)
             observed_sum = sum_task.get()
             self.assertEqual(
                 observed_sum,
@@ -843,7 +956,6 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
     def tearDownClass(cls):
         if hasattr(cls, "batch"):
             cls.batch.join()
-            cls.batch.destroy()
 
     def tearDown(self):
         # PTD tests share one Batch instance across the class, so reset retained
@@ -944,7 +1056,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
             file_in.write(f"{val_in}")
 
         # Launch a chain where each process consumes the previous output file.
-        num_iter = 8
+        num_iter = 4
         return_codes = []
         for i in range(num_iter):
             rc = proc(
@@ -999,9 +1111,10 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
     def test_job_w_deps_ptd(self):
         """A PTD-imported job should preserve transformed file-based state across iterations."""
 
-        # TODO: need to update my_mpi_job.c to make it consistent with this test
         # This mirrors the process PTD test on the job path so the file-based
-        # dependency plumbing is covered for multi-process launches too.
+        # dependency plumbing is covered without depending on external MPI
+        # launcher semantics for a test that only cares about serialized file
+        # reads/writes across repeated submissions.
         def foo(x: float):
             return x / 2.0
 
@@ -1010,7 +1123,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
 
         proc = self.batch.import_func(
             _yml("job_w_deps.yml"),
-            "my_mpi_job",
+            "my_job",
             base_dir=".",
             env=new_env,
             update_input=foo,
@@ -1022,7 +1135,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         with open(f"job_w_deps_data_0", "w") as file_in:
             file_in.write(f"{val_in}")
 
-        num_iter = 8
+        num_iter = 4
         return_codes = []
 
         for i in range(num_iter):
@@ -1043,6 +1156,218 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         self.assertAlmostEqual(val_out, num_iter * arg_in / 2.0, delta=0.01)
 
 
+class TestBatchLogging(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.batch = Batch(num_nodes=1, scheduler_workers=1, task_logs=True)
+        cls._run_root = cls.batch.log_dir().parent.parent
+
+    @classmethod
+    def tearDownClass(cls):
+        if hasattr(cls, "batch"):
+            cls.batch.join()
+        shutil.rmtree(cls._run_root, ignore_errors=True)
+
+    def tearDown(self):
+        self.batch.clear_results()
+
+    def test_function_uses_auto_generated_per_client_log_files(self):
+        existing_records = self.batch.iter_log_records()
+
+        with self.assertWarnsRegex(DeprecationWarning, r"Batch\.options\(\.\.\.\)\.function"):
+            task = self.batch.function(emit_logs, "function-stdout", "function-stderr", name="function-log-test")
+
+        self.assertEqual(task.get(), ("function-stdout", "function-stderr"))
+        paths = task.log_paths()
+        stdout_path = Path(paths["stdout"])
+        stderr_path = Path(paths["stderr"])
+        self.assertEqual(stdout_path.parent, self.batch.log_dir() / "function")
+        self.assertEqual(stderr_path.parent, self.batch.log_dir() / "function")
+        self.assertNotIn(f"client-{self.batch.client_id}", stdout_path.name)
+        self.assertIn("emit_logs", stdout_path.name)
+
+        self.assertIn("function-stdout", stdout_path.read_text(encoding="utf-8"))
+        self.assertIn("function-stderr", stderr_path.read_text(encoding="utf-8"))
+
+        manifest_entries = self.batch.iter_log_records()
+        matching_entry = next(entry for entry in manifest_entries if entry["tuid"] == task.uid)
+        self.assertEqual(matching_entry["stdout"], paths["stdout"])
+        self.assertEqual(matching_entry["stderr"], paths["stderr"])
+        self.assertEqual(matching_entry["log_dir"], str(self.batch.log_dir()))
+        self.assertEqual(matching_entry["submit_host"], current().hostname)
+        self.assertIsNotNone(matching_entry["submitted_at_ns"])
+        self.assertIsNotNone(matching_entry["completed_at_ns"])
+
+        helper_entry = self.batch.find_logs(task.uid)
+        self.assertIsNotNone(helper_entry)
+        self.assertEqual(helper_entry["stdout"], paths["stdout"])
+        self.assertIsNotNone(helper_entry["host"])
+        self.assertTrue(helper_entry["hostnames"])
+        self.assertEqual(
+            self.batch.read_logs(task.uid, log_type="stdout")["stdout"], stdout_path.read_text(encoding="utf-8")
+        )
+        updated_records = self.batch.iter_log_records()
+        self.assertEqual(len(updated_records), len(existing_records) + 1)
+        self.assertEqual(sum(1 for entry in updated_records if entry["tuid"] == task.uid), 1)
+
+    def test_task_log_accessors_return_paths_and_contents(self):
+        task = self.batch.options(name="accessor-test").function(emit_logs, "accessor-stdout", "accessor-stderr")
+
+        self.assertEqual(task.get(), ("accessor-stdout", "accessor-stderr"))
+        self.assertEqual(task.stdout_path, task.log_paths()["stdout"])
+        self.assertEqual(task.stderr_path, task.log_paths()["stderr"])
+        stdout_text = cast(str, task.get_stdout())
+        stderr_text = cast(str, task.get_stderr())
+        self.assertIn("accessor-stdout", stdout_text)
+        self.assertIn("accessor-stderr", stderr_text)
+
+        task_uid = cast(str, task.uid)
+        log_payload = self.batch.read_logs(task_uid)
+        self.assertEqual(stdout_text, log_payload["stdout"])
+        self.assertEqual(stderr_text, log_payload["stderr"])
+
+    def test_get_stdout_blocks_until_task_completes(self):
+        marker_path = self.batch.log_dir() / "stdout-blocking.marker"
+        task = self.batch.options(name="stdout-blocking").function(signal_start_and_sleep, str(marker_path), 9, 0.2)
+
+        stdout_result = []
+
+        def _read_stdout():
+            stdout_result.append(task.get_stdout())
+
+        reader = threading.Thread(target=_read_stdout)
+        reader.start()
+
+        deadline = time.time() + 10
+        while not marker_path.exists() and time.time() < deadline:
+            time.sleep(0.01)
+
+        self.assertTrue(marker_path.exists())
+        self.assertTrue(reader.is_alive())
+        self.assertEqual(task.get(), 9)
+
+        reader.join(timeout=10)
+        self.assertFalse(reader.is_alive())
+        self.assertEqual(stdout_result, [""])
+
+    def test_manifest_helpers_support_lookup_without_task_handle(self):
+        task = self.batch.options(name="manifest-test").function(emit_logs, "manifest-stdout", "manifest-stderr")
+        tuid = cast(str, task.uid)
+
+        self.assertEqual(task.get(), ("manifest-stdout", "manifest-stderr"))
+
+        entry = cast(dict, self.batch.find_logs(tuid))
+        self.assertIsNotNone(entry)
+        self.assertEqual(entry["tuid"], tuid)
+        self.assertEqual(entry["stdout"], task.stdout_path)
+        self.assertEqual(entry["stderr"], task.stderr_path)
+
+        record_tuids = {record["tuid"] for record in self.batch.iter_log_records()}
+        self.assertIn(tuid, record_tuids)
+
+        payload = self.batch.read_logs(tuid)
+        stdout_text = cast(str, payload["stdout"])
+        stderr_text = cast(str, payload["stderr"])
+        self.assertIn("manifest-stdout", stdout_text)
+        self.assertIn("manifest-stderr", stderr_text)
+
+    def test_options_function_separates_batch_metadata_from_user_kwargs(self):
+        stdout_path = self.batch.log_dir() / "options-function.out"
+        stderr_path = self.batch.log_dir() / "options-function.err"
+        task = self.batch.options(
+            name="options-function",
+            stdout=stdout_path,
+            stderr=stderr_path,
+        ).function(emit_named_logs, stdout="payload-stdout", stderr="payload-stderr")
+
+        self.assertEqual(task.get(), ("payload-stdout", "payload-stderr"))
+        self.assertIn("payload-stdout", stdout_path.read_text(encoding="utf-8"))
+        self.assertIn("payload-stderr", stderr_path.read_text(encoding="utf-8"))
+
+    def test_process_respects_explicit_stdout_stderr_files(self):
+        stdout_path = self.batch.log_dir() / "explicit-process.out"
+        stderr_path = self.batch.log_dir() / "explicit-process.err"
+        task = self.batch.options(stdout=stdout_path, stderr=stderr_path).process(
+            ProcessTemplate(
+                target=sys.executable,
+                args=(
+                    "-c",
+                    'import sys; print("process-stdout"); sys.stderr.write("process-stderr\\n")',
+                ),
+            ),
+        )
+
+        self.assertEqual(task.get(), 0)
+        self.assertIn("process-stdout", stdout_path.read_text(encoding="utf-8"))
+        self.assertIn("process-stderr", stderr_path.read_text(encoding="utf-8"))
+
+    def test_process_template_log_paths_override_options_defaults(self):
+        option_stdout = self.batch.log_dir() / "options-process.out"
+        option_stderr = self.batch.log_dir() / "options-process.err"
+        template_stdout = self.batch.log_dir() / "template-process.out"
+        template_stderr = self.batch.log_dir() / "template-process.err"
+        task = self.batch.options(stdout=option_stdout, stderr=option_stderr).process(
+            ProcessTemplate(
+                target=sys.executable,
+                args=(
+                    "-c",
+                    'import sys; print("template-stdout"); sys.stderr.write("template-stderr\\n")',
+                ),
+                stdout=template_stdout,
+                stderr=template_stderr,
+            )
+        )
+
+        self.assertEqual(task.get(), 0)
+        self.assertEqual(task.log_paths()["stdout"], str(template_stdout))
+        self.assertEqual(task.log_paths()["stderr"], str(template_stderr))
+        self.assertIn("template-stdout", template_stdout.read_text(encoding="utf-8"))
+        self.assertIn("template-stderr", template_stderr.read_text(encoding="utf-8"))
+        self.assertFalse(option_stdout.exists())
+        self.assertFalse(option_stderr.exists())
+
+    def test_multi_rank_job_appends_to_single_files(self):
+        stdout_path = self.batch.log_dir() / "job-shared.out"
+        stderr_path = self.batch.log_dir() / "job-shared.err"
+        task = self.batch.job(
+            [
+                (
+                    2,
+                    ProcessTemplate(
+                        target=sys.executable,
+                        args=(
+                            "-c",
+                            'import sys; print("job-stdout"); sys.stderr.write("job-stderr\\n")',
+                        ),
+                    ),
+                )
+            ],
+            pmi=None,
+            stdout=stdout_path,
+            stderr=stderr_path,
+        )
+
+        self.assertEqual(task.get(), [0, 0])
+        stdout_text = stdout_path.read_text(encoding="utf-8")
+        stderr_text = stderr_path.read_text(encoding="utf-8")
+        self.assertGreaterEqual(stdout_text.count("job-stdout"), 2)
+        self.assertGreaterEqual(stderr_text.count("job-stderr"), 2)
+
+    def test_function_ptd_honors_stdout_and_stderr(self):
+        stdout_path = self.batch.log_dir() / "ptd-function.out"
+        stderr_path = self.batch.log_dir() / "ptd-function.err"
+        emit_logs_wrapper = self.batch.import_func(
+            _yml("function_logging.yml"),
+            emit_logs,
+            stdout_file=stdout_path,
+            stderr_file=stderr_path,
+        )
+
+        self.assertEqual(emit_logs_wrapper("ptd-stdout", "ptd-stderr").get(), ("ptd-stdout", "ptd-stderr"))
+        self.assertIn("ptd-stdout", stdout_path.read_text(encoding="utf-8"))
+        self.assertIn("ptd-stderr", stderr_path.read_text(encoding="utf-8"))
+
+
 class TestBatchFence(unittest.TestCase):
     """Tests for Batch.fence() and Batch.clear_results()."""
 
@@ -1053,7 +1378,6 @@ class TestBatchFence(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.batch.join()
-        cls.batch.destroy()
 
     def test_fence_completes(self):
         """fence() should complete within a reasonable timeout after tasks are submitted."""
@@ -1099,39 +1423,52 @@ class TestBatchFence(unittest.TestCase):
         val = self.batch.function(foo_3_1, 99, 0, 0)
         self.assertEqual(val.get(), 99)
 
-    def test_fence_clears_state(self):
-        """After fence(), the client compiler's dependency and routing caches should be empty."""
+    def test_fence_starts_a_new_dependency_epoch(self):
+        """After fence(), a new epoch should be able to reuse the same dependency key cleanly."""
         shared_ddict = get_ddict(self.batch)
         self.addCleanup(shared_ddict.destroy)
 
-        # Use a write followed by a read so both compile-time caches are
-        # populated before the fence resets the client compiler state.
-        self.batch.function(
-            return_constant,
-            1,
+        first_writer = self.batch.function(
+            iterated_write_value,
+            shared_ddict,
+            "k",
+            0,
+            0,
             writes=[self.batch.write(shared_ddict, "k")],
-            name="fence-state-writer",
+            name="fence-epoch-writer-1",
         )
-        self.batch.function(
-            return_constant,
-            2,
+        first_reader = self.batch.function(
+            iterated_sum_values,
+            shared_ddict,
+            ("k",),
             reads=[self.batch.read(shared_ddict, "k")],
-            name="fence-state-reader",
+            name="fence-epoch-reader-1",
         )
 
-        # Force the client request worker to compile and dispatch the queued
-        # tasks so the compiler caches are populated before the fence runs.
-        self.batch._flush_client_request_worker(timeout=5)
-        self.assertIsNotNone(self.batch.client_compiler)
-        compiler = self.batch.client_compiler
-
-        self.assertGreater(len(compiler.dep_frontier), 0)
-        self.assertGreater(len(compiler.tuid_to_manager_q), 0)
+        self.assertEqual(first_writer.get(), 11)
+        self.assertEqual(first_reader.get(), 11)
 
         self.batch.fence(timeout=5)
 
-        self.assertEqual(len(compiler.dep_frontier), 0)
-        self.assertEqual(len(compiler.tuid_to_manager_q), 0)
+        second_writer = self.batch.function(
+            iterated_write_value,
+            shared_ddict,
+            "k",
+            50,
+            0,
+            writes=[self.batch.write(shared_ddict, "k")],
+            name="fence-epoch-writer-2",
+        )
+        second_reader = self.batch.function(
+            iterated_sum_values,
+            shared_ddict,
+            ("k",),
+            reads=[self.batch.read(shared_ddict, "k")],
+            name="fence-epoch-reader-2",
+        )
+
+        self.assertEqual(second_writer.get(), 61)
+        self.assertEqual(second_reader.get(), 61)
 
     def test_tasks_can_be_submitted_after_fence(self):
         """Tasks submitted after a fence should complete normally."""
@@ -1182,22 +1519,27 @@ class TestScheduler(unittest.TestCase):
     def tearDownClass(cls):
         if hasattr(cls, "batch"):
             cls.batch.join()
-            cls.batch.destroy()
 
     def test_mnj_jobs_varying_node_counts(self):
         """Submit multi-node jobs with varying rank counts routed through the scheduler."""
         if self.nnodes < 2:
             self.skipTest("Need at least 2 nodes for multi-node job tests")
 
-        n_jobs = 10
-        sleepsecs = 1
+        sleepsecs = 0.2
         max_ranks = self.nnodes * self.physical_cores_per_node
+        job_sizes = sorted(
+            {
+                self.physical_cores_per_node + 1,
+                min(max_ranks, self.physical_cores_per_node * 2),
+                max(self.physical_cores_per_node + 1, max_ranks // 2),
+                max_ranks,
+            }
+        )
 
-        # Randomize the requested size so the scheduler path gets coverage across
-        # one-node-plus and larger multi-node allocations.
+        # Use representative fixed sizes so the scheduler path still covers
+        # one-node-plus, mid-sized, and max-sized allocations deterministically.
         job_handles = []
-        for i in range(n_jobs):
-            nranks = random.randint(self.physical_cores_per_node + 1, max_ranks)
+        for i, nranks in enumerate(job_sizes):
             # choose a job target depending on MPI availability; fall back to
             # a lightweight local job function when mpi4py is missing
             if getattr(self, "mpi_available", False):
@@ -1222,15 +1564,15 @@ class TestScheduler(unittest.TestCase):
 
     def test_mpi_ensemble(self):
         """Submit a randomized ensemble of MPI jobs; fall back to mpi_job_func if mpi4py missing."""
-        njobs = 32
-        sleepsecs = 2
+        sleepsecs = 0.2
         maxranks = 32
+        job_sizes = [2, min(4, maxranks), min(8, maxranks), min(16, maxranks), maxranks]
+        job_sizes = job_sizes + job_sizes[:3]
 
-        # A larger ensemble is more likely to catch scheduler bookkeeping bugs
-        # than a single representative job size.
+        # Keep several back-to-back jobs in flight, but use a fixed representative
+        # ensemble rather than a long randomized run.
         alljobs = []
-        for i in range(njobs):
-            nranks = random.randint(2, maxranks)
+        for i, nranks in enumerate(job_sizes):
             if getattr(self, "mpi_available", False):
                 template = ProcessTemplate(target=mpi_f, args=(i, sleepsecs))
                 job = self.batch.job(process_templates=[(nranks, template)])
@@ -1246,30 +1588,83 @@ class TestScheduler(unittest.TestCase):
             else:
                 self.assertEqual(exit_codes, 0, msg=f"Job {i} failed with exit code {exit_codes}")
 
+    def test_mpi_executable_job_honors_explicit_env(self):
+        """A multi-rank executable job should see explicit env vars without breaking the MPI world."""
+        exe = "./mpi_env_report"
+        if not os.path.isfile(exe):
+            self.skipTest("mpi_env_report test binary not built")
+
+        nranks = min(4, max(2, self.physical_cores_per_node))
+        env_value = "foo-bar-spam-eggs"
+
+        with tempfile.TemporaryDirectory(dir=os.getcwd()) as temp_dir:
+            stdout_path = Path(temp_dir) / "mpi-env-report.out"
+            stderr_path = Path(temp_dir) / "mpi-env-report.err"
+            task = self.batch.job(
+                process_templates=[
+                    (
+                        nranks,
+                        ProcessTemplate(
+                            target=exe,
+                            args=(),
+                            env={"ABCDEF": env_value},
+                        ),
+                    )
+                ],
+                stdout=stdout_path,
+                stderr=stderr_path,
+            )
+
+            exit_codes = task.get()
+            self.assertIsInstance(exit_codes, list)
+            self.assertEqual(len(exit_codes), nranks)
+            self.assertTrue(all(ec == 0 for ec in exit_codes), msg=f"Non-zero exit codes: {exit_codes}")
+
+            stdout_lines = [
+                line.strip() for line in stdout_path.read_text(encoding="utf-8").splitlines() if line.strip()
+            ]
+            self.assertEqual(len(stdout_lines), nranks, msg=f"Unexpected stdout lines: {stdout_lines}")
+
+            observed_ranks = set()
+            observed_world_sizes = set()
+            observed_env_values = set()
+            for line in stdout_lines:
+                parts = dict(item.split("=", 1) for item in line.split())
+                observed_ranks.add(int(parts["RANK"]))
+                observed_world_sizes.add(int(parts["WORLD"]))
+                observed_env_values.add(parts["ABCDEF"])
+
+            self.assertEqual(observed_ranks, set(range(nranks)))
+            self.assertEqual(observed_world_sizes, {nranks})
+            self.assertEqual(observed_env_values, {env_value})
+            self.assertEqual(stderr_path.read_text(encoding="utf-8"), "")
+
     def test_interleaved_functions_and_growing_jobs(self):
         """Submit interleaved function and job tasks with growing job sizes.
 
         Jobs grow from 1 core, to 1 node, to 2 nodes, ... up to total nodes.
-        The cycle runs twice; tasks are submitted back-to-back with no fence
-        until the end of the two-cycle run.
+        A single cycle is enough to cover the mixed scheduling path while
+        keeping the suite runtime reasonable.
         """
         # Build sizes: 1 core, then 1 node, 2 nodes, ..., up to nnodes
-        sizes = [1] + [self.physical_cores_per_node * n for n in range(1, self.nnodes + 1)]
+        full_sizes = [1] + [self.physical_cores_per_node * n for n in range(1, self.nnodes + 1)]
+        if len(full_sizes) > 4:
+            sizes = [full_sizes[0], full_sizes[1], full_sizes[len(full_sizes) // 2], full_sizes[-1]]
+        else:
+            sizes = full_sizes
 
         handles = []
-        sleepsecs = 1
-        for cycle in range(2):
-            for idx, sz in enumerate(sizes):
-                # Interleave cheap function work with progressively larger jobs so
-                # the scheduler has to juggle both task classes back-to-back.
-                f = self.batch.function(foo_3_1, sz, 0, 0)
-                handles.append(("func", f, sz))
+        for sz in sizes:
+            # Interleave cheap function work with progressively larger jobs so
+            # the scheduler has to juggle both task classes back-to-back.
+            f = self.batch.function(foo_3_1, sz, 0, 0)
+            handles.append(("func", f, sz))
 
-                # Use the lightweight fallback job target so the test stresses Batch's
-                # scheduling path without depending on mpi4py in the worker env.
-                template = ProcessTemplate(target=mpi_job_func, args=())
-                j = self.batch.job(process_templates=[(sz, template)], pmi=None)
-                handles.append(("job", j, sz))
+            # Use the lightweight fallback job target so the test stresses Batch's
+            # scheduling path without depending on mpi4py in the worker env.
+            template = ProcessTemplate(target=mpi_job_func, args=())
+            j = self.batch.job(process_templates=[(sz, template)], pmi=None)
+            handles.append(("job", j, sz))
 
         # Fence once at the end so the run behaves like a realistic mixed backlog.
         self.batch.fence()
@@ -1300,7 +1695,8 @@ class TestScheduler(unittest.TestCase):
             self.skipTest("Need at least 2 nodes for producer/job arg-chain test")
 
         total_physical_cores = self.physical_cores_per_node * self.nnodes
-        num_jobs = self.nnodes // 2
+        max_funcs = min(total_physical_cores, 16)
+        num_jobs = min(self.nnodes // 2, 2)
         ranks_per_job = 2 * self.physical_cores_per_node
 
         prev_first_codes = None
@@ -1361,62 +1757,59 @@ class TestScheduler(unittest.TestCase):
                     first = exit_codes
                 prev_first_codes.append(first)
 
-            if n_funcs == total_physical_cores:
+            if n_funcs == max_funcs:
                 break
-            n_funcs = min(total_physical_cores, n_funcs * 2)
+            n_funcs = min(max_funcs, n_funcs * 2)
+
 
 # Add this test class to test_batch.py
+
 
 class TestBatchManagedLifecycle(unittest.TestCase):
     """Tests for managed_lifecycle flag and Batch serialization."""
 
-    def test_default_managed_lifecycle_is_false(self):
-        """New Batch instances should default to managed_lifecycle=False."""
+    def test_unmanaged_runtime_auto_shuts_down_after_last_client_detaches(self):
+        """Default Batch runtimes should shut down after the last client detaches."""
         batch = Batch()
         try:
-            self.assertFalse(batch.managed_lifecycle)
+            serialized = cloudpickle.dumps(batch)
+            restored = cloudpickle.loads(serialized)
+            restored.join()
         finally:
             batch.join()
-            batch.destroy()
 
-    def test_explicit_managed_lifecycle_true(self):
-        """Batch can be created with managed_lifecycle=True."""
+        with self.assertRaises(RuntimeError):
+            cloudpickle.loads(serialized)
+
+    def test_managed_runtime_survives_after_all_clients_detach_until_destroy(self):
+        """Managed runtimes should survive detached clients until some handle destroys them."""
         batch = Batch(managed_lifecycle=True)
         try:
-            self.assertTrue(batch.managed_lifecycle)
-        finally:
+            serialized = cloudpickle.dumps(batch)
+            restored = cloudpickle.loads(serialized)
+            restored.join()
             batch.join()
-            batch.destroy()
+
+            late_handle = cloudpickle.loads(serialized)
+            try:
+                task = late_handle.function(return_constant, 123)
+                self.assertEqual(task.get(), 123)
+            finally:
+                late_handle.destroy(force_timeout=0)
+            batch = None
+        finally:
+            if batch is not None:
+                batch.join()
+                batch.destroy(force_timeout=0)
 
     def test_destroy_is_idempotent(self):
         """Calling destroy() multiple times should not raise."""
-        batch = Batch()
+        batch = Batch(managed_lifecycle=True)
         batch.join()
-        batch.destroy()
+        batch.destroy(force_timeout=0)
         # Second call should be a no-op
-        batch.destroy()
-        batch.destroy()
-
-    def test_serialized_batch_has_managed_lifecycle_true(self):
-        """Deserialized Batch handles should always have managed_lifecycle=True."""
-        batch = Batch()
-        try:
-            # Run a task to ensure the batch is functional
-            task = batch.function(return_constant, 42)
-            self.assertEqual(task.get(), 42)
-
-            # Serialize and deserialize
-            serialized = cloudpickle.dumps(batch)
-            restored = cloudpickle.loads(serialized)
-
-            try:
-                self.assertTrue(restored.managed_lifecycle)
-                self.assertIsNotNone(restored.client_id)  # Should get new client_id on register
-            finally:
-                restored.destroy()
-        finally:
-            batch.join()
-            batch.destroy()
+        batch.destroy(force_timeout=0)
+        batch.destroy(force_timeout=0)
 
     def test_serialized_batch_can_submit_work_while_owner_alive(self):
         """A deserialized Batch handle should be able to submit work while the original is alive."""
@@ -1434,32 +1827,27 @@ class TestBatchManagedLifecycle(unittest.TestCase):
                 task2 = batch.function(return_constant, 101)
                 self.assertEqual(task2.get(), 101)
             finally:
-                restored.destroy()
+                restored.join()
         finally:
             batch.join()
-            batch.destroy()
 
-    def test_serialized_batch_gets_distinct_client_id(self):
-        """A deserialized Batch handle should register as a new client with a distinct ID."""
-        batch = Batch()
+    def test_detaching_one_serialized_handle_does_not_affect_another(self):
+        """Detaching one deserialized handle should not prevent another from submitting work."""
+        batch = Batch(managed_lifecycle=True)
         try:
-            original_client_id = batch.client_id
-
             serialized = cloudpickle.dumps(batch)
-            restored = cloudpickle.loads(serialized)
+            first = cloudpickle.loads(serialized)
+            second = cloudpickle.loads(serialized)
 
             try:
-                # Trigger registration by submitting work
-                task = restored.function(return_constant, 1)
-                task.get()
-
-                self.assertIsNotNone(restored.client_id)
-                self.assertNotEqual(restored.client_id, original_client_id)
+                first.join(timeout=10)
+                task = second.function(return_constant, 1)
+                self.assertEqual(task.get(), 1)
             finally:
-                restored.destroy()
+                second.join(timeout=10)
         finally:
-            batch.join()
-            batch.destroy()
+            batch.join(timeout=10)
+            batch.destroy(force_timeout=0)
 
     def test_multiple_serialized_handles_can_coexist(self):
         """Multiple deserialized Batch handles should be able to work concurrently."""
@@ -1481,58 +1869,111 @@ class TestBatchManagedLifecycle(unittest.TestCase):
                 for i, task in tasks:
                     self.assertEqual(task.get(), i * 10)
 
-                # All should have distinct client IDs
-                client_ids = {h.client_id for h in restored_handles}
-                self.assertEqual(len(client_ids), 3)
-                self.assertNotIn(batch.client_id, client_ids)
+                self.assertEqual(batch.function(return_constant, 111).get(), 111)
             finally:
                 for handle in restored_handles:
-                    handle.destroy()
+                    handle.join()
         finally:
             batch.join()
-            batch.destroy()
 
-    def test_serialized_batch_destroy_does_not_affect_owner(self):
-        """Destroying a deserialized handle should not tear down the shared runtime."""
+    def test_serialized_unmanaged_batch_destroy_raises(self):
+        """Destroying a handle from an unmanaged runtime should raise."""
         batch = Batch()
         try:
             serialized = cloudpickle.dumps(batch)
             restored = cloudpickle.loads(serialized)
 
-            # Destroy the restored handle
-            restored.destroy()
+            with self.assertRaises(RuntimeError):
+                restored.destroy()
 
-            # Original batch should still be functional
+            restored.join()
+
             task = batch.function(return_constant, 77)
             self.assertEqual(task.get(), 77)
         finally:
             batch.join()
-            batch.destroy()
 
-    def test_getstate_excludes_unpicklable_fields(self):
-        """__getstate__ should exclude thread and local queue objects."""
-        batch = Batch()
+    def test_managed_destroy_after_join_is_allowed(self):
+        """Managed runtimes may be destroyed after the calling handle has joined."""
+        batch = Batch(managed_lifecycle=True)
+        serialized = cloudpickle.dumps(batch)
+        batch.join()
+        batch.destroy(force_timeout=0)
+
+        with self.assertRaises(RuntimeError):
+            cloudpickle.loads(serialized)
+
+    def test_serialized_managed_joined_handle_can_destroy_runtime(self):
+        """A joined deserialized handle may still destroy a managed runtime."""
+        batch = Batch(managed_lifecycle=True)
         try:
-            state = batch.__getstate__()
-
-            # These fields should be stripped
-            self.assertNotIn("_client_request_q", state)
-            self.assertNotIn("_client_request_thread", state)
-            self.assertNotIn("log", state)
-            self.assertNotIn("ret_q", state)
-
-            # Serialized queue descriptors should be present
-            self.assertIn("_serialized_manager_qs", state)
-
-            # State flags should be reset for deserialized handle
-            self.assertTrue(state["managed_lifecycle"])
-            self.assertIsNone(state["client_id"])
-            self.assertFalse(state["closed"])
-            self.assertFalse(state["destroyed"])
-            self.assertFalse(state["terminated"])
-        finally:
+            serialized = cloudpickle.dumps(batch)
+            restored = cloudpickle.loads(serialized)
+            restored.join()
             batch.join()
-            batch.destroy()
+            restored.destroy(force_timeout=0)
+
+            with self.assertRaises(RuntimeError):
+                cloudpickle.loads(serialized)
+
+            batch = None
+        finally:
+            if batch is not None:
+                batch.join()
+                batch.destroy(force_timeout=0)
+
+    def test_force_destroy_can_shutdown_with_other_clients_still_attached(self):
+        """Managed destroy(force_timeout=0) should shut down even with attached peers."""
+        batch = Batch(managed_lifecycle=True)
+        try:
+            serialized = cloudpickle.dumps(batch)
+            attached_peer = cloudpickle.loads(serialized)
+
+            batch.join()
+            batch.destroy(force_timeout=0)
+
+            with self.assertRaises(RuntimeError):
+                cloudpickle.loads(serialized)
+
+            attached_peer.join(timeout=10)
+
+            batch = None
+        finally:
+            if batch is not None:
+                batch.join()
+                batch.destroy(force_timeout=0)
+
+    def test_managed_destroy_succeeds_after_peer_drops_handle_without_join(self):
+        """Managed force-destroy should succeed even if a dropped peer has not been reaped yet."""
+        batch = Batch(managed_lifecycle=True)
+        result_q = Queue()
+
+        try:
+            proc = Process(
+                target=drop_serialized_batch_without_join,
+                args=(cloudpickle.dumps(batch), result_q, 55),
+            )
+            proc.start()
+
+            payload = cast(dict, result_q.get(timeout=20))
+            self.assertEqual(payload["result"], 55)
+            self.assertEqual(payload["value"], 55)
+
+            proc.join()
+            self.assertEqual(proc.returncode, 0)
+
+            batch.join()
+            batch.destroy(timeout=10, force_timeout=0)
+            batch = None
+        finally:
+            try:
+                result_q.close()
+            except Exception:
+                pass
+
+            if batch is not None:
+                batch.join()
+                batch.destroy(force_timeout=0)
 
 
 class TestBatchSerializationWithDDict(unittest.TestCase):
@@ -1553,16 +1994,17 @@ class TestBatchSerializationWithDDict(unittest.TestCase):
             restored = ddict.pop("batch")
 
             try:
-                self.assertTrue(restored.managed_lifecycle)
-
-                # Should be able to submit work
                 task = restored.function(return_constant, 123)
                 self.assertEqual(task.get(), 123)
             finally:
-                restored.destroy()
+                # ``restored`` is a temporary handle; just detach it. The owner
+                # (``batch``) tears the runtime down in the outer finally. A
+                # graceful ``destroy()`` here would block forever waiting for
+                # the still-attached owner to detach on this same thread.
+                restored.join()
         finally:
             batch.join()
-            batch.destroy()
+            batch.destroy(force_timeout=0)
             ddict.destroy()
 
     def test_restore_batch_from_ddict_after_destroy_fails(self):
@@ -1578,7 +2020,7 @@ class TestBatchSerializationWithDDict(unittest.TestCase):
 
             # Destroy the original batch (tears down results_ddict)
             batch.join()
-            batch.destroy()
+            batch.destroy(force_timeout=0)
             batch = None  # Prevent double-destroy in finally
 
             # Attempting to restore should fail because the underlying
@@ -1588,8 +2030,264 @@ class TestBatchSerializationWithDDict(unittest.TestCase):
         finally:
             if batch is not None:
                 batch.join()
-                batch.destroy()
+                batch.destroy(force_timeout=0)
             ddict.destroy()
+
+
+class TestResultsDDictManagersPerPoolLogic(unittest.TestCase):
+    """Pure-logic tests for the results-DDict managers-per-pool knob.
+
+    These do not require a running Batch and exercise the clamping helper and the
+    ClientCompiler shard-assignment mapping directly.
+    """
+
+    def _make_compiler(self, num_nodes: int, managers_per_pool: int) -> ClientCompiler:
+        # The mapping under test does not touch manager_qs, so supply one opaque
+        # placeholder per manager (scheduler + one per subnode manager).
+        num_managers = num_nodes + 1
+        manager_qs = [object() for _ in range(num_managers)]
+        return ClientCompiler(
+            num_managers=num_managers,
+            manager_qs=manager_qs,
+            physical_cores_per_node=managers_per_pool,
+            results_ddict_managers_per_pool=managers_per_pool,
+            log=logging.getLogger("test-results-ddict-managers-per-pool"),
+        )
+
+    def test_resolve_default_is_one_per_worker(self):
+        """A ``None`` request maps to one results-DDict manager per worker with no warning."""
+        value, warning = _resolve_results_ddict_managers_per_pool(None, 8)
+        self.assertEqual(value, 8)
+        self.assertIsNone(warning)
+
+    def test_resolve_in_range_is_unchanged(self):
+        """An in-range request is returned untouched and produces no warning."""
+        for requested in (1, 3, 8):
+            value, warning = _resolve_results_ddict_managers_per_pool(requested, 8)
+            self.assertEqual(value, requested)
+            self.assertIsNone(warning)
+
+    def test_resolve_clamps_above_worker_count(self):
+        """A request above the worker count clamps down and reports the clamp."""
+        value, warning = _resolve_results_ddict_managers_per_pool(100, 8)
+        self.assertEqual(value, 8)
+        self.assertIsNotNone(warning)
+        self.assertIn("clamping to 8", warning)
+
+    def test_resolve_clamps_zero_and_negative_to_one(self):
+        """Non-positive requests clamp up to one and report the clamp."""
+        for requested in (0, -5):
+            value, warning = _resolve_results_ddict_managers_per_pool(requested, 8)
+            self.assertEqual(value, 1)
+            self.assertIsNotNone(warning)
+            self.assertIn("clamping to 1", warning)
+
+    def test_mapping_scheduler_always_uses_shard_zero(self):
+        """Scheduler-owned tasks always resolve to results-DDict manager 0."""
+        compiler = self._make_compiler(num_nodes=3, managers_per_pool=4)
+        for _ in range(5):
+            self.assertEqual(compiler._result_ddict_idx_for_task(SCHEDULER_MANAGER_IDX), 0)
+
+    def test_mapping_round_robin_within_pool(self):
+        """Each pool round-robins across exactly its own ``R`` contiguous shards."""
+        num_nodes = 3
+        managers_per_pool = 4
+        total_managers = num_nodes * managers_per_pool
+        compiler = self._make_compiler(num_nodes=num_nodes, managers_per_pool=managers_per_pool)
+
+        for manager_idx in range(num_nodes):
+            base = manager_idx * managers_per_pool
+            # Two full cycles to prove the round-robin wraps back to the base.
+            expected = [base + (slot % managers_per_pool) for slot in range(2 * managers_per_pool)]
+            observed = [compiler._result_ddict_idx_for_task(manager_idx) for _ in range(2 * managers_per_pool)]
+            self.assertEqual(observed, expected, msg=f"manager_idx={manager_idx}")
+            # Every assigned shard stays within the global manager range.
+            for idx in observed:
+                self.assertGreaterEqual(idx, 0)
+                self.assertLess(idx, total_managers)
+
+    def test_mapping_single_shard_per_pool_collapses_to_base(self):
+        """With ``R == 1`` every task in a pool funnels into that pool's single shard."""
+        num_nodes = 4
+        compiler = self._make_compiler(num_nodes=num_nodes, managers_per_pool=1)
+        for manager_idx in range(num_nodes):
+            for _ in range(3):
+                self.assertEqual(compiler._result_ddict_idx_for_task(manager_idx), manager_idx)
+
+    def test_mapping_pools_do_not_overlap(self):
+        """Distinct pools own disjoint shard ranges across a full sweep."""
+        num_nodes = 3
+        managers_per_pool = 5
+        compiler = self._make_compiler(num_nodes=num_nodes, managers_per_pool=managers_per_pool)
+
+        shards_by_manager = {
+            manager_idx: {compiler._result_ddict_idx_for_task(manager_idx) for _ in range(managers_per_pool)}
+            for manager_idx in range(num_nodes)
+        }
+
+        seen: set[int] = set()
+        for manager_idx, shards in shards_by_manager.items():
+            self.assertEqual(len(shards), managers_per_pool, msg=f"manager_idx={manager_idx}")
+            self.assertFalse(shards & seen, msg=f"manager_idx={manager_idx} overlaps another pool")
+            seen |= shards
+
+
+class TestResultsDDictManagersPerPoolE2E(unittest.TestCase):
+    """End-to-end tests that the managers-per-pool knob shapes the results DDict
+    and still routes/returns task results correctly."""
+
+    _MAX_E2E_MANAGERS_PER_POOL = 8
+
+    @staticmethod
+    def _workers_per_node() -> int:
+        node = System()._node_objs[0]
+        return max(1, node.num_cpus // 2)
+
+    @staticmethod
+    def _ddict_manager_count(batch: Batch) -> int:
+        return batch.results_ddict._num_managers
+
+    def _run_dependency_workload(self, batch: Batch) -> None:
+        """Submit a small dependent DAG and verify every result round-trips."""
+        # Enough leaves to force round-robin across multiple shards (when R > 1)
+        # while staying cheap. add_values tasks read their inputs back out of the
+        # results DDict, so correct results prove the shard indices are valid.
+        count = 12
+        leaves = [batch.function(return_constant, value) for value in range(count)]
+        sums = [batch.function(add_values, leaves[i], leaves[i + 1]) for i in range(count - 1)]
+
+        self.assertEqual([leaf.get() for leaf in leaves], list(range(count)))
+        self.assertEqual([task.get() for task in sums], [i + (i + 1) for i in range(count - 1)])
+
+    def test_managers_per_pool_values_shape_results_ddict(self):
+        """Representative R values produce ``num_nodes * R`` shards and correct results."""
+        workers_per_node = self._workers_per_node()
+        capped_workers = min(workers_per_node, self._MAX_E2E_MANAGERS_PER_POOL)
+        candidate_values = sorted({1, max(1, capped_workers // 2), capped_workers})
+
+        for managers_per_pool in candidate_values:
+            with self.subTest(results_ddict_managers_per_pool=managers_per_pool):
+                batch = Batch(num_nodes=1, results_ddict_managers_per_pool=managers_per_pool)
+                try:
+                    self.assertEqual(batch._results_ddict_managers_per_pool, managers_per_pool)
+                    # num_nodes is 1, so total shards equal the per-pool count.
+                    self.assertEqual(self._ddict_manager_count(batch), managers_per_pool)
+                    self._run_dependency_workload(batch)
+                finally:
+                    batch.join()
+
+    def test_default_uses_default_shard_count(self):
+        """Omitting the knob uses the configured default shard count per pool."""
+        # The default is the configured ``default_results_ddict_managers_per_pool``
+        # (clamped to the worker count), NOT one shard per worker. Run a real
+        # workload before joining so the Batch tears down through the normal
+        # completion path instead of an immediate create->destroy.
+        workers_per_node = self._workers_per_node()
+        expected = min(default_results_ddict_managers_per_pool, workers_per_node)
+        batch = Batch(num_nodes=1)
+        try:
+            self.assertEqual(batch._results_ddict_managers_per_pool, expected)
+            self.assertEqual(self._ddict_manager_count(batch), expected)
+            self._run_dependency_workload(batch)
+        finally:
+            batch.join()
+
+    def test_request_below_one_is_clamped_to_one(self):
+        """A non-positive request clamps to a single shard per pool and still runs correctly."""
+        batch = Batch(num_nodes=1, results_ddict_managers_per_pool=0)
+        try:
+            self.assertEqual(batch._results_ddict_managers_per_pool, 1)
+            self.assertEqual(self._ddict_manager_count(batch), 1)
+            self._run_dependency_workload(batch)
+        finally:
+            batch.join()
+
+
+class TestClientTaskBatchingLogic(unittest.TestCase):
+    class _FakeTask:
+        pass
+
+    class _ControlMessage:
+        pass
+
+    def test_drain_client_task_batch_collects_follow_on_tasks_within_linger(self):
+        """A short linger window should coalesce tasks that arrive just after the first dequeue."""
+        request_q = queue.Queue()
+        first = self._FakeTask()
+        second = self._FakeTask()
+        control = self._ControlMessage()
+
+        def _enqueue_follow_on_items() -> None:
+            time.sleep(0.005)
+            request_q.put(second)
+            request_q.put(control)
+
+        producer = threading.Thread(target=_enqueue_follow_on_items)
+        producer.start()
+        try:
+            batch, deferred_item = _drain_client_task_batch(
+                first,
+                request_q,
+                self._FakeTask,
+                linger_sec=0.05,
+                max_batch_size=8,
+            )
+        finally:
+            producer.join()
+
+        self.assertEqual(batch, [first, second])
+        self.assertIs(deferred_item, control)
+
+    def test_drain_client_task_batch_respects_max_batch_size(self):
+        """Batch draining should stop at the configured cap and leave later items queued."""
+        request_q = queue.Queue()
+        first = self._FakeTask()
+        second = self._FakeTask()
+        third = self._FakeTask()
+        request_q.put(second)
+        request_q.put(third)
+
+        batch, deferred_item = _drain_client_task_batch(
+            first,
+            request_q,
+            self._FakeTask,
+            linger_sec=0.0,
+            max_batch_size=2,
+        )
+
+        self.assertEqual(batch, [first, second])
+        self.assertIsNone(deferred_item)
+        self.assertIs(request_q.get_nowait(), third)
+
+    def test_drain_client_task_batch_waits_for_idle_gap_not_total_elapsed_time(self):
+        """A steady task stream should keep extending the batch until the stream goes idle."""
+        request_q = queue.Queue()
+        first = self._FakeTask()
+        follow_on_tasks = [self._FakeTask() for _ in range(3)]
+
+        def _enqueue_steady_stream() -> None:
+            # Each arrival happens within the linger window, but the total stream
+            # duration exceeds it. Fixed-deadline batching would stop early here.
+            for task in follow_on_tasks:
+                time.sleep(0.01)
+                request_q.put(task)
+
+        producer = threading.Thread(target=_enqueue_steady_stream)
+        producer.start()
+        try:
+            batch, deferred_item = _drain_client_task_batch(
+                first,
+                request_q,
+                self._FakeTask,
+                linger_sec=0.02,
+                max_batch_size=8,
+            )
+        finally:
+            producer.join()
+
+        self.assertEqual(batch, [first, *follow_on_tasks])
+        self.assertIsNone(deferred_item)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

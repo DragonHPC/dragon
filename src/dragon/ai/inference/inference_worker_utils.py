@@ -1,3 +1,20 @@
+"""Inference worker processes for preprocessing and vLLM generation.
+
+An inference worker is the per-GPU-worker unit launched by a CPU head.  It is
+implemented as either a single LLM process or as a preprocessing process plus
+an LLM process, depending on configuration.  The preprocessing process handles
+dynamic batching and optional PromptGuard filtering.  The LLM process owns all
+vLLM and CUDA state, applies chat templates when requests arrive in OpenAI chat
+format, generates responses, records telemetry, and routes each response to the
+request's original response queue.
+
+Streaming Support:
+    When a request has ``stream=True``, the LLM process uses
+    :meth:`LLMInferenceEngine.generate_stream` instead of batch generation.
+    Each :class:`StreamChunk` is put on the response queue as tokens are
+    generated, followed by :data:`STREAM_DONE_SENTINEL` to signal completion.
+"""
+
 import time
 from queue import Empty
 from typing import Optional
@@ -9,7 +26,7 @@ from .config import (
 )
 from .guardrails import GuardrailsProcessor
 from .batching import DynamicBatcher
-from .llm_engine import LLMInferenceEngine
+from .llm_engine import LLMInferenceEngine, StreamChunk, STREAM_DONE_SENTINEL
 
 # Logging imports
 import logging
@@ -702,15 +719,15 @@ class InferenceWorker:
         end_to_end_latency = round(time.time() - input_entry_timestamp, 2)
 
         # Record metrics
-        self.dt.add_data("cpu_head_network_latency", cpu_head_network_latency)
-        self.dt.add_data("guardrails_inference_latency", preprocessing_time)
-        self.dt.add_data("guardrails_network_latency", guardrails_network_latency)
-        self.dt.add_data("model_inference_latency", 0)
-        self.dt.add_data("model_network_latency", 0)
-        self.dt.add_data("end_to_end_latency", end_to_end_latency)
-        self.dt.add_data("requests_per_second", 0)
-        self.dt.add_data("total_tokens_per_second", 0)
-        self.dt.add_data("total_output_tokens_per_second", 0)
+        # self.dt.add_data("cpu_head_network_latency", cpu_head_network_latency)
+        # self.dt.add_data("guardrails_inference_latency", preprocessing_time)
+        # self.dt.add_data("guardrails_network_latency", guardrails_network_latency)
+        # self.dt.add_data("model_inference_latency", 0)
+        # self.dt.add_data("model_network_latency", 0)
+        # self.dt.add_data("end_to_end_latency", end_to_end_latency)
+        # self.dt.add_data("requests_per_second", 0)
+        # self.dt.add_data("total_tokens_per_second", 0)
+        # self.dt.add_data("total_output_tokens_per_second", 0)
 
         # Send error response
         response_queue.put(
@@ -817,7 +834,9 @@ class InferenceWorker:
         extracted and classified.
 
         :param batch: A :class:`Batch` from the unified DynamicBatcher.
+        :type batch: dragon.ai.inference.batching.Batch
         :param guardrails: Optional GuardrailsProcessor instance.
+        :type guardrails: GuardrailsProcessor or None
         """
         updated_latency_metrics = [
             self._update_guardrails_latency(
@@ -976,6 +995,23 @@ class InferenceWorker:
             else self.preprocessing_input_queue
         )
 
+        # Start idle tracking after initialization and barrier wait so startup time does
+        # not count as idle time.
+        baseline_start_time = time.time()
+
+        def mark_worker_down():
+            self.log.info(
+                f"LLM Module: {self.hostname=} {self.devices=} {self.inf_wrkr_id=} has spun down"
+            )
+            self.inf_wrkr_manager_q.put(
+                (
+                    self.hostname,
+                    self.devices,
+                    self.inf_wrkr_id,
+                )
+            )
+            self.inf_wrkr_down_ev.set()
+
         while True:
             try:
                 # Get batch from preprocessing queue
@@ -986,6 +1022,8 @@ class InferenceWorker:
                     # (user_prompts, formatted_inputs, response_queues,
                     #  latency_metrics, preprocessing_time, timestamp,
                     #  tools_list, schema_list, cfm_list)
+                    # Note: Streaming requests bypass preprocessing, so stream_list
+                    # is always False when coming through preprocessing.
                     user_prompts = q_item[0]
                     formatted_inputs = q_item[1]
                     qs = (
@@ -1005,6 +1043,8 @@ class InferenceWorker:
                     tools_list = q_item[6]       # tool schemas per request
                     schema_list = q_item[7]      # json_schema overrides per request
                     cfm_list = q_item[8]         # continue_final_message flags per request
+                    # Streaming not supported via preprocessing path (yet)
+                    stream_list = [False] * len(formatted_inputs)
                 else:
                     # Data comes directly from cpu_worker:
                     # (user_prompt(s), formatted_input(s), response_queue,
@@ -1017,6 +1057,7 @@ class InferenceWorker:
                     _tools = q_item[4] if len(q_item) > 4 else None
                     _schema_override = q_item[5] if len(q_item) > 5 else None
                     _cfm = q_item[6] if len(q_item) > 6 else False
+                    _stream = q_item[7] if len(q_item) > 7 else False
 
                     if _tools is not None or (
                         isinstance(q_item[1], list)
@@ -1055,6 +1096,7 @@ class InferenceWorker:
                     tools_list = [_tools] * n            # tool schemas per request
                     schema_list = [_schema_override] * n  # json_schema overrides per request
                     cfm_list = [_cfm] * n                 # continue_final_message flags per request
+                    stream_list = [_stream] * n          # streaming flags per request
 
                 # Unified path: for each item in the batch, apply the
                 # model's chat template if it is a chat-format request
@@ -1062,6 +1104,8 @@ class InferenceWorker:
                 # whole batch with per-request json_schemas.
                 try:
                     tokenizer = llm_engine.get_tokenizer()
+                    # Check if the model has a chat template (base models don't)
+                    has_chat_template = getattr(tokenizer, "chat_template", None) is not None
                     prompts = []
                     schemas = []
                     for fi, tools, schema, cfm in zip(
@@ -1075,36 +1119,142 @@ class InferenceWorker:
                             # Chat-format request: fi is a list of message dicts
                             # (e.g. [{"role":"system","content":"..."},
                             #        {"role":"user","content":"..."}]).
-                            # Apply the model's chat template to produce a text
-                            # prompt with tool schemas and generation markers.
-                            prompt_text = tokenizer.apply_chat_template(
-                                fi,
-                                tools=tools,                       # tool JSON schemas (or None)
-                                add_generation_prompt=not cfm,     # True unless continuing
-                                continue_final_message=cfm,        # continue assistant turn
-                                tokenize=False,
-                            )
+                            if has_chat_template:
+                                # Apply the model's chat template to produce a text
+                                # prompt with tool schemas and generation markers.
+                                prompt_text = tokenizer.apply_chat_template(
+                                    fi,
+                                    tools=tools,                       # tool JSON schemas (or None)
+                                    add_generation_prompt=not cfm,     # True unless continuing
+                                    continue_final_message=cfm,        # continue assistant turn
+                                    tokenize=False,
+                                )
+                            else:
+                                # Base model without chat template — concatenate messages as plain text.
+                                # Format: "System: ...\n\nUser: ...\n\nAssistant:"
+                                parts = []
+                                for msg in fi:
+                                    role = msg.get("role", "user").capitalize()
+                                    content = msg.get("content", "")
+                                    parts.append(f"{role}: {content}")
+                                prompt_text = "\n\n".join(parts) + "\n\nAssistant:"
                             prompts.append(prompt_text)
                         else:
                             # Plain text prompt — already formatted
                             prompts.append(fi)
                         schemas.append(schema)
 
-                    # Generate responses for the whole batch using vLLM.
-                    # The engine builds SamplingParams internally from
-                    # json_schemas — single source of truth.
-                    responses, metrics = llm_engine.generate(prompts, json_schemas=schemas)
+                    # Check if streaming is requested.
+                    # Streaming requests are processed one at a time with no batching.
+                    is_streaming = any(stream_list)
 
-                    # Send responses back to the user with metrics
-                    self._send_responses(
-                        user_prompts,
-                        responses,
-                        qs,
-                        preprocessing_time,
-                        tuple_latency_timestamps,
-                        model_network_latency,
-                        metrics,
-                    )
+                    # Check if we're using AsyncLLM (streaming-capable engine)
+                    use_async_engine = llm_engine.async_engine is not None
+
+                    if is_streaming:
+                        # Streaming requires AsyncLLM engine
+                        if not use_async_engine:
+                            self.log.error(
+                                "LLM Module: Streaming requested but AsyncLLM engine not available. "
+                                "Set 'use_async_streaming: true' in config.yaml."
+                            )
+                            # Send error to response queue
+                            response_queue = qs[0]
+                            response_queue.put(RuntimeError(
+                                "Streaming requires 'use_async_streaming: true' in config.yaml"
+                            ))
+                            response_queue.put(STREAM_DONE_SENTINEL)
+                            continue
+
+                        # Streaming path: process single request with generate_stream()
+                        # Streaming bypasses batching, so we expect batch size of 1.
+                        if len(prompts) > 1:
+                            self.log.warning(
+                                "LLM Module: Streaming requested with batch size > 1. "
+                                "Processing only the first request in streaming mode."
+                            )
+
+                        prompt = prompts[0]
+                        schema = schemas[0]
+                        response_queue = qs[0]
+                        user_prompt = user_prompts[0]
+                        tuple_latency_metric = tuple_latency_timestamps[0]
+
+                        input_entry_timestamp = tuple_latency_metric[0]
+                        cpu_head_network_latency = tuple_latency_metric[1]
+                        guardrails_network_latency = tuple_latency_metric[2]
+
+                        try:
+                            self.log.debug(f"LLM Module: Starting streaming for prompt '{user_prompt[:50]}...'")
+                            # Stream tokens to the response queue
+                            for chunk in llm_engine.generate_stream(prompt, json_schema=schema):
+                                response_queue.put(chunk)
+
+                                # Log final chunk metrics
+                                if chunk.is_finished and chunk.metrics:
+                                    self.log.debug(
+                                        f"LLM Module: Streaming complete. "
+                                        f"Tokens: {chunk.metrics.get('total_output_tokens', 0)}, "
+                                        f"Time: {chunk.metrics.get('inference_time', 0)}s"
+                                    )
+
+                            # Signal end of stream
+                            response_queue.put(STREAM_DONE_SENTINEL)
+                            self.log.debug(
+                                f"LLM Module: Sent STREAM_DONE_SENTINEL for prompt '{user_prompt[:50]}...'"
+                            )
+
+                        except Exception as e:
+                            import traceback
+                            tb = traceback.format_exc()
+                            self.log.error(f"LLM Module: Streaming error: {e}\n{tb}")
+                            # Send error as exception object
+                            response_queue.put(RuntimeError(f"Streaming failed: {e}"))
+                            response_queue.put(STREAM_DONE_SENTINEL)
+
+                    elif use_async_engine:
+                        # AsyncLLM engine with stream=False: return complete response
+                        # Process each request individually since batching is disabled
+                        # when using AsyncLLM.
+                        for i, (prompt, schema, response_queue, user_prompt, tuple_latency_metric) in enumerate(
+                            zip(prompts, schemas, qs, user_prompts, tuple_latency_timestamps)
+                        ):
+                            try:
+                                response, metrics = llm_engine.generate_single(prompt, json_schema=schema)
+
+                                # Send response back (wrap in list for compatibility)
+                                self._send_responses(
+                                    [user_prompt],
+                                    [response],
+                                    [response_queue],
+                                    preprocessing_time,
+                                    [tuple_latency_metric],
+                                    model_network_latency,
+                                    metrics,
+                                )
+                            except Exception as e:
+                                import traceback
+                                tb = traceback.format_exc()
+                                self.log.error(f"LLM Module: generate_single error: {e}\n{tb}")
+                                response_queue.put(RuntimeError(f"Generation failed: {e}"))
+
+                    else:
+                        # Non-streaming batch path: generate all responses at once
+                        # Generate responses for the whole batch using vLLM.
+                        # The engine builds SamplingParams internally from
+                        # json_schemas — single source of truth.
+                        responses, metrics = llm_engine.generate(prompts, json_schemas=schemas)
+
+                        # Send responses back to the user with metrics
+                        self._send_responses(
+                            user_prompts,
+                            responses,
+                            qs,
+                            preprocessing_time,
+                            tuple_latency_timestamps,
+                            model_network_latency,
+                            metrics,
+                        )
                 except Exception as e:
                     import traceback
                     tb = traceback.format_exc()
@@ -1127,20 +1277,20 @@ class InferenceWorker:
                         fallback_metrics,
                     )
 
+                baseline_start_time = time.time()
+
             except Empty:
-                if self.end_event.is_set() or self.llm_proc_end_ev.is_set():
-                    if self.llm_proc_end_ev.is_set():
-                        self.log.info(
-                            f"LLM Module: {self.llm_proc_end_ev.is_set()=} {self.hostname=} {self.devices=} {self.inf_wrkr_id=}"
-                        )
-                        self.inf_wrkr_manager_q.put(
-                            (
-                                self.hostname,
-                                self.devices,
-                                self.inf_wrkr_id,
-                            )
-                        )
-                        self.inf_wrkr_down_ev.set()
+                should_spin_down = (not preprocessing_needed) and self._should_spin_down(
+                    baseline_start_time
+                )
+
+                if (
+                    self.end_event.is_set()
+                    or self.llm_proc_end_ev.is_set()
+                    or should_spin_down
+                ):
+                    if self.llm_proc_end_ev.is_set() or should_spin_down:
+                        mark_worker_down()
 
                     # Shutdown vLLM and clear GPU memory
                     llm_engine.shutdown()
@@ -1181,6 +1331,7 @@ class InferenceWorker:
         requests_per_second = metrics.get("requests_per_second", 0.0)
         total_tokens_per_second = metrics.get("total_tokens_per_second", 0.0)
         total_output_tokens_per_second = metrics.get("output_tokens_per_second", 0.0)
+        time_to_first_token = metrics.get("time_to_first_token", 0.0)
 
         for i in range(len(responses)):
             user_prompt = user_prompts[i]
@@ -1195,19 +1346,19 @@ class InferenceWorker:
             end_to_end_latency = round(time.time() - input_entry_timestamp, 2)
 
             # Latency
-            self.dt.add_data("cpu_head_network_latency", cpu_head_network_latency)
-            self.dt.add_data("guardrails_inference_latency", preprocessing_time)
-            self.dt.add_data("guardrails_network_latency", guardrails_network_latency)
-            self.dt.add_data("model_inference_latency", inference_elapsed_time)
-            self.dt.add_data("model_network_latency", model_network_latency)
-            self.dt.add_data("end_to_end_latency", end_to_end_latency)
+            # self.dt.add_data("cpu_head_network_latency", cpu_head_network_latency)
+            # self.dt.add_data("guardrails_inference_latency", preprocessing_time)
+            # self.dt.add_data("guardrails_network_latency", guardrails_network_latency)
+            # self.dt.add_data("model_inference_latency", inference_elapsed_time)
+            # self.dt.add_data("model_network_latency", model_network_latency)
+            # self.dt.add_data("end_to_end_latency", end_to_end_latency)
 
-            # Throughput
-            self.dt.add_data("requests_per_second", requests_per_second)
-            self.dt.add_data("total_tokens_per_second", total_tokens_per_second)
-            self.dt.add_data(
-                "total_output_tokens_per_second", total_output_tokens_per_second
-            )
+            # # Throughput
+            # self.dt.add_data("requests_per_second", requests_per_second)
+            # self.dt.add_data("total_tokens_per_second", total_tokens_per_second)
+            # self.dt.add_data(
+            #     "total_output_tokens_per_second", total_output_tokens_per_second
+            # )
 
             # Send response to the user
             q.put(
@@ -1225,6 +1376,7 @@ class InferenceWorker:
                     "model_inference_latency": inference_elapsed_time,
                     "model_network_latency": model_network_latency,
                     "end_to_end_latency": end_to_end_latency,
+                    "time_to_first_token": time_to_first_token,
                     # Throughput
                     "requests_per_second": requests_per_second,
                     "total_tokens_per_second": total_tokens_per_second,

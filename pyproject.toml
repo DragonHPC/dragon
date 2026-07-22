@@ -24,7 +24,7 @@ classifiers = [
 ]
 description = "Dragon is a composable distributed run-time for managing dynamic processes, memory, and data at scale through high-performance communication objects."
 readme = "pkg/README.md"
-requires-python=">=3.10"
+requires-python=">=3.11"
 dynamic = [
     "version",
     "dependencies",

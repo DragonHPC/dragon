@@ -73,7 +73,7 @@ class DragonAgent(ABC):
         # -- LLM proxy: auto-created from config.inference_queue -------------
         self.llm = None
         if config.inference_queue is not None:
-            from ...inference.llm_proxy import DragonQueueLLMProxy  # noqa: PLC0415
+            from ...inference import DragonQueueLLMProxy  # noqa: PLC0415
 
             pool_kwargs = {}
             if config.max_concurrent_requests is not None:
@@ -85,7 +85,7 @@ class DragonAgent(ABC):
         # -- Summarizer proxy: same pattern ----------------------------------
         summarizer_llm = None
         if config.summarizer_inference_queue is not None:
-            from ...inference.llm_proxy import DragonQueueLLMProxy  # noqa: PLC0415
+            from ...inference import DragonQueueLLMProxy  # noqa: PLC0415
 
             pool_kwargs = {}
             if config.max_concurrent_requests is not None:

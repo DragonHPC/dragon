@@ -17,7 +17,7 @@ Lightweight Workload Managers (WLM).
 
 The following multinode configurations are supported:
 
-1. :ref:`Running on a cluster or supercomputer that has been configured with a Traditional WLM, such has Slurm or PBS+Pals.<using_a_traditional_wlm>`
+1. :ref:`Running on a cluster or supercomputer that has been configured with a Traditional WLM, such as Slurm or PBS+Pals.<using_a_traditional_wlm>`
 2. :ref:`Running on a cluster using either the DragonRun or SSH Lightweight WLM.<using_drun_or_ssh_wlm>`
 
 .. _using_a_traditional_wlm:
@@ -375,7 +375,8 @@ command can also be used to specify that the TCP transport should be used. To do
 dragon-config as follows.
 
 .. code-block:: console
-  dragon-config -a 'tcp-runtime=True'
+
+    dragon-config -a 'tcp-runtime=True'
 
 The TCP agent is configured to use port 7575 by default. If that port is blocked,
 it can be changed with the `--port` argument to :ref:`dragon`. If not specific,

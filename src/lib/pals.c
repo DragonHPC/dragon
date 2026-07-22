@@ -10,7 +10,7 @@ extern dragonRecvJobParams_t pmod_mparams;
 
 static void *lib_pals_handle = NULL;
 static int inside_vanilla_pals = 0;
-
+static int vanilla_pals_nnodes = 0; // Necessary for freeing the nodelist when PALS state is not available
 
 pals_rc_t (*fn_pals_init)(pals_state_t *state);
 pals_rc_t (*fn_pals_init2)(pals_state_t **state);
@@ -21,6 +21,7 @@ pals_rc_t (*fn_pals_get_pes)(pals_state_t *state, pals_pe_t **pes, int *npes);
 pals_rc_t (*fn_pals_get_nodeidx)(pals_state_t *state, int *nodeidx);
 pals_rc_t (*fn_pals_get_num_nodes)(pals_state_t *state, int *nnodes);
 pals_rc_t (*fn_pals_get_nodes)(pals_state_t *state, pals_node_t **nodes, int *nnodes);
+pals_rc_t (*fn_pals_get_nodelist)(pals_state_t *state, char ***nodelist, int *nnodes);
 pals_rc_t (*fn_pals_get_num_nics)(pals_state_t *state, int *nnics);
 pals_rc_t (*fn_pals_get_nics)(pals_state_t *state, pals_nic_t **nics, int *nnics);
 pals_rc_t (*fn_pals_get_num_cmds)(pals_state_t *state, int *ncmds);
@@ -32,6 +33,7 @@ pals_rc_t (*fn_pals_app_spawn)(
     const char **const argvs[], const int maxprocs[],
     const char *preput_envs[], const int num_envs, pals_rc_t errors[]);
 const char *(*fn_pals_errmsg)(pals_state_t *state);
+void (*fn_pals_free_nodelist)(char ***nodelist);
 
 pals_rc_t set_pals_function_pointers()
 {
@@ -49,6 +51,7 @@ pals_rc_t set_pals_function_pointers()
     fn_pals_get_nodeidx = dlsym(lib_pals_handle, "pals_get_nodeidx");
     fn_pals_get_num_nodes = dlsym(lib_pals_handle, "pals_get_num_nodes");
     fn_pals_get_nodes = dlsym(lib_pals_handle, "pals_get_nodes");
+    fn_pals_get_nodelist = dlsym(lib_pals_handle, "pals_get_nodelist");
     fn_pals_get_num_nics = dlsym(lib_pals_handle, "pals_get_num_nics");
     fn_pals_get_nics = dlsym(lib_pals_handle, "pals_get_nics");
     fn_pals_get_num_cmds = dlsym(lib_pals_handle, "pals_get_num_cmds");
@@ -57,7 +60,7 @@ pals_rc_t set_pals_function_pointers()
     fn_pals_get_apid = dlsym(lib_pals_handle, "pals_get_apid");
     fn_pals_app_spawn = dlsym(lib_pals_handle, "pals_app_spawn");
     fn_pals_errmsg = dlsym(lib_pals_handle, "pals_errmsg");
-
+    fn_pals_free_nodelist = dlsym(lib_pals_handle, "pals_free_nodelist");
     return PALS_OK;
 }
 
@@ -210,6 +213,98 @@ pals_rc_t pals_get_nodes(pals_state_t *state, pals_node_t **nodes, int *nnodes)
         return fn_pals_get_nodes(state, nodes, nnodes);
     }
 }
+
+pals_rc_t pals_get_nodelist(pals_state_t *state, char ***nodelist, int *nnodes)
+{
+    if (check_calling_context()) {
+        *nnodes = pmod_mparams.sp->nnodes;
+        char **l_nodelist = (char **) malloc(pmod_mparams.sp->nnodes * sizeof(char *));
+        if (l_nodelist == NULL) {
+            return PALS_FAILED;
+        }
+
+        int nid;
+
+        for (nid = 0; nid < pmod_mparams.sp->nnodes; ++nid) {
+
+            l_nodelist[nid] = (char *) malloc(PMOD_MAX_HOSTNAME_LEN);
+            if (l_nodelist[nid] == NULL) {
+                // Free previously allocated memory
+                for (int j = 0; j < nid; j++) {
+                    free(l_nodelist[j]);
+                }
+                free(l_nodelist);
+                return PALS_FAILED;
+            }
+
+            strncpy(l_nodelist[nid], pmod_mparams.np.hostnames[nid].name, PMOD_MAX_HOSTNAME_LEN);
+        }
+        *nodelist = l_nodelist;
+        return PALS_OK;
+    } else {
+        if (fn_pals_get_nodelist == NULL) {
+            // if we're here, PMI is up to date but PALS is not, and we've lead PMI astray.
+            // Patch up a quick fix that should handle this case
+            pals_node_t *nodes = NULL;
+            pals_rc_t rc = fn_pals_get_nodes(state, &nodes, nnodes);
+            if (rc != PALS_OK) {
+                return rc;
+            }
+
+            // Repackage the data struct into a nodelist
+            char **l_nodelist = (char **) malloc(*nnodes * sizeof(char *));
+            if (l_nodelist == NULL) {
+                free(nodes);
+                return PALS_FAILED;
+            }
+            else {
+                vanilla_pals_nnodes = *nnodes;
+                for (int i = 0; i < *nnodes; i++) {
+                    l_nodelist[i] = (char *) malloc(PMOD_MAX_HOSTNAME_LEN);
+                    if (l_nodelist[i] == NULL) {
+                        for (int j = 0; j < i; j++) {
+                            free(l_nodelist[j]);
+                        }
+                        free(l_nodelist);
+                        free(nodes);
+                        return PALS_FAILED;
+                    }
+                    strncpy(l_nodelist[i], nodes[i].hostname, PMOD_MAX_HOSTNAME_LEN);
+                }
+                free(nodes);
+                *nodelist = l_nodelist;
+                return PALS_OK;
+            }
+        }
+        else {
+            return fn_pals_get_nodelist(state, nodelist, nnodes);
+        }
+    }
+}
+
+
+void pals_free_nodelist(char ***nodelist)
+{
+    if (check_calling_context()) {
+        for (int i = 0; i < pmod_mparams.sp->nnodes; ++i) {
+            free((*nodelist)[i]);
+        }
+        free(*nodelist);
+    } else {
+        if (fn_pals_free_nodelist == NULL) {
+            // if we're here, PMI is up to date but PALS is not, and we've lead PMI astray.
+            // Patch up a quick fix that should handle this case
+            for (int i = 0; i < vanilla_pals_nnodes; ++i) {
+                free((*nodelist)[i]);
+            }
+            free(*nodelist);
+        }
+        else {
+            fn_pals_free_nodelist(nodelist);
+        }
+    }
+}
+
 
 pals_rc_t pals_get_num_cmds(pals_state_t *state, int *ncmds)
 {

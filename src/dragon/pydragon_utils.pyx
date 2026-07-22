@@ -310,20 +310,23 @@ class TimeKeeper:
         self.reset_all()
 
     def start_telemetry(self):
-        from dragon.telemetry.telemetry import Telemetry, DRAGON_INFRASTRUCTURE_TELEMETRY_STARTUP_TIMEOUT
+        try:
+            from dragon.telemetry.telemetry import Telemetry, DRAGON_INFRASTRUCTURE_TELEMETRY_STARTUP_TIMEOUT
 
-        self._telemetry = Telemetry(timeout=DRAGON_INFRASTRUCTURE_TELEMETRY_STARTUP_TIMEOUT)
+            self._telemetry = Telemetry(timeout=DRAGON_INFRASTRUCTURE_TELEMETRY_STARTUP_TIMEOUT)
 
-        if self._telemetry.level > 0:
-            self._hostname = gethostname()
-            self._lock = threading.RLock()
-            self._stop_event = threading.Event()
-            self._thread = threading.Thread(
-                target=self._telemetry_worker,
-                name=f"TimeKeeper-{self._name}",
-                daemon=True,
-            )
-            self._thread.start()
+            if self._telemetry.level > 0:
+                self._hostname = gethostname()
+                self._lock = threading.RLock()
+                self._stop_event = threading.Event()
+                self._thread = threading.Thread(
+                    target=self._telemetry_worker,
+                    name=f"TimeKeeper-{self._name}",
+                    daemon=True,
+                )
+                self._thread.start()
+        except ModuleNotFoundError:
+            pass
 
     def _telemetry_worker(self) -> None:
         """Periodically flush accumulated timings to the telemetry service.
@@ -515,6 +518,8 @@ class XNumPyVectorPickler:
     interface like native Queue or DDict. """
 
     def __init__(self, data_type: np.dtype, type_val = TY_NONE):
+        if np is None:
+            raise ModuleNotFoundError("The numpy package is required when using XNumPyVectorPickler.")
         self._ty_val = type_val
         self._data_type = data_type
 
@@ -603,6 +608,8 @@ class XNumPy2DMatrixPickler:
     interface like native Queue or DDict. """
 
     def __init__(self, data_type: np.dtype, type_val = TY_NONE):
+        if np is None:
+            raise ModuleNotFoundError("The numpy package is required when using XNumPy2DMatrixPickler.")
         self._ty_val = type_val
         self._data_type = data_type
         self._arr_pickler = XNumPyVectorPickler(data_type)
@@ -762,6 +769,8 @@ class XScalarPickler:
     interface like native Queue or DDict. """
 
     def __init__(self, data_type: np.dtype, type_val = TY_NONE):
+        if np is None:
+            raise ModuleNotFoundError("The numpy package is required when using XScalarPickler.")
         self._ty_val = type_val
         self._data_type = data_type
         self._num_bytes = np.dtype(self._data_type).itemsize
@@ -846,6 +855,8 @@ class XPickler:
 
     def __init__(self):
         self._str_pickler = XStringPickler()
+        if np is None:
+            raise ModuleNotFoundError("The numpy package is required when using XPickler.")
         self._int_pickler = XScalarPickler(np.int32, TY_INT)
         self._double_pickler = XScalarPickler(np.float64, TY_DOUBLE)
         self._intvector_pickler = XNumPyVectorPickler(np.int32, TY_INTVECTOR)

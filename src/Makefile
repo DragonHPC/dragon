@@ -173,7 +173,28 @@ dist: build
 
 .PHONY: release
 release:
+	$(MAKE) -C ../test dist  # Make sure tests get staged
 	mkdir -p release/dragon
+	cp -pr ../examples release/dragon
+	cp -pr dist/* release/dragon
+	rm -rd release/dragon/examples/dragon_native/mpi
+	rm -rf release/dragon/examples/multiprocessing/user_adapter
+	rm -rf release/dragon/examples/dragon_core
+	rm -rf release/dragon/examples/smartsim
+	rm -rf release/dragon/include
+	rm -f release/dragon/examples/multiprocessing/lock_performance.py
+	rm -f release/dragon/examples/multiprocessing/scipy_image_demo.py
+	mkdir -p release/dragon/examples/multiprocessing/multi-node_tests
+	cp ../test/multi-node/test_process.py release/dragon/examples/multiprocessing/multi-node_tests
+	cp ../test/multi-node/test_pool.py release/dragon/examples/multiprocessing/multi-node_tests
+	cp ../test/multi-node/test_queue.py release/dragon/examples/multiprocessing/multi-node_tests
+	cp ../test/multi-node/test_connection.py release/dragon/examples/multiprocessing/multi-node_tests
+	mkdir -p release/dragon/examples/dragon_native/multi-node_tests
+	cp ../test/multi-node/test_lock.py  release/dragon/examples/dragon_native/multi-node_tests
+	cp ../test/multi-node/test_machine.py  release/dragon/examples/dragon_native/multi-node_tests
+	cp ../test/multi-node/test_barrier.py  release/dragon/examples/dragon_native/multi-node_tests
+	cp ../src/dragon/telemetry/imports/*.yaml  release/dragon/examples/dragon_telemetry
+	cp ../src/dragon/telemetry/imports/*.json  release/dragon/examples/dragon_telemetry
 # If Linux then repair the wheel to use manylinux tag before copying it to release and remove the un-tagged version
 # If MacOS then use delocate-wheel to put it in the right state. Also rename wheel file to something sensible.
 	if [ "$(OS)" != "Darwin" ]; then \

@@ -55,7 +55,6 @@ def main() -> int:
         ret_codes = [-1]
     finally:
         batch.join()
-        batch.destroy()
 
     if elapsed is not None:
         print(

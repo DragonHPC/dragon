@@ -6,7 +6,7 @@ Orchestrate Processes
 +++++++++++++++++++++
 
 Dragon provides its own native API to finely and programmatically control where and how processes get
-executed. Below, we work thorough the use of :ref:`dragon.native <NativeAPI>` to execute a combination of
+executed. Below, we work through the use of :ref:`dragon.native <NativeAPI>` to execute a combination of
 user applications, specify their placement on hardware, and how to manage their output
 
 ProcessGroup

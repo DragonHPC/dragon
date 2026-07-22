@@ -7,41 +7,42 @@ auditwheel>=6.2.0:              dev
 biopython:                      examples
 black>=24.8.0:                  dev
 breathe>=4.35.0:                docs
+cloudpickle:                    services
 cryptography>=46.0.5:           dev
 Cython>=3.0.12:                 dev
 delocate>=0.13.0:               dev
-fastmcp:                        dev
-flask>=3.0.3:                   telemetry, test, dev
-flask-jwt-extended>=4.7.1:      telemetry, test, dev
-gunicorn>=22.0.0:               telemetry, test, dev
+fastmcp:                        ai, dev, test, services
+flask>=3.0.3:                   telemetry, test, dev, services
+flask-jwt-extended>=4.7.1:      telemetry, test, dev, services
+gunicorn>=22.0.0:               telemetry, test, dev, services
 hypothesis:                     test
 ipywidgets:                     telemetry
 joblib:                         examples
-jupyter>=1.1.1:                 examples
-kubernetes>=32.0.0:             dev
+jupyter>=1.1.1:                 examples, services
+kubernetes>=32.0.0:             dev, services
 matplotlib:                     examples
 mpi4py:                         examples
-msgspec:                        ai
+msgspec:                        ai, test
 networkx:                       batch
 numcodecs>=0.13.1,<0.16.0:      test
 numpy:                          dev
 nvidia-ml-py:                   telemetry, dev
 opencv-python:                  examples
-openpyxl:                       ai
-packaging:                      ai
+openpyxl:                       ai, test
+packaging:                      ai, test
 pandarallel:                    examples
-pandas:                         ai, examples
+pandas:                         ai, examples, test
 parameterized>=0.9.0:           test
 parsl>=2024.9.23:               test, workflows
 Pillow>=10.0.1:                 docs
 prometheus-client:              examples
 py3nvml>=0.2.7:                 examples
 pyclean:                        dev
-pydantic:                       dev, docs
+pydantic:                       ai, dev, docs, test
 pygments:                       examples
-pyzmq:                          ai
+pyzmq:                          ai, test
 ray:                            examples
-requests>=2.32.2:               telemetry, test, dev
+requests>=2.32.2:               telemetry, test, dev, services
 scikit-learn:                   examples
 scipy:                          examples
 seaborn:                        examples
@@ -53,10 +54,11 @@ sphinx-fortran>=1.1.1:          docs
 sphinx-new-tab-link>=0.7.0:     docs
 sphinx-rtd-theme>=2.0.0:        docs
 sphinxcontrib-plantuml>=0.3.0:  docs
-torch>=2.6.0:                   ai, examples, docs
-torchvision:                    ai, examples
-transformers:                   ai
+torch>=2.6.0:                   ai, examples, docs, test
+torchvision:                    ai, examples, test
+transformers:                   ai, test
 tqdm>=4.64.1:                   examples
+vllm>=0.11.0,<0.18.0:           ai
 typeguard:                      workflows
 typing_extensions:              workflows
 zarr<3.0.0:                     test

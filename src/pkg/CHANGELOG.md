@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.14.1] - 2026-07-01
+
+### Changed
+    [AICI-1990] - Consider providing optional dependency support in .whl files
+    [AICI-2014] - Swap Infrastructure messages for Capt'n Proto in Dragon Logging
+    [AICI-2015] - Enable dynamic registration of Logging clients instead of hardcoded enum
+    [AICI-2139] - Inference improvements
+    [AICI-2141] - Reconsider requiring numpy in setup.py install_requires
+    [AICI-2143] - Migrate PyPI releases to manylinux_2_28
+
+### Added
+    [AICI-2016] - Add a cross-platform logging example and use case tile in documentation
+    [AICI-2120] - Separate lifecycle management in Batch
+    [AICI-2121] - DDict Tutorials and Examples
+    [AICI-2146] - Add ability to redirect managed process stdout/stderr to file
+    [AICI-2161] - Inference improvements: better inclusion
+    [AICI-2041] - Missing dragon.__version__
+    [AICI-1890] - Add ARM dst build for dragon
+    [AICI-2034] - Enable Dragon CLI to have "tab completion" hints
+    [AICI-2110] - Mac OS Support
+    [AICI-2126] - ARM/MAC builds on Pypi
+    [AICI-2132] - Data serialization/pickling support across Python and C++
+    [AICI-2153] - Serializable Byte Buffer support
+    [AICI-2154] - Fetch Add DDict method and additional Serializable Support
+
+### Fixed
+    [AICI-2152] - Fix telemetry/test_analysis hang
+    [AICI-2163] - Improve the installation steps for Dragon Inference
+    [AICI-2107] - Dragon Launcher is not honoring DRAGON_RUN_NODELIST env when using drun wlm
+    [AICI-2112] - Drun 'NoneType' object has no attribute 'write' error
+    [AICI-2145] - Fix global services startup issue
+    [AICI-2155] - Update PALS API for cray-mpich ProcessGroup support
+    [AICI-2134] - Cleanup our documentation
+    [AICI-2135] - Autodoc the Dragon Inference API
+    [AICI-2158] - Add logic to calculate defaults in Inference
+    [AICI-2184] - Fix launch of PMIx MPI apps in devcontainer and memory corruption in cray-mpich apps
+
 ## [0.14.0] - 2026-05-18
 
 ### Changed

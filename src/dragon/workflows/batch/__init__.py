@@ -1,1 +1,9 @@
-from .batch import Batch, BatchTopology, ReadAfterWriteDependencyError, SubmitAfterCloseError, TaskCancelledError
+from .batch import (
+    Batch,
+    BatchError,
+    BatchTopology,
+    ReadAfterWriteDependencyError,
+    SubmitAfterCloseError,
+    TaskCancelledError,
+    TaskNotReadyError,
+)

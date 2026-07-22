@@ -105,7 +105,7 @@ Depending on the nature of the processing it may be much better to use a iterato
 
 
 The nice thing about this style of code is it makes few assumptions about the type of system you are running on, in
-particluar there is no assumption files are accessible on all nodes. The drawback is all input and output data flows
+particular there is no assumption files are accessible on all nodes. The drawback is all input and output data flows
 through the initial process. If there is a shared filesystem, it may be more efficient to make use of it.
 
 

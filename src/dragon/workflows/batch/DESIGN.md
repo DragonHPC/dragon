@@ -32,6 +32,41 @@ The important types are:
 - `Work`: one manager-targeted partition of a compiled batch, containing ready and blocked tasks for that manager
 - `Manager`: one runtime scheduler/executor process; the scheduler owns the ingress queue and subnode managers are indexed `0..n-1` for task placement
 
+## Runtime Lifecycle Model
+
+Batch now has two runtime lifecycle modes.
+
+- unmanaged mode (`managed_lifecycle=False`, the default): the Batch instance shared by clients shuts down automatically after the last attached client detaches
+- managed mode (`managed_lifecycle=True`): that client-shared Batch instance stays alive until some client calls `Batch.destroy()`
+
+This is a runtime-wide policy, not a per-handle policy. Serializing and deserializing a `Batch`
+handle preserves the runtime's lifecycle mode.
+
+### Client handle lifecycle
+
+Each `Batch` Python object is a client handle attached to the same Batch instance shared by clients.
+
+- `join()` is client-scoped: it flushes pending local submissions, fences this client's work, stops the client request worker, and unregisters the client from the managers
+- `destroy()` is runtime-scoped and is only allowed in managed mode
+- `__del__` is best-effort only: it attempts a bounded `join(timeout=1.0)` first and falls back to a lighter detach path if that fails
+
+Manager-side cleanup distinguishes between:
+
+- clean detach: `join()` completed successfully, so manager-side client state (`ret_q`, completed-task caches, pending-count bookkeeping) can be reaped immediately
+- fallback detach: `__del__` had to fall back to stop/unregister without a completed fence, so manager-side client state is retained until all in-flight work and scheduler bookkeeping for that client drain naturally
+
+This means deleting a Python handle does not directly tear down the client-shared Batch instance. It only tries to detach that client cleanly.
+
+### Serialization and deserialization
+
+Serializing a `Batch` handle produces a new attachable client handle, not a transferred owner.
+
+- the deserialized handle registers as a fresh client with the existing managers
+- it preserves the runtime lifecycle mode
+- it carries serialized manager queues plus a serialized `ProcessGroup` client so it can wait for runtime shutdown if it later becomes the last client or calls `destroy()` in managed mode
+
+This is important because shutdown is no longer tied to a distinguished creator client.
+
 ## Topology And Process Model
 
 Batch derives a manager topology from the current Dragon allocation.
@@ -176,7 +211,7 @@ For job tasks, host placement is resolved before dispatch. A `JobCore` reaching 
 The worker:
 
 1. runs the task
-2. captures result, stdout, stderr, and exception state
+2. records the task result and exception state; task stdout/stderr are redirected to shared-filesystem log files under the submitting client's Batch log directory
 3. sends direct `DepSat` notifications for same-batch downstream tasks using `TaskCore.downstream_routes`
 4. maps `manager_idx` to the colocated DDict manager and writes the result tuple there
 5. returns `(tuid, compiled_tuid)` to the manager through `map_async`
@@ -201,8 +236,15 @@ Then `Task.get()`:
 
 - derives the owning DDict manager from `manager_idx`
 - reads the result tuple by stable `tuid`
-- prints captured stdout/stderr
 - re-raises the stored exception if the worker failed
+
+Per-client log discovery is opt-in and file-based rather than result-based. It is enabled by constructing `Batch(task_logs=True)`. When enabled, each Batch client owns a log directory rooted at `runinfo/<batch-run-id>/client-<id>/task_logs`, with per-kind subdirectories (`function/`, `process/`, `job/`) and a `manifest.jsonl` file that records each task's resolved stdout/stderr paths. When disabled (the default), no `runinfo` directory or manifest is created and task stdout/stderr are only written to files when an explicit `stdout`/`stderr` path is supplied; otherwise task output is forwarded to the client console via the normal Dragon output-forwarding path.
+
+Client-side helper APIs such as `Batch.log_dir()`, `Batch.log_manifest_path()`, `Batch.iter_log_records()`, `Batch.find_logs()`, and `Batch.read_logs()` use that manifest as the source of truth for log discovery and require `task_logs=True` (they raise `RuntimeError` when task logging is disabled). `Task.log_paths()` and `Task.get_stdout()`/`Task.get_stderr()` continue to work for any task given an explicit output path, regardless of the `task_logs` setting.
+
+Batch submission metadata is now intended to flow through `Batch.options(...)` so execution options are kept distinct from user payload arguments. The older style of passing metadata such as `reads`, `writes`, `name`, `timeout`, `stdout`, or `stderr` directly to `Batch.function/process/job` is retained only as a deprecated compatibility path.
+
+For process and job submissions, task-level `stdout` and `stderr` configured via `Batch.options(...)` act as defaults. Any `stdout` or `stderr` already present on a specific `ProcessTemplate` takes precedence for that template.
 
 If a user cancellation was accepted for a running process/job task, `Task.get()` also normalizes the late `DragonUserCodeError` raised by `ProcessGroup` shutdown into `TaskCancelledError` so callers observe the Batch-level cancellation contract.
 

@@ -22,9 +22,9 @@ resources they use.
 
     **Single-Node Overview of Dragon Services**
 
-.. FIXME: NOTE: In the single-node case the :ref:`Launcher` serves as both frontned and backend component. So the launcher sends and receives several backend messages during bringup and teardown.
-
-**FIXME**: Adapt UML Diagram to be correct
+.. note::
+   In the single-node case, the :ref:`Launcher` serves as both frontend and backend component.
+   It sends and receives several backend messages during bringup and teardown.
 
 In the single-node case, as depicted in :numref:`deploy-single-node` + :numref:`singlenode-overview`, there is no :ref:`TransportAgent`, :ref:`MRNet` tree,
 or :ref:`Launcher` backend service.  :ref:`Channels` in :numref:`singlenode-overview` are represented by the colored arrows. The
@@ -91,4 +91,3 @@ subsequent activities can take place.
 
         .. figure:: images/single_startup.srms1.png
             :scale: 75%
-

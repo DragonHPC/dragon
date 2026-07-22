@@ -1,9 +1,9 @@
 #!/bin/bash
 #SBATCH --nodes=132
 #SBATCH --exclusive
+#SBATCH --output=run_gups_scale_%j.out
 
-source ~/.bashrc
-conda activate _env312
+# Assume that the correct python environment is already activated
 
 export DRAGON_DEFAULT_SEG_SZ=21474836480
 

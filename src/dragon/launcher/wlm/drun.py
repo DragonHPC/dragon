@@ -5,6 +5,8 @@ import logging
 from .base import WLM, BaseWLM
 from dragon.infrastructure.facts import TransportAgentOptions
 from dragon.tools.dragon_run.src import DragonRunPopen, PIPE
+from dragon.tools.dragon_run.src.wlm import WLM as DrunWLM
+
 from typing import Optional
 
 
@@ -12,7 +14,7 @@ class DRunWLM(BaseWLM):
 
     def __init__(self, network_prefix, port, hostlist):
         nhosts = len(hostlist) if hostlist is not None else 0
-        super().__init__(WLM.DRUN.value, network_prefix, port, nhosts)
+        super().__init__(WLM.DRUN.value, network_prefix, port)
         self.hostlist = hostlist
 
     @classmethod
@@ -37,9 +39,6 @@ class DRunWLM(BaseWLM):
         raise RuntimeError("DRunNetworkConfig does not implement _get_wlm_launch_be_args")
 
     def _launch_network_config_helper(self, args_map: dict) -> subprocess.Popen:
-        if not self.hostlist:
-            raise RuntimeError("DRunWLM requires a non-empty hostlist.")
-
         network_config_helper_cmd = self.NETWORK_CFG_HELPER_LAUNCH_CMD
         self.LOGGER.debug(f"Launching config with: {network_config_helper_cmd=}")
         return DragonRunPopen(
@@ -48,6 +47,7 @@ class DRunWLM(BaseWLM):
             stdout=PIPE,
             stderr=PIPE,
             env=os.environ.copy(),
+            force_wlm=DrunWLM.DRAGON_SSH,
             ssh_config_path=args_map.get("ssh_config_path"),
             private_key=args_map.get("private_key"),
             passphrase=args_map.get("passphrase"),
@@ -84,6 +84,7 @@ class DRunWLM(BaseWLM):
             stdout=PIPE,
             stderr=PIPE,
             env=os.environ.copy(),
+            force_wlm=DrunWLM.DRAGON_SSH,
             ssh_config_path=args_map.get("ssh_config_path"),
             private_key=args_map.get("private_key"),
             passphrase=args_map.get("passphrase"),

@@ -1,3 +1,12 @@
+"""Dragon-compatible vLLM engine startup helper for vLLM 0.15.x.
+
+This module provides the vLLM 0.15.x variant of Dragon's replacement for
+``vllm.v1.engine.utils.wait_for_engine_startup``.  The signature includes the
+``coordinated_dp`` flag introduced by newer vLLM releases, but the purpose is
+the same as the 0.12 helper: monitor core-engine handshakes and process
+sentinels safely inside a Dragon multiprocessing context.
+"""
+
 import logging
 from typing import Optional, TYPE_CHECKING
 from multiprocessing import Process, connection
@@ -30,9 +39,31 @@ def dragon_wait_for_engine_startup(
     proc_manager: Optional["CoreEngineProcManager"],
     coord_process: Optional[Process],
 ):
-    """Patched version of wait_for_engine_startup with enhanced logging.
+    """Wait for all vLLM 0.15 core engines to connect and report ready.
 
-    Updated for vLLM 0.12 compatibility - uses connection.wait for sentinel monitoring.
+    The implementation mirrors vLLM 0.15 startup behavior while using
+    ``multiprocessing.connection.wait`` for Dragon-compatible process sentinel
+    monitoring.  When coordinated data parallelism is enabled, the helper also
+    validates the parallel-configuration hash reported by each worker.
+
+    :param handshake_socket: ZMQ socket receiving HELLO and READY messages.
+    :type handshake_socket: zmq.Socket
+    :param addresses: vLLM engine socket address bundle.
+    :type addresses: EngineZmqAddresses
+    :param core_engines: Local and remote engine descriptors to wait for.
+    :type core_engines: list[CoreEngine]
+    :param parallel_config: vLLM parallel configuration.
+    :type parallel_config: ParallelConfig
+    :param coordinated_dp: Whether vLLM coordinated data parallel startup is active.
+    :type coordinated_dp: bool
+    :param cache_config: vLLM cache configuration updated with GPU block counts.
+    :type cache_config: CacheConfig
+    :param proc_manager: Optional manager for local engine core processes.
+    :type proc_manager: CoreEngineProcManager or None
+    :param coord_process: Optional coordinator process used by vLLM.
+    :type coord_process: multiprocessing.Process or None
+    :raises RuntimeError: If a process exits early, an unexpected engine
+        connects, startup states are invalid, or coordinated-DP hashes differ.
     """
     from vllm.v1.engine.utils import CoreEngineState, EngineHandshakeMetadata
 

@@ -37,6 +37,7 @@ PROCNAME_DRUN = "drun"
 PROCNAME_DRBE = "drbe"
 PROCNAME_DHOSTS = "dhosts"
 PROCNAME_OFFLINE_TELEMETRY = "dragon-offline-telemetry"
+PROCNAME_DRAGON_INSTALL_COMPLETIONS = "dragon-install-completions"
 
 # TODO Refactor frontend entry point. See ../__main__.py and
 # TODO ../launcher/launch_selector.py.
@@ -71,8 +72,24 @@ entry_points = {
         f"{PROCNAME_DRBE} = dragon.tools.dragon_run.drbe:main",
         f"{PROCNAME_DHOSTS} = dragon.tools.dragon_run.dhosts:main",
         f"{PROCNAME_OFFLINE_TELEMETRY} = dragon.telemetry.offline_telemetry:main",
+        f"{PROCNAME_DRAGON_INSTALL_COMPLETIONS} = dragon.cli.completion:main",
     ]
 }
+
+# vLLM general plugins. vLLM discovers and loads these from the
+# ``vllm.general_plugins`` entry point group when an ``LLM()`` instance starts,
+# which is how the Dragon vLLM compatibility plugin (shipped inside this package
+# under ``dragon.ai.inference.patch_vllm``) is registered. Bundling these entry
+# points here means ``pip install "dragonhpc[ai]"`` enables Dragon's vLLM
+# support. Each patch is a no-op unless vLLM is running inside the Dragon inference service.
+_PATCH_VLLM = "dragon.ai.inference.patch_vllm"
+entry_points["vllm.general_plugins"] = [
+    f"dragon_engine = {_PATCH_VLLM}:patch_engine_utils",
+    f"dragon_multiproc_executor = {_PATCH_VLLM}:patch_multiproc_executor",
+    f"dragon_get_open_port = {_PATCH_VLLM}:patch_get_open_port",
+    f"dragon_mp_context = {_PATCH_VLLM}:patch_mp_context",
+    f"dragon_engine_core = {_PATCH_VLLM}:patch_engine_core",
+]
 
 
 def _get_console_scripts(eps):

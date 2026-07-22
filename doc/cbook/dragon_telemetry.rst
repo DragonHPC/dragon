@@ -60,7 +60,7 @@ For convenience, those files are shown below:
 
       .. literalinclude:: ../../src/dragon/telemetry/imports/custom.yaml
 
-  2. Config YAML for Grafana OpenTSDB Connection
+  2. Grafana Dashboard JSON Configuration
 
   .. literalinclude:: ../../src/dragon/telemetry/imports/Grafana_DragonTelemetryDashboard.json
 

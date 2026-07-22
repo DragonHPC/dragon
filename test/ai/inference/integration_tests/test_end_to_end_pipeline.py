@@ -41,12 +41,11 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
     def test_query_creates_data_on_input_queue(
-        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+        self, mock_telemetry, mock_node_class, mock_system
     ):
         """Test that Inference.query() puts properly formatted data on input queue."""
         mock_system_instance = MagicMock()
@@ -55,8 +54,6 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
 
         mock_node = MockNode("node-0", num_gpus=4)
         mock_node_class.return_value = mock_node
-
-        mock_formatter.return_value = "<formatted_prompt>"
 
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=1),
@@ -86,10 +83,17 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
         user_prompt = "What is 2+2?"
         dragon_inference.query((user_prompt, response_queue))
 
-        # Verify data structure on input queue
+        # Verify data structure on input queue.  query() builds OpenAI-style
+        # message dicts; the chat template is applied later on the worker.
         item = input_queue.get(timeout=1)
         self.assertEqual(item[0], user_prompt)
-        self.assertEqual(item[1], "<formatted_prompt>")
+        self.assertEqual(
+            item[1],
+            [
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": user_prompt},
+            ],
+        )
         # Queue objects are serialized/deserialized through mp.Queue
         self.assertIsInstance(item[2], type(response_queue))
         self.assertIsInstance(item[3], float)  # timestamp
@@ -146,12 +150,11 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
         self.assertIsNotNone(dragon_inference.cpu_barrier)
         self.assertTrue(hasattr(dragon_inference.cpu_barrier, "wait"))
 
-    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
     def test_multiple_queries_preserve_order(
-        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+        self, mock_telemetry, mock_node_class, mock_system
     ):
         """Test that multiple queries maintain order through the input queue."""
         mock_system_instance = MagicMock()
@@ -160,14 +163,6 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
 
         mock_node = MockNode("node-0", num_gpus=4)
         mock_node_class.return_value = mock_node
-
-        call_count = [0]
-
-        def format_side_effect(system, user, history, model):
-            call_count[0] += 1
-            return f"<formatted_{call_count[0]}>"
-
-        mock_formatter.side_effect = format_side_effect
 
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=1),
@@ -198,7 +193,13 @@ class TestEndToEndSinglePrompt(unittest.TestCase):
         for i in range(5):
             item = input_queue.get(timeout=1)
             self.assertEqual(item[0], f"Prompt {i}")
-            self.assertEqual(item[1], f"<formatted_{i+1}>")
+            self.assertEqual(
+                item[1],
+                [
+                    {"role": "system", "content": "You are a helpful chatbot"},
+                    {"role": "user", "content": f"Prompt {i}"},
+                ],
+            )
             # Queue objects are serialized/deserialized through mp.Queue
             self.assertIsInstance(item[2], type(queues[i]))
 
@@ -213,12 +214,11 @@ class TestEndToEndBatchedPrompts(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
     def test_prebatch_query_formats_all_prompts(
-        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+        self, mock_telemetry, mock_node_class, mock_system
     ):
         """Test that pre-batched queries format all prompts correctly."""
         mock_system_instance = MagicMock()
@@ -227,11 +227,6 @@ class TestEndToEndBatchedPrompts(unittest.TestCase):
 
         mock_node = MockNode("node-0", num_gpus=4)
         mock_node_class.return_value = mock_node
-
-        def format_side_effect(system, user, history, model):
-            return f"<formatted:{user}>"
-
-        mock_formatter.side_effect = format_side_effect
 
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=1),
@@ -257,15 +252,25 @@ class TestEndToEndBatchedPrompts(unittest.TestCase):
         batch = ["Question A", "Question B", "Question C"]
         dragon_inference.query((batch, response_queue))
 
-        # Verify batch data on queue
+        # Verify batch data on queue.  Each pre-batched prompt becomes its own
+        # OpenAI-style message list; formatting happens later on the worker.
         item = input_queue.get(timeout=1)
         self.assertEqual(item[0], batch)
         self.assertEqual(
             item[1],
             [
-                "<formatted:Question A>",
-                "<formatted:Question B>",
-                "<formatted:Question C>",
+                [
+                    {"role": "system", "content": "You are a helpful chatbot"},
+                    {"role": "user", "content": "Question A"},
+                ],
+                [
+                    {"role": "system", "content": "You are a helpful chatbot"},
+                    {"role": "user", "content": "Question B"},
+                ],
+                [
+                    {"role": "system", "content": "You are a helpful chatbot"},
+                    {"role": "user", "content": "Question C"},
+                ],
             ],
         )
 

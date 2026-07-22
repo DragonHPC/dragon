@@ -1,3 +1,40 @@
+# Dragon 0.14.1 Release Summary
+
+We're excited to announce the release of Dragon v0.14.1, which includes several updates, additions and fixes. Here are the highlights:
+
+### Changed
+- Refactored the DragonHPC wheel to reduce core pip dependencies and introduced pip extras for optional components. Supported extras: `telemetry`, `dev`, `examples`, `docs`, `test`, `ai`, `batch`, `workflows`, `all`
+- Refactored Dragon's logging infrastructure to support C/C++ logging in addition to Python
+- Enabled dynamic registration of logging clients instead of a hardcoded enum
+- Improved Dragon Inference performance and configuration
+- Moved linux wheels to manylinux_2_28 (away from manylinux2014/manylinux_2_17)
+
+### Added
+- Added a cross-platform logging example and use case documentation entry
+- Added separate lifecycle management for Batch jobs
+- Added new DDict tutorials and examples
+- Added ability to redirect managed process stdout/stderr to a file
+- Improved inclusion behavior in Dragon Inference
+- Added `dragon.__version__` Python property
+- DragonHPC ARM/macOS builds are now available on PyPI
+- Enabled tab completion hints for the Dragon CLI in bash and zsh
+- Added new macOS unit tests
+- Added cross-language data serialization and pickling support
+- Added new `SerializableByteBuffer` class
+- Added `fetch_add` operation and additional serializable type support in DDict
+- Added logic to calculate default values in Dragon Inference
+- Added support for masking GPUs with environment variables
+
+### Fixed
+- Fixed hang in `telemetry/test_analysis`
+- Improved installation documentation for Dragon Inference
+- Fixed Dragon Launcher not honoring `DRAGON_RUN_NODELIST` environment variable when using the `drun` WLM
+- Fixed `NoneType` object has no attribute `write` error in `drun`
+- Fixed Global Services startup issue
+- Updated PALS API for cray-mpich ProcessGroup support
+- Cleaned up DragonHPC documentation, added new examples, and validated links
+- Fix MPI application launch with Cray MPICH and Open MPI devcontainer environments
+
 # Dragon 0.14.0 Release Summary
 
 We're excited to announce the release of Dragon v0.14.0, which includes several updates, additions and fixes. Here are the highlights:

@@ -298,7 +298,7 @@ Start User Program (A22-A25)
 
     After sending the response, it selects a Local Services to deploy the program to. After selection
     it sends this request as a `SHProcessCreate` to the selected Local Services. This Local Services
-    sends a `SHProcessCreateResposne` as receipt.
+    sends a `SHProcessCreateResponse` as receipt.
 
 .. _route-stdout:
 
@@ -431,5 +431,3 @@ Shutdown Frontend (A26-A30)
     overlay exit, it similarly deallocates managed memory and exits.
 
     After the Frontend exits, the Dragon runtime is down.
-
-

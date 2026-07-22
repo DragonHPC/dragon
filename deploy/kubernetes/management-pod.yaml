@@ -12,7 +12,7 @@ spec:
       apt upgrade -y && apt update && \
       # cd dragon-develop && \
       # cd hpc-pe-dragon-dragon-k8s-merge-develop && \
-      # . hack/setup && \
+      # . devtools/setup && \
       sleep 1000000
     volumeMounts:
     - mountPath: /dragon-develop

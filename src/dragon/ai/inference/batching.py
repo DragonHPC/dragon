@@ -165,17 +165,39 @@ class Batch:
 
     @property
     def tools_list(self) -> List[Optional[List[Dict[str, Any]]]]:
-        """Per-request tool definitions."""
+        """Extract per-request tool definitions from the batch.
+
+        Chat requests may carry OpenAI-style tool schemas.  The batch preserves
+        one entry per request so the LLM process can apply each request's tool
+        definitions when formatting chat messages.
+
+        :returns: Tool definition lists, or ``None`` for requests without tools.
+        :rtype: list[list[dict] | None]
+        """
         return [item.tools for item in self.items]
 
     @property
     def json_schema_list(self) -> List[Optional[dict]]:
-        """Per-request JSON schema overrides for guided decoding."""
+        """Extract per-request JSON schema overrides from the batch.
+
+        A schema entry enables vLLM guided or structured decoding for that
+        request.  ``None`` means the request should use free-form generation.
+
+        :returns: JSON schema dictionaries, or ``None`` for free-form requests.
+        :rtype: list[dict | None]
+        """
         return [item.json_schema_override for item in self.items]
 
     @property
     def continue_final_message_list(self) -> List[bool]:
-        """Per-request ``continue_final_message`` flags."""
+        """Extract chat-template continuation flags from the batch.
+
+        When ``True``, the LLM process asks the tokenizer to continue the final
+        assistant message instead of adding a new generation prompt.
+
+        :returns: One continuation flag per batch item.
+        :rtype: list[bool]
+        """
         return [item.continue_final_message for item in self.items]
 
 
@@ -227,17 +249,23 @@ class DynamicBatcher:
         been reached); otherwise ``None`` is returned.
 
         :param user_prompt: Raw user input (str for text, list for chat).
+        :type user_prompt: str or list[dict[str, Any]]
         :param formatted_prompt: Formatted prompt (str) or conversation
             (list of message dicts).
+        :type formatted_prompt: str or list[dict[str, Any]]
         :param response_queue: Queue used to send the response.
         :type response_queue: dragon.native.Queue
         :param latency_metrics: Tuple of
             ``(entry_time, cpu_latency, guard_latency)``.
+        :type latency_metrics: tuple[float, float, float]
         :param tools: Optional tool definitions for chat requests.
+        :type tools: list[dict[str, Any]] or None
         :param json_schema_override: Per-request JSON schema for
             guided decoding.
+        :type json_schema_override: dict or None
         :param continue_final_message: Whether to continue the final
             assistant message.
+        :type continue_final_message: bool
         :returns: A :class:`Batch` if ready to process, otherwise ``None``.
         :rtype: Optional[Batch]
         """

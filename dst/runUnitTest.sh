@@ -29,7 +29,7 @@ PYTHON_VERSION=`python -c 'import sys; version=sys.version_info[:3]; print("{0}.
 PYTHON_MAJOR_VERSION=`python -c 'import sys; print(sys.version_info[0])'`
 PYTHON_MINOR_VERSION=`python -c 'import sys; print(sys.version_info[1])'`
 mkdir -p release
-tar -C release -xvzf /workspace/RPMS/centos7/py${PYTHON_MAJOR_VERSION}.${PYTHON_MINOR_VERSION}/dragon-*-py${PYTHON_VERSION}-${GITHASH}.x86_64.rpm
+tar -C release -xvzf /workspace/RPMS/centos7/py${PYTHON_MAJOR_VERSION}.${PYTHON_MINOR_VERSION}/dragon-*-py${PYTHON_VERSION}-${GITHASH}.*.rpm
 
 INSTALL_TARGET=$(ls src/dist/dragonhpc-*.whl)[test,batch]
 uv pip install ${INSTALL_TARGET}

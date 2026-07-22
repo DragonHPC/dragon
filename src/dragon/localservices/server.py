@@ -10,6 +10,8 @@ import json
 import collections
 import selectors
 import psutil
+import tempfile
+import shutil
 
 from .. import channels as dch
 from .. import managed_memory as dmm
@@ -454,6 +456,137 @@ class OutputConnector:
         return self._conn.outbound_channel.cuid
 
 
+class FileOutputConnector:
+    """Writes subprocess pipe output directly to a file on disk.
+
+    Two-hop architecture: subprocess -> PIPE -> FileOutputConnector -> file.
+    The subprocess always uses subprocess.PIPE so the selector in watch_output
+    can detect available data. This connector reads from the pipe and writes
+    to the specified file.
+
+    Thread-safe via internal lock (watch_output and watch_death both call flush).
+    """
+
+    def __init__(self, file_handle, puid, out_err):
+        """
+        :param file_handle: Already-opened file in "a" mode.
+        :param puid: Process UID for identification.
+        :param out_err: dmsg.SHFwdOutput.FDNum.STDOUT.value or STDERR.value
+        """
+        self._file_handle = file_handle
+        self._puid = puid
+        self._out_err = out_err
+        self._proc = None
+        self._closed = False
+        self._lock = threading.Lock()
+        self._log = logging.getLogger("LS.file output connector")
+
+    def add_proc_info(self, proc):
+        self._proc = proc
+
+    def end_stderr_forwarding(self):
+        """No-op for file mode. File captures everything intentionally."""
+        pass
+
+    def end_stdout_forwarding(self):
+        """No-op for file mode. File captures everything intentionally."""
+        pass
+
+    def flush(self):
+        """Read available data from subprocess pipe, write to file.
+
+        Returns True on EOF, False otherwise (same contract as OutputConnector.flush).
+        """
+        with self._lock:
+            if self._closed:
+                return True
+
+            try:
+                file_obj = self.file_obj
+                # not limiting read size here since the file is on disk and we want to flush out as much as possible each time to avoid keeping too much in memory. If this becomes an issue we can always add a max read size later.
+                io_data = file_obj.read(dfacts.DEFAULT_FILEOUTPUTCONNECTOR_MAX_READ) if file_obj else None
+            except (EOFError, ValueError, OSError):
+                io_data = None
+
+            if not io_data:
+                return True  # EOF
+
+            try:
+                str_data = io_data.decode()
+            except:
+                str_data = str(io_data)
+
+            # This is temporary and code to ignore warnings coming from capnproto. The
+            # capnproto library has been modified to not send the following warning.
+            # kj/filesystem-disk-unix.c++:1734: warning: PWD environment variable ...
+            # The warning does not show up normally but does in our build pipeline for
+            # now until the pycapnp project is updated. So we eliminate it here for now.
+            if "kj/" in str_data and ": warning:" in str_data:
+                return False
+
+            try:
+                self._file_handle.write(str_data)
+                self._file_handle.flush()
+            except OSError as e:
+                self._log.warning("Failed to write to output file: %s", e)
+
+            return False
+
+    def close(self):
+        """Close the output file handle. Idempotent (handles double-close from shared connector)."""
+        with self._lock:
+            if self._closed:
+                return
+
+            # Drain remaining data from subprocess pipe
+            try:
+                file_obj = self.file_obj
+                if file_obj:
+                    remaining = file_obj.read(dfacts.DEFAULT_FILEOUTPUTCONNECTOR_MAX_READ)
+                    try:
+                        str_data = remaining.decode()
+                    except:
+                        str_data = str(remaining)
+
+                    # This is temporary and code to ignore warnings coming from capnproto. The
+                    # capnproto library has been modified to not send the following warning.
+                    # kj/filesystem-disk-unix.c++:1734: warning: PWD environment variable ...
+                    # The warning does not show up normally but does in our build pipeline for
+                    # now until the pycapnp project is updated. So we eliminate it here for now.
+                    if "kj/" in str_data and ": warning:" in str_data:
+                        return False
+
+                    if remaining:
+                        self._file_handle.write(str_data)
+            except (EOFError, ValueError, OSError):
+                pass
+
+            try:
+                self._file_handle.flush()
+                self._file_handle.close()
+            except OSError:
+                pass
+
+            self._closed = True
+
+    @property
+    def file_obj(self):
+        """Returns the subprocess pipe file object (for selector registration).
+
+        This is the subprocess pipe fd, NOT the output file handle.
+        """
+        is_stderr = self._out_err == dmsg.SHFwdOutput.FDNum.STDERR.value
+        return self._proc.stderr if is_stderr else self._proc.stdout
+
+    @property
+    def proc_is_alive(self):
+        return self._proc.returncode is None
+
+    @property
+    def puid(self):
+        return self._puid
+
+
 def mk_response_pairs(resp_cl, ref):
     err_cl = resp_cl.Errors
 
@@ -630,7 +763,7 @@ class LocalServer:
         self.local_cuids = AvailableLocalCUIDS(self.node_index)
         self.local_muids = AvailableLocalMUIDS(self.node_index)
         self.local_channels = dict()
-        self.pmix_group_resources = dict()
+        self.pmi_group_resources = dict()
         self.def_muid = dfacts.default_pool_muid_from_index(self.node_index)
 
         if channels is None:
@@ -966,12 +1099,15 @@ class LocalServer:
         log.info("Main loop has exited. Now cleaning up local channels, pools, and other resources")
 
         # If we created a pmix server, clean it up now
-        if bool(self.pmix_group_resources):
-            for guid, pmix_group_resources in self.pmix_group_resources.items():
-                if isinstance(pmix_group_resources, PMIxGroupResources):
-                    log.info("Destroying PMIx server associated with guid %s", guid)
-                    pmix_group_resources.destroy_server()
+        if bool(self.pmi_group_resources):
+            for k, pmi_group_resources in self.pmi_group_resources.items():
+                if isinstance(pmi_group_resources, PMIxGroupResources):
+                    log.info("Destroying PMIx server associated with guid %s", k)
+                    pmi_group_resources.destroy_server()
                     break
+                if k == "PMOD_PATH":
+                    log.info("Destroying PMOD directory")
+                    shutil.rmtree(pmi_group_resources, ignore_errors=True)
 
         for proc in self.apt.values():
             self.cleanup_local_channels_pools(proc)
@@ -1308,9 +1444,9 @@ class LocalServer:
                 )
 
                 # If we haven't created a PMIx server, we'll need to stand up a dictionary
-                if not bool(self.pmix_group_resources):
-                    self.pmix_group_resources["server_created"] = False
-                self.pmix_group_resources[msg.guid] = PMIxGroupResources(
+                if not bool(self.pmi_group_resources):
+                    self.pmi_group_resources["server_created"] = False
+                self.pmi_group_resources[msg.guid] = PMIxGroupResources(
                     self.make_local_channel(), self.make_local_channel(), self.make_local_channel()
                 )
 
@@ -1328,14 +1464,14 @@ class LocalServer:
                     err_info = "A PMIx backend has been requested for an MPI process group, but this Dragon library was not built with PMIx support"
                     raise AttributeError(err_info)
                 else:
-                    self.pmix_group_resources[msg.guid].job = DragonPMIxJob(
+                    self.pmi_group_resources[msg.guid].job = DragonPMIxJob(
                         msg.guid,
-                        self.pmix_group_resources["server_created"],
+                        self.pmi_group_resources["server_created"],
                         msg.pmi_group_info.pmix_desc,
                         local_mgr_desc,
-                        self.pmix_group_resources[msg.guid].ls_ch.serialize(),
-                        self.pmix_group_resources[msg.guid].ret_ch.serialize(),
-                        self.pmix_group_resources[msg.guid].buffered_resp_ch.serialize(),
+                        self.pmi_group_resources[msg.guid].ls_ch.serialize(),
+                        self.pmi_group_resources[msg.guid].ret_ch.serialize(),
+                        self.pmi_group_resources[msg.guid].buffered_resp_ch.serialize(),
                         my_node_id,
                         pmix_ranklist,
                         ppns,
@@ -1343,8 +1479,8 @@ class LocalServer:
                         pmix_hostlist,
                     )
 
-                    if not self.pmix_group_resources["server_created"]:
-                        self.pmix_group_resources["server_created"] = True
+                    if not self.pmi_group_resources["server_created"]:
+                        self.pmi_group_resources["server_created"] = True
         # In case PMI stuff isn't happening
         except AttributeError:
             pass
@@ -1421,6 +1557,8 @@ class LocalServer:
         stderr_resp = None
         stdout_root = False
         stderr_root = False
+        stdout_file_handle = None
+        stderr_file_handle = None
 
         if msg.gs_ret_chan_msg is not None:
             gs_ret_chan_resp = self.create_channel(msg.gs_ret_chan_msg)
@@ -1463,10 +1601,10 @@ class LocalServer:
             stderr_root = True
             the_env[dfacts.STDERR_DESC] = stderr_resp.desc
         elif msg.stderr == dmsg.STDOUT:
-            # We put stderr connection in environment so any subprocesses
-            # will also write to the stdout connection.
-            stderr_conn = stdout_conn
-            the_env[dfacts.STDERR_DESC] = stdout_resp.desc
+            if not isinstance(msg.stdout, str):
+                # Existing behavior: stderr shares stdout channel
+                stderr_conn = stdout_conn
+                the_env[dfacts.STDERR_DESC] = stdout_resp.desc
         elif dfacts.STDERR_DESC in the_env:
             # Finding the STDERR descriptor in the environment
             # means inherit it. See above for STDOUT explanation.
@@ -1481,11 +1619,15 @@ class LocalServer:
                 # process that way. Otherwise, LS gets output
                 # via PIPE forwards it where requested.
                 stdout = subprocess.DEVNULL
+            elif isinstance(msg.stdout, str):
+                stdout_file_handle = open(msg.stdout, "a")
 
             stderr = subprocess.PIPE
             if msg.stderr == subprocess.DEVNULL:
                 # Same handling as stdout explanation above.
                 stderr = subprocess.DEVNULL
+            elif isinstance(msg.stderr, str):
+                stderr_file_handle = open(msg.stderr, "a")
 
             if msg.stderr == subprocess.STDOUT:
                 stderr = subprocess.STDOUT
@@ -1497,11 +1639,10 @@ class LocalServer:
 
                 node_index = parms.this_process.index
                 inf_muid = dfacts.infrastructure_pool_muid_from_index(node_index)
-                log.info("p_uid %s Setting required PMI environment variables" % msg.t_p_uid)
+                log.info("p_uid %s Setting required PMI environment variables", msg.t_p_uid)
                 # For PBS, we need to tell PMI to not use a FD to get PALS info:
 
                 the_env["MPICH_OFI_CXI_PID_BASE"] = str(msg.pmi_info.pid_base)
-                the_env["LD_LIBRARY_PATH"] = str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("LD_LIBRARY_PATH", ""))
                 the_env["DYLD_LIBRARY_PATH"] = (
                     str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("DYLD_LIBRARY_PATH", ""))
                 )
@@ -1513,20 +1654,35 @@ class LocalServer:
                         dutils.host_id(), pmi_group_info.job_id, msg.pmi_info.lrank
                     )
                     log.info(
-                        "p_uid %s Creating pmod launch channel using pmod_launch_cuid=%s"
-                        % (msg.t_p_uid, pmod_launch_cuid)
+                        "p_uid %s Creating pmod launch channel using pmod_launch_cuid=%s", msg.t_p_uid, pmod_launch_cuid
                     )
-
-                    log.info(
-                        "p_uid %s Creating pmod launch channel using pmod_launch_cuid=%s"
-                        % (msg.t_p_uid, pmod_launch_cuid)
-                    )
-
                     pmod_launch_ch = dch.Channel(self.pools[inf_muid], pmod_launch_cuid)
+
+                    # Create a PMOD sym link in a tmp directory if we don't already have one:
+                    if "PMOD_PATH" not in self.pmi_group_resources:
+                        pmod_path = tempfile.mkdtemp(prefix="dragon_pmod_")
+                        self.pmi_group_resources["PMOD_PATH"] = str(pmod_path)
+                        log.info("p_uid %s Creating PMOD directory at %s", msg.t_p_uid, pmod_path)
+                        os.symlink(
+                            os.path.join(dfacts.DRAGON_LIB_DIR, "libdragon.so"), os.path.join(pmod_path, "libpmod.so")
+                        )
+                        log.info(
+                            "p_uid %s Creating libpmod.so symlink to libdragon.so in directory %s",
+                            msg.t_p_uid,
+                            pmod_path,
+                        )
+
                     the_env["DRAGON_PMOD_CHILD_CHANNEL"] = str(dutils.B64(pmod_launch_ch.serialize()))
                     the_env["_DRAGON_PALS_ENABLED"] = "1"
                     the_env["DL_PLUGIN_RESILIENCY"] = "1"
                     the_env["LD_PRELOAD"] = str(dfacts.DRAGON_LIB_SO)
+                    the_env["LD_LIBRARY_PATH"] = (
+                        str(dfacts.DRAGON_LIB_DIR)
+                        + ":"
+                        + str(self.pmi_group_resources["PMOD_PATH"])
+                        + ":"
+                        + str(the_env.get("LD_LIBRARY_PATH", ""))
+                    )
                     the_env["PMI_CONTROL_PORT"] = str(pmi_group_info.control_port)
                     try:
                         del the_env["PMI_CONTROL_FD"]
@@ -1536,10 +1692,14 @@ class LocalServer:
                 elif pmi_group_info.backend == dfacts.PMIBackend.PMIX:
                     log.info("Establishing parameters for PMIx launch of MPI app")
                     try:
-                        the_env = self.pmix_group_resources[guid].job.get_client_env(the_env, msg.pmi_info.lrank)
+                        the_env = self.pmi_group_resources[guid].job.get_client_env(the_env, msg.pmi_info.lrank)
                     except AttributeError:
                         resp_msg = fail("A PMIx backend was requested, but no PMIx server was found.")
                         return resp_msg
+
+                    the_env["LD_LIBRARY_PATH"] = (
+                        str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("LD_LIBRARY_PATH", ""))
+                    )
 
                     # We don't have support for GPUs in our PMIx server yet. For ANL MPICH, we need to manually
                     # disable GPU support during MPI_init:
@@ -1557,25 +1717,42 @@ class LocalServer:
 
             stdin_connector = InputConnector(stdin_conn)
 
-            stdout_connector = OutputConnector(
-                be_in=self.be_in,
-                puid=msg.t_p_uid,
-                hostname=self.hostname,
-                out_err=dmsg.SHFwdOutput.FDNum.STDOUT.value,
-                conn=stdout_conn,
-                root_proc=stdout_root,
-                critical_proc=False,
-            )
+            if stdout_file_handle is not None:
+                stdout_connector = FileOutputConnector(
+                    file_handle=stdout_file_handle,
+                    puid=msg.t_p_uid,
+                    out_err=dmsg.SHFwdOutput.FDNum.STDOUT.value,
+                )
+            else:
+                stdout_connector = OutputConnector(
+                    be_in=self.be_in,
+                    puid=msg.t_p_uid,
+                    hostname=self.hostname,
+                    out_err=dmsg.SHFwdOutput.FDNum.STDOUT.value,
+                    conn=stdout_conn,
+                    root_proc=stdout_root,
+                    critical_proc=False,
+                )
 
-            stderr_connector = OutputConnector(
-                be_in=self.be_in,
-                puid=msg.t_p_uid,
-                hostname=self.hostname,
-                out_err=dmsg.SHFwdOutput.FDNum.STDERR.value,
-                conn=stderr_conn,
-                root_proc=stderr_root,
-                critical_proc=False,
-            )
+            if stderr_file_handle is not None:
+                stderr_connector = FileOutputConnector(
+                    file_handle=stderr_file_handle,
+                    puid=msg.t_p_uid,
+                    out_err=dmsg.SHFwdOutput.FDNum.STDERR.value,
+                )
+            elif msg.stderr == dmsg.STDOUT and stdout_file_handle is not None:
+                # Shared connector - streams merged at OS level via subprocess.STDOUT
+                stderr_connector = stdout_connector
+            else:
+                stderr_connector = OutputConnector(
+                    be_in=self.be_in,
+                    puid=msg.t_p_uid,
+                    hostname=self.hostname,
+                    out_err=dmsg.SHFwdOutput.FDNum.STDERR.value,
+                    conn=stderr_conn,
+                    root_proc=stderr_root,
+                    critical_proc=False,
+                )
 
             with self.apt_lock:  # race with death watcher; hold lock to get process in table.
                 # The stdout_conn and stderr_conn will be filled in just below.
@@ -1654,6 +1831,10 @@ class LocalServer:
             tb = traceback.format_exc()
             error = "%r encountered %s\n%s" % (msg, popen_err, tb)
             log.warning(error)
+            if stdout_file_handle is not None:
+                stdout_file_handle.close()
+            if stderr_file_handle is not None:
+                stderr_file_handle.close()
             resp_msg = fail(error)
 
         return resp_msg
@@ -1840,7 +2021,7 @@ class LocalServer:
         success, fail = mk_response_pairs(dmsg.LSDestroyPMIxResponse, msg.tag)
         log.debug("Cleaning up PMIx resources for guid %s", msg.guid)
         try:
-            self.pmix_group_resources[msg.guid].destroy_job()
+            self.pmi_group_resources[msg.guid].destroy_job()
             resp_msg = success(guid=msg.guid)
             log.debug("Successfully destroyed PMIx resources for guid %s", msg.guid)
         except KeyError:
@@ -2331,7 +2512,6 @@ class LocalServer:
             pass
 
     def _output_connector_cleanup(self, stream_sel=None):
-
         try:
             while True:
                 exited_proc_connector = self.exited_channel_output_monitors.get_nowait()

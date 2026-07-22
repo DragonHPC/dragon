@@ -1,3 +1,17 @@
+"""Top-level orchestration for the Dragon inference service.
+
+The :class:`Inference` class discovers the Dragon allocation, validates the
+requested model and hardware configuration, partitions nodes and GPUs into
+CPU-head workers and tensor-parallel inference workers, and owns the backend
+process-group lifecycle.  It exposes a small lifecycle API:
+
+* construct with an :class:`~dragon.ai.inference.InferenceConfig` and a
+    shared input queue,
+* call :meth:`Inference.initialize` to start workers,
+* submit low-level requests with :meth:`Inference.query`, and
+* call :meth:`Inference.destroy` to stop workers and close the queue.
+"""
+
 import os
 from ...infrastructure.policy import Policy
 from ...native.process_group import ProcessGroup
@@ -104,7 +118,6 @@ class Inference:
         self.nnodes = config.hardware.num_nodes
         self.node_offset = config.hardware.node_offset
         self.ngpus = config.hardware.num_gpus
-        self.num_inf_workers_for_each_cpu_head = config.hardware.num_inf_workers_per_cpu
 
         # Get all nodes in allocation
         self.all_nodes = self.get_nodes_in_alloc()
@@ -113,7 +126,18 @@ class Inference:
         config.validate_all(self.all_nodes)
 
         # Subset nodes & gpus if user-specified.
-        self.nodes = self.maybe_subset_nodes_gpus()
+        self.nodes, resolved_gpus = self.maybe_subset_nodes_gpus()
+
+        # Calculate num_inf_workers_per_cpu after GPU count is resolved
+        self.num_inf_workers_for_each_cpu_head = config.hardware.calculate_inf_workers_per_cpu(
+            resolved_gpus, self.tp_size
+        )
+        if config.hardware.num_inf_workers_per_cpu == -1:
+            print(
+                f"Auto-calculated num_inf_workers_per_cpu: {self.num_inf_workers_for_each_cpu_head} "
+                f"(gpus={resolved_gpus}, tp_size={self.tp_size})",
+                flush=True,
+            )
 
         # Create cpu and device dict by hostname affinity.
         self.cpu_and_device_proc_by_hostname, self.cpu_nprocs = (
@@ -130,6 +154,12 @@ class Inference:
         # Create dragon telemetry procs.
         self.dt = Telemetry()
 
+        # Calculate inf_wrkr_queue_maxsize (default: num_inf_workers * 2)
+        if config.hardware.inf_wrkr_queue_maxsize == -1:
+            self.inf_wrkr_queue_maxsize = self.num_inf_workers_for_each_cpu_head * 2
+        else:
+            self.inf_wrkr_queue_maxsize = config.hardware.inf_wrkr_queue_maxsize
+
         # Store CPU worker constructor kwargs (shared across CPU worker processes)
         self.cpu_worker_kwargs = {
             "input_queue": self.input_queue,
@@ -138,6 +168,7 @@ class Inference:
             "guardrails_config": config.guardrails,
             "dynamic_worker_config": config.dynamic_worker,
             "num_inf_workers_per_cpu": self.num_inf_workers_for_each_cpu_head,
+            "inf_wrkr_queue_maxsize": self.inf_wrkr_queue_maxsize,
             "end_event": self.end_event,
             "cpu_barrier": self.cpu_barrier,
             "dt": self.dt,
@@ -165,8 +196,10 @@ class Inference:
         different than default (full utilization), subset the nodes and
         GPUs accordingly.
 
-        :returns: Dictionary mapping (hostname, Dragon Node) tuples to GPU ranks.
-        :rtype: dict
+        :returns: Tuple of (nodes_dict, gpus_per_node) where nodes_dict maps
+            (hostname, Dragon Node) tuples to GPU ranks, and gpus_per_node
+            is the number of GPUs per node after subsetting.
+        :rtype: tuple[dict, int]
         """
         # Maybe subset nodes
         all_nodes = self.all_nodes
@@ -195,7 +228,10 @@ class Inference:
             # Validate tensor-parallel input arg by node
             self.tp_args_validator(len(devices))
             my_nodes[(hostname, node)] = devices
-        return my_nodes
+
+        # Return nodes dict and GPU count (assumes homogeneous cluster)
+        gpus_per_node = len(devices) if my_nodes else 0
+        return my_nodes, gpus_per_node
 
     def tp_args_validator(self, app_gpus):
         """Validate tensor-parallel size against GPUs available per node.
@@ -272,22 +308,29 @@ class Inference:
         prompt = q_item[0]
         response_q = q_item[1]
 
-        from .llm_engine import chat_template_formatter
+        def _build_messages(user_prompt: str) -> list:
+            """Build OpenAI-format message list for a single prompt.
 
-        # No batching or single inputs that are dynamically batched in the backend.
-        # Format them individually.
-        if self.batch_toggle is False or self.batch_type == "dynamic":
-            formatted_prompt = chat_template_formatter(
-                self.system_prompt, prompt, [], self.model_name
+            The worker will apply the model's chat template using vLLM's
+            already-loaded tokenizer, avoiding redundant tokenizer loads.
+            """
+            sp = (
+                " ".join(self.system_prompt)
+                if isinstance(self.system_prompt, list)
+                else self.system_prompt
             )
+            return [
+                {"role": "system", "content": sp},
+                {"role": "user", "content": user_prompt},
+            ]
+
+        # Build message dicts — formatting happens on the worker using vLLM's tokenizer.
+        # No batching or single inputs that are dynamically batched in the backend.
+        if self.batch_toggle is False or self.batch_type == "dynamic":
+            formatted_prompt = _build_messages(prompt)
         elif self.batch_type == "pre-batch":  # Already pre-batched list of inputs.
-            formatted_prompt = []
-            for item in prompt:
-                formatted_prompt.append(
-                    chat_template_formatter(
-                        self.system_prompt, item, [], self.model_name
-                    )
-                )
+            formatted_prompt = [_build_messages(item) for item in prompt]
+
         item = (prompt, formatted_prompt, response_q, start_time)
         self.input_queue.put(item)
 

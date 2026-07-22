@@ -11,6 +11,7 @@ from unittest.mock import patch
 import copy
 
 from dragon.native.machine import System, Node
+from dragon.native.queue import Queue
 
 from dragon.ai.inference.inference_utils import Inference
 from dragon.ai.inference.config import (
@@ -48,6 +49,7 @@ def create_test_config():
             num_gpus=-1,
             num_inf_workers_per_cpu=4,
             node_offset=0,
+            inf_wrkr_queue_maxsize=-1,
         ),
         model=ModelConfig(
             model_name="test-model",
@@ -105,7 +107,7 @@ class TestInferenceUtils(TestCase):
         num_available_nodes = len(system.nodes)
 
         # Validate config file:
-        input_queue = mp.Queue()
+        input_queue = Queue()
 
         # Test num_nodes = 0 (should raise ValueError)
         config = create_test_config()
@@ -140,8 +142,13 @@ class TestInferenceUtils(TestCase):
         first_node = Node(system.nodes[0])
         num_gpus_per_node = first_node.num_gpus
 
+        # Skip test if no GPUs available. The test config uses tp_size=1, which
+        # requires at least one visible GPU per node.
+        if not num_gpus_per_node:
+            self.skipTest("No GPUs available on Dragon nodes for testing")
+
         # Validate subset of nodes - use num_nodes=1
-        input_queue = mp.Queue()
+        input_queue = Queue()
         config = create_test_config()
         config.hardware.num_nodes = 1
         # New signature: Inference(config, input_queue)
@@ -153,7 +160,7 @@ class TestInferenceUtils(TestCase):
 
         # Validate subset of gpus - num_gpus is set via config
         if num_gpus_per_node >= 4:
-            input_queue = mp.Queue()
+            input_queue = Queue()
             config = create_test_config()
             config.hardware.num_gpus = 4
             # Use -1 for num_nodes to use all nodes
@@ -163,6 +170,85 @@ class TestInferenceUtils(TestCase):
             self.assertEqual(len(nodes.keys()), num_available_nodes)  # Assert all nodes
             for (hostname, node), gpus in nodes.items():
                 self.assertEqual(len(gpus), 4)  # Assert subset of GPUs
+
+    def test_auto_calculate_inf_workers_per_cpu(self, mock_cpu_wrkr, mock_mp_proc, mock_dt):
+        """Test auto-calculation of num_inf_workers_per_cpu when set to -1."""
+        # Mock dragon-telemetry and CPU worker (external dependencies)
+        mock_dt.return_value = MockTelemetry()
+        mock_cpu_wrkr.return_value = MockCPUWorker()
+
+        # Get real system info
+        system = System()
+        num_available_nodes = len(system.nodes)
+
+        # Skip test if no nodes available
+        if num_available_nodes < 1:
+            self.skipTest("No Dragon nodes available for testing")
+
+        # Get GPU count from first node
+        first_node = Node(system.nodes[0])
+        num_gpus_per_node = first_node.num_gpus
+
+        # Skip if not enough GPUs for meaningful test
+        if num_gpus_per_node < 1:
+            self.skipTest("No GPUs available for testing")
+
+        # Test auto-calculation with num_inf_workers_per_cpu = -1
+        input_queue = Queue()
+        config = create_test_config()
+        config.hardware.num_inf_workers_per_cpu = -1  # Auto-calculate
+        config.model.tp_size = 1
+        pipeline = Inference(config, input_queue)
+
+        # Formula: num_gpus // tp_size
+        expected_workers = num_gpus_per_node // config.model.tp_size
+        self.assertEqual(pipeline.num_inf_workers_for_each_cpu_head, expected_workers)
+
+        # Test with tp_size = 2 (if enough GPUs)
+        if num_gpus_per_node >= 2:
+            input_queue = Queue()
+            config = create_test_config()
+            config.hardware.num_inf_workers_per_cpu = -1
+            config.model.tp_size = 2
+            pipeline = Inference(config, input_queue)
+            expected_workers = num_gpus_per_node // 2
+            self.assertEqual(pipeline.num_inf_workers_for_each_cpu_head, expected_workers)
+
+    def test_auto_calculate_inf_wrkr_queue_maxsize(self, mock_cpu_wrkr, mock_mp_proc, mock_dt):
+        """Test auto-calculation of inf_wrkr_queue_maxsize when set to -1."""
+        # Mock dragon-telemetry and CPU worker (external dependencies)
+        mock_dt.return_value = MockTelemetry()
+        mock_cpu_wrkr.return_value = MockCPUWorker()
+
+        # Get real system info
+        system = System()
+        num_available_nodes = len(system.nodes)
+
+        # Skip test if no nodes available
+        if num_available_nodes < 1:
+            self.skipTest("No Dragon nodes available for testing")
+
+        # Skip if no GPUs available; config validation requires tp_size <= GPUs.
+        first_node = Node(system.nodes[0])
+        if first_node.num_gpus < 1:
+            self.skipTest("No GPUs available for testing")
+
+        # Test auto-calculation with inf_wrkr_queue_maxsize = -1
+        input_queue = mp.Queue()
+        config = create_test_config()
+        config.hardware.inf_wrkr_queue_maxsize = -1  # Auto-calculate
+        pipeline = Inference(config, input_queue)
+
+        # Formula: num_inf_workers_for_each_cpu_head * 2
+        expected_queue_size = pipeline.num_inf_workers_for_each_cpu_head * 2
+        self.assertEqual(pipeline.inf_wrkr_queue_maxsize, expected_queue_size)
+
+        # Test with explicit value
+        input_queue = mp.Queue()
+        config = create_test_config()
+        config.hardware.inf_wrkr_queue_maxsize = 10  # Explicit value
+        pipeline = Inference(config, input_queue)
+        self.assertEqual(pipeline.inf_wrkr_queue_maxsize, 10)
 
 
 if __name__ == "__main__":

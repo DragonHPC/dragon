@@ -15,6 +15,9 @@ calling ``.get()`` on a task's handle, which blocks until
 the task completes. Use :py:meth:`~dragon.workflows.batch.Batch.fence` to wait for all currently
 submitted tasks to finish before proceeding, and :py:meth:`~dragon.workflows.batch.Batch.clear_results`
 to free the memory used to hold task results (implicitly calls :py:meth:`~dragon.workflows.batch.Batch.fence`).
+Task results remain in Batch's internal results DDict until ``.get()`` fetches them or
+``clear_results()`` discards them; Batch teardown does not automatically copy unfetched
+results back to the client.
 
 Batch always creates and owns its internal results DDict. By default it allocates one gibibyte
 per requested node for that store. For result-heavy workloads or tighter memory budgets, pass
@@ -49,7 +52,7 @@ demonstrates the basics of the API.
     # file describes a collection of tasks that are parameterized by the arguments to
     # the returned function, gpu_matmul_func.
     get_file = lambda base_dir, i, j: Path(base_dir) / Path(f"file_{i + j}")
-    gpu_matul_lazy = batch.import_func("gpu_matmul_ptd.yml", gpu_matmul, base_dir, get_file)
+    gpu_matmul_lazy = batch.import_func("gpu_matmul_ptd.yml", gpu_matmul, base_dir, get_file)
 
     results = []
     for i in range(1000):
@@ -64,7 +67,6 @@ demonstrates the basics of the API.
             print(f"gpu_matmul failed with the following exception: {e}")
 
     batch.join()
-    batch.destroy()
 
 
 Notice that the call to :py:meth:`~dragon.workflows.batch.Batch.import_func` requires a file called
@@ -167,8 +169,8 @@ And here is the same example as above, but done without a PTD file.
     m = np.vander(a)
 
     # Submit tasks directly — Batch dispatches them to workers in the background
-    tasks = [batch.function(gpu_matmul, m, base_dir, i,
-                            reads=[get_read(i)], writes=[get_write(i)], timeout=30)
+    tasks = [batch.options(reads=[get_read(i)], writes=[get_write(i)], timeout=30)
+                    .function(gpu_matmul, m, base_dir, i)
              for i in range(1000)]
 
     # Retrieve results — .get() waits for each task to complete if it hasn't yet
@@ -179,7 +181,6 @@ And here is the same example as above, but done without a PTD file.
             print(f"gpu_matmul failed with the following exception: {e}")
 
     batch.join()
-    batch.destroy()
 
 
 Tasks are submitted continuously (although batched in the background for better performance). Calls to
@@ -187,9 +188,21 @@ Tasks are submitted continuously (although batched in the background for better 
 :py:meth:`~dragon.workflows.batch.Batch.job` return immediately and :py:class:`~dragon.workflows.batch.Batch`
 batches and dispatches submitted tasks to workers in the background. The lifecycle methods are:
 :py:meth:`~dragon.workflows.batch.Batch.close`, which is deprecated and retained as a no-op for compatibility;
-:py:meth:`~dragon.workflows.batch.Batch.join`, which waits only for work started by the calling client and then detaches that client from the shared runtime; and
-:py:meth:`~dragon.workflows.batch.Batch.destroy`, which shuts down the shared
-:py:class:`~dragon.workflows.batch.Batch` runtime after all clients have joined and all in-flight work completes.
+:py:meth:`~dragon.workflows.batch.Batch.join`, which waits only for work started by the calling client and then detaches that client from the Batch instance shared by clients; and
+:py:meth:`~dragon.workflows.batch.Batch.destroy`, which is only valid when the Batch was created with ``managed_lifecycle=True`` and shuts down that client-shared Batch instance after all clients have detached (or after ``force_timeout`` expires, if provided).
+
+By default, ``Batch()`` uses unmanaged lifecycle mode. In that mode, the Batch instance shared by clients shuts down automatically when the last client detaches, so the usual cleanup pattern is just:
+
+.. code-block:: python
+
+    result = task.get()
+    batch.join()
+
+Any task results you still need must be fetched before that final ``join()``. If you need a joined
+handle to keep reading results afterward, create the runtime with ``managed_lifecycle=True`` and
+delay :py:meth:`~dragon.workflows.batch.Batch.destroy` until after retrieval.
+
+Use ``Batch(managed_lifecycle=True)`` only when you intentionally want the runtime to outlive individual client handles, for example when serializing Batch handles through another service. In managed mode, any client may later call :py:meth:`~dragon.workflows.batch.Batch.destroy`, even after that client has already called :py:meth:`~dragon.workflows.batch.Batch.join`.
 
 Any mix of Python functions, executables, and parallel jobs can be submitted to
 :py:class:`~dragon.workflows.batch.Batch` simultaneously, and dependencies can exist between tasks
@@ -199,21 +212,104 @@ reads from a file that the function writes to. MPI jobs are specified using the
 :py:meth:`~dragon.workflows.batch.Batch.process` function submits a task for running a serial
 executable.
 
-Each task has three handles for obtaining output: ``result``, ``stdout``, and ``stderr``.
-Calling ``.get()`` on the task handle returns the task's return value, blocking until the task
+Batch metadata is now expected to be supplied through
+:py:meth:`~dragon.workflows.batch.Batch.options`, for example
+``batch.options(name="step1", stdout="step1.out").function(fn, *args, **kwargs)``.
+Passing metadata such as ``reads``, ``writes``, ``name``, ``timeout``, ``stdout``,
+or ``stderr`` directly to :py:meth:`~dragon.workflows.batch.Batch.function`,
+:py:meth:`~dragon.workflows.batch.Batch.process`, or
+:py:meth:`~dragon.workflows.batch.Batch.job` is still supported for compatibility,
+but has been deprecated.
+
+When a ``ProcessTemplate`` passed to :py:meth:`~dragon.workflows.batch.Batch.process` or
+:py:meth:`~dragon.workflows.batch.Batch.job` includes an explicit host-name policy
+(``Policy(placement=Policy.Placement.HOST_NAME, host_name=...)``), Batch preserves that request and,
+for jobs, reserves those specific hosts before launch. Leave ``host_name`` unset if you want Batch
+to choose task placement automatically across its managed topology.
+
+The same precedence rule applies to task log files: ``stdout`` and ``stderr``
+configured through :py:meth:`~dragon.workflows.batch.Batch.options` act as
+defaults for process and job tasks, but any ``stdout`` or ``stderr`` already
+present on an individual :py:class:`ProcessTemplate` wins for that template.
+An explicit ``stdout``/``stderr`` path is always honored even when
+``task_logs=False``; only the automatic per-task file capture is gated behind
+``task_logs=True``.
+
+Calling ``.get()`` on a task handle returns the task's return value, blocking until the task
 completes if it has not finished yet. If an exception was thrown during the execution of a task,
 calling ``.get()`` on the task's handle will re-raise that exception.
+
+For :py:meth:`~dragon.workflows.batch.Batch.process` and
+:py:meth:`~dragon.workflows.batch.Batch.job` tasks, the task's return value is the child
+exit code. A non-zero exit code is returned like any other value rather than raised, so a
+downstream task that consumes a process or job result (for example through an argument
+dependency) receives that exit code as its input; check the code yourself to decide whether
+the task succeeded. A single-process :py:meth:`~dragon.workflows.batch.Batch.process` returns
+a scalar exit code, while a multi-rank :py:meth:`~dragon.workflows.batch.Batch.job` returns a
+list of exit codes, one per launched process.
+
+A :py:meth:`~dragon.workflows.batch.Batch.function` target must be importable by the Batch
+workers, since the callable is reconstructed in the worker process. Functions defined in an
+installed package or on the workers' ``PYTHONPATH`` work; a helper that only exists in the
+submitting process (for example one made importable through a runtime ``sys.path`` insert)
+cannot be re-imported on the worker, and ``.get()`` re-raises the resulting import error
+(such as ``ModuleNotFoundError``) instead of blocking.
+
+By default (``Batch()``), task ``stdout`` and ``stderr`` are not captured to files. Unless you pass
+an explicit ``stdout``/``stderr`` path for a task, its output is forwarded to the client console like
+any other Dragon process. Pass ``task_logs=True`` to :py:class:`~dragon.workflows.batch.Batch` to
+instead redirect each task's ``stdout`` and ``stderr`` to files on the shared filesystem and enable
+log discovery. With ``task_logs=True``, each Batch client owns a log directory rooted at
+``runinfo/<batch-run-id>/client-<id>/task_logs`` with per-kind subdirectories such as
+``function/``, ``process/``, and ``job/``. Use :py:meth:`~dragon.workflows.batch.Batch.log_dir`
+to discover that directory, :py:meth:`~dragon.workflows.batch.Batch.log_manifest_path` to inspect
+the per-client ``manifest.jsonl`` index of task log files, and :py:meth:`~dragon.workflows.batch.Task.log_paths`
+on a specific task to get its resolved stdout/stderr file paths.
+
+Batch also provides a small, experimental Python helper layer over the manifest
+so users do not need to parse the JSONL file manually. These discovery helpers
+may evolve as the logging interface matures:
+
+* :py:meth:`~dragon.workflows.batch.Batch.iter_log_records` returns all current client's manifest records.
+* :py:meth:`~dragon.workflows.batch.Batch.find_logs` returns one task's manifest record by ``tuid``.
+* :py:meth:`~dragon.workflows.batch.Batch.read_logs` reads a task's stdout/stderr files from the shared filesystem and always returns a dictionary with ``stdout`` and ``stderr`` keys.
+
+These experimental log-discovery helpers require ``task_logs=True``; they raise
+``RuntimeError`` when task logging is disabled. For example:
+
+.. code-block:: python
+    :linenos:
+    :caption: **Inspecting Batch task logs**
+
+    batch = Batch(task_logs=True)
+    task = batch.options(stdout="custom.out").function(my_func)
+    task.get()
+
+    print(task.log_paths())
+    print(batch.log_dir())
+    print(batch.log_manifest_path())
+    print(batch.find_logs(task.uid))
+    print(batch.read_logs(task.uid, log_type="stdout")["stdout"])
+
+Even when ``log_type`` is specified, :py:meth:`~dragon.workflows.batch.Batch.read_logs`
+still returns a two-key dictionary. The requested side contains the log text,
+and the other side is ``None``.
+
+Using :py:meth:`~dragon.workflows.batch.Batch.options` avoids conflicts between
+Batch metadata and user function keyword arguments. The old direct style,
+``batch.function(fn, stdout="task.out", ...)``, is deprecated specifically
+because those keyword names are reserved by Batch in that compatibility path.
 
 The initial creation of the :py:class:`~dragon.workflows.batch.Batch` object sets up manager and worker
 processes. :py:class:`~dragon.workflows.batch.Batch`
 objects can be passed between processes to allow multiple clients.
 Unpickling a :py:class:`~dragon.workflows.batch.Batch` object at a destination
-process will register the new :py:class:`~dragon.workflows.batch.Batch` client
-and allow the user to submit tasks to it. All clients must call
-:py:meth:`~dragon.workflows.batch.Batch.join` when they are done.
+process registers a new :py:class:`~dragon.workflows.batch.Batch` client and
+allows the user to submit tasks to the same client-shared Batch instance. All clients should
+call :py:meth:`~dragon.workflows.batch.Batch.join` when they are done.
 Calling :py:meth:`~dragon.workflows.batch.Batch.close` is optional and has no effect beyond a deprecation warning.
-Any client can also call :py:meth:`~dragon.workflows.batch.Batch.destroy` to shut down the shared runtime;
-it will block until all active clients have called :py:meth:`~dragon.workflows.batch.Batch.join` and all work completes.
+If the runtime was created with ``managed_lifecycle=True``, any client can later call
+:py:meth:`~dragon.workflows.batch.Batch.destroy` to shut down that client-shared Batch instance.
 
 Data Dependencies
 =================
@@ -228,7 +324,9 @@ task is created, a list of Read or Write objects, created by
 .. code-block:: python
     :linenos:
 
-    task = batch.job(target=mpi_exec, num_procs=256, reads=<list of Reads>, writes=<list of Writes>)
+    task = batch.options(reads=<list of Reads>, writes=<list of Writes>).job(
+        process_templates=[(256, ProcessTemplate(target=mpi_exec))]
+    )
 
 After a task has been create, further Reads and Writes can be specified
 via ``task.read`` and ``task.write``:
@@ -258,8 +356,10 @@ Argument-passing Dependencies
 
 Beyond the type of dependencies described above, there is a second type
 of dependency: argument-passing dependencies. These dependencies are
-inferred when a ``result``, ``stdout``, or ``stderr`` object is passed
-as an argument to a ``Batch`` ``Function``, ``Process``, or ``Job``. For
+inferred when a task handle is passed
+as an argument to a ``Batch`` ``Function``, ``Process``, or ``Job``. Batch passes the
+upstream task's return value into the downstream argument position once the upstream task
+completes. For
 example:
 
 .. code-block:: python
@@ -281,7 +381,6 @@ example:
     # prints: "Hi-diddly-ho!!!"
 
     batch.join()
-    batch.destroy()
 
 
 In the above example, the function ``bar`` will not run until ``foo``
@@ -298,6 +397,8 @@ client completes, then clears internal dependency state so the next batch of tas
 a clean slate. To additionally free the memory used to hold task results, call
 :py:meth:`~dragon.workflows.batch.Batch.clear_results`, which calls
 :py:meth:`~dragon.workflows.batch.Batch.fence` and then clears the results dictionary.
+After ``clear_results()``, any task result that has not already been retrieved by ``.get()`` is no
+longer available from the client handle.
 
 Distributed Dictionary
 ======================
@@ -344,8 +445,8 @@ Dictionary. The only change needed is in the task definitions - the rest of the 
     m = np.vander(a)
 
     # Submit tasks — Batch dispatches them in the background
-    tasks = [batch.function(gpu_matmul, m, ddict, i,
-                            reads=[get_read(i)], writes=[get_write(i)])
+    tasks = [batch.options(reads=[get_read(i)], writes=[get_write(i)])
+                    .function(gpu_matmul, m, ddict, i)
              for i in range(1000)]
 
     # Retrieve results — .get() waits for each task to complete if needed
@@ -356,7 +457,6 @@ Dictionary. The only change needed is in the task definitions - the rest of the 
             print(f"gpu_matmul failed with the following exception: {e}")
 
     batch.join()
-    batch.destroy()
 
 
 Inspecting the Topology
@@ -377,4 +477,3 @@ shuts down cleanly without submitting any real work.
     :language: python
     :linenos:
     :caption: **topology.py: Batch topology API walkthrough**
-

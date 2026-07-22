@@ -13,31 +13,61 @@ repository: <https://github.com/DragonHPC/dragon>
 Installing Dragon
 ------------------------
 
-Dragon currently requires a minimum python version of 3.10 with support
-for 3.11, 3.12 and 3.13. Otherwise, just do a `pip install`:
+Dragon currently supports python versions 3.11, 3.12 and 3.13. Otherwise, just
+do a `pip install`:
 
     pip install dragonhpc
 
 After doing the `pip install` of the package, you have
 completed the prerequisites for running Dragon multiprocessing programs.
 
-Dragon is built with `manylinux2014` support and should function on most Linux
+Dragon is built with `manylinux_2_28` support and should function on most Linux
 distros.
+
+Extra requirements
+------------------
+
+Beyond its foundational distributed communication architecture, Dragon includes
+support for AI and scientific workflows as well as monitoring system performance
+via its telemetry feature. Dependencies for these supported features is not installed
+by default when you install the `dragonhpc` package.
+
+Rather, those extra dependencies are defined as optional requirements that you can
+install as needed. For instance, installing AI workflow dependencies can be done via
+
+    pip install dragonhpc[ai]
+
+And telemetry dependencies can be installed via
+
+    pip install dragonhpc[telemetry]
+
+If you were interested in installing both sets of those dependencies, a comma
+separated list will achieve the result:
+
+    pip install dragonhpc[ai,telemetry]
+
+To install the dependencies for all the optional features, you can use the `all` tag:
+
+    pip install dragonhpc[all]
+
+For a complete list of the currently supported extra requirement tags, refer to
+[extra-requirements.txt](https://github.com/DragonHPC/dragon/blob/main/src/extra-requirements.txt)
+in the open source repository.
 
 Configuring Dragon's high performance network backend for HSTA
 --------------------------------------------------------------
 
 Dragon includes two separate network backend services for communication across compute nodes.
-The first is referred as the "TCP transport agent". This backend uses common TCP to 
+The first is referred as the "TCP transport agent". This backend uses common TCP to
 perform any communication over the compute network. However, this backend is relatively
-low performing and can be a perforamnce bottleneck.
+low performing and can be a performance bottleneck.
 
-Dragon also includes the "High Speed Transport Agent (HSTA)", which supports UCX for 
+Dragon also includes the "High Speed Transport Agent (HSTA)", which supports UCX for
 Infiniband networks and OpenFabrics Interface (OFI) for HPE Slingshot. However,
-Dragon can only use these networks if its envionment is properly configured. 
+Dragon can only use these networks if its environment is properly configured.
 
 To configure HSTA, use `dragon-config` to provide an "ofi-runtime-lib" or "ucx-runtime-lib".
-The input should be a library path that contains a `libfabric.so` for OFI or a 
+The input should be a library path that contains a `libfabric.so` for OFI or a
 `libucp.so` for UCX. These are libraries are dynamically opened by HSTA at runtime.
 Without them, dragon will fallback to using the lower performing TCP transport agent
 
@@ -98,7 +128,7 @@ There are two steps that users must take to use Dragon multiprocessing.
 
 2. You must start your program using the dragon command. This not only starts
    your program, but it also starts the Dragon run-time services that provide
-   the necesssary infrastructure for running multiprocessing at scale.
+   the necessary infrastructure for running multiprocessing at scale.
 
         dragon myprog.py
 
@@ -176,9 +206,9 @@ report. To learn more about how to enable higher levels of debug logging refer t
 `dragon --help`.
 
 Dragon Managed Memory, a low level component of the Dragon runtime, uses shared memory.
-It is possible that things go wrong while the runtime is coming down and files are 
-left in /dev/shm. Dragon does attempt to clean these up in the chance of a bad exit, 
-but it may not succeed. In that case, running `dragon-cleanup` on your own will clean up 
+It is possible that things go wrong while the runtime is coming down and files are
+left in /dev/shm. Dragon does attempt to clean these up in the chance of a bad exit,
+but it may not succeed. In that case, running `dragon-cleanup` on your own will clean up
 any zombie processes or un-freed memory.
 
 It is possible for a user application or workflow to exhaust memory resources in Dragon

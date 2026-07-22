@@ -9,6 +9,14 @@ messages, the messages themselves constitute the true internal interface. To tha
 Developers should use this API to add functionality to the Dragon Services through new messages.
 It is not meant for users.
 
+This reference is aimed at contributors extending the runtime itself, not at
+application authors. If you are building normal Dragon applications, stay with
+the User API and the Native API unless you specifically need to reason about
+runtime descriptors, service messages, or infrastructure parameters.
+
+For the broader system design and service relationships, see
+:ref:`runtime_design` in the developer guide before using this reference.
+
 
 Python Reference
 ================

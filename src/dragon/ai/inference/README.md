@@ -1,42 +1,61 @@
-# Dragon Distributed ML Inference
+# Dragon Inference Service
 
-This module is experimental and not in its final state.
+This package implements the Dragon-native inference service under
+`dragon.ai.inference`. It provides a shared vLLM-backed LLM backend for Dragon
+applications, agents, and workflows using Dragon queues, process groups,
+placement policies, telemetry, and optional dynamic batching and guardrails.
 
+The service is experimental and its public API may change.
 
-## Install package dependencies & VLLM
+## Documentation
 
-```shell
-pip3 install -r requirements.txt
-pip3 install --force-reinstall vllm==0.12.0
-```
+The central Dragon documentation is the canonical source for installation,
+configuration, examples, and API details:
 
-### Patch vllm to make compatible with Dragon
+- [Dragon Inference Service - User Guide](https://dragonhpc.github.io/dragon/doc/_build/html/uses/inference.html)
+- [Inference Service Examples](https://dragonhpc.github.io/dragon/doc/_build/html/cbook/ai_inference/index.html)
+- [Inference Service - Developer Guide](https://dragonhpc.github.io/dragon/doc/_build/html/devguide/inference.html)
+- [Inference API Reference](https://dragonhpc.github.io/dragon/doc/_build/html/ref/ai/inference/index.html)
 
-```shell
-python3 patch_vllm/vllm_utils.py
-```
+## Local Files
 
-### Install vllm_dragon plugin
-
-```shell
-cd patch_vllm
-pip3 install -e .
-```
-
+- `config.sample` provides a starting YAML configuration.
+- `patch_vllm/` contains the `vllm_dragonhpc` Dragon vLLM compatibility
+	plugin.
 
 ## Configuration
 
-### Rename/Copy config.sample to config.yaml and add your custom configs
+Use `config.sample` as the starting point for YAML-based configuration. Copy it
+to your own configuration file, then update the required values under the
+`required` section:
 
-Rename the config.sample file into config.yaml.
+- `model_name`: Hugging Face model name or local model path.
+- `hf_token`: Hugging Face token for gated models, or another token string for
+	open/local models.
+- `tp_size`: Number of GPU devices used by each tensor-parallel model worker.
+- `flask_secret_key`: Unique secret string for Flask-based integrations.
 
-There are 4 required key-value pairs in the config.yaml file.
+Optional sections in `config.sample` configure hardware selection, vLLM model
+settings, batching, guardrails, and dynamic inference-worker management. See the
+central user guide for the full configuration walkthrough.
 
-- llm_model: "Your HuggingFace model or custom model path". Ex: meta-llama/Llama-3.1-8B-Instruct
-- hf_token: "Your HuggingFace token". Note: Only required if your model is "closed". If open model, then add an arbitrary hugging-face token.
-- tp_size: "Your model tensor-parallel size". What is tensor parallelism? <https://huggingface.co/docs/text-generation-inference/en/conceptual/tensor_parallelism>
-- flask_secret_key: "Your flask application token". Note: This key can be arbitrarily generated. Ex: 123
+## Installation
 
-### Optional args in config.yaml
+Install Dragon with the `ai` optional dependency set. The `ai` extra installs a
+supported vLLM (`vllm>=0.11.0,<0.18.0`) and bundles the Dragon vLLM
+compatibility plugin, which is registered automatically through vLLM's
+`vllm.general_plugins` entry point group.
 
-- There are pleanty of optional configs that you can modify in config.yaml based on desired custom behavior. Details about the configuration, default values, and field-type, are all specified in the config.yaml file.
+```shell
+pip3 install "dragonhpc[ai]"
+```
+
+For a source checkout, install from the repository root with:
+
+```shell
+pip3 install -e "src[ai]"
+```
+
+The plugin patches vLLM at runtime when an `LLM()` instance starts inside the
+Dragon inference service. The patches are a no-op outside Dragon, and nothing
+needs to be re-run after changing or reinstalling vLLM.

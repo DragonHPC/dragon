@@ -1,3 +1,11 @@
+"""Dragon-compatible vLLM worker process helpers for vLLM 0.15.x.
+
+The functions in this module are version-specific replacements for selected
+``WorkerProc`` methods in vLLM 0.15.x.  They preserve vLLM's worker protocol but
+adapt shutdown, parent-death monitoring, and response-handle attachment for
+Dragon-managed processes and channels.
+"""
+
 import logging
 import signal
 import threading
@@ -13,8 +21,12 @@ from vllm.distributed.device_communicators.shm_broadcast import MessageQueue, Ha
 
 
 def dragon_worker_main(*args, **kwargs):
-    """Worker initialization and execution loops.
-    This runs a background process"""
+    """Run a vLLM worker process with Dragon-aware shutdown handling.
+
+    This entry point sends the vLLM READY payload, waits for message queues to
+    become usable, monitors the parent process if a death pipe is supplied, and
+    shuts the worker down cleanly when cancellation is requested.
+    """
 
     from vllm.v1.executor.multiproc_executor import WorkerProc
 
@@ -24,6 +36,7 @@ def dragon_worker_main(*args, **kwargs):
     shutdown_requested = False
 
     def signal_handler(signum, frame):
+        """Request one graceful worker shutdown when SIGTERM or SIGINT arrives."""
         nonlocal shutdown_requested
         if not shutdown_requested:
             shutdown_requested = True
@@ -42,6 +55,7 @@ def dragon_worker_main(*args, **kwargs):
     if death_pipe is not None:
 
         def monitor_parent_death():
+            """Set the local shutdown event when the parent death pipe closes."""
             try:
                 # This will block until parent process exits (pipe closes)
                 death_pipe.recv()
@@ -127,6 +141,14 @@ def dragon_wait_for_response_handle_ready(
     """Process the response handles from a worker and create WorkerProcHandle.
 
     This is the Dragon-compatible version of WorkerProc.wait_for_response_handle_ready.
+
+    :param handles: Ready-pipe payload containing the local response handle and
+        optional peer response handles.
+    :type handles: dict[str, Any]
+    :param proc_handle: Worker process handle that has not yet been marked ready.
+    :type proc_handle: UnreadyWorkerProcHandle
+    :returns: Ready worker handle used by vLLM's multiprocess executor.
+    :rtype: WorkerProcHandle
     """
     response_handle: Handle = handles["handle"]
     worker_response_mq: MessageQueue | None = None
@@ -156,6 +178,13 @@ def dragon_wait_for_ready(
 
     This is the Dragon-compatible version of WorkerProc.wait_for_ready.
     Updated for vLLM 0.12 compatibility with peer_response_handles support.
+
+    :param unready_proc_handles: Worker handles with ready pipes to monitor.
+    :type unready_proc_handles: list[UnreadyWorkerProcHandle]
+    :returns: Worker handles after their response queues have been attached.
+    :rtype: list[WorkerProcHandle]
+    :raises Exception: If any worker reports a non-ready status or exits before
+        sending a ready message.
     """
     import multiprocessing
 

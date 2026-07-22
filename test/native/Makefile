@@ -21,6 +21,9 @@ endif
 INCLUDE = $(L_DRAGON_INCLUDE_DIR) -I ${VIRTUAL_ENV}/include
 LIBS = $(L_DRAGON_LIB_DIR)
 
+DRAGON_CPP_TEST_COMMON_DEPS = $(wildcard ../../src/include/dragon/*.hpp ../../src/include/dragon/*.h) ../../src/lib/libdragon.so
+CPP_TEST_BINS = flimsgfrom flimsgto cpp_ddict cpp_queue cpp_semaphore cpp_barrier
+
 BIN_FILES = flimsgfrom flimsgto c_ddict cpp_ddict cpp_queue cpp_semaphore cpp_barrier
 
 %.c.o: %.c
@@ -30,25 +33,25 @@ default: build
 
 build: flimsgfrom flimsgto c_ddict cpp_ddict cpp_queue cpp_semaphore cpp_barrier
 
-flimsgfrom: flimsgfrom.cpp
+flimsgfrom: flimsgfrom.cpp $(DRAGON_CPP_TEST_COMMON_DEPS)
 	g++ $(INCLUDE) -std=c++14 -o flimsgfrom $< $(LIBS) -ldl
 
-flimsgto: flimsgto.cpp
+flimsgto: flimsgto.cpp $(DRAGON_CPP_TEST_COMMON_DEPS)
 	g++ $(INCLUDE) -std=c++14 -o flimsgto $< $(LIBS) -ldl
 
 c_ddict: c_ddict.c
 	$(CC) $(INCLUDE) $(CFLAGS) -o c_ddict $< $(LIBS)  -ldl
 
-cpp_ddict: cpp_ddict.cpp
+cpp_ddict: cpp_ddict.cpp $(DRAGON_CPP_TEST_COMMON_DEPS)
 	g++ $(INCLUDE) -std=c++14 -o cpp_ddict $< $(LIBS) -ldl
 
-cpp_queue: cpp_queue.cpp
+cpp_queue: cpp_queue.cpp $(DRAGON_CPP_TEST_COMMON_DEPS)
 	g++ $(INCLUDE) -std=c++14 -o cpp_queue $< $(LIBS) -ldl
 
-cpp_semaphore: cpp_semaphore.cpp
+cpp_semaphore: cpp_semaphore.cpp $(DRAGON_CPP_TEST_COMMON_DEPS)
 	g++ $(INCLUDE) -std=c++14 -o cpp_semaphore $< $(LIBS) -ldl
 
-cpp_barrier: cpp_barrier.cpp
+cpp_barrier: cpp_barrier.cpp $(DRAGON_CPP_TEST_COMMON_DEPS)
 	g++ $(INCLUDE) -std=c++14 -o cpp_barrier $< $(LIBS) -ldl
 
 clean:

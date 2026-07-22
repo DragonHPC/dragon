@@ -330,7 +330,7 @@ consistent with your environment:
 
 .. code-block:: bash
    :linenos:
-   :caption: **Setting Intel MPI environemnt variables to work with PMIx**
+   :caption: **Setting Intel MPI environment variables to work with PMIx**
 
     export I_MPI_PMI_LIBRARY=/usr/lib64/libpmix.so # Adjust to location of your system's libpmix.so
     export I_MPI_PMI=pmix

@@ -24,9 +24,9 @@ Resubmit as part of a 'salloc' or 'sbatch' execution."""
             msg = f"{self.ENV_SLURM_NUM_NODES} environment variable is not set"
             raise RuntimeError(msg)
 
-        super().__init__(WLM.SLURM.value, network_prefix, port, nnodes=int(nnodes))
+        super().__init__(WLM.SLURM.value, network_prefix, port)
 
-        self.SRUN_ARGS = self.SRUN_COMMAND_LINE.format(nnodes=self.NNODES).split()
+        self.SRUN_ARGS = self.SRUN_COMMAND_LINE.format(nnodes=nnodes).split()
 
     @classmethod
     def check_for_wlm_support(cls) -> bool:
@@ -45,7 +45,7 @@ Resubmit as part of a 'salloc' or 'sbatch' execution."""
 
     def _launch_network_config_helper(self, args_map: dict) -> subprocess.Popen:
         srun_launch_args = self.SRUN_ARGS[:]
-        srun_launch_args.extend(list(self.NETWORK_CFG_HELPER_LAUNCH_CMD)) # type: ignore
+        srun_launch_args.extend(list(self.NETWORK_CFG_HELPER_LAUNCH_CMD))  # type: ignore
 
         self.LOGGER.debug(f"Launching config with: {srun_launch_args=}")
 

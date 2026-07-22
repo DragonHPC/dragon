@@ -14,3 +14,7 @@ setup.sh
 
 ./shepherd/
     Tests for shepherd
+
+./ai/
+    Tests for Dragon AI components, including collective groups, inference,
+    agents, and DragonTorch integration.

@@ -318,9 +318,9 @@ class TestMaliciousResponseHandling(unittest.TestCase):
         self.assertEqual(result["model_inference_latency"], 0)
         self.assertEqual(result["model_network_latency"], 0)
 
-        # Verify telemetry
-        self.assertIn(("guardrails_inference_latency", 0.02), self.dt.add_data_calls)
-        self.assertIn(("model_inference_latency", 0), self.dt.add_data_calls)
+        # Telemetry travels inside the response dict on the queue.
+        self.assertEqual(result["guardrails_inference_latency"], 0.02)
+        self.assertEqual(result["model_inference_latency"], 0)
 
     def test_malicious_response_structure(self):
         """Test malicious response has all required fields."""

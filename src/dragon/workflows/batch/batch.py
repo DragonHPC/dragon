@@ -2,24 +2,31 @@
 
 import copy
 import heapq
-import io
+import json
 import logging
 import math
-import networkx as nx
+import os
 import queue
 import random
+import subprocess
 import sys
 import threading
 import time
 import traceback
+from collections import OrderedDict, deque
+from contextlib import contextmanager
 import warnings
 import yaml
 import cloudpickle
 
 from collections import namedtuple
 from collections.abc import Callable
+from dataclasses import dataclass
 from ...data.ddict.ddict import DDict
 from ...dlogging.util import setup_BE_logging, DragonLoggingServices as dls
+from ... import fli
+from ...globalservices.process import query as process_query, ProcessError
+from ...infrastructure.process_desc import ProcessDescriptor
 from ...infrastructure.facts import PMIBackend
 from ...infrastructure.policy import Policy
 from ...native.machine import current, Node, System
@@ -31,9 +38,13 @@ from ...telemetry.telemetry import Telemetry as dt
 from ...utils import ExceptionalThread
 from enum import Enum, IntEnum
 from .facts import (
+    client_completion_queue_maxsize,
+    client_task_batch_linger_sec,
+    client_task_batch_maxsize,
     default_timeout,
     default_progress_timeout,
     default_block_size,
+    default_results_ddict_managers_per_pool,
     manager_work_queue_max_batch_size,
     manager_work_queue_maxsize,
     return_queue_maxsize,
@@ -45,6 +56,8 @@ from queue import Queue as LocalQueue
 from typing import Any, Iterable, Optional, TYPE_CHECKING
 from uuid import uuid1
 
+_FUNCTION_TASK_OUTPUT_ITEM_COUNT = 2
+
 
 def _next_pow_of_2(x: int) -> int:
     """
@@ -54,6 +67,128 @@ def _next_pow_of_2(x: int) -> int:
         return 1
     else:
         return 1 << (x - 1).bit_length()
+
+
+def _resolve_results_ddict_managers_per_pool(
+    requested: Optional[int], workers_per_node: int
+) -> tuple[int, Optional[str]]:
+    """
+    Resolve and clamp the results-DDict managers-per-pool knob.
+
+    ``requested is None`` selects one results-DDict manager per worker (the
+    historical default). Any other value is clamped to ``[1, workers_per_node]``.
+
+    :param requested: User-requested number of results-DDict managers per worker
+        pool, or ``None`` to use one manager per worker.
+    :type requested: Optional[int]
+    :param workers_per_node: Number of batch workers per node (the per-pool worker count).
+    :type workers_per_node: int
+
+    :return: A ``(value, warning)`` tuple where ``value`` is the clamped
+        managers-per-pool count and ``warning`` is an optional message describing
+        any clamping that occurred (``None`` when no clamping was needed).
+    :rtype: tuple[int, Optional[str]]
+    """
+    if requested is None:
+        requested_value = workers_per_node
+    else:
+        requested_value = int(requested)
+
+    clamped = max(1, min(requested_value, workers_per_node))
+
+    warning = None
+    if clamped != requested_value:
+        warning = (
+            f"results_ddict_managers_per_pool={requested_value} is out of range "
+            f"[1, {workers_per_node}]; clamping to {clamped}"
+        )
+
+    return clamped, warning
+
+
+@contextmanager
+def _with_ddict_manager(ddict: DDict, manager_idx: int) -> Iterable[DDict]:
+    previous_manager = ddict._chosen_manager
+    ddict._chosen_manager = manager_idx
+    try:
+        yield ddict
+    finally:
+        ddict._chosen_manager = previous_manager
+
+
+def _drain_client_task_batch(
+    first_item: Any,
+    request_q: LocalQueue,
+    item_type: type,
+    linger_sec: float = client_task_batch_linger_sec,
+    max_batch_size: int = client_task_batch_maxsize,
+) -> tuple[list[Any], Optional[Any]]:
+    """
+    Collect a bounded batch of same-type client submissions from a local queue.
+
+    Batch eagerly drains already-queued items, then waits briefly for follow-on
+    submissions from a tight producer loop so the client request worker does not
+    collapse into one-task compile batches.
+
+    :param first_item: The item already dequeued by the caller.
+    :type first_item: Any
+    :param request_q: Local client request queue to drain.
+    :type request_q: LocalQueue
+    :param item_type: Queue item type that should be coalesced into the batch.
+    :type item_type: type
+    :param linger_sec: Maximum extra time to wait for follow-on submissions once
+        the immediate queue drain is empty.
+    :type linger_sec: float
+    :param max_batch_size: Upper bound on the number of queued submissions to batch.
+    :type max_batch_size: int
+
+    :return: A ``(batch, deferred_item)`` tuple. ``deferred_item`` is the first
+        non-batchable queue item encountered, if any.
+    :rtype: tuple[list[Any], Optional[Any]]
+    """
+    batch = [first_item]
+    deferred_item = None
+
+    def _consume(item: Any) -> bool:
+        nonlocal deferred_item
+        if isinstance(item, item_type):
+            batch.append(item)
+            return True
+
+        deferred_item = item
+        return False
+
+    while len(batch) < max_batch_size:
+        try:
+            next_item = request_q.get_nowait()
+        except queue.Empty:
+            break
+
+        if not _consume(next_item):
+            return batch, deferred_item
+
+    if deferred_item is not None or len(batch) >= max_batch_size or linger_sec <= 0:
+        return batch, deferred_item
+
+    while len(batch) < max_batch_size and deferred_item is None:
+        try:
+            next_item = request_q.get(timeout=linger_sec)
+        except queue.Empty:
+            break
+
+        if not _consume(next_item):
+            break
+
+        while len(batch) < max_batch_size:
+            try:
+                next_item = request_q.get_nowait()
+            except queue.Empty:
+                break
+
+            if not _consume(next_item):
+                return batch, deferred_item
+
+    return batch, deferred_item
 
 
 def _setup_logging(context: Optional[str] = None) -> logging.Logger:
@@ -91,6 +226,209 @@ def _get_traceback() -> str:
     return traceback.format_exc().replace("\\n", "\n").replace("\n", "\n> ")
 
 
+def _sanitize_log_component(value: str) -> str:
+    safe_value = "".join(ch if ch.isalnum() or ch in ("-", "_", ".") else "_" for ch in value).strip("._")
+    return safe_value or "task"
+
+
+def _build_log_stem(
+    task_kind: str,
+    target_label: Optional[str],
+    task_name: Optional[str],
+    tuid: str,
+) -> str:
+    parts = []
+    if target_label:
+        parts.append(_sanitize_log_component(target_label))
+    if task_name:
+        sanitized_name = _sanitize_log_component(task_name)
+        if not target_label or sanitized_name != _sanitize_log_component(target_label):
+            parts.append(sanitized_name)
+    if not parts:
+        parts.append(_sanitize_log_component(task_kind))
+    parts.append(_sanitize_log_component(tuid))
+    return "--".join(parts)
+
+
+def _normalize_output_path(path: Optional[str | Path]) -> Optional[str]:
+    if path is None:
+        return None
+    if isinstance(path, Path):
+        path = str(path)
+    if not isinstance(path, str):
+        raise TypeError(f"output path must be a str or Path, got {type(path)!r}")
+    if not path:
+        raise ValueError("output path must be non-empty")
+    return path
+
+
+def _ensure_output_parent(path: str) -> None:
+    Path(path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+
+
+def _describe_target(target: Any) -> str:
+    if callable(target):
+        return getattr(target, "__name__", target.__class__.__name__)
+
+    return Path(str(target)).stem or Path(str(target)).name or "task"
+
+
+def _describe_process_template_target(template: ProcessTemplate) -> str:
+    if getattr(template, "is_python", False):
+        orig_target, _, _ = template.get_original_python_parameters()
+        return _describe_target(orig_target)
+
+    return _describe_target(template.target)
+
+
+def _get_rank_label() -> Optional[str]:
+    for env_name in (
+        "PMI_RANK",
+        "PMIX_RANK",
+        "OMPI_COMM_WORLD_RANK",
+        "SLURM_PROCID",
+        "MV2_COMM_WORLD_RANK",
+    ):
+        rank = os.getenv(env_name)
+        if rank is not None:
+            return rank
+
+    return None
+
+
+def _build_job_log_prefix() -> str:
+    prefix_parts = [f"host={current().hostname}"]
+    rank = _get_rank_label()
+    if rank is not None:
+        prefix_parts.append(f"rank={rank}")
+    prefix_parts.append(f"pid={os.getpid()}")
+    return f"[{' '.join(prefix_parts)}] "
+
+
+class _PrefixedLineWriter:
+    def __init__(self, wrapped_stream, prefix: str) -> None:
+        self._wrapped_stream = wrapped_stream
+        self._prefix = prefix
+        self._buffer = ""
+        self.encoding = getattr(wrapped_stream, "encoding", "utf-8")
+
+    def write(self, data: str) -> int:
+        if not data:
+            return 0
+
+        self._buffer += data
+        while "\n" in self._buffer:
+            line, self._buffer = self._buffer.split("\n", 1)
+            self._wrapped_stream.write(f"{self._prefix}{line}\n")
+        return len(data)
+
+    def flush(self) -> None:
+        if self._buffer:
+            self._wrapped_stream.write(f"{self._prefix}{self._buffer}")
+            self._buffer = ""
+        self._wrapped_stream.flush()
+
+    def writable(self) -> bool:
+        return True
+
+    def isatty(self) -> bool:
+        return getattr(self._wrapped_stream, "isatty", lambda: False)()
+
+    def fileno(self) -> int:
+        return self._wrapped_stream.fileno()
+
+
+def _run_python_with_prefixed_logs(target: Callable, args: tuple, kwargs: dict) -> None:
+    prefix = _build_job_log_prefix()
+    save_stdout = sys.stdout
+    save_stderr = sys.stderr
+    sys.stdout = _PrefixedLineWriter(save_stdout, prefix)
+    sys.stderr = _PrefixedLineWriter(save_stderr, prefix)
+
+    try:
+        target(*args, **kwargs)
+    finally:
+        try:
+            sys.stdout.flush()
+        finally:
+            try:
+                sys.stderr.flush()
+            finally:
+                sys.stdout = save_stdout
+                sys.stderr = save_stderr
+
+
+def _unwrap_prefixed_python_process_payload(
+    target: Callable,
+    args: tuple,
+    kwargs: dict,
+) -> Optional[tuple[Callable, tuple, dict]]:
+    """Return the underlying user payload for prefixed Python job wrappers.
+
+    Multi-rank Python jobs wrap the original callable as
+    ``_run_python_with_prefixed_logs(user_target, user_args, user_kwargs)`` so
+    stdout/stderr can be rank-prefixed. Argument dependency scanning and
+    substitution must operate on the nested ``user_args`` payload rather than
+    the wrapper's top-level argument tuple.
+    """
+    if target is not _run_python_with_prefixed_logs:
+        return None
+
+    if kwargs:
+        return None
+
+    if len(args) != 3:
+        return None
+
+    wrapped_target, wrapped_args, wrapped_kwargs = args
+    if not callable(wrapped_target):
+        return None
+    if not isinstance(wrapped_args, tuple):
+        return None
+    if not isinstance(wrapped_kwargs, dict):
+        return None
+
+    return wrapped_target, wrapped_args, wrapped_kwargs
+
+
+def _forward_subprocess_stream(pipe, writer: _PrefixedLineWriter) -> None:
+    try:
+        for line in pipe:
+            writer.write(line)
+    finally:
+        writer.flush()
+        pipe.close()
+
+
+def _run_binary_with_prefixed_logs(target: str, args: tuple, cwd: str, env: Optional[dict]) -> None:
+    prefix = _build_job_log_prefix()
+    stdout_writer = _PrefixedLineWriter(sys.stdout, prefix)
+    stderr_writer = _PrefixedLineWriter(sys.stderr, prefix)
+    argv = [str(target)]
+    if args is not None:
+        argv.extend(str(arg) for arg in args)
+
+    proc = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        bufsize=1,
+    )
+    stdout_thread = threading.Thread(target=_forward_subprocess_stream, args=(proc.stdout, stdout_writer), daemon=True)
+    stderr_thread = threading.Thread(target=_forward_subprocess_stream, args=(proc.stderr, stderr_writer), daemon=True)
+    stdout_thread.start()
+    stderr_thread.start()
+    return_code = proc.wait()
+    stdout_thread.join()
+    stderr_thread.join()
+
+    if return_code != 0:
+        raise SystemExit(return_code)
+
+
 def _compress_hostnames(hostnames: list) -> str:
     """Return a compressed hostlist string (e.g. 'node[001-003]') for *hostnames*.
 
@@ -105,19 +443,22 @@ def _compress_hostnames(hostnames: list) -> str:
         return ", ".join(hostnames)
 
 
-ResultWrapper = namedtuple(
-    "ResultWrapper",
-    ["compiled_tuid", "tuid", "result", "traceback", "stdout", "stderr", "raised"],
-)
 CompiledResultWrapper = namedtuple(
     "CompiledResultWrapper",
-    ["tuid", "result_dict", "stdout_dict", "stderr_dict"],
+    ["tuid", "result_dict"],
 )
-AsyncWrapper = namedtuple("AsyncWrapper", ["async_result", "async_stdout", "async_stderr"])
 ManagerException = namedtuple("ManagerException", ["tuid", "exception", "traceback", "err_message"])
 DepSat = namedtuple(
     "DepSat",
-    ["source_tuid", "source_manager_idx", "tuid", "compiled_tuid", "arg_dep_updates", "cancel_reason"],
+    [
+        "source_tuid",
+        "source_manager_idx",
+        "source_result_ddict_idx",
+        "tuid",
+        "compiled_tuid",
+        "arg_dep_updates",
+        "cancel_reason",
+    ],
 )
 DepSatRequest = namedtuple(
     "DepSatRequest",
@@ -130,12 +471,13 @@ DependencyNotificationRoute = namedtuple(
 )
 DependencyRequestRoute = namedtuple("DependencyRequestRoute", ["queue", "upstream_tuid", "arg_dep_updates", "is_raw"])
 TaskComplete = namedtuple("TaskComplete", ["tuid", "compiled_tuid", "raised"])
-CompletedTaskInfo = namedtuple("CompletedTaskInfo", ["manager_idx", "raised"])
+CompletedTaskInfo = namedtuple("CompletedTaskInfo", ["manager_idx", "result_ddict_idx", "raised"])
 CompletionNotification = TaskComplete
+CompletedTuids = namedtuple("CompletedTuids", ["tuids"])
 StartedTaskInfo = namedtuple("StartedTaskInfo", ["control_q", "reserved_cores"])
 RegisterClient = namedtuple("RegisterClient", ["ret_q", "client_id"])
-UnregisterClient = namedtuple("UnregisterClient", ["client_id"])
-DestroyCalled = namedtuple("DestroyCalled", [])
+UnregisterClient = namedtuple("UnregisterClient", ["client_id", "reply_q", "clean_detach"], defaults=[None, False])
+DestroyCalled = namedtuple("DestroyCalled", ["force_timeout"], defaults=[None])
 FenceRequest = namedtuple("FenceRequest", ["client_id", "reply_q"])
 FenceComplete = namedtuple("FenceComplete", ["client_id"])
 ClientFenceRequest = namedtuple("ClientFenceRequest", ["reply_q"])
@@ -145,13 +487,13 @@ ClientCancelRequest = namedtuple("ClientCancelRequest", ["task", "reply_q"])
 CancelRequest = namedtuple("CancelRequest", ["client_id", "tuid", "manager_idx", "reply_q"])
 CancelResponse = namedtuple("CancelResponse", ["tuid", "cancelled"])
 CancelJob = namedtuple("CancelJob", [])
-DataAccess = namedtuple("DataAccess", ["access_type", "kvs", "keys", "disable_fast_path"], defaults=[False])
+DataAccess = namedtuple("DataAccess", ["access_type", "kvs", "keys"])
 FrontierInfo = namedtuple("FrontierInfo", ["task_list", "access_type", "write_before_read"])
 SubnodeAllocRequest = namedtuple(
     "SubnodeAllocRequest", ["manager_idx", "hostnames", "client_ids", "reply_q", "priority_weight"]
 )
 SubnodeAllocResponse = namedtuple("SubnodeAllocResponse", ["manager_idx"])
-SubnodeFreeRequest = namedtuple("SubnodeFreeRequest", ["manager_idx", "client_ids", "task_tuids"])
+SubnodeFreeRequest = namedtuple("SubnodeFreeRequest", ["manager_idx", "client_work_counts", "task_tuids"])
 PendingAllocInfo = namedtuple("PendingAllocInfo", ["hostnames", "num_nodes", "client_ids", "priority_weight"])
 ClearFenceState = namedtuple("ClearFenceState", ["client_id"])
 MultiNodeJobComplete = namedtuple("MultiNodeJobComplete", ["tuid", "compiled_tuid", "node_hostnames"])
@@ -174,14 +516,6 @@ class TaskCancellationReason(Enum):
 
 
 SCHEDULER_MANAGER_IDX = -1
-
-
-def _ddict_manager_idx_for_task_manager(manager_idx: int) -> int:
-    """Map a task's logical manager_idx to the Batch-owned results-ddict manager id."""
-    if manager_idx == SCHEDULER_MANAGER_IDX:
-        return 0
-
-    return manager_idx
 
 
 class BatchError(Exception):
@@ -208,7 +542,7 @@ class SubmitAfterCloseError(BatchError):
     :py:meth:`Batch.close` is deprecated and is a no-op, so this exception is
     raised when work is submitted after :py:meth:`Batch.join`,
     :py:meth:`Batch.destroy`, or :py:meth:`Batch.terminate` has detached the
-    client from the shared runtime.
+    client from the Batch instance shared by clients.
     """
 
     def __init__(self, message):
@@ -344,6 +678,7 @@ class TaskCore:
         self.timeout = timeout
         self.tuid = tuid
         self.manager_idx: Optional[int] = None
+        self.result_ddict_idx: Optional[int] = None
         self.compiled_tuid = None
         self.cached_queue = None
 
@@ -370,8 +705,7 @@ class TaskCore:
         self.is_cancelled = TaskCancellationReason.NONE
         self.cancel_source_tuid: Optional[str] = None
         self.cancel_source_manager_idx: Optional[int] = None
-        # True when this task should not use the manager-owned thread fast path.
-        self.disable_fast_path = False
+        self.cancel_source_result_ddict_idx: Optional[int] = None
 
     def __repr__(self) -> str:
         """
@@ -389,6 +723,7 @@ class TaskCore:
         return (
             f"name={self.name}, client_id={self.client_id}, tuid={self.tuid}, "
             f"manager_idx={self.manager_idx}, "
+            f"result_ddict_idx={self.result_ddict_idx}, "
             f"compiled_tuid={self.compiled_tuid}"
         )
 
@@ -411,6 +746,7 @@ class TaskCore:
                 dep_sat = DepSat(
                     self.tuid,
                     self.manager_idx,
+                    self.result_ddict_idx,
                     route.downstream_tuid,
                     compiled_tuid,
                     arg_dep_updates,
@@ -459,14 +795,19 @@ class Task:
         self.accesses = {}
         self.subnode_work_chunks = []  # Work chunks for subnode managers
         self.mnj_work_chunk = None  # Single scheduler-owned Work chunk for multi-node jobs
-        self._manager_offset = None
         self._ready = False
         self.exception = None
         self.traceback = None
         self.num_subtasks = 0
         self._result = None
+        self._result_cached = False
+        self._result_cleared = False
+        self._result_unavailable_message = None
+        self._result_fetch_lock = threading.Lock()
         self._stdout = None
         self._stderr = None
+        self._task_kind = None
+        self._target_label = None
 
         if reads is not None:
             for read in reads:
@@ -496,7 +837,6 @@ class Task:
     def _depends_on(
         self,
         task: "Task",
-        dep_dag: Optional[nx.DiGraph] = None,
         arg_dep_update: Optional[list[ArgDepUpdate]] = None,
         origin: DependencyOrigin = DependencyOrigin.DATA_ACCESS,
         is_raw: bool = False,
@@ -505,10 +845,6 @@ class Task:
         Sets a dependency for this task, which will be blocked until the completion of ``task``.
 
         :param task: The task that this one will be dependent on.
-        :param dep_dag: Optional dependency DAG. Accepted for call-site
-            compatibility; compile-time code reconstructs the live DAG from the
-            stored logical dependency record.
-        :type dep_dag: Optional[nx.DiGraph]
         :param origin: Metadata describing why this dependency exists.
         :type origin: DependencyOrigin
 
@@ -518,7 +854,7 @@ class Task:
         self.core.num_dep_tot += 1
 
         # Record the logical dependency on the downstream task. Compile-time
-        # code later turns this durable record into live dep_dag edges and
+        # code later turns this durable record into live dependency edges and
         # manager-to-manager routing state.
         self.core.dependencies.append(LogicalDependency(task.core.tuid, arg_dep_update, origin, is_raw))
 
@@ -572,9 +908,6 @@ class Task:
         kvs = data_access.kvs
         keys = data_access.keys
 
-        if data_access.disable_fast_path:
-            self.core.disable_fast_path = True
-
         for key in keys:
             # if we haven't seen this access before, or if the previous access was a read,
             # then update the accesses dict. the check for previous read accesses is necessary
@@ -587,8 +920,23 @@ class Task:
 
     def get(self, block: bool = True, timeout: float = default_timeout) -> None:
         """
-        Wait for this Task to complete. This function returns the task's result and prints
-        any stdout/stderr output.
+        Wait for this Task to complete and return its result.
+
+        ``get()`` never prints task stdout or stderr. When the owning Batch was
+        created with ``task_logs=True``, task stdout and stderr are redirected to
+        files; use :py:meth:`Task.stdout_path`, :py:meth:`Task.stderr_path`,
+        :py:meth:`Task.get_stdout`, :py:meth:`Task.get_stderr`, or
+        :py:meth:`Task.log_paths` to inspect the resolved task logs. When task
+        logging is disabled (the default), task stdout and stderr are not
+        captured to files unless an explicit ``stdout``/``stderr`` path was given;
+        otherwise they are forwarded to the client console like any other Dragon
+        process. Task results remain in Batch's internal
+        results DDict until ``get()`` fetches them or
+        :py:meth:`Batch.clear_results` discards them. Once fetched here, the
+        result is cached on this client-side task handle for subsequent calls.
+        In unmanaged mode, fetch any result you need before the last client
+        calls :py:meth:`Batch.join`, because that shutdown destroys the shared
+        results DDict.
 
         :param block: If True (the default), block until the result is available or *timeout* is
             exceeded. If False, return immediately if the result is available, otherwise raise
@@ -603,47 +951,82 @@ class Task:
         :return: Returns the result of the task.
         :rtype: Any
         """
+        self._ensure_result_cached(block=block, timeout=timeout)
+        return self._return_or_raise_cached_result()
+
+    def _get_result_tuple(
+        self, block: bool = True, timeout: float = default_timeout
+    ) -> tuple[Any, Optional[str], bool]:
+        if self._result_cached:
+            return self._result, self.traceback, self.exception is not None or self.traceback is not None
+
+        if self._result_cleared:
+            raise RuntimeError(f"result was cleared before retrieval: {self.core._get_id_str()}")
+
+        if self._result_unavailable_message is not None:
+            raise RuntimeError(f"{self._result_unavailable_message}: {self.core._get_id_str()}")
+
         if self._results_ddict is None:
             raise RuntimeError(f"task has no results_ddict reference: {self.core._get_id_str()}")
 
-        manager_idx = self.get_manager_idx(block=block, timeout=timeout)
-        ddict_manager_idx = _ddict_manager_idx_for_task_manager(manager_idx)
-        results_ddict = self._results_ddict.manager(ddict_manager_idx)
+        self.get_manager_idx(block=block, timeout=timeout)
 
-        if not block:
-            if self.core.tuid not in results_ddict:
-                raise TaskNotReadyError(f"result not yet available: {self.core._get_id_str()}")
+        if self.core.result_ddict_idx is None:
+            raise RuntimeError(f"task result location not assigned by compiler: {self.core._get_id_str()}")
 
-        try:
-            # we're using wait_for_keys in the ddict, so this will wait for the
-            # result to be ready
-            result, tb, raised, stdout, stderr = results_ddict[self.core.tuid]
-        except KeyError:
-            raise RuntimeError(f"no return value found for task: {self.core._get_id_str()}")
+        # Serialize the shared results DDict client connector. get() and the log
+        # accessors can run from multiple threads and across different tasks of
+        # the same Batch; the DDict client assumes single-threaded use (and
+        # _with_ddict_manager mutates shared state on it), so concurrent indexing
+        # would desync its return channel. This lock covers only the brief
+        # request/response below -- not the blocking wait in get_manager_idx() --
+        # so fetches for independent tasks still proceed concurrently.
+        with self._batch._results_ddict_lock:
+            with _with_ddict_manager(self._results_ddict, self.core.result_ddict_idx) as results_ddict:
+                if not block and self.core.tuid not in results_ddict:
+                    raise TaskNotReadyError(f"result not yet available: {self.core._get_id_str()}")
 
-        # Print stdout and stderr if available
-        if stdout:
-            print(stdout)
-        if stderr:
-            print(stderr, file=sys.stderr)
+                try:
+                    return results_ddict[self.core.tuid]
+                except KeyError:
+                    raise RuntimeError(f"no return value found for task: {self.core._get_id_str()}")
 
-        if raised:
-            message = f"task with {self.core._get_id_str()} failed with the following traceback:\n{tb}"
-            # `result` is expected to be the exception instance raised by
-            # the worker. Re-raise it directly rather than attempting to
-            # reconstruct by type (some exception types have non-standard
-            # constructors and will fail if instantiated with a single
-            # message argument).
-            if isinstance(result, BaseException):
-                if self.core.is_cancelled == TaskCancellationReason.USER_REQUESTED and isinstance(
-                    result, DragonUserCodeError
-                ):
-                    raise _build_cancelled_error(self.core, results_ddict) from None
-                raise result
-            else:
-                raise RuntimeError(message)
-        else:
-            return result
+    def _ensure_result_cached(self, block: bool = True, timeout: float = default_timeout) -> None:
+        if self._result_cached:
+            return
+
+        # get() and get_stdout()/get_stderr() can run on the same task from
+        # different threads. Serialize the fetch so only one thread touches the
+        # shared results DDict connector; the other observes the cached result.
+        with self._result_fetch_lock:
+            if self._result_cached:
+                return
+
+            result, tb, raised = self._get_result_tuple(block=block, timeout=timeout)
+            self._cache_result_tuple(result, tb, raised)
+
+            if self._batch is not None:
+                self._batch._mark_task_log_complete(self.uid)
+
+    def _cache_result_tuple(self, result: Any, tb: Optional[str], raised: bool) -> None:
+        self._result = result
+        self.traceback = tb
+        self.exception = result if raised and isinstance(result, BaseException) else None
+        self._result_cached = True
+        self._result_cleared = False
+
+    def _return_or_raise_cached_result(self) -> Any:
+        if self.exception is not None:
+            if self.core.is_cancelled == TaskCancellationReason.USER_REQUESTED:
+                raise TaskCancelledError(f"task {self.core.tuid} was cancelled") from None
+            raise self.exception
+
+        if self.traceback is not None and self.exception is None:
+            raise RuntimeError(
+                f"task with {self.core._get_id_str()} failed with the following traceback:\n{self.traceback}"
+            )
+
+        return self._result
 
     def cancel(self, timeout: float = default_timeout) -> bool:
         """Best-effort cancellation request for this task.
@@ -657,6 +1040,75 @@ class Task:
             self.core.is_cancelled = TaskCancellationReason.USER_REQUESTED
         return cancelled
 
+    def log_paths(self) -> dict[str, Optional[str]]:
+        """Return the resolved stdout/stderr log file paths for this task.
+
+        The returned dictionary contains ``stdout`` and ``stderr`` keys whose
+        values are the shared-filesystem paths configured or generated for this
+        task. A value is ``None`` when no path was configured, which happens for
+        tasks submitted without an explicit ``stdout``/``stderr`` on a client
+        created with ``task_logs=False`` (the default), since their output is
+        forwarded to the client console instead of a file.
+        """
+        return {"stdout": self._stdout, "stderr": self._stderr}
+
+    @property
+    def stdout_path(self) -> Optional[str]:
+        """Return the resolved stdout log path for this task, if any."""
+
+        return self._stdout
+
+    @property
+    def stderr_path(self) -> Optional[str]:
+        """Return the resolved stderr log path for this task, if any."""
+
+        return self._stderr
+
+    def get_stdout(
+        self,
+        block: bool = True,
+        timeout: float = default_timeout,
+        encoding: str = "utf-8",
+    ) -> Optional[str]:
+        """Read this task's stdout log.
+
+        By default, waits for the task to complete before reading the final log
+        file. When *block* is ``False``, raises :py:exc:`TaskNotReadyError` if
+        the task has not completed yet.
+        """
+
+        return self._get_log_contents("stdout", block=block, timeout=timeout, encoding=encoding)
+
+    def get_stderr(
+        self,
+        block: bool = True,
+        timeout: float = default_timeout,
+        encoding: str = "utf-8",
+    ) -> Optional[str]:
+        """Read this task's stderr log.
+
+        By default, waits for the task to complete before reading the final log
+        file. When *block* is ``False``, raises :py:exc:`TaskNotReadyError` if
+        the task has not completed yet.
+        """
+
+        return self._get_log_contents("stderr", block=block, timeout=timeout, encoding=encoding)
+
+    def _get_log_contents(
+        self,
+        stream_name: str,
+        block: bool = True,
+        timeout: float = default_timeout,
+        encoding: str = "utf-8",
+    ) -> Optional[str]:
+        self._ensure_result_cached(block=block, timeout=timeout)
+
+        path = self._stdout if stream_name == "stdout" else self._stderr
+        if path is None:
+            return None
+
+        return Path(path).read_text(encoding=encoding)
+
     def __getstate__(self) -> dict:
         state = self.__dict__.copy()
         # DDict objects cannot be deserialized in the same process that created
@@ -665,11 +1117,20 @@ class Task:
         # original client-side task object is never pickled and retains the ref.
         state.pop("_batch", None)
         state.pop("_results_ddict", None)
+        state.pop("_result_fetch_lock", None)
         return state
 
     def __setstate__(self, state) -> None:
         self.__dict__.update(state)
         self._results_ddict = None
+        if not hasattr(self, "_result_fetch_lock"):
+            self._result_fetch_lock = threading.Lock()
+        if not hasattr(self, "_result_cached"):
+            self._result_cached = False
+        if not hasattr(self, "_result_cleared"):
+            self._result_cleared = False
+        if not hasattr(self, "_result_unavailable_message"):
+            self._result_unavailable_message = None
 
     @property
     def uid(self):
@@ -700,6 +1161,8 @@ class FunctionCore(TaskCore):
         target: Callable,
         args: tuple = (),
         kwargs: dict = {},
+        stdout: Optional[str] = None,
+        stderr: Optional[str] = None,
     ) -> None:
         """
         Initialize the core part of a function.
@@ -722,15 +1185,22 @@ class FunctionCore(TaskCore):
         """
         super().__init__(tuid, client_id, name, timeout)
 
-        self.func = target
+        self._serialized_func = cloudpickle.dumps(target)
         self.args = args
         self.kwargs = kwargs
+        self.stdout = stdout
+        self.stderr = stderr
+
+    def _load_func(self) -> Callable:
+        return cloudpickle.loads(self._serialized_func)
 
     def _func_wrapper(self, output: list) -> None:
         """
-        The wrapper for the user's function that captures stdout and stderr, and appends
-        output values to the ``output`` list. This wrapper is run in a thread to handle
-        the user-specified timeout.
+        Run the user's function with stdout/stderr redirected to the resolved
+        log files, then append the function result or exception to ``output``.
+
+        This wrapper is run in a thread so the caller can enforce the
+        user-specified timeout.
 
         :param output: A list containing output from the function (necessary because the
         function is run in a thread).
@@ -740,25 +1210,46 @@ class FunctionCore(TaskCore):
         :rtype: None
         """
         save_stdout = sys.stdout
-        stdout = sys.stdout = io.StringIO()
-
         save_stderr = sys.stderr
-        stderr = sys.stderr = io.StringIO()
+        stdout_file = None
+        stderr_file = None
+        combined_file = None
 
         result = None
         exc = None
 
         try:
-            result = self.func(*self.args, **self.kwargs)
+            if self.stdout is not None and self.stderr is not None and self.stdout == self.stderr:
+                _ensure_output_parent(self.stdout)
+                combined_file = open(self.stdout, "a", encoding="utf-8", buffering=1)
+                sys.stdout = combined_file
+                sys.stderr = combined_file
+            else:
+                if self.stdout is not None:
+                    _ensure_output_parent(self.stdout)
+                    stdout_file = open(self.stdout, "a", encoding="utf-8", buffering=1)
+                    sys.stdout = stdout_file
+                if self.stderr is not None:
+                    _ensure_output_parent(self.stderr)
+                    stderr_file = open(self.stderr, "a", encoding="utf-8", buffering=1)
+                    sys.stderr = stderr_file
+            result = self._load_func()(*self.args, **self.kwargs)
         except Exception as err:
             exc = err
         finally:
-            stdout_val = stdout.getvalue()
-            stderr_val = stderr.getvalue()
+            for handle in (combined_file, stdout_file, stderr_file):
+                if handle is not None:
+                    try:
+                        handle.flush()
+                    except Exception:
+                        pass
             sys.stdout = save_stdout
             sys.stderr = save_stderr
+            for handle in (combined_file, stdout_file, stderr_file):
+                if handle is not None:
+                    handle.close()
 
-        output.extend([result, stdout_val, stderr_val, exc])
+        output.extend([result, exc])
 
     def run(self, control_q: Queue) -> Any:
         """
@@ -792,10 +1283,10 @@ class FunctionCore(TaskCore):
 
         worker.join()
 
-        if len(output) != 4:
+        if len(output) != _FUNCTION_TASK_OUTPUT_ITEM_COUNT:
             raise RuntimeError(f"function worker exited without producing output: {self._get_id_str()}")
 
-        result, stdout_val, stderr_val, exc = output
+        result, exc = output
         if isinstance(exc, _FunctionTaskCancelled):
             raise TaskCancelledError(f"task was cancelled before completing: {self._get_id_str()}")
         if isinstance(exc, _FunctionTaskTimedOut):
@@ -803,7 +1294,7 @@ class FunctionCore(TaskCore):
         if exc is not None:
             raise exc
 
-        return result, stdout_val, stderr_val
+        return result
 
 
 class Function(Task):
@@ -819,6 +1310,8 @@ class Function(Task):
         writes: Optional[list] = None,
         name: Optional[str] = None,
         timeout: float = default_timeout,
+        stdout: Optional[str | Path] = None,
+        stderr: Optional[str | Path] = None,
     ) -> None:
         """
         Creates a new function task. Arguments for the function that are of type :py:class:`Task`
@@ -839,15 +1332,51 @@ class Function(Task):
         :return: Returns None.
         :rtype: None
         """
+        tuid = batch._next_tuid()
+        resolved_stdout, resolved_stderr = batch._resolve_task_output_paths(
+            tuid=tuid,
+            task_kind="function",
+            target_label=_describe_target(target),
+            name=name,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
         # replace Task argument with None, since the actual value will be filled in
         # by the manager after the dependency is satisfied
         sanitized_args = tuple(None if isinstance(arg, Task) else arg for arg in args)
         super().__init__(
-            FunctionCore(batch._next_tuid(), batch.client_id, name, timeout, target, sanitized_args, kwargs),
+            FunctionCore(
+                tuid,
+                batch.client_id,
+                name,
+                timeout,
+                target,
+                sanitized_args,
+                kwargs,
+                stdout=resolved_stdout,
+                stderr=resolved_stderr,
+            ),
             batch,
             reads=reads,
             writes=writes,
         )
+        self._stdout = resolved_stdout
+        self._stderr = resolved_stderr
+        self._task_kind = "function"
+        self._target_label = _describe_target(target)
+        if batch._task_logs_enabled:
+            batch._append_log_manifest_entry(
+                tuid=tuid,
+                task_kind=self._task_kind,
+                target_label=self._target_label,
+                task_name=name,
+                stdout_path=resolved_stdout,
+                stderr_path=resolved_stderr,
+            )
+        # Always track the task so unmanaged-shutdown result invalidation can
+        # reach it, even when task logging (and thus the manifest) is disabled.
+        batch._register_task_for_log_metadata(self)
         self._handle_arg_passing_deps([args])
 
 
@@ -859,7 +1388,7 @@ class JobCore(TaskCore):
         name: str,
         timeout: float,
         process_templates: list[ProcessTemplate],
-        pmi: PMIBackend = PMIBackend.CRAY,
+        pmi: Optional[PMIBackend] = PMIBackend.CRAY,
     ) -> None:
         """
         Description.
@@ -874,8 +1403,7 @@ class JobCore(TaskCore):
         nprocs indicates the number of processes to create for this job using the corresponding
         ProcessTemplate.
         :type process_templates: list
-        :param pmi: The PMI backend to use for launching MPI jobs. Defaults to ``PMIBackend.CRAY``.
-            Set to ``PMIBackend.PMIX`` for systems using PMIx, or ``None`` to disable PMI.
+        :param pmi: The PMI backend to use for launching MPI jobs. Defaults to ``PMIBackend.CRAY``. Set to ``PMIBackend.PMIX`` for systems using PMIx, or ``None`` to disable PMI.
         :type pmi: PMIBackend
 
         :raises RuntimeError: If there is an issue while setting up the dependency graph
@@ -891,21 +1419,32 @@ class JobCore(TaskCore):
         self.is_parallel = True
         self.pmi = pmi
 
-    def run(self, control_q: Queue) -> tuple[Any, str, str]:
+    def run(self, control_q: Queue) -> Any:
         """
         Runs the job associated with a job task.
 
+        A non-zero exit is reported as the exit code, not raised: process and
+        job tasks return their child exit code(s) as the task result. A single
+        process returns a scalar exit code; a multi-rank job returns a list of
+        exit codes, one per launched process.
+
         :raises RuntimeError: If path to the target is invalid.
 
-        :return: Returns None.
-        :rtype: None
+        :return: The child exit code (int) for a single process, or a list of
+            exit codes for a multi-rank job.
+        :rtype: int | list[int]
         """
         if self.is_parallel:
             pmi = self.pmi
         else:
             pmi = None
 
-        grp = ProcessGroup(restart=False, pmi=pmi, walltime=self.timeout)
+        # ignore_error_on_exit=True so a non-zero process exit is reported back
+        # as an exit code via inactive_puids rather than the Manager raising a
+        # DragonUserCodeError. Batch's process()/job() contract is to return
+        # exit codes (including non-zero) as the task result so callers and
+        # downstream argument dependencies can inspect them.
+        grp = ProcessGroup(restart=False, ignore_error_on_exit=True, pmi=pmi, walltime=self.timeout)
 
         if self.hostname_list is None:
             raise RuntimeError(f"no hostname list available for job: {self._get_id_str()}")
@@ -913,10 +1452,6 @@ class JobCore(TaskCore):
             raise RuntimeError(
                 f"invalid hostname list for job: expected {self.num_procs} entries, got {len(self.hostname_list)}"
             )
-
-        # Check whether any template requests stdout/stderr capture. Avoid
-        # O(num_procs) GS round-trips when no output capture was requested.
-        needs_output = any(t.stdout == Popen.PIPE or t.stderr == Popen.PIPE for _, t in self.process_templates)
 
         # Build one add_process call per (template, hostname) pair, using the
         # nproc replica count instead of one call per rank. This keeps the
@@ -988,34 +1523,9 @@ class JobCore(TaskCore):
             # get puids and exit codes
             puids = []
             exit_codes = []
-            proc_resources = []
-            stdout = ""
-            stderr = ""
-
             for puid, exit_code in grp.inactive_puids:
                 puids.append(puid)
                 exit_codes.append(exit_code)
-                if needs_output:
-                    proc_resources.append(Process(None, ident=puid))
-
-            if needs_output:
-                for proc_idx in range(self.num_procs):
-                    conn_stdout = proc_resources[proc_idx].stdout_conn
-                    conn_stderr = proc_resources[proc_idx].stderr_conn
-
-                    if conn_stdout is not None:
-                        try:
-                            while True:
-                                stdout += conn_stdout.recv()
-                        except EOFError:
-                            pass
-
-                    if conn_stderr is not None:
-                        try:
-                            while True:
-                                stderr += conn_stderr.recv()
-                        except EOFError:
-                            pass
 
             # Preserve process() ergonomics by returning a scalar exit code for
             # the single-process case, even though jobs internally track one
@@ -1023,7 +1533,7 @@ class JobCore(TaskCore):
             if len(exit_codes) == 1:
                 exit_codes = exit_codes[0]
 
-            return exit_codes, stdout, stderr
+            return exit_codes
         except DragonUserCodeError:
             # Cancellation stops a running ProcessGroup by signalling its
             # workers, which ProcessGroup reports back as DragonUserCodeError.
@@ -1054,7 +1564,9 @@ class Job(Task):
         writes: Optional[list] = None,
         name: Optional[str] = None,
         timeout: float = default_timeout,
-        pmi: PMIBackend = PMIBackend.CRAY,
+        pmi: Optional[PMIBackend] = PMIBackend.CRAY,
+        stdout: Optional[str | Path] = None,
+        stderr: Optional[str | Path] = None,
     ) -> None:
         """
         Creates a new job task. Arguments for a process passed using :py:attr:`ProcessTemplate.args`
@@ -1073,8 +1585,7 @@ class Job(Task):
         :type writes: Optional[list]
         :param name: A human-readable name for the task.
         :type name: Optional[str]
-        :param pmi: The PMI backend to use for launching MPI jobs. Defaults to ``PMIBackend.CRAY``.
-            Set to ``PMIBackend.PMIX`` for systems using PMIx, or ``None`` to disable PMI.
+        :param pmi: The PMI backend to use for launching MPI jobs. Defaults to ``PMIBackend.CRAY``. Set to ``PMIBackend.PMIX`` for systems using PMIx, or ``None`` to disable PMI.
         :type pmi: PMIBackend
 
         :return: Returns None.
@@ -1083,11 +1594,30 @@ class Job(Task):
         if len(process_templates) == 0:
             raise RuntimeError("need at least one process template")
 
+        tuid = batch._next_tuid()
+        task_kind = "process" if len(process_templates) == 1 and process_templates[0][0] == 1 else "job"
+        target_labels = {_describe_process_template_target(template) for _, template in process_templates}
+        target_label = next(iter(target_labels)) if len(target_labels) == 1 else "mixed"
+        resolved_stdout, resolved_stderr = batch._resolve_task_output_paths(
+            tuid=tuid,
+            task_kind=task_kind,
+            target_label=target_label,
+            name=name,
+            stdout=stdout,
+            stderr=stderr,
+        )
+
         total_procs = 0
         list_of_arg_lists = []
+        resolved_templates = []
 
         # TODO: handle kwargs for arg-passing deps (probably changes elsewhere too)
         for nprocs_this_template, template in process_templates:
+            template = batch._resolve_process_template_outputs(
+                template,
+                resolved_stdout,
+                resolved_stderr,
+            )
             total_procs += nprocs_this_template
 
             if getattr(template, "is_python", False):
@@ -1101,21 +1631,50 @@ class Job(Task):
                 # Task placeholders replaced by None. `template.args` (CLI
                 # flags) must be left untouched.
                 orig_target, orig_args, orig_kwargs = template.get_original_python_parameters()
-                list_of_arg_lists.append(tuple(orig_args))
-                sanitized_orig_args = tuple(None if isinstance(a, Task) else a for a in orig_args)
-                template.argdata = cloudpickle.dumps((orig_target, sanitized_orig_args, orig_kwargs))
+                wrapped_payload = _unwrap_prefixed_python_process_payload(orig_target, orig_args, orig_kwargs)
+
+                if wrapped_payload is not None:
+                    wrapped_target, wrapped_args, wrapped_kwargs = wrapped_payload
+                    list_of_arg_lists.append(tuple(wrapped_args))
+                    sanitized_wrapped_args = tuple(None if isinstance(a, Task) else a for a in wrapped_args)
+                    template.argdata = cloudpickle.dumps(
+                        (orig_target, (wrapped_target, sanitized_wrapped_args, wrapped_kwargs), orig_kwargs)
+                    )
+                else:
+                    list_of_arg_lists.append(tuple(orig_args))
+                    sanitized_orig_args = tuple(None if isinstance(a, Task) else a for a in orig_args)
+                    template.argdata = cloudpickle.dumps((orig_target, sanitized_orig_args, orig_kwargs))
             else:
                 # Binary templates: user args are directly in template.args.
                 list_of_arg_lists.append(template.args)
                 sanitized_args = tuple(None if isinstance(arg, Task) else arg for arg in template.args)
                 template.args = sanitized_args
 
+            resolved_templates.append((nprocs_this_template, template))
+
         super().__init__(
-            JobCore(batch._next_tuid(), batch.client_id, name, timeout, process_templates, pmi=pmi),
+            JobCore(tuid, batch.client_id, name, timeout, resolved_templates, pmi=pmi),
             batch,
             reads=reads,
             writes=writes,
         )
+        metadata_stdout, metadata_stderr = batch._summarize_template_log_paths(resolved_templates)
+        self._stdout = metadata_stdout
+        self._stderr = metadata_stderr
+        self._task_kind = task_kind
+        self._target_label = target_label
+        if batch._task_logs_enabled:
+            batch._append_log_manifest_entry(
+                tuid=tuid,
+                task_kind=task_kind,
+                target_label=target_label,
+                task_name=name,
+                stdout_path=metadata_stdout,
+                stderr_path=metadata_stderr,
+            )
+        # Always track the task so unmanaged-shutdown result invalidation can
+        # reach it, even when task logging (and thus the manifest) is disabled.
+        batch._register_task_for_log_metadata(self)
 
         self.core.num_procs = total_procs
         self._handle_arg_passing_deps(list_of_arg_lists)
@@ -1157,31 +1716,13 @@ class Work:
 
         self._ready_task_cores = {}
         self._blocked_task_cores = {}
-        self._compiled_result_wrapper = CompiledResultWrapper(compiled_tuid, {}, {}, {})
+        self._compiled_result_wrapper = CompiledResultWrapper(compiled_tuid, {})
 
         for task_core in task_set:
             if task_core.num_dep_tot == 0:
                 self._ready_task_cores[task_core.tuid] = task_core
             else:
                 self._blocked_task_cores[task_core.tuid] = task_core
-
-    def _num_blocked_tasks(self) -> int:
-        """
-        Get the number of blocked tasks for this work item.
-
-        :return: Returns the number of blocked tasks.
-        :rtype: int
-        """
-        return len(self._blocked_task_cores)
-
-    def _num_ready_tasks(self) -> int:
-        """
-        Get the number of tasks that are ready to run (no dependencies) for this work item.
-
-        :return: Returns the number of ready tasks.
-        :rtype: int
-        """
-        return len(self._ready_task_cores)
 
 
 def _is_multi_node_job(task_core: TaskCore, physical_cores_per_node: int) -> bool:
@@ -1210,9 +1751,9 @@ def _bootstrap_manager(work_q: Queue) -> None:
     manager._run()
 
 
-def _get_result_tuple(results_ddict: DDict, tuid: str, manager_idx: Optional[int]) -> tuple:
-    ddict_manager_idx = _ddict_manager_idx_for_task_manager(manager_idx)
-    return results_ddict.manager(ddict_manager_idx)[tuid]
+def _get_result_tuple(results_ddict: DDict, tuid: str, result_ddict_idx: int) -> tuple:
+    with _with_ddict_manager(results_ddict, result_ddict_idx) as manager_results_ddict:
+        return manager_results_ddict[tuid]
 
 
 def _build_cancelled_error(task_core: TaskCore, results_ddict: DDict) -> BatchError:
@@ -1223,11 +1764,11 @@ def _build_cancelled_error(task_core: TaskCore, results_ddict: DDict) -> BatchEr
             f"on upstream task tuid={source_tuid}, and that upstream task failed or was cancelled."
         )
 
-        if task_core.cancel_source_tuid is not None and task_core.cancel_source_manager_idx is not None:
-            upstream_result, _, upstream_raised, _, _ = _get_result_tuple(
+        if task_core.cancel_source_tuid is not None and task_core.cancel_source_result_ddict_idx is not None:
+            upstream_result, _, upstream_raised = _get_result_tuple(
                 results_ddict,
                 task_core.cancel_source_tuid,
-                task_core.cancel_source_manager_idx,
+                task_core.cancel_source_result_ddict_idx,
             )
             if upstream_raised and isinstance(upstream_result, BaseException):
                 raise dep_error from upstream_result
@@ -1251,13 +1792,11 @@ def _do_task_impl(task_core: TaskCore, results_ddict: DDict, control_q: Queue) -
     """
     tb = None
     raised = False
-    stdout_val = ""
-    stderr_val = ""
 
     try:
         if task_core.is_cancelled != TaskCancellationReason.NONE:
             raise _build_cancelled_error(task_core, results_ddict)
-        result, stdout_val, stderr_val = task_core.run(control_q=control_q)
+        result = task_core.run(control_q=control_q)
     except Exception as e:
         result = e
         tb = _get_traceback()
@@ -1265,12 +1804,12 @@ def _do_task_impl(task_core: TaskCore, results_ddict: DDict, control_q: Queue) -
 
     task_core._notify_dep_tasks(result)
 
-    # Write results directly to the task's assigned ddict manager.
-    ddict_manager_idx = _ddict_manager_idx_for_task_manager(task_core.manager_idx)
+    # Write results directly to the task's assigned result ddict manager.
+    if task_core.result_ddict_idx is None:
+        raise RuntimeError(f"task result_ddict_idx not assigned: {task_core._get_id_str()}")
 
-    local_results_ddict = results_ddict.manager(ddict_manager_idx)
-    with local_results_ddict:
-        local_results_ddict[task_core.tuid] = (result, tb, raised, stdout_val, stderr_val)
+    with _with_ddict_manager(results_ddict, task_core.result_ddict_idx) as local_results_ddict:
+        local_results_ddict[task_core.tuid] = (result, tb, raised)
 
     return TaskComplete(task_core.tuid, task_core.compiled_tuid, raised)
 
@@ -1308,6 +1847,7 @@ class Manager:
         is_scheduler: bool = False,
         all_node_hostnames: Optional[list[str]] = None,
         subnode_manager_qs: Optional[list] = None,
+        managed_lifecycle: bool = False,
     ) -> None:
         """
         Initialize a manager.
@@ -1370,20 +1910,21 @@ class Manager:
         # Number of in-flight Work chunks per client (client_id -> count). Incremented
         # when a Work chunk is accepted by this manager, decremented when it completes.
         self._pending_task_counts = {}
+        # Detached clients whose manager-side state should be reaped once all
+        # in-flight work and runtime bookkeeping for that client drains.
+        self._clients_pending_reap: set[int] = set()
         self._pool_launch_args_list = []
-        self._direct_launch_args_list = []
         self._compiled_task_list = []
         self._queued_task_count = 0
         self._async_queue = None
+        self.managed_lifecycle = managed_lifecycle
         self.destroy_called = False
+        self._force_destroy_deadline: Optional[float] = None
         self.dbg_start_time = None
         self.dbg_update_start = False
         self.dispatch = None
         self.pool_node_huids = pool_node_huids if pool_node_huids is not None else []
         self.physical_cores_per_node = physical_cores_per_node
-        # Fast-path state for manager-owned function execution threads.
-        self._function_fast_path_enabled = False
-        self._direct_task_threads: dict[str, ExceptionalThread] = {}
 
         # telemetry stuff
         self.dragon_telem = None
@@ -1396,8 +1937,6 @@ class Manager:
         # scheduler (manager 0)
         # ---------------------
         self.is_scheduler = is_scheduler
-        if not self.is_scheduler and len(self.pool_node_huids) == 1:
-            self._function_fast_path_enabled = True
         # Pool of hostnames available for node allocation (multi-node jobs and
         # subnode manager pool locking). Populated only on the scheduler.
         self._available_nodes: list[str] = sorted(all_node_hostnames) if all_node_hostnames else []
@@ -1451,10 +1990,11 @@ class Manager:
         self._pending_work_chunks: list = []
         # Work chunks that arrived while a subnode allocation request was already in flight.
         self._queued_work_chunks: list = []
-        # Client IDs that submitted work during the current allocation phase. Populated
-        # as Work chunks are processed (past the alloc guard) and cleared when the
-        # SubnodeFreeRequest is sent.
-        self._alloc_phase_clients: set = set()
+        # Number of Work chunks accepted per client during the current allocation
+        # phase. This mirrors the scheduler-side _subnode_outstanding unit so
+        # fence() accounting can be decremented consistently when the allocation
+        # is released.
+        self._alloc_phase_client_work_counts: dict[int, int] = {}
         # Task tuids that were accepted for execution during the current allocation phase.
         self._alloc_phase_tuids: set[str] = set()
         # Ready subnode tasks for the current allocation phase, ordered by HEFT priority.
@@ -1465,6 +2005,57 @@ class Manager:
         # threads, so the total active work on the node never exceeds the
         # physical core budget.
         self._subnode_available_cores: int = physical_cores_per_node
+
+    def _request_runtime_shutdown(self, force_timeout: Optional[float] = None) -> None:
+        if not self.destroy_called:
+            self.log.debug("destroy called")
+            self.destroy_called = True
+
+        if force_timeout is not None:
+            deadline = time.monotonic() + force_timeout
+            if self._force_destroy_deadline is None or deadline < self._force_destroy_deadline:
+                self._force_destroy_deadline = deadline
+
+    def _should_exit_runtime(self) -> bool:
+        if not self.destroy_called:
+            return False
+
+        if self._force_destroy_deadline is not None and time.monotonic() >= self._force_destroy_deadline:
+            return True
+
+        return len(self.active_clients) == 0 and len(self.work_backlog) == 0
+
+    def _reap_client_state(self, client_id: int) -> None:
+        self.ret_q.pop(client_id, None)
+        self._completed_tuids.pop(client_id, None)
+        self._pending_task_counts.pop(client_id, None)
+        self._clients_pending_reap.discard(client_id)
+
+        if self.is_scheduler:
+            self._subnode_outstanding.pop(client_id, None)
+            self._mnj_pending_counts.pop(client_id, None)
+            self._scheduler_fence_requests.pop(client_id, None)
+
+    def _can_reap_client_state(self, client_id: int) -> bool:
+        if client_id in self.active_clients:
+            return False
+
+        if self._pending_task_counts.get(client_id, 0) != 0:
+            return False
+
+        if self.is_scheduler:
+            if self._subnode_outstanding.get(client_id, 0) != 0:
+                return False
+            if self._mnj_pending_counts.get(client_id, 0) != 0:
+                return False
+            if client_id in self._scheduler_fence_requests:
+                return False
+
+        return True
+
+    def _maybe_reap_client_state(self, client_id: int) -> None:
+        if client_id in self._clients_pending_reap and self._can_reap_client_state(client_id):
+            self._reap_client_state(client_id)
 
     def __setstate__(self, state) -> None:
         """
@@ -1572,6 +2163,26 @@ class Manager:
 
         return hostnames
 
+    def _claim_required_and_contiguous_nodes(self, hostnames: list[str], num_nodes: int) -> Optional[list[str]]:
+        """Claim required nodes plus enough additional free nodes to reach ``num_nodes``."""
+        if num_nodes < len(hostnames):
+            raise RuntimeError(
+                f"invalid node allocation request: need at least {len(hostnames)} node(s) for explicit hostnames"
+            )
+        if not all(hostname in self._available_nodes for hostname in hostnames):
+            return None
+
+        remaining_available = [hostname for hostname in self._available_nodes if hostname not in hostnames]
+        extra_nodes_needed = num_nodes - len(hostnames)
+        if len(remaining_available) < extra_nodes_needed:
+            return None
+
+        allocated = sorted(hostnames) + remaining_available[:extra_nodes_needed]
+        for hostname in allocated:
+            self._available_nodes.remove(hostname)
+
+        return allocated
+
     def _claim_contiguous_nodes(self, num_nodes: int) -> Optional[list[str]]:
         """Claim the first contiguous slice from the free-node list.
 
@@ -1658,6 +2269,38 @@ class Manager:
         priority = request.priority_weight
         return (-priority, handle)
 
+    def _get_job_requested_hostnames(self, task_core: "TaskCore") -> Optional[list[str]]:
+        """Return the distinct explicit hostnames requested by a job's templates, if any."""
+        if not isinstance(task_core, JobCore):
+            return None
+
+        requested_hostnames: list[str] = []
+        for _, template in task_core.process_templates:
+            policy = template.policy
+            if policy is None or policy.placement != Policy.Placement.HOST_NAME:
+                continue
+
+            host_name = policy.host_name
+            if not host_name:
+                raise RuntimeError(
+                    "invalid process template policy: placement=HOST_NAME requires a non-empty host_name"
+                )
+
+            if host_name not in requested_hostnames:
+                requested_hostnames.append(host_name)
+
+        if not requested_hostnames:
+            return None
+
+        return sorted(requested_hostnames)
+
+    def _validate_job_requested_hostnames(self, hostnames: list[str]) -> None:
+        """Reject hostname requests that cannot be satisfied by this Batch allocation."""
+        if any(hostname not in self._all_node_hostnames for hostname in hostnames):
+            invalid = [hostname for hostname in hostnames if hostname not in self._all_node_hostnames]
+            invalid_str = ", ".join(sorted(invalid))
+            raise RuntimeError(f"job requested hostnames outside this Batch allocation: {invalid_str}")
+
     def _submit_mnj_task(self, task_core: "TaskCore", client_id: int, hostnames: list[str]) -> None:
         """Queue a multi-node job after its nodes have been allocated."""
         task_core.hostname_list = self._build_contiguous_hostname_list(hostnames, task_core.num_procs)
@@ -1678,9 +2321,12 @@ class Manager:
         """Normalize a node-allocation request into the shared internal form."""
         frozen_client_ids = frozenset(client_ids) if client_ids else frozenset()
         if hostnames is not None:
+            # An explicit hostname set is a hard constraint, so the allocation
+            # must cover at least those nodes; honor a larger num_nodes request
+            # by adding extra free nodes on top of the required hosts.
             return PendingAllocInfo(
                 hostnames=sorted(hostnames),
-                num_nodes=None,
+                num_nodes=max(num_nodes, len(hostnames)),
                 client_ids=frozen_client_ids,
                 priority_weight=priority_weight,
             )
@@ -1695,7 +2341,10 @@ class Manager:
     def _try_allocate_request(self, request: PendingAllocInfo) -> Optional[list[str]]:
         """Attempt to satisfy a normalized allocation request from the free-node pool."""
         if request.hostnames is not None:
-            return self._claim_requested_nodes(request.hostnames)
+            if request.num_nodes == len(request.hostnames):
+                return self._claim_requested_nodes(request.hostnames)
+
+            return self._claim_required_and_contiguous_nodes(request.hostnames, request.num_nodes)
 
         return self._claim_contiguous_nodes(request.num_nodes)
 
@@ -1714,15 +2363,18 @@ class Manager:
     ) -> int:
         """
         Request an allocation of nodes, returning an integer handle immediately.
-        If *hostnames* is given, those specific nodes are requested; otherwise
-        *num_nodes* arbitrary nodes are requested from the front of
+        If *hostnames* is given, those specific nodes are always included in the
+        allocation and additional nodes are chosen from the front of
+        ``_available_nodes`` when *num_nodes* exceeds ``len(hostnames)``.
+        Otherwise *num_nodes* arbitrary nodes are requested from the front of
         ``_available_nodes``. If the requested nodes are currently available they
         are removed from ``_available_nodes`` and stored in
         ``_alloc_handles[handle]``. If not, the request is queued in
         ``_pending_alloc_requests`` and ``free_nodes`` will satisfy it later,
         appending the result to ``_newly_satisfied_allocs``.
 
-        :param num_nodes: Number of nodes for a count-based request.
+        :param num_nodes: Number of nodes for a count-based request, or the total
+            node count when *hostnames* must be included.
         :type num_nodes: int
         :param hostnames: Specific hostnames for a hostname-based request.
         :type hostnames: Optional[list[str]]
@@ -1874,10 +2526,10 @@ class Manager:
         :type req: SubnodeFreeRequest
         """
         manager_idx = req.manager_idx
-        client_ids = req.client_ids
+        client_work_counts = req.client_work_counts
         task_tuids = req.task_tuids
         self.log.debug(
-            f"scheduler: SubnodeFreeRequest from manager {manager_idx}, clients={client_ids}, num tasks={len(task_tuids)}"
+            f"scheduler: SubnodeFreeRequest from manager {manager_idx}, clients={client_work_counts}, num tasks={len(task_tuids)}"
         )
 
         handle = self._subnode_alloc_handle.pop(manager_idx, None)
@@ -1888,13 +2540,14 @@ class Manager:
         # Decrement the outstanding work counter for each client whose work
         # was covered by this allocation. This completes the Work lifecycle
         # that began when the scheduler routed those chunks.
-        for client_id in client_ids:
-            new_count = self._subnode_outstanding.get(client_id, 0) - len(task_tuids)
+        for client_id, work_count in client_work_counts.items():
+            new_count = self._subnode_outstanding.get(client_id, 0) - work_count
             if new_count <= 0:
                 self._subnode_outstanding.pop(client_id, None)
             else:
                 self._subnode_outstanding[client_id] = new_count
             self._try_satisfy_scheduler_fence(client_id)
+            self._maybe_reap_client_state(client_id)
 
     def _handle_scheduler_fence_request(self, fence_request: FenceRequest) -> None:
         """
@@ -1945,12 +2598,19 @@ class Manager:
             else:
                 self._mnj_pending_counts[client_id] = new_count
             self._try_satisfy_scheduler_fence(client_id)
+            self._maybe_reap_client_state(client_id)
 
     def _request_mnj_alloc(self, task_core: "TaskCore", client_id: int) -> None:
         """
         Request a node allocation for a ready multi-node job and, if immediately
         granted, submit the job to the worker pool.  If deferred, store the job
         in ``_pending_mnj_tasks`` to be submitted by ``_process_alloc_completions``.
+
+        Jobs with explicit ``HOST_NAME`` placement in their process-template
+        policies treat those hostnames as hard allocation constraints. Batch
+        validates that the requested hosts belong to its managed allocation and
+        reserves those nodes before launch, adding extra nodes only if the job
+        needs more capacity than the explicit host set provides.
 
         ``_mnj_pending_counts`` is incremented immediately so fence checks
         correctly see the job as in-flight even when the allocation is deferred.
@@ -1961,8 +2621,18 @@ class Manager:
         # Track in-flight MNJ count immediately for fence purposes.
         self._mnj_pending_counts[client_id] = self._mnj_pending_counts.get(client_id, 0) + 1
 
-        num_nodes = math.ceil(task_core.num_procs / self.physical_cores_per_node)
-        handle = self.request_nodes(num_nodes=num_nodes, client_ids={client_id}, priority_weight=task_core.weight)
+        requested_hostnames = self._get_job_requested_hostnames(task_core)
+        if requested_hostnames is not None:
+            self._validate_job_requested_hostnames(requested_hostnames)
+            handle = self.request_nodes(
+                hostnames=requested_hostnames,
+                client_ids={client_id},
+                priority_weight=task_core.weight,
+            )
+        else:
+            num_nodes = math.ceil(task_core.num_procs / self.physical_cores_per_node)
+            handle = self.request_nodes(num_nodes=num_nodes, client_ids={client_id}, priority_weight=task_core.weight)
+
         if handle in self._alloc_handles:
             # Immediately satisfied: submit to pool now.
             hostnames = self._alloc_handles[handle]
@@ -2020,7 +2690,7 @@ class Manager:
         if any(task_core.tuid == tuid for task_core, _ in self._pool_launch_args_list):
             return True
 
-        return any(task_core.tuid == tuid for task_core, _ in self._direct_launch_args_list)
+        return False
 
     def _task_is_queued_in_ready_heap(self, tuid: str) -> bool:
         return any(task_core.tuid == tuid for _, _, _, task_core in self._subnode_ready_heap)
@@ -2177,17 +2847,13 @@ class Manager:
         self._queued_task_count += 1
 
     def _queue_task_for_launch(self, task_core: TaskCore, control_q: Queue) -> None:
-        """Append task launch args to the selected backend queue.
+        """Append task launch args to the worker pool.
 
-        Core budget was already reserved by ``_register_running_task``, so the
-        backend split here does not change node-level concurrency.
+        Core budget was already reserved by ``_register_running_task``, so this
+        simply queues the task for dispatch via map_async.
         """
         task_and_args = (task_core, (self.results_ddict, control_q))
-
-        if self._should_use_direct_function_launch(task_core):
-            self._direct_launch_args_list.append(task_and_args)
-        else:
-            self._pool_launch_args_list.append(task_and_args)
+        self._pool_launch_args_list.append(task_and_args)
 
     def _prepare_task_for_launch(self, task_core: TaskCore) -> None:
         """
@@ -2306,7 +2972,7 @@ class Manager:
         # this for allocation-phase bookkeeping and state cleanup.
         client_id = work._client_id
         self._pending_task_counts[client_id] = self._pending_task_counts.get(client_id, 0) + 1
-        self._alloc_phase_clients.add(client_id)
+        self._alloc_phase_client_work_counts[client_id] = self._alloc_phase_client_work_counts.get(client_id, 0) + 1
         self._alloc_phase_tuids.update(task_core.tuid for task_core in work._ready_task_cores.values())
         self._alloc_phase_tuids.update(task_core.tuid for task_core in work._blocked_task_cores.values())
 
@@ -2360,7 +3026,7 @@ class Manager:
         task_core: TaskCore,
         arg_dep_updates: list[ArgDepUpdate],
         source_tuid: Optional[str] = None,
-        source_manager_idx: Optional[int] = None,
+        source_result_ddict_idx: Optional[int] = None,
     ) -> None:
         """
         Update task args using dep_sat.arg_dep_updates. ArgDepUpdate contains only
@@ -2371,8 +3037,10 @@ class Manager:
 
         # fetch the result value from the distributed dict
         if source_tuid is not None:
+            if source_result_ddict_idx is None:
+                raise RuntimeError(f"missing result ddict index for upstream task {source_tuid}")
             try:
-                result_tuple = _get_result_tuple(self.results_ddict, source_tuid, source_manager_idx)
+                result_tuple = _get_result_tuple(self.results_ddict, source_tuid, source_result_ddict_idx)
                 new_arg = result_tuple[0]
             except Exception:
                 raise
@@ -2410,16 +3078,27 @@ class Manager:
                 # back into `argdata` so workers receive the updated values.
                 if getattr(process_template, "is_python", False):
                     orig_target, orig_args, orig_kwargs = process_template.get_original_python_parameters()
+                    wrapped_payload = _unwrap_prefixed_python_process_payload(orig_target, orig_args, orig_kwargs)
 
-                    args_list = list(orig_args)
-                    for new_arg_val, arg_idx in new_args_list:
-                        args_list[arg_idx] = new_arg_val
+                    if wrapped_payload is not None:
+                        wrapped_target, wrapped_args, wrapped_kwargs = wrapped_payload
+                        args_list = list(wrapped_args)
+                        for new_arg_val, arg_idx in new_args_list:
+                            args_list[arg_idx] = new_arg_val
 
-                    # For Python-callable templates, `process_template.args` holds
-                    # the subprocess CLI flags (["-c", "..."]) and must NOT be
-                    # modified. Only `argdata` (the cloudpickled user payload) needs
-                    # to be updated with the resolved dependency values.
-                    process_template.argdata = cloudpickle.dumps((orig_target, tuple(args_list), orig_kwargs))
+                        process_template.argdata = cloudpickle.dumps(
+                            (orig_target, (wrapped_target, tuple(args_list), wrapped_kwargs), orig_kwargs)
+                        )
+                    else:
+                        args_list = list(orig_args)
+                        for new_arg_val, arg_idx in new_args_list:
+                            args_list[arg_idx] = new_arg_val
+
+                        # For Python-callable templates, `process_template.args` holds
+                        # the subprocess CLI flags (["-c", "..."]) and must NOT be
+                        # modified. Only `argdata` (the cloudpickled user payload) needs
+                        # to be updated with the resolved dependency values.
+                        process_template.argdata = cloudpickle.dumps((orig_target, tuple(args_list), orig_kwargs))
                 else:
                     args_list = list(process_template.args)
 
@@ -2442,6 +3121,7 @@ class Manager:
         """
         source_tuid = dep_sat.source_tuid
         source_manager_idx = dep_sat.source_manager_idx
+        source_result_ddict_idx = dep_sat.source_result_ddict_idx
         tuid = dep_sat.tuid
         compiled_tuid = dep_sat.compiled_tuid
         cancel_reason = dep_sat.cancel_reason
@@ -2454,12 +3134,13 @@ class Manager:
             # (which is part of a larger compiled task)
             task_core = work._blocked_task_cores[tuid]
 
-            self._update_task_args(task_core, dep_sat.arg_dep_updates, source_tuid, source_manager_idx)
+            self._update_task_args(task_core, dep_sat.arg_dep_updates, source_tuid, source_result_ddict_idx)
             if cancel_reason == TaskCancellationReason.UPSTREAM_RAW_FAILURE:
                 if task_core.is_cancelled == TaskCancellationReason.NONE:
                     task_core.is_cancelled = cancel_reason
                     task_core.cancel_source_tuid = source_tuid
                     task_core.cancel_source_manager_idx = source_manager_idx
+                    task_core.cancel_source_result_ddict_idx = source_result_ddict_idx
             task_core.num_dep_sat += 1
 
             self.log.debug(
@@ -2513,6 +3194,7 @@ class Manager:
                 dep_sat = DepSat(
                     upstream_tuid,
                     completion_info.manager_idx,
+                    completion_info.result_ddict_idx,
                     downstream_tuid,
                     downstream_compiled_tuid,
                     arg_dep_updates,
@@ -2583,10 +3265,25 @@ class Manager:
         :rtype: None
         """
         client_id = unregister_client.client_id
+        last_client = False
 
         if client_id in self.active_clients:
             self.log.debug(f"unregistering client {client_id}")
             self.active_clients.remove(client_id)
+
+        if unregister_client.clean_detach:
+            self._reap_client_state(client_id)
+        else:
+            self._clients_pending_reap.add(client_id)
+            self._maybe_reap_client_state(client_id)
+
+        if len(self.active_clients) == 0:
+            last_client = True
+            if not self.managed_lifecycle:
+                self._request_runtime_shutdown()
+
+        if self.is_scheduler and unregister_client.reply_q is not None:
+            unregister_client.reply_q.put(last_client)
 
     def _handle_destroy_called(self, destroy_called: DestroyCalled) -> None:
         """
@@ -2598,9 +3295,7 @@ class Manager:
         :return: Returns None.
         :rtype: None
         """
-        if not self.destroy_called:
-            self.log.debug("destroy called")
-            self.destroy_called = True
+        self._request_runtime_shutdown(destroy_called.force_timeout)
 
     @singledispatchmethod
     def _handle_request(self, item):
@@ -2778,44 +3473,6 @@ class Manager:
         """Add a completion batch to the async queue."""
         self._async_queue.put(completion_batch)
 
-    def _should_use_direct_function_launch(self, task_core: TaskCore) -> bool:
-        """Return True when this task should run via manager-owned thread fast-path."""
-        return (
-            self._function_fast_path_enabled
-            and isinstance(task_core, FunctionCore)
-            and not task_core.disable_fast_path
-        )
-
-    def _run_direct_task(self, task_and_args) -> None:
-        """Run one task in a manager-owned thread and enqueue completion."""
-        task_core, args = task_and_args
-        results_ddict, _ = args
-
-        try:
-            completion = _do_task(task_and_args)
-        except Exception as e:
-            tb = _get_traceback()
-
-            # Best effort fallback so manager state can still progress on
-            # unexpected direct-launch failures.
-            try:
-                ddict_manager_idx = _ddict_manager_idx_for_task_manager(task_core.manager_idx)
-                local_results_ddict = results_ddict.manager(ddict_manager_idx)
-                with local_results_ddict:
-                    local_results_ddict[task_core.tuid] = (e, tb, True, "", "")
-            except Exception as write_err:
-                self._handle_manager_exception(
-                    write_err,
-                    "failed to write fast-path task failure result",
-                    self.ret_q.get(task_core.client_id, None),
-                    task_core.tuid,
-                )
-
-            completion = TaskComplete(task_core.tuid, task_core.compiled_tuid, True)
-
-        # Reuse the same ingestion path as pool.map_async callbacks.
-        self._add_to_async_queue([completion])
-
     def _launch_tasks(self) -> None:
         """
         Launch all queued tasks using map_async.
@@ -2829,10 +3486,10 @@ class Manager:
             # before dispatch.
             self._drain_subnode_ready_tasks()
 
-        if len(self._pool_launch_args_list) == 0 and len(self._direct_launch_args_list) == 0:
+        if len(self._pool_launch_args_list) == 0:
             return
 
-        num_tasks = len(self._pool_launch_args_list) + len(self._direct_launch_args_list)
+        num_tasks = len(self._pool_launch_args_list)
         # chunk_size=1 ensures each task is dispatched to a worker individually, so completed
         # tasks are reported back (via _add_to_async_queue) as soon as possible. A larger
         # chunk_size would bundle multiple tasks onto one worker and execute them sequentially,
@@ -2841,20 +3498,13 @@ class Manager:
         # cost of the user-defined work (functions, processes, MPI jobs).
         chunk_size = 1
 
-        for task_and_args in self._direct_launch_args_list:
-            task_core, _ = task_and_args
-            worker = ExceptionalThread(target=self._run_direct_task, args=(task_and_args,))
-            self._direct_task_threads[task_core.tuid] = worker
-            worker.start()
-
         self.log.debug(f"starting {num_tasks} tasks")
-        if self._pool_launch_args_list:
-            self.pool.map_async(
-                _do_task,
-                self._pool_launch_args_list,
-                chunk_size,
-                self._add_to_async_queue,
-            )
+        self.pool.map_async(
+            _do_task,
+            self._pool_launch_args_list,
+            chunk_size,
+            self._add_to_async_queue,
+        )
 
         if not self.disable_telem:
             self.num_running_tasks += self._queued_task_count
@@ -2873,6 +3523,7 @@ class Manager:
         :rtype: None
         """
         num_tasks = 0
+        completed_tuids_by_client: dict[int, list[str]] = {}
 
         for completion in tuid_compiled_tuid_list:
             num_tasks += 1
@@ -2881,14 +3532,11 @@ class Manager:
             compiled_tuid = completion.compiled_tuid
             self.log.debug(f"individual task complete: tuid={tuid}, compiled_tuid={compiled_tuid}")
 
-            direct_worker = self._direct_task_threads.pop(tuid, None)
-            if direct_worker is not None:
-                direct_worker.join()
-
             work = self.work_backlog[compiled_tuid]
             task_core = work._ready_task_cores[tuid]
             del work._ready_task_cores[tuid]
             work_client_id = work._client_id
+            completed_tuids_by_client.setdefault(work_client_id, []).append(tuid)
 
             # On the scheduler, a completed multi-node job means we can return the allocated
             # nodes to the available pool and check pending fences.
@@ -2909,6 +3557,7 @@ class Manager:
                     del self._pending_task_counts[work_client_id]
                 else:
                     self._pending_task_counts[work_client_id] = new_count
+                self._maybe_reap_client_state(work_client_id)
 
             # task_core.cached_queue is the per-task control queue used for
             # cancellation. Recycle it after completion so later tasks can
@@ -2922,6 +3571,7 @@ class Manager:
                 self._completed_tuids[work_client_id] = {}
             self._completed_tuids[work_client_id][tuid] = CompletedTaskInfo(
                 task_core.manager_idx,
+                task_core.result_ddict_idx,
                 completion.raised,
             )
 
@@ -2936,6 +3586,7 @@ class Manager:
                         ds = DepSat(
                             tuid,
                             task_core.manager_idx,
+                            task_core.result_ddict_idx,
                             downstream_tuid,
                             downstream_compiled_tuid,
                             arg_dep_updates,
@@ -2953,6 +3604,11 @@ class Manager:
 
             self.dragon_telem.add_data("num_running_tasks", self.num_running_tasks)
             self.dragon_telem.add_data("num_completed_tasks", self.num_completed_tasks)
+
+        for client_id, tuids in completed_tuids_by_client.items():
+            ret_q = self.ret_q.get(client_id)
+            if ret_q is not None:
+                ret_q.put(CompletedTuids(tuids))
 
     def _log_task_debug_info(self, task_core: TaskCore) -> None:
         """
@@ -3069,9 +3725,7 @@ class Manager:
             # stage ready tasks in _subnode_ready_heap until _launch_tasks drains
             # them into launch queues, so both containers mean the current
             # allocation phase has performed work and must later release it.
-            if (self._pool_launch_args_list or self._direct_launch_args_list) or (
-                not self.is_scheduler and self._subnode_ready_heap
-            ):
+            if self._pool_launch_args_list or (not self.is_scheduler and self._subnode_ready_heap):
                 subnode_has_work = True
             try:
                 if self.is_scheduler or self._subnode_has_alloc:
@@ -3086,7 +3740,6 @@ class Manager:
                     )
             finally:
                 self._pool_launch_args_list = []
-                self._direct_launch_args_list = []
                 self._compiled_task_list = []
                 self._queued_task_count = 0
 
@@ -3113,16 +3766,16 @@ class Manager:
                 try:
                     scheduler_q = self._subnode_manager_qs[0] if self._subnode_manager_qs else None
                     if scheduler_q is not None:
-                        phase_client_ids = self._alloc_phase_clients
+                        phase_client_work_counts = self._alloc_phase_client_work_counts
                         phase_tuids = self._alloc_phase_tuids
-                        self._alloc_phase_clients = set()
+                        self._alloc_phase_client_work_counts = {}
                         self._alloc_phase_tuids = set()
-                        scheduler_q.put(SubnodeFreeRequest(self.idx, phase_client_ids, phase_tuids))
+                        scheduler_q.put(SubnodeFreeRequest(self.idx, phase_client_work_counts, phase_tuids))
                         self._subnode_has_alloc = False
                         self._subnode_ready_heap.clear()
                         subnode_has_work = False
                         self.log.debug(
-                            f"subnode manager {self.idx}: node allocation released, clients={phase_client_ids}, tasks={len(phase_tuids)}"
+                            f"subnode manager {self.idx}: node allocation released, clients={phase_client_work_counts}, tasks={len(phase_tuids)}"
                         )
                         if self._queued_work_chunks:
                             self._pending_work_chunks = self._queued_work_chunks
@@ -3131,7 +3784,7 @@ class Manager:
                 except Exception as e:
                     self._handle_manager_exception(e, "failed to release subnode allocation")
 
-            if self.destroy_called and len(self.active_clients) == 0 and len(self.work_backlog) == 0:
+            if self._should_exit_runtime():
                 break
 
             try:
@@ -3146,19 +3799,6 @@ class Manager:
                 self.dragon_telem.shutdown()
             except Exception as e:
                 self._handle_manager_exception(e, f"failed to shut down telemetry")
-
-        # Expected invariant: direct-task threads should normally be consumed
-        # by _handle_results; this is a defensive drain for exceptional exits.
-        if self._direct_task_threads:
-            self.log.debug(
-                f"manager {self.idx}: draining {len(self._direct_task_threads)} leftover direct-task thread(s) at shutdown"
-            )
-        for tuid, worker in list(self._direct_task_threads.items()):
-            try:
-                worker.join()
-            except Exception as e:
-                self._handle_manager_exception(e, "failed to join direct-task worker", tuid=tuid)
-        self._direct_task_threads.clear()
 
         try:
             self.log.debug(f"manager shutting down pool")
@@ -3187,42 +3827,54 @@ class ClientCompiler:
         num_managers: int,
         manager_qs: list[Queue],
         physical_cores_per_node: int,
+        results_ddict_managers_per_pool: int,
         log: logging.Logger,
     ) -> None:
         self.num_managers = num_managers
         self.manager_qs = list(manager_qs)
         self.physical_cores_per_node = physical_cores_per_node
+        self.results_ddict_managers_per_pool = results_ddict_managers_per_pool
         self.log = log
         self._compiled_task_ctr = 0
         self.dep_frontier: dict = {}
         self.tuid_to_manager_q: dict[str, Queue] = {}
+        # Per-subnode-manager round-robin slot counter for result ddict assignment
+        # Maps manager_idx -> next slot to use for this manager's workers
+        self._result_slot_counter: dict[int, int] = {}
 
     def reset(self) -> None:
         """Clear compile-time state that is carried across batches for one client."""
         self.dep_frontier = {}
         self.tuid_to_manager_q = {}
+        # Note: we keep result_slot_counter across batches for stable affinity
 
-    def _build_current_batch_dep_dag(self, tasks_to_compile: list["Task"]) -> nx.DiGraph:
-        """Build the dependency DAG for the tasks being compiled in the current batch."""
-        dep_dag = nx.DiGraph()
-        current_batch_task_core_index: dict[str, TaskCore] = {}
+    def _result_ddict_idx_for_task(self, manager_idx: int) -> int:
+        """
+        Map a task's manager and an auto-incremented slot to its result ddict manager index.
 
-        for task in tasks_to_compile:
-            dep_dag.add_node(task.core)
-            current_batch_task_core_index[task.core.tuid] = task.core
+        Each worker pool owns ``results_ddict_managers_per_pool`` consecutive
+        result-ddict manager shards. Scheduler tasks always use ddict manager 0.
+        Subnode manager ``i`` tasks use ddict managers
+        ``i*R .. i*R + R - 1`` where ``R = results_ddict_managers_per_pool``.
 
-        for task in tasks_to_compile:
-            for dep_record in task.core.dependencies:
-                upstream_tuid = dep_record.upstream_tuid
-                upstream_task_core = current_batch_task_core_index.get(upstream_tuid)
-                if upstream_task_core is not None:
-                    dep_dag.add_edge(upstream_task_core, task.core)
-                elif upstream_tuid not in self.tuid_to_manager_q:
-                    self.log.debug(
-                        f"failed to add HEFT edge for upstream_tuid={upstream_tuid} downstream_tuid={task.core.tuid}: upstream node not found"
-                    )
+        This means the scheduler shares ddict manager 0 with subnode manager 0's
+        slot-0 shard on node 0, avoiding a reserved extra shard slot on
+        every node.
+        Round-robin slot assignment ensures equal load distribution across a pool's shards.
+        """
+        if manager_idx == SCHEDULER_MANAGER_IDX:
+            return 0
 
-        return dep_dag
+        managers_per_pool = self.results_ddict_managers_per_pool
+
+        # For subnode managers, use round-robin slot assignment within this pool's shards
+        if manager_idx not in self._result_slot_counter:
+            self._result_slot_counter[manager_idx] = 0
+
+        slot = self._result_slot_counter[manager_idx]
+        self._result_slot_counter[manager_idx] = (slot + 1) % managers_per_pool
+
+        return manager_idx * managers_per_pool + slot
 
     def _subnode_manager_idx_for_partition(self, part_idx: int, subnode_offset: int, num_subnode_managers: int) -> int:
         """Map a partition index to a concrete subnode manager, honoring the batch offset."""
@@ -3250,28 +3902,46 @@ class ClientCompiler:
 
         return 1
 
-    def assign_heft_weights(self, dep_dag: nx.DiGraph) -> None:
+    def assign_heft_weights(self, tasks_to_compile: list["Task"]) -> None:
         """
-        Assign HEFTY weights and deterministic topological tie-break order.
+        Assign HEFTY weights using client submission order.
 
-        The forward pass records a stable topological index for each task. The
-        reverse pass then computes the critical-path weight used by both
-        partitioning/task placement and subnode ready-task launch order.
+        Task tuids are allocated monotonically when tasks are created, and the
+        client request worker batches them without reordering. That means the
+        compile list is already in deterministic topological order for current-
+        batch dependencies, so the reverse pass can compute critical-path
+        weights directly without a separate graph walk.
         """
-        if dep_dag.number_of_nodes() == 0:
+        if not tasks_to_compile:
             return
 
-        topological_order = list(nx.lexicographical_topological_sort(dep_dag, key=lambda tc: tc.tuid))
+        successors_by_task: dict[TaskCore, set[TaskCore]] = {}
+        current_batch_task_core_index: dict[str, TaskCore] = {}
+        topological_order = [task.core for task in tasks_to_compile]
+
+        for task_core in topological_order:
+            successors_by_task[task_core] = set()
+            current_batch_task_core_index[task_core.tuid] = task_core
+
+        for task_core in topological_order:
+            for dep_record in task_core.dependencies:
+                upstream_tuid = dep_record.upstream_tuid
+                upstream_task_core = current_batch_task_core_index.get(upstream_tuid)
+                if upstream_task_core is not None:
+                    successors_by_task[upstream_task_core].add(task_core)
+                elif upstream_tuid not in self.tuid_to_manager_q:
+                    self.log.debug(
+                        f"failed to add HEFT edge for upstream_tuid={upstream_tuid} downstream_tuid={task_core.tuid}: upstream node not found"
+                    )
+
         for order_idx, task_core in enumerate(topological_order):
             task_core.heft_topo_order = order_idx
 
         for task_core in reversed(topological_order):
-            successor_weights = [successor.weight for successor in dep_dag.successors(task_core)]
+            successor_weights = [successor.weight for successor in successors_by_task[task_core]]
             task_core.weight = self._task_compute_cost(task_core) + (max(successor_weights) if successor_weights else 0)
 
-    def hefty_partition(
-        self, tasks_to_compile: list["Task"], dep_dag: nx.DiGraph, subnode_offset: int = 0
-    ) -> list[set["TaskCore"]]:
+    def hefty_partition(self, tasks_to_compile: list["Task"], subnode_offset: int = 0) -> list[set["TaskCore"]]:
         # Partition only the work that can run on subnode managers. Multi-node
         # jobs stay on the scheduler path and are handled separately later in
         # compile(), so they must not consume subnode partition slots here.
@@ -3368,22 +4038,20 @@ class ClientCompiler:
                     part_idx, subnode_offset, num_subnode_managers=num_subnode_managers
                 )
                 comm_penalty = 0
-                ddict_manager_idx = _ddict_manager_idx_for_task_manager(manager_idx)
+                candidate_node_idx = 0 if manager_idx == SCHEDULER_MANAGER_IDX else manager_idx
 
                 # Penalize managers that would force this task to consume
                 # upstream argument values from elsewhere. The penalty is coarse
                 # by design: a simple per-parent increment is enough to bias
-                # placement toward colocated argument-passing chains without
-                # overfitting to uncertain runtime costs. Compare in results-ddict
-                # space rather than raw logical-manager space: scheduler-owned
-                # multi-node jobs still publish results through ddict manager 0.
+                # placement toward node-local argument-passing chains without
+                # overfitting to uncertain runtime costs.
                 if arg_parent_tuids:
                     for upstream_tuid in arg_parent_tuids:
                         parent_manager_idx = _manager_idx_for_parent(upstream_tuid)
-                        if parent_manager_idx is not None and (
-                            _ddict_manager_idx_for_task_manager(parent_manager_idx) != ddict_manager_idx
-                        ):
-                            comm_penalty += 1
+                        if parent_manager_idx is not None:
+                            parent_node_idx = 0 if parent_manager_idx == SCHEDULER_MANAGER_IDX else parent_manager_idx
+                            if parent_node_idx != candidate_node_idx:
+                                comm_penalty += 1
 
                 load = partition_loads[part_idx]
                 # Compare candidate partitions lexicographically so we first
@@ -3499,8 +4167,7 @@ class ClientCompiler:
                         )
                         self.dep_frontier[kvs_and_key] = FrontierInfo([task_obj], access_type, task_obj)
 
-        current_batch_dep_dag = self._build_current_batch_dep_dag(tasks_to_compile)
-        self.assign_heft_weights(current_batch_dep_dag)
+        self.assign_heft_weights(tasks_to_compile)
         num_subnode_managers = self.num_managers - 1
         if num_subnode_managers <= 0:
             raise RuntimeError("Batch requires at least one subnode manager")
@@ -3509,12 +4176,9 @@ class ClientCompiler:
         # per requested node. The compiler relies on that invariant so every
         # non-multi-node task can be placed onto a concrete subnode manager.
         subnode_offset = random.randrange(num_subnode_managers)
-        compiled_task._manager_offset = subnode_offset
 
         self.log.debug("partitioning the dependency graph")
-        subnode_partitions = self.hefty_partition(
-            tasks_to_compile, current_batch_dep_dag, subnode_offset=subnode_offset
-        )
+        subnode_partitions = self.hefty_partition(tasks_to_compile, subnode_offset=subnode_offset)
         mnj_partition: set["TaskCore"] = {
             task.core for task in tasks_to_compile if _is_multi_node_job(task.core, self.physical_cores_per_node)
         }
@@ -3532,10 +4196,12 @@ class ClientCompiler:
             manager_q = self.manager_qs[subnode_idx + 1]
             for task_core in task_set:
                 task_core.manager_idx = subnode_idx
+                task_core.result_ddict_idx = self._result_ddict_idx_for_task(subnode_idx)
                 self.tuid_to_manager_q[task_core.tuid] = manager_q
 
         for task_core in mnj_partition:
             task_core.manager_idx = SCHEDULER_MANAGER_IDX
+            task_core.result_ddict_idx = self._result_ddict_idx_for_task(SCHEDULER_MANAGER_IDX)
             self.tuid_to_manager_q[task_core.tuid] = scheduler_q
 
         current_batch_task_core_index = {task_core.tuid: task_core for task_core in current_batch_task_cores}
@@ -4027,7 +4693,8 @@ class MakeTask:
         """
         Make "update tuples" that allow us to quickly swap in the runtime argument values for
         task attributes, replacing the template strings that represent the arguments in the PTD
-        file. Possible task attributes are the task's type, name, and timeout value.
+        file. Possible task attributes are the task's type, name, timeout value,
+        and explicit stdout/stderr log paths.
 
         :return: Returns None.
         :rtype: None
@@ -4051,6 +4718,20 @@ class MakeTask:
             timeout_dict = self._ptd["timeout"]
             for val_idx, val in enumerate(timeout_dict):
                 self._process_val(val, timeout_dict, val_idx)
+        except KeyError:
+            pass
+
+        # key=stdout
+        try:
+            val = self._ptd["stdout"]
+            self._process_val(val, self._ptd, "stdout")
+        except KeyError:
+            pass
+
+        # key=stderr
+        try:
+            val = self._ptd["stderr"]
+            self._process_val(val, self._ptd, "stderr")
         except KeyError:
             pass
 
@@ -4127,6 +4808,16 @@ class MakeTask:
         except:
             timeout_dict = None
 
+        try:
+            task_stdout = _resolve_val(self._ptd["stdout"])
+        except KeyError:
+            task_stdout = None
+
+        try:
+            task_stderr = _resolve_val(self._ptd["stderr"])
+        except KeyError:
+            task_stderr = None
+
         # set up ProcessTemplate list
 
         pt_list = []
@@ -4178,8 +4869,24 @@ class MakeTask:
             except KeyError:
                 env = None
 
+            try:
+                stdout = _resolve_val(exe["stdout"])
+                if not isinstance(stdout, str) and not isinstance(stdout, Path):
+                    raise RuntimeError(f"stdout must be a str or Path: {stdout=}")
+            except KeyError:
+                stdout = None
+
+            try:
+                stderr = _resolve_val(exe["stderr"])
+                if stderr != Popen.STDOUT and not isinstance(stderr, str) and not isinstance(stderr, Path):
+                    raise RuntimeError(f"stderr must be a str, Path, or Popen.STDOUT: {stderr=}")
+            except KeyError:
+                stderr = None
+
             if task_type != TaskType.FUNC:
-                pt = ProcessTemplate(target=target, args=args, kwargs=kwargs, cwd=cwd, env=env)
+                pt = ProcessTemplate(
+                    target=target, args=args, kwargs=kwargs, cwd=cwd, env=env, stdout=stdout, stderr=stderr
+                )
                 pt_list.append((nprocs, pt))
 
         # set up reads and writes
@@ -4195,33 +4902,22 @@ class MakeTask:
             writes.extend(new_writes)
 
         # create Task from task_type and pt_list
+        task_options = self._batch.options(
+            reads=reads,
+            writes=writes,
+            name=task_name,
+            timeout=_get_timeout_val(timeout_dict),
+            stdout=task_stdout,
+            stderr=task_stderr,
+        )
+
         if task_type == TaskType.FUNC:
-            task = self._batch.function(
-                target,
-                *args,
-                reads=reads,
-                writes=writes,
-                name=task_name,
-                timeout=_get_timeout_val(timeout_dict),
-                **kwargs,
-            )
+            task = task_options.function(target, *args, **kwargs)
         elif task_type == TaskType.PROC:
             _, pt = pt_list[0]
-            task = self._batch.process(
-                process_template=pt,
-                reads=reads,
-                writes=writes,
-                name=task_name,
-                timeout=_get_timeout_val(timeout_dict),
-            )
+            task = task_options.process(process_template=pt)
         elif task_type == TaskType.JOB:
-            task = self._batch.job(
-                process_templates=pt_list,
-                reads=reads,
-                writes=writes,
-                name=task_name,
-                timeout=_get_timeout_val(timeout_dict),
-            )
+            task = task_options.job(process_templates=pt_list)
         else:
             raise RuntimeError(f"invalid task type: {task_type}\n==> valid types: function, process, job")
 
@@ -4290,6 +4986,44 @@ class BatchTopology:
         )
 
 
+@dataclass(frozen=True)
+class BatchTaskOptions:
+    """Execution metadata for a Batch task submission.
+
+    Use :py:meth:`Batch.options` to construct one of these indirectly and then
+    call ``.function(...)``, ``.process(...)``, or ``.job(...)`` on the returned
+    proxy so Batch metadata is kept separate from user payload arguments.
+    """
+
+    reads: Optional[list] = None
+    writes: Optional[list] = None
+    name: Optional[str] = None
+    timeout: float = default_timeout
+    stdout: Optional[str | Path] = None
+    stderr: Optional[str | Path] = None
+    pmi: PMIBackend = PMIBackend.CRAY
+
+
+class BatchOptionsProxy:
+    """Bound submission helper returned by :py:meth:`Batch.options`."""
+
+    def __init__(self, batch: "Batch", task_options: BatchTaskOptions) -> None:
+        self._batch = batch
+        self._task_options = task_options
+
+    def function(self, target: Callable, *args, **kwargs) -> Function:
+        """Submit a function task using the bound Batch task options."""
+        return self._batch._submit_function(target, args, kwargs, self._task_options)
+
+    def process(self, process_template: ProcessTemplate) -> Job:
+        """Submit a process task using the bound Batch task options."""
+        return self._batch._submit_process(process_template, self._task_options)
+
+    def job(self, process_templates: list) -> Job:
+        """Submit a job task using the bound Batch task options."""
+        return self._batch._submit_job(process_templates, self._task_options)
+
+
 # TODO: need to be able to pickle and unpickle Batch objects and send them
 # to managers and workers to enable recursive function calls
 class Batch:
@@ -4302,7 +5036,11 @@ class Batch:
         disable_telem: bool = False,
         scheduler_workers: Optional[int] = None,
         results_ddict_mem: Optional[int] = None,
+        results_ddict_managers_per_pool: Optional[int] = default_results_ddict_managers_per_pool,
         managed_lifecycle: bool = False,
+        stdout: Optional[str | Path] = None,
+        stderr: Optional[str | Path] = None,
+        task_logs: bool = False,
     ) -> None:
         """
         Create a Batch instance for orchestrating functions, executables, and parallel applications
@@ -4324,8 +5062,42 @@ class Batch:
         :param results_ddict_mem: Total memory in bytes to allocate for the Batch-owned results
             DDict. When omitted, Batch allocates one gibibyte per requested node.
         :type results_ddict_mem: Optional[int]
-        :param managed_lifecycle: Indicates if the Batch instance will manage its own lifecycle.
+        :param results_ddict_managers_per_pool: Number of results-DDict manager shards to
+            provision per worker pool (one pool per requested node). Must be between ``1`` and
+            the number of batch workers per node; values outside that range are clamped (and the
+            clamping is logged). When omitted, Batch uses ``default_results_ddict_managers_per_pool``
+            shards per pool (clamped to the worker count). Pass ``None`` explicitly to request one
+            results-DDict manager per worker.
+        :type results_ddict_managers_per_pool: Optional[int]
+        :param managed_lifecycle: Controls the lifetime of the Batch instance
+            shared by clients. When ``False`` (the default), that Batch
+            instance shuts down automatically after the last client detaches.
+            When ``True``, it stays alive until some client calls
+            :py:meth:`Batch.destroy`.
         :type managed_lifecycle: bool
+        :param stdout: Default stdout log file path for tasks created by this client. When omitted
+            and ``task_logs=True``, Batch creates per-task stdout files under
+            ``runinfo/<batch-run-id>/client-<id>/task_logs/<task-kind>``. When omitted and
+            ``task_logs=False`` (the default), task stdout is not captured to a file and is
+            forwarded to the client console instead.
+        :type stdout: Optional[str | Path]
+        :param stderr: Default stderr log file path for tasks created by this client. When omitted
+            and ``task_logs=True``, Batch creates per-task stderr files under
+            ``runinfo/<batch-run-id>/client-<id>/task_logs/<task-kind>``. When omitted and
+            ``task_logs=False`` (the default), task stderr is not captured to a file and is
+            forwarded to the client console instead.
+        :type stderr: Optional[str | Path]
+        :param task_logs: When ``True``, Batch captures each task's stdout/stderr to per-task files
+            under ``runinfo/<batch-run-id>/client-<id>/task_logs`` and maintains a ``manifest.jsonl``
+            index, enabling the experimental log-discovery helpers (:py:meth:`Batch.log_dir`,
+            :py:meth:`Batch.log_manifest_path`, :py:meth:`Batch.iter_log_records`,
+            :py:meth:`Batch.find_logs`, and :py:meth:`Batch.read_logs`). When ``False``
+            (the default), no ``runinfo`` directory or manifest is created and task output is only
+            written to a file when an explicit ``stdout``/``stderr`` path is supplied; otherwise it
+            is forwarded to the client console. These helper APIs may evolve as the logging
+            interface matures. The log-discovery helpers raise ``RuntimeError`` while task
+            logging is disabled.
+        :type task_logs: bool
 
         .. highlight:: python
         .. code-block:: python
@@ -4353,8 +5125,8 @@ class Batch:
             m = np.vander(a)
 
             # Submit tasks — Batch dispatches them to workers in the background
-            tasks = [batch.function(gpu_matmul, m, base_dir, i,
-                                    reads=[get_read(i)], writes=[get_write(i)], timeout=30)
+            tasks = [batch.options(reads=[get_read(i)], writes=[get_write(i)], timeout=30)
+                         .function(gpu_matmul, m, base_dir, i)
                      for i in range(1000)]
 
             # Retrieve results — .get() waits for each task to complete if needed
@@ -4365,7 +5137,6 @@ class Batch:
                     print(f"gpu_matmul failed with the following exception: {e}")
 
             batch.join()
-            batch.destroy()
 
 
         :return: Returns None.
@@ -4426,11 +5197,27 @@ class Batch:
         self._cpus_per_node = cpus_per_node
         self._workers_per_node_in_pool = workers_per_node_in_pool
 
+        # Resolve the number of results-DDict manager shards per worker pool. Default
+        # is ``default_results_ddict_managers_per_pool``; the value is clamped to
+        # [1, workers_per_node] and any clamping is logged once self.log is available
+        # (see below). Passing None requests one shard per worker.
+        self._results_ddict_managers_per_pool, self._results_ddict_managers_per_pool_warning = (
+            _resolve_results_ddict_managers_per_pool(results_ddict_managers_per_pool, workers_per_node_in_pool)
+        )
+
         # One worker pool per requested node.
         self.num_workers = workers_per_node_in_pool
         self.num_managers = num_managers
 
         self.managed_lifecycle = managed_lifecycle
+        self._deserialized_handle = False
+        self._run_id = str(uuid1())
+        self._task_logs_enabled = task_logs
+        self._default_stdout = _normalize_output_path(stdout)
+        self._default_stderr = _normalize_output_path(stderr)
+        self._client_run_dir: Optional[Path] = None
+        self._log_manifest_path: Optional[Path] = None
+        self._log_manifest_lock = threading.Lock()
 
         # All node hostnames, used by the scheduler for node allocation.
         self._all_node_hostnames: list[str] = [n.hostname for n in node_objs]
@@ -4442,13 +5229,16 @@ class Batch:
         # Work submission queue; bound to manager 0's queue in _setup_managers().
         self.work_q = None
 
-        # Every Batch handle registers through the same client path. The
-        # shared runtime stays alive until some client explicitly calls
-        # destroy().
+        # Every Batch handle registers through the same client path. Runtime
+        # shutdown is then controlled by the shared lifecycle mode: either the
+        # last client detaches (default) or some client explicitly calls
+        # destroy() when managed_lifecycle=True.
         self.client_id: Optional[int] = None
         self.manager_qs = []
+        self._serialized_manager_qs = []
         self.grp = None
         self._serialized_grp = None
+        self._serialized_grp_mgr_puid = None
 
         # These flags are local to this client handle.
         self.closed = False
@@ -4458,13 +5248,15 @@ class Batch:
         self.disable_telem = disable_telem
 
         # Create a distributed dict to store task results keyed by tuid.
-        # One DDict manager per Batch node, with one gigabyte of memory each by default.
+        # Use ``self._results_ddict_managers_per_pool`` shards per pool on every
+        # node. The scheduler shares ddict manager 0 with subnode manager 0's
+        # slot-0 shard on node 0 rather than reserving a dedicated extra shard.
         one_gig = 1024**3
         results_ddict_total_mem = results_ddict_mem if results_ddict_mem is not None else (num_nodes * one_gig)
 
         self.results_ddict = DDict(
             n_nodes=num_nodes,
-            managers_per_node=1,
+            managers_per_node=self._results_ddict_managers_per_pool,
             total_mem=results_ddict_total_mem,
             wait_for_keys=True,
             working_set_size=2,
@@ -4473,24 +5265,23 @@ class Batch:
 
         self._set_unique_attrs()
         # NOTE: self.log is set in _set_unique_attrs
+        if self._results_ddict_managers_per_pool_warning is not None:
+            self.log.warning(self._results_ddict_managers_per_pool_warning)
         self.log.debug(str(self.topology()))
 
         self._setup_managers()
         self._init_client_compiler()
         self._register()
+        self._initialize_client_run_dir()
         self._start_client_request_worker()
 
     def __del__(self) -> None:
         """
-        Close this client handle if it has not already been closed.
+        Best-effort detach this client handle during garbage collection.
 
         :return: Returns None.
         :rtype: None
         """
-        # Skip cleanup for managed-lifecycle handles
-        if getattr(self, "managed_lifecycle", False):
-            return
-        
         if getattr(self, "destroyed", False) or getattr(self, "terminated", False):
             return
 
@@ -4499,84 +5290,145 @@ class Batch:
 
         if not self.closed:
             try:
-                self._flush_client_request_worker()
-                self._stop_client_request_worker()
+                self._stop_client_request_worker(timeout=1.0)
             except Exception:
                 pass
+
             try:
-                self._unregister()
+                self._detach_group_client()
+            except Exception:
+                pass
+
+            try:
+                self._unregister(timeout=1.0, clean_detach=False)
+            except Exception:
+                pass
+
+        ret_q = getattr(self, "ret_q", None)
+        if ret_q is not None:
+            try:
+                ret_q.close()
             except Exception:
                 pass
 
     def __setstate__(self, state) -> None:
         """
         Set state for a new client handle from a serialized Batch.
-        
-        Deserialized copies are always created with ``managed_lifecycle=True``
-        and must call :py:meth:`destroy` explicitly when done. The new handle
-        registers as a fresh client with the existing managers.
+
+        Deserialized copies preserve the lifecycle mode of the Batch instance
+        shared by clients, carry enough shared Batch-instance state to wait for
+        shutdown, and register as fresh clients with the existing managers.
 
         :return: Returns None.
         :rtype: None
         """
 
+        serialized_results_ddict = state.pop("_serialized_results_ddict", None)
+
         # a lot of the state is generic and can just be set using the origin __dict__
         self.__dict__.update(state)
+        self.results_ddict = None
 
-        self.managed_lifecycle = True
         self.destroyed = False
+        self._deserialized_handle = True
         self.grp = None
-        self._serialized_grp = None
 
-        # Rebuild manager_qs from serialized descriptors
-        serialized_qs = state.pop("_serialized_manager_qs", [])
-        self.manager_qs = [Queue.attach(desc) for desc in serialized_qs]
-        self.work_q = self.manager_qs[0] if self.manager_qs else None
+        # Local-only sync/log state is stripped during __getstate__. Restore safe
+        # defaults up front so the runtime-loss finalizer (which flushes the log
+        # manifest) can run even when we bail out before _set_unique_attrs() and
+        # _initialize_client_run_dir() recreate them on the success path.
+        self._log_manifest_lock = threading.Lock()
+        self._log_manifest_path = None
+        self._task_log_metadata = OrderedDict()
+        self._task_log_tasks = {}
 
-        # update attributes that are unique to this batch instance
-        self._set_unique_attrs()
-        self._init_client_compiler()
+        try:
+            serialized_grp_mgr_puid = state.get("_serialized_grp_mgr_puid", None)
+            if serialized_grp_mgr_puid is not None and not self._is_runtime_group_manager_active(
+                serialized_grp_mgr_puid
+            ):
+                raise RuntimeError("serialized batch runtime is no longer active")
 
-        # Only register if we have queues to register with
-        if self.manager_qs:
-            self._register()
-            self._start_client_request_worker()
+            # Rebuild manager_qs from serialized descriptors
+            serialized_qs = state.pop("_serialized_manager_qs", [])
+            self.manager_qs = [Queue.attach(desc) for desc in serialized_qs]
+            self.work_q = self.manager_qs[0] if self.manager_qs else None
+
+            # update attributes that are unique to this batch instance
+            self._set_unique_attrs()
+            self._init_client_compiler()
+
+            # Only register if we have queues to register with
+            if self.manager_qs:
+                self._register()
+                self._initialize_client_run_dir()
+                self._start_client_request_worker()
+
+            if serialized_results_ddict is not None:
+                self.results_ddict = DDict.attach(serialized_results_ddict)
+        except Exception as exc:
+            if not self._is_runtime_unavailable_exception(exc):
+                raise
+
+            self._finalize_local_runtime_loss()
+            raise RuntimeError("cannot attach to batch runtime after it has been destroyed") from exc
 
     def __getstate__(self) -> dict:
         """
         Serialize only the remote Batch handle state.
-        
-        Local-only synchronization objects and runtime handles that cannot be
-        safely pickled are excluded. Deserialized copies are always created with
-        ``managed_lifecycle=True`` to prevent accidental cleanup from GC.
+
+        Local-only synchronization objects that cannot be safely shared between
+        client handles are excluded. Deserialized copies preserve the runtime's
+        lifecycle mode, keep the serialized ProcessGroup client needed to wait
+        for shutdown, and re-register as new clients.
         """
         state = self.__dict__.copy()
 
         # Strip unpicklable local state
         for key in (
             "ret_q",
+            "cq",
+            "_completion_overflow",
             "_client_request_q",
             "_client_request_thread",
             "_client_request_worker_exc",
             "client_compiler",
             "log",
             "grp",
-            "_serialized_grp",
             "work_q",
+            "_client_run_dir",
+            "_log_manifest_path",
+            "_log_manifest_lock",
+            "_results_ddict_lock",
+            "_task_log_metadata",
+            "_task_log_tasks",
+            "results_ddict",
         ):
             state.pop(key, None)
 
+        if state.get("_serialized_grp", None) is None and getattr(self, "grp", None) is not None:
+            state["_serialized_grp"] = cloudpickle.dumps(self.grp)
+
+        if state.get("_serialized_grp_mgr_puid", None) is None and getattr(self, "grp", None) is not None:
+            state["_serialized_grp_mgr_puid"] = getattr(self.grp, "_mgr_p_uid", None)
+
+        results_ddict = getattr(self, "results_ddict", None)
+        if results_ddict is not None:
+            state["_serialized_results_ddict"] = results_ddict.serialize()
+
         # Serialize manager queue descriptors for reattachment
         manager_qs = getattr(self, "manager_qs", [])
-        state["_serialized_manager_qs"] = [q.serialize() for q in manager_qs]
+        if manager_qs:
+            state["_serialized_manager_qs"] = [q.serialize() for q in manager_qs]
+        else:
+            state["_serialized_manager_qs"] = list(getattr(self, "_serialized_manager_qs", []))
         state.pop("manager_qs", None)
 
-        # Deserialized copies are managed-lifecycle
-        state["managed_lifecycle"] = True
         state["client_id"] = None
         state["closed"] = False
         state["destroyed"] = False
         state["terminated"] = False
+        state["_deserialized_handle"] = True
 
         return state
 
@@ -4641,6 +5493,7 @@ class Batch:
                 physical_cores_per_node=self._workers_per_node_in_pool,
                 disable_telem=self.disable_telem,
                 is_scheduler=False,
+                managed_lifecycle=self.managed_lifecycle,
                 # Pass the scheduler queue so the subnode manager can send
                 # SubnodeAllocRequest / SubnodeFreeRequest messages.
                 subnode_manager_qs=[scheduler_q],
@@ -4672,6 +5525,7 @@ class Batch:
             physical_cores_per_node=self._workers_per_node_in_pool,
             disable_telem=self.disable_telem,
             is_scheduler=True,
+            managed_lifecycle=self.managed_lifecycle,
             all_node_hostnames=self._all_node_hostnames,
             subnode_manager_qs=subnode_manager_qs,
         )
@@ -4731,11 +5585,338 @@ class Batch:
                 host_name=client_hostname,
             ),
         )
+        self.cq = LocalQueue(maxsize=client_completion_queue_maxsize)
+        # Completions that arrive while ``cq`` is full (e.g. a client that never
+        # calls poll()). Buffered here so the Dragon return queue keeps draining;
+        # only the client request worker thread touches this buffer.
+        self._completion_overflow = deque()
         self._client_request_q = LocalQueue()
         self._client_request_thread = None
         self._client_request_worker_exc = None
         self.client_compiler = None
         self.log = _setup_logging("client")
+        # Serializes access to the shared results DDict client connector across
+        # threads/tasks (see Task._get_result_tuple). The DDict client assumes
+        # single-threaded use, so concurrent fetches must not overlap on it.
+        self._results_ddict_lock = threading.Lock()
+        self._log_manifest_lock = threading.Lock()
+        self._task_log_metadata = OrderedDict()
+        self._task_log_tasks = {}
+
+    def _initialize_client_run_dir(self) -> None:
+        if not self._task_logs_enabled:
+            # Task logging disabled: do not create a runinfo directory or manifest.
+            self._client_run_dir = None
+            self._log_manifest_path = None
+            return
+
+        if self.client_id is None:
+            raise RuntimeError("cannot initialize client run dir before client registration")
+
+        client_run_dir = Path.cwd() / "runinfo" / self._run_id / f"client-{self.client_id}" / "task_logs"
+        client_run_dir.mkdir(parents=True, exist_ok=True)
+        self._client_run_dir = client_run_dir
+        self._log_manifest_path = client_run_dir / "manifest.jsonl"
+
+    def _resolve_task_output_paths(
+        self,
+        tuid: str,
+        task_kind: str,
+        target_label: Optional[str],
+        name: Optional[str],
+        stdout: Optional[str | Path],
+        stderr: Optional[str | Path],
+    ) -> tuple[Optional[str], Optional[str]]:
+        resolved_stdout = _normalize_output_path(stdout) if stdout is not None else self._default_stdout
+        resolved_stderr = _normalize_output_path(stderr) if stderr is not None else self._default_stderr
+
+        if not self._task_logs_enabled:
+            # Task logging disabled: only honor explicit (or default) paths and
+            # leave the rest unset so task output inherits and is forwarded to
+            # the client console. Never auto-generate per-task log files.
+            if resolved_stdout is not None:
+                _ensure_output_parent(resolved_stdout)
+            if resolved_stderr is not None:
+                _ensure_output_parent(resolved_stderr)
+            return resolved_stdout, resolved_stderr
+
+        if self._client_run_dir is None:
+            raise RuntimeError("client run dir is not initialized")
+
+        stem = _build_log_stem(task_kind, target_label, name, tuid)
+        task_dir = self._client_run_dir / task_kind
+
+        if resolved_stdout is None:
+            resolved_stdout = str(task_dir / f"{stem}.out")
+        if resolved_stderr is None:
+            resolved_stderr = str(task_dir / f"{stem}.err")
+
+        _ensure_output_parent(resolved_stdout)
+        _ensure_output_parent(resolved_stderr)
+        return resolved_stdout, resolved_stderr
+
+    def _append_log_manifest_entry(
+        self,
+        tuid: str,
+        task_kind: str,
+        target_label: Optional[str],
+        task_name: Optional[str],
+        stdout_path: Optional[str],
+        stderr_path: Optional[str],
+    ) -> None:
+        if self._log_manifest_path is None or self.client_id is None:
+            raise RuntimeError("log manifest path is not initialized")
+
+        entry = {
+            "client_id": self.client_id,
+            "tuid": tuid,
+            "task_kind": task_kind,
+            "target": target_label,
+            "name": task_name,
+            "stdout": stdout_path,
+            "stderr": stderr_path,
+            "log_dir": str(self._client_run_dir),
+            "submit_host": current().hostname,
+            "host": None,
+            "hostnames": None,
+            "submitted_at_ns": time.time_ns(),
+            "completed_at_ns": None,
+        }
+
+        with self._log_manifest_lock:
+            self._task_log_metadata[tuid] = entry
+
+    def _write_log_manifest_locked(self) -> None:
+        if self._log_manifest_path is None:
+            raise RuntimeError("log manifest path is not initialized")
+
+        with self._log_manifest_path.open("w", encoding="utf-8") as manifest_file:
+            for entry in self._task_log_metadata.values():
+                manifest_file.write(json.dumps(entry, sort_keys=True) + "\n")
+
+    def _load_log_manifest_locked(self) -> None:
+        if self._log_manifest_path is None or not self._log_manifest_path.exists():
+            return
+
+        if self._task_log_metadata:
+            return
+
+        for line in self._log_manifest_path.read_text(encoding="utf-8").splitlines():
+            if not line:
+                continue
+            entry = json.loads(line)
+            self._task_log_metadata[entry["tuid"]] = entry
+
+    def _register_task_for_log_metadata(self, task: Task) -> None:
+        self._task_log_tasks[task.uid] = task
+
+    def _refresh_task_log_metadata_locked(self, tuid: Optional[str] = None) -> None:
+        tuids = [tuid] if tuid is not None else list(self._task_log_metadata.keys())
+
+        for current_tuid in tuids:
+            entry = self._task_log_metadata.get(current_tuid)
+            task = self._task_log_tasks.get(current_tuid)
+            if entry is None or task is None:
+                continue
+
+            host, hostnames = self._resolve_task_host_metadata(task)
+            if host is not None and entry.get("host") != host:
+                entry["host"] = host
+                entry["hostnames"] = hostnames
+
+    def _mark_task_log_complete_locked(self, tuid: str, completed_at_ns: Optional[int] = None) -> None:
+        entry = self._task_log_metadata.get(tuid)
+        task = self._task_log_tasks.get(tuid)
+        if entry is None or task is None:
+            return
+
+        host, hostnames = self._resolve_task_host_metadata(task)
+        if host is not None and entry.get("host") != host:
+            entry["host"] = host
+            entry["hostnames"] = hostnames
+
+        if entry.get("completed_at_ns") is None:
+            entry["completed_at_ns"] = time.time_ns() if completed_at_ns is None else completed_at_ns
+
+    def _resolve_task_host_metadata(self, task: Task) -> tuple[Optional[str], Optional[list[str]]]:
+        hostnames: Optional[list[str]] = None
+
+        if isinstance(task.core, JobCore) and task.core.hostname_list is not None:
+            hostnames = list(task.core.hostname_list)
+        elif task.core.manager_idx is not None:
+            if task.core.manager_idx == SCHEDULER_MANAGER_IDX:
+                hostnames = [self._scheduler_hostname]
+            elif 0 <= task.core.manager_idx < len(self._subnode_manager_node_objs):
+                hostnames = [self._subnode_manager_node_objs[task.core.manager_idx].hostname]
+
+        if not hostnames:
+            return None, None
+
+        return _compress_hostnames(hostnames), hostnames
+
+    def _refresh_task_log_metadata(self, tuid: Optional[str] = None) -> None:
+        with self._log_manifest_lock:
+            self._refresh_task_log_metadata_locked(tuid=tuid)
+
+    def _mark_task_log_complete(self, tuid: str, completed_at_ns: Optional[int] = None) -> None:
+        if not self._task_logs_enabled:
+            return
+        with self._log_manifest_lock:
+            self._mark_task_log_complete_locked(tuid, completed_at_ns=completed_at_ns)
+
+    def _flush_log_manifest(self) -> None:
+        with self._log_manifest_lock:
+            if self._log_manifest_path is None:
+                return
+
+            self._refresh_task_log_metadata_locked()
+            self._write_log_manifest_locked()
+
+    def log_dir(self) -> Path:
+        """Return the per-client directory for the experimental log-discovery layer.
+
+        This is the root of the current client's Batch logging area, typically
+        ``runinfo/<batch-run-id>/client-<id>/task_logs``.
+
+        :raises RuntimeError: If task logging is disabled (``Batch(task_logs=False)``).
+        """
+        if not self._task_logs_enabled:
+            raise RuntimeError("task logging is disabled; construct Batch(task_logs=True) to enable it")
+        if self._client_run_dir is None:
+            raise RuntimeError("client run dir is not initialized")
+
+        return self._client_run_dir
+
+    def log_manifest_path(self) -> Path:
+        """Return the path to the per-client JSONL manifest of task log files.
+
+        The manifest is the index used by the experimental log-discovery helpers.
+        Each record stores
+        the task id, task kind, task/target names, log paths, and any host or
+        completion metadata known to this client.
+
+        :raises RuntimeError: If task logging is disabled (``Batch(task_logs=False)``).
+        """
+        if not self._task_logs_enabled:
+            raise RuntimeError("task logging is disabled; construct Batch(task_logs=True) to enable it")
+        if self._log_manifest_path is None:
+            raise RuntimeError("log manifest path is not initialized")
+
+        return self._log_manifest_path
+
+    def iter_log_records(self) -> list[dict[str, Any]]:
+        """Return the current client's task-log records from the manifest.
+
+        This is the primary Python helper in the experimental log-discovery
+        layer for inspecting all known task-log
+        metadata without reading the JSONL file manually.
+
+        :raises RuntimeError: If task logging is disabled (``Batch(task_logs=False)``).
+        """
+        if not self._task_logs_enabled:
+            raise RuntimeError("task logging is disabled; construct Batch(task_logs=True) to enable it")
+        self._refresh_task_log_metadata()
+        with self._log_manifest_lock:
+            return [dict(entry) for entry in self._task_log_metadata.values()]
+
+    def find_logs(self, tuid: str) -> Optional[dict[str, Any]]:
+        """Return the manifest record for *tuid*, or ``None`` if it is unknown.
+
+        Use this experimental helper to locate a task's stdout/stderr files and any resolved
+        host metadata by task id.
+
+        :raises RuntimeError: If task logging is disabled (``Batch(task_logs=False)``).
+        """
+        if not self._task_logs_enabled:
+            raise RuntimeError("task logging is disabled; construct Batch(task_logs=True) to enable it")
+        self._refresh_task_log_metadata(tuid)
+        with self._log_manifest_lock:
+            entry = self._task_log_metadata.get(tuid)
+            return dict(entry) if entry is not None else None
+
+    def read_logs(self, tuid: str, log_type: Optional[str] = None, encoding: str = "utf-8") -> dict[str, Optional[str]]:
+        """Read stdout/stderr log contents for *tuid* from the shared filesystem.
+
+        This is part of Batch's experimental log-discovery layer.
+
+        When *log_type* is ``"stdout"`` or ``"stderr"``, only that log file is read.
+        Otherwise both log files are read.
+
+        The return value is always a dictionary with ``stdout`` and ``stderr``
+        keys. The selected log content is returned as a string, and any
+        unrequested or unavailable side is returned as ``None``.
+
+        :raises RuntimeError: If task logging is disabled (``Batch(task_logs=False)``).
+        """
+        if not self._task_logs_enabled:
+            raise RuntimeError("task logging is disabled; construct Batch(task_logs=True) to enable it")
+        entry = self.find_logs(tuid)
+        if entry is None:
+            raise KeyError(f"unknown task log record: {tuid}")
+
+        if log_type is not None and log_type not in {"stdout", "stderr"}:
+            raise ValueError("log_type must be one of: stdout, stderr, or None")
+
+        streams = (log_type,) if log_type is not None else ("stdout", "stderr")
+        result: dict[str, Optional[str]] = {"stdout": None, "stderr": None}
+
+        for stream_name in streams:
+            path = entry.get(stream_name)
+            if path is not None:
+                result[stream_name] = Path(path).read_text(encoding=encoding)
+
+        return result
+
+    def _resolve_process_template_outputs(
+        self,
+        template: ProcessTemplate,
+        resolved_stdout: str,
+        resolved_stderr: str,
+    ) -> ProcessTemplate:
+        cloned = copy.copy(template)
+
+        template_stdout = _normalize_output_path(cloned.stdout) if isinstance(cloned.stdout, (str, Path)) else None
+        if template_stdout is None:
+            cloned.stdout = resolved_stdout
+        else:
+            cloned.stdout = template_stdout
+
+        if cloned.stderr == Popen.STDOUT:
+            cloned.stderr = Popen.STDOUT
+        else:
+            template_stderr = _normalize_output_path(cloned.stderr) if isinstance(cloned.stderr, (str, Path)) else None
+            if template_stderr is None:
+                cloned.stderr = resolved_stderr
+            else:
+                cloned.stderr = template_stderr
+
+        if isinstance(cloned.stdout, str):
+            _ensure_output_parent(cloned.stdout)
+        if isinstance(cloned.stderr, str):
+            _ensure_output_parent(cloned.stderr)
+
+        return cloned
+
+    def _summarize_template_log_paths(
+        self,
+        resolved_templates: list,
+    ) -> tuple[Optional[str], Optional[str]]:
+        stdout_paths = set()
+        stderr_paths = set()
+
+        for _, template in resolved_templates:
+            if isinstance(template.stdout, str):
+                stdout_paths.add(template.stdout)
+
+            if template.stderr == Popen.STDOUT:
+                if isinstance(template.stdout, str):
+                    stderr_paths.add(template.stdout)
+            elif isinstance(template.stderr, str):
+                stderr_paths.add(template.stderr)
+
+        summary_stdout = next(iter(stdout_paths)) if len(stdout_paths) == 1 else None
+        summary_stderr = next(iter(stderr_paths)) if len(stderr_paths) == 1 else None
+        return summary_stdout, summary_stderr
 
     def _init_client_compiler(self) -> None:
         if not self.manager_qs:
@@ -4745,6 +5926,7 @@ class Batch:
             num_managers=self.num_managers,
             manager_qs=self.manager_qs,
             physical_cores_per_node=self._workers_per_node_in_pool,
+            results_ddict_managers_per_pool=self._results_ddict_managers_per_pool,
             log=self.log,
         )
 
@@ -4753,6 +5935,7 @@ class Batch:
         if grp is None:
             return
 
+        self._serialized_grp_mgr_puid = getattr(grp, "_mgr_p_uid", self._serialized_grp_mgr_puid)
         self._serialized_grp = cloudpickle.dumps(grp)
         with grp:
             pass
@@ -4763,6 +5946,226 @@ class Batch:
             return
 
         self.grp = cloudpickle.loads(self._serialized_grp)
+
+    def _stash_manager_queue_descriptors(self) -> None:
+        manager_qs = getattr(self, "manager_qs", None)
+        if manager_qs:
+            self._serialized_manager_qs = [q.serialize() for q in manager_qs]
+
+    def _ensure_manager_queues_attached(self) -> None:
+        if getattr(self, "manager_qs", None):
+            return
+
+        serialized_qs = list(getattr(self, "_serialized_manager_qs", []))
+        if not serialized_qs:
+            return
+
+        self.manager_qs = [Queue.attach(desc) for desc in serialized_qs]
+        self.work_q = self.manager_qs[0] if self.manager_qs else None
+
+    def _runtime_group_manager_alive(self) -> Optional[bool]:
+        """Best-effort liveness check of the ProcessGroup manager backing this runtime."""
+        mgr_puid = getattr(self, "_serialized_grp_mgr_puid", None)
+        if mgr_puid is None:
+            grp = getattr(self, "grp", None)
+            mgr_puid = getattr(grp, "_mgr_p_uid", None)
+        if mgr_puid is None:
+            return None
+        try:
+            return self._is_runtime_group_manager_active(mgr_puid)
+        except Exception:
+            return None
+
+    def _wait_for_runtime_shutdown(self, timeout: float = default_timeout) -> None:
+        grp = getattr(self, "grp", None)
+        if grp is None:
+            self._ensure_group_client_attached()
+            grp = self.grp
+
+        if grp is None:
+            return
+
+        try:
+            grp.join(timeout=timeout)
+        except TimeoutError:
+            raise RuntimeError("timed out waiting for batch runtime shutdown")
+
+    def _close_local_client_queues(self, close_manager_qs: bool) -> None:
+        ret_q = getattr(self, "ret_q", None)
+        if ret_q is not None:
+            try:
+                ret_q.close()
+            except Exception:
+                pass
+            self.ret_q = None
+
+        if close_manager_qs:
+            self._stash_manager_queue_descriptors()
+
+            for manager_q in getattr(self, "manager_qs", []):
+                try:
+                    manager_q.close()
+                except Exception:
+                    pass
+
+            self.manager_qs = []
+            self.work_q = None
+
+    def _finalize_runtime_shutdown(self) -> None:
+        grp = getattr(self, "grp", None)
+        if grp is None:
+            try:
+                self._ensure_group_client_attached()
+                grp = self.grp
+            except Exception:
+                grp = None
+
+        if grp is not None:
+            try:
+                grp.close()
+            except Exception:
+                pass
+
+        results_ddict = getattr(self, "results_ddict", None)
+        if results_ddict is not None:
+            try:
+                results_ddict.destroy()
+            except Exception:
+                pass
+
+        for manager_q in getattr(self, "manager_qs", []):
+            try:
+                manager_q.close()
+            except Exception:
+                pass
+
+        ret_q = getattr(self, "ret_q", None)
+        if ret_q is not None:
+            try:
+                ret_q.close()
+            except Exception:
+                pass
+
+        self._mark_unfetched_results_unavailable(
+            "task result is unavailable because Batch.join() shut down the unmanaged runtime; "
+            "fetch results before join() or use Batch(managed_lifecycle=True) and destroy() after retrieval"
+        )
+
+        self.grp = None
+        self.manager_qs = []
+        self.work_q = None
+        self.ret_q = None
+        self.results_ddict = None
+        self._serialized_grp = None
+        self._serialized_grp_mgr_puid = None
+        self._serialized_manager_qs = []
+
+        self._release_task_references()
+        self.destroyed = True
+
+    def _finalize_local_runtime_loss(self) -> None:
+        grp = getattr(self, "grp", None)
+        if grp is not None:
+            try:
+                grp.close()
+            except Exception:
+                pass
+            self.grp = None
+
+        results_ddict = getattr(self, "results_ddict", None)
+        if results_ddict is not None:
+            # The client-shared Batch instance (and its results DDict) is already gone, so we
+            # must only release this client's local handle. ``destroy()`` would
+            # send a blocking DDDestroy to an orchestrator that no longer
+            # exists; ``detach()`` releases local resources without that
+            # round-trip (and is a no-op for a non-creator handle).
+            try:
+                results_ddict.detach()
+            except Exception:
+                pass
+
+        for manager_q in getattr(self, "manager_qs", []):
+            try:
+                manager_q.close()
+            except Exception:
+                pass
+
+        ret_q = getattr(self, "ret_q", None)
+        if ret_q is not None:
+            try:
+                ret_q.close()
+            except Exception:
+                pass
+
+        self._mark_unfetched_results_unavailable(
+            "task result is unavailable because the Batch runtime was already shut down"
+        )
+
+        self.grp = None
+        self.manager_qs = []
+        self.work_q = None
+        self.ret_q = None
+        self.results_ddict = None
+        self._serialized_grp = None
+        self._serialized_grp_mgr_puid = None
+        self._serialized_manager_qs = []
+
+        self._release_task_references()
+        self.closed = True
+        self.destroyed = True
+
+    def _is_runtime_destroyed_exception(self, exc: BaseException) -> bool:
+        current_exc = exc
+
+        while current_exc is not None:
+            if isinstance(current_exc, fli.DragonFLIObjectDestroyed):
+                return True
+
+            current_exc = current_exc.__cause__ or current_exc.__context__
+
+        return False
+
+    def _is_runtime_group_manager_active(self, manager_puid: int) -> bool:
+        try:
+            desc = process_query(manager_puid)
+        except ProcessError:
+            return False
+        except Exception:
+            return False
+
+        return desc.state is ProcessDescriptor.State.ACTIVE
+
+    def _is_runtime_unavailable_exception(self, exc: BaseException) -> bool:
+        if self._is_runtime_destroyed_exception(exc):
+            return True
+
+        current_exc = exc
+
+        while current_exc is not None:
+            if isinstance(current_exc, RuntimeError):
+                msg = str(current_exc)
+                if "Failed to attach to ProcessGroup" in msg:
+                    return True
+                if "ProcessGroup manager is not in state" in msg:
+                    return True
+                if "serialized batch runtime is no longer active" in msg:
+                    return True
+
+            current_exc = current_exc.__cause__ or current_exc.__context__
+
+        return False
+
+    def _release_task_references(self) -> None:
+        self._flush_log_manifest()
+        task_log_tasks = getattr(self, "_task_log_tasks", None)
+        if task_log_tasks is not None:
+            task_log_tasks.clear()
+
+    def _mark_unfetched_results_unavailable(self, message: str) -> None:
+        for task in getattr(self, "_task_log_tasks", {}).values():
+            task._results_ddict = None
+            if not task._result_cached and not task._result_cleared:
+                task._result_unavailable_message = message
 
     def _start_client_request_worker(self) -> None:
         if self._client_request_thread is not None:
@@ -4779,31 +6182,94 @@ class Batch:
         if self._client_request_worker_exc is not None:
             raise RuntimeError("client request worker failed") from self._client_request_worker_exc
 
+    def _drain_client_return_queue(self) -> None:
+        ret_q = self.ret_q
+        if ret_q is None:
+            return
+
+        # Make room from any previously buffered overflow before pulling more.
+        self._flush_completion_overflow()
+
+        while True:
+            try:
+                item = ret_q.get_nowait()
+            except queue.Empty:
+                return
+
+            if isinstance(item, CompletedTuids):
+                completed_at_ns = time.time_ns()
+                for tuid in item.tuids:
+                    self._mark_task_log_complete(tuid, completed_at_ns=completed_at_ns)
+                    self._enqueue_completion(tuid)
+                continue
+
+            if isinstance(item, ManagerException):
+                raise RuntimeError(item.err_message) from item.exception
+
+            raise RuntimeError(f"unexpected item received on client return queue: {item!r}")
+
+    def _flush_completion_overflow(self) -> None:
+        """Move buffered completions into the bounded completion queue in FIFO order.
+
+        Only the client request worker thread mutates ``_completion_overflow``,
+        so no extra locking is needed; ``cq`` is the thread-safe handoff to
+        :py:meth:`poll`.
+        """
+        while self._completion_overflow:
+            try:
+                self.cq.put_nowait(self._completion_overflow[0])
+            except queue.Full:
+                return
+            self._completion_overflow.popleft()
+
+    def _enqueue_completion(self, tuid: str) -> None:
+        """Publish one completed tuid for :py:meth:`poll`.
+
+        The completion queue is bounded so it cannot grow without limit when a
+        client never calls ``poll()``. Once it fills, further completions are
+        buffered in ``_completion_overflow`` (preserving FIFO order) until
+        ``poll()`` frees space.
+        """
+        if self._completion_overflow:
+            # Preserve FIFO ordering: new completions must queue behind items
+            # already waiting in the overflow buffer.
+            self._completion_overflow.append(tuid)
+            return
+
+        try:
+            self.cq.put_nowait(tuid)
+        except queue.Full:
+            self._completion_overflow.append(tuid)
+
     def _run_client_request_worker(self) -> None:
         deferred_item = None
 
         while True:
-            if deferred_item is not None:
-                item = deferred_item
-                deferred_item = None
-            else:
-                item = self._client_request_q.get()
-
+            item = None
             try:
+                # Once the handle has been finalized (runtime gone or shut
+                # down), ``ret_q`` is dropped out from under us. Exit cleanly
+                # instead of dereferencing a now-``None`` return queue.
+                if self.closed or self.destroyed or self.ret_q is None:
+                    return
+
+                self._drain_client_return_queue()
+
+                if deferred_item is not None:
+                    item = deferred_item
+                    deferred_item = None
+                else:
+                    try:
+                        item = self._client_request_q.get(timeout=0.05)
+                    except queue.Empty:
+                        continue
+
                 if isinstance(item, Task):
-                    task_batch = [item]
-
-                    while True:
-                        try:
-                            next_item = self._client_request_q.get_nowait()
-                        except queue.Empty:
-                            break
-
-                        if isinstance(next_item, Task):
-                            task_batch.append(next_item)
-                        else:
-                            deferred_item = next_item
-                            break
+                    task_batch, deferred_item = _drain_client_task_batch(
+                        item,
+                        self._client_request_q,
+                        Task,
+                    )
 
                     self._compile_and_dispatch_client_tasks(task_batch)
                     continue
@@ -4856,6 +6322,18 @@ class Batch:
     def _flush_client_request_worker(self, timeout: float = default_timeout) -> None:
         self._wait_for_client_request(ClientFlushRequest, timeout=timeout)
 
+    def poll(self, timeout: float = default_timeout) -> Optional[str]:
+        """Wait up to ``timeout`` seconds for the next completed task tuid."""
+        self._raise_client_request_worker_error()
+
+        try:
+            item = self.cq.get(timeout=timeout)
+        except queue.Empty:
+            self._raise_client_request_worker_error()
+            return None
+
+        return item
+
     def _stop_client_request_worker(self, timeout: float = default_timeout) -> None:
         thread = self._client_request_thread
         if thread is None:
@@ -4883,13 +6361,39 @@ class Batch:
 
         self._wait_for_client_request(ClientFenceRequest, timeout=timeout)
 
-    def _detach_client(self, timeout: float = default_timeout) -> None:
+    def _detach_client(self, timeout: float = default_timeout) -> bool:
         if self.closed:
-            return
+            return False
 
-        self._wait_for_client_completion(timeout=timeout)
-        self._stop_client_request_worker(timeout=timeout)
-        self._unregister()
+        runtime_destroyed = False
+
+        try:
+            self._wait_for_client_completion(timeout=timeout)
+        except Exception as exc:
+            if not self._is_runtime_unavailable_exception(exc):
+                raise
+            runtime_destroyed = True
+
+        try:
+            self._stop_client_request_worker(timeout=timeout)
+        except Exception as exc:
+            if not self._is_runtime_unavailable_exception(exc):
+                raise
+            runtime_destroyed = True
+        finally:
+            self._client_request_thread = None
+
+        if runtime_destroyed:
+            self._finalize_local_runtime_loss()
+            return False
+
+        try:
+            return self._unregister(timeout=timeout, clean_detach=True)
+        except Exception as exc:
+            if not self._is_runtime_unavailable_exception(exc):
+                raise
+            self._finalize_local_runtime_loss()
+            return False
 
     def _cancel_task(self, task: Task, timeout: float = default_timeout) -> bool:
         """Send a cancellation request and wait for the scheduler's response."""
@@ -4950,7 +6454,12 @@ class Batch:
         self.log.debug(f"registering a new client")
         register_client = RegisterClient(self.ret_q, None)
         primary_manager = 0
-        self.manager_qs[primary_manager].put(register_client)
+        try:
+            self.manager_qs[primary_manager].put(register_client)
+        except Exception as exc:
+            if self._is_runtime_destroyed_exception(exc):
+                raise RuntimeError("cannot attach to batch runtime after it has been destroyed") from exc
+            raise
         # Registration happens before the client request worker exists, so
         # manager-side bootstrap failures still have to come back directly on
         # the return queue rather than through the normal worker-exception path.
@@ -4966,9 +6475,14 @@ class Batch:
         # use the client_id to register with the remaining managers
         register_client = RegisterClient(self.ret_q, self.client_id)
         for manager_q in self.manager_qs[1:]:
-            manager_q.put(register_client)
+            try:
+                manager_q.put(register_client)
+            except Exception as exc:
+                if self._is_runtime_destroyed_exception(exc):
+                    raise RuntimeError("cannot attach to batch runtime after it has been destroyed") from exc
+                raise
 
-    def _unregister(self) -> None:
+    def _unregister(self, timeout: float = default_timeout, clean_detach: bool = False) -> bool:
         """
         Unregisters a client with the managers, i.e., removes the client id to the list of
         active clients.
@@ -4976,11 +6490,35 @@ class Batch:
         :return: Returns None.
         :rtype: None
         """
-        unregister_client = UnregisterClient(self.client_id)
-        for manager_q in self.manager_qs:
-            manager_q.put(unregister_client)
+        if self.client_id is None:
+            self.closed = True
+            return False
+
+        reply_q = Queue(block_size=default_block_size)
+        last_client = False
+
+        try:
+            unregister_client = UnregisterClient(self.client_id, reply_q, clean_detach)
+            for manager_q in self.manager_qs:
+                manager_q.put(unregister_client)
+
+            try:
+                item = reply_q.get(timeout=timeout)
+            except queue.Empty:
+                item = False
+
+            if isinstance(item, Exception):
+                raise RuntimeError("client unregister failed") from item
+
+            last_client = bool(item)
+        finally:
+            try:
+                reply_q.close()
+            except Exception:
+                pass
 
         self.closed = True
+        return last_client
 
     def read(self, obj, *channels) -> DataAccess:
         """
@@ -5003,15 +6541,10 @@ class Batch:
         :param obj: The communication object being accessed.
         :param *channels: A tuple of channels on the communcation object that will be writtent o.
 
-        If ``obj`` is a :py:class:`DDict`, mark this access so function tasks
-        that include it skip the manager-owned thread fast path. This avoids
-        running concurrent same-process DDict writes through the fast path.
-
         :return: Returns an descriptor for the data access that can be passed to (in a list) when creating a new task.
         :rtype: DataAccess
         """
-        disable_fast_path = isinstance(obj, DDict)
-        return DataAccess(AccessType.WRITE, obj, channels, disable_fast_path)
+        return DataAccess(AccessType.WRITE, obj, channels)
 
     def fence(self, timeout: float = default_timeout) -> None:
         """
@@ -5034,7 +6567,7 @@ class Batch:
 
         Client detachment is now handled by :py:meth:`Batch.join`, which flushes
         pending local submissions, waits for this client's work to complete, and
-        unregisters the client from the shared runtime.
+        unregisters the client from the Batch instance shared by clients.
 
         :return: Returns None.
         :rtype: None
@@ -5052,11 +6585,17 @@ class Batch:
     def join(self, timeout: float = default_timeout) -> None:
         """
         Wait for the completion of all operations started by this client, then
-        detach this client from the shared Batch runtime.
+        detach this client from the Batch instance shared by clients.
 
         After ``join()`` returns, this handle can no longer submit additional
-        work. If this handle is the one that will tear down the shared runtime,
-        call :py:meth:`Batch.destroy` afterwards.
+        work. In the default unmanaged mode, the client-shared Batch instance
+        shuts down automatically after the last client detaches. In managed
+        mode, any client may later call :py:meth:`Batch.destroy`, even after
+        that handle has already joined. In unmanaged mode, fetch any task
+        results you need before calling ``join()`` on the last attached client,
+        because automatic shutdown destroys the shared results DDict. Use
+        ``managed_lifecycle=True`` when results must remain retrievable after a
+        handle has joined.
 
         :param float: A timeout value for waiting on batch completion. Defaults to 1e9.
         :type timeout: float
@@ -5067,19 +6606,49 @@ class Batch:
         if self.destroyed or self.terminated or self.closed:
             return
 
-        self._detach_client(timeout=timeout)
+        # If the client-shared Batch instance has already been torn down (for example another
+        # client called destroy()), the scheduler can never answer the detach
+        # handshake (flush/fence/unregister). Detect that up front via the
+        # non-attaching manager-liveness probe and finalize local cleanup
+        # instead of blocking on replies that will never arrive.
+        if self._runtime_group_manager_alive() is False:
+            self._finalize_local_runtime_loss()
+            return
+
+        last_client = self._detach_client(timeout=timeout)
+
+        if self.managed_lifecycle:
+            self._detach_group_client()
+            self._close_local_client_queues(close_manager_qs=True)
+            self._release_task_references()
+            return
+
+        if last_client:
+            self._wait_for_runtime_shutdown(timeout=timeout)
+            self._finalize_runtime_shutdown()
+            return
+
         self._detach_group_client()
+        self._close_local_client_queues(close_manager_qs=True)
+        self._release_task_references()
 
-    def destroy(self, timeout: float = default_timeout) -> None:
+    def destroy(self, timeout: float = default_timeout, force_timeout: Optional[float] = None) -> None:
         """
-        Gracefully destroy the shared Batch runtime.
+        Gracefully destroy the Batch instance shared by clients.
 
-        The calling client is joined if needed, then the scheduler and managers
-        are asked to shut down once all currently active clients have
-        joined and all in-flight work has completed.
+        Managed-lifecycle runtimes are shut down after all currently attached
+        clients detach. The calling client is detached first if needed. When
+        ``force_timeout`` is provided, managers shut down after that many
+        seconds even if other clients remain attached.
+
+        Calling ``destroy()`` on an unmanaged runtime raises ``RuntimeError``;
+        the default mode shuts down automatically after the last client joins.
 
         :param timeout: Timeout in seconds for waiting on manager shutdown.
         :type timeout: float
+        :param force_timeout: Optional grace period in seconds before forcing
+            runtime shutdown even if other clients remain attached.
+        :type force_timeout: Optional[float]
 
         :return: Returns None.
         :rtype: None
@@ -5087,76 +6656,32 @@ class Batch:
         if self.destroyed or self.terminated:
             return
 
-        is_primary = getattr(self, "client_id", None) == 0
+        if not self.managed_lifecycle:
+            raise RuntimeError(
+                "Batch.destroy() is only supported when managed_lifecycle=True; "
+                "default Batch runtimes shut down automatically when the last client detaches"
+            )
 
-        if is_primary:
-            # Primary client: join work, then tear down runtime
-            if not self.closed:
-                try:
-                    self.join(timeout=timeout)
-                except Exception:
-                    pass
+        # If another client already tore the runtime down, the detach/shutdown
+        # handshake (and the wait for managers to exit) would block on a dead
+        # scheduler. Detect that up front via the non-attaching manager-liveness
+        # probe and finalize local cleanup instead, mirroring join().
+        if self._runtime_group_manager_alive() is False:
+            self._finalize_local_runtime_loss()
+            return
 
-            # Notify managers of shutdown
-            destroy_called = DestroyCalled()
-            for manager_q in getattr(self, "manager_qs", []):
-                try:
-                    manager_q.put(destroy_called)
-                except Exception:
-                    pass
+        self._ensure_manager_queues_attached()
 
-            # Wait for manager shutdown
-            grp = getattr(self, "grp", None)
-            if grp is None:
-                try:
-                    self._ensure_group_client_attached()
-                    grp = self.grp
-                except Exception:
-                    pass
+        if not self.closed:
+            self._detach_client(timeout=timeout)
 
-            if grp is not None:
-                try:
-                    grp.join(timeout=timeout)
-                except Exception:
-                    pass
-                try:
-                    grp.close()
-                except Exception:
-                    pass
+        destroy_called = DestroyCalled(force_timeout)
+        manager_qs = getattr(self, "manager_qs", [])
+        for manager_q in manager_qs:
+            manager_q.put(destroy_called)
 
-            # Destroy shared resources
-            results_ddict = getattr(self, "results_ddict", None)
-            if results_ddict is not None:
-                try:
-                    results_ddict.destroy()
-                except Exception:
-                    pass
-
-            for manager_q in getattr(self, "manager_qs", []):
-                try:
-                    manager_q.close()
-                except Exception:
-                    pass
-        else:
-            # Secondary client: just unregister and clean up local state
-            try:
-                self._stop_client_request_worker()
-            except Exception:
-                pass
-            try:
-                self._unregister()
-            except Exception:
-                pass
-
-        # All clients close their local return queue
-        ret_q = getattr(self, "ret_q", None)
-        if ret_q is not None:
-            try:
-                ret_q.close()
-            except Exception:
-                pass
-
-        self.destroyed = True
+        self._wait_for_runtime_shutdown(timeout=timeout)
+        self._finalize_runtime_shutdown()
 
     def terminate(self) -> None:
         """
@@ -5185,13 +6710,19 @@ class Batch:
         """
         Wait for all outstanding tasks to complete then clear the results dict for
         this batch. This can be used to free up memory after tasks have completed
-        and their results have been retrieved.
+        and their results have been retrieved. Any task result that has not yet
+        been fetched with :py:meth:`Task.get` becomes unavailable after this
+        call.
 
         :return: Returns None.
         :rtype: None
         """
         self.fence()
         self.results_ddict.clear()
+
+        for task in getattr(self, "_task_log_tasks", {}).values():
+            if not task._result_cached:
+                task._result_cleared = True
 
     def topology(self) -> BatchTopology:
         """
@@ -5252,6 +6783,136 @@ class Batch:
             workers_per_pool=workers_per_pool_list,
         )
 
+    def options(
+        self,
+        reads: Optional[list] = None,
+        writes: Optional[list] = None,
+        name: Optional[str] = None,
+        timeout: float = default_timeout,
+        stdout: Optional[str | Path] = None,
+        stderr: Optional[str | Path] = None,
+        pmi: PMIBackend = PMIBackend.CRAY,
+    ) -> BatchOptionsProxy:
+        """Return a submission proxy with Batch metadata bound ahead of time.
+
+        This is the preferred API for task metadata. It cleanly separates Batch
+        execution options from user payload arguments, following the same broad
+        idea as Ray's ``.options(...)`` API.
+
+        For process and job submissions, ``stdout`` and ``stderr`` supplied via
+        :py:meth:`Batch.options` act as task-level defaults. If an individual
+        :py:class:`ProcessTemplate` already specifies ``stdout`` or ``stderr``,
+        the template setting takes precedence.
+        """
+        return BatchOptionsProxy(
+            self,
+            BatchTaskOptions(
+                reads=reads,
+                writes=writes,
+                name=name,
+                timeout=timeout,
+                stdout=stdout,
+                stderr=stderr,
+                pmi=pmi,
+            ),
+        )
+
+    def _warn_direct_submission_options(self, method_name: str, task_options: BatchTaskOptions) -> None:
+        direct_options_used = self._direct_submission_option_names(task_options)
+
+        if direct_options_used:
+            warnings.warn(
+                self._deprecated_direct_submission_options_message(method_name, direct_options_used),
+                DeprecationWarning,
+                stacklevel=3,
+            )
+
+    def _direct_submission_option_names(self, task_options: BatchTaskOptions) -> list[str]:
+        option_names = []
+        if task_options.reads is not None:
+            option_names.append("reads")
+        if task_options.writes is not None:
+            option_names.append("writes")
+        if task_options.name is not None:
+            option_names.append("name")
+        if task_options.timeout != default_timeout:
+            option_names.append("timeout")
+        if task_options.stdout is not None:
+            option_names.append("stdout")
+        if task_options.stderr is not None:
+            option_names.append("stderr")
+        if task_options.pmi != PMIBackend.CRAY:
+            option_names.append("pmi")
+        return option_names
+
+    def _deprecated_direct_submission_options_message(self, method_name: str, option_names: list[str]) -> str:
+        if method_name == "function":
+            replacement = "Batch.options(...).function(fn, *args, **kwargs)"
+        elif method_name == "process":
+            replacement = "Batch.options(...).process(process_template)"
+        elif method_name == "job":
+            replacement = "Batch.options(...).job(process_templates)"
+        else:
+            replacement = f"Batch.options(...).{method_name}(...)"
+
+        option_list = ", ".join(option_names)
+        return (
+            f"Passing Batch metadata directly to Batch.{method_name}() is deprecated. "
+            f"Move these option(s) into Batch.options(...): {option_list}. "
+            f"Use {replacement} instead."
+        )
+
+    def _submit_function(
+        self,
+        target: Callable,
+        args: tuple,
+        kwargs: dict,
+        task_options: BatchTaskOptions,
+    ) -> Function:
+        if self.closed or self.destroyed or self.terminated:
+            raise SubmitAfterCloseError("cannot submit work after this Batch client has joined or terminated")
+
+        task = Function(
+            self,
+            target,
+            args,
+            kwargs,
+            reads=task_options.reads,
+            writes=task_options.writes,
+            name=task_options.name,
+            timeout=task_options.timeout,
+            stdout=task_options.stdout,
+            stderr=task_options.stderr,
+        )
+        self._enqueue_client_request(task)
+        return task
+
+    def _submit_process(self, process_template: ProcessTemplate, task_options: BatchTaskOptions) -> Job:
+        if self.closed or self.destroyed or self.terminated:
+            raise SubmitAfterCloseError("cannot submit work after this Batch client has joined or terminated")
+
+        job = self._submit_job([(1, process_template)], task_options)
+        job.core.is_parallel = False
+        return job
+
+    def _submit_job(self, process_templates: list, task_options: BatchTaskOptions) -> Job:
+        if self.closed or self.destroyed or self.terminated:
+            raise SubmitAfterCloseError("cannot submit work after this Batch client has joined or terminated")
+
+        task = Job(
+            self,
+            process_templates,
+            reads=task_options.reads,
+            writes=task_options.writes,
+            name=task_options.name,
+            timeout=task_options.timeout,
+            pmi=task_options.pmi,
+            stdout=task_options.stdout,
+            stderr=task_options.stderr,
+        )
+        self._enqueue_client_request(task)
+        return task
+
     def function(
         self,
         # function args (except kwargs)
@@ -5262,6 +6923,8 @@ class Batch:
         writes: Optional[list] = None,
         name: Optional[str] = None,
         timeout: float = default_timeout,
+        stdout: Optional[str | Path] = None,
+        stderr: Optional[str | Path] = None,
         **kwargs,
     ) -> Function:
         """
@@ -5269,6 +6932,13 @@ class Batch:
         will create a dependency for this task on the output of the task specified by the
         argument. Further, the output of the specified task will be passed in place of the
         :py:class:`Task` argument when the function executes.
+
+        .. deprecated::
+           Passing Batch metadata such as ``reads``, ``writes``, ``name``,
+           ``timeout``, ``stdout``, or ``stderr`` directly to
+           :py:meth:`Batch.function` is deprecated. Use
+           :py:meth:`Batch.options` to separate Batch metadata from user
+           function arguments.
 
         :param func: The function to associate with the object.
         :param *args: The arguments for the function.
@@ -5278,6 +6948,20 @@ class Batch:
         :type writes: Optional[list]
         :param name: A human-readable name for the task.
         :type name: Optional[str]
+        :param stdout: Optional stdout log file path for this task. When omitted, Batch uses the
+            client default. If the client was created with ``task_logs=True`` and no default is set,
+            Batch auto-generates a per-task file in the client run directory; otherwise the task's
+            stdout is forwarded to the client console.
+            ``stdout`` is a reserved Batch submission keyword and is not passed
+            through to the user function's ``**kwargs``.
+        :type stdout: Optional[str | Path]
+        :param stderr: Optional stderr log file path for this task. When omitted, Batch uses the
+            client default. If the client was created with ``task_logs=True`` and no default is set,
+            Batch auto-generates a per-task file in the client run directory; otherwise the task's
+            stderr is forwarded to the client console.
+            ``stderr`` is a reserved Batch submission keyword and is not passed
+            through to the user function's ``**kwargs``.
+        :type stderr: Optional[str | Path]
 
         :raises :py:exc:`SubmitAfterCloseError`: If this client handle has already
             been detached from the Batch runtime by :py:meth:`Batch.join`,
@@ -5286,25 +6970,16 @@ class Batch:
         :return: The new function task.
         :rtype: Function
         """
-        if self.closed or self.destroyed or self.terminated:
-            raise SubmitAfterCloseError("cannot submit work after this Batch client has joined or terminated")
-
-        task = Function(
-            self,
-            # function args
-            target,
-            args,
-            kwargs,
-            # task args
+        task_options = BatchTaskOptions(
             reads=reads,
             writes=writes,
             name=name,
             timeout=timeout,
+            stdout=stdout,
+            stderr=stderr,
         )
-
-        self._enqueue_client_request(task)
-
-        return task
+        self._warn_direct_submission_options("function", task_options)
+        return self._submit_function(target, args, kwargs, task_options)
 
     def process(
         self,
@@ -5313,12 +6988,20 @@ class Batch:
         writes: Optional[list] = None,
         name: Optional[str] = None,
         timeout: float = default_timeout,
+        stdout: Optional[str | Path] = None,
+        stderr: Optional[str | Path] = None,
     ) -> Job:
         """
         Creates a new process task. Arguments for a process passed using :py:attr:`ProcessTemplate.args`
         that are of type :py:class:`Task` will create a dependency for this task on the output of the
         task specified by the argument. Further, the output of the specified task will be
         passed in place of the :py:class:`Task` argument when the process executes.
+
+        .. deprecated::
+           Passing Batch metadata such as ``reads``, ``writes``, ``name``,
+           ``timeout``, ``stdout``, or ``stderr`` directly to
+           :py:meth:`Batch.process` is deprecated. Use
+           :py:meth:`Batch.options(...).process(process_template)`` instead.
 
         :param process_template: A Dragon :py:class:`ProcessTemplate` to describe the process to be run.
         :type process_template: ProcessTemplate
@@ -5328,6 +7011,16 @@ class Batch:
         :type writes: Optional[list]
         :param name: A human-readable name for the task.
         :type name: Optional[str]
+        :param stdout: Optional stdout log file path for this task. When omitted, Batch uses the
+            client default. If the client was created with ``task_logs=True`` and no default is set,
+            Batch auto-generates a per-task file in the client run directory; otherwise the task's
+            stdout is forwarded to the client console.
+        :type stdout: Optional[str | Path]
+        :param stderr: Optional stderr log file path for this task. When omitted, Batch uses the
+            client default. If the client was created with ``task_logs=True`` and no default is set,
+            Batch auto-generates a per-task file in the client run directory; otherwise the task's
+            stderr is forwarded to the client console.
+        :type stderr: Optional[str | Path]
 
         :raises :py:exc:`SubmitAfterCloseError`: If this client handle has already
             been detached from the Batch runtime by :py:meth:`Batch.join`,
@@ -5336,19 +7029,16 @@ class Batch:
         :return: The new process task.
         :rtype: Job
         """
-        if self.closed or self.destroyed or self.terminated:
-            raise SubmitAfterCloseError("cannot submit work after this Batch client has joined or terminated")
-
-        job = self.job(
-            [(1, process_template)],
-            reads,
-            writes,
-            name,
-            timeout,
+        task_options = BatchTaskOptions(
+            reads=reads,
+            writes=writes,
+            name=name,
+            timeout=timeout,
+            stdout=stdout,
+            stderr=stderr,
         )
-        job.core.is_parallel = False
-
-        return job
+        self._warn_direct_submission_options("process", task_options)
+        return self._submit_process(process_template, task_options)
 
     def job(
         self,
@@ -5358,12 +7048,27 @@ class Batch:
         name: Optional[str] = None,
         timeout: float = default_timeout,
         pmi: PMIBackend = PMIBackend.CRAY,
+        stdout: Optional[str | Path] = None,
+        stderr: Optional[str | Path] = None,
     ) -> Job:
         """
         Creates a new job task. Arguments for a process passed using :py:attr:`ProcessTemplate.args`
         that are of type :py:class:`Task` will create a dependency for this task on the output of the
         task specified by the argument. Further, the output of the specified task will be
         passed in place of the :py:class:`Task` argument when the job executes.
+
+        .. deprecated::
+           Passing Batch metadata such as ``reads``, ``writes``, ``name``,
+           ``timeout``, ``pmi``, ``stdout``, or ``stderr`` directly to
+           :py:meth:`Batch.job` is deprecated. Use
+           :py:meth:`Batch.options(...).job(process_templates)`` instead.
+
+        If any ``process_template`` includes an explicit host-name policy
+        (``Policy(placement=Policy.Placement.HOST_NAME, host_name=...)``), Batch
+        preserves that placement request. For multi-node jobs, Batch also treats
+        those hostnames as allocation constraints and reserves those specific
+        nodes before launch. Leave ``host_name`` unset if you want Batch to
+        choose job placement automatically.
 
         :param process_templates: A list of pairs of the form (num_procs, process_template), where
         ``process_template`` is template for ``num_procs`` processes in the job. The process template
@@ -5378,30 +7083,35 @@ class Batch:
         :param pmi: The PMI backend to use for launching MPI jobs. Defaults to ``PMIBackend.CRAY``.
             Set to ``PMIBackend.PMIX`` for systems using PMIx, or ``None`` to disable PMI.
         :type pmi: PMIBackend
+        :param stdout: Optional stdout log file path for this task. Multi-rank jobs share one stdout
+            file across all ranks. When omitted, Batch uses the client default. If the client was
+            created with ``task_logs=True`` and no default is set, Batch auto-generates a per-task
+            file in the client run directory; otherwise the job's stdout is forwarded to the client
+            console.
+        :type stdout: Optional[str | Path]
+        :param stderr: Optional stderr log file path for this task. Multi-rank jobs share one stderr
+            file across all ranks. When omitted, Batch uses the client default. If the client was
+            created with ``task_logs=True`` and no default is set, Batch auto-generates a per-task
+            file in the client run directory; otherwise the job's stderr is forwarded to the client
+            console.
+        :type stderr: Optional[str | Path]
 
-        :raises :py:exc:`SubmitAfterCloseError`: If this client handle has already
-            been detached from the Batch runtime by :py:meth:`Batch.join`,
-            :py:meth:`Batch.destroy`, or :py:meth:`Batch.terminate`.
+        :raises :py:exc:`SubmitAfterCloseError`: If this client handle has already been detached from the Batch runtime by :py:meth:`Batch.join`, :py:meth:`Batch.destroy`, or :py:meth:`Batch.terminate`.
 
         :return: The new job task.
         :rtype: Job
         """
-        if self.closed or self.destroyed or self.terminated:
-            raise SubmitAfterCloseError("cannot submit work after this Batch client has joined or terminated")
-
-        task = Job(
-            self,
-            process_templates=process_templates,
+        task_options = BatchTaskOptions(
             reads=reads,
             writes=writes,
             name=name,
             timeout=timeout,
+            stdout=stdout,
+            stderr=stderr,
             pmi=pmi,
         )
-
-        self._enqueue_client_request(task)
-
-        return task
+        self._warn_direct_submission_options("job", task_options)
+        return self._submit_job(process_templates, task_options)
 
     def import_func(self, ptd_file: str, *real_import_args, **real_import_kwargs) -> MakeTask:
         """

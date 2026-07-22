@@ -13,8 +13,13 @@ communication primitives.
 
 .. note::
     This module is experimental and not yet in its final state. See the
-    ``src/dragon/ai/inference/README.md`` for installation and configuration
-    instructions.
+    :ref:`inference_tutorial` for installation and configuration instructions,
+    :ref:`inference-cookbook` for examples, and
+    :ref:`developer-guide-inference` for implementation details.
+
+User code should import the main service, configuration dataclasses, and queue
+proxy from ``dragon.ai.inference``. The submodule references below document the
+implementation modules that define those public objects.
 
 Python Reference
 ================
@@ -117,7 +122,7 @@ LLM Engine
 ----------
 
 vLLM-based inference engine and supporting utilities for chat-template
-formatting and port allocation.
+formatting, port allocation, and streaming generation.
 
 .. currentmodule:: dragon.ai.inference.llm_engine
 
@@ -126,8 +131,61 @@ formatting and port allocation.
     :recursive:
 
     LLMInferenceEngine
+    StreamChunk
+    StreamDoneSentinel
+    STREAM_DONE_SENTINEL
     chat_template_formatter
     find_free_port
+
+
+Async Streaming Mode
+--------------------
+
+The inference engine supports two operational modes controlled by the
+``use_async_streaming`` configuration flag:
+
+**Synchronous Mode** (default, ``use_async_streaming: false``):
+    Uses vLLM's synchronous ``LLM`` engine. Suitable for batch processing
+    workloads where multiple requests are accumulated and processed together.
+    Requests with ``stream: true`` will return an error in this mode.
+
+**Async Streaming Mode** (``use_async_streaming: true``):
+    Uses vLLM's V1 ``AsyncLLM`` engine for token-by-token streaming. Suitable
+    for interactive workloads requiring low time-to-first-token latency.
+    Supports both streaming (``stream: true``) and non-streaming
+    (``stream: false``) requests.
+
+.. note::
+    Async streaming mode and batch mode are mutually exclusive. If
+    ``use_async_streaming: true``, then ``input_batching.toggle_on`` must be
+    ``false``. The configuration validator will raise an error if both are
+    enabled.
+
+Configuration example:
+
+.. code-block:: yaml
+
+    llm:
+      model_name: "meta-llama/Llama-3.1-8B-Instruct"
+      use_async_streaming: true  # Enable AsyncLLM for streaming
+      # ... other model config
+
+    input_batching:
+      toggle_on: false  # Must be false when streaming is enabled
+
+Request routing based on configuration and request flags:
+
++---------------------------+------------------+--------------------+----------------------------+
+| ``use_async_streaming``   | Request ``stream``| Method Called     | Result                     |
++===========================+==================+====================+============================+
+| ``false``                 | ``false``        | ``generate()``     | Sync batch/single response |
++---------------------------+------------------+--------------------+----------------------------+
+| ``false``                 | ``true``         | Error              | Streaming not available    |
++---------------------------+------------------+--------------------+----------------------------+
+| ``true``                  | ``false``        | ``generate_single()``| Complete response        |
++---------------------------+------------------+--------------------+----------------------------+
+| ``true``                  | ``true``         | ``generate_stream()``| Chunked token stream     |
++---------------------------+------------------+--------------------+----------------------------+
 
 
 Workers

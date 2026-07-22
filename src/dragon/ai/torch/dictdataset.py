@@ -65,7 +65,7 @@ class DragonDataset(Dataset):
 
         :param dataset: Base PyTorch Dataset
         :type dataset: PyTorch Dataset or :py:class:`~dragon.data.DDict`
-        :param dataset_keys: All keys in the dataset (e.g., from :py:method:`~dragon.data.DDict.keys`)
+        :param dataset_keys: All keys in the dataset (for example, from ``dragon.data.DDict.keys``).
         :type dataset_keys: list or iterable
         :param dragon_dict_args: Optional arguments to construct a new :py:class:`~dragon.data.DDict`
         :type dragon_dict_args: dict

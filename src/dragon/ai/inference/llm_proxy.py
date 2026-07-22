@@ -9,17 +9,23 @@ Dragon ``Policy`` infrastructure — so it can be safely imported in the main
 process and in agent processes before any worker spawning.
 
 Contents:
-  * :class:`LLMProxy` — abstract chat interface
+  * :class:`LLMProxy` — abstract chat interface with streaming support
   * :class:`InferenceRequest` — typed request payload (NamedTuple)
   * :class:`ResponseQueuePool` — reusable pool of minimal Dragon Queues
   * :class:`DragonQueueLLMProxy` — Dragon-Queue-backed implementation
+
+Streaming:
+  * :meth:`LLMProxy.chat_stream` — async generator yielding :class:`StreamChunk`
+  * Uses :class:`StreamChunk` and :data:`STREAM_DONE_SENTINEL` from llm_engine
 """
 
 import abc
 import asyncio
 import logging
 import time
-from typing import Any, Dict, List, NamedTuple, Optional
+from typing import Any, AsyncIterator, Dict, List, NamedTuple, Optional
+
+from .llm_engine import StreamChunk, StreamDoneSentinel, STREAM_DONE_SENTINEL
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +63,36 @@ class LLMProxy(abc.ABC):
         """
         ...
 
+    @abc.abstractmethod
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        json_schema: Optional[dict] = None,
+        continue_final_message: bool = False,
+    ) -> AsyncIterator[StreamChunk]:
+        """Send a streaming chat request and yield response chunks.
+
+        Unlike :meth:`chat`, this method yields :class:`StreamChunk`
+        objects as tokens are generated, enabling Server-Sent Events
+        (SSE) responses.
+
+        :param messages: Conversation messages in OpenAI chat format.
+        :type messages: list[dict]
+        :param tools: Optional tool definitions.
+        :type tools: list[dict] | None
+        :param json_schema: JSON schema dict for structured output.
+        :type json_schema: dict | None
+        :param continue_final_message: Continue last assistant message.
+        :type continue_final_message: bool
+        :yields: StreamChunk objects with incremental response text.
+        :rtype: AsyncIterator[StreamChunk]
+        """
+        ...
+        # Make this an async generator
+        if False:
+            yield  # type: ignore
+
     async def shutdown(self) -> None:
         """Release any resources held by this proxy.
 
@@ -85,6 +121,7 @@ class InferenceRequest(NamedTuple):
     tools: Optional[list] = None
     sampling_override: Optional[dict] = None
     continue_final_message: bool = False
+    stream: bool = False
 
 
 # ====================================================================== #
@@ -109,6 +146,17 @@ class ResponseQueuePool:
     """
 
     def __init__(self, pool_size: int = 32, block_size: int = 2048) -> None:
+        """Initialize an empty response-queue pool.
+
+        Queues are created lazily on first use instead of during construction,
+        which keeps proxy creation cheap in agent processes that may never reach
+        the configured concurrency limit.
+
+        :param pool_size: Maximum number of response queues to allocate.
+        :type pool_size: int
+        :param block_size: Dragon queue block size used for each response queue.
+        :type block_size: int
+        """
         self._pool_size = pool_size
         self._block_size = block_size
         # _idle holds ready-to-use Dragon Queues; filled lazily.
@@ -158,6 +206,7 @@ class ResponseQueuePool:
         """Return *queue* to the pool for reuse.
 
         :param queue: The Dragon Queue to release.
+        :type queue: dragon.native.Queue
         """
         self._idle.put_nowait(queue)
 
@@ -197,6 +246,15 @@ class DragonQueueLLMProxy(LLMProxy):
     """
 
     def __init__(self, input_queue, *, max_concurrent_requests: int = 32) -> None:
+        """Create a proxy bound to a shared inference input queue.
+
+        :param input_queue: Queue consumed by the inference backend.
+        :type input_queue: dragon.native.Queue
+        :param max_concurrent_requests: Maximum in-flight ``chat`` calls for
+            this proxy instance.  Additional calls wait for a response queue to
+            return to the pool.
+        :type max_concurrent_requests: int
+        """
         self.input_queue = input_queue
         self._response_pool = ResponseQueuePool(pool_size=max_concurrent_requests)
 
@@ -290,6 +348,90 @@ class DragonQueueLLMProxy(LLMProxy):
         if isinstance(result, dict):
             return result.get("assistant", str(result))
         return str(result)
+
+    async def chat_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        tools: Optional[List[Dict[str, Any]]] = None,
+        json_schema: Optional[dict] = None,
+        continue_final_message: bool = False,
+        *,
+        sampling_params_override=None,
+    ) -> AsyncIterator[StreamChunk]:
+        """Send a streaming chat request and yield response chunks.
+
+        Unlike :meth:`chat`, this method yields :class:`StreamChunk`
+        objects as tokens are generated. The response queue is polled
+        until :data:`STREAM_DONE_SENTINEL` is received.
+
+        Streaming requests bypass batching and are processed immediately
+        with batch_size=1.
+
+        :param messages: Conversation messages in OpenAI chat format.
+        :type messages: list[dict]
+        :param tools: Optional tool definitions.
+        :type tools: list[dict] | None
+        :param json_schema: JSON schema dict for structured output.
+        :type json_schema: dict | None
+        :param continue_final_message: Continue last assistant message.
+        :type continue_final_message: bool
+        :param sampling_params_override: Explicit ``SamplingParams``
+            override.  Takes precedence over *json_schema*.
+        :type sampling_params_override: SamplingParams | None
+        :yields: StreamChunk objects with incremental response text.
+        :rtype: AsyncIterator[StreamChunk]
+        :raises Exception: Re-raises any exception returned by the backend.
+        """
+        # Resolve the effective schema override
+        effective_override = sampling_params_override
+        if effective_override is None:
+            effective_override = self._resolve_schema_override(json_schema)
+
+        # Acquire a response queue (blocks if pool exhausted).
+        response_queue = await self._response_pool.acquire()
+
+        try:
+            request = InferenceRequest(
+                messages=messages,
+                formatted_messages=messages,
+                response_queue=response_queue,
+                timestamp=time.time(),
+                tools=tools,
+                sampling_override=effective_override,
+                continue_final_message=continue_final_message,
+                stream=True,
+            )
+            await asyncio.to_thread(self.input_queue.put, request)
+
+            # Poll the response queue for chunks until sentinel received
+            while True:
+                result = await asyncio.to_thread(response_queue.get)
+
+                # Check for sentinel (end of stream)
+                if isinstance(result, StreamDoneSentinel):
+                    break
+
+                # Re-raise if the backend returned an exception
+                if isinstance(result, Exception):
+                    raise result
+
+                # Yield the chunk
+                if isinstance(result, StreamChunk):
+                    yield result
+                    if result.is_finished:
+                        # Final chunk received, wait for sentinel
+                        continue
+                else:
+                    # Unexpected result type - log and skip
+                    log.warning(
+                        f"DragonQueueLLMProxy.chat_stream: unexpected result type {type(result)}"
+                    )
+        except Exception:
+            log.exception("DragonQueueLLMProxy: streaming LLM request failed")
+            raise
+        finally:
+            # Always return the queue to the pool.
+            await self._response_pool.release(response_queue)
 
     async def shutdown(self) -> None:
         """Destroy all pooled response queues."""

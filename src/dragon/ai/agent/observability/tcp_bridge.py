@@ -59,12 +59,9 @@ class TraceTcpBridge(threading.Thread):
 
     1. Binds a TCP server socket on a free port.
     2. Waits for a viewer client to connect.
-    3. In a loop:
-       a. For each known agent_id, polls its slot key in DDict to discover
-          the agent's trace key (written by the dispatcher).
-       b. For each discovered trace key, reads the span list and detects
-          new/updated spans.
-       c. Streams newline-delimited JSON to the connected client.
+    3. In a loop, polls each known agent slot key in DDict, reads discovered
+         span lists, detects new or updated spans, and streams newline-delimited
+         JSON to the connected client.
     4. On :meth:`stop`, sends a ``{"type": "shutdown"}`` message and closes.
 
     Unlike a shared index list, per-agent slot keys avoid read-modify-write

@@ -72,7 +72,7 @@ class TestLLMInferenceEngine(TestCase):
         with self.assertRaises(RuntimeError) as context:
             engine.generate(["Test prompt"])
 
-        self.assertIn("not initialized", str(context.exception))
+        self.assertIn("Batch generation requires sync LLMEngine", str(context.exception))
 
     def test_calculate_metrics(self):
         """Test _calculate_metrics method."""

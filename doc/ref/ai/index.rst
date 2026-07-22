@@ -3,7 +3,7 @@
 AI
 ++
 
-These interfaces enable integrations into key AI packages, such as `PyTorch <https://pytorch.org/>`__. A Common use is
+These interfaces enable integrations into key AI packages, such as `PyTorch <https://pytorch.org/>`__. A common use is
 for enhanced data loading.
 
 

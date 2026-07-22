@@ -11,10 +11,10 @@ import dragon
 import multiprocessing as mp
 import queue
 import time
-import traceback
 from unittest import TestCase, main
 
 from dragon.ai.inference.batching import DynamicBatcher, BatchItem, Batch
+from dragon.native.queue import Queue
 
 
 class TestBatchItem(TestCase):
@@ -30,7 +30,7 @@ class TestBatchItem(TestCase):
 
     def test_batch_item_creation(self):
         """Test creating a BatchItem."""
-        queue = mp.Queue()
+        queue = Queue()
         latency_metrics = (1.0, 0.1, 0.05)
 
         item = BatchItem(
@@ -59,7 +59,7 @@ class TestBatch(TestCase):
 
     def test_batch_creation(self):
         """Test creating a Batch."""
-        queue = mp.Queue()
+        queue = Queue()
         items = [
             BatchItem("Hello", "<user>Hello</user>", queue, (1.0, 0.1, 0.05)),
             BatchItem("World", "<user>World</user>", queue, (1.1, 0.1, 0.05)),
@@ -73,7 +73,7 @@ class TestBatch(TestCase):
 
     def test_batch_user_prompts_property(self):
         """Test user_prompts property."""
-        queue = mp.Queue()
+        queue = Queue()
         items = [
             BatchItem("Hello", "<user>Hello</user>", queue, (1.0, 0.1, 0.05)),
             BatchItem("World", "<user>World</user>", queue, (1.1, 0.1, 0.05)),
@@ -85,7 +85,7 @@ class TestBatch(TestCase):
 
     def test_batch_formatted_prompts_property(self):
         """Test formatted_prompts property."""
-        queue = mp.Queue()
+        queue = Queue()
         items = [
             BatchItem("Hello", "<user>Hello</user>", queue, (1.0, 0.1, 0.05)),
             BatchItem("World", "<user>World</user>", queue, (1.1, 0.1, 0.05)),
@@ -99,8 +99,8 @@ class TestBatch(TestCase):
 
     def test_batch_response_queues_property(self):
         """Test response_queues property."""
-        queue_1 = mp.Queue()
-        queue_2 = mp.Queue()
+        queue_1 = Queue()
+        queue_2 = Queue()
         items = [
             BatchItem("Hello", "<user>Hello</user>", queue_1, (1.0, 0.1, 0.05)),
             BatchItem("World", "<user>World</user>", queue_2, (1.1, 0.1, 0.05)),
@@ -112,7 +112,7 @@ class TestBatch(TestCase):
 
     def test_batch_latency_metrics_property(self):
         """Test latency_metrics property."""
-        queue = mp.Queue()
+        queue = Queue()
         items = [
             BatchItem("Hello", "<user>Hello</user>", queue, (1.0, 0.1, 0.05)),
             BatchItem("World", "<user>World</user>", queue, (1.1, 0.2, 0.06)),
@@ -151,7 +151,7 @@ class TestDynamicBatcher(TestCase):
             batch_wait_seconds=0.1, max_batch_size=10, enabled=False
         )
 
-        queue = mp.Queue()
+        queue = Queue()
         batch = batcher.add_item(
             user_prompt="Hello",
             formatted_prompt="<user>Hello</user>",
@@ -172,7 +172,7 @@ class TestDynamicBatcher(TestCase):
             enabled=True,
         )
 
-        queue = mp.Queue()
+        queue = Queue()
         batch = batcher.add_item(
             user_prompt="Hello",
             formatted_prompt="<user>Hello</user>",
@@ -190,7 +190,7 @@ class TestDynamicBatcher(TestCase):
             batch_wait_seconds=10.0, max_batch_size=3, enabled=True
         )
 
-        queue = mp.Queue()
+        queue = Queue()
 
         # Add items until max batch size
         for i in range(2):
@@ -222,7 +222,7 @@ class TestDynamicBatcher(TestCase):
             enabled=True,
         )
 
-        queue = mp.Queue()
+        queue = Queue()
 
         # Add first item
         batch = batcher.add_item(
@@ -253,7 +253,7 @@ class TestDynamicBatcher(TestCase):
             batch_wait_seconds=10.0, max_batch_size=100, enabled=True
         )
 
-        queue = mp.Queue()
+        queue = Queue()
 
         # Add some items
         batcher.add_item(
@@ -300,7 +300,7 @@ class TestDynamicBatcher(TestCase):
             batch_wait_seconds=10.0, max_batch_size=100, enabled=True
         )
 
-        queue = mp.Queue()
+        queue = Queue()
         batcher.add_item(
             user_prompt="Hello",
             formatted_prompt="<user>Hello</user>",
@@ -316,7 +316,7 @@ class TestDynamicBatcher(TestCase):
             batch_wait_seconds=0.01, max_batch_size=100, enabled=True
         )
 
-        queue = mp.Queue()
+        queue = Queue()
         batcher.add_item(
             user_prompt="Hello",
             formatted_prompt="<user>Hello</user>",
@@ -335,7 +335,7 @@ class TestDynamicBatcher(TestCase):
             batch_wait_seconds=10.0, max_batch_size=1, enabled=True
         )
 
-        queue = mp.Queue()
+        queue = Queue()
 
         # First batch
         batch1 = batcher.add_item(
@@ -361,7 +361,7 @@ class TestDynamicBatcher(TestCase):
             batch_wait_seconds=10.0, max_batch_size=100, enabled=True
         )
 
-        queue = mp.Queue()
+        queue = Queue()
 
         # Add an item
         batcher.add_item(
@@ -387,7 +387,7 @@ class TestDynamicBatcher(TestCase):
 
         # Immediately after init, there should be no active batch
         # and current_batch_age should be ~0 when first item arrives.
-        queue = mp.Queue()
+        queue = Queue()
         time.sleep(0.05)
 
         # Add first item; this should start the timer and not flush yet.
@@ -421,7 +421,7 @@ class TestDynamicBatcherIntegration(TestCase):
         """Test a typical batching workflow with multiple items."""
         batcher = DynamicBatcher(batch_wait_seconds=0.1, max_batch_size=5, enabled=True)
 
-        queue = mp.Queue()
+        queue = Queue()
         batches_received = []
 
         # Simulate adding items over time
@@ -453,7 +453,7 @@ class TestDynamicBatcherIntegration(TestCase):
             batch_wait_seconds=10.0, max_batch_size=100, enabled=True
         )
 
-        queue = mp.Queue()
+        queue = Queue()
 
         # Add items
         for i in range(3):
@@ -498,12 +498,12 @@ def process_batch_worker(input_q, output_q, worker_id):
 
 
 def batch_producer_worker(
-    batch_queue: mp.Queue, num_batches: int, items_per_batch: int, worker_id: int
+    batch_queue: Queue, num_batches: int, items_per_batch: int, worker_id: int
 ):
     """Worker function that produces batches and puts them in a queue.
 
     :param batch_queue: Queue to put batches into
-    :type batch_queue: mp.Queue
+    :type batch_queue: Queue
     :param num_batches: Number of batches to produce.
     :type num_batches: int
     :param items_per_batch: Number of items per batch.
@@ -536,7 +536,7 @@ def batch_producer_worker(
 
 
 def batch_consumer_worker(
-    batch_queue: mp.Queue, result_queue: mp.Queue, worker_id: int
+    batch_queue: Queue, result_queue: Queue, worker_id: int
 ):
     """Worker function that consumes batches from a queue and processes them.
 
@@ -581,8 +581,8 @@ class TestMultiprocessBatchSharing(TestCase):
         batches_per_producer = 2
         items_per_batch = 4
 
-        batch_queue = mp.Queue()
-        result_queue = mp.Queue()
+        batch_queue = Queue()
+        result_queue = Queue()
 
         # Start producer processes
         producer_processes = []
@@ -642,10 +642,10 @@ class TestMultiprocessBatchSharing(TestCase):
 
     def test_batch_queue_communication(self):
         """Test that Batch objects can be passed through Dragon queues correctly."""
-        queue = mp.Queue()
+        queue = Queue()
 
         # Create a batch
-        response_queue = mp.Queue()
+        response_queue = Queue()
         items = [
             BatchItem(
                 user_prompt=f"Prompt {i}",
@@ -674,15 +674,15 @@ class TestMultiprocessBatchSharing(TestCase):
 
     def test_concurrent_batch_processing_pipeline(self):
         """Test a complete pipeline with batch creation, queuing, and parallel processing."""
-        input_queue = mp.Queue()
-        output_queue = mp.Queue()
+        input_queue = Queue()
+        output_queue = Queue()
 
         # Create batches with a batcher
         batcher = DynamicBatcher(
             batch_wait_seconds=0.01, max_batch_size=3, enabled=True
         )
 
-        response_queue = mp.Queue()
+        response_queue = Queue()
 
         # Add items to create multiple batches
         created_batches = []

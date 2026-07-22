@@ -1,6 +1,6 @@
 .. _developer-guide-agent:
 
-Agent Framework — Developer Guide
+Agent Framework
 ==================================
 
 This document is a top-down walkthrough of the Dragon AI Agent Framework for
@@ -19,7 +19,7 @@ For the Python API reference, see :ref:`AgentAPI`. For a hands-on tutorial, see
 
 .. _agent-big-picture:
 
-1 — What This Framework Does
+What This Framework Does
 -----------------------------
 
 The Dragon AI Agent Framework is a **multi-agent orchestration system** for
@@ -92,7 +92,7 @@ The entire stack — agents, inference, state, coordination — runs inside a si
 
 .. _agent-source-layout:
 
-2 — Source Code Layout
+Source Code Layout
 -----------------------
 
 All agent framework code lives under ``src/dragon/ai/agent/``. The inference
@@ -194,7 +194,7 @@ etc.) whose Dragon-specific implementations are injected at construction time.
 
 .. _agent-runtime-architecture:
 
-2a — Runtime Architecture
+Runtime Architecture
 --------------------------
 
 The following diagram shows how the framework components connect at runtime:
@@ -224,7 +224,7 @@ The diagram illustrates:
 
 .. _agent-dragon-primitives:
 
-3 — Dragon Primitives Used
+Dragon Primitives Used
 ----------------------------
 
 The framework is built on a small set of Dragon primitives. Understanding which
@@ -266,7 +266,7 @@ primitives are used is key to understanding the architecture.
 
 .. _agent-request-flow:
 
-4 — End-to-End Request Flow
+End-to-End Request Flow
 -----------------------------
 
 This section traces **one user request** through the entire system, from the
@@ -345,7 +345,7 @@ this flow.
 
 .. _agent-design-orchestrator:
 
-5 — The Orchestrator
+The Orchestrator
 ---------------------
 
 The ``DAGOrchestrator`` (``orchestrator/orchestrator.py``) is the request-side
@@ -409,13 +409,14 @@ Cleanup
 ________
 
 ``destroy()`` stops the TCP bridges, destroys the HITL Queue, and destroys the
-shared DDict. Batch teardown (``batch.close()`` / ``batch.join()``) remains the
+shared DDict. Batch teardown (typically ``batch.join()``; use ``batch.destroy()``
+only for runtimes created with ``managed_lifecycle=True``) remains the
 caller's responsibility.
 
 
 .. _agent-design-batch-dispatch:
 
-6 — The Dispatch Layer
+The Dispatch Layer
 -----------------------
 
 Each Dragon Batch node runs a lightweight *dispatcher closure* — **not** the
@@ -457,7 +458,7 @@ When Dragon Batch invokes the closure, it executes these 9 steps:
 
 .. _agent-design-agent-process:
 
-7 — The Agent Process
+The Agent Process
 ----------------------
 
 Agents are long-lived Dragon Processes. Each agent runs in its own process,
@@ -540,7 +541,7 @@ that enforces strict isolation:
 
 .. _agent-design-context-assembly:
 
-8 — Context Assembly
+Context Assembly
 ---------------------
 
 When ``SubAgent._invoke_llm_with_tools()`` is called, it must assemble the
@@ -605,7 +606,7 @@ a shared list.
 
 .. _agent-design-reasoning:
 
-9 — The Reasoning Loop
+The Reasoning Loop
 ------------------------
 
 The ``ToolDispatcher`` (``reasoning/tool_dispatcher.py``) drives the agentic LLM
@@ -820,7 +821,7 @@ discover new events (see :ref:`agent-design-observability`).
 
 .. _agent-design-scoreboard:
 
-10 — The Scoreboard DDict
+The Scoreboard DDict
 ---------------------------
 
 All task state lives in a :py:class:`~dragon.data.ddict.DDict` called the
@@ -897,7 +898,7 @@ orchestration scoreboard:
 
 .. _agent-design-memory:
 
-11 — Memory Management
+Memory Management
 ------------------------
 
 The ``ContextManager`` (``memory/context_manager.py``) manages the conversation
@@ -932,7 +933,7 @@ via ``AgentConfig.summarizer_inference_queue``, which gets wrapped in its own
 
 .. _agent-design-tools:
 
-12 — Tools and MCP
+Tools and MCP
 --------------------
 
 The tool layer provides a unified interface for local functions and remote MCP
@@ -967,7 +968,7 @@ agent's ``listen()`` loop after the ``asyncio`` event loop is running.
 
 .. _agent-design-hitl:
 
-13 — Human-in-the-Loop
+Human-in-the-Loop
 ------------------------
 
 The HITL system provides a human approval gate for tool calls that require
@@ -1027,7 +1028,7 @@ queue to prevent indefinite blocking.
 
 .. _agent-design-observability:
 
-14 — Observability and Tracing
+Observability and Tracing
 -------------------------------
 
 The tracing system writes span data to the Scoreboard
@@ -1176,7 +1177,7 @@ prevent cross-task leakage.
 
 .. _agent-design-cross-cutting:
 
-15 — Cross-Cutting Concerns
+Cross-Cutting Concerns
 -----------------------------
 
 Bridging Sync Dragon Primitives with asyncio
@@ -1300,7 +1301,7 @@ three tiers.
 
 .. _agent-design-advanced:
 
-16 — Advanced Topics
+Advanced Topics
 ---------------------
 
 Inference Pipeline

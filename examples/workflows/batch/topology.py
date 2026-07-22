@@ -128,7 +128,6 @@ def main() -> None:
         )
         b = Batch(num_nodes=subset)
         show(f"Batch(num_nodes={subset})", b)
-        b.close()
         b.join()
 
     # 3. Manager count tracks requested nodes
@@ -143,7 +142,6 @@ def main() -> None:
         )
         b = Batch(num_nodes=candidate)
         show(f"Batch(num_nodes={candidate})", b)
-        b.close()
         b.join()
 
     # 4. BatchTopology field-by-field walkthrough
@@ -155,7 +153,6 @@ def main() -> None:
     explain_fields(t)
     explain_invariants(t)
 
-    b_default.close()
     b_default.join()
 
 

@@ -26,16 +26,24 @@ setup_env() {
 }
 
 build() {
+
+    if [[ $(uname -m) == "aarch64" ]]
+    then
+      MY_BUILD_YAML="./dst/manylinux_2_28_py${PYTHON_VERSION}.aarch64.yaml"
+    else
+      MY_BUILD_YAML="./dst/manylinux_2_28_py${PYTHON_VERSION}.yaml"
+    fi
+
     if ${NOT_LOCAL_BUILD} ; then
       dst-rpm build --not-local \
                     --product "${PRODUCT}" \
-                    --yamlfile "./dst/manylinux2014_py${PYTHON_VERSION}.yaml" \
+                    --yamlfile "${MY_BUILD_YAML}" \
                     --main-branch "main" \
                     --container-software "podman"
     else
       dst-rpm build --local \
                     --product "${PRODUCT}" \
-                    --yamlfile "./dst/manylinux2014_py${PYTHON_VERSION}.yaml" \
+                    --yamlfile "${MY_BUILD_YAML}" \
                     --main-branch "main" \
                     --container-software "podman"
     fi

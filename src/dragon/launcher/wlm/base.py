@@ -57,9 +57,8 @@ class NetworkConfigState(Enum):
 
 class BaseWLM(ABC):
 
-    def __init__(self, wlm, network_prefix, port, nnodes):
+    def __init__(self, wlm, network_prefix, port):
         self.wlm = wlm
-        self.NNODES = nnodes
         self.NETWORK_CFG_HELPER_LAUNCH_CMD = [
             "dragon-network-config-launch-helper",
             "--network-prefix",
@@ -124,12 +123,12 @@ class BaseWLM(ABC):
         stderr_stream = NewlineStreamWrapper(self.config_helper.stderr)
         node_returns = 0
         temp_uniqueness_guarantee = set()
-        while node_returns < self.NNODES:
+        while self.config_helper.poll() is None:
 
             lines = []
             node_descriptor_count = len(self.node_descriptors.keys())
             if last_node_descriptor_count != node_descriptor_count:
-                self.LOGGER.debug("received %d of %d expected NodeDescriptors", node_descriptor_count, self.NNODES)
+                self.LOGGER.debug("received %d NodeDescriptors", node_descriptor_count)
                 last_node_descriptor_count = node_descriptor_count
 
             if self.config_helper.poll():  # Is the helper process still running?
@@ -141,7 +140,8 @@ class BaseWLM(ABC):
                 line = stdout_stream.recv()
 
                 # sattach returns an empty string if nothing to report. ignore
-                if line.strip() == "":
+                if not line.strip():
+                    self.LOGGER.debug("breaking out after received empty line")
                     break
                 else:
                     lines.append(line)
@@ -185,7 +185,8 @@ class BaseWLM(ABC):
         # Keep iteration deterministic after asynchronous helper output so
         # downstream code sees network-config entries in node-index order.
         self.node_descriptors = dict(sorted(self.node_descriptors.items(), key=lambda item: int(item[0])))
-        self.LOGGER.debug("received %d of %d expected NodeDescriptors", self.NNODES, self.NNODES)
+        self.LOGGER.debug("received %d NodeDescriptors", node_returns)
+        self.NNODES = node_returns
 
     def _sigint_teardown(self):
         """Safely teardown network config infrastructure"""
@@ -244,7 +245,7 @@ class BaseWLM(ABC):
     def get_allocation_node_count(self) -> int:
         return self.NNODES
 
-    def get_network_config(self, args_map : dict, sigint_trigger=None) -> dict[str, NodeDescriptor]:
+    def get_network_config(self, args_map: dict, sigint_trigger=None) -> dict[str, NodeDescriptor]:
 
         try:
             self.orig_handler = signal.signal(signal.SIGINT, self._sigint_handler)

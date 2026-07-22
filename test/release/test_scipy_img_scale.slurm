@@ -2,9 +2,11 @@
 #SBATCH --nodes=550
 #SBATCH --exclusive
 #SBATCH --time=2:00:00
+#SBATCH --output=test_scipy_img_scale_%j.out
 
+# Assume that the correct python environment is already activated
 
-# The following timings for the scipy_scale_work.py file are completed using Python 3.11.5 with 8 nodes. The program inputs, the timings for the iterations, the average time and the standard of deviations for the iterations are recorded in the tables below. The tables are grouped by number of iterations. 
+# The following timings for the scipy_scale_work.py file are completed using Python 3.11.5 with 8 nodes. The program inputs, the timings for the iterations, the average time and the standard of deviations for the iterations are recorded in the tables below. The tables are grouped by number of iterations.
 # for 0.10 release
 # 4 iteratons
 
@@ -15,8 +17,6 @@
 # user    0m2.252s
 # sys     0m0.760s
 
-source ~/.bashrc
-conda activate _env312
 srun --nodes=512 hostname
 
 ##This runs the script with the parameters of 1024 workers, 32768 images, 1 burn cycle, 4 iterations, images of size 32, memory size of 33554432, and a work time for each image of 1 second.

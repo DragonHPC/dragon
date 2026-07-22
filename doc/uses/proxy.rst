@@ -254,7 +254,7 @@ Local:
 * When attaching to a remote runtime via a proxy, you can specify a different working directory for the remote processes using the `remote_cwd` parameter.
 * Use the `get_env()` method of the proxy to obtain the correct environment variables for processes running in the remote runtime.
 * If local runtime appears hung, check the remote system for any error messages or issues with the Dragon runtime. Many errors will be returned to the local runtime when using a proxy; however, some issues may only be visible on the remote system. Specifically, missing dependencies or code on the remote system may cause errors that are not visible on the local system.
-* When using a memory object that was created in the remote runtime on the local system, the object needs to be instatiated within the proxy enable/disable block but can be used outside of it until the remote runtime is shutdown.
+* When using a memory object that was created in the remote runtime on the local system, the object needs to be instantiated within the proxy enable/disable block but can be used outside of it until the remote runtime is shutdown.
 * Process and ProcessGroup objects created within the remote runtime cannot be used on the local system when the proxy is disabled, but can be used when the proxy is enabled. Be sure to only use these objects when the proxy is enabled to avoid errors. You can disable and re-enable the proxy as needed to check the status of remote processes. In the future, we may add functionality to automatically route process management calls through the proxy when a process was created in the remote runtime to avoid this issue.
 
 

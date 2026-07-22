@@ -36,7 +36,7 @@ functionality.
 """
 
 import os
-
+from .version import __version__
 
 def _patch_multiprocessing():
     # Set DRAGON_PATCH_MP so multiprocessing is automatically patched when

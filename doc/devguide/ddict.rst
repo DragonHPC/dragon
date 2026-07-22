@@ -7,8 +7,8 @@ The Dragon Distributed Dictionary implements a data distributed key-value store
 that spans multiple nodes of a distributed program's allocation. This makes it
 possible to create large key-value stores, larger than could be stored in memory
 on one node. It also distributes access to the key-value store so that there is
-no bottlekneck in accessing or storing values. Access to the store is distributed
-according to an evenly distributed hashing algorithm, thus statististically
+no bottleneck in accessing or storing values. Access to the store is distributed
+according to an evenly distributed hashing algorithm, thus statistically
 spreading the data evenly over all the nodes of the store.
 
 The next section describes the design of the Distributed Dictionary followed
@@ -89,7 +89,7 @@ data could be placed on the same node as clients which will write and read the
 data. In cases like this it is possible to define a class with its own hash
 function which can be used to determine which manager is selected. Once selected,
 the manager itself will still use the low-level byte hashing function itself, but
-selection of a manager can be determined by provding an appropriate class with
+selection of a manager can be determined by providing an appropriate class with
 its own hash function as shown in :numref:`user_hash`. The *getstate* function is
 called when the key is serialized and the definition provided in the sample code
 simply strips off the extra *MyKey* definition and results in serializing the
@@ -121,7 +121,7 @@ standard out of the Orchestrator.
 
 The Orchestrator creates the specified number of Managers, providing each with the
 orchestrator response FLI and its main FLI. The orchestrator receives registration
-requests by each manager and responds to each manager on the manager's resposne FLI.
+requests by each manager and responds to each manager on the manager's response FLI.
 
 .. _ddictperformance:
 
@@ -133,7 +133,7 @@ that can be used to optimize performance. Depending on your application and the
 system you are running on, you may get the best performance while using one or more
 of these optimizations.
 
-    * On machines where there is more than on NIC (network interface card), you will
+    * On machines where there is more than one NIC (network interface card), you will
       likely obtain better performance by having more than one manager per node. This
       is because clients can access each manager completely in parallel when two NICs
       are present. When starting the dictionary you can specify the number of managers

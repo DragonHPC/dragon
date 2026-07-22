@@ -19,6 +19,7 @@ from sphinx.ext import autodoc
 #
 # import os
 # import sys
+sys.path.insert(0, os.path.abspath("./../src"))
 sys.path.insert(0, os.path.abspath("./../src/dragon"))
 sys.path.insert(0, os.path.abspath("."))
 
@@ -26,7 +27,7 @@ sys.path.insert(0, os.path.abspath("."))
 
 project = "Dragon"
 DragonVersion = "0.11"
-copyright = "2025, DragonHPC"
+copyright = "2026, DragonHPC"
 author = "Michael Burke, Yian Chen, Eric Cozzi, Zach Crisler, Julius Donnert, Veena Ghorakavi, Nick Hill, Maria Kalantzi, Ben Keen, Kent D. Lee, Pete Mendygral, Davin Potts, Nick Radcliffe, and Colin Wahl"
 
 # -- General configuration ---------------------------------------------------
@@ -52,8 +53,8 @@ extensions = [
 
 tls_verify = False
 
-# we need this for now in order to build the documentation, until we have a unified requirements.txt file
-# dragon.ai.inference has its own requirements that are separate from the rest of the project
+# The inference docs import optional AI dependencies that are not part of the
+# base Dragon install.
 autodoc_mock_imports = [
     "torch",
     "transformers",

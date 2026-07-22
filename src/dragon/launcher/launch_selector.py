@@ -22,6 +22,11 @@ def determine_environment(args=None):
     # Check if the user requested a specific launcher mode
     arg_map = launchargs.get_args(args)
 
+    # Make sure the user provided a program to execute
+    if not arg_map.get("prog"):
+        msg = "No program specified to execute. Please provide a program to execute as the first argument. `dragon --help` for more information."
+        raise ValueError(msg)
+
     wlm = str(arg_map.get("wlm", ""))
     single_arg = arg_map["single_node_override"]
     multi_arg = arg_map["multi_node_override"]
@@ -128,7 +133,7 @@ def main():
                                 `--hostfile` or `--hostlist` is a required argument for WLM SSH and is only used for SSH
           --network-prefix NETWORK_PREFIX
                                 NETWORK_PREFIX specifies the network prefix the dragon runtime will use to determine which IP addresses it should use to build
-                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth)\\w+$' is used -- the prefix for known
+                                multinode connections from. By default the regular expression r'^(hsn|ipogif|ib|eth|en)\\w+$' is used -- the prefix for known
                                 HPE-Cray XC and EX high speed networks as well as the common eth interface. If uncertain which networks are available, the
                                 following will return them in pretty formatting: `dragon-network-ifaddrs --ip --no-loopback --up --running | jq`. Prepending
                                 with `srun` may be necessary to get networks available on backend compute nodes. The eth prefix is only used as a last resort

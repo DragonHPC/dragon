@@ -76,10 +76,9 @@ batching, and dynamic worker management.
     :caption: **Inference pipeline setup**
 
     from dragon.native.queue import Queue
-    from dragon.ai.inference.inference_utils import Inference
-    from dragon.ai.inference.config import (
-        InferenceConfig, ModelConfig, HardwareConfig, BatchingConfig,
-        GuardrailsConfig, DynamicWorkerConfig,
+    from dragon.ai.inference import (
+      Inference, InferenceConfig, ModelConfig, HardwareConfig,
+      BatchingConfig, GuardrailsConfig, DynamicWorkerConfig,
     )
 
     inference_queue = Queue()
@@ -105,8 +104,6 @@ batching, and dynamic worker management.
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
             flask_secret_key="",
-            run_type="agent",
-            token="",
         ),
         input_queue=inference_queue,
     )
@@ -130,11 +127,15 @@ InferenceConfig Reference
      - ``model_name`` (str), ``hf_token`` (str), ``tp_size`` (int — tensor
        parallelism), ``max_tokens`` (int — max new tokens), ``dtype``
        (str, default ``"bfloat16"``), ``top_k`` (int, default 50),
-       ``top_p`` (float, default 0.95), ``system_prompt`` (list[str])
+       ``top_p`` (float, default 0.95), ``temperature`` (float, default 0.5),
+       ``repetition_penalty`` (float, default 1.1), ``ignore_eos``
+       (bool, default False), ``skip_special_tokens`` (bool, default False),
+       ``system_prompt`` (list[str])
    * - ``HardwareConfig``
      - ``num_nodes`` (int, -1 = auto), ``num_gpus`` (int, -1 = all),
-       ``num_inf_workers_per_cpu`` (int, default 4),
-       ``node_offset`` (int, default 0 — skip first N nodes)
+       ``num_inf_workers_per_cpu`` (int, -1 = auto ``num_gpus // tp_size``),
+       ``node_offset`` (int, default 0 — skip first N nodes),
+       ``inf_wrkr_queue_maxsize`` (int, -1 = auto ``num_inf_workers_per_cpu * 2``)
    * - ``BatchingConfig``
      - ``enabled`` (bool, default True), ``batch_type`` (``"dynamic"`` or
        ``"pre-batch"``), ``batch_wait_seconds`` (float, default 0.1),
@@ -170,7 +171,7 @@ separate GPU partition:
             batching=BatchingConfig(enabled=True, batch_wait_seconds=0.05),
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
-            flask_secret_key="", run_type="agent", token="",
+            flask_secret_key="",
         ),
         input_queue=summarizer_queue,
     )
@@ -809,7 +810,6 @@ Running a Pipeline
         print(result)
     finally:
         orchestrator.destroy()
-        batch.close()
         batch.join()
         # Shutdown agents
         shutdown_event.set()
@@ -1165,10 +1165,9 @@ Here is a minimal end-to-end script:
     from dragon.native.event import Event
     from dragon.workflows.batch import Batch
 
-    from dragon.ai.inference.inference_utils import Inference
-    from dragon.ai.inference.config import (
-        InferenceConfig, ModelConfig, HardwareConfig, BatchingConfig,
-        GuardrailsConfig, DynamicWorkerConfig,
+    from dragon.ai.inference import (
+      Inference, InferenceConfig, ModelConfig, HardwareConfig,
+      BatchingConfig, GuardrailsConfig, DynamicWorkerConfig,
     )
     from dragon.ai.agent.config.agent_config import AgentConfig, OrchestratorConfig
     from dragon.ai.agent.config.pipeline import Pipeline, PipelineNode
@@ -1186,7 +1185,7 @@ Here is a minimal end-to-end script:
             batching=BatchingConfig(enabled=True),
             guardrails=GuardrailsConfig(enabled=False),
             dynamic_worker=DynamicWorkerConfig(enabled=False),
-            flask_secret_key="", run_type="agent", token="",
+            flask_secret_key="",
         ),
         input_queue=inference_queue,
     )
@@ -1232,7 +1231,6 @@ Here is a minimal end-to-end script:
         print(result)
     finally:
         orch.destroy()
-        batch.close()
         batch.join()
         shutdown.set()
         p.join(timeout=30)

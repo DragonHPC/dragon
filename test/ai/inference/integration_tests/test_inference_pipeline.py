@@ -98,9 +98,8 @@ class TestInferenceWorkerResponseRouting(unittest.TestCase):
         self.assertEqual(result["batch_size"], 1)
         self.assertEqual(result["model_inference_latency"], 0.5)
 
-        # Verify telemetry recorded
-        keys_recorded = [call[0] for call in self.dt.add_data_calls]
-        self.assertIn("model_inference_latency", keys_recorded)
+        # Telemetry travels inside the response dict on the queue.
+        self.assertIn("model_inference_latency", result)
 
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
     def test_batch_responses_routed_to_individual_queues(self, mock_logging):
@@ -228,16 +227,16 @@ class TestInferenceWorkerTelemetryIntegration(unittest.TestCase):
             },
         )
 
-        # Verify all telemetry keys recorded
-        keys_recorded = [call[0] for call in self.dt.add_data_calls]
-        self.assertIn("cpu_head_network_latency", keys_recorded)
-        self.assertIn("guardrails_inference_latency", keys_recorded)
-        self.assertIn("guardrails_network_latency", keys_recorded)
-        self.assertIn("model_inference_latency", keys_recorded)
-        self.assertIn("model_network_latency", keys_recorded)
-        self.assertIn("end_to_end_latency", keys_recorded)
-        self.assertIn("requests_per_second", keys_recorded)
-        self.assertIn("total_tokens_per_second", keys_recorded)
+        # Telemetry travels inside the response dict on the queue.
+        result = response_queue.get(timeout=2)
+        self.assertIn("cpu_head_network_latency", result)
+        self.assertIn("guardrails_inference_latency", result)
+        self.assertIn("guardrails_network_latency", result)
+        self.assertIn("model_inference_latency", result)
+        self.assertIn("model_network_latency", result)
+        self.assertIn("end_to_end_latency", result)
+        self.assertIn("requests_per_second", result)
+        self.assertIn("total_tokens_per_second", result)
 
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
     def test_response_includes_all_required_fields(self, mock_logging):

@@ -11,23 +11,23 @@ Examples By Category
     <div class="tiles">
         <a href="cbook/multiprocessing.html" class="tile_item">
             <h3>Multiprocessing</h3>
-            <p>Distributed Python and interactive Jupyter</p>
+            <p>Distributed Python examples for queues, pools, pipelines, and shared state</p>
         </a>
         <a href="cbook/data.html" class="tile_item">
             <h3>Data</h3>
-            <p>Easy-to-use and HPC-optimized data exchange between applications</p>
+            <p>Distributed data sharing with a DDict-focused walkthrough</p>
         </a>
         <a href="cbook/telemetry.html" class="tile_item">
             <h3>Telemetry</h3>
-            <p>Observability for applications and workflows</p>
+            <p>Collect and inspect Dragon runtime and application metrics</p>
         </a>
         <a href="cbook/workflows.html" class="tile_item">
             <h3>Workflow</h3>
-            <p>AI/HPC workflows across systems and sites</p>
+            <p>Workflow patterns for AI loops, MPI orchestration, Parsl, and Batch DAGs</p>
         </a>
         <a href="cbook/ai.html" class="tile_item">
             <h3>AI</h3>
-            <p>Data loading and resilient training and inference</p>
+            <p>AI examples for data loading, agents, and inference-oriented workflows</p>
         </a>
     </div>
 
@@ -64,7 +64,7 @@ Tutorials
         </a>
         <a href="uses/distributed_training.html" class="tile_item">
             <h3>Distributed PyTorch</h3>
-            <p>Train with PyTorch across many GPUs</p>
+            <p>Set up PyTorch distributed launch, rank info, and data loading on GPUs</p>
         </a>
         <a href="uses/ddict_checkpoint.html" class="tile_item">
             <h3>Resiliency with DDict Checkpointing</h3>
@@ -90,7 +90,7 @@ Tutorials
         </a>
         <a href="uses/workflow.html" class="tile_item">
             <h3>Workflows</h3>
-            <p>Develop a workflow that puts it all together</p>
+            <p>Build a simple end-to-end workflow with Batch, DDict, and external jobs</p>
         </a>
     </div>
     <div class="tiles">
@@ -102,27 +102,21 @@ Tutorials
             <h3>Building AI Agents</h3>
             <p>Multi-agent LLM pipelines with tools, HITL, and tracing</p>
         </a>
+        <a href="uses/inference.html" class="tile_item">
+            <h3>Inference Service</h3>
+            <p>Serve shared vLLM backends with Dragon queues and GPUs</p>
+        </a>
         <a href="uses/batch.html" class="tile_item">
             <h3>Batch</h3>
-            <p>Use batch processing with Dragon</p>
+            <p>Schedule parallel tasks and DAG-shaped dependencies with the Batch API</p>
+        </a>
+        <a href="uses/debugging.html" class="tile_item">
+            <h3>Debugging</h3>
+            <p>Use Dragon logging to inspect runtime behavior and application issues</p>
         </a>
         <a href="uses/tutorial1.html" class="tile_item">
             <h3>Tutorial 1</h3>
             <p>First tutorial for using Dragon</p>
-        </a>
-        <a href="uses/tutorial2.html" class="tile_item">
-            <h3>Tutorial 2</h3>
-            <p>Second tutorial for using Dragon</p>
-        </a>
-        <a href="uses/tutorial3.html" class="tile_item">
-            <h3>Tutorial 3</h3>
-            <p>Third tutorial for using Dragon</p>
-        </a>
-    </div>
-    <div class="tiles">
-        <a href="uses/debugging.html" class="tile_item">
-            <h3>Debugging</h3>
-            <p>Debug workflows and applications</p>
         </a>
     </div>
 
@@ -135,6 +129,7 @@ Tutorials
     uses/orchestrate_mpi.rst
     uses/distributed_training.rst
     uses/ddict_checkpoint.rst
+    uses/batch.rst
     uses/multinode.rst
     uses/jupyter.rst
     uses/gpus.rst
@@ -142,3 +137,5 @@ Tutorials
     uses/workflow.rst
     uses/proxy.rst
     uses/agent.rst
+    uses/inference.rst
+    uses/debugging.rst

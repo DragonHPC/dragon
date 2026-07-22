@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd ../../../ && . hack/setup && cd -
+cd ../../../ && . devtools/setup && cd -
 
 rm *log
 rm .dragon-net-conf

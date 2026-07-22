@@ -1023,7 +1023,7 @@ class LauncherBackEnd:
                 while logging_queue and not self._logging_shutdown.is_set():
                     try:
                         msg = logging_queue.get(timeout=None)
-                        log.debug('got log message of type %s - "%s"', type(msg), msg.msg)
+                        log.debug('got log message of type %s', type(msg))
                         if isinstance(msg, dmsg.HaltLoggingInfra):
                             break
                         elif isinstance(msg, dmsg.CpLoggingMessage):

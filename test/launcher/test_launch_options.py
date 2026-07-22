@@ -13,7 +13,7 @@ from .launcher_testing_utils import catch_thread_exceptions
 from .frontend_testing_mocks import run_frontend
 
 
-def get_args_map(network_config, network_prefix="^(eth|hsn)", **kwargs):
+def get_args_map(network_config, network_prefix="^(eth|hsn|en)", **kwargs):
 
     parser = get_parser()
     arg_list = ["--wlm", "slurm", "--network-config", f"{network_config}", "--network-prefix", network_prefix]

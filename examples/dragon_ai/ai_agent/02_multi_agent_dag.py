@@ -61,13 +61,13 @@ from dragon.native.process import Process
 from dragon.native.queue import Queue
 from dragon.workflows.batch import Batch
 
-from dragon.ai.inference.config import (
+from dragon.ai.inference import (
     BatchingConfig,
     HardwareConfig,
     InferenceConfig,
     ModelConfig,
+    Inference,
 )
-from dragon.ai.inference.inference_utils import Inference
 
 # ---------------------------------------------------------------------------
 # Style 1: Import existing sync tools, register via registry.register(fn)
@@ -481,7 +481,6 @@ async def main():
         finally:
             orchestrator.destroy()
             batch.join()
-            batch.destroy()
 
     except Exception as exc:
         import traceback

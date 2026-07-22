@@ -12,88 +12,173 @@ allows to join on the completion of an item.
 Using a Queue with Python
 ^^^^^^^^^^^^^^^^^^^^^^^^^
 
-TBD
+The Dragon Native Queue in Python mirrors the :external+python:py:class:`multiprocessing.Queue` interface
+but works across multiple nodes and supports joinable queues. Import it from :py:mod:`dragon.native.queue`:
 
-Using a Queue with C
-^^^^^^^^^^^^^^^^^^^^
+.. code-block:: python
+    :linenos:
+    :caption: **Creating and using a Dragon Native Queue in Python**
 
-To use a Dragon queue it's as simple as creating it and then sending data.
-Managed queues incur some startup cost, but no performance cost while using and
-they make creation and disposal extremely easy. Here is sample code for creating
-a queue and sending some binary data using it.
+    import dragon
+    from multiprocessing import set_start_method
+    from dragon.native.process import Process
+    from dragon.native.queue import Queue
 
-.. JD: Is a dragon_queue_put_close(&put_str); missing here ?
+    def producer(q):
+        for i in range(5):
+            q.put(f"item-{i}")
+        q.put(None)  # sentinel to signal completion
 
-.. code-block:: C
-  :linenos:
-  :caption: **Creating a Queue using C and the stream interface.**
+    def consumer(q):
+        while True:
+            item = q.get()
+            if item is None:
+                break
+            print(f"Received: {item}", flush=True)
 
-  #include <dragon/global_types.h>
-  #include <dragon/queue.h>
+    if __name__ == "__main__":
+        set_start_method("dragon")
 
-  int main(int argc, char* argv[]) {
-    dragonError_t err;
-    dragonQueueDescr_t queue;
-    dragonQueuePutStream_t put_str;
-    uint64_t my_data[VERY_BIG]; /* assumed initialized */
-    int val = 100;
+        q = Queue()
+        p_prod = Process(target=producer, args=(q,))
+        p_cons = Process(target=consumer, args=(q,))
 
-    err = dragon_managed_queue_create("my_unique_queue_name", 100, true, NULL, NULL, NULL, &queue);
+        p_cons.start()
+        p_prod.start()
+        p_prod.join()
+        p_cons.join()
 
-    if (err != DRAGON_SUCCESS) {
-      fprintf(stderr, "The managed queue could not be created. Error Code=%lu\n", err);
-      return 1;
-    }
+The queue is serializable: it can be passed as an argument to any managed process, on any node in the
+Dragon runtime, just like a :external+python:py:class:`multiprocessing.Queue`. For joinable queues,
+initialize with ``joinable=True`` and call :py:meth:`~dragon.native.queue.Queue.task_done` after processing
+each item, then use :py:meth:`~dragon.native.queue.Queue.join` to wait for all items to be processed:
 
-    err = dragon_queue_put_open(&queue, &put_str);
-    if (err != DRAGON_SUCCESS) {
-      fprintf(stderr, "The queue putstream could not be opened. Error Code=%lu\n", err);
-      return 1;
-    }
+.. code-block:: python
+    :linenos:
+    :caption: **Using a joinable Dragon Native Queue**
 
-    /* some work is done and results need to be shared */
+    import dragon
+    from multiprocessing import set_start_method
+    from dragon.native.process import Process
+    from dragon.native.queue import Queue
 
-    err = dragon_queue_put_write(&put_str, my_data, VERY_BIG*sizeof(uint64_t), NULL);
-    if (err != DRAGON_SUCCESS) {
-      fprintf(stderr, "The queue putstream write failed. Error Code=%lu\n", err);
-      return 1;
-    }
+    def worker(q):
+        while True:
+            item = q.get()
+            if item is None:
+                q.task_done()  # balance the sentinel's task count
+                break
+            print(f"Processing: {item}", flush=True)
+            q.task_done()
 
-    err = dragon_queue_put_write(&put_str, &val, sizeof(int), NULL);
-    if (err != DRAGON_SUCCESS) {
-      fprintf(stderr, "The queue putstream write failed. Error Code=%lu\n", err);
-      return 1;
-    }
+    if __name__ == "__main__":
+        set_start_method("dragon")
 
-    return 0;
-  }
+        q = Queue(joinable=True)
+        p = Process(target=worker, args=(q,))
+        p.start()
+
+        for i in range(10):
+            q.put(f"work-{i}")
+
+        q.join()    # block until all items have been processed
+        q.put(None)  # stop the worker
+        p.join()
+
+See :any:`dragon.native.queue.Queue` for the full API reference.
 
 Using a Queue with C++
 ^^^^^^^^^^^^^^^^^^^^^^
 
-Both reading and writing to a Queue in C++ is handled via the std::streambuf
-protocol. An istream can be constructed in a similar way to read data from a
-stream buffer. The left and right shift operators can be defined for user-defined
-data types so arbitrarily complex data can be read and written in this fashion.
+Dragon's native Queue has a C++ interface provided by the ``dragon::Queue<T>``
+class template declared in ``<dragon/queue.hpp>``. There is no separate C API;
+C and C++ code both use this C++ template. A Queue is created in Python and then
+attached from C++ using its serialized descriptor, so the Queue's lifetime is
+managed by the Python code that created it.
+
+The ``T`` type parameter is a serializable value type. Dragon ships several
+ready-made serializable wrappers in ``<dragon/serializable.hpp>`` (for example
+``dragon::SerializableString``, ``dragon::SerializableByteBuffer``,
+``dragon::SerializableScalar``, and ``dragon::SerializableVector``). You can also
+implement your own by subclassing ``dragon::SerializableBase``.
+
+First, create the Queue in Python and pass its serialized descriptor to the C++
+program. Use the Queue's :py:meth:`~dragon.native.queue.Queue.serialize` method,
+which returns a base64-encoded descriptor intended for the C++ Queue to attach to:
+
+.. code-block:: python
+    :linenos:
+    :caption: **run_cpp_queue.py — create the Queue and launch the C++ program**
+
+    import dragon
+    from multiprocessing import set_start_method
+    from dragon.native.queue import Queue
+    import subprocess
+
+    if __name__ == "__main__":
+        set_start_method("dragon")
+
+        q = Queue()
+        serialized = q.serialize()  # base64 FLI descriptor for the C++ side
+
+        result = subprocess.run(
+            ["./cpp_queue_demo", serialized],
+            capture_output=True, text=True,
+        )
+        print("C++ stdout:", result.stdout.strip())
+
+The C++ program attaches to that Queue, then puts and gets a value:
 
 .. code-block:: c++
-  :linenos:
-  :caption: **Creating a C++ Stream over a Queue**
+    :linenos:
+    :caption: **cpp_queue_demo.cpp — attach to a Dragon Queue and put/get a value**
 
-  std::string greeting = "Hello World";
-  int id = 42;
-  char action = 'a';
+    #include <dragon/queue.hpp>
+    #include <dragon/serializable.hpp>
+    #include <iostream>
 
-  DragonManagedQueueBuf strm_buf("holly", 1024, 1024, true, NULL, NULL);
-  std::ostream out(strm_buf, 1024);
+    int main(int argc, char* argv[]) {
+        if (argc < 2) {
+            std::cerr << "usage: " << argv[0] << " <serialized_queue_descr>\n";
+            return 1;
+        }
 
-  out << greeting << id << action << std::endl;
+        try {
+            // Attach to the Python-created queue (NULL => use the default pool).
+            dragon::Queue<dragon::SerializableString> q(argv[1], nullptr);
 
-  out.close()
+            // Put a value, then get it back.
+            dragon::SerializableString msg(std::string("Hello from C++"));
+            q.put(msg);
 
+            dragon::SerializableString got = q.get();
+            std::cout << "C++ received: " << got.getVal() << std::endl;
+        } catch (const dragon::DragonError& e) {
+            std::cerr << "DragonError: " << e.err_str() << std::endl;
+            return 1;
+        }
+        return 0;
+    }
 
-Using a Queue with Fortran
-^^^^^^^^^^^^^^^^^^^^^^^^^^
+Compile against the Dragon headers and link against ``libdragon``. The
+``dragon-config`` command emits the correct include and link flags for your
+installation:
 
+.. code-block:: console
 
-TBD
+    g++ -std=c++17 cpp_queue_demo.cpp \
+        $(dragon-config -o) $(dragon-config -l) -o cpp_queue_demo
+
+Then run the Python driver under the Dragon runtime. The C++ subprocess inherits
+the runtime environment, so it can attach to the default memory pool:
+
+.. code-block:: console
+
+    dragon run_cpp_queue.py
+
+The program prints::
+
+    C++ stdout: C++ received: Hello from C++
+
+See ``<dragon/queue.hpp>`` for the full C++ Queue API, including ``put``, ``get``,
+``get_nowait``, ``poll``, and their timeout-aware overloads.

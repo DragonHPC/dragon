@@ -28,7 +28,7 @@ CAPNP = $(CAPNP_DIR)/bin/capnp
 CAPNP-CXX = $(CAPNP_DIR)/bin/capnpc-c++
 
 
-LIBRARIES := libdragon.so libpmod.so
+LIBRARIES := libdragon.so
 
 libdragon_HEADERS := $(wildcard *.h) \
                      $(wildcard gpu/*.hpp) \
@@ -75,11 +75,8 @@ libdragon.so: $(libdragon_OBJECTS)
 	@if [ "$(OS)" != "Darwin" ]; then \
 		$(CC) -L . -L ${VIRTUAL_ENV}/lib -L ${VIRTUAL_ENV}/lib64 -L $(CAPNP_DIR)/lib -L $(CAPNP_DIR)/lib64 -shared -Wl,-soname,$(notdir $@) -o $@ $^ -Wl,--whole-archive -lcapnp -lkj -Wl,--no-whole-archive $(LDLIBS) -lrt; \
 	else \
-		$(CC) -L . -L ${VIRTUAL_ENV}/lib -L $(CAPNP_DIR)/lib -shared -o $@ $^ -lcapnp -lkj $(LDLIBS); \
+		$(CC) -L . -L ${VIRTUAL_ENV}/lib -L $(CAPNP_DIR)/lib -shared -Wl,-install_name,@rpath/$(notdir $@) -o $@ $^ -lcapnp -lkj $(LDLIBS); \
 	fi
-
-libpmod.so: libdragon.so
-	ln -sf libdragon.so libpmod.so
 
 $(filter-out libpmod.so,$(filter-out libdragon.so,$(LIBRARIES))): lib%.so: ../dragon/transport/hsta/dfabric_lib/lib%.so
 	$(MAKE) -C $(<D) $(<F)

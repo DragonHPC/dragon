@@ -183,7 +183,7 @@ class TestDragonTelemetryDetector(unittest.TestCase):
         if cls._previous_telemetry_level is not None:
             os.environ["DRAGON_TELEMETRY_LEVEL"] = cls._previous_telemetry_level
         # need to cleanup ddict that was destroyed with restart_allowed=True
-        for filename in glob.glob("/dev/shm/_dragon_dragon_dict_pool*"):
+        for filename in glob.glob("/dev/shm/DDD*"):
             try:
                 os.remove(filename)
             except:
@@ -274,20 +274,25 @@ class TestDragonTelemetryCollectorGroup(unittest.TestCase):
         # For simplicity, we will just check the counter value
         self.assertTrue(counter.value > 1, msg="Collector group did not increment the counter as expected.")
         connection = sqlite3.connect(self.filename)
-        cursor = connection.cursor()
-        query_from_grafana = copy.deepcopy(BASE_GRAFANA_QUERY)
-        uid = str(int(time.time() * 100)) + "_" + str(10)
-        query_from_grafana["queries"][0]["metric"] = self.collector_group.metric_name
-        query_from_grafana["req_id"] = uid
-        query_from_grafana["type"] = "query"
-        query_from_grafana["start"] = str(start_time * 1000)
-        query_from_grafana["end"] = str((start_time + 300) * 1000)
-        res = self.ds.query(query_from_grafana, connection, cursor)
-        self.assertIsInstance(res, list)
-        self.assertTrue(len(res[0]["dps"]) == counter.value, msg="No data returned from the database.")
-        self.assertTrue(
-            all([val == 8 for val in res[0]["dps"].values()]), msg="Data in the database does not match expected data."
-        )
+        try:
+            cursor = connection.cursor()
+            query_from_grafana = copy.deepcopy(BASE_GRAFANA_QUERY)
+            uid = str(int(time.time() * 100)) + "_" + str(10)
+            query_from_grafana["queries"][0]["metric"] = self.collector_group.metric_name
+            query_from_grafana["req_id"] = uid
+            query_from_grafana["type"] = "query"
+            query_from_grafana["start"] = str(start_time * 1000)
+            query_from_grafana["end"] = str((start_time + 300) * 1000)
+            res = self.ds.query(query_from_grafana, connection, cursor)
+            self.assertIsInstance(res, list)
+            self.assertTrue(len(res[0]["dps"]) == counter.value, msg="No data returned from the database.")
+            self.assertTrue(
+                all([val == 8 for val in res[0]["dps"].values()]),
+                msg="Data in the database does not match expected data.",
+            )
+        finally:
+            cursor.close()
+            connection.close()
 
     def test_analysis_collector_group_good_path(self):
 

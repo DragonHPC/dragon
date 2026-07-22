@@ -1,3 +1,13 @@
+"""CPU-head worker utilities for the Dragon inference service.
+
+A CPU worker is a Dragon-managed process placed on a specific host.  It pulls
+requests from the public inference queue, records CPU-side latency, forwards
+work to node-local inference workers, and optionally manages dynamic worker
+spin-up and spin-down.  Each CPU worker owns one local input queue shared by
+its assigned inference workers plus manager queues and events used to reclaim
+and restart idle GPU workers.
+"""
+
 import os
 from ...infrastructure.policy import Policy
 from ...native.process_group import ProcessGroup
@@ -61,6 +71,7 @@ class CPUWorker:
         guardrails_config: GuardrailsConfig,
         dynamic_worker_config: DynamicWorkerConfig,
         num_inf_workers_per_cpu: int,
+        inf_wrkr_queue_maxsize: int,
         end_event,
         cpu_barrier,
         dt,
@@ -79,6 +90,8 @@ class CPUWorker:
         :type dynamic_worker_config: DynamicWorkerConfig
         :param num_inf_workers_per_cpu: Number of inference workers to be assigned per CPU head.
         :type num_inf_workers_per_cpu: int
+        :param inf_wrkr_queue_maxsize: Maximum size of the inference worker input queue.
+        :type inf_wrkr_queue_maxsize: int
         :param end_event: Primary event that terminates all processes.
         :type end_event: dragon.native.Event
         :param cpu_barrier: Barrier used to wait until each CPU process spins up.
@@ -118,6 +131,7 @@ class CPUWorker:
         self.kv_cache_max_tokens = model_config.max_tokens
         self.max_new_tokens = model_config.max_tokens
         self.num_inf_workers_for_each_cpu_head = num_inf_workers_per_cpu
+        self.inf_wrkr_queue_maxsize = inf_wrkr_queue_maxsize
         self.tp_size = model_config.tp_size
 
         self.prompt_guard_sensitivity = guardrails_config.prompt_guard_sensitivity
@@ -310,7 +324,7 @@ class CPUWorker:
         :param inf_wrkr_config: List of device lists for each inference worker.
         :type inf_wrkr_config: list
         """
-        self.inf_wrkr_input_queue = Queue()
+        self.inf_wrkr_input_queue = Queue(maxsize=self.inf_wrkr_queue_maxsize)
         cpu_worker_pid = os.getpid()
         self.inf_wrkr_manager_q = Queue()
         my_inf_workers = []
@@ -359,6 +373,7 @@ class CPUWorker:
                 tools = q_item[4] if len(q_item) > 4 else None
                 json_schema_override = q_item[5] if len(q_item) > 5 else None
                 continue_final_message = q_item[6] if len(q_item) > 6 else False
+                stream = q_item[7] if len(q_item) > 7 else False
 
                 # Latency metrics.
                 cpu_head_network_latency = round(time.time() - input_entry_timestamp, 2)
@@ -371,7 +386,7 @@ class CPUWorker:
                 # Forward pass user-prompt to inference worker(s).
                 self.inf_wrkr_input_queue.put(
                     (user_prompt, formatted_input, q, tuple_latency_metric,
-                     tools, json_schema_override, continue_final_message)
+                     tools, json_schema_override, continue_final_message, stream)
                 )
 
                 if self.dynamic_inf_wrkr_toggle:

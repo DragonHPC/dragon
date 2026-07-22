@@ -17,7 +17,12 @@ Architecture
 
     **Image 1: Global Services Architecture**
 
-**FIXME: GS needs a textual description of the architecture, i.e. software requirements.**
+Global Services is responsible for managing the lifecycle and namespace of all globally scoped Dragon objects:
+managed processes, channels, and memory pools. It acts as a central registry and coordination point, processing
+requests from other runtime components and user programs via a message-based protocol. All requests are
+serialized through the server's main event loop, which ensures consistent state across the distributed program.
+Key responsibilities include process creation and tracking, channel allocation and cleanup, and group management
+for collective operations.
 
 Code structure
 ==============

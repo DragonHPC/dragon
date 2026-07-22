@@ -20,8 +20,8 @@ kwargs:
 type: job
 
 executables:
-  - target: ./mpi_job
-    nprocs: 2
+  - target: ./my_dumb_proc
+    nprocs: 1
     args:
       - some_func:
         - input_arg

@@ -1,0 +1,38 @@
+@startuml
+skinparam monochrome true
+skinparam style strictuml
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+title File Like Interface — Nominal Case
+
+participant "Sender" as S
+participant "FLI\n(send handle)" as FSH
+participant "Manager\nChannel\n(pool of stream\nchannel descriptors)" as MC
+participant "Stream\nChannel" as SC
+participant "Main\nChannel\n(stream channel\ndescriptor)" as MAIN
+participant "FLI\n(recv handle)" as FRH
+participant "Receiver" as R
+
+S -> FSH: open_send_handle()
+FSH -> MC: dequeue stream channel descriptor
+MC --> FSH: stream channel descriptor
+FSH -> MAIN: enqueue stream channel descriptor
+note over MAIN: Receiver can now\nattach to stream channel
+
+R -> FRH: open_recv_handle()
+FRH -> MAIN: dequeue stream channel descriptor
+MAIN --> FRH: stream channel descriptor
+
+S -> FSH: write(data)
+FSH -> SC: send message(s)
+FRH -> SC: recv message(s)
+SC --> R: data
+
+S -> FSH: close_send_handle()
+FSH -> SC: send EOT
+SC --> R: DRAGON_EOT
+R -> FRH: close_recv_handle()
+FRH -> MC: recycle stream channel descriptor
+
+@enduml

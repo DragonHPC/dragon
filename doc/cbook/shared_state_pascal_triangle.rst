@@ -1,7 +1,7 @@
 Shared State Example Utilizing Pascal Triangle
 ++++++++++++++++++++++++++++++++++++++++++++++
 
-In this example, we demonstrate that the Dragon multiprocessing interface can be used to create a simple shared state example. We utilize the Pascal triangle which is a method for calcuating coefficients for binomial expansions.
+In this example, we demonstrate that the Dragon multiprocessing interface can be used to create a simple shared state example. We utilize the Pascal triangle which is a method for calculating coefficients for binomial expansions.
 The manager multiprocessing process and the client multiprocessing process communicate via a shared state spawned by the context multiprocessing process.
 The main multiprocessing process will start the manager and client multiprocessing processes. The manager process finds the sum of the Pascal triangle array calcualated by the client process.
 The third multiprocessing process spawned by the context class finds when the Pascal triangle has been completed.

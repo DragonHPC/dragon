@@ -37,12 +37,11 @@ class TestInferenceQueryPipeline(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
     def test_query_puts_formatted_data_on_queue(
-        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+        self, mock_telemetry, mock_node_class, mock_system
     ):
         """Test that query() formats prompt and puts complete data tuple
         on the input queue for InferenceWorkers to consume.
@@ -53,10 +52,6 @@ class TestInferenceQueryPipeline(unittest.TestCase):
 
         mock_node = MockNode("node-0", num_gpus=4)
         mock_node_class.return_value = mock_node
-
-        mock_formatter.return_value = (
-            "<system>You are helpful.</system><user>Hello!</user>"
-        )
 
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=4),
@@ -85,21 +80,25 @@ class TestInferenceQueryPipeline(unittest.TestCase):
         response_queue = mp.Queue()
         dragon_inference.query(("Hello!", response_queue))
 
-        # Verify complete data tuple on input queue
+        # Verify complete data tuple on input queue.  query() emits
+        # OpenAI-style message dicts; the worker applies the chat template later.
         item = input_queue.get(timeout=1)
         self.assertEqual(item[0], "Hello!")  # user_prompt
         self.assertEqual(
-            item[1], "<system>You are helpful.</system><user>Hello!</user>"
-        )  # formatted
+            item[1],
+            [
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Hello!"},
+            ],
+        )  # message dicts
         self.assertIsInstance(item[2], type(response_queue))
         self.assertIsInstance(item[3], float)  # start_time
 
-    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
     def test_query_prebatch_formats_all_prompts(
-        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+        self, mock_telemetry, mock_node_class, mock_system
     ):
         """Test that pre-batch query formats each prompt in the batch
         and preserves them together for downstream processing.
@@ -110,11 +109,6 @@ class TestInferenceQueryPipeline(unittest.TestCase):
 
         mock_node = MockNode("node-0", num_gpus=4)
         mock_node_class.return_value = mock_node
-
-        def format_side_effect(system, user, history, model):
-            return f"<formatted:{user}>"
-
-        mock_formatter.side_effect = format_side_effect
 
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=4),
@@ -138,15 +132,25 @@ class TestInferenceQueryPipeline(unittest.TestCase):
         batch = ["Question 1", "Question 2", "Question 3"]
         dragon_inference.query((batch, response_queue))
 
-        # Verify batch data on queue
+        # Verify batch data on queue.  Each pre-batched prompt becomes its own
+        # OpenAI-style message list; formatting happens later on the worker.
         item = input_queue.get(timeout=1)
         self.assertEqual(item[0], batch)
         self.assertEqual(
             item[1],
             [
-                "<formatted:Question 1>",
-                "<formatted:Question 2>",
-                "<formatted:Question 3>",
+                [
+                    {"role": "system", "content": "You are a helpful chatbot"},
+                    {"role": "user", "content": "Question 1"},
+                ],
+                [
+                    {"role": "system", "content": "You are a helpful chatbot"},
+                    {"role": "user", "content": "Question 2"},
+                ],
+                [
+                    {"role": "system", "content": "You are a helpful chatbot"},
+                    {"role": "user", "content": "Question 3"},
+                ],
             ],
         )
 

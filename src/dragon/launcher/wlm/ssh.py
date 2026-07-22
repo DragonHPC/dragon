@@ -221,7 +221,7 @@ class SSHWLM(BaseWLM):
 
     def __init__(self, network_prefix, port, hostlist):
         nhosts = len(hostlist) if hostlist is not None else 0
-        super().__init__(WLM.SSH.value, network_prefix, port, nhosts)
+        super().__init__(WLM.SSH.value, network_prefix, port)
         self.hostlist = hostlist
         self.ENV_VARS = None
 

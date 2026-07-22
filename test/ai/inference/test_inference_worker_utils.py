@@ -9,6 +9,7 @@ These tests use Dragon multiprocessing primitives.
 import dragon
 import multiprocessing as mp
 import time
+from queue import Empty
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock
 
@@ -19,6 +20,7 @@ from dragon.ai.inference.config import (
     GuardrailsConfig,
     DynamicWorkerConfig,
 )
+from dragon.native.queue import Queue
 from .mocks import MockTelemetry
 
 
@@ -118,12 +120,12 @@ class TestInferenceWorkerInit(TestCase):
 
     def test_init_with_all_runtime_params(self):
         """Test initialization with all runtime parameters."""
-        input_queue = mp.Queue()
-        output_queue = mp.Queue()
+        input_queue = Queue()
+        output_queue = Queue()
         barrier = mp.Barrier(1)  # Only 1 party needed for init test
         end_ev = mp.Event()
         down_ev = mp.Event()
-        manager_q = mp.Queue()
+        manager_q = Queue()
 
         worker = InferenceWorker(
             end_event=self.end_event,
@@ -216,7 +218,7 @@ class TestInferenceWorkerGuardrailsFiltering(TestCase):
 
         formatted_prompts = ["<user>Hello</user>", "<user>World</user>"]
         user_prompts = ["Hello", "World"]
-        response_queues = [mp.Queue(), mp.Queue()]
+        response_queues = [Queue(), Queue()]
         latency_metrics = [(1.0, 0.1, 0.05), (1.1, 0.1, 0.05)]
 
         (
@@ -265,8 +267,8 @@ class TestInferenceWorkerGuardrailsFiltering(TestCase):
         # Prepare inputs: 2 prompts, second is malicious
         formatted_prompts = ["<user>Hello</user>", "<user>Bad</user>"]
         user_prompts = ["Hello", "Bad"]
-        q_safe = mp.Queue()
-        q_mal = mp.Queue()
+        q_safe = Queue()
+        q_mal = Queue()
         response_queues = [q_safe, q_mal]
         latency_metrics = [(1.0, 0.1, 0.05), (1.1, 0.2, 0.06)]
 
@@ -422,7 +424,7 @@ class TestInferenceWorkerSendResponses(TestCase):
 
         worker.log = mock_logger  # Set logger attribute
 
-        queue = mp.Queue()
+        queue = Queue()
         user_prompts = ["Hello"]
         responses = ["Hi there!"]
         qs = [queue]
@@ -477,9 +479,9 @@ class TestInferenceWorkerSendResponses(TestCase):
 
         worker.log = mock_logger  # Set logger attribute
 
-        queue_1 = mp.Queue()
-        queue_2 = mp.Queue()
-        queue_3 = mp.Queue()
+        queue_1 = Queue()
+        queue_2 = Queue()
+        queue_3 = Queue()
 
         user_prompts = ["Hello", "How are you?", "Goodbye"]
         responses = ["Hi!", "I'm fine!", "Bye!"]
@@ -541,7 +543,7 @@ class TestInferenceWorkerSendResponses(TestCase):
         )
         worker.log = mock_logger  # Set logger attribute
 
-        queue = mp.Queue()
+        queue = Queue()
         user_prompts = ["Test"]
         responses = ["Response"]
         qs = [queue]
@@ -565,13 +567,14 @@ class TestInferenceWorkerSendResponses(TestCase):
             metrics,
         )
 
-        # Verify telemetry data was recorded
-        self.dt.assert_any_call("cpu_head_network_latency", 0.01)
-        self.dt.assert_any_call("guardrails_inference_latency", 0.05)
-        self.dt.assert_any_call("model_inference_latency", 0.5)
-        self.dt.assert_any_call("model_network_latency", 0.03)
-        self.dt.assert_any_call("requests_per_second", 2.0)
-        self.dt.assert_any_call("total_tokens_per_second", 100.0)
+        # Telemetry travels inside the response dict on the queue.
+        result = queue.get(timeout=1)
+        self.assertEqual(result["cpu_head_network_latency"], 0.01)
+        self.assertEqual(result["guardrails_inference_latency"], 0.05)
+        self.assertEqual(result["model_inference_latency"], 0.5)
+        self.assertEqual(result["model_network_latency"], 0.03)
+        self.assertEqual(result["requests_per_second"], 2.0)
+        self.assertEqual(result["total_tokens_per_second"], 100.0)
 
     @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
     def test_send_responses_with_fallback_metrics(self, mock_logging):
@@ -592,7 +595,7 @@ class TestInferenceWorkerSendResponses(TestCase):
         )
         worker.log = mock_logger  # Set logger attribute
 
-        queue = mp.Queue()
+        queue = Queue()
         user_prompts = ["Hello"]
         responses = ["Error"]
         qs = [queue]
@@ -660,7 +663,7 @@ class TestInferenceWorkerMaliciousResponse(TestCase):
             inf_wrkr_id=1,
         )
 
-        queue = mp.Queue()
+        queue = Queue()
         user_prompt = "Malicious prompt"
         latency_metric = (100.0, 0.01, 0.02)
         preprocessing_time = 0.05
@@ -709,7 +712,7 @@ class TestInferenceWorkerForwardToLLM(TestCase):
 
     def test_forward_to_llm_with_prompts(self):
         """Test _forward_to_llm forwards prompts to output queue."""
-        output_queue = mp.Queue()
+        output_queue = Queue()
 
         worker = InferenceWorker(
             end_event=self.end_event,
@@ -723,7 +726,7 @@ class TestInferenceWorkerForwardToLLM(TestCase):
 
         formatted_prompts = ["<user>Hello</user>"]
         user_prompts = ["Hello"]
-        response_queues = [mp.Queue()]
+        response_queues = [Queue()]
         latency_metrics = [(1.0, 0.1, 0.05)]
         preprocessing_time = 0.05
 
@@ -744,7 +747,7 @@ class TestInferenceWorkerForwardToLLM(TestCase):
         # Check response_queues: verify it's a list with 1 queue (Dragon queues may not preserve identity)
         self.assertIsInstance(result[2], list)
         self.assertEqual(len(result[2]), 1)
-        self.assertIsInstance(result[2][0], mp.Queue().__class__)
+        self.assertIsInstance(result[2][0], Queue)
         self.assertEqual(result[3], latency_metrics)
         self.assertEqual(result[4], preprocessing_time)
         # result[5] is the timestamp - just verify it exists
@@ -752,7 +755,7 @@ class TestInferenceWorkerForwardToLLM(TestCase):
 
     def test_forward_to_llm_empty_prompts(self):
         """Test _forward_to_llm does nothing with empty prompts."""
-        output_queue = mp.Queue()
+        output_queue = Queue()
 
         worker = InferenceWorker(
             end_event=self.end_event,
@@ -774,6 +777,131 @@ class TestInferenceWorkerForwardToLLM(TestCase):
 
         # Verify output queue is empty (no data sent)
         self.assertTrue(output_queue.empty())
+
+
+class TestInferenceWorkerDynamicLifecycle(TestCase):
+    """Tests for dynamic spin-down in the LLM worker loop."""
+
+    @classmethod
+    def setUpClass(cls):
+        """Set up Dragon multiprocessing."""
+        try:
+            mp.set_start_method("dragon", force=True)
+        except RuntimeError:
+            pass  # Already set
+
+    def setUp(self):
+        self.model_config = ModelConfig(
+            model_name="test-model",
+            hf_token="test-token",
+            tp_size=1,
+        )
+        self.batching_config = BatchingConfig(enabled=False)
+        self.guardrails_config = GuardrailsConfig(enabled=False)
+        self.dynamic_worker_config = DynamicWorkerConfig(
+            enabled=True,
+            min_active_workers_per_cpu=1,
+            spin_down_threshold_seconds=1,
+        )
+        self.end_event = mp.Event()
+        self.dt = MockTelemetry()
+
+    @patch("dragon.ai.inference.inference_worker_utils.time.time")
+    @patch("dragon.ai.inference.inference_worker_utils.LLMInferenceEngine")
+    @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
+    def test_llm_module_spins_down_without_preprocessing_when_idle(
+        self, mock_logging, mock_engine_cls, mock_time
+    ):
+        """A direct LLM worker above the minimum should return its slot when idle."""
+        mock_logger = MagicMock()
+        mock_logging.return_value = mock_logger
+        mock_time.side_effect = [100.0, 102.0]
+
+        mock_engine = mock_engine_cls.return_value
+        input_queue = MagicMock()
+        input_queue.get.side_effect = Empty
+        barrier = MagicMock()
+        llm_proc_end_ev = mp.Event()
+        inf_wrkr_down_ev = mp.Event()
+        manager_q = MagicMock()
+
+        worker = InferenceWorker(
+            end_event=self.end_event,
+            model_config=self.model_config,
+            batching_config=self.batching_config,
+            guardrails_config=self.guardrails_config,
+            dynamic_worker_config=self.dynamic_worker_config,
+            dt=self.dt,
+            hostname="test-host",
+            devices=[0],
+            head_cpu_pid=1234,
+            inf_wrkr_id=2,
+            preprocessing_input_queue=input_queue,
+            inf_wrkr_barrier=barrier,
+            llm_proc_end_ev=llm_proc_end_ev,
+            inf_wrkr_down_ev=inf_wrkr_down_ev,
+            inf_wrkr_manager_q=manager_q,
+        )
+
+        worker.run_llm_inference_module()
+
+        mock_engine.initialize.assert_called_once()
+        barrier.wait.assert_called_once()
+        manager_q.put.assert_called_once_with(("test-host", [0], 2))
+        self.assertTrue(inf_wrkr_down_ev.is_set())
+        mock_engine.shutdown.assert_called_once()
+
+    @patch("dragon.ai.inference.inference_worker_utils.time.time")
+    @patch("dragon.ai.inference.inference_worker_utils.LLMInferenceEngine")
+    @patch("dragon.ai.inference.inference_worker_utils.setup_logging")
+    def test_llm_module_keeps_min_active_worker_until_shutdown(
+        self, mock_logging, mock_engine_cls, mock_time
+    ):
+        """A direct LLM worker at the minimum should not advertise itself as down."""
+        mock_logger = MagicMock()
+        mock_logging.return_value = mock_logger
+        mock_time.return_value = 100.0
+
+        mock_engine = mock_engine_cls.return_value
+        call_count = 0
+
+        def get_side_effect(timeout):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 2:
+                self.end_event.set()
+            raise Empty
+
+        input_queue = MagicMock()
+        input_queue.get.side_effect = get_side_effect
+        barrier = MagicMock()
+        llm_proc_end_ev = mp.Event()
+        inf_wrkr_down_ev = mp.Event()
+        manager_q = MagicMock()
+
+        worker = InferenceWorker(
+            end_event=self.end_event,
+            model_config=self.model_config,
+            batching_config=self.batching_config,
+            guardrails_config=self.guardrails_config,
+            dynamic_worker_config=self.dynamic_worker_config,
+            dt=self.dt,
+            hostname="test-host",
+            devices=[0],
+            head_cpu_pid=1234,
+            inf_wrkr_id=1,
+            preprocessing_input_queue=input_queue,
+            inf_wrkr_barrier=barrier,
+            llm_proc_end_ev=llm_proc_end_ev,
+            inf_wrkr_down_ev=inf_wrkr_down_ev,
+            inf_wrkr_manager_q=manager_q,
+        )
+
+        worker.run_llm_inference_module()
+
+        manager_q.put.assert_not_called()
+        self.assertFalse(inf_wrkr_down_ev.is_set())
+        mock_engine.shutdown.assert_called_once()
 
 
 class TestInferenceWorkerLLMErrorPath(TestCase):
@@ -822,7 +950,7 @@ class TestInferenceWorkerLLMErrorPath(TestCase):
         worker.log = mock_logger  # Set logger attribute
 
         # Test the _send_responses method directly with error scenario
-        response_queue = mp.Queue()
+        response_queue = Queue()
         user_prompts = ["Hello"]
         error_responses = ["LLM inference failed. Please try again later."]
         qs = [response_queue]

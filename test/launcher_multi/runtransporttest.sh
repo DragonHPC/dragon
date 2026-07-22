@@ -4,7 +4,7 @@ set -x
 
 export DRAGON_TRANSPORT_TEST=1
 
-cd ../../ && . hack/multinode_config
+cd ../../ && . devtools/multinode_config
 cd -
 
 export LD_LIBRARY_PATH=${CRAY_LD_LIBRARY_PATH}:${LD_LIBRARY_PATH}

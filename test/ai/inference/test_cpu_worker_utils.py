@@ -15,6 +15,7 @@ from dragon.infrastructure.policy import Policy
 from dragon.native.event import Event as DragonNativeEvent
 from dragon.native.process_group import ProcessGroup
 from dragon.native.process import ProcessTemplate, Popen
+from dragon.native.queue import Queue
 
 from dragon.ai.inference.cpu_worker_utils import CPUWorker
 from dragon.ai.inference.config import (
@@ -39,7 +40,7 @@ class TestCPUWorkerInit(TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.input_queue = mp.Queue()
+        self.input_queue = Queue()
         self.model_config = ModelConfig(
             model_name="test-model",
             hf_token="test-token",
@@ -82,6 +83,7 @@ class TestCPUWorkerInit(TestCase):
             guardrails_config=self.guardrails_config,
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -139,6 +141,7 @@ class TestCPUWorkerInit(TestCase):
             guardrails_config=GuardrailsConfig(enabled=True),
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -155,6 +158,7 @@ class TestCPUWorkerInit(TestCase):
             guardrails_config=GuardrailsConfig(enabled=False),
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -171,6 +175,7 @@ class TestCPUWorkerInit(TestCase):
             guardrails_config=GuardrailsConfig(enabled=False),
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -187,6 +192,7 @@ class TestCPUWorkerInit(TestCase):
             guardrails_config=GuardrailsConfig(enabled=False),
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -208,7 +214,7 @@ class TestCPUWorkerCreateInfWorker(TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.input_queue = mp.Queue()
+        self.input_queue = Queue()
         self.model_config = ModelConfig(
             model_name="test-model",
             hf_token="test-token",
@@ -230,6 +236,7 @@ class TestCPUWorkerCreateInfWorker(TestCase):
             guardrails_config=self.guardrails_config,
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -249,6 +256,7 @@ class TestCPUWorkerCreateInfWorker(TestCase):
             guardrails_config=GuardrailsConfig(enabled=False),
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -271,7 +279,7 @@ class TestCPUWorkerDestroy(TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.input_queue = mp.Queue()
+        self.input_queue = Queue()
         self.model_config = ModelConfig(
             model_name="test-model",
             hf_token="test-token",
@@ -293,6 +301,7 @@ class TestCPUWorkerDestroy(TestCase):
             guardrails_config=self.guardrails_config,
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -339,7 +348,7 @@ class TestCPUWorkerDynamicInfWorkers(TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.input_queue = mp.Queue()
+        self.input_queue = Queue()
         self.model_config = ModelConfig(
             model_name="test-model",
             hf_token="test-token",
@@ -367,6 +376,7 @@ class TestCPUWorkerDynamicInfWorkers(TestCase):
             guardrails_config=self.guardrails_config,
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -397,12 +407,12 @@ class TestCPUWorkerDynamicInfWorkers(TestCase):
             (ev_down, pg_down, 2),
         ]
 
-        mock_manager_q = mp.Queue()
+        mock_manager_q = Queue()
 
         updated_workers, prompt_count = worker.dynamic_inf_workers(
             my_inf_workers=my_inf_workers,
             cpu_worker_pid=1234,
-            inf_wrkr_input_queue=mp.Queue(),
+            inf_wrkr_input_queue=Queue(),
             inf_wrkr_manager_q=mock_manager_q,
             num_input_prompts_since_last_idle=1,
             idle_time_seconds=10,  # More than spin_up_threshold
@@ -431,19 +441,20 @@ class TestCPUWorkerDynamicInfWorkers(TestCase):
             guardrails_config=self.guardrails_config,
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
         )
 
         my_inf_workers = []
-        mock_manager_q = mp.Queue()  # Empty queue
+        mock_manager_q = Queue()  # Empty queue
 
         # Test with idle_time > spin_up_threshold (should reset count)
         _, prompt_count = worker.dynamic_inf_workers(
             my_inf_workers=my_inf_workers,
             cpu_worker_pid=1234,
-            inf_wrkr_input_queue=mp.Queue(),
+            inf_wrkr_input_queue=Queue(),
             inf_wrkr_manager_q=mock_manager_q,
             num_input_prompts_since_last_idle=10,
             idle_time_seconds=10,  # More than spin_up_threshold_seconds (3)
@@ -466,7 +477,7 @@ class TestCPUWorkerStartInfWorkers(TestCase):
 
     def setUp(self):
         """Set up test fixtures."""
-        self.input_queue = mp.Queue()
+        self.input_queue = Queue()
         self.model_config = ModelConfig(
             model_name="test-model",
             hf_token="test-token",
@@ -510,6 +521,7 @@ class TestCPUWorkerStartInfWorkers(TestCase):
             guardrails_config=self.guardrails_config,
             dynamic_worker_config=self.dynamic_worker_config,
             num_inf_workers_per_cpu=4,
+            inf_wrkr_queue_maxsize=8,
             end_event=self.end_event,
             cpu_barrier=self.cpu_barrier,
             dt=self.dt,
@@ -531,8 +543,8 @@ class TestCPUWorkerStartInfWorkers(TestCase):
         my_inf_workers = worker.start_inf_workers(
             my_inf_workers=[],
             cpu_worker_pid=1234,
-            inf_wrkr_input_queue=mp.Queue(),
-            inf_wrkr_manager_q=mp.Queue(),
+            inf_wrkr_input_queue=Queue(),
+            inf_wrkr_manager_q=Queue(),
             hostname="test-host",
             inf_wrkr_config=inf_wrkr_config,
         )

@@ -2,6 +2,7 @@
 
 import argparse
 import socket
+import shtab
 import sys
 import os
 
@@ -137,7 +138,7 @@ def get_parser():
         nargs=argparse.REMAINDER,
         default=[],
         help=USER_CMD_HELP,
-    )
+    ).complete = shtab.FILE
 
     return parser
 

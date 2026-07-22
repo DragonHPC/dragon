@@ -1,7 +1,7 @@
-- name: manylinux2014-build
-  os: centos7
-  arch: x86_64
-  image: arti.hpc.amslabs.hpecorp.net/quay-remote/pypa/manylinux2014_x86_64
+- name: manylinux_2_28-build
+  os: alma8
+  arch: aarch64
+  image: arti.hpc.amslabs.hpecorp.net/quay-remote/pypa/manylinux_2_28_aarch64
   spec_file: fake.spec
   pre_build: dst/runBuildPrep.py312.sh
   build: dst/runBuild.sh

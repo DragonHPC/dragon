@@ -38,7 +38,7 @@ from .frontend_testing_mocks import send_abnormal_term
 def get_args_map(network_config, **kwargs):
 
     parser = get_parser()
-    arg_list = ["--wlm", "slurm", "--network-config", f"{network_config}", "--network-prefix", "^(eth|hsn)"]
+    arg_list = ["--wlm", "slurm", "--network-config", f"{network_config}", "--network-prefix", "^(eth|hsn|en)"]
     for val in kwargs.values():
         arg_list = arg_list + val
 
@@ -740,7 +740,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
     def test_wlm_slurm_launch_selection(self, mock_overlay, mock_launch, mock_config):
         """Test that we honor user's slurm WLM selection rather than auto detect"""
         parser = get_parser()
-        arg_list = ["--wlm", "slurm", "--network-prefix", "^(eth|hsn)", "hello_world.py"]
+        arg_list = ["--wlm", "slurm", "--network-prefix", "^(eth|hsn|en)", "hello_world.py"]
 
         args = parser.parse_args(args=arg_list)
         if args.basic_label or args.verbose_label:
@@ -772,7 +772,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         mock_config.assert_called_with(
             workload_manager=WLM.SLURM,
             port=DEFAULT_OVERLAY_NETWORK_PORT,
-            network_prefix="^(eth|hsn)",
+            network_prefix="^(eth|hsn|en)",
             hostlist=None,
             args_map=ANY,
             sigint_trigger=None,
@@ -795,7 +795,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
     ):
         """Test we throw an error if a user doesn't specify a WLM, and we only detect drun"""
         parser = get_parser()
-        arg_list = ["-l", "dragon_file=DEBUG", "--network-prefix", "^(eth|hsn)", "hello_world.py"]
+        arg_list = ["-l", "dragon_file=DEBUG", "--network-prefix", "^(eth|hsn|en)", "hello_world.py"]
 
         slurm_check_mock.return_value = False
         pbs_check_mock.return_value = False
@@ -835,7 +835,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         args_map = get_args_map(self.network_config, arg1=["--wlm", "slurm"])
 
         parser = get_parser()
-        arg_list = ["--wlm", "pbs+pals", "--network-prefix", "^(eth|hsn)", "hello_world.py"]
+        arg_list = ["--wlm", "pbs+pals", "--network-prefix", "^(eth|hsn|en)", "hello_world.py"]
 
         args = parser.parse_args(args=arg_list)
         if args.basic_label or args.verbose_label:
@@ -869,7 +869,7 @@ class FrontendBringUpTeardownTest(unittest.TestCase):
         mock_config.assert_called_with(
             workload_manager=WLM.PBS,
             port=DEFAULT_OVERLAY_NETWORK_PORT,
-            network_prefix="^(eth|hsn)",
+            network_prefix="^(eth|hsn|en)",
             hostlist=None,
             args_map=ANY,
             sigint_trigger=None,

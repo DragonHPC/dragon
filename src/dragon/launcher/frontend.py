@@ -40,36 +40,6 @@ LAUNCHER_FAIL_EXIT = 1
 LAUNCHER_SUCCESS_EXIT = 0
 
 
-def _create_default_telemetry_config(frontend_host: str) -> str:
-    tmdb_dir = Path.home() / "dragon_telemetry"
-    tmdb_dir.mkdir(parents=True, exist_ok=True)
-
-    lines = [
-        "aggregator_port: 4242",
-        "tsdb_server_port: 4243",
-        "remote_tunnel_port: 4242",
-        f'remote_tunnel_node: "{frontend_host}"',
-        "collector_rate: 0.5",
-        "delete_tmdb: 1",
-        "default_tmdb_window: 300",
-        f'default_tmdb_dir: "{tmdb_dir}"',
-        f'default_tmdb_directory: "{tmdb_dir}"',
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def _set_default_telemetry_config() -> None:
-    cfg_path = os.getenv("DRAGON_TELEMETRY_CONFIG")
-    if cfg_path:
-        return
-
-    cfg_dir = Path.home() / ".dragon"
-    cfg_dir.mkdir(parents=True, exist_ok=True)
-    cfg_path = cfg_dir / "telemetry.yaml"
-    cfg_path.write_text(_create_default_telemetry_config(os.uname().nodename))
-    os.environ["DRAGON_TELEMETRY_CONFIG"] = str(cfg_path)
-
-
 class LauncherImmediateExit(Exception):
     def __init__(self, msg=""):
         self._msg = msg
@@ -194,6 +164,8 @@ class LauncherFrontEnd:
         # If using SSH, confirm we have enough info do that:
         if self._wlm in (WLM.SSH, WLM.DRUN) and self._config_from_file is None:
             self.hostlist = parse_hosts(self.hostlist, self.hostfile)
+            if self._wlm is WLM.SSH and not self.hostlist:
+                raise RuntimeError("SSH workload manager requires a valid hostlist or hostfile")
 
         # Get an instance of the workload manager helper class
         self.wlm_cls = wlm_cls_dict.get(WLM.from_str(self._wlm), None)
@@ -1035,7 +1007,8 @@ Performance may be suboptimal."""
                         args_map=self.args_map,
                         sigint_trigger=self._sigint_trigger,
                     )
-                except Exception:
+                except Exception as ex:
+                    log.debug("Exception while acquiring network config via WLM: %s", ex)
                     raise RuntimeError("Unable to acquire backend network configuration via workload manager")
 
         # If we're here, we're doing a restart. We need to assume the Overlay ports we were using are being
@@ -1213,7 +1186,6 @@ Performance may be suboptimal."""
 
             # we need to put the telemetry level in the env before the backend is launched so that it is in both telemetry and user space
             os.environ["DRAGON_TELEMETRY_LEVEL"] = str(self.telemetry_level)
-            _set_default_telemetry_config()
 
             try:
                 temp_fe_label_selector = os.getenv("FRONTEND_JOB_LABEL")
@@ -1421,7 +1393,6 @@ Performance may be suboptimal."""
 
             # we need to put the telemetry level in the env before the backend is launched so that it is in both telemetry and user space
             os.environ["DRAGON_TELEMETRY_LEVEL"] = str(self.telemetry_level)
-            _set_default_telemetry_config()
 
             try:
                 self.wlm_proc = self._launch_backend(

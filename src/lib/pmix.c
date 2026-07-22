@@ -1155,7 +1155,7 @@ _dragon_pmix_initialize_application_server(dragonPMIxJob_t *d_job)
     no_err_return(DRAGON_SUCCESS);
 }
 
-#define INFO_SPOTS 10 // # of fixed attributes in the top level collection
+#define INFO_SPOTS 12 // # of fixed attributes in the top level collection
 #define RANK_SPOTS 5 // # of attributes for each per-rank collection
 #define HOST_SPOTS 8 // # of attributes for each host/node
 dragonError_t
@@ -1227,6 +1227,12 @@ _dragon_pmix_configure_client_nspace(dragonPMIxJob_t *d_job, dragonPMIxServer_t 
     PMIx_Info_load_p(spot, PMIX_NSDIR, d_job->nsdir, PMIX_STRING);
     spot++;
 
+    uint32_t l_ppn = (uint32_t)d_job->ppn;
+    PMIx_Info_load_p(spot, PMIX_LOCAL_SIZE, &l_ppn, PMIX_UINT32);
+    spot++;
+
+    PMIx_Info_load_p(spot, PMIX_LOCAL_PEERS, local_peers, PMIX_STRING);
+    spot++;
 
     ////// Collection of all attributes for every rank in all the jobs this server is involved in//////////
     for (int32_t i = 0; i < d_job->nprocs; i++) {

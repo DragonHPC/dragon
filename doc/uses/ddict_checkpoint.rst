@@ -4,7 +4,7 @@
 Resiliency with DDict Checkpointing
 +++++++++++++++++++++++++++++++++++
 
-The Dragon distribute dictionary, refered to as the :py:class:`~dragon.data.DDict`, provides APIs for users to add resiliency to their applications. The :py:class:`DDict.checkpoint() <dragon.data.ddict.DDict.checkpoint>` is the foundation that enables this capability. This feature allows users to create consistent snapshots of the DDict's state at specific points in time. This is particularly useful for applications that require fault tolerance, iterative computations, or long-running processes where intermediate results need to be saved and potentially restored later.
+The Dragon distribute dictionary, referred to as the :py:class:`~dragon.data.DDict`, provides APIs for users to add resiliency to their applications. The :py:class:`DDict.checkpoint() <dragon.data.ddict.DDict.checkpoint>` is the foundation that enables this capability. This feature allows users to create consistent snapshots of the DDict's state at specific points in time. This is particularly useful for applications that require fault tolerance, iterative computations, or long-running processes where intermediate results need to be saved and potentially restored later.
 
 Some features of this tutorial are still experimental and under development. These features may not be ready for production use and could change in future releases. Please refer to the Dragon documentation and release notes for the most up-to-date information on the status of these features.
 
@@ -18,7 +18,6 @@ Checkpointing allows applications to save their state at specific points in time
     :caption: **Use DDict with checkpointing to compute average of samples with potential rollback if value is out of allowed range**
 
     import random
-    import socket
     from dragon.native.machine import System
     from dragon.data.ddict import DDict
     from dragon.native.process_group import ProcessGroup
@@ -36,7 +35,7 @@ Checkpointing allows applications to save their state at specific points in time
 
         while num_samples < 1000:
             # some work
-            sample = random.normalvariate()
+            sample = random.normalvariate(0, 1)
             local_sample_agg += sample
             num_samples += 1
 
@@ -146,6 +145,7 @@ Checkpointing combined with persistence, allows users to save the state of their
         input_size = 10
         hidden_size = 20
         output_size = 1
+        nnodes = System().nnodes
         num_samples = 100 * nnodes
         batch_size = 10
         learning_rate = 0.01
@@ -189,7 +189,6 @@ Checkpointing combined with persistence, allows users to save the state of their
             # store loader to ddict. only needs to be done once with a persistent put
             if rank == 0:
                 ddict.pput("train_loader", train_loader)
-            optimizer = optim.Adam(model.parameters(), lr=learning_rate)
 
             first_chkpt = 0
             last_chkpt = num_epochs
@@ -296,4 +295,16 @@ In this example, all checkpoints are first written to node-local memory for perf
 Recovering from Failures with In-Memory Checkpoints
 ===================================================
 
-In progress...
+When a worker process fails, Dragon can automatically restart it within the same job allocation.
+If the DDict is configured with ``working_set_size >= 2``, the surviving managers still hold the
+last N checkpoints in shared memory. A restarted worker can call
+:py:meth:`~dragon.data.ddict.DDict.sync_to_newest_checkpoint` to advance its client view to the
+most recent checkpoint present across all surviving managers, and resume from there — no disk I/O
+required.
+
+This approach is ideal for:
+
+* Jobs where hardware failures are rare but costly to restart from scratch.
+* Applications where the entire state fits comfortably in distributed shared memory.
+* Scenarios where DDict managers survive the failing worker (i.e., the crash is in the
+  application layer, not in the storage layer).

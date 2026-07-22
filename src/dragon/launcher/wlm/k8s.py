@@ -31,7 +31,7 @@ class KubernetesNetworkConfig(BaseWLM):
         if hostlist is None:
             hostlist = []
 
-        super().__init__(WLM.K8S.value, network_prefix, port, len(hostlist))
+        super().__init__(WLM.K8S.value, network_prefix, port)
 
         # Load the in-cluster config
         config.load_incluster_config()
@@ -55,6 +55,7 @@ class KubernetesNetworkConfig(BaseWLM):
 
     def _launch_network_config_helper(
         self,
+        args_map: dict,
         network_prefix: str = DEFAULT_TRANSPORT_NETIF,
         port_range: Union[Tuple[int, int], int] = (
             DEFAULT_OVERLAY_NETWORK_PORT,

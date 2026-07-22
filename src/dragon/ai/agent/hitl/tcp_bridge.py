@@ -28,13 +28,9 @@ class HitlTcpBridge(threading.Thread):
 
     1. Binds a TCP server socket on a free port.
     2. Waits for a single HITL client to connect.
-    3. In a loop:
-       a. ``hitl_queue.get()`` — blocks on the Dragon Queue (intra-runtime).
-       b. Sends the ``HumanApprovalRequest`` as a newline-delimited JSON
-          message over TCP to the connected client.
-       c. Reads the client's JSON response (``HumanApprovalResponse``).
-       d. ``response_queue.put(response)`` — intra-runtime, unblocks the
-          agent's ``request_human_approval()`` coroutine.
+   3. In a loop, gets from ``hitl_queue``, sends the
+         ``HumanApprovalRequest`` as newline-delimited JSON, reads the client's
+         ``HumanApprovalResponse``, and puts it on the response queue.
     4. On :meth:`stop`, sends a ``{"type": "shutdown"}`` message and closes
        the socket.
 

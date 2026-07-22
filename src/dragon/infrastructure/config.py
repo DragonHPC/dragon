@@ -650,7 +650,7 @@ def _handle_subparsers(args, base_dir, config_filename, makefile_filename):
 
     if len(defined_keys) != 0:
         if base_dir == "":
-            print("failed to update environment: DRAGON_BASE_DIR not set, try hack/setup", flush=True)
+            print("failed to update environment: DRAGON_BASE_DIR not set, try devtools/setup", flush=True)
             sys.exit()
 
         if config_filename == "" or makefile_filename == "":

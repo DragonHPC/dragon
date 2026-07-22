@@ -80,7 +80,11 @@ ifneq ($(wildcard workflows/Makefile),)
 TEST_WORKFLOWS = test_workflows
 endif
 
-TESTS_AI := test_collective_group.py
+TESTS_AI := test_collective_group.py \
+            test_public_api.py \
+            inference \
+            agent \
+            torch
 
 TESTS_DRAGON := test_mpbridge.py \
                 test_native.py \
@@ -116,7 +120,7 @@ $(TESTS_PYTHON):
 #   This can replace line above if logs are needed for debugging tests.
 # 	$(PYTHON) $@ -v -f || true
 # 	$(PYTHON) -m pip install ciso8601
-# 	$(PYTHON) ../hack/mergelogs > out.txt
+# 	$(PYTHON) ../devtools/mergelogs > out.txt
 # 	@echo "***************** LOG **********************"
 # 	@cat out.txt
 # 	@echo "*************** END OF LOG **********************"
@@ -139,8 +143,29 @@ $(TESTS_CCFUTURES):
 
 .PHONY: $(TESTS_AI)
 $(TESTS_AI):
-	@echo "Running ai test"
-	cd ai && DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s $@ -v -f
+	@echo "Running ai tests: $@"
+	@if [ "$@" = "torch" ]; then \
+	    cd ai && DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s $(PYTHON) -m unittest discover -s torch -p "test_*.py" -t torch; \
+	elif [ -d "ai/$@" ]; then \
+	    cd ai && DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s $(PYTHON) -m unittest discover -s $@ -p "test_*.py" -t .; \
+	else \
+	    cd ai && DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s $(PYTHON) -m unittest -v -f $(basename $@); \
+	fi
+
+.PHONY: test_ai_inference
+test_ai_inference:
+	@echo "Running ai inference test suite"
+	cd ai && DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s $(PYTHON) -m unittest discover -s inference -p "test_*.py" -t .
+
+.PHONY: test_ai_agent
+test_ai_agent:
+	@echo "Running ai agent test suite"
+	cd ai && DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s $(PYTHON) -m unittest discover -s agent -p "test_*.py" -t .
+
+.PHONY: test_ai_torch
+test_ai_torch:
+	@echo "Running ai torch test suite"
+	cd ai && DYLD_LIBRARY_PATH=$(DYLD_LIBRARY_PATH) dragon -s $(PYTHON) -m unittest discover -s torch -p "test_*.py" -t torch
 
 BUILD_COMPONENTS := $(addprefix build-,$(COMPONENTS))
 

@@ -18,6 +18,6 @@ def main():
             lst = line.split()
             pid = lst[1]
             print(f'*********************** Executing script.gdb on Process {pid} ***********************', flush=True)
-            os.system(f'gdb -q -batch -x {path}/../hack/script.gdb -ex "getinfo {pid}"')
+            os.system(f'gdb -q -batch -x {path}/../devtools/script.gdb -ex "getinfo {pid}"')
 if __name__ == "__main__":
     main()

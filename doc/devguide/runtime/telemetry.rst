@@ -5,14 +5,14 @@ Telemetry
 
 The Telemetry infrastructure in the Dragon runtime is a way for users to visualize real-time metrics while running their application.
 
-Adding the telemetry flag launches an additional head process that runs alongside the application. The telemetry application shares dragon infrastructure 
-like global services, local services, transport agents, and the launcher frontend and backend. In Figure :numref:`telemetry-architecture` the architecture of 
-the telemetry service is laid out. The user is responsible for installing grafana locally and setting up the ssh port forwarding from the aggregator node, 
+Adding the telemetry flag launches an additional head process that runs alongside the application. The telemetry application shares dragon infrastructure
+like global services, local services, transport agents, and the launcher frontend and backend. In Figure :numref:`telemetry-architecture` the architecture of
+the telemetry service is laid out. The user is responsible for installing grafana locally and setting up the ssh port forwarding from the aggregator node,
 which will be one of the compute nodes, through the login node, to their laptop. Future versions of dragon will set up some of these for the user.
 
 
-.. figure:: ../images/architecture_telemetry.png
-  :scale: 10%
+.. figure:: ../images/architecture_telemetry.svg
+  :scale: 75%
   :name: telemetry-architecture
 
 **Telemetry Architecture**
@@ -39,8 +39,12 @@ tsdb_server.py      TSDB Gunicorn Server
 Telemetry Architecture
 =======================
 
-Telemetry has a few settings that can be customized using a YAML file. To do this, provide the path to the file by setting the ``DRAGON_TELEMETRY_CONFIG`` 
+Telemetry has a few settings that can be customized using a YAML file. To do this, provide the path to the file by setting the ``DRAGON_TELEMETRY_CONFIG``
+<<<<<<< HEAD
+environment variable. Keys that can be set in the YAML are included in the relevant sections. A sample YAML is available in ``/examples/dragon_telemetry/telemetry.yaml``.
+=======
 environment variable. Keys that can be set in the YAML are included in the relevant sections. A sample YAML is available in ``/examples/dragon_telemetry/telemetry.yaml.
+>>>>>>> develop
 
 Local Database
 -----------------
@@ -64,33 +68,35 @@ tags                BLOB            tag key and tag value
 
 Sample dps
 
-``{
+.. code-block:: json
+
+  {
     "dps": [
-        {
-            "metric": "load_average",
-            "value": 0.3115234375
-        },
-        {
-            "metric": "used_RAM",
-            "value": 6.2
-        },
-        {
-            "metric": "DevicePowerUsage",
-            "value": 89.0,
-            "tags": {
-                "gpu": 0
-            }
-        },
-        {
-            "metric": "DeviceUtilization",
-            "value": 0,
-            "tags": {
-                "gpu": 0
-            }
+      {
+        "metric": "load_average",
+        "value": 0.3115234375
+      },
+      {
+        "metric": "used_RAM",
+        "value": 6.2
+      },
+      {
+        "metric": "DevicePowerUsage",
+        "value": 89.0,
+        "tags": {
+          "gpu": 0
         }
+      },
+      {
+        "metric": "DeviceUtilization",
+        "value": 0,
+        "tags": {
+          "gpu": 0
+        }
+      }
     ],
     "timestamp": 1746652796
-}``
+  }
 
 Table: flags
 ```````````````
@@ -178,7 +184,7 @@ YAML Configuration options
 
 * ``default_tmdb_window``
 
-  * Default time window for time series database cleanup. 
+  * Default time window for time series database cleanup.
   * Default: 300 seconds
 
 * ``default_tmdb_dir``
@@ -214,12 +220,17 @@ When the user specifies the telemetry flag while running dragon, a separate tele
 ``telemetry_head.py``
 ---------------------
 Orchestrates start up.
+
 1. Creates a set of required objects -
+
    - A dictionary of queues associated with each compute node (Request queues)
    - A Return queue
    - A shutdown Event
+
 2. Starts Dragon Server process on each compute node
+
 3. Starts the Aggregator process
+
    - Receives request from Grafana on port ``4242``
    - Sends requests to each Request queue
 
@@ -253,29 +264,3 @@ A custom gunicorn application
    - Cleans up metrics
 3. Sets start Event when ready (for collector)
 4. Exits if shutdown request is detected
-
-
-To Do
-=======
-Phase 1
---------
-1. Scalability
-2. Divide metrics along different telemetry levels, provide Grafana configs for each level (in progress)
-3. Standardize messaging between Aggregator and Dragon Servers using routing decorator.
-4. Add timeout for Telemetry initialization. Currently, when the user calls Telemetry(), it blocks until the TSDB Server is started by Telemetry.
-5. Allow users to specify size limit of DB
-6. Allow users to adjust frequency of default metric collection
-
-Phase 2
---------
-1. User API - Add Filter class that allows users to define functions that filter data both at collection time and when a request from Grafana is made.
-
-
-Phase 3
-----------
-1. Revamp Dragon Server - use Ddict, messages (local node discovery)
-2. Simplify Aggregator App /api/suggest (push to pull)
- 
-Someday
-----------
-1. Dragon Plugin to replace OpenTSDB Plugin

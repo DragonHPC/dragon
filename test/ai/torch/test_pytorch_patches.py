@@ -69,7 +69,10 @@ class PyTorchPatches(unittest.TestCase):
         # normalize and scale the MNIST dataset
         transform = transforms.Compose([transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))])
 
-        dataset1 = datasets.MNIST("./data", train=True, download=True, transform=transform)
+        try:
+            dataset1 = datasets.MNIST("./data", train=True, download=True, transform=transform)
+        except Exception as exc:
+            self.skipTest(f"MNIST dataset is unavailable (download failed): {exc}")
 
         # create the dataloader for the MNIST dataset
         train_loader = torch.utils.data.DataLoader(dataset1, **train_kwargs)

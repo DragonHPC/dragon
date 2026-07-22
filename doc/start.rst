@@ -70,7 +70,7 @@ We needed to add a single `import dragon` and tell :external+python:doc:`multipr
 use the `dragon` start method. That's it. If this code then called libraries underneath that also use
 :external+python:doc:`multiprocessing <library/multiprocessing>`, those two steps enables Dragon for the
 libraries as well. But what do I get from this? The true power of Dragon comes when you have a very large working set
-and can scale across an entire cluster. Since the Dragon v0.9 release, we regularily test
+and can scale across an entire cluster. Since the Dragon v0.9 release, we regularly test
 :py:meth:`Dragon Pool() <dragon.mpbridge.context.DragonContext.Pool>` with over 50,000 workers on hundreds of nodes on a
 Cray EX supercomputer.
 
@@ -85,7 +85,7 @@ Cray EX supercomputer.
     if __name__ == '__main__':
         set_start_method("dragon")
         with Pool(50000) as p:
-            print(p.map(f, range(50000))
+            print(p.map(f, range(50000)))
 
 You can also manage multiple :py:meth:`~dragon.mpbridge.context.DragonContext.Pool` instances at once and have them
 come and go at different times. This is great
@@ -104,18 +104,18 @@ approach to balance the processing could look like this:
     if __name__ == '__main__':
         set_start_method("dragon")
 
-        typeAfiles = # some long list
-        typeBfiles = # some other long list
+        typeAfiles = get_type_a_files()  # replace with your list of type A files
+        typeBfiles = get_type_b_files()  # replace with your list of type B files
 
         poola = Pool(2000)
         poolb = Pool(1000)
 
         resultsa = poola.map_async(f, typeAfiles)
         resultsb = poolb.map_async(f, typeBfiles)
-        for result in resultsa.get()
-            # do something
-        for result in resultsb.get()
-            # do something
+        for result in resultsa.get():
+            pass  # do something with each result
+        for result in resultsb.get():
+            pass  # do something with each result
 
         poola.close()
         poolb.close()
@@ -129,9 +129,9 @@ resources and program different elements of their application to use different a
 kind of cloud-like.
 
 In addition to scaling :py:meth:`~dragon.mpbridge.context.DragonContext.Pool` to supercomputer scales, Dragon also lets
-users do something base :external+python:doc:`multiprocessing <library/multiprocessing>`
+users do something basic :external+python:doc:`multiprocessing <library/multiprocessing>`
 doesn't let you do. You can nest :py:meth:`Pools <dragon.mpbridge.context.DragonContext.Pool>` inside of one another. Pools
-that use Pool?! Why might you want that?
+that use Pools? Why might you want that?
 There are a lot of use-cases for this. Imagine your use-case is to process different types of data as they land in a
 filesystem. Imagine that each file has many components that themselves require
 :py:class:`Pool.map() <dragon.mpbridge.pool.DragonPool.map>`-like operations. Something
@@ -155,7 +155,7 @@ like this:
     if __name__ == '__main__':
         set_start_method("dragon")
 
-        files = # some long list
+        files = get_work_files()  # replace with your list of work files
         with Pool(128) as p:
             all_results = p.map(f, files)
 
@@ -193,11 +193,11 @@ use :py:meth:`~dragon.mpbridge.context.DragonContext.Queue` in combination with 
     def work(f, resultq):
         resultq.put(compute_it(f))
 
-     if __name__ == '__main__':
+    if __name__ == '__main__':
         set_start_method("dragon")
 
         q = Queue()
-        somedata = # some data
+        somedata = "hello world"  # replace with the actual data to process
         p = Process(target=work, args=(somedata, q,))
         p.start()
 
@@ -214,10 +214,10 @@ Data
 ====
 
 The Python `dict <https://docs.python.org/3/tutorial/datastructures.html#dictionaries>`_ is one of the most fundamental
-and useful abstractions in the language, in our opinon. What if we had a `dict` that scaled to hundreds or thousands of
+and useful abstractions in the language, in our opinion. What if we had a `dict` that scaled to hundreds or thousands of
 nodes and could be accessed by thousands of processes at the same time? Dragon has this feature. With the Dragon
 distributed `dict`, :py:class:`~dragon.data.DDict`, you can easily
-manage data exchange at-scale between process with great performance. Like everything communication related in Dragon,
+manage data exchange at-scale between processes with great performance. Like everything communication related in Dragon,
 it uses our :py:class:`Channels <dragon.channels.Channel>` layer for
 high-performance communication. It behaves with the same semantics as the normal `dict` and how they are accessed from
 multiple threads at the same time. The only difference with the :py:class:`~dragon.data.DDict` is it works across multiple processes.
@@ -237,7 +237,7 @@ Using the :py:class:`~dragon.data.DDict` looks like the following:
 
     def assign(x):
         dist_dict = current_process().stash["ddict"]
-        key = # some object, like a string or int
+        key = str(x)  # use a string representation of x as the key
         dist_dict[key] = x
 
     if __name__ == '__main__':
@@ -253,7 +253,7 @@ Using the :py:class:`~dragon.data.DDict` looks like the following:
 
 You can start to think of the :py:class:`~dragon.data.DDict` like a co-located object store that scales with your
 application. For
-example, you might read in a large quanitity of data from a filesystem and store them into the
+example, you might read in a large quantity of data from a filesystem and store them into the
 :py:class:`~dragon.data.DDict` with keys
 mimicing file paths. If you don't have a great parallel filesystem, this lets you read the data once, cache it in the
 memory of your nodes, and leverage your network's performance (and shared memory) for subsequent accesses. You can use
@@ -262,7 +262,65 @@ a pipeline, :py:class:`~dragon.data.DDict` is a very convenient way to manage da
 code, such as file paths.
 
 
+More Dragon Capabilities
+========================
+
+Dragon offers several additional capabilities beyond the multiprocessing and data interfaces covered above.
+
+Observability with Telemetry
+-----------------------------
+
+Dragon includes a telemetry module for collecting system metrics, resource utilization, and custom application data
+in real-time across distributed nodes. This is valuable for understanding performance bottlenecks and debugging
+large-scale runs. Telemetry data can be visualized in `Grafana <https://grafana.com/>`_ with minimal configuration.
+
+See :ref:`TelemetryAPI` and the :ref:`Telemetry with Grafana <uses/grafana:Telemetry with Grafana>` tutorial.
+
+Workflows and Task Orchestration
+---------------------------------
+
+For applications that need higher-level task coordination, :py:mod:`dragon.workflows` provides graph-based execution
+of functions and parallel applications. The :py:class:`~dragon.workflows.batch.Batch` API is useful for parameter
+sweeps and scientific workflows, and :py:class:`~dragon.workflows.runtime.Proxy` enables execution across multiple
+systems.
+
+See :ref:`WorkflowsAPI` and the :ref:`uses` page for workflow examples.
+
+AI and Machine Learning Integration
+-------------------------------------
+
+Dragon integrates with popular AI frameworks through the :py:mod:`dragon.ai` module. This includes scalable data
+loaders for PyTorch, support for distributed training across many GPUs, high-performance LLM inference with
+load balancing, and a multi-agent orchestration framework for building complex AI pipelines on HPC clusters.
+
+See :ref:`AIAPI` and the :ref:`Distributed PyTorch <uses/distributed_training:Distributed Training with PyTorch>` and
+:ref:`Building AI Agents <uses/agent:Dragon AI Agent Framework — User Guide>` tutorials.
+
+Native API
+-----------
+
+For applications requiring explicit resource placement, detailed process control, or cross-language support (C, C++,
+Fortran), the :py:mod:`dragon.native` module provides a lower-level API with more control than the Python
+multiprocessing bridge.
+
+See :ref:`NativeAPI` for API details and :ref:`uses/gpus:Controlling GPU Affinity` for placement examples.
+
+
 Next Steps
 ==========
 
-Visit the :ref:`tutorials and examples <uses>` to learn about other interfaces and more sophisticated examples.
+Where you go from here depends on your use case:
+
+* **Just getting started?** Explore the :ref:`uses` page for practical tutorials on common patterns like data
+  processing, process orchestration, and running across multiple nodes.
+
+* **Need to scale to a supercomputer?** Read :ref:`uses/multinode:Running Dragon on Multiple Nodes` to learn about
+  multi-node deployment.
+
+* **Working with AI/ML?** Check out the :ref:`Distributed PyTorch <uses/distributed_training:Distributed Training with PyTorch>`
+  tutorial for training models at scale, or :ref:`Building AI Agents <uses/agent:Dragon AI Agent Framework — User Guide>`
+  for complex multi-agent workflows.
+
+* **Need to monitor your application?** See :ref:`uses/grafana:Telemetry with Grafana` for real-time observability.
+
+* **Want the full API?** Visit the :ref:`DragonAPI` for complete reference documentation of all Dragon components.

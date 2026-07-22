@@ -12,8 +12,8 @@ else
 fi
 export UV_AVAILABLE
 
-HACK_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";
-source ${HACK_DIR}/VARIABLES
+DEVTOOLS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";
+source ${DEVTOOLS_DIR}/VARIABLES
 
 # Accept version as first arg or VENV_PY env var, default to 3.12
 if [[ "${UV_AVAILABLE}" == "1" ]]; then
@@ -34,17 +34,17 @@ else
     env_str="_env"
 fi
 
-# if we were called from hack/clean_build, a 2nd arg tells us
+# if we were called from devtools/clean_build, a 2nd arg tells us
 # we should clean up the old venv before creating a new one
 if [[ "$@" == *"clean"* ]]; then
     # Try deactivating any active environment. Move on if unable
     deactivate || true
 
     # Remove existing environment
-    rm -rf ${HACK_DIR}/../${env_str}
+    rm -rf ${DEVTOOLS_DIR}/../${env_str}
 fi
 
-if [ ! -d "${HACK_DIR}/../${env_str}" ]; then
+if [ ! -d "${DEVTOOLS_DIR}/../${env_str}" ]; then
     if [[ "${UV_AVAILABLE}" == "1" ]]; then
         # uv cache clean
         # create venv in the current working directory

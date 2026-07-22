@@ -157,9 +157,9 @@ class TestConfigWithInferenceWorker(unittest.TestCase):
         self.assertEqual(result["devices"], [0, 1])
         self.assertEqual(result["inf_worker_id"], 3)
 
-        # Verify telemetry was recorded
-        keys_recorded = [call[0] for call in dt.add_data_calls]
-        self.assertIn("model_inference_latency", keys_recorded)
+        # Telemetry travels inside the response dict on the queue.
+        self.assertIn("model_inference_latency", result)
+        self.assertEqual(result["model_inference_latency"], 1.0)
 
 
 class TestConfigWithLLMEngine(unittest.TestCase):
@@ -271,12 +271,11 @@ class TestConfigWithInference(unittest.TestCase):
         except RuntimeError:
             pass
 
-    @patch("dragon.ai.inference.llm_engine.chat_template_formatter")
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")
     @patch("dragon.ai.inference.inference_utils.Telemetry")
     def test_config_flows_to_dragon_inference(
-        self, mock_telemetry, mock_node_class, mock_system, mock_formatter
+        self, mock_telemetry, mock_node_class, mock_system
     ):
         """Test that config flows through Inference and reaches input queue."""
         from dragon.ai.inference.inference_utils import Inference
@@ -287,8 +286,6 @@ class TestConfigWithInference(unittest.TestCase):
 
         mock_node = MockNode("node-0", num_gpus=4)
         mock_node_class.return_value = mock_node
-
-        mock_formatter.return_value = "<formatted>"
 
         config = InferenceConfig(
             hardware=HardwareConfig(num_nodes=1, num_gpus=4),
@@ -325,10 +322,17 @@ class TestConfigWithInference(unittest.TestCase):
         response_queue = mp.Queue()
         dragon_inference.query(("Hello!", response_queue))
 
-        # Verify data reached input queue
+        # Verify data reached input queue.  query() emits OpenAI-style
+        # message dicts; the worker applies the chat template later.
         item = input_queue.get(timeout=1)
         self.assertEqual(item[0], "Hello!")
-        self.assertEqual(item[1], "<formatted>")
+        self.assertEqual(
+            item[1],
+            [
+                {"role": "system", "content": "You are helpful."},
+                {"role": "user", "content": "Hello!"},
+            ],
+        )
 
     @patch("dragon.ai.inference.inference_utils.System")
     @patch("dragon.ai.inference.inference_utils.Node")

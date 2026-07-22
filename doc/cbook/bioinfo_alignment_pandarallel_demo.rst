@@ -7,7 +7,7 @@ compare performance on your machine. The DNA/nucleotide workload is run in a sin
 The protein/amino acid workload is run in a multi-node environment.
 
 The use case utilizes pairwise alignments from pyalign, a jaccard distance calculation for the E value, and a hamming distance calculation for the coverage percentage.
-The timings are provided with Dragon and base multiprocessing for `parallel_apply`, the multiprocessing verison of pandas `apply`.
+The timings are provided with Dragon and base multiprocessing for `parallel_apply`, the multiprocessing version of pandas `apply`.
 The application utilizes nucleotide and amino acid workloads for feature selection.
 The time to run the workloads is calculated and displayed in the pandas. K-means clustering is used to group sequences by alignment and percentage coverage of alignments.
 
@@ -24,7 +24,7 @@ The following notebook was used for the single-node comparison:
 .. literalinclude:: ../../examples/jupyter/doc_ref/bioinformatics_alignment_pandarallel_demo.py
 
 For the single-node run, both base multiprocessing and Dragon are compared. The runs utilized a single node with 2 AMD EPYC 7742 64-Core Processors with 128 cores.
-Dragon employs a number of optimizations on base multiprocessing; the Dragon start method outperforms the use of the base multiprocessing spawn start method on the same hardware. 
+Dragon employs a number of optimizations on base multiprocessing; the Dragon start method outperforms the use of the base multiprocessing spawn start method on the same hardware.
 
 The timing for the base multiprocessing runtime is:
 
@@ -71,10 +71,10 @@ The timing for the single-node Dragon runtime is:
      -
      - 27.174203
 
-For multi-node Dragon run, the run was on 2 Apollo nodes. Each Apollo node has 1x AMD Rome CPU with 4x AMD MI100 GPUs and 128 cores. 
-The multi-node use case scales with the total number of CPUs reported by the allocation. As there are more nodes, workers, and CPUs available for multi-node, Dragon extends 
-multiprocessing's stock capabilities and demonstrates additional improvement to measured execution time. 
-Base multiprocessing does not support multi-node workloads. 
+For multi-node Dragon run, the run was on 2 Apollo nodes. Each Apollo node has 1x AMD Rome CPU with 4x AMD MI100 GPUs and 128 cores.
+The multi-node use case scales with the total number of CPUs reported by the allocation. As there are more nodes, workers, and CPUs available for multi-node, Dragon extends
+multiprocessing's stock capabilities and demonstrates additional improvement to measured execution time.
+Base multiprocessing does not support multi-node workloads.
 
 The following notebook was used for the multi-node comparison:
 

@@ -50,8 +50,10 @@ class TestHardwareConfig(TestCase):
         config = HardwareConfig()
         self.assertEqual(config.num_nodes, -1)
         self.assertEqual(config.num_gpus, -1)
-        self.assertEqual(config.num_inf_workers_per_cpu, 4)
+        self.assertEqual(config.num_inf_workers_per_cpu, -1)
+        self.assertEqual(config.inf_wrkr_queue_maxsize, -1)
         self.assertEqual(config.node_offset, 0)
+        self.assertEqual(config.inf_wrkr_queue_maxsize, -1)
 
     def test_validate_num_nodes_valid(self):
         """Test validation passes for valid num_nodes."""
@@ -108,6 +110,19 @@ class TestHardwareConfig(TestCase):
             config.validate(self.all_nodes)
         self.assertIn("num_inf_workers_per_cpu must be >= 1", str(context.exception))
 
+    def test_validate_inf_wrkr_queue_maxsize_invalid(self):
+        """Test validation fails for invalid inf_wrkr_queue_maxsize."""
+        config = HardwareConfig(inf_wrkr_queue_maxsize=0)
+        with self.assertRaises(ValueError) as context:
+            config.validate(self.all_nodes)
+        self.assertIn("inf_wrkr_queue_maxsize must be >= 1", str(context.exception))
+
+    def test_validate_inf_wrkr_queue_maxsize_auto(self):
+        """Test validation passes for auto inf_wrkr_queue_maxsize (-1)."""
+        config = HardwareConfig(inf_wrkr_queue_maxsize=-1)
+        # Should not raise
+        config.validate(self.all_nodes)
+
 
 class TestModelConfig(TestCase):
     """Test cases for ModelConfig dataclass."""
@@ -129,6 +144,7 @@ class TestModelConfig(TestCase):
         self.assertEqual(config.truncation_side, "left")
         self.assertEqual(config.top_k, 50)
         self.assertEqual(config.top_p, 0.95)
+        self.assertEqual(config.gpu_memory_utilization, 0.95)
 
     def test_validate_tp_size_valid(self):
         """Test validation passes for valid tp_size."""
@@ -167,6 +183,52 @@ class TestModelConfig(TestCase):
         with self.assertRaises(ValueError) as context:
             config.validate(gpus_per_node=8)
         self.assertIn("top_p must be in [0, 1]", str(context.exception))
+
+    def test_validate_gpu_memory_utilization_valid(self):
+        """Test validation passes for valid gpu_memory_utilization."""
+        # Test at upper bound (1.0)
+        config = ModelConfig(
+            model_name="test-model", hf_token="test-token", tp_size=1,
+            gpu_memory_utilization=1.0
+        )
+        config.validate(gpus_per_node=8)  # Should not raise
+
+        # Test typical value
+        config = ModelConfig(
+            model_name="test-model", hf_token="test-token", tp_size=1,
+            gpu_memory_utilization=0.9
+        )
+        config.validate(gpus_per_node=8)  # Should not raise
+
+    def test_validate_gpu_memory_utilization_zero(self):
+        """Test validation fails for gpu_memory_utilization = 0."""
+        config = ModelConfig(
+            model_name="test-model", hf_token="test-token", tp_size=1,
+            gpu_memory_utilization=0.0
+        )
+        with self.assertRaises(ValueError) as context:
+            config.validate(gpus_per_node=8)
+        self.assertIn("gpu_memory_utilization must be in (0, 1]", str(context.exception))
+
+    def test_validate_gpu_memory_utilization_negative(self):
+        """Test validation fails for negative gpu_memory_utilization."""
+        config = ModelConfig(
+            model_name="test-model", hf_token="test-token", tp_size=1,
+            gpu_memory_utilization=-0.5
+        )
+        with self.assertRaises(ValueError) as context:
+            config.validate(gpus_per_node=8)
+        self.assertIn("gpu_memory_utilization must be in (0, 1]", str(context.exception))
+
+    def test_validate_gpu_memory_utilization_exceeds_one(self):
+        """Test validation fails for gpu_memory_utilization > 1."""
+        config = ModelConfig(
+            model_name="test-model", hf_token="test-token", tp_size=1,
+            gpu_memory_utilization=1.5
+        )
+        with self.assertRaises(ValueError) as context:
+            config.validate(gpus_per_node=8)
+        self.assertIn("gpu_memory_utilization must be in (0, 1]", str(context.exception))
 
 
 class TestBatchingConfig(TestCase):

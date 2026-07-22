@@ -7,12 +7,12 @@ This is an example of how Dragon can be used to execute an AI-in-the-loop workfl
 Inspiration for this demo comes from the NERSC-10 Workflow Archetypes White Paper.
 This workflow most closely resembles the workflow scenario given as part of archetype four.
 
-In this example we use a small model implemented in PyTorch to compute an approximation to :math:`\sin(x)`.
-In parallel to doing the inference with the model, we launch `sim-cheap` on four MPI ranks.
+In this example, we use a small model implemented in PyTorch to compute an approximation to :math:`\sin(x)`.
+In parallel, while performing inference with the model, we launch `sim-cheap` on four MPI ranks.
 This MPI job computes the Taylor approximation to :math:`\sin(x)` and compares this with the output of the model.
 If the difference is less than 0.05 we consider the model's approximation to be sufficiently accurate and print out the
 result with the exact result.
-If the difference is larger than 0.05 we consider this a failure and re-train the model on a new set of data.
+If the difference is greater than 0.05 we consider this a failure and re-train the model on a new set of data.
 
 To generate this data we launch `sim-expensive`.
 This MPI job is launched on eight ranks-per-node and each rank generates 32 data points of the form :math:`(x, \sin(x))`
@@ -85,4 +85,3 @@ Example Output when run on 16 nodes with 8 MPI ranks-per-node used to generate d
     approx = -0.9724616408348083, exact = -0.9808886564963794
     approx = -0.38959139585494995, exact = -0.4315753703483373
     approx = 0.8678910732269287, exact = 0.8812041533601648
-

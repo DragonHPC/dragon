@@ -13,6 +13,7 @@ import threading
 from shutil import which
 import traceback
 import json
+from typing import Union
 
 from ..globalservices.process import (
     ProcessError,
@@ -256,8 +257,8 @@ class ProcessTemplate:
         cwd: str = ".",
         env: dict = None,
         stdin: int = None,
-        stdout: int = None,
-        stderr: int = None,
+        stdout: Union[int, str, None] = None,
+        stderr: Union[int, str, None] = None,
         policy: Policy = None,
         options: ProcessOptions = None,
     ):
@@ -302,10 +303,10 @@ class ProcessTemplate:
         :type env: dict, optional
         :param stdin: Stdin file handling. Valid values are PIPE and None.
         :type stdin: int, optional
-        :param stdout: Stdout file handling. Valid values are PIPE, STDOUT and None.
-        :type stdout: int, optional
-        :param stderr: Stderr file handling. Valid values are PIPE, STDOUT and None.
-        :type stderr: int, optional
+        :param stdout: Stdout handling. Valid values are PIPE, DEVNULL, None, or a string file path. When a string file path is provided, process output is written in append mode to that file on the node where the process runs. The path is NOT validated at template creation time (it only needs to exist on the target node at launch time). When PIPE is used, a Connection is returned via the stdout property. When a file path is used, the stdout property returns None.
+        :type stdout: int, str, or None, optional
+        :param stderr: Stderr handling. Valid values are PIPE, STDOUT, DEVNULL, None, or a string file path. When a string file path is provided, process stderr is written in append mode to that file on the node where the process runs. When STDOUT is used with a file path for stdout, both streams are written to the stdout file.
+        :type stderr: int, str, or None, optional
         :param policy: determines the placement and resources of the process
         :type policy: dragon.infrastructure.policy.Policy, optional
         :param options: process options, such as allowing the process to connect to the infrastructure
@@ -324,14 +325,21 @@ class ProcessTemplate:
             self.argdata = None
 
         if cwd is None or cwd == ".":
-            if bool(os.getenv("DRAGON_PROXY_ENABLED", False)) and os.getenv("DRAGON_PROXY_REMOTE_CWD", None) is not None:
+            if (
+                bool(os.getenv("DRAGON_PROXY_ENABLED", False))
+                and os.getenv("DRAGON_PROXY_REMOTE_CWD", None) is not None
+            ):
                 cwd = os.getenv("DRAGON_PROXY_REMOTE_CWD")
             else:
                 cwd = os.getcwd()
 
         self.cwd = cwd
 
-        if env is None and bool(os.getenv("DRAGON_PROXY_ENABLED", False)) and os.getenv("DRAGON_PROXY_REMOTE_ENV", None) is not None:
+        if (
+            env is None
+            and bool(os.getenv("DRAGON_PROXY_ENABLED", False))
+            and os.getenv("DRAGON_PROXY_REMOTE_ENV", None) is not None
+        ):
             env = json.loads(os.getenv("DRAGON_PROXY_REMOTE_ENV"))
 
         self.env = env
@@ -340,6 +348,11 @@ class ProcessTemplate:
         self.stderr = stderr
         self.stdin = stdin
         self.options = options
+
+        if isinstance(self.stdout, str) and not self.stdout:
+            raise ValueError("stdout file path must be non-empty")
+        if isinstance(self.stderr, str) and not self.stderr:
+            raise ValueError("stderr file path must be non-empty")
 
         self.policy = policy
         # can't grab the global policy here because of the following.
@@ -479,8 +492,8 @@ class Process(ProcessTemplate):
         ident: str or int = None,
         _pmi: PMIBackend = None,
         stdin: int = None,
-        stdout: int = None,
-        stderr: int = None,
+        stdout: Union[int, str, None] = None,
+        stderr: Union[int, str, None] = None,
         policy: Policy = None,
         options: ProcessOptions = None,
     ):
@@ -518,10 +531,10 @@ class Process(ProcessTemplate):
         :type ident: int or str
         :param stdin: Stdin file handling. Valid values are PIPE and None.
         :type stdin: int, optional
-        :param stdout: Stdout file handling. Valid values are PIPE, STDOUT and None.
-        :type stdout: int, optional
-        :param stderr: Stderr file handling. Valid values are PIPE, STDOUT and None.
-        :type stderr: int, optional
+        :param stdout: Stdout handling. Valid values are PIPE, DEVNULL, None, or a string file path. When a string file path is provided, process output is written in append mode to that file on the node where the process runs. The path is NOT validated at template creation time (it only needs to exist on the target node at launch time). When PIPE is used, a Connection is returned via the stdout property. When a file path is used, the stdout property returns None.
+        :type stdout: int, str, or None, optional
+        :param stderr: Stderr handling. Valid values are PIPE, STDOUT, DEVNULL, None, or a string file path. When a string file path is provided, process stderr is written in binary append mode to that file on the node where the process runs. When STDOUT is used with a file path for stdout, both streams are written to the stdout file.
+        :type stderr: int, str, or None, optional
         :param policy: determines the placement and resources of the process
         :type policy: dragon.infrastructure.policy.Policy
         :param options: process options, such as allowing the process to connect to the infrastructure

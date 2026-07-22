@@ -13,6 +13,7 @@ from unittest.mock import patch
 
 from dragon.ai.inference.guardrails import GuardrailsProcessor
 from dragon.ai.inference.config import GuardrailsConfig
+from dragon.native.queue import Queue
 
 
 class MockPromptGuard:
@@ -161,7 +162,7 @@ class TestGuardrailsProcessor(TestCase):
 
         prompts = ["Hello", "World"]
         formatted_prompts = ["<user>Hello</user>", "<user>World</user>"]
-        response_queues = [mp.Queue(), mp.Queue()]
+        response_queues = [Queue(), Queue()]
         latency_metrics = [(1.0, 0.1, 0.05), (1.1, 0.1, 0.05)]
 
         (
@@ -195,7 +196,7 @@ class TestGuardrailsProcessor(TestCase):
 
         prompts = ["Hello", "World"]
         formatted_prompts = ["<user>Hello</user>", "<user>World</user>"]
-        response_queues = [mp.Queue(), mp.Queue()]
+        response_queues = [Queue(), Queue()]
         latency_metrics = [(1.0, 0.1, 0.05), (1.1, 0.1, 0.05)]
 
         (
@@ -234,7 +235,7 @@ class TestGuardrailsProcessor(TestCase):
             "<user>Safe 2</user>",
             "<user>Malicious 2</user>",
         ]
-        response_queues = [mp.Queue() for _ in range(4)]
+        response_queues = [Queue() for _ in range(4)]
         latency_metrics = [(1.0, 0.1, 0.05) for _ in range(4)]
 
         (
@@ -267,7 +268,7 @@ class TestGuardrailsProcessor(TestCase):
 
         prompts = ["Malicious 1", "Malicious 2"]
         formatted_prompts = ["<user>Malicious 1</user>", "<user>Malicious 2</user>"]
-        response_queues = [mp.Queue(), mp.Queue()]
+        response_queues = [Queue(), Queue()]
         latency_metrics = [(1.0, 0.1, 0.05), (1.1, 0.1, 0.05)]
 
         (
@@ -357,7 +358,7 @@ class TestGuardrailsProcessorIntegration(TestCase):
         formatted_prompts = [f"<user>{p}</user>" for p in prompts]
 
         # Create Dragon queues
-        response_queues = [mp.Queue() for _ in prompts]
+        response_queues = [Queue() for _ in prompts]
 
         latency_metrics = [(float(i), 0.1, 0.05) for i in range(5)]
 

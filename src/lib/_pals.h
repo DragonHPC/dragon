@@ -271,6 +271,23 @@ pals_rc_t pals_get_num_nodes(pals_state_t *state, int *nnodes);
 pals_rc_t pals_get_nodes(pals_state_t *state, pals_node_t **nodes, int *nnodes);
 
 /**
+ * Get the list of nodes in the application.
+ *
+ * @param[in]  state    Pointer to initialized state structure
+ * @param[out] nodelist Pointer to list of nodes. Free with pals_free_nodelist.
+ * @param[out] nnodes   Set to list length on success
+ * @return PALS_OK, PALS_NOT_SUPPORTED, or PALS_FAILED
+ */
+pals_rc_t pals_get_nodelist(pals_state_t *state, char ***nodelist, int *nnodes);
+
+/**
+ * Free a node list returned by @ref pals_get_nodelist
+ *
+ * @param[in,out] nodelist Node list to be freed.
+ */
+void pals_free_nodelist(char ***nodelist);
+
+/**
  * Get the number of MPMD commands in the application
  *
  * @param[in] state Pointer to initialized state structure
@@ -302,7 +319,7 @@ pals_rc_t pals_get_num_pes(pals_state_t *state, int *npes);
  * Get a list of PEs in the application
  *
  * @param[in] state Pointer to initialized state structure
- * @param[out] places Pointer to list of PE structures
+ * @param[out] pes Pointer to list of PE structures
  * @param[out] npes Number of PEs in the application
  * @return PALS_OK, PALS_NOT_SUPPORTED, or PALS_FAILED
  */

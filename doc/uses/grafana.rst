@@ -148,8 +148,10 @@ Grafana Dashboard
 Troubleshooting
 =============================
 Sometimes metrics don't show up on Grafana dashboard panels (if it's the first time you're running Grafana and Telemetry). To resolve this:
+
 - Verify that Grafana is able to access Telemetry by clicking on `Save & Test` under the OpenTSDB datasource.
 - Refresh Grafana Panels individually
+
     - Click on the Edit option of any panel.
     - Click on the Datasource dropdown and re-select OpenTSDB
     - Click on the Metric dropdown and re-type the metric name.

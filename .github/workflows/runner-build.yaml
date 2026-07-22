@@ -11,7 +11,13 @@ on:
       build-command: # example dst input = "dst/dragon_build.sh -n -p 311" or diy input = "runBuildPrep.py311.sh"
         type: string
         required: true
-      build-type: # input options = use-dst-workflow or use-diy-workflow
+      build-type: # input options = "use-dst-workflow" or "use-diy-workflow"
+         type: string
+         required: true
+      build-container: # input example = "quay.io/pypa/manylinux_2_28_aarch64"
+         type: string
+         required: true
+      build-cpu: # input example = "arm"
          type: string
          required: true
 
@@ -20,7 +26,7 @@ jobs:
   #
   # use call-reusable-dst-workflow job if we want to use dst libs and push to artifactory
   #
-  
+
   call-reusable-dst-workflow:
     if: ${{ inputs.build-type == 'use-dst-workflow' }}
     uses: hpe/hpc-dst-shared-actions/.github/workflows/build-pipeline.yml@main
@@ -40,6 +46,8 @@ jobs:
     with:
       machine_size: 'small'
       # small or large machine_size options
+      machine_type: ${{ inputs.build-cpu }}
+      # x86 or arm options
     secrets: inherit
   use-our-hybrid-workflow:
     if: ${{ inputs.build-type == 'use-hybrid-workflow' }}
@@ -72,13 +80,15 @@ jobs:
   #
   # or use create-runner + use-runner + use-our-workflow jobs to go it on our own diy and push artifact to github
   #
-  
+
   create-runner:
     if: ${{ inputs.build-type == 'use-diy-workflow' }}
     uses: hpc-sw/create_runners/.github/workflows/create_runners.yaml@master
     with:
       machine_size: 'small'
       # small or large machine_size options
+      machine_type: ${{ inputs.build-cpu }}
+      # x86 or arm options
     secrets: inherit
   use-our-diy-workflow:
     if: ${{ inputs.build-type == 'use-diy-workflow' }}
@@ -93,7 +103,7 @@ jobs:
           echo $PWD
           ls -alt
           ls -alt ..
-          my_container=$(podman run -v $PWD:/workspace -d --shm-size=12gb --rm -it arti.hpc.amslabs.hpecorp.net/quay-remote/pypa/manylinux2014_x86_64)
+          my_container=$(podman run -v $PWD:/workspace -d --shm-size=12gb --rm -it ${{ inputs.build-container }})
           echo $my_container
           podman exec $my_container pwd
           podman exec $my_container ls -alt

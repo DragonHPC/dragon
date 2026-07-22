@@ -456,6 +456,11 @@ PIPE = subprocess.PIPE
 STDOUT = subprocess.STDOUT
 DEVNULL = subprocess.DEVNULL
 
+# In addition to these constants, stdout and stderr fields in process creation
+# messages may carry a string file path for local-file redirection. When a
+# string is provided, process output is written directly to that file in binary
+# append mode on the target node.
+
 # 292.3 years, the maximum value you can use without causing an OverflowError.
 NO_TIMEOUT_VALUE = 9223372036
 
@@ -4343,12 +4348,7 @@ class GSGroupCreate(InfraMsg):
         self.r_c_uid = int(r_c_uid)
 
         items = list(items) if items is not None else []
-        self.items = [
-            (num, b64decode(msg))
-            if isinstance(msg, str)
-            else (num, msg)
-            for (num, msg) in items
-        ]
+        self.items = [(num, b64decode(msg)) if isinstance(msg, str) else (num, msg) for (num, msg) in items]
 
         self.user_name = user_name
         self.pmix_desc = pmix_desc
@@ -4370,12 +4370,7 @@ class GSGroupCreate(InfraMsg):
         rv["p_uid"] = self.p_uid
         rv["r_c_uid"] = self.r_c_uid
 
-        rv["items"] = [
-            (num, b64encode(msg))
-            if isinstance(msg, bytes)
-            else (num, msg)
-            for (num, msg) in self.items
-        ]
+        rv["items"] = [(num, b64encode(msg)) if isinstance(msg, bytes) else (num, msg) for (num, msg) in self.items]
         if self.policy:
             rv["policy"] = self.policy.get_sdict()
         rv["user_name"] = self.user_name
@@ -4885,12 +4880,7 @@ class GSGroupCreateAddTo(InfraMsg):
         self.user_name = user_name
 
         items = list(items) if items is not None else []
-        self.items = [
-            (num, b64decode(msg))
-            if isinstance(msg, str)
-            else (num, msg)
-            for (num, msg) in items
-        ]
+        self.items = [(num, b64decode(msg)) if isinstance(msg, str) else (num, msg) for (num, msg) in items]
 
         if policy is None:
             self.policy = None
@@ -4911,12 +4901,7 @@ class GSGroupCreateAddTo(InfraMsg):
         else:
             rv["user_name"] = self.user_name
 
-        rv["items"] = [
-            (num, b64encode(msg))
-            if isinstance(msg, bytes)
-            else (num, msg)
-            for (num, msg) in self.items
-        ]
+        rv["items"] = [(num, b64encode(msg)) if isinstance(msg, bytes) else (num, msg) for (num, msg) in self.items]
 
         rv["policy"] = self.policy.get_sdict()
 
@@ -6259,7 +6244,10 @@ class SHProcessCreate(InfraMsg):
     to the stdin of the newly created process.
 
     The stdin, stdout, and stderr are all either None or an instance of SHChannelCreate to be processed
-    by the local services component.
+    by the local services component. In addition, stdout and stderr may carry a string file path; when a
+    string file path is provided, process output is written directly to that file in binary append mode on
+    the target node. The path is not validated by local services at message receipt time — it must exist on
+    the target node at process launch time.
 
     """
 
@@ -8126,7 +8114,18 @@ class RuntimeDesc(InfraMsg):
     _tc = MessageTypes.RUNTIME_DESC
 
     def __init__(
-        self, tag, gs_cd, gs_ret_cd, ls_cd, ls_ret_cd, fe_ext_ip_addr, head_node_ip_addr, oob_port, python_path, env, _tc=None
+        self,
+        tag,
+        gs_cd,
+        gs_ret_cd,
+        ls_cd,
+        ls_ret_cd,
+        fe_ext_ip_addr,
+        head_node_ip_addr,
+        oob_port,
+        python_path,
+        env,
+        _tc=None,
     ):
         super().__init__(tag)
         self.gs_cd = gs_cd
@@ -8575,8 +8574,16 @@ def mk_all_message_classes_set():
 all_message_classes = mk_all_message_classes_set()
 mt_dispatch = {cls._tc.value: cls for cls in all_message_classes}
 
+import sys
 
 def parse(serialized, restrict=None):
+
+    if serialized is None:
+        raise EOFError("The message to parse was None.")
+
+    if hasattr(serialized, "__len__") and len(serialized) == 0:
+            raise EOFError("The message to parse was empty.")
+
     try:
         # if a compressed message, decompress to get the service message
         try:
@@ -8608,6 +8615,7 @@ def parse(serialized, restrict=None):
                 f'The message "{serialized}" could not be parsed.\nJSON Parsing Error Message:{json_exception}\nCapnProto Parsing Error Message:{ex}\n Traceback {tb}'
             )
 
+
 # Used for sending and receiving infrastructure messages through
 # a Queue.
 class MessagePickler:
@@ -8623,6 +8631,7 @@ class MessagePickler:
 # to prevent circular imports, hide the MessageQueue class behind this facade
 def MessageQueueClassBuilder():
     from dragon.native.queue import Queue
+
     class MessageQueue(Queue):
         def destroy(self):
             channel = self._main_channel

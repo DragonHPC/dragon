@@ -41,26 +41,26 @@ to "Configuring the Build for the High Speed Transport Agent (HSTA)" section of 
 `README.md`
 
 ```
-. hack/clean_build
+. devtools/clean_build
 ```
 
 After doing this once, on subsequent builds you can use the `build` helper script to build dragon
 
 ```
-. hack/build
+. devtools/build
 ```
 
 If you have already built it and just want to run something, then you can set up the
 environment with
 
 ```
-. hack/setup
+. devtools/setup
 ```
 
 If things aren't working and you need a fresh build you can try a clean build again with
 
 ```
-. hack/clean_build
+. devtools/clean_build
 ```
 
 4. If you are running a container, base requirements are met, but for setting up variables you can do the following
@@ -128,7 +128,7 @@ The `src/Makefile` has a number of targets that might be of interest.  They are 
 
 ## Additional Tools
 
-There is a `hack` directory at the top-level where additional helper scripts can be placed.  Anyone
+There is a `devtools` directory at the top-level where additional helper scripts can be placed.  Anyone
 adding scripts there is responsible for maintaining them.  The scripts are:
 
 | Script       | Purpose                                                                          |
@@ -186,7 +186,7 @@ for more information.
 >
 > ```
 > $ docker run --rm -ti -u "$(id -u):$(id -g)" -v "$(pwd):/dragon" dragon-dev   # Note: this is typically done for you via VSCode
-> / $ . hack/setup   # This needs to be run to set up your development environment anytime you're doing development for Dragon
+> / $ . devtools/setup   # This needs to be run to set up your development environment anytime you're doing development for Dragon
 > ```
 
 Note that for convenience VS Code remaps the root user in the
@@ -205,7 +205,7 @@ drwxr-xr-x  11 root root   352 Mar 29 21:03 doc
 drwxr-xr-x   5 root root   160 Mar 29 21:03 dst
 drwxr-xr-x   5 root root   160 Mar 29 21:03 examples
 drwxr-xr-x   6 root root   192 Mar 29 21:04 external
-drwxr-xr-x   5 root root   160 Mar 29 21:04 hack
+drwxr-xr-x   5 root root   160 Mar 29 21:04 devtools
 -rw-r--r--   1 root root   200 Mar 29 15:05 Jenkinsfile.sle15sp1
 -rw-r--r--   1 root root  6213 Mar 29 21:03 README.md
 drwxr-xr-x  22 root root   704 Mar 30 14:33 src

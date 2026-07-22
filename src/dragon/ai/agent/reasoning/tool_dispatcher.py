@@ -76,7 +76,7 @@ class ToolDispatcher:
     Parameters
     ----------
     llm_engine:
-        An :class:`~dragon.ai.inference.llm_proxy.LLMProxy` instance
+        An :class:`~dragon.ai.inference.LLMProxy` instance
         (or any object exposing a compatible ``.chat(messages, tools,
         json_schema, continue_final_message)`` method).
     registry:

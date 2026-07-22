@@ -39,5 +39,4 @@ for i in range(1000):
 
 batch.fence()  # wait for all submitted tasks to complete
 batch.join()
-batch.destroy()
 ```

@@ -27,7 +27,8 @@ Resubmit as part of a 'qsub' execution"""
             raise RuntimeError(msg)
 
         from . import WLM
-        super().__init__(WLM.PBS.value, network_prefix, port, get_nodefile_node_count(os.environ.get("PBS_NODEFILE")))
+
+        super().__init__(WLM.PBS.value, network_prefix, port)
 
         self.job_id = os.environ.get(self.ENV_PBS_JOB_ID)
 
@@ -41,10 +42,11 @@ Resubmit as part of a 'qsub' execution"""
             except KeyError:
                 pass
 
+        node_count = get_nodefile_node_count(os.environ.get("PBS_NODEFILE"))
         if mpiexec_override is not None:
-            self.MPIEXEC_ARGS = mpiexec_override.format(nnodes=self.NNODES).split()
+            self.MPIEXEC_ARGS = mpiexec_override.format(nnodes=node_count).split()
         else:
-            self.MPIEXEC_ARGS = self.MPIEXEC_COMMAND_LINE.format(nnodes=self.NNODES).split()
+            self.MPIEXEC_ARGS = self.MPIEXEC_COMMAND_LINE.format(nnodes=node_count).split()
 
     @classmethod
     def check_for_wlm_support(cls) -> bool:

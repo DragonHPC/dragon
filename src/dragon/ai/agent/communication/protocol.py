@@ -12,10 +12,9 @@ from .message import Message
 class CommunicationProtocol(ABC):
     """Abstract communication protocol used by Dragon agents.
 
-    ``receive``  — read from the agent's own input queue.
-    ``send``     — send a message to another agent's queue (reserved for
-                   future use; not called by dispatchers in the current
-                   implementation).
+        * ``receive`` reads from the agent's own input queue.
+        * ``send`` sends a message to another agent's queue. It is reserved for
+            future use and is not called by dispatchers in the current implementation.
     """
 
     # -- queue operations ----------------------------------------------------

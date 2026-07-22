@@ -3,7 +3,25 @@
 Developer Guide
 +++++++++++++++
 
-**Note: This developer guide is under construction.**
+This guide is for contributors and advanced users who want to understand how
+Dragon is organized internally, how its major subsystems fit together, and
+where to go next when working on a specific part of the project.
+
+The guide is still growing, but the current sections already cover the main
+runtime architecture, Dragon's multiprocessing model, the distributed
+dictionary, the agent framework, and the documentation workflow used to improve
+this site.
+
+Start Here By Task
+==================
+
+Use the page that matches the work you are doing:
+
+* runtime design and lifecycle: ``devguide/runtime/index.rst``
+* Python multiprocessing behavior and differences: ``devguide/multiprocessing.rst``
+* distributed dictionary internals: ``devguide/ddict.rst``
+* agent framework development: ``devguide/agent.rst``
+* shared terminology: ``devguide/glossary.rst``
 
 This section is intended for programmers who want to understand the Dragon
 architecture in more detail. Dragon includes a set of
@@ -64,7 +82,7 @@ Programmers looking for a place to start should likely start with
 `Python multiprocessing <https://docs.python.org/3/library/multiprocessing.html>`_ .
 This API is supported by Dragon with a few minor exceptions.
 Differences between the original and Dragon version of multiprocessing are
-provided :ref:`here <dragon_mutiprocessing:multiprocessing with dragon>`.
+provided :ref:`here <dragon_multiprocessing:Multiprocessing with Dragon>`.
 Using Python multiprocessing has advantages like process management and high level
 communication and synchronization objects like Python multiprocessing’s
 Connection object, Queue, Value, and Lock.
@@ -87,6 +105,7 @@ Development Topics
    devguide/multiprocessing.rst
    devguide/ddict.rst
    devguide/agent.rst
+   devguide/inference.rst
    devguide/glossary.rst
 
 ..   devguide/intro.rst

@@ -9,43 +9,40 @@ import os
 import math
 import argparse
 import numpy as np
+import scipy.signal
 import time
 import itertools
-
 
 
 def get_args():
     parser = argparse.ArgumentParser(description="Basic SciPy test")
 
-    parser.add_argument("--num_workers", type=int, default=4,
-                        help="number of workers")
+    parser.add_argument("--num_workers", type=int, default=4, help="number of workers")
 
-    parser.add_argument("--iterations", type=int, default=10,
-                        help="number of iterations to do")
+    parser.add_argument("--iterations", type=int, default=10, help="number of iterations to do")
 
-    parser.add_argument("--burns", type=int, default=2,
-                        help="number of iterations to burn/ignore in order to warm up")
+    parser.add_argument("--burns", type=int, default=2, help="number of iterations to burn/ignore in order to warm up")
 
-    parser.add_argument("--size", type=int, default=1000,
-                        help="size of the array")
+    parser.add_argument("--size", type=int, default=1000, help="size of the array")
 
-    parser.add_argument("--mem", type=int, default=(512 * 1024 * 1024),
-                        help="overall footprint of image dataset to process")
+    parser.add_argument(
+        "--mem", type=int, default=(512 * 1024 * 1024), help="overall footprint of image dataset to process"
+    )
 
-    parser.add_argument('--work_time', type=float, default=0.0,
-                        help='how many seconds of compute per image')
+    parser.add_argument("--work_time", type=float, default=0.0, help="how many seconds of compute per image")
 
     my_args = parser.parse_args()
 
     return my_args
 
+
 @python_app
 def f(args):
-    import scipy.signal
-    import time
+    # We don't import modules here. Dragon is capable of managing the imports correctly.
+
     # Do some image processing
     image, random_filter, work_time = args
-    elapsed = 0.
+    elapsed = 0.0
     start = time.perf_counter()
 
     # Explicitly control compute time per image
@@ -53,7 +50,6 @@ def f(args):
         scipy.signal.convolve2d(image, random_filter)[::5, ::5]
         elapsed = time.perf_counter() - start
     return scipy.signal.convolve2d(image, random_filter)[::5, ::5]
-
 
 
 def main():
@@ -70,11 +66,11 @@ def main():
     filters = [np.random.normal(size=(4, 4)) for _ in range(nimages)]
 
     num_cpus = args.num_workers
-    nnodes=int(os.environ['SLURM_NNODES'])
-    num_cpus_per_node= math.ceil(num_cpus/nnodes)
+    nnodes = int(os.environ["SLURM_NNODES"])
+    num_cpus_per_node = math.ceil(num_cpus / nnodes)
     print(f"Number of workers: {num_cpus}", flush=True)
     print(f"Number of workers per node: {num_cpus_per_node}", flush=True)
-    optimal_batch_size=int(nimages/num_cpus)
+    optimal_batch_size = int(nimages / num_cpus)
     print(f"Batch size: {optimal_batch_size}", flush=True)
 
     config = Config(
@@ -93,11 +89,11 @@ def main():
     times = []
     for i in range(args.iterations + args.burns):
         start = time.perf_counter()
-        results=[]
+        results = []
         for input_args in zip(images, filters, itertools.repeat(float(args.work_time))):
             # launch task and get back a future
             res_future = f(input_args)
-            results.append(res_future) 
+            results.append(res_future)
         for res_future in results:
             # this blocks till each result is available
             res_future.result()
@@ -108,6 +104,7 @@ def main():
     print(f"Average time: {round(np.mean(times[args.burns:]), 2)} second(s)")
     print(f"Standard deviation: {round(np.std(times[args.burns:]), 2)} second(s)")
     config.executors[0].shutdown()
+
 
 if __name__ == "__main__":
     main()

@@ -371,42 +371,45 @@ class TestProcessGroupMultiNode(unittest.TestCase):
             node = Node(node_id)
             nodes[node.hostname] = node
 
-        a_node = list(nodes.values())[0]
-        num_use_devices = int(a_node.num_gpus / 2)
-        if num_use_devices > 0:
-            devices_to_use = a_node.gpus[num_use_devices:]
-            if a_node.gpu_vendor == "Intel":
-                devices_to_use[0] = int(devices_to_use[0])
-                del devices_to_use[1]
-            correct_env_var = ""
-            for i in devices_to_use:
-                correct_env_var += str(i) + ","
-            correct_env_var = correct_env_var.strip(",")
-        else:
-            correct_env_var = None
-            # check that if we use define GPUs to use with non-available that the env string is set to None
-            devices_to_use = ["5", "6"]
+        grp = ProcessGroup(restart=False)
+        qs = {}
+        correct_env_vars = {}
+        for node in nodes.values():
+            num_use_devices = int(node.num_gpus / 2)
+            if num_use_devices > 0:
+                devices_to_use = node.gpus[num_use_devices:]
+                if node.gpu_vendor == "Intel":
+                    devices_to_use[0] = int(devices_to_use[0])
+                    del devices_to_use[1]
+                correct_env_var = ""
+                for i in devices_to_use:
+                    correct_env_var += str(i) + ","
+                correct_env_var = correct_env_var.strip(",")
+            else:
+                correct_env_var = None
+                # check that if we define GPUs to use with none available that the env string is set to None
+                devices_to_use = ["5", "6"]
+            correct_env_vars[node.hostname] = correct_env_var
 
-        if num_use_devices == 0:
-            self.assertEqual(a_node.gpu_vendor, None)
-        else:
-            self.assertIn(a_node.gpu_vendor, ["Nvidia", "AMD", "Intel"])
-        q = Queue()
-        args = (q, a_node.gpu_vendor)
-        cwd = os.getcwd()
-        global_policy = Policy(gpu_affinity=devices_to_use)
-        grp = ProcessGroup(restart=False, policy=global_policy)
-        grp.add_process(nproc=my_alloc.nnodes, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd))
+            if num_use_devices == 0:
+                self.assertEqual(node.gpu_vendor, None)
+            else:
+                self.assertIn(node.gpu_vendor, ["Nvidia", "AMD", "Intel"])
+
+            q = Queue()
+            qs[node.hostname] = q
+            args = (q, node.gpu_vendor)
+            cwd = os.getcwd()
+            local_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node.hostname, gpu_affinity=devices_to_use)
+            grp.add_process(nproc=1, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd, policy=local_policy))
 
         # init and start my process group
         grp.init()
         grp.start()
 
-        count = 0
-        while count < my_alloc.nnodes:
+        for hostname, q in qs.items():
             _, _, visible_devices = q.get()
-            self.assertEqual(visible_devices, correct_env_var)
-            count += 1
+            self.assertEqual(visible_devices, correct_env_vars[hostname], msg=f"Got visible devices {visible_devices} which is not equal to {correct_env_vars[hostname]} for node {hostname}")
 
         # wait for workers to finish and shutdown process group
         grp.join()

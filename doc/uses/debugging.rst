@@ -52,7 +52,7 @@ log message will be similar to the following:
 
     2026-05-04 19:19:16,970 WARNING  user_app.multinode Logging Monitor (281471656268064) :: Hello from Python!
 
-To help locate the relevent messages, you can search for the name passed to `getLogger` in
+To help locate the relevant messages, you can search for the name passed to `getLogger` in
 the log files. In the above example, you would search for "user_app" to find the relevant log messages.
 
 C/C++ Dragon Logger
@@ -135,7 +135,7 @@ log message will be similar to the following:
 
     2026-05-04 19:25:45,452 INFO     user_app Logging Monitor (281471899472160) :: Hello from C!
 
-To help locate the relevent messages, you can search for the name value to `dragon_log_message` in
+To help locate the relevant messages, you can search for the name value to `dragon_log_message` in
 the log files. In the above example, you would search for "user_app" to find the relevant log messages.
 
 Note: Not all values passed to `dragon_log_message` are currently used. The only required values are

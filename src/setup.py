@@ -22,7 +22,6 @@ LIBRARIES = ["dragon"]
 
 
 def get_extra_requires(path, add_all=True):
-
     with open(path) as fp:
         extra_deps = defaultdict(set)
         for k in fp:
@@ -46,9 +45,11 @@ def make_relative_rpath_args(path):
     """Construct platform-appropriate RPATH to support binary
     wheels that ship with libdragon.so, etc."""
     if platform.system() == "Darwin":
-        return [f"-Wl,-rpath,@loader_path{ROOTDIR}/{path}"]
+        return [f"-Wl,-rpath,@loader_path/{path}"]
 
-    return [f"-Wl,-rpath,{ROOTDIR}/{path}"]
+    # Linux/ELF: $ORIGIN resolves to the loaded extension module's directory,
+    # analogous to @loader_path on macOS, so wheels remain relocatable.
+    return [f"-Wl,-rpath,$ORIGIN/{path}"]
 
 
 DragonExtension = partial(
@@ -263,7 +264,6 @@ class DragonBuild_py(build_py):
 
 
 if __name__ == "__main__":
-
     setup(
         cmdclass={
             "build": DragonBuild,
@@ -279,7 +279,6 @@ if __name__ == "__main__":
         package_data={
             "dragon": [
                 "lib/libdragon.so",
-                "lib/libpmod.so",
                 "bin/dragon-*",
                 "localservices/dragon-popen",
                 "infrastructure/message_defs.capnp",
@@ -293,6 +292,7 @@ if __name__ == "__main__":
             "psutil>=5.9.0",
             "pycapnp>=2.0.0,<2.2.0",
             "paramiko>=3.5.1",
+            "shtab>=1.6.0",
         ],
         extras_require=get_extra_requires("extra-requirements.txt"),
     )

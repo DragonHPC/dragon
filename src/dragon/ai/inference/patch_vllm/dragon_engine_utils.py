@@ -1,3 +1,11 @@
+"""Dragon-compatible vLLM engine startup helper for vLLM 0.12.x.
+
+This module provides a replacement for ``vllm.v1.engine.utils.wait_for_engine_startup``.
+It monitors vLLM engine-core handshakes and process sentinels in a way that is
+compatible with Dragon's multiprocessing context, while preserving vLLM's
+parallel-configuration validation and cache setup behavior.
+"""
+
 import logging
 from typing import Optional, TYPE_CHECKING
 from multiprocessing import Process, connection
@@ -29,9 +37,28 @@ def dragon_wait_for_engine_startup(
     proc_manager: Optional["CoreEngineProcManager"],
     coord_process: Optional[Process],
 ):
-    """Patched version of wait_for_engine_startup with enhanced logging.
+    """Wait for all vLLM core engines to connect and report ready.
 
-    Updated for vLLM 0.12 compatibility - uses connection.wait for sentinel monitoring.
+    This Dragon-specific implementation mirrors vLLM 0.12 startup semantics but
+    uses ``multiprocessing.connection.wait`` to monitor engine sentinels while
+    polling the ZMQ handshake socket.
+
+    :param handshake_socket: ZMQ socket receiving HELLO and READY messages.
+    :type handshake_socket: zmq.Socket
+    :param addresses: vLLM engine socket address bundle.
+    :type addresses: EngineZmqAddresses
+    :param core_engines: Local and remote engine descriptors to wait for.
+    :type core_engines: list[CoreEngine]
+    :param parallel_config: vLLM parallel configuration.
+    :type parallel_config: ParallelConfig
+    :param cache_config: vLLM cache configuration updated with GPU block counts.
+    :type cache_config: CacheConfig
+    :param proc_manager: Optional manager for local engine core processes.
+    :type proc_manager: CoreEngineProcManager or None
+    :param coord_process: Optional coordinator process used by vLLM.
+    :type coord_process: multiprocessing.Process or None
+    :raises RuntimeError: If a process exits early, an unexpected engine
+        connects, or an engine reports an invalid startup state.
     """
     from vllm.v1.engine.utils import CoreEngineState, EngineHandshakeMetadata
 

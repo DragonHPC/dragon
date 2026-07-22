@@ -193,7 +193,7 @@ Examples of input and Output
 
 
 
-To simulate many different users iteracting with a chatbot, we loop over a list of fifteen prompts seven times giving a total of 105 prompts that the four inference workers
+To simulate many different users interacting with a chatbot, we loop over a list of fifteen prompts seven times giving a total of 105 prompts that the four inference workers
 to respond to. The input loop and prompts are shown in :numref:`loop-over-prompts`. A sample telemetry output as displayed in Grafana after all these prompts are processed is
 shown in :numref:`node-telemetry` . Note how the utilization is nearly equal among the GPUs with all starting and ending at the same time. The spikes in utilization prior to
 the running of the many prompts are from the models being loaded onto the GPUs at the start up of the inference workers and the worker that responded to the prompt

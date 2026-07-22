@@ -113,7 +113,7 @@ data:
             - |
               ucx_info -v;
               cd /dragon-develop/hpc-pe-dragon-dragon-k8s-merge-develop;
-              . hack/setup;
+              . devtools/setup;
               ldconfig -p | grep ucp;
               ldd /dragon-develop/hpc-pe-dragon-dragon-k8s-merge-develop/src/lib/libdfabric_ucx.so;
               ulimit -l;
@@ -282,7 +282,7 @@ spec:
         args:
         - |
           cd /dragon-develop/hpc-pe-dragon-dragon-k8s-merge-develop;
-          . hack/setup;
+          . devtools/setup;
           # ldconfig -p | grep ucp;
           # ldd /dragon-develop/hpc-pe-dragon-dragon-k8s-merge-develop/src/lib/libdfabric_ucx.so;
           # dragon -l actor_file=DEBUG -t hsta examples/multiprocessing/p2p_lat.py --dragon;

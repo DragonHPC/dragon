@@ -90,7 +90,7 @@ checkpoint id, indicating that the client has completed it's computation at step
 be used by its neighbors on iteration `i+1` of the algorithm. Any client
 trying to load a neighbor's chunk on lines 2 or 4 of :numref:`ddict-ref` will
 block until that neighbor has executed line 5 of :numref:`ddict-smooth-avg`. The
-DDict provides the synchronization necesssary to block the workers until data is
+DDict provides the synchronization necessary to block the workers until data is
 available at the current checkpoint.
 
 .. literalinclude:: ../../examples/dragon_data/ddict/ddict_smoothing.py

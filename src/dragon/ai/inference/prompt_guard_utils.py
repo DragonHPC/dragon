@@ -1,3 +1,12 @@
+"""PromptGuard model wrapper used by inference guardrails.
+
+The :class:`PromptGuard` class loads a Hugging Face sequence-classification
+model and exposes convenience methods for scoring prompts for jailbreaks and
+indirect prompt injection.  Longer inputs are split into chunks and the maximum
+score across chunks is used so a suspicious segment is not hidden inside a long
+conversation.
+"""
+
 import torch
 from torch.nn.functional import softmax
 import time
@@ -9,12 +18,16 @@ from transformers import (
 
 
 class PromptGuard:
-    """Utilities for loading the PromptGuard model and evaluating text for jailbreaks and indirect injections.
+    """Evaluate text with a PromptGuard jailbreak/injection classifier.
 
-    Note that the underlying model has a maximum recommended input size of 512 tokens as a DeBERTa model.
-    The final two functions in this file implement efficient parallel batched evaluation of the model on a list
-    of input strings of arbitrary length, with the final score for each input being the maximum score across all
-    chunks of the input string.
+    PromptGuard is a DeBERTa-based classifier with a recommended maximum input
+    length of 512 tokens.  Single-text methods score one truncated input.  The
+    batched scoring methods split longer strings into chunks and aggregate by
+    taking the maximum score per original input, so a high-risk chunk causes the
+    full input to be treated as high risk.
+
+    The preprocessing step removes adversarial whitespace that may otherwise
+    split meaningful tokens and reduce the classifier score.
     """
 
     def __init__(self, model: str, hf_token: str) -> None:

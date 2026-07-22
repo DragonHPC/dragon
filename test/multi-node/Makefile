@@ -85,6 +85,8 @@ INCLUDE = $(DRAGON_INCLUDE)
 PYTHON = $(shell which python3 | awk '{if ($$1 == "") { print "python" } else { print "python3"}}')
 DEF_NODES =
 
+DRAGON_CPP_TEST_COMMON_DEPS = $(wildcard ../../src/include/dragon/*.hpp ../../src/include/dragon/*.h) ../../src/lib/libdragon.so
+
 
 SOURCES := $(wildcard *.c)
 OBJECTS := $(addsuffix .o,$(basename $(SOURCES)))
@@ -122,6 +124,7 @@ TESTS_DRAGON_DATA_MOVERS := test_data_mover.py
 BATCH_UTILS_DIR := batch_utils
 BATCH_MY_DUMB_PROC := my_dumb_proc
 BATCH_MPI_JOB := mpi_job
+BATCH_MPI_ENV_REPORT := mpi_env_report
 
 .PHONY: all
 all: multinode_default_wlm multinode_drun_wlm
@@ -148,12 +151,15 @@ multinode-tests: c_ddict cpp_ddict $(TESTS_DRAGON_MULTI_NODE) resiliency test_hs
 resiliency: $(TESTS_DRAGON_RUNTIME_REBOOT)
 
 test_batch.py: MULTI_NODE_TEST_PREFIX = module unload cray-mpich > /dev/null 2>&1 && module load cray-mpich-abi > /dev/null 2>&1 &&
-test_batch.py: $(BATCH_MY_DUMB_PROC) $(BATCH_MPI_JOB)
+test_batch.py: $(BATCH_MY_DUMB_PROC) $(BATCH_MPI_JOB) $(BATCH_MPI_ENV_REPORT)
 
 $(BATCH_MY_DUMB_PROC): $(BATCH_UTILS_DIR)/my_dumb_proc.c
 	$(CC) $(CFLAGS) -o $@ $<
 
 $(BATCH_MPI_JOB): $(BATCH_UTILS_DIR)/my_mpi_job.c
+	$(CC) $(CRAY_MPICH_FLAGS) -o $@ $<
+
+$(BATCH_MPI_ENV_REPORT): $(BATCH_UTILS_DIR)/mpi_env_report.c
 	$(CC) $(CRAY_MPICH_FLAGS) -o $@ $<
 
 .PHONY: test_data_movers
@@ -195,7 +201,7 @@ pmi: $(TESTS_DRAGON_PMI_BACKENDS)
 c_ddict: c_ddict.c
 	$(CC) $(INCLUDE) $(CFLAGS) -o c_ddict $< $(LIBS) -ldl
 
-cpp_ddict: cpp_ddict.cpp
+cpp_ddict: cpp_ddict.cpp $(DRAGON_CPP_TEST_COMMON_DEPS)
 	g++ $(INCLUDE) -std=c++14 -o cpp_ddict $< $(LIBS) -ldl
 
 .PHONY: $(TESTS_DRAGON_DATA_MOVERS)
@@ -211,7 +217,7 @@ endif
 clean: $(CLEAN_COMPONENTS)
 	$(RM) *.log
 	$(RM) -f *.o c_ddict cpp_ddict $(MPI_HELLO_OMPI) $(MPI_HELLO_CRAY) $(MPI_HELLO_MPICH)
-	$(RM) -f $(BATCH_MY_DUMB_PROC) $(BATCH_MPI_JOB)
+	$(RM) -f $(BATCH_MY_DUMB_PROC) $(BATCH_MPI_JOB) $(BATCH_MPI_ENV_REPORT)
 	$(RM) -f process_w_deps_data_* job_w_deps_data_*
 	$(RM) -rf batch_unittest_fib_seq
 	$(RM) -f /dev/shm/*

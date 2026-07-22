@@ -21,7 +21,7 @@ from dragon.utils import B64, b64decode, b64encode
 
 
 def get_args_map(network_config, frontend_sdesc, host_id, ip_addrs):
-    network_prefix = "^(eth|hsn)"
+    network_prefix = "^(eth|hsn|en)"
 
     args_map = {
         "ip_addrs": ip_addrs,  # it includes the port

@@ -13,7 +13,7 @@ number of ring processes, potentially on different nodes of a multi-node
 allocation. Each ring process runs a specified number of iterations of passing a
 message around the ring. The final ring process receives a message from the
 previous ring process and forwards it back to the beginning of the ring to be
-sent around atain. The program reports the average time it takes to forward the
+sent around again. The program reports the average time it takes to forward the
 message from once ring process to the next in the ring.
 
 .. code-block:: shell

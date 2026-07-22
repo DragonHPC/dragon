@@ -20,8 +20,8 @@ the API and objects that are a part of the Dragon Core.
 Managed Memory
 =========================
 
-.. figure:: images/managed_memory.png
-    :scale: 50%
+.. figure:: images/managed_memory.svg
+    :scale: 75%
     :name: managed_mem_fig
 
     **Conceptual View of Managed Memory**
@@ -85,8 +85,8 @@ Internally, as shown at a very high level in :numref:`channel_pic` a channel is
 composed of finite number of blocks. Both the number of blocks and the block size
 are configurable at run-time.
 
-.. figure:: images/channel.png
-    :scale: 50%
+.. figure:: images/channel.svg
+    :scale: 75%
     :name: channel_pic
 
     **Conceptual View of a Channel's Structure**
@@ -203,14 +203,14 @@ over a *connection* like interface. Sending and receiving data is done by openin
 a send or receive handle. Once a send and a receive handle is opened, a 1:1
 connection exists between sender and receiver. Data can then be streamed over the
 connection with a guarantee that data from other senders and receivers will not
-interrrupt the stream between the two end points.
+interrupt the stream between the two end points.
 
 There is no restriction about the location of the two end points. They may exist
 in different processes on different nodes using channels that may be co-located
 on the sending or receiving side, but are not required to be. There are certain
 benefits to co-location, but no requirements for it in the FLI API.
 
-.. figure:: images/fli_main.png
+.. figure:: images/fli_main.svg
     :scale: 75%
     :name: fli_main
 
@@ -409,8 +409,8 @@ channels. In the nominal case, senders pick up a stream channel from the manager
 the design of the application is to have each sender have its own dedicated stream channel, then
 a manager channel is not necessary.
 
-.. figure:: images/fli_sender.png
-    :scale: 50%
+.. figure:: images/fli_sender.svg
+    :scale: 75%
     :name: fli_sender
 
     **File Like Interface with Sender Supplied Stream Channels**
@@ -456,8 +456,8 @@ In the nominal case, receivers pick up a stream channel from the main channel. I
 the design of the application is to have each receiver have its own dedicated stream channel, then
 a main channel is not necessary.
 
-.. figure:: images/fli_receiver.png
-    :scale: 50%
+.. figure:: images/fli_receiver.svg
+    :scale: 75%
     :name: fli_receiver
 
     **File Like Interface with Receiver Supplied Stream Channels**
@@ -582,4 +582,4 @@ operations.
 API Reference
 ==============
 
-Here is the :ref:`DragonCoreAPI` API.
+Here is the :ref:`CoreAPI` API.

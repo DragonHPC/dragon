@@ -1,6 +1,44 @@
 # Dragon AI API Examples
 
-The purpose of the example here is to show the usage of DragonTorch. This example provides an idea of how to use the PyTorch dataset stored with a Dragon distributed dictionary. Over multiple iterations, the processes interact with the same distributed dictionary. 
+This directory contains examples for Dragon's AI features, including the
+Dragon inference service, the Dragon agent framework, DragonTorch, and AI data
+loading patterns backed by Dragon distributed objects.
+
+## Inference and Agent Examples
+
+The `inference/` examples use `dragon.ai.inference` directly. Start there when
+you want a minimal shared LLM backend without agents.
+
+The `ai_agent/` examples use `dragon.ai.inference` as the shared LLM backend
+for Dragon agents. They show how to initialize an inference service with
+Dragon queues and pass the service queue into one or more agents.
+
+Run the standalone inference example with:
+
+```shell
+cd examples/dragon_ai/inference
+dragon single_prompt.py
+```
+
+Run the first agent example with:
+
+```shell
+cd examples/dragon_ai/ai_agent
+dragon 01_single_agent.py
+```
+
+For standalone inference usage, see the central Dragon documentation:
+
+- [Dragon Inference Service - User Guide](https://dragonhpc.github.io/dragon/doc/_build/html/uses/inference.html)
+- [Inference Service Examples](https://dragonhpc.github.io/dragon/doc/_build/html/cbook/ai_inference/index.html)
+- [Inference API Reference](https://dragonhpc.github.io/dragon/doc/_build/html/ref/ai/inference/index.html)
+
+## DragonTorch and Data Loading Examples
+
+These examples show how to use DragonTorch and Dragon distributed dictionaries
+for AI data loading. The PyTorch dataset example stores data in a Dragon
+distributed dictionary. Over multiple iterations, processes interact with the
+same distributed dictionary.
 
 The correct version of PyTorch CUDA 11.8 is installed with this command.
 

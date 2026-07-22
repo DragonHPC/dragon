@@ -227,10 +227,11 @@ def start_telemetry(telemetry_level=None):
     return_queue_dict = {"aggregator": return_queue_aggregator, "analysis-server": return_queue_as}
     cfg_path = os.getenv("DRAGON_TELEMETRY_CONFIG", None)
     if cfg_path is None:
-        raise RuntimeError("DRAGON_TELEMETRY_CONFIG must be set before telemetry startup")
+        telemetry_cfg = {}
+    else:
+        with open(cfg_path, "r") as file:
+            telemetry_cfg = yaml.safe_load(file)
 
-    with open(cfg_path, "r") as file:
-        telemetry_cfg = yaml.safe_load(file)
     args = (
         queue_discovery,
         as_discovery,

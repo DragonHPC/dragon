@@ -1,15 +1,15 @@
 #!/bin/bash
 #SBATCH --nodes=550
 #SBATCH --exclusive
+#SBATCH --output=test_bounce_%j.out
 
-source ~/.bashrc
-conda activate _env312
+# Assume that the correct python environment is already activated
 
 #To change the version of Python, please use the following commands:
 # To find the version of Python on your system: ls -ls /usr/bin/python*
 # To load the version of Python you want: `alias python=python<version>` or `alias python='\usr\bin\python<version>'`
 # The following bounce test involves running "hello world" from 512 nodes. Dragon is stressed to see how it behaves under high load conditions.
-# The following bounce timings are completed with 512 nodes. 
+# The following bounce timings are completed with 512 nodes.
 
 # time ./test_bounce.sh -- 0.11 numbers on hotlum
 # Cold start

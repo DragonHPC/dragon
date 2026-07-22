@@ -6,7 +6,7 @@ from dragon.native.process import Process
 import __init__
 from argparse import ArgumentParser
 import yaml
-from dragon.ai.inference.dataset_utils import SonnetDataset
+from dataset_utils import SonnetDataset
 from dragon.ai.inference.inference_utils import Inference
 from dragon.ai.inference.reader_utils import MetricsConsolidator
 from dragon.ai.inference.config import InferenceConfig
@@ -136,7 +136,7 @@ def run(
             )
             # Generate arbitrary prompts of fixed length from William Shakespeare's Sonnet dataset.
             samples = SonnetDataset(
-                dataset_path="inference/sonnet.dataset",
+                dataset_path="sonnet.dataset",
                 random_seed=42,
                 model_name_or_path=config.model.model_name,
                 num_requests=num_prompts,

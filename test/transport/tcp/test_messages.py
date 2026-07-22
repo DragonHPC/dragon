@@ -36,8 +36,8 @@ class RequestTestCase(unittest.TestCase):
         req = messages.Request(seqno=None, timeout=1.0, channel_sd=None)
         ts = req.timestamp  # preserve original timestamp
         req.deadline += 1.0
-        # check that original timeout was increased by 1.0s
-        self.assertEqual(req.deadline - ts, 2.0)
+        # check that original timeout was increased by 1.0s, approximately.
+        self.assertLess(abs(req.deadline - ts - 2.0), 0.001)
 
     def test_timeout_scales_to_zero(self):
         req = messages.Request(seqno=None, timeout=1.0, channel_sd=None)

@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd ../../ && . hack/setup && . _env/bin/activate && cd -
+cd ../../ && . devtools/setup && . _env/bin/activate && cd -
 
 # Remove any cores lying
 rm core

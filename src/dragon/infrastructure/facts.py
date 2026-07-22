@@ -761,7 +761,7 @@ class PMIBackend(str, enum.Enum):
 # Prefer to use high-speed network interfaces. Be cautious about matching any
 # interface (e.g., r'^.*$') as it may expose the transport agent on an
 # unintended network (e.g., the internet).
-DEFAULT_TRANSPORT_NETIF = r"^(hsn|ipogif|ib|eth)\w+$"
+DEFAULT_TRANSPORT_NETIF = r"^(hsn|ipogif|ib|eth|en)\w+$"
 DEFAULT_TRANSPORT_PORT = 7575
 DEFAULT_OVERLAY_NETWORK_PORT = 6565
 DEFAULT_FRONTEND_PORT = 6566
@@ -851,3 +851,6 @@ CONFIG_FILE_PATH = DRAGON_CONFIG_DIR / "dragon-config.json"
 
 # Default timeout for WLM process in launcher after calling cleanup
 DEFAULT_WLM_TIMEOUT = 60
+
+# This is the max read size for the file output connector. This is set to 1GB but it can be tuned in the future if needed.
+DEFAULT_FILEOUTPUTCONNECTOR_MAX_READ = 1024**3
