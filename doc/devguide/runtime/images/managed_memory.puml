@@ -1,0 +1,49 @@
+@startuml
+skinparam monochrome true
+skinparam style strictuml
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+skinparam rectangle {
+    BackgroundColor white
+    BorderColor black
+}
+
+skinparam package {
+    BackgroundColor white
+    BorderColor black
+}
+
+title Conceptual View of Managed Memory
+
+package "POSIX Shared Memory" {
+    package "Managed Memory Pool" {
+        rectangle "Manifest\n(metadata, heap manager state,\npool size, segment count)" as manifest #LightGray
+        package "Data Region" {
+            rectangle "Segment 0" as s0
+            rectangle "Segment 1" as s1
+            rectangle "Segment 2\n(allocated)" as s2 #LightBlue
+            rectangle "Segment 3\n(allocated)" as s3 #LightBlue
+            rectangle "Segment N" as sN
+            s0 -[hidden]right- s1
+            s1 -[hidden]right- s2
+            s2 -[hidden]right- s3
+            s3 -[hidden]right- sN
+        }
+    }
+}
+
+note right of manifest
+  Heap manager tracks free/allocated
+  segments. Configurable at runtime:
+  pool size, segment size, segment count.
+end note
+
+note bottom of s2
+  Allocation =
+  one or more
+  contiguous
+  segments
+end note
+
+@enduml

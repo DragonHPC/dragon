@@ -3,7 +3,7 @@ name: call-py311-runner-build
 #
 # Call runner-build.yaml for a python 3.11 dst-workflow or diy-workflow build
 #
-  
+
 on:
   pull_request: # build for python 3.11 on all PRs
   push:
@@ -17,5 +17,7 @@ jobs:
     uses: ./.github/workflows/runner-build.yaml
     secrets: inherit
     with:
-      build-command: "dst/dragon_build.sh -n -p 311" # dst example = "dst/dragon_build.sh -n -p 311" or diy example = "runBuildPrep.py311.sh" 
+      build-command: "dst/dragon_build.sh -n -p 311" # dst example = "dst/dragon_build.sh -n -p 311" or diy example = "runBuildPrep.py311.sh"
       build-type: "use-hybrid-workflow" # options = use-dst-workflow use-hybrid-workflow use-diy-workflow
+      build-container: "arti.hpc.amslabs.hpecorp.net/quay-remote/pypa/manylinux_2_28_x86_64"
+      build-cpu: "x86" # options = "x86" or "arm"
