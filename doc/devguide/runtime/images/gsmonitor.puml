@@ -1,0 +1,38 @@
+@startuml
+skinparam monochrome true
+skinparam style strictuml
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+title The Global Services Monitor
+
+package "Local Services (PRIMARY_INDEX node)" {
+    component "Process Manager" as PM
+    component "Internal Queue" as IQ
+    component "GSMonitor\n(AsyncIO task)" as GSM
+}
+
+component "Global Services\n(managed process)" as GS
+
+PM --> IQ : SHFwdOutput\nor SHProcessExit\n(from GS stdout/stderr\nor GS process exit)
+IQ --> GSM : dequeue message
+GSM --> GS : monitor lifecycle
+
+GS --> PM : stdout: serialized GSHalted\nor other output
+
+note right of GSM
+  GSMonitor runs as an AsyncIO task.
+  It sits quietly waiting for input
+  on the internal queue.
+  Handles GSHalted to coordinate
+  controlled shutdown.
+end note
+
+note bottom of IQ
+  This internal queue is NOT
+  a Dragon Channel — it is an
+  in-process structure used only
+  for GS monitoring.
+end note
+
+@enduml

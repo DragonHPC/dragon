@@ -1,0 +1,26 @@
+@startuml
+skinparam monochrome true
+skinparam style strictuml
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+title Process State Transition Diagram
+
+[*] --> init : SHProcessCreate\nreceived
+
+init --> running : AsyncIO process task\ncreates OS process;\nstdin/stdout/stderr\ntasks started
+
+running --> complete : process exits;\nSHProcessExit sent\nto Global Services;\noutput tasks cancelled
+
+complete --> [*] : process deleted\nfrom Local Services
+
+running --> running : SHFwdInput\n(stdin written)\nor SHFwdOutput\n(stdout/stderr forwarded\nto Launcher/Backend)
+
+note right of running
+  Three AsyncIO tasks active:
+  • stdout monitoring → SHFwdOutput
+  • stderr monitoring → SHFwdOutput
+  • stdin writing ← SHFwdInput
+end note
+
+@enduml

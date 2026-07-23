@@ -1,0 +1,39 @@
+@startuml
+skinparam monochrome true
+skinparam style strictuml
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+title Dragon Channels Off-Node Communication via HSTA
+
+node "Node A" {
+    component "Process A" as PA
+    component "Dragon Channel\n(shared memory)" as CHA
+    component "Gateway Channel\n(off-node send queue)" as GWA
+    component "HSTA\n(High Speed\nTransport Agent)" as HSTAA
+    PA --> CHA : send
+    CHA --> GWA : off-node\ndetected
+    GWA --> HSTAA : route message
+}
+
+node "Node B" {
+    component "HSTA\n(High Speed\nTransport Agent)" as HSTAB
+    component "Gateway Channel\n(off-node recv queue)" as GWB
+    component "Dragon Channel\n(shared memory)" as CHB
+    component "Process B" as PB
+    HSTAB --> GWB : deliver
+    GWB --> CHB : forward
+    CHB --> PB : receive
+}
+
+HSTAA --> HSTAB : RDMA / libfabric (OFI)\nor UCX (Infiniband)\nover HPC interconnect
+
+note bottom
+  Dragon Channels transparently
+  route off-node messages through
+  gateway channels and HSTA.
+  Application code is identical
+  for on-node and off-node sends.
+end note
+
+@enduml
