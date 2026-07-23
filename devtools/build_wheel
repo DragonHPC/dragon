@@ -1,0 +1,31 @@
+#!/bin/bash
+# This will build a wheel file for the currently active Python env.
+# Make sure you have a build with the correct DRAGON_VERSION in
+# the VARIABLES file first. Then run this script from the same
+# env and it will deposit a wheel file in src/dist. After running it
+# you can copy out the wheel before running it again as the contents
+# of the directory is erased with each wheel build.
+
+echo "Building source code."
+if [[ "${UV_AVAILABLE}" == "1" ]]; then
+    uv pip install build --verbose
+else
+    python3 -m pip install build --verbose
+fi
+
+# Set basic environment variables
+DEVTOOLS_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )";
+source ${DEVTOOLS_DIR}/VARIABLES
+
+echo "Building wheel file for release."
+rm -fr src/dist && cd src && python -m build --wheel --verbose && cd -
+
+if [[ "$(uname -s)" == "Linux" ]]; then
+    if command -v auditwheel >/dev/null 2>&1; then
+        echo "Repairing Linux wheel tag for PyPI/TestPyPI compatibility."
+        auditwheel repair -w src/dist src/dist/dragonhpc*-linux_*.whl
+        rm -f src/dist/dragonhpc*-linux_*.whl
+    else
+        echo "WARNING: auditwheel not found; wheel will keep linux_* tag and may be rejected by PyPI/TestPyPI."
+    fi
+fi

@@ -1,0 +1,55 @@
+8 12
+begin components
+LA "Launcher"
+MRNet "MRNet Server"
+MRNetB "MRNet Backend Server"
+BE "Backend"
+GS "Global Services"
+SH "Shepherd"
+UP "User Program"
+end;
+LA MRNet "a1 GSProcessCreate my.py, parms";
+MRNet MRNetB "GSProcessCreate my.py, parms";
+MRNetB BE "GSProcessCreate my.py, parms";
+BE GS "GSProcessCreate my.py, parms";
+GS SH "SHProcessCreate my.py, parms";
+ltext@ SH "spawn my.py process";
+SH GS "SHProcessCreateResponse p_uid=xx";
+GS BE "GSProcessCreateResponse p_uid=xx";
+BE MRNetB "GSProcessCreateResponse p_uid=xx";
+MRNetB MRNet "GSProcessCreateResponse p_uid=xx";
+MRNet LA "GSProcessCreateResponse p_uid=xx";
+ltext@ UP "example: print('foo')";
+UP SH "a2 stdout"+
+UP SH "'foo\\n'";
+ltext@ SH "package output";
+SH BE "SHFwdOutput 'foo\\n'";
+BE MRNetB "SHFwdOutput 'foo\\n'";
+MRNetB MRNet "SHFwdOutput 'foo\\n'";
+MRNet LA "SHFwdOutput 'foo\\n'";
+LA MRNet "a3 SHFwdInput 'echo\\n' p_uid=xx";
+MRNet MRNetB "SHFwdInput 'echo\\n' p_uid=xx";
+MRNetB BE "SHFwdInput 'echo\\n' p_uid=xx";
+BE SH "SHFwdInput 'echo\\n' p_uid=xx";
+ltext@ UP "stdin 'echo\\n'";
+LA MRNet "a4 GSProcessKill p_uid=xx";
+MRNet MRNetB "GSProcessKill p_uid=xx";
+MRNetB BE "GSProcessKill p_uid=xx";
+BE GS "GSProcessKill p_uid=xx";
+GS SH "GSProcessKill p_uid=xx";
+SH GS "SHProcessExit" +
+SH GS "(indicates the signal was sent)";
+GS BE "GSProcessKillResponse p_uid=xx";
+BE MRNetB "GSProcessKillResponse p_uid=xx";
+MRNetB MRNet "GSProcessKillResponse p_uid=xx";
+MRNet LA "GSProcessKillResponse p_uid=xx";
+LA MRNet "a5 GSProcessJoin p_uid=xx";
+MRNet MRNetB "GSProcessJoin p_uid=xx";
+MRNetB BE "GSProcessJoin p_uid=xx";
+BE GS "GSProcessJoin p_uid=xx";
+ltext@ UP "Exit";
+SH GS "a6 SHProcessExit p_uid=xx";
+GS BE "GSProcessJoinResponse p_uid=xx";
+BE MRNetB "GSProcessJoinResponse p_uid=xx";
+MRNetB MRNet "GSProcessJoinResponse p_uid=xx";
+MRNet LA "GSProcessJoinResponse p_uid=xx";

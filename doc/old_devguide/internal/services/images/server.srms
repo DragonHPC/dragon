@@ -1,0 +1,41 @@
+8 8
+begin components
+Server "Server Front End"
+CP "Launcher Cmd Processor"
+Launcher "Launcher"
+MRNet "MRNet"
+BE "Dragon Back End"
+GS "Global Services"
+SH "Shepherd"
+ServerBE "Server Back End"
+end;
+ctext@ CP "serve(args) executed";
+CP Launcher "LAServerMode";
+ctext@ Server "Started";
+Launcher MRNet "GSProcessCreate (SBE)";
+MRNet BE "GSProcessCreate (SBE)";
+BE GS "GSProcessCreate (SBE)";
+GS SH "SHProcessCreate (SBE)";
+ctext@ ServerBE "Started";
+SH GS "SHProcessCreateResponse (SBE)";
+GS BE "GSProcessCreateResponse (SBE)";
+BE MRNet "GSProcessCreateResponse (SBE)";
+MRNet Launcher "GSProcessCreateResponse (SBE)";
+
+ServerBE BE "PassThruBF with r_c_uid=xx";
+BE MRNet "PassThruBF with r_c_uid=xx";
+MRNet Launcher "PassThruBF with r_c_uid=xx";
+Launcher Server "PassThruBF with r_c_uid=xx";
+Server Launcher "PassThruFB with c_uid=xx";
+Launcher MRNet "PassThruFB with c_uid=xx";
+MRNet BE "PassThruFB with c_uid=xx";
+BE ServerBE "PassThruFB with c_uid=xx";
+
+ServerBE BE "LAServerModeExit";
+BE MRNet "LAServerModeExit";
+MRNet Launcher "LAServerModeExit";
+Launcher Server "LAServerModeExit";
+Launcher CP "LAServerModeExit";
+
+ltext@ Launcher "Launcher returns to command mode.";
+ltext@ CP "Command Processor completes serve(args) cmd";
