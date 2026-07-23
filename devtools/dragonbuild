@@ -1,4 +1,0 @@
-#!/bin/bash
-
-cd $DRAGON_BASE_DIR
-pip install -e .
