@@ -19,7 +19,7 @@ make -C src distclean
 
 echo "Building source code."
 if [[ "${UV_AVAILABLE}" == "1" ]]; then
-    uv pip install -e src[dev,test] --verbose
+    uv pip install -e src[dev,test,docs] --verbose
 else
-    python3 -m pip install -e src[dev,test] --verbose
+    python3 -m pip install -e src[dev,test,docs] --verbose
 fi

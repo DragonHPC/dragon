@@ -127,8 +127,8 @@ def hitl_tcp_client_loop(
     Auto-saves a timestamped JSONL audit log + ``.txt`` report when the
     session ends.  Pass *save_path* / *report_path* to override defaults.
 
-    Parameters
-    ----------
+    Args:
+
     host:
         Hostname or IP of the HITL TCP bridge.
     port:
@@ -142,8 +142,8 @@ def hitl_tcp_client_loop(
         Path for the human-readable ``.txt`` report.  When ``None``
         (default), derived from the JSONL filename.
 
-    Returns
-    -------
+    Returns:
+
     HitlSessionStats
         Summary of operator decisions made during the session.
     """

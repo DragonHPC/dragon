@@ -902,7 +902,7 @@ checkpoint is written sequentially. For each allocation, it starts with a memory
 followed by the length of the memory content and the content in the memory.
 
 The POSIX Persister - Load Checkpoints from Disk
-------------------------------------
+----------------------------------------------------
 
 To restore a dictionary from previously persisted checkpoints, several arguments must
 be specified during initialization of the dictionary: the `name` of the dictionary,
@@ -1159,14 +1159,17 @@ manager to look up the value based on its key. The main manager then performs th
 operation to read the associated value.
 
 Notes for using broadcast put:
+
     * Calling broadcast put creates duplicates of the key-value pair on all managers
     across the distributed dictionary, leading to increased memory overhead. Therefore,
     users should use this API carefully. Broadcast put and get are desgined to
     efficiently handle read requests from multiple clients accessing the same key.
+
     * While broadcast put can work with multiple clients simultaneously, due to the
     significant memory overhead as mentioned above, it is recommended to use broadcast
     put sparingly. It is best used when all clients will need to read the same key-value
     pair.
+
 
 Message Flow Between Components
 _________________________________________
