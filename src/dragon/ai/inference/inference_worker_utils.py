@@ -24,7 +24,6 @@ from .config import (
     GuardrailsConfig,
     DynamicWorkerConfig,
 )
-from .guardrails import GuardrailsProcessor
 from .batching import DynamicBatcher
 from .llm_engine import LLMInferenceEngine, StreamChunk, STREAM_DONE_SENTINEL
 
@@ -228,9 +227,10 @@ class InferenceWorker:
             )
             self.log.info("Pre-Proc Module: DynamicBatcher initialized")
 
-        # Initialize GuardrailsProcessor
+        # Initialize GuardrailsProcessor (lazy import to avoid missing XPU error)
         guardrails = None
         if self.prompt_guard_toggle:
+            from .guardrails import GuardrailsProcessor
             guardrails = GuardrailsProcessor(self.guardrails_config, self.hf_token)
             self.log.info("Pre-Proc Module: GuardrailsProcessor initialized")
         else:
@@ -624,7 +624,7 @@ class InferenceWorker:
         user_prompts: list,
         response_queues: list,
         latency_metrics: list,
-        guardrails: Optional[GuardrailsProcessor],
+        guardrails: Optional["GuardrailsProcessor"],
     ):
         """Apply guardrails filtering and return safe prompts and metrics.
 
@@ -862,7 +862,7 @@ class InferenceWorker:
         user_prompts: list,
         response_queues: list,
         latency_metrics: list,
-        guardrails: Optional[GuardrailsProcessor],
+        guardrails: Optional["GuardrailsProcessor"],
         tools_list: list = None,
         json_schema_list: list = None,
         continue_final_message_list: list = None,
