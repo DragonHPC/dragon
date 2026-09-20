@@ -3083,6 +3083,10 @@ cdef class GatewayMessage:
 
         self.completion_called = True
 
+        if self.is_event_kind and self._gmsg.event_mask == DRAGON_CHANNEL_CLEANUP:
+            # Cleanup notifications have no native caller waiting for a result.
+            return
+
         with nogil:
             err = dragon_channel_gatewaymessage_transport_event_cmplt(&self._gmsg, poll_result, <dragonError_t>op_err)
         if err != DRAGON_SUCCESS:
