@@ -70,6 +70,7 @@ TESTS_PYTHON := test_channels.py \
                 test_globalservices.py \
                 test_policy.py \
                 test_localservices.py \
+                test_ls_startup.py \
                 $(wildcard transport/tcp/test_*.py) \
                 transport/test_lsif.py \
                 test_transport.py \
