@@ -7,6 +7,7 @@ import os
 import queue
 import subprocess
 import sys
+import time
 
 from typing import Optional
 
@@ -483,18 +484,25 @@ def multinode(
         # Send LAChannelsInfo to TA
         ta_input.put(la_channels_info)
 
-        # Confirmation TA is up. Use 10 seconds since this only requires node-local work,
-        # ie: no communication is occurring unless something changes in the future.
-        # If TA isn't up in 10 seconds, assume things have gone awry, check stderr
-        # and log any error messages to the user
+        # GS on the primary can ping a slower node as soon as its transport
+        # receives remote traffic, before the local TAPingLS is queued. Retain
+        # that ping for the GS handshake without extending the TA deadline.
+        gs_ping_ls = None
+        ta_deadline = time.monotonic() + 10
         try:
             ta_ping = ls_input.get(timeout=10)
+            if not is_primary and not transport_test_env and isinstance(ta_ping, dmsg.GSPingLS):
+                gs_ping_ls = ta_ping
+                remaining = ta_deadline - time.monotonic()
+                if remaining <= 0:
+                    raise queue.Empty
+                ta_ping = ls_input.get(timeout=remaining)
         except queue.Empty:
             _, ta_stderr = ta.communicate()
             error_str = f"Unable to bring up Dragon transport agent: {ta_stderr.decode()}"
             la_input.put(dmsg.AbnormalTermination(tag=get_new_tag(), err_info=error_str))
             raise RuntimeError(error_str)
-        assert isinstance(ta_ping, dmsg.TAPingLS), "ls did not receive ping from TA)"
+        assert isinstance(ta_ping, dmsg.TAPingLS), f"ls expected TAPingLS, received {type(ta_ping)}"
         log.info("ls received TAPingLS - m7")
         ch_list = []
         if transport_test_env:
@@ -548,7 +556,8 @@ def multinode(
             if is_primary:
                 gs_timeout = dfacts.LOCAL_LAUNCH_TIMEOUT
             try:
-                gs_ping_ls = ls_input.get(timeout=gs_timeout)
+                if gs_ping_ls is None:
+                    gs_ping_ls = ls_input.get(timeout=gs_timeout)
             except queue.Empty:
                 _, gs_stderr = gs.communicate()
                 error_str = f"Unable to bring up Dragon global services: {gs_stderr.decode()}"
