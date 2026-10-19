@@ -1,0 +1,76 @@
+.wy-nav-content {
+    max-width: 100%;
+    min-width: 468px;
+    overflow-x: auto;
+}
+
+/* tile-like style for the Use Cases page */
+.tiles {
+    display: flex;
+    gap: 20px;
+    margin: 20px 0;
+    width: 100%;
+}
+
+.tile_item {
+    background-color: #135785;
+    padding: 20px;
+    border-radius: 8px;
+    min-width: 130px;
+    width: 20%;
+    text-align: center;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.tile_item h3 {
+    margin-top: 0;
+    color: #fff;
+}
+
+.tile_item p {
+    color: #fff;
+}
+
+.tile_item:hover {
+    /* background-color: #e0e0e0; */
+    transform: scale(1.05);  /* Scale the tile 5% larger */
+    box-shadow: 0 8px 12px rgba(0, 0, 0, 0.2);
+}
+
+.homeblock li span {
+    font-size: 1.5em;
+}
+
+.homeblock li {
+    font-size: 1.5em;
+}
+
+@media (max-width: 768px) {
+    .tile_item h3 {
+        font-size: 70%;
+    }
+    .tile_item p {
+        font-size: 70%;
+        line-height: 100%;
+    }
+}
+
+@media (max-width: 991px) {
+    .tile_item h3 {
+        font-size: 60%;
+    }
+    .tile_item p {
+        font-size: 60%;
+        line-height: 100%;
+    }
+}
+
+@media (max-width: 1440px) {
+    .tile_item h3 {
+        font-size: 70%;
+    }
+    .tile_item p {
+        font-size: 70%;
+        line-height: 100%;
+    }
+}

@@ -1,0 +1,46 @@
+@startuml
+skinparam monochrome true
+skinparam style strictuml
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+skinparam rectangle {
+    BackgroundColor white
+    BorderColor black
+}
+
+title Conceptual View of a Channel's Structure
+
+rectangle "Managed Memory Pool" {
+    rectangle "Channel" {
+        rectangle "Block 0\n(free)" as b0
+        rectangle "Block 1\n(message)" as b1 #LightBlue
+        rectangle "Block 2\n(message)" as b2 #LightBlue
+        rectangle "Block 3\n(free)" as b3
+        rectangle "Block N" as bN
+        b0 -[hidden]right- b1
+        b1 -[hidden]right- b2
+        b2 -[hidden]right- b3
+        b3 -[hidden]right- bN
+    }
+}
+
+note top
+  Number of blocks and block size
+  are configurable at runtime.
+  Large messages overflow into pool.
+end note
+
+note bottom of b1
+  Enqueued FIFO.
+  Thread and
+  interprocess safe.
+end note
+
+actor "Sender" as sender
+actor "Receiver" as receiver
+
+sender --> b0 : send\n(allocate block)
+b2 --> receiver : receive\n(dequeue block)
+
+@enduml

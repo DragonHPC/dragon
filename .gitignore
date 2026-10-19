@@ -75,6 +75,7 @@ src/include/python3*
 src/dragon/.dragon-config.mk
 test/multi-node/c_ddict
 test/multi-node/cpp_ddict
+test/ext_attach/test_ext_attach_client
 src/dragon/include/
 src/lib/cmake/
 src/lib/libcapnp-json.la

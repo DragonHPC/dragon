@@ -1,0 +1,23 @@
+@startuml
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+skinparam linetype polyline
+
+
+node "Primary Compute Node" {
+    artifact "Launcher" as LA
+    artifact "Global Services" as GS
+    artifact "Shepherd" as SH
+    ' artifact "Transport Service" as TS
+    artifact "User Program" as UP
+}
+
+LA -- SH : Launcher Channel
+LA -- GS:  Launcher Backend Channel
+SH -- UP: stdin/stdout/stderr
+SH -- GS: Global Services Channel
+
+
+@enduml

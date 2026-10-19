@@ -1,0 +1,52 @@
+@startuml
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+skinparam linetype polyline
+
+
+package "Transport Service" as TS {
+
+    [Main Process] as MP
+    [Gateway Monitor] as GM
+    [Host Monitor] as HM
+    [Socket Monitor] as SM
+
+    frame "Remote Host" {
+
+        [Socket Monitor] as RSM
+        [Host Monitor] as RHM
+
+        interface "routing channel" as rrc
+        RSM --> rrc : ACK
+        RHM <-- rrc
+    }
+
+    interface "routing channel" as rc
+    interface outgoing_socket
+    interface incoming_socket
+
+    GM --> rc
+    HM <-- rc
+    HM --> outgoing_socket
+    SM <-- incoming_socket
+
+    RSM <-- outgoing_socket
+    RHM --> incoming_socket
+
+    MP ..> GM
+    MP ..> HM : bringup/teardown
+    MP ..> SM
+}
+
+interface transport_re_channel
+interface remote_channel
+interface gateway_channel
+
+GM <-up- gateway_channel
+MP <-up- transport_re_channel
+RSM -up-> remote_channel
+SM -up-> gateway_channel
+
+
+@enduml

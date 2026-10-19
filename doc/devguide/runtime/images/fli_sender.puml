@@ -1,0 +1,35 @@
+@startuml
+skinparam monochrome true
+skinparam style strictuml
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+title FLI with Sender-Supplied Stream Channels
+
+participant "Sender" as S
+participant "Sender's\nStream Channel" as SSC
+participant "Main\nChannel" as MAIN
+participant "FLI\n(recv handle)" as FRH
+participant "Receiver" as R
+
+S -> MAIN: open_send_handle(stream_channel=SSC)\n→ enqueue SSC descriptor
+note right of MAIN: Receiver finds SSC\ndescriptor here
+
+R -> FRH: open_recv_handle()
+FRH -> MAIN: dequeue SSC descriptor
+MAIN --> R: SSC ready
+
+S -> SSC: write(data)
+FRH -> SSC: recv(data)
+SSC --> R: data
+
+S -> SSC: close → EOT
+R -> FRH: close_recv_handle()
+
+note over SSC
+  SSC is NOT recycled to a
+  manager channel — it belongs
+  to the sender.
+end note
+
+@enduml

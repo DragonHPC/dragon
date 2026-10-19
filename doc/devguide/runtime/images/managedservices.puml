@@ -1,0 +1,47 @@
+@startuml
+skinparam monochrome true
+skinparam style strictuml
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+title Managed Process Services Provided by Local Services
+
+package "Local Services (Shepherd)" {
+    component "Process Manager" as PM
+    component "AsyncIO Event Loop" as ASYNC
+}
+
+package "Managed Process" as PROC {
+    component "User Process\n(exe + args + env)" as UP
+    interface "stdin" as STDIN
+    interface "stdout" as STDOUT
+    interface "stderr" as STDERR
+}
+
+component "AsyncIO Tasks" {
+    component "process task\n(create & wait)" as PT
+    component "stdin task\n(SHFwdInput → write)" as SINT
+    component "stdout task\n(read → SHFwdOutput)" as SOUTT
+    component "stderr task\n(read → SHFwdOutput)" as SERRT
+}
+
+component "Launcher/Backend\nChannel" as LBC
+component "Global Services\nChannel" as GSC
+
+PM --> PT : creates
+PM --> SINT : creates
+PM --> SOUTT : creates
+PM --> SERRT : creates
+ASYNC --> PT : schedules
+ASYNC --> SINT : schedules
+ASYNC --> SOUTT : schedules
+ASYNC --> SERRT : schedules
+PT --> UP : OS spawn
+SINT --> STDIN : write
+STDOUT --> SOUTT : read
+STDERR --> SERRT : read
+SOUTT --> LBC : SHFwdOutput
+SERRT --> LBC : SHFwdOutput
+PT --> GSC : SHProcessExit\n(on completion)
+
+@enduml

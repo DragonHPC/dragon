@@ -1,0 +1,100 @@
+@startuml
+
+' title "Dragon MPBridge Architecture"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+skinparam linetype ortho
+' skinparam linetype polyline
+skinparam nodesep 90
+' skinparam ranksep 50
+
+component "Dragon Core (C)" as DCORE {
+
+    portin "Channel Set API" as dset_api
+    portin "Channel API" as dchan_api
+    portin "Managed Memory API" as dmm_api
+    portin "Broadcast API" as dbcast_api
+    portin "Gateway Message API       " as dgmsg_api
+    ' portin "Global Types & Return Codes" as dtypes_api
+
+    [Channel Set] as DSET
+    [Channels] as DCHAN
+    [Managed Memory] as DMEM
+    [Broadcast] as DBROAD
+    [Gateway Messages] as DGMSG
+    ' [Common Types \n& Return Codes] as DTYPES
+
+    ' [Bitset] as DBITSET
+    ' [Hashtable] as DHASH
+    ' [Priority Heap] as DHEAP
+    [Shared Lock] as DLOCK
+    [Unordered Map] as DMAP 
+    ' [Utilities] as DUTIL 
+    [Unordered List] as DLIST
+    [Heap Manager] as DHEAPMAN 
+
+    DSET <- dset_api
+    DCHAN <- dchan_api
+    DMEM <- dmm_api
+    DBROAD <- dbcast_api
+    DGMSG <- dgmsg_api
+    ' DTYPES <- dtypes_api
+
+    DBROAD --> DLOCK
+    DBROAD --> DMEM
+    ' DBROAD --> DUTIL
+    DBROAD --> DMAP
+
+    DGMSG --> DCHAN
+    ' DGMSG --> DUTIL
+
+    DCHAN -> DMEM
+    DCHAN -> DBROAD
+    ' DCHAN -> DHEAP
+    DCHAN -> DLIST
+    DCHAN -> DMAP
+    ' DCHAN -> DUTIL
+
+    DSET -> DCHAN
+    DSET -> DMAP
+    DSET -> DBROAD
+    ' DSET -> DTYPES
+
+    ' DHASH -> DBITSET
+    ' DHASH -> DTYPES
+
+    DHEAPMAN -> DBROAD
+    DHEAPMAN -> DLOCK
+    ' DHEAPMAN -> DBITSET
+    ' DHEAPMAN -> DTYPES
+
+    DMEM -> DHEAPMAN
+    DMEM -> DCHAN
+    ' DMEM -> DUTIL
+    DMEM -> DLOCK
+    ' DMEM -> DTYPES
+
+    ' DHEAP -> DTYPES
+
+    ' DLOCK -> DTYPES
+    ' DLOCK -> DUTIL
+
+    ' DLIST -> DTYPES
+    DLIST -> DLOCK
+
+    ' DMAP -> DTYPES
+
+    ' DUTIL -> DTYPES
+
+
+}
+
+
+
+
+'in case we want to hide components
+hide $hidden
+@enduml

@@ -1,0 +1,169 @@
+.. _LocksCython:
+
+`dragon.locks` --- Dragon Locks for Python
+==========================================
+
+This module provides high-level access from Python for accessing and utilizing Dragon Locks for
+multi-threading and multi-processing use.
+
+For details on the lock types, please refer to the low-level documentation on :ref:`Locks`.
+
+**FIXME  Add FIFOLite class**
+
+Classes and API
+---------------
+
+There are currently four classes exposed in this API:
+
+* ``Type`` - An enum class
+* ``DragonLock`` - Access to a high-level lock API that covers all lock types
+* ``FIFOLock`` - Direct calls to the FIFOLock type
+* ``GreedyLock`` - Direct calls to the GreedyLock type
+
+``Type`` is for use in conjunction with ``DragonLock``.  All lock types have the same API with the exception
+of ``DragonLock.init`` and ``DragonLock.attach``, which take an additional parameter of ``Type``.
+
+`Type`
+^^^^^^
+
+`Type` is an enum class with entries mapping Python-space enums for lock types to Cython/C space enums.  This
+may be unnecessary but is functional for now.  The enums are self-explanatory:
+
+* Type.FIFO
+* Type.FIFOLITE
+* Type.GREEDY
+
+`DragonLock` -- Init and Attach calls
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The `DragonLock` class has the same API as the direct call modules with the exception of the ``init``,
+``attach``, and ``size`` calls, which have an additional parameter.
+
+.. py:staticmethod:: init(kind, memobj)
+
+   Instantiates a new lock of the specified type, tied to the provided memory object.
+
+   :param `Type` kind: Type enum of the desired lock kind
+   :param memobj: A byte-buffer enabled memory object such as a bytearray, ``multiprocessing`` SharedMemory
+   object, mmap object, or any other memoryview object.
+   :rtype: DragonLock
+   :return: A new lock handle object initialized to the provided memory
+   :raises: RuntimeError
+
+.. py:staticmethod:: attach(kind, memobj)
+
+   Attaches a new lock handle of the specified type to the provided memory object.
+
+   :param `Type` kind: Type enum of the desired lock kind
+   :param memobj: A memoryview object that has already been initialized with the same type of lock
+   :rtype: DragonLock
+   :return: A new lock handle object attached to the provided memory
+   :raises: RuntimeError
+
+.. py:staticmethod:: size(kind)
+
+   :param `Type` kind: Type enum of the desired lock kind
+   :rtype: int
+   :return: Needed memory size of the specified lock type
+
+General API
+^^^^^^^^^^^
+
+With the exception of the `DragonLock` class ``init`` and ``attach`` methods, all classes share the same API.
+
+.. py:staticmethod:: init(memobj)
+
+   Instantiates a new lock tied to the provided memory object
+
+   :param memobj: A memoryview object to tie the lock handle to such as a bytearray, ``multiprocessing`` SharedMemory object, or mmap object
+   :return: A new lock of the appropriate class initialized to the provided memory
+   :raises: RuntimeError
+
+.. py:staticmethod:: attach(memobj)
+
+   Attaches a new lock handle tied to the provided memory object that has already been initialized
+
+   :param memobj: A memoryview object that has already been initialized with the same type of lock
+   :return: A new lock of the appropriate class attached to the provided memory
+   :raises: RuntimeError
+
+.. py:staticmethod:: size()
+
+   :rtype: int
+   :return: Needed memory size of the appropriate lock type
+
+.. py:function:: detach()
+
+   Detaches the lock handle from its memory.  Call when the handle was created with attach.
+
+   :return: None
+   :raises: RuntimeError if handle was called with init and not attach
+
+.. py:function:: destroy()
+
+   Destroys the lock handle from its memory.  Call when the handle was created with init.
+
+   :return: None
+   :raises: RuntimeError if handle was not called with init
+
+.. py:function:: lock()
+
+   Locks the handle.  If the handle is already locked, will block the process until it can achieve ownership of the lock.
+
+   :return: None
+   :raises: RuntimeError
+
+.. py:function:: try_lock()
+
+   Attempts to lock the handle.  If the handle is already locked, immediately returns.
+   If successful, returns 1.  Otherwise returns 0.
+
+   :rtype: int
+   :return: Lock success
+   :raises: RuntimeError
+
+.. py:function:: unlock()
+
+   Attempts to unlock the handle.  If the handle is already unlock, behavior is undefined across all lock types.
+
+   :return: None
+   :raises: RuntimeError
+
+
+Example
+-------
+.. code-block::
+   :linenos:
+   :caption: **Example usage**
+
+   from dragon.locks import Type, DragonLock, FIFOLock
+   import mmap
+   import multiprocessing as mp
+   import time
+
+   def do_work(memobj):
+      fifo_lock = FIFOLock.attach(memobj)
+      # Blocks until lock is released
+      fifo_lock.lock()
+      # Lock released, ownership gained and re-locked
+      # Do some work, then unlock
+      fifo_lock.unlock()
+      # Done with lock, detach
+      fifo_lock.detach()
+
+   # Example of creating a FIFOLock through DragonLock class
+   memsize = DragonLock.size(Type.FIFO)
+   memobj = mmap.mmap(-1, memsize)
+   dragon_lock = DragonLock.init(Type.FIFO, memobj)
+   dragon_lock.lock()
+
+   proc = mp.Process(target=do_work, args=(memobj,))
+   proc.start()
+
+   # Release lock, let other process do work
+   dragon_lock.unlock()
+   proc.join()
+
+   # All work done, lock is no longer needed by any processes
+   dragon_lock.destroy()
+   memobj.close()

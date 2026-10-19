@@ -1,0 +1,49 @@
+@startuml
+skinparam monochrome true
+skinparam style strictuml
+skinparam defaultTextAlignment center
+skinparam backgroundColor white
+
+title Telemetry Architecture
+
+node "Compute Node (each)" {
+    component "User Application" as APP
+    component "Dragon Telemetry\nAPI" as TEL
+    component "Collector\n(default metrics)" as COL
+    component "TSDB Flask App\n(SQLite3 per node)" as TSDB
+    APP --> TEL : custom metrics
+    COL --> TEL : system/resource\nmetrics
+    TEL --> TSDB : store time-series data
+}
+
+node "Aggregator Node\n(one compute node)" {
+    component "Aggregator\nFlask API" as AGG
+    component "Dragon Server\n(query interface)" as DS
+    TSDB --> AGG : push data
+    AGG --> DS : process queries
+}
+
+node "Login Node" {
+    component "SSH Port\nForwarding" as SSH
+}
+
+node "User's Laptop" {
+    component "Grafana\n(visualization)" as GRAF
+}
+
+AGG --> SSH : port forward\n(user configures)
+SSH --> GRAF : HTTP
+GRAF --> GRAF : dashboards &\nalerts
+
+note right of TSDB
+  SQLite3 database at /tmp/ts_<hostname>.db
+  Location configurable via DRAGON_TELEMETRY_CONFIG
+end note
+
+note right of GRAF
+  User must install Grafana locally
+  and configure the SSH port forward
+  from the aggregator node.
+end note
+
+@enduml

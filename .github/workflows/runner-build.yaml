@@ -62,7 +62,7 @@ jobs:
       pull-requests: write # needed to post comments on PRs
     needs: create-hybrid-runner
     runs-on: ${{ needs.create-hybrid-runner.outputs.runner_name }}
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -122,7 +122,7 @@ jobs:
     if: ${{ inputs.build-type == 'use-diy-workflow' }}
     needs: create-runner
     runs-on: ${{ needs.create-runner.outputs.runner_name }}
-    timeout-minutes: 120
+    timeout-minutes: 150
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4

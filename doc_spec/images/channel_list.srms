@@ -1,0 +1,12 @@
+6 4
+begin components
+UP "User Process"
+GS "Global Services"
+end;
+rtext@ UP "channel.list()";
+UP GS "CHANNEL_LIST"+
+UP GS "p_uid";
+ltext@ GS "success";
+GS UP "CHANNEL_LIST_RESP"+
+GS UP "[(c_uid, name)]";
+

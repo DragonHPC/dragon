@@ -1,0 +1,33 @@
+@startuml
+
+title "Dragon Domain Model"
+
+skinparam componentStyle uml2
+skinparam shadowing false
+skinparam monochrome true
+
+skinparam linetype ortho
+' skinparam linetype polyline
+' skinparam nodesep 30
+' skinparam ranksep 40
+
+[Distributed System] o-- "1..*" [Node]
+[Federated Systems] o-- "1..*" [Distributed System]
+[System Resource] --o " 1..1" [Node]
+[Dragon Object] --> "1..*" [System Resource] : abstracts
+
+[Managed Object] --|> [Dragon Object]
+[Unmanaged Object] --|> [Dragon Object]
+[Refcounted Object] --|> [Managed Object]
+
+[Object Name] --> [Managed Object] : uniquely \nidentifies
+[Object UID] --> [Managed Object] : uniquely \nidentifies
+[Serialized Descriptor] --> [Managed Object] : uniquely \nidentifies
+[Serialized Descriptor] --> [Unmanaged Object] : uniquely \nidentifies
+[Directed Graph] --> [Workflow] : abstracts
+[Directed Graph] --|> [Dragon Object]
+[Workflow] --> "1..1" [Federated System] : runs on
+
+'in case we want to hide components
+hide $hidden
+@enduml

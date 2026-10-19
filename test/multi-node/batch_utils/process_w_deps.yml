@@ -1,0 +1,40 @@
+########################### import-time and call-time arguments specified here ###########################
+
+import_args:
+  - my_proc_name
+
+import_kwargs:
+  base_dir: base_dir
+  env: new_env
+  update_input: some_func
+
+args:
+  - input_arg
+
+kwargs:
+  input_file: file_in
+  output_file: file_out
+
+######### definition of task executables, resources, dependencies, etc. (in terms of args above) #########
+
+type: process
+
+executables:
+  - target: ./my_dumb_proc
+    args:
+      - some_func:
+        - input_arg
+      - file_in
+      - file_out
+    cwd: base_dir
+    env: new_env
+
+name: my_proc_name
+
+reads:
+  - files:
+    - file_in
+
+writes:
+  - files:
+    - file_out
