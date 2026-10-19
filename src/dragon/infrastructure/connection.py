@@ -3,6 +3,7 @@
 import multiprocessing  # for BufferTooShort
 import enum
 import numbers
+import os
 import pickle
 import threading
 import logging
@@ -15,6 +16,7 @@ from .channel_desc import ChannelOptions
 import dragon.globalservices.channel as dgchan
 import dragon.infrastructure.parameters as dparm
 import dragon.infrastructure.facts as dfacts
+import dragon.infrastructure.runtime_env as druntime_env
 from dragon.managed_memory import MemoryPool
 from dragon.utils import B64
 
@@ -270,7 +272,7 @@ class Connection:
             write_options = self.write_adapter_options
             if self.options.default_pool is None:
                 try:
-                    self._detach_pool = MemoryPool.attach(B64.str_to_bytes(dparm.this_process.default_pd))
+                    self._detach_pool = druntime_env.attach_local_buffer_pool(self.policy)
                     write_options["buffer_pool"] = self._detach_pool
                 except:
                     raise OSError("unable to attach to default Managed Memory pool")

@@ -49,13 +49,13 @@ from langgraph.graph import END, START, StateGraph
 from dragon.ai.langgraph import DragonExecutor
 
 # -- Dragon primitives the agents use as first-class handles ------------------
-from dragon.data.ddict import DDict
+from dragon import DDict
 from dragon.native.process import Process
 from dragon.native.queue import Queue
 
 # -- Multi-node placement (uncomment on a real allocation) --------------------
-# from dragon.infrastructure.policy import Policy
-# from dragon.native.machine import Node, System
+# from dragon import Policy, System
+# from dragon.native.machine import Node
 
 
 # =============================================================================

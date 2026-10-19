@@ -20,24 +20,58 @@ cpdef host_id_from_k8s(str pod_uid):
     backend pods. For setting/assigning the hostid of the pod itself,
     each pod needs to call set_host_id().
     """
+    cdef:
+        dragonULInt c_host_id
+        dragonError_t err
+
     pod_uuid = pod_uid.encode('utf-8')
-    return dragon_host_id_from_k8s_uuid(<char *>pod_uuid)
+    err = dragon_host_id_from_k8s_uuid(<char *>pod_uuid, &c_host_id)
+    if err != DRAGON_SUCCESS:
+        raise RuntimeError(f'Could not get host ID from the Kubernetes pod UUID. EC=({dragon_get_rc_string(err)})\n ERR_MSG={dragon_getlasterrstr()}')
+
+    return c_host_id
 
 cpdef host_id():
-    return dragon_host_id()
+    cdef:
+        dragonULInt c_host_id
+        dragonError_t err
+
+    err = dragon_host_id(&c_host_id)
+    if err != DRAGON_SUCCESS:
+        raise RuntimeError(f'Could not determine the host ID. EC=({dragon_get_rc_string(err)})\n ERR_MSG={dragon_getlasterrstr()}')
+
+    return c_host_id
 
 cpdef set_host_id(unsigned long new_id):
-    dnew_id = <dragonULInt> new_id
-    dragon_set_host_id(new_id)
+    cdef dragonError_t err = dragon_set_host_id(<dragonULInt> new_id)
+    if err != DRAGON_SUCCESS:
+        raise RuntimeError(f'Could not set the host ID. EC=({dragon_get_rc_string(err)})\n ERR_MSG={dragon_getlasterrstr()}')
 
 cpdef get_local_rt_uid():
     return dragon_get_local_rt_uid()
+
+# Explicitly override the C layer's cached local runtime UID. Proxy environment
+# switches leave this process-local identity unchanged.
+cpdef set_local_rt_uid(unsigned long new_rt_uid):
+    dragon_set_local_rt_uid(<dragonULInt> new_rt_uid)
 
 cpdef set_procname(str name):
     estr = name.encode('utf-8')
     cdef dragonError_t err = dragon_set_procname(<char *>estr)
     if err != DRAGON_SUCCESS:
         raise ValueError('Could not set process name')
+
+cpdef shm_space():
+    cdef:
+        unsigned long total_space;
+        unsigned long free_space;
+        dragonError_t err;
+
+    err = query_shm_space(&total_space, &free_space)
+    if err != DRAGON_SUCCESS:
+        raise RuntimeError("Could not query the free shared memory size.")
+
+    return (free_space, total_space)
 
 cdef class B64:
     """ Cython wrapper for Dragon's byte <> string conversion routines. """
@@ -521,71 +555,77 @@ def nparray(arr):
 
     return arr
 
-class XNDArray(np.ndarray):
-    def __new__(cls, input_array, dd_ser:str, ndarray_key:str = None, data_type:np.dtype=None, dim:tuple(int)=None, timeout:float=None):
-        from dragon.data.ddict import DDict
-        # Add the custom attribute
-        if dd_ser is None:
-            raise ValueError("You must provide a serialized DDict for serializable ndarrays.")
 
-        dd = DDict.attach(serialized_dict=dd_ser, timeout=timeout)
-        kpickler = XStringPickler()
-        vpickler = XByteBufferPickler()
-        dd = dd.pickler(key_pickler=kpickler, value_pickler=vpickler)
-        store_needed = False
+try:
+    class XNDArray(np.ndarray):
+        def __new__(cls, input_array, dd_ser:str, ndarray_key:str = None, data_type:np.dtype=None, dim:tuple(int)=None, timeout:float=None):
+            from dragon.data.ddict import DDict
+            # Add the custom attribute
+            if dd_ser is None:
+                raise ValueError("You must provide a serialized DDict for serializable ndarrays.")
 
-        if ndarray_key is None:
-            key_tag = dd.fetch_add("dragon_serializable_ndarray")
-            ndarray_key = "DRAGON_NDARRAY_" + str(key_tag)
-            # Cast the input_array to our new class type
-            obj = np.asarray(input_array).view(cls)
-            store_needed = True
-        else:
-            data = dd[ndarray_key]
-            view = memoryview(data)
-            obj = bytearray(view)
-            # view(cls) is required so the instance attributes below can be set.
-            obj = np.frombuffer(obj, dtype=data_type).view(cls)
+            dd = DDict.attach(serialized_dict=dd_ser, timeout=timeout)
+            kpickler = XStringPickler()
+            vpickler = XByteBufferPickler()
+            dd = dd.pickler(key_pickler=kpickler, value_pickler=vpickler)
+            store_needed = False
 
-        if dim is not None:
-            obj = obj.reshape(dim)
+            if ndarray_key is None:
+                key_tag = dd.fetch_add("dragon_serializable_ndarray")
+                ndarray_key = "DRAGON_NDARRAY_" + str(key_tag)
+                # Cast the input_array to our new class type
+                obj = np.asarray(input_array).view(cls)
+                store_needed = True
+            else:
+                data = dd[ndarray_key]
+                view = memoryview(data)
+                obj = bytearray(view)
+                # view(cls) is required so the instance attributes below can be set.
+                obj = np.frombuffer(obj, dtype=data_type).view(cls)
 
-        obj._dd_ser = dd_ser
-        obj._dd = dd
-        obj._ndarray_key = ndarray_key
-        obj._timeout = timeout
+            if dim is not None:
+                obj = obj.reshape(dim)
 
-        if store_needed:
-            mv = memoryview(obj)
+            obj._dd_ser = dd_ser
+            obj._dd = dd
+            obj._ndarray_key = ndarray_key
+            obj._timeout = timeout
+
+            if store_needed:
+                mv = memoryview(obj)
+                bobj = mv.tobytes()
+                dd[ndarray_key] = bobj
+
+            return obj
+
+        def __array_finalize__(self, obj):
+            # Ensures attributes persist through slicing and operations
+            if obj is None: return
+            self._dd_ser = getattr(obj, "_dd_ser", None)
+            self._dd = getattr(obj, "_dd", None)
+            self._ndarray_key = getattr(obj, "_ndarray_key", None)
+            self._timeout = getattr(obj, "_timeout", None)
+
+        def sync(self):
+            mv = memoryview(self)
             bobj = mv.tobytes()
-            dd[ndarray_key] = bobj
+            self._dd[self._ndarray_key] = bobj
 
-        return obj
+        def refresh(self):
+            data = self._dd[self._ndarray_key]
+            arr = np.frombuffer(bytearray(memoryview(data)), dtype=self.dtype)
+            # Writes through to this instance's own buffer, leaving attributes intact.
+            np.copyto(self, arr.reshape(self.shape))
 
-    def __array_finalize__(self, obj):
-        # Ensures attributes persist through slicing and operations
-        if obj is None: return
-        self._dd_ser = getattr(obj, "_dd_ser", None)
-        self._dd = getattr(obj, "_dd", None)
-        self._ndarray_key = getattr(obj, "_ndarray_key", None)
-        self._timeout = getattr(obj, "_timeout", None)
-
-    def sync(self):
-        mv = memoryview(self)
-        bobj = mv.tobytes()
-        self._dd[self._ndarray_key] = bobj
-
-    def refresh(self):
-        data = self._dd[self._ndarray_key]
-        arr = np.frombuffer(bytearray(memoryview(data)), dtype=self.dtype)
-        # Writes through to this instance's own buffer, leaving attributes intact.
-        np.copyto(self, arr.reshape(self.shape))
-
-    def destroy(self):
-        try:
-            del self._dd[self._ndarray_key]
-        except:
-            pass
+        def destroy(self):
+            try:
+                del self._dd[self._ndarray_key]
+            except:
+                pass
+except:
+    class XNDArray:
+        def __init__(self, *args, **kwargs):
+            raise NotImplementedError("XNDArray is not available without numpy")
 
 
 class XVectorPickler:
@@ -1297,7 +1337,7 @@ class XPickler:
         self._double_ndarray_pickler = XNDArrayPickler(np.float64, TY_DOUBLENDARRAY)
         self._float_ndarray_pickler = XNDArrayPickler(np.float32, TY_FLOATNDARRAY)
         self._int_ndarray_pickler = XNDArrayPickler(np.int32, TY_INTNDARRAY)
-        self._long_ndarray_pickler = XNDArrayPickler(np.long, TY_LONGNDARRAY)
+        self._long_ndarray_pickler = XNDArrayPickler(np.int64, TY_LONGNDARRAY)
         self._queue_pickler = XQueuePickler()
         self._ddict_pickler = XDDictPickler()
         self._barrier_pickler = XBarrierPickler()

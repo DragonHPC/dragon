@@ -1,7 +1,7 @@
 import dragon
-from dragon.data.ddict.ddict import DDict
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import System, Node
+from dragon import DDict, Policy, System
+
+from dragon.native.machine import Node
 import multiprocessing as mp
 import socket
 

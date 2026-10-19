@@ -37,8 +37,8 @@ The script does not submit any real work — it just creates ``Batch``
 objects, prints their ``topology()``, and tears them down cleanly.
 """
 
-from dragon.workflows.batch import Batch, BatchTopology
-from dragon.native.machine import System
+from dragon import Batch, System
+from dragon.workflows.batch import BatchTopology
 
 
 def section(title: str) -> None:

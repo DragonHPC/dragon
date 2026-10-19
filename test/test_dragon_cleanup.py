@@ -1,12 +1,15 @@
+import contextlib
 import os
 import sys
 import subprocess
+import tempfile
 import unittest
 import unittest.mock
 from re import match
 import platform
 
 from textwrap import dedent
+from dragon.infrastructure.facts import ATTACH_DIR_ENV, ATTACH_INFO_FILENAME
 from dragon.tools.dragon_cleanup import DragonCleanup
 from psutil import Process
 
@@ -248,8 +251,8 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
     @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
     def test_cleanup_tmp_resilient(self):
         # Pseudocode:
-        # - Patch Path.iterdir to return files matching *.db.
-        # - Patch file.unlink to check it's called.
+        # - Patch Path.iterdir to return a DDict orchestrator file.
+        # - Verify resilient cleanup preserves it.
         file1 = unittest.mock.Mock()
         file1.is_file.return_value = True
         file1.owner.return_value = DragonCleanup.MY_USERNAME
@@ -275,6 +278,63 @@ class DragonCleanupProcessMockTest(unittest.TestCase):
         with unittest.mock.patch('pathlib.Path.iterdir', return_value=[file1]):
             dc.cleanup_tmp()
             file1.unlink.assert_not_called()
+
+    def _make_attach_dir(self, root, name="dragon_attach", extra_file=None):
+        attach_dir = os.path.join(root, name)
+        os.mkdir(attach_dir)
+        for file_name in (ATTACH_INFO_FILENAME, extra_file):
+            if file_name is not None:
+                with open(os.path.join(attach_dir, file_name), "w") as fh:
+                    fh.write("data")
+        return attach_dir
+
+    @contextlib.contextmanager
+    def _attach_dirs(self, default_dir, env_dir=None):
+        with unittest.mock.patch(
+            "dragon.tools.dragon_cleanup.default_attach_runtime_dir", return_value=default_dir
+        ), unittest.mock.patch.dict(os.environ):
+            os.environ.pop(ATTACH_DIR_ENV, None)
+            if env_dir is not None:
+                os.environ[ATTACH_DIR_ENV] = env_dir
+            yield
+
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
+    def test_cleanup_attach_info_removes_file_and_empty_dir(self):
+        with tempfile.TemporaryDirectory() as root:
+            attach_dir = self._make_attach_dir(root)
+            with self._attach_dirs(default_dir=attach_dir):
+                DragonCleanup().cleanup_attach_info()
+            self.assertFalse(os.path.exists(attach_dir))
+
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
+    def test_cleanup_attach_info_checks_env_and_default_dirs(self):
+        with tempfile.TemporaryDirectory() as root:
+            env_dir = self._make_attach_dir(root, name="env_attach", extra_file="user_file")
+            default_dir = self._make_attach_dir(root)
+            with self._attach_dirs(default_dir=default_dir, env_dir=env_dir):
+                DragonCleanup().cleanup_attach_info()
+            self.assertFalse(os.path.exists(os.path.join(env_dir, ATTACH_INFO_FILENAME)))
+            self.assertTrue(os.path.exists(os.path.join(env_dir, "user_file")))
+            self.assertFalse(os.path.exists(default_dir))
+
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
+    def test_cleanup_attach_info_keeps_non_empty_dir(self):
+        with tempfile.TemporaryDirectory() as root:
+            attach_dir = self._make_attach_dir(root, extra_file="other_file")
+            with self._attach_dirs(default_dir=attach_dir):
+                DragonCleanup().cleanup_attach_info()
+            self.assertFalse(os.path.exists(os.path.join(attach_dir, ATTACH_INFO_FILENAME)))
+            self.assertTrue(os.path.exists(os.path.join(attach_dir, "other_file")))
+
+    @unittest.skipIf(platform.system() == "Darwin", "Not supported on macOS")
+    def test_cleanup_attach_info_dry_run(self):
+        with tempfile.TemporaryDirectory() as root:
+            env_dir = self._make_attach_dir(root, name="env_attach")
+            default_dir = self._make_attach_dir(root)
+            with self._attach_dirs(default_dir=default_dir, env_dir=env_dir):
+                DragonCleanup(dry_run=True).cleanup_attach_info()
+            self.assertTrue(os.path.exists(os.path.join(env_dir, ATTACH_INFO_FILENAME)))
+            self.assertTrue(os.path.exists(os.path.join(default_dir, ATTACH_INFO_FILENAME)))
 
 
 if __name__ == "__main__":

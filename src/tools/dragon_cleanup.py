@@ -1,4 +1,5 @@
 import argparse
+import errno
 import getpass
 import os
 import re
@@ -11,11 +12,33 @@ from pathlib import Path
 from psutil import Process, process_iter, TimeoutExpired, ZombieProcess, NoSuchProcess, AccessDenied
 
 from dragon.infrastructure.config import hugepages_cleanup
-from dragon.infrastructure.facts import DEFAULT_DICT_POOL_NAME_BASE
+from dragon.infrastructure.facts import (
+    ATTACH_DIR_ENV,
+    ATTACH_INFO_FILENAME,
+    DEFAULT_DICT_POOL_NAME_BASE,
+    DEFAULT_POOL_SUFFIX,
+    INFRASTRUCTURE_POOL_SUFFIX,
+    LOGGING_POOL_SUFFIX,
+    default_attach_runtime_dir,
+)
 
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _ancestor_pids():
+    """Return the pids of this process and every one of its ancestors.
+
+    dragon-cleanup launches itself on each node over its own ssh tree, so the
+    drbe process hosting this cleanup is an ancestor and must never be killed.
+    """
+    pids = {os.getpid()}
+    try:
+        pids.update(parent.pid for parent in Process(os.getpid()).parents())
+    except (NoSuchProcess, AccessDenied):
+        pass
+    return frozenset(pids)
 
 
 class DragonCleanup:
@@ -24,6 +47,10 @@ class DragonCleanup:
     DRAGON_BE_PROCESS_REGEX = r"/dragon-backend$"
     DRAGON_LS_PROCESS_REGEX = r"/dragon-localservices$"
     DRAGON_OVERLAY_PROCESS_REGEX = r"dragon.cli"
+    # Match a whole path component so a user's "mydrbe" is never killed. Both
+    # are normally absolute, but tolerate a bare name.
+    DRAGON_DRBE_PROCESS_REGEX = r"(^|/)drbe$"
+    DRAGON_HSTA_PROCESS_REGEX = r"(^|/)dragon-hsta$"
 
     NVIDIA_CUDA_MPS_REGEX = r"/nvidia-cuda-mps$"
 
@@ -36,16 +63,26 @@ class DragonCleanup:
     TMP_DIR = "/tmp"
     DEV_SHM_DIR = "/dev/shm"
 
+    # Darwin has no /dev/shm and POSIX shared memory objects cannot be
+    # enumerated, so leaked pools are reclaimed by rebuilding the names Dragon
+    # could have used and calling shm_unlink() on each. See cleanup_darwin_shm.
+    DARWIN_FILE_PREFIX = "D"  # DRAGON_MEMORY_DEFAULT_FILE_PREFIX
+    DARWIN_NAME_SUFFIXES = ("M", "D")  # manifest, data
+    DARWIN_PID_RANGE = 1000  # names embed only the last 3 digits of the pid
+    DARWIN_RETRY_RANGE = 10  # MemoryPool.create_with_retry default attempts
+
     MY_PID = os.getpid()
     MY_PPID = os.getppid()
+    MY_ANCESTOR_PIDS = _ancestor_pids()
     MY_USERNAME = getpass.getuser()
     MY_HOSTNAME = socket.gethostname()
 
-    def __init__(self, resilient=False, dry_run=False, timeout=2):
+    def __init__(self, resilient=False, dry_run=False, timeout=2, keep_ddict_files=False):
 
         self.resilient = resilient
         self.dry_run = dry_run
         self.timeout = timeout
+        self.keep_ddict_files = keep_ddict_files
 
         self.my_rank = int(os.environ.get("DRAGON_RUN_RANK", "0"))
         self.num_ranks = int(os.environ.get("DRAGON_RUN_NUM_RANKS", 0))
@@ -96,9 +133,9 @@ class DragonCleanup:
                 cmdline = process.cmdline()[0]
                 return all(
                     [
-                        # we don't want to kill ourselves
-                        process.pid != DragonCleanup.MY_PID,
-                        process.pid != DragonCleanup.MY_PPID,
+                        # we don't want to kill ourselves, nor the drbe that is
+                        # hosting this cleanup on a multi-node run
+                        process.pid not in DragonCleanup.MY_ANCESTOR_PIDS,
                         # only look for processes started by this user
                         process.username() == DragonCleanup.MY_USERNAME,
                         # exclude these commonly started processes
@@ -118,11 +155,9 @@ class DragonCleanup:
         the expression argument is set using python partial.
         """
         try:
-            if expression.search(process.cmdline()[1]):
-                return True
-            if expression.search(process.cmdline()[2]):
-                return True
-            return False
+            # argv[0] must be included: dragon-hsta is exec'd as a bare binary
+            # with no arguments, so it only ever appears there.
+            return any(expression.search(arg) for arg in process.cmdline()[:3])
         except (IndexError, NoSuchProcess):
             return False
 
@@ -178,6 +213,14 @@ class DragonCleanup:
             DragonCleanup._find_dragon_launcher_process,
             expression=re.compile(DragonCleanup.DRAGON_OVERLAY_PROCESS_REGEX),
         )
+        filter_proc_hsta = partial(
+            DragonCleanup._find_dragon_launcher_process,
+            expression=re.compile(DragonCleanup.DRAGON_HSTA_PROCESS_REGEX),
+        )
+        filter_proc_drbe = partial(
+            DragonCleanup._find_dragon_launcher_process,
+            expression=re.compile(DragonCleanup.DRAGON_DRBE_PROCESS_REGEX),
+        )
 
         dragon_processes = list(filter(filter_proc, self.user_processes))
 
@@ -186,6 +229,20 @@ class DragonCleanup:
 
         dragon_overlay_processes = list(filter(filter_proc_overlay, self.user_processes))
         dragon_processes.extend(dragon_overlay_processes)
+
+        # HSTA outlives its dragon.cli wrapper when a run dies abnormally, and
+        # drbe is started over ssh so it is never reached by a parent's tree.
+        dragon_hsta_processes = list(filter(filter_proc_hsta, self.user_processes))
+        dragon_processes.extend(dragon_hsta_processes)
+
+        # Only a backend rank may sweep drbe. The multi-node coordinator reaches
+        # every node through its own drbe tree, and on a host that is both
+        # frontend and compute node that tree is a sibling of this process, not
+        # an ancestor, so MY_ANCESTOR_PIDS cannot protect it. The backend rank
+        # running on that same host clears any stale drbe there.
+        if self.is_be:
+            dragon_drbe_processes = list(filter(filter_proc_drbe, self.user_processes))
+            dragon_processes.extend(dragon_drbe_processes)
 
         for process in dragon_processes:
             try:
@@ -253,6 +310,8 @@ class DragonCleanup:
     def cleanup_dev_shm(self):
         dev_shm_dir = Path(DragonCleanup.DEV_SHM_DIR)
         if not all([dev_shm_dir.exists(), dev_shm_dir.is_dir()]):
+            # No /dev/shm to enumerate (Darwin); sweep pool names instead.
+            self.cleanup_darwin_shm()
             return
 
         if self.is_be and self.resilient:
@@ -280,13 +339,81 @@ class DragonCleanup:
                 # a user that is not listed in the /etc/passwd file.
                 pass
 
+    def cleanup_darwin_shm(self):
+        """Reclaim POSIX shared memory on platforms that have no /dev/shm.
+
+        Darwin cannot enumerate shm objects, so instead every name a run on
+        this host could have produced is rebuilt and shm_unlink()ed. Pool names
+        embed only the last three digits of the creating pid plus the
+        create_with_retry counter, so the space is small enough to sweep.
+        DDict manager pools are not covered: their names embed a full puid and
+        are not reconstructable from outside the run.
+        """
+        import ctypes
+        import ctypes.util
+
+        libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        libc.shm_unlink.argtypes = [ctypes.c_char_p]
+        libc.shm_unlink.restype = ctypes.c_int
+        libc.shm_open.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_uint16]
+        libc.shm_open.restype = ctypes.c_int
+
+        uid3 = str(os.getuid())[-3:]
+        user3 = DragonCleanup.MY_USERNAME[-3:]
+        try:
+            from dragon.utils import host_id
+
+            host3 = str(host_id())[-3:]
+        except Exception:
+            host3 = None
+
+        print(f"Cleaning up POSIX shared memory pools on {DragonCleanup.MY_HOSTNAME}.", flush=True)
+
+        removed = 0
+        for pid in range(DragonCleanup.DARWIN_PID_RANGE):
+            pid3 = f"{pid:03d}"
+            for i in range(DragonCleanup.DARWIN_RETRY_RANGE):
+                bases = [
+                    f"D{uid3}{pid3}{INFRASTRUCTURE_POOL_SUFFIX}{i}",
+                    f"D{uid3}{pid3}{DEFAULT_POOL_SUFFIX}{i}",
+                    f"D{user3}{pid3}{LOGGING_POOL_SUFFIX}_{i}",
+                ]
+                if host3 is not None:
+                    bases.append(f"D{uid3}{pid3}{host3}{DEFAULT_POOL_SUFFIX}{i}")
+
+                for base in bases:
+                    for suffix in DragonCleanup.DARWIN_NAME_SUFFIXES:
+                        name = f"/{DragonCleanup.DARWIN_FILE_PREFIX}{base}{suffix}"
+                        if self.dry_run:
+                            # Darwin returns EACCES, not a usable fd, when an shm
+                            # object exists; only ENOENT means it is absent.
+                            ctypes.set_errno(0)
+                            fd = libc.shm_open(name.encode(), os.O_RDONLY, 0)
+                            if fd >= 0:
+                                os.close(fd)
+                            elif ctypes.get_errno() == errno.ENOENT:
+                                continue
+                            print(
+                                f"DRY_RUN: Removing {name} on {DragonCleanup.MY_HOSTNAME}",
+                                flush=True,
+                            )
+                            removed += 1
+                            continue
+
+                        if libc.shm_unlink(name.encode()) == 0:
+                            print(f"Removing {name} on {DragonCleanup.MY_HOSTNAME}", flush=True)
+                            removed += 1
+
+        if removed == 0:
+            print(f"No leaked pools found on {DragonCleanup.MY_HOSTNAME}.", flush=True)
+
     def cleanup_tmp(self):
         tmp_dir = Path(DragonCleanup.TMP_DIR)
         if not tmp_dir.exists() or not tmp_dir.is_dir():
             return
 
         print(
-            f"Removing DB files, Gunicorn logfiles and DDICT orchestrator files from {DragonCleanup.TMP_DIR}",
+            f"Removing DB files, Gunicorn logfiles, and DDICT orchestrator files from {DragonCleanup.TMP_DIR}",
             flush=True,
         )
 
@@ -299,7 +426,9 @@ class DragonCleanup:
                     [
                         tmp_file.match(DragonCleanup.DATABASE_FILES),
                         tmp_file.match(DragonCleanup.GUNICORN_LOG_FILES),
-                        tmp_file.match(DragonCleanup.DDICT_ORCHESTRATOR_FILES) and not self.resilient,
+                        tmp_file.match(DragonCleanup.DDICT_ORCHESTRATOR_FILES)
+                        and not self.resilient
+                        and not self.keep_ddict_files,
                     ]
                 ):
                     if self.dry_run:
@@ -315,11 +444,89 @@ class DragonCleanup:
             except PermissionError as e:
                 pass
 
+    def cleanup_ddict_orchestrator_files(self):
+        """Remove DDict orchestrator files that were not written under /tmp.
+
+        A DDict whose destroy() never ran leaves an orchestrator file in the
+        directory the job ran from, which cleanup_tmp does not search. Only the
+        orchestrator pattern is swept here; unlike /tmp, these directories hold
+        user data and must not be matched more broadly.
+        """
+        if self.resilient or self.keep_ddict_files:
+            return
+
+        roots = []
+        for root in (Path.cwd(), Path.home()):
+            if root not in roots and root != Path(DragonCleanup.TMP_DIR):
+                roots.append(root)
+
+        for root in roots:
+            if not root.is_dir():
+                continue
+
+            print(
+                f"Removing DDICT orchestrator files from {root} on {DragonCleanup.MY_HOSTNAME}",
+                flush=True,
+            )
+            # Matches the depth kclean.sh searched; deep trees are not worth walking.
+            for depth in ("", "*/"):
+                for orc_file in root.glob(f"{depth}{DragonCleanup.DDICT_ORCHESTRATOR_FILES}"):
+                    try:
+                        if not orc_file.is_file():
+                            continue
+                        if orc_file.owner() != DragonCleanup.MY_USERNAME:
+                            continue
+
+                        if self.dry_run:
+                            print(
+                                f"DRY_RUN: Removing {orc_file} on {DragonCleanup.MY_HOSTNAME}",
+                                flush=True,
+                            )
+                            continue
+
+                        print(f"Removing {orc_file} on {DragonCleanup.MY_HOSTNAME}", flush=True)
+                        orc_file.unlink(missing_ok=True)
+                    except KeyError:
+                        # Owner is absent from /etc/passwd.
+                        pass
+                    except (PermissionError, OSError):
+                        pass
+
+    def cleanup_attach_info(self):
+        attach_dirs = []
+        for attach_dir in (os.environ.get(ATTACH_DIR_ENV), default_attach_runtime_dir()):
+            if attach_dir and attach_dir not in attach_dirs:
+                attach_dirs.append(attach_dir)
+
+        for attach_dir in attach_dirs:
+            self._cleanup_attach_dir(Path(attach_dir))
+
+    def _cleanup_attach_dir(self, attach_dir):
+        if not attach_dir.is_dir():
+            return
+
+        attach_file = attach_dir / ATTACH_INFO_FILENAME
+        if self.dry_run:
+            print(
+                f"DRY_RUN: Removing {attach_file} and {attach_dir} (if empty) on {DragonCleanup.MY_HOSTNAME}",
+                flush=True,
+            )
+            return
+
+        print(f"Removing {attach_file} and {attach_dir} (if empty) on {DragonCleanup.MY_HOSTNAME}", flush=True)
+        attach_file.unlink(missing_ok=True)
+        try:
+            attach_dir.rmdir()
+        except OSError:
+            pass
+
     def cleanup(self):
 
         self.kill_dragon_process_tree()
         self.restart_nvidia_cuda_mps()
         self.cleanup_tmp()
+        self.cleanup_ddict_orchestrator_files()
+        self.cleanup_attach_info()
         self.cleanup_dev_shm()
 
         print("Cleaning up huge-pages.", flush=True)
@@ -339,6 +546,11 @@ def get_cleanup_parser(parser: argparse.ArgumentParser):
     parser.add_argument(
         "--resilient",
         help="Prevent removing resources to enable resilient restart of the Dragon runtime",
+        action="store_true",
+    )
+    parser.add_argument(
+        "--keep-ddict-files",
+        help="Leave DDict orchestrator files in place instead of removing them",
         action="store_true",
     )
     parser.add_argument(
@@ -370,6 +582,7 @@ def main():
         resilient=args["resilient"],
         dry_run=args["dry_run"],
         timeout=args["timeout"],
+        keep_ddict_files=args["keep_ddict_files"],
     ).cleanup()
     return 0
 

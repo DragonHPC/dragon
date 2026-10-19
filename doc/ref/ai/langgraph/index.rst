@@ -184,7 +184,7 @@ launch_host Parameters
        Each name must be unique across all hosts.
    * - ``policy``
      - ``None``
-     - Optional :py:class:`~dragon.infrastructure.policy.Policy` to pin this
+     - Optional :py:class:`~dragon.Policy` to pin this
        host to a specific cluster node, NUMA zone, or GPU. ``None`` uses the
        default Dragon placement.
    * - ``event_timeout``
@@ -328,8 +328,8 @@ Usage Patterns
 
 .. code-block:: python
 
-    from dragon.infrastructure.policy import Policy
-    from dragon.native.machine import Node, System
+    from dragon import System, Policy
+    from dragon.native.machine import Node
 
     system = System()
     node0 = Node(system.nodes[0]).hostname
@@ -367,7 +367,7 @@ Usage Patterns
 
 .. code-block:: python
 
-    from dragon.data.ddict import DDict
+    from dragon import DDict
 
     sim_data = DDict(managers_per_node=1, total_mem=10_000_000_000)
 

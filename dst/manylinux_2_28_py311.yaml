@@ -6,4 +6,4 @@
   pre_build: dst/runBuildPrep.py311.sh
   build: dst/runBuild.sh
   post_build: dst/runUnitTest.sh
-  container_flags: ["--shm-size=4gb", "--network=host", "--privileged", "--rm"]
+  container_flags: ["--shm-size=6gb", "--network=host", "--privileged", "--rm"]

@@ -8,7 +8,7 @@ This is a simple ping-pong latency microbenchmark useful for comparing the perfo
 ### Usage
 ```
 usage: dragon p2p_lat.py [-h] [--iterations ITERATIONS]
-                         [--lg_max_message_size LG_MAX_MESSAGE_SIZE] [--dragon]
+                         [--lg_max_message_size LG_MAX_MESSAGE_SIZE]
                          [--with_bytes] [--queues]
 
 P2P latency test
@@ -19,7 +19,6 @@ optional arguments:
                         number of iterations to do
   --lg_max_message_size LG_MAX_MESSAGE_SIZE
                         log base 2 of size of message to pass in
-  --dragon              run using dragon
   --with_bytes          use send_bytes/recv_bytes instead of send/recv
   --queues              use per-worker queues for the communication
 ```
@@ -28,7 +27,7 @@ optional arguments:
 
 #### Single node
 ```
-> dragon p2p_lat.py --iterations 1000 --lg_max_message_size 12 --dragon
+> dragon p2p_lat.py --iterations 1000 --lg_max_message_size 12
 using Dragon
 Msglen [B]   Lat [usec]
 2  26.72357251867652
@@ -51,7 +50,7 @@ In order to run the example on two nodes, we do:
 ```
 > salloc --nodes=2 --exclusive
 
-> dragon p2p_lat.py --iterations 1000 --lg_max_message_size 12 --dragon
+> dragon p2p_lat.py --iterations 1000 --lg_max_message_size 12
 [stdout: p_uid=4294967296] using Dragon
 Msglen [B]   Lat [usec]
 [stdout: p_uid=4294967296] 2  1244.2267920050654
@@ -468,7 +467,7 @@ $
 
 ## Pascal Triangle: Shared State Context Demo
 
-In this example, we demonstrate that the Dragon multiprocessing interface can be used to create a simple shared state example. The manager multiprocessing process and the client multiprocessing process communicate via a shared state spawned by the context multiprocessing process. The main multiprocessing process will start the manager and client multiprocessing processes. The manager process finds the sum of the Pascal triangle array calcualated by the client process. The third multiprocessing process spawned by the context class finds when the Pascal triangle has been completed. The shared state that contains the Pascal triangle array and the Pascal triangle sum is guarded by a lock; only the process that accesses the lock may alter the array and value. 
+In this example, we demonstrate that the Dragon multiprocessing interface can be used to create a simple shared state example. The manager multiprocessing process and the client multiprocessing process communicate via a shared state spawned by the context multiprocessing process. The main multiprocessing process will start the manager and client multiprocessing processes. The manager process finds the sum of the Pascal triangle array calcualated by the client process. The third multiprocessing process spawned by the context class finds when the Pascal triangle has been completed. The shared state that contains the Pascal triangle array and the Pascal triangle sum is guarded by a lock; only the process that accesses the lock may alter the array and value.
 
 ### Example Output
 

@@ -38,6 +38,7 @@ PROCNAME_DRBE = "drbe"
 PROCNAME_DHOSTS = "dhosts"
 PROCNAME_OFFLINE_TELEMETRY = "dragon-offline-telemetry"
 PROCNAME_DRAGON_INSTALL_COMPLETIONS = "dragon-install-completions"
+PROCNAME_WAITING_RUNTIME_HEAD = "dragon-waiting-runtime-head"
 
 # TODO Refactor frontend entry point. See ../__main__.py and
 # TODO ../launcher/launch_selector.py.
@@ -73,6 +74,7 @@ entry_points = {
         f"{PROCNAME_DHOSTS} = dragon.tools.dragon_run.dhosts:main",
         f"{PROCNAME_OFFLINE_TELEMETRY} = dragon.telemetry.offline_telemetry:main",
         f"{PROCNAME_DRAGON_INSTALL_COMPLETIONS} = dragon.cli.completion:main",
+        f"{PROCNAME_WAITING_RUNTIME_HEAD} = dragon.workflows._runtime_head:main",
     ]
 }
 

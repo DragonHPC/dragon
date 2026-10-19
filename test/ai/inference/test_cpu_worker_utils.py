@@ -11,10 +11,13 @@ import multiprocessing as mp
 from unittest import TestCase, main
 from unittest.mock import patch, MagicMock
 
-from dragon.infrastructure.policy import Policy
+from dragon import (
+    Policy,
+    ProcessGroup,
+    ProcessTemplate
+)
 from dragon.native.event import Event as DragonNativeEvent
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import ProcessTemplate, Popen
+from dragon.native.process import Popen
 from dragon.native.queue import Queue
 
 from dragon.ai.inference.cpu_worker_utils import CPUWorker

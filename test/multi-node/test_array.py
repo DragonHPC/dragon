@@ -13,8 +13,7 @@ import sys
 import dragon
 import multiprocessing as mp
 
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import ProcessTemplate
+from dragon import ProcessGroup, ProcessTemplate
 
 
 def process_function(

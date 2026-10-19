@@ -1,9 +1,6 @@
 """Classes for efficiently moving data between a host and devices"""
 
-from dragon.managed_memory import (
-    MemoryPool,
-    MemoryAlloc,
-)
+from dragon.managed_memory import MemoryPool, MemoryAlloc, DragonPoolError
 from dragon.infrastructure.policy import Policy
 from dragon.native.process_group import ProcessGroup
 from dragon.native.process import ProcessTemplate, Process
@@ -134,12 +131,22 @@ class NumPyDataMover(DataMover):
     """
 
     def __init__(self, pool_size, pool=None, numa_node=-1, *args, **kwargs):
-
         if pool is not None:
             self._mpool = pool
         else:
             uid = 1044 + os.getpid()  # what should this be in general?
-            self._mpool = MemoryPool(pool_size, "D_np_dm_host_" + str(os.getpid()), uid, numa_node=numa_node)
+
+            device_pool = kwargs.get("device_pool", args[1] if len(args) > 1 else None)
+            gpu_device_id = 0
+            if device_pool is not None:
+                try:
+                    gpu_device_id = device_pool.gpu_device_id
+                except DragonPoolError:
+                    gpu_device_id = 0
+
+            self._mpool = MemoryPool(
+                pool_size, "D_np_dm_host_" + str(os.getpid()), uid, gpu_device_id=gpu_device_id, numa_node=numa_node
+            )
         super().__init__(*args, **kwargs)
 
     def _local_process_init(self):
@@ -257,7 +264,6 @@ class CuPyOptimizedDataMover(DataMover):
     """Data mover for moving arrays from GPU to host and reconstructing them as numpy arrays on the host. This version uses relies on the data residing in the buffer that it was originally allocated in. This works for operations like in-place FFTs on complex data-types. Compared to CuPyDataMover, this version avoids an extra memcpy by the kernel process."""
 
     def __init__(self, pool_size, pool=None, numa_node=-1, *args, **kwargs):
-
         if pool is not None:
             self._mpool = pool
         else:
@@ -333,7 +339,11 @@ class CuPyInputQueue(Queue):
         super().__setstate__(old_state)
 
     def put(self, item, *args, **kwargs):
-        """Takes a CuPy array and copies into into the GPU backed managed memory pool to be copied off the device. Puts a tuple of (metadata, serialized memory descriptor) into the queue, where metadata is a tuple of (shape, dtype).
+        """Takes a CuPy array and stages it for GPU->host copy.
+
+        This method also accepts a tuple of ``(cupy_array, serialized_device_descriptor)``
+        for zero-extra-copy handoff when the data already resides in a managed GPU buffer.
+        In that case, the descriptor is reused directly and no D2D memcpy is issued.
 
         :param item: The CuPy array to copy.
         :type item: cp.ndarray
@@ -359,7 +369,20 @@ class CuPyDataMover(DataMover):
             self._mpool = pool
         else:
             uid = 1046 + os.getpid()
-            self._mpool = MemoryPool(pool_size, "D_cp_dm_host_" + str(os.getpid()), uid, numa_node=numa_node)
+            device_pool = kwargs.get("device_pool", args[1] if len(args) > 1 else None)
+            gpu_device_id = 0
+            if device_pool is not None:
+                try:
+                    gpu_device_id = device_pool.gpu_device_id
+                except DragonPoolError:
+                    gpu_device_id = 0
+
+            self._mpool = MemoryPool(
+                pool_size, "D_cp_dm_host_" + str(os.getpid()), uid, gpu_device_id=gpu_device_id, numa_node=numa_node
+            )
+
+            # associate this host pool with the gpu device pool, if one was created and provided
+
         super().__init__(*args, **kwargs)
 
     def _local_process_init(self):
@@ -560,6 +583,7 @@ class DataMovers:
         data_mover_args: dict = {},
         num_workers: int = 1,
         device_pool_size: int = 1024 * 1024 * 1024,
+        device_id: int = 0,
         manager_policy: Policy = None,
         policies: list = None,
         num_workers_per_policy: int = 1,
@@ -579,6 +603,7 @@ class DataMovers:
         self._data_mover_args = data_mover_args
         self._num_workers = num_workers
         self._device_pool_size = device_pool_size
+        self._device_id = device_id
         self._manager_queue = Queue()
         self._input_queue = None
         self._output_queue = None
@@ -588,11 +613,11 @@ class DataMovers:
     def _manager(self):
         uid = 1043 + os.getpid()  # what should this be in general?
         if self._device_pool_size is not None:
+            p_name = "D_gpu_dm_" + f"{self._data_mover_class.__name__}" + str(os.getpid()) + "_" + str(self._device_id)
+            while len(p_name) >= MemoryPool.max_pool_name_len():
+                p_name = p_name[1:]
             self._device_pool = MemoryPool(
-                self._device_pool_size,
-                "D_gpu_dm_" + f"{self._data_mover_class.__name__}" + str(os.getpid()),
-                uid,
-                gpu_memory=True,
+                self._device_pool_size, p_name, uid, gpu_memory=True, gpu_device_id=self._device_id
             )
         else:
             self._device_pool = None

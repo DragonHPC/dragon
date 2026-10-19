@@ -3,11 +3,11 @@ import cloudpickle
 import random
 import time
 
+
+from dragon import ProcessGroup, ProcessTemplate
 from dragon.native.machine import cpu_count
 from dragon.native.pool import Pool
 from dragon.native.queue import Queue
-from dragon.native.process import ProcessTemplate
-from dragon.native.process_group import ProcessGroup
 from dragon.infrastructure.facts import PMIBackend
 
 import mpi4py

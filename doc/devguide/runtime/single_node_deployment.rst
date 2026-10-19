@@ -68,7 +68,7 @@ then allocates a channel for itself with Channel Id 3. The Shepherd also allocat
 Services with Channel Id 2.
 
 Once the two channels are created the *SHChannelsUp* message is sent to the launcher. At this point the
-Shepherd expects the first message on it's channel to be the *GSPingSH* message. Once that is received the
+Shepherd expects the first message on it's channel to be the *GSPingLS* message. Once that is received the
 Shepherd responds with a *SHPingGS* message sent to the Global Services channel and it runs its AsyncIO loop
 with a recv task ready to receive any other messages off its main queue. And that concludes the single-node
 startup.

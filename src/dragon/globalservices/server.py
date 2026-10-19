@@ -8,6 +8,7 @@ import sys
 import time
 import threading
 
+from functools import partial
 from queue import Queue, Empty as qEmpty
 from .. import channels as dch
 
@@ -81,6 +82,12 @@ class GlobalContext(object):
     DTBL = {}  # dispatch table for handlers, no metadata
 
     def __init__(self, test_gs_stdout=None):
+        """Initialize the Global Services context.
+
+        :param test_gs_stdout: Optional stdout wrapper for GS → launcher communication.
+            If ``None``, wraps ``sys.stdout`` with base64 encoding.  Used in tests.
+        :type test_gs_stdout: NewlineStreamWrapper or None
+        """
         self.process_table = dict()  # key = p_uid, value = ProcessContext
         self.channel_table = dict()  # key = c_uid, value = ChannelContext
         self.pool_table = dict()  # key = m_uid, value = PoolContext
@@ -113,6 +120,9 @@ class GlobalContext(object):
         )  # Used to track destruction of PMIx resources tied to a given group, key = guid
 
         self.pending = dict()  # key = tag, value = continuation on response
+        self.pending_external_detaches = {}  # key = external p_uid, value = (process context, detach request tags)
+        self.external_cleanup_in_progress = set()
+        self.cancelled_external_puids = set()
         self.pending_group_destroy = (
             dict()
         )  # is applied only to groups of resources when destroy is called, key = uid, value = continuation on response
@@ -214,6 +224,8 @@ class GlobalContext(object):
         return tmp
 
     def new_puid_and_default_name(self):
+        if self._next_puid >= dfacts.BASE_EXTERNAL_PUID:
+            raise RuntimeError("ordinary PUID namespace exhausted before external PUID reservation")
         tmp = self._next_puid
         self._next_puid += 1
         return tmp, dfacts.DEFAULT_PROCESS_NAME_BASE + str(tmp)
@@ -264,7 +276,10 @@ class GlobalContext(object):
             elif dfacts.BASE_BE_CUID <= msg.r_c_uid < (dfacts.BASE_BE_CUID + dfacts.RANGE_BE_CUID):
                 log.debug("this is bela")
                 return self.bela_input
-            elif dfacts.BASE_LS_CUID <= msg.r_c_uid < (dfacts.BASE_LS_CUID + dfacts.RANGE_LS_CUID):
+            elif (
+                dfacts.BASE_LS_CUID <= msg.r_c_uid < (dfacts.BASE_LS_CUID + dfacts.MAX_NODES)
+                and dfacts.index_from_localservices_cuid(msg.r_c_uid) in self.node_idx_to_huid
+            ):
                 log.debug("this is local services")
                 return self.ls_inputs[dfacts.index_from_localservices_cuid(msg.r_c_uid)]
             elif self.test_connections and msg.r_c_uid in self.test_connections:
@@ -272,6 +287,9 @@ class GlobalContext(object):
                 return self.test_connections[msg.r_c_uid]
             elif msg.r_c_uid in self.channel_table:
                 # TODO PE-37246 GS Channel attachment ageing policy
+                # Note: for this to work with externally managed procs, a queue_sdesc (the
+                # serialized InfraQueue descriptor) must be stored on the context and used
+                # here instead of descriptor.sdesc, which is only the raw channel descriptor.
                 context = self.channel_table[msg.r_c_uid]
                 if context.attached_connection is None:
                     context.attached_connection = InfraQueue.attach(context.descriptor.sdesc)
@@ -752,6 +770,18 @@ class GlobalContext(object):
         log.info("Received the GSTeardown message. Now shutting down Global Services.")
         self._state = self.RunState.SHUTTING_DOWN
 
+    @dutil.route(dmsg.GSRegisterCtrlEvent, DTBL)
+    def handle_register_ctrl_event(self, msg):
+        log = logging.getLogger("GS.register_ctrl_event")
+        log.info("Received GSRegisterCtrlEvent, broadcasting LSStoreCtrlEvent to all LS nodes.")
+        ls_msg = dmsg.LSStoreCtrlEvent(
+            tag=self.tag_inc(),
+            ctrl_event_sdesc=msg.ctrl_event_sdesc,
+            ctrl_event_cuid=msg.ctrl_event_cuid,
+        )
+        for ls in self.ls_inputs:
+            ls.put(ls_msg)
+
     @dutil.route(dmsg.GSProcessCreate, DTBL)
     def handle_process_create(self, msg):
         log = self._process_logger
@@ -959,6 +989,7 @@ class GlobalContext(object):
         log.info(f"rec {msg}")
         gspjr = dmsg.GSProcessJoinResponse
         gspjlr = dmsg.GSProcessJoinListResponse
+        log.debug(f"Handling process exit for p_uid {msg.p_uid} with exit code {msg.exit_code}")
         log.debug(f"p_uid {msg.p_uid} exited")
 
         if msg.creation_msg_tag in self.pending:
@@ -968,11 +999,24 @@ class GlobalContext(object):
             self.pending_process_exits[msg.creation_msg_tag] = msg
             return
 
-        ctx = self.process_table[msg.p_uid]
-        ctx.descriptor.state = process_desc.ProcessDescriptor.State.DEAD
+        ctx = self.process_table.get(msg.p_uid)
+        if ctx is None:
+            if dfacts.is_external_puid(msg.p_uid):
+                self.cancelled_external_puids.add(msg.p_uid)
+                log.info("external p_uid %s exited before registration committed", msg.p_uid)
+                return
+            raise KeyError(msg.p_uid)
+
+        self.pending_external_detaches.pop(msg.p_uid, None)
         ctx.descriptor.ecode = msg.exit_code
 
-        if ctx.request.options.make_inf_channels:
+        if ctx.is_external:
+            self.external_cleanup_in_progress.add(ctx.descriptor.p_uid)
+            self._destroy_external_return(ctx, msg.exit_code)
+        else:
+            ctx.descriptor.state = process_desc.ProcessDescriptor.State.DEAD
+
+        if ctx.request.options.make_inf_channels and not ctx.is_external:
             clean_chan = dmsg.GSChannelDestroy(
                 tag=self.tag_inc(), p_uid=dfacts.GS_PUID, r_c_uid=0, c_uid=ctx.descriptor.gs_ret_cuid
             )
@@ -1099,6 +1143,323 @@ class GlobalContext(object):
                 self.group_to_pending_resource_map[(msg.p_uid, guid)] = self.process_table[msg.p_uid]
                 handler = self.pending_group_destroy.pop(msg.p_uid)
                 handler(msg)
+
+    @dutil.route(dmsg.GSExternalRegisterPrepared, DTBL)
+    def handle_external_register_prepared(self, msg):
+        """Adopt LS-prepared resources and register an external process by PUID."""
+        log = self._process_logger
+        response_queue = None
+        response_error = dmsg.GSExternalRegisterComplete.Errors.FAIL
+
+        try:
+            response_queue = InfraQueue.attach(msg.gs_return_qd)
+            if msg.node_index not in self.node_idx_to_huid:
+                raise ValueError(f"node index {msg.node_index} is not known to GS")
+            if not dfacts.is_external_puid(msg.p_uid):
+                raise ValueError(f"PUID {msg.p_uid} is outside the external PUID namespace")
+            if dfacts.external_puid_node_index(msg.p_uid) != msg.node_index:
+                raise ValueError(f"PUID {msg.p_uid} does not belong to node {msg.node_index}")
+
+            if msg.p_uid in self.cancelled_external_puids:
+                gs_return_context = self.channel_table.get(msg.gs_return_cuid)
+                if gs_return_context is None:
+                    gs_return_context = ChannelContext.adopt_external_return(self, msg)
+                    self._start_cancelled_prepared_cleanup(gs_return_context, msg.p_uid, msg.node_index)
+                elif gs_return_context.adopted_puid != msg.p_uid:
+                    raise ValueError(f"GS-return CUID {msg.gs_return_cuid} belongs to another process")
+                log.info("scheduled cleanup for cancelled external PUID %s", msg.p_uid)
+                return
+
+            context = self.process_table.get(msg.p_uid)
+            if context is not None:
+                if (
+                    not context.is_external
+                    or context.descriptor.node != msg.node_index
+                    or context.os_pid != msg.pid
+                    or context.process_start_time != msg.process_start_time
+                    or context.descriptor.gs_ret_cuid != msg.gs_return_cuid
+                ):
+                    response_error = dmsg.GSExternalRegisterComplete.Errors.CONFLICTING_ATTEMPT
+                    raise ValueError(f"PUID {msg.p_uid} conflicts with an existing process")
+            else:
+                process_name = msg.user_name or (dfacts.DEFAULT_PROCESS_NAME_BASE + str(msg.p_uid))
+                if process_name in self.process_names:
+                    response_error = dmsg.GSExternalRegisterComplete.Errors.CONFLICTING_ATTEMPT
+                    raise ValueError(f"process name {process_name!r} is already registered")
+
+                gs_return_context = ChannelContext.adopt_external_return(self, msg)
+                context = ProcessContext.construct_external(
+                    self,
+                    msg.p_uid,
+                    process_name,
+                    msg.node_index,
+                    self.node_idx_to_huid[msg.node_index],
+                )
+                context.descriptor.gs_ret_cuid = msg.gs_return_cuid
+                context.gs_ret_channel_context = gs_return_context
+                context.gs_ret_queue = gs_return_context.attached_connection
+                context.os_pid = msg.pid
+                context.process_start_time = msg.process_start_time
+                context.descriptor.state = process_desc.ProcessDescriptor.State.ACTIVE
+                self.process_table[msg.p_uid] = context
+                self.process_names[process_name] = msg.p_uid
+
+            response_queue.put(
+                dmsg.GSExternalRegisterComplete(
+                    tag=self.tag_inc(),
+                    ref=msg.tag,
+                    err=dmsg.GSExternalRegisterComplete.Errors.SUCCESS,
+                    p_uid=msg.p_uid,
+                )
+            )
+            log.info("committed external PUID %s on node %s", msg.p_uid, msg.node_index)
+        except Exception as ex:
+            log.warning("external PUID %s registration failed: %s", msg.p_uid, ex)
+            if response_queue is not None:
+                response_queue.put(
+                    dmsg.GSExternalRegisterComplete(
+                        tag=self.tag_inc(),
+                        ref=msg.tag,
+                        err=response_error,
+                        errInfo=str(ex),
+                        p_uid=msg.p_uid,
+                    )
+                )
+
+    def _complete_cancelled_prepared(self, channel_context, p_uid, msg):
+        if msg.err != dmsg.LSProcessDetachResponse.Errors.SUCCESS:
+            self.external_cleanup_in_progress.discard(p_uid)
+            self._process_logger.error(
+                "LS cleanup failed for cancelled external puid %s: %s",
+                p_uid,
+                getattr(msg, "err_info", ""),
+            )
+            return
+
+        clean_channel = dmsg.GSChannelDestroy(
+            tag=self.tag_inc(),
+            p_uid=dfacts.GS_PUID,
+            r_c_uid=0,
+            c_uid=channel_context.descriptor.c_uid,
+        )
+        ChannelContext.destroy(
+            self,
+            clean_channel,
+            dutil.AbsorbingChannel(callback=partial(self._complete_cancelled_channel_destroy, p_uid)),
+        )
+
+    def _complete_cancelled_channel_destroy(self, p_uid, msg):
+        if msg.err == dmsg.GSChannelDestroyResponse.Errors.SUCCESS:
+            self._process_logger.info("cleaned cancelled external puid %s", p_uid)
+        else:
+            self._process_logger.error(
+                "GS-return cleanup failed for cancelled external puid %s: %s",
+                p_uid,
+                getattr(msg, "err_info", ""),
+            )
+        self.external_cleanup_in_progress.discard(p_uid)
+
+    def _start_cancelled_prepared_cleanup(self, channel_context, p_uid, node_index):
+        if p_uid in self.external_cleanup_in_progress:
+            return
+        self.external_cleanup_in_progress.add(p_uid)
+        outbound_tag = self.tag_inc()
+        ls_message = dmsg.LSProcessDetach(
+            tag=outbound_tag,
+            p_uid=dfacts.GS_PUID,
+            r_c_uid=dfacts.GS_INPUT_CUID,
+            t_p_uid=p_uid,
+        )
+        self.pending[outbound_tag] = partial(self._complete_cancelled_prepared, channel_context, p_uid)
+        self.ls_inputs[node_index].put(ls_message)
+
+    @dutil.route(dmsg.GSExternalRegisterCancel, DTBL)
+    def handle_external_register_cancel(self, msg):
+        """Release a registration after its client abandons attach."""
+        log = self._process_logger
+        if (
+            msg.node_index not in self.node_idx_to_huid
+            or not dfacts.is_external_puid(msg.p_uid)
+            or dfacts.external_puid_node_index(msg.p_uid) != msg.node_index
+        ):
+            log.warning("ignoring invalid external cancellation for puid %s", msg.p_uid)
+            return
+
+        context = self.process_table.get(msg.p_uid)
+        if context is None:
+            self.cancelled_external_puids.add(msg.p_uid)
+            try:
+                channel_context = ChannelContext.adopt_external_return(self, msg)
+                self._start_cancelled_prepared_cleanup(channel_context, msg.p_uid, msg.node_index)
+            except Exception as ex:
+                log.error("could not adopt cancelled external puid %s: %s", msg.p_uid, ex)
+                return
+            log.info("scheduled cancellation before commit for external puid %s", msg.p_uid)
+            return
+        if not context.is_external or context.descriptor.node != msg.node_index:
+            log.warning("ignoring conflicting external cancellation for puid %s", msg.p_uid)
+            return
+
+        self.cancelled_external_puids.add(msg.p_uid)
+        self.pending_external_detaches.pop(msg.p_uid, None)
+        self._start_external_cleanup(context)
+
+    @dutil.route(dmsg.GSProcessDetach, DTBL)
+    def handle_process_detach(self, msg):
+        """Handle a detach request from an externally-registered process."""
+        log = self._process_logger
+        log.debug(f"handling {msg!s}")
+
+        reply_channel = self.get_reply_handle(msg)
+        RESP_ERR = dmsg.GSProcessDetachResponse.Errors
+
+        ctx = self.process_table.get(msg.p_uid)
+        if ctx is None or not ctx.is_external:
+            err = RESP_ERR.UNKNOWN if ctx is None else RESP_ERR.FAIL
+            err_info = f"p_uid {msg.p_uid} unknown" if ctx is None else f"p_uid {msg.p_uid} is not an external process"
+            rm = dmsg.GSProcessDetachResponse(
+                tag=self.tag_inc(),
+                ref=msg.tag,
+                err=err,
+                errInfo=err_info,
+            )
+            reply_channel.put(rm)
+            return
+
+        if ctx.descriptor.state == process_desc.ProcessDescriptor.State.DEAD:
+            rm = dmsg.GSProcessDetachResponse(
+                tag=self.tag_inc(),
+                ref=msg.tag,
+                err=RESP_ERR.SUCCESS,
+            )
+            reply_channel.put(rm)
+            return
+
+        if msg.p_uid in self.pending_external_detaches:
+            _, detach_refs = self.pending_external_detaches[msg.p_uid]
+            detach_refs.add(msg.tag)
+        else:
+            self.pending_external_detaches[msg.p_uid] = (ctx, {msg.tag})
+
+        rm = dmsg.GSProcessDetachResponse(
+            tag=self.tag_inc(),
+            ref=msg.tag,
+            err=RESP_ERR.SUCCESS,
+        )
+        reply_channel.put(rm)
+        log.debug(f"waiting for detach acknowledgment for puid {msg.p_uid}")
+
+    @dutil.route(dmsg.GSProcessDetachAck, DTBL)
+    def handle_process_detach_ack(self, msg):
+        """Begin server-side cleanup after the external client consumed its response."""
+        log = self._process_logger
+        pending = self.pending_external_detaches.get(msg.p_uid)
+        if pending is None:
+            ctx = self.process_table.get(msg.p_uid)
+            if (
+                ctx is not None
+                and ctx.is_external
+                and (
+                    ctx.descriptor.state == process_desc.ProcessDescriptor.State.DEAD
+                    or msg.p_uid in self.external_cleanup_in_progress
+                )
+            ):
+                return
+            log.warning("ignoring detach acknowledgment for non-pending puid %s", msg.p_uid)
+            return
+
+        ctx, detach_refs = pending
+        if msg.detach_ref not in detach_refs:
+            log.warning(
+                "ignoring detach acknowledgment for puid %s with ref %s; expected one of %s",
+                msg.p_uid,
+                msg.detach_ref,
+                detach_refs,
+            )
+            return
+
+        del self.pending_external_detaches[msg.p_uid]
+
+        self._start_external_cleanup(ctx)
+
+    def _start_external_cleanup(self, ctx):
+        if ctx.descriptor.p_uid in self.external_cleanup_in_progress:
+            return
+        self.external_cleanup_in_progress.add(ctx.descriptor.p_uid)
+
+        outbound_tag = self.tag_inc()
+        ls_msg = dmsg.LSProcessDetach(
+            tag=outbound_tag,
+            p_uid=dfacts.GS_PUID,
+            r_c_uid=dfacts.GS_INPUT_CUID,
+            t_p_uid=ctx.descriptor.p_uid,
+        )
+        self.pending[outbound_tag] = partial(self._complete_detach, ctx)
+        self.ls_inputs[ctx.descriptor.node].put(ls_msg)
+        self._process_logger.debug(
+            "sent LSProcessDetach for puid %s to node %s", ctx.descriptor.p_uid, ctx.descriptor.node
+        )
+
+    def _complete_detach(self, ctx, msg):
+        """Continuation called on LSProcessDetachResponse."""
+        log = self._process_logger
+        log.debug(f"_complete_detach puid={ctx.descriptor.p_uid} err={msg.err}")
+
+        if msg.err != dmsg.LSProcessDetachResponse.Errors.SUCCESS:
+            self.external_cleanup_in_progress.discard(ctx.descriptor.p_uid)
+            log.error(
+                "LS cleanup failed for external puid %s: %s",
+                ctx.descriptor.p_uid,
+                getattr(msg, "err_info", ""),
+            )
+            return
+
+        self._destroy_external_return(ctx, 0)
+
+    def _destroy_external_return(self, ctx, exit_code):
+        # Commit process death only after LS confirms that the adopted
+        # GS-return channel was reclaimed.
+        clean_chan = dmsg.GSChannelDestroy(
+            tag=self.tag_inc(),
+            p_uid=dfacts.GS_PUID,
+            r_c_uid=0,
+            c_uid=ctx.descriptor.gs_ret_cuid,
+        )
+        ChannelContext.destroy(
+            self,
+            clean_chan,
+            dutil.AbsorbingChannel(callback=partial(self._complete_external_channel_destroy, ctx, exit_code)),
+        )
+
+    def _complete_external_channel_destroy(self, ctx, exit_code, msg):
+        if msg.err == dmsg.GSChannelDestroyResponse.Errors.SUCCESS:
+            ctx.descriptor.state = process_desc.ProcessDescriptor.State.DEAD
+            ctx.descriptor.ecode = exit_code
+            self.pending_external_detaches.pop(ctx.descriptor.p_uid, None)
+            self._process_logger.info("external puid %s detached cleanly", ctx.descriptor.p_uid)
+        else:
+            self._process_logger.error(
+                "GS-return cleanup failed for external puid %s: %s",
+                ctx.descriptor.p_uid,
+                getattr(msg, "err_info", ""),
+            )
+        self.external_cleanup_in_progress.discard(ctx.descriptor.p_uid)
+
+    @dutil.route(dmsg.LSProcessDetachResponse, DTBL)
+    def handle_ls_process_detach_response(self, msg):
+        """Dispatch a LSProcessDetachResponse from LS to the pending detach callback.
+
+        Called when Local Services replies to a :class:`~dragon.infrastructure.messages.LSProcessDetach`
+        message.  Looks up the ``_complete_detach`` continuation in ``self.pending``
+        using ``msg.ref`` and invokes it with the response message.
+
+        :param msg: The LSProcessDetachResponse from Local Services.
+        :type msg: dragon.infrastructure.messages.LSProcessDetachResponse
+        """
+        log = self._process_logger
+        log.debug(f"LSProcessDetachResponse tag {msg.tag} ref {msg.ref}")
+        assert msg.ref in self.pending
+        self.pending.pop(msg.ref)(msg)
 
     @dutil.route(dmsg.GSPoolCreate, DTBL)
     def handle_pool_create(self, msg):
@@ -1605,6 +1966,15 @@ def single():
 
 # thread internal entry
 def single_thread(gs_stdout):
+    """Run Global Services as a thread in single-node mode.
+
+    Used by ``dragon_single.py`` to run GS in-process rather than as a
+    separate OS process.  Constructs a :class:`GlobalContext`, runs startup,
+    the main server loop, and teardown sequentially.
+
+    :param gs_stdout: Stream wrapper used for GS → launcher communication.
+    :type gs_stdout: NewlineStreamWrapper
+    """
     log = logging.getLogger("gs")
     log.info("Starting GS in single thread mode")
     log.info(f"start in {os.getpid()}")

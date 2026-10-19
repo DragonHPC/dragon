@@ -30,6 +30,7 @@ starting point for application developers.
 .. toctree::
     :maxdepth: 2
 
+    ref/dragon/index.rst
     ref/mpbridge/multiprocessing.rst
     ref/data/index.rst
     ref/telemetry/index.rst

@@ -1,7 +1,7 @@
 from libc.stdint cimport uint64_t, uint32_t, uint8_t, uintptr_t
 from libc.stdlib cimport malloc, free, calloc
 from libcpp cimport bool
-from posix.types cimport mode_t
+from posix.types cimport mode_t, pid_t
 from libc.string cimport memcpy
 from posix.time cimport timespec
 from libc.stddef cimport size_t
@@ -83,12 +83,10 @@ cdef extern from "<dragon/managed_memory.h>":
         uint8_t * data
 
     ctypedef struct dragonMemoryPoolAttr_t:
+        double utilization_pct
         size_t allocatable_data_size
         size_t total_data_size
         size_t free_space
-        double utilization_pct
-        dragonMemoryPoolType_t mem_type
-        int numa_node
         size_t data_min_block_size
         size_t max_allocations
         size_t waiters_for_manifest
@@ -96,6 +94,9 @@ cdef extern from "<dragon/managed_memory.h>":
         size_t max_manifest_entries
         size_t npre_allocs
         size_t * pre_allocs
+        dragonULInt gpu_device_id
+        int numa_node
+        dragonMemoryPoolType_t mem_type
 
     ctypedef struct dragonMemoryPoolAllocations_t:
         dragonULInt nallocs
@@ -152,6 +153,7 @@ cdef extern from "<dragon/managed_memory.h>":
     dragonError_t dragon_memory_get_pointer(dragonMemoryDescr_t * mem_descr, void ** ptr) nogil
     dragonError_t dragon_memory_get_size(dragonMemoryDescr_t * mem_descr, size_t * bytes) nogil
     dragonError_t dragon_memory_descr_clone(dragonMemoryDescr_t * newmem_descr, const dragonMemoryDescr_t * oldmem_descr, ptrdiff_t offset, size_t * custom_length) nogil
+    dragonError_t dragon_memory_descr_destroy(dragonMemoryDescr_t * mem_descr) nogil
     dragonError_t dragon_memory_hash(dragonMemoryDescr_t* mem_descr, dragonULInt* hash_value) nogil
     dragonError_t dragon_memory_equal(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result) nogil
     dragonError_t dragon_memory_is(dragonMemoryDescr_t* mem_descr1, dragonMemoryDescr_t* mem_descr2, bool* result) nogil
@@ -169,6 +171,9 @@ cdef extern from "<dragon/managed_memory.h>":
     # Memory debug functions
     dragonError_t dragon_memory_manifest_info(dragonMemoryDescr_t * mem_descr, dragonULInt* type, dragonULInt* type_id)
     void dragon_memory_set_debug_flag(int the_flag)
+
+    # Static helper functions for python code
+    dragonError_t dragon_memory_get_max_pool_name_len(int * _name_len)
 
 cdef extern from "<dragon/channels.h>":
 
@@ -287,6 +292,9 @@ cdef extern from "<dragon/channels.h>":
     ctypedef struct dragonGatewayMessage_t:
         dragonGatewayMessageKind_t msg_kind
         dragonULInt target_hostid
+        dragonULInt target_rt_uid
+        dragonUInt target_rt_bootstrap_ip_addr
+        dragonULInt target_rt_bootstrap_port
         dragonChannelSendReturnWhen_t send_return_mode
         uint8_t send_payload_cleanup_required
         dragonChannelSerial_t target_ch_ser
@@ -506,6 +514,7 @@ cdef extern from "_heap_manager.h":
 
 cdef extern from "<dragon/utils.h>":
     dragonULInt dragon_get_local_rt_uid()
+    void dragon_set_local_rt_uid(dragonULInt rt_uid)
     dragonError_t dragon_set_procname(char * name)
     char * dragon_base64_encode(uint8_t *data, size_t input_length)
     uint8_t * dragon_base64_decode(const char *data, size_t *output_length)
@@ -518,6 +527,7 @@ cdef extern from "<dragon/utils.h>":
     dragonError_t dragon_ls_set_kv(const unsigned char* key, const unsigned char* value, const timespec_t* timeout) nogil
     dragonError_t dragon_ls_get_kv(const unsigned char* key, char** value, const timespec_t* timeout) nogil
     dragonError_t dragon_get_hugepage_mount(char **mount_dir) nogil
+    dragonError_t query_shm_space(unsigned long* total_space, unsigned long* free_space) nogil
 
 
 cdef extern from "<string.h>":
@@ -585,9 +595,9 @@ cdef extern from "<dragon/shared_lock.h>":
     dragonError_t dragon_greedy_unlock(dragonGreedyLock_t * dlock) nogil
 
 cdef extern from "hostid.h":
-    dragonULInt dragon_host_id()
+    dragonError_t dragon_host_id(dragonULInt * host_id)
     dragonError_t dragon_set_host_id(dragonULInt id)
-    dragonULInt dragon_host_id_from_k8s_uuid(char *pod_uid)
+    dragonError_t dragon_host_id_from_k8s_uuid(char *pod_uid, dragonULInt * host_id)
 
 cdef extern from "dragon/pmod.h":
 
@@ -734,7 +744,6 @@ cdef extern from "dragon/fli.h":
 
 cdef extern from "_pmix.h":
 
-
     dragonError_t dragon_pmix_initialize_job(dragonG_UID_t guid,
                                              char *pmix_sdesc,
                                              char *local_mgr_sdesc,
@@ -760,3 +769,37 @@ cdef extern from "_pmix.h":
     bool dragon_pmix_is_server_host(dragonG_UID_t guid)
     dragonError_t dragon_pmix_finalize_job(dragonG_UID_t guid)
     dragonError_t dragon_pmix_finalize_server()
+
+
+cdef extern from "dnuma.h":
+
+    cdef struct bitmask:
+        pass
+
+    dragonError_t dragon_numa_available()
+    dragonError_t dragon_numa_sched_getaffinity(pid_t pid, bitmask* bm)
+    dragonError_t dragon_numa_sched_setaffinity(pid_t pid, bitmask* bm)
+    dragonError_t dragon_numa_num_configured_nodes(int* num_nodes)
+    dragonError_t dragon_numa_free_cpumask(bitmask* bm)
+    dragonError_t dragon_numa_allocate_cpumask(bitmask** bm)
+    dragonError_t dragon_numa_bitmask_isbitset(bitmask* bm, unsigned int n, int* bitset)
+    dragonError_t dragon_numa_bitmask_size(bitmask* bm, unsigned long* size)
+    dragonError_t dragon_numa_node_to_cpus(int node, bitmask* bm)
+
+cdef extern from "gpu_c_api.h":
+
+    ctypedef enum dragonGPUBackend_t:
+        DRAGON_GPU_BACKEND_UNDETECTED = 0
+        DRAGON_GPU_BACKEND_CUDA
+        DRAGON_GPU_BACKEND_HIP
+        DRAGON_GPU_BACKEND_ZE
+        DRAGON_GPU_BACKEND_END
+
+
+    dragonError_t dragon_gpu_setup(void **dragon_gpu_handle)
+    dragonError_t dragon_gpu_get_handle(void **dragon_gpu_handle)
+    dragonError_t dragon_gpu_get_uuid(void *dragon_gpu_handle, int devID, char **uuid_str)
+    int dragon_gpu_get_device_count(void *dragon_gpu_handle)
+    dragonError_t dragon_gpu_get_device_list(void *dragon_gpu_handle, int **int_device_list, double **double_device_list, int *num_devices)
+    dragonError_t dragon_gpu_get_backend_type(void *dragon_gpu_handle, dragonGPUBackend_t *backend_type)
+

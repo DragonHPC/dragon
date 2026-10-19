@@ -13,7 +13,7 @@ except ImportError:
 import os
 import inspect
 from multiprocessing.reduction import ForkingPickler
-from dragon.native.machine import System, current
+from dragon import System, current
 
 
 def simple_fill(queue, event):

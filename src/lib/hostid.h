@@ -7,14 +7,14 @@ extern "C" {
 
 extern dragonULInt dg_frontend_host_id;
 
-dragonULInt
-dragon_host_id();
+dragonError_t
+dragon_host_id(dragonULInt *host_id);
 
 dragonError_t
 dragon_set_host_id(dragonULInt id);
 
-dragonULInt
-dragon_host_id_from_k8s_uuid(char *pod_uid);
+dragonError_t
+dragon_host_id_from_k8s_uuid(char *pod_uid, dragonULInt *host_id);
 
 #ifdef __cplusplus
 }

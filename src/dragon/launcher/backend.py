@@ -108,12 +108,11 @@ class LauncherBackEnd:
 
     _DTBL = {}  # dispatch router for msgs, keyed by type of message
 
-    def __init__(self, transport_test_env, network_prefix, overlay_transport, overlay_port):
+    def __init__(self, network_prefix, overlay_transport, overlay_port):
 
         self._state = BackendState.INITIALIZING
         self._abnormally_terminating = False
 
-        self.transport_test_env = bool(transport_test_env)
         self.network_prefix = network_prefix
         self.overlay_transport = overlay_transport
         self.overlay_port = overlay_port
@@ -199,38 +198,35 @@ class LauncherBackEnd:
                     log.info("abnormal closing of recv overlay thread")
                     self._shutdown.set()
                     self.infra_in.put(halt_overlay_msg)
-                self.recv_overlaynet_thread.join()
+            dlutil.join_thread(self.recv_msgs_from_overlaynet_thread, log=log, abnormal=abnormal)
         except AttributeError:
             pass
-        log.info("recv_overlaynet_thread joined")
 
         try:
             if self.send_msgs_to_overlaynet_thread.is_alive():
                 if abnormal:
+                    self._shutdown.set()
                     self.la_be_stdout.send(halt_overlay_msg.serialize())
-                self.recv_overlaynet_thread.join()
+            dlutil.join_thread(self.send_msgs_to_overlaynet_thread, log=log, abnormal=abnormal)
         except AttributeError:
             pass
-        log.info("send_overlaynet_thread joined")
 
         try:
             if self.send_log_to_overlaynet_thread.is_alive():
                 # Send it a message to make sure it can get out
                 self._logging_shutdown.set()
                 self.logging_queue.put(halt_logging_msg)
-            self.send_log_to_overlaynet_thread.join()
+            dlutil.join_thread(self.send_log_to_overlaynet_thread, log=log, abnormal=abnormal)
         except AttributeError:
             pass
-        log.info("send_logs_to_overlaynet_thread joined")
 
         try:
             if self.channel_monitor_thread.is_alive():
                 if abnormal:
                     self.la_queue_bd.put(halt_overlay_msg)
-                self.recv_overlaynet_thread.join()
+            dlutil.join_thread(self.channel_monitor_thread, log=log, abnormal=abnormal)
         except AttributeError:
             pass
-        log.info("channel_monitor_thread joined")
 
     def _close_conns_chs_pools(self):
         """Clean up all communication-based data structures:"""
@@ -607,7 +603,7 @@ class LauncherBackEnd:
             # Create my memory pool
             self.be_mpool = MemoryPool(
                 int(dfacts.DEFAULT_BE_OVERLAY_TRANSPORT_SEG_SZ),
-                f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(self.host_id)[-3:]}{str(dfacts.DEFAULT_POOL_SUFFIX)[-3:]}",
+                dfacts.runtime_pool_name(dfacts.DEFAULT_POOL_SUFFIX),
                 dfacts.be_pool_muid_from_hostid(self.host_id),
             )
             puid, mpool_fname = MemoryPool.serialized_uid_fname(self.be_mpool.serialize())
@@ -684,6 +680,7 @@ class LauncherBackEnd:
                 log_sdesc=serialized_dragon_logger,
                 host_ids=host_ids,
                 ip_addrs=ip_addrs,
+                overlay_port=self.overlay_port,
                 frontend=False,
                 env=os.environ,
             )
@@ -767,7 +764,7 @@ class LauncherBackEnd:
         # This starts the "down the tree" router.
         log.debug("starting frontend monitor")
         recv_msgs_from_overlaynet_thread_args = (self.la_be_stdin,)
-        self.recv_msgs_from_overlaynet_thread = threading.Thread(
+        self.recv_msgs_from_overlaynet_thread = dlutil.ServiceThread(
             name="Frontend Monitor",
             target=self.receive_messages_from_overlaynet,
             args=recv_msgs_from_overlaynet_thread_args,
@@ -777,7 +774,7 @@ class LauncherBackEnd:
 
         # Start the "up the tree" router
         send_msgs_to_overlaynet_thread_args = (self.la_be_stdout,)
-        self.send_msgs_to_overlaynet_thread = threading.Thread(
+        self.send_msgs_to_overlaynet_thread = dlutil.ServiceThread(
             name="Backend Monitor",
             target=self.send_messages_to_overlaynet,
             args=send_msgs_to_overlaynet_thread_args,
@@ -802,7 +799,7 @@ class LauncherBackEnd:
 
         # This starts the "logging" router.
         send_log_to_overlaynet_thread_args = (self.logging_queue, level)
-        self.send_log_to_overlaynet_thread = threading.Thread(
+        self.send_log_to_overlaynet_thread = dlutil.ServiceThread(
             name="Logging Monitor",
             target=self.send_log_msgs_to_overlaynet,
             args=send_log_to_overlaynet_thread_args,
@@ -850,20 +847,20 @@ class LauncherBackEnd:
 
         # Wait for LSPingBE on the incoming Posix Message Queue. This tells us the
         # infrastructure channels have been created. Then we know we can attach to them.
-        sh_ping_be_msg = dlutil.get_with_blocking(self.ls_stdout)
-        assert isinstance(sh_ping_be_msg, dmsg.LSPingBE), "la_be ping from ls expected"
+        ls_ping_be_msg = dlutil.get_with_blocking(self.ls_stdout)
+        assert isinstance(ls_ping_be_msg, dmsg.LSPingBE), "la_be ping from ls expected"
         log.info("la_be recv LSPingBE - m3")
 
         # switch to comms with local services over channels and proceed with bring up
         self.ls_channel = None
-        self.ls_queue = InfraQueue.attach(sh_ping_be_msg.ls_cd)
-        self.la_queue = InfraQueue.attach(sh_ping_be_msg.be_cd)
+        self.ls_queue = InfraQueue.attach(ls_ping_be_msg.ls_qd)
+        self.la_queue = InfraQueue.attach(ls_ping_be_msg.be_qd)
         self.la_queue_bd = self.la_queue
         log.info("la_be attached to ls created channels - a7")
 
         # Start the channel monitor thread
         channel_monitor_args = (self.la_queue, self.la_be_stdout)
-        self.channel_monitor_thread = threading.Thread(
+        self.channel_monitor_thread = dlutil.ServiceThread(
             name="BE Channel Monitor", target=self.be_channel_monitor, args=channel_monitor_args, daemon=False
         )
         self.channel_monitor_thread.start()
@@ -1094,7 +1091,7 @@ class LauncherBackEnd:
 
         # The GSProcessCreate message should only be received by the Primary Launcher Backend process.
         # Verify that we're the primary and that our connection to Global Services is established.
-        if (not self.is_primary) or self.transport_test_env:
+        if not self.is_primary:
             self.msg_log.error(
                 "Non-primary LA_BE received GSProcessCreate Request. Cannot forward request to GlobalServices."
             )
@@ -1128,7 +1125,7 @@ class LauncherBackEnd:
 
         # The GSTeardown message should only be received by the Primary Launcher Backend process.
         # Verify that we're the primary and that our connection to Global Services is established.
-        if (not self.is_primary) or self.transport_test_env:
+        if not self.is_primary:
             self.msg_log.error(
                 "Non-primary LA_BE received GSTeardown Request. Cannot forward request to GlobalServices."
             )
@@ -1214,7 +1211,7 @@ class LauncherBackEnd:
         # Wait for the LAChannelsInfo Message to be sent
         # The LAChannelsInfo gave us the serialized descriptor of
         # global services channel, so now we can attach to that channel.
-        if self.is_primary and (not self.transport_test_env):
+        if self.is_primary:
             self.gs_queue = InfraQueue.attach(msg.gs_qd)
             self.msg_log.debug(f"Primary la_be created gs_queue: {self.gs_queue}")
 

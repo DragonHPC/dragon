@@ -9,7 +9,8 @@ import subprocess
 import importlib
 import argparse
 
-from dragon.native.process import ProcessTemplate, Popen, Process
+from dragon import ProcessTemplate
+from dragon.native.process import Popen, Process
 import dragon.workflows.runtime as runtime
 
 
@@ -79,7 +80,7 @@ def main_single_proxy_env(args):
 
     print(f"Connecting to remote runtime on system: {system}", flush=True)
     runtime_sdesc = runtime.lookup(system, runtime_name, timeout, publish_dir=args.runtime_path)
-    proxy = runtime.attach(runtime_sdesc)
+    proxy = runtime.attach(sdesc_str=runtime_sdesc)
 
     print("\n")
 

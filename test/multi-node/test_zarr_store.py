@@ -12,8 +12,8 @@ import dragon
 import multiprocessing as mp
 import zarr
 import numpy as np
+from dragon import System
 from dragon.data.zarr import Store
-from dragon.native.machine import System
 
 DD_MB = 64
 FV = np.float32(1.1)

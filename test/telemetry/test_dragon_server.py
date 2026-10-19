@@ -11,9 +11,9 @@ import sqlite3
 import pickle
 import copy
 
+from dragon import Policy
 from dragon.globalservices.node import get_list, query
 from dragon.telemetry.dragon_server import DragonServer
-from dragon.infrastructure.policy import Policy
 
 from telemetry.telemetry_data import SAMPLE_DATA, BASE_GRAFANA_QUERY
 
@@ -120,14 +120,14 @@ class TestDragonTelemetryDragonServer(unittest.TestCase):
 
         # Set necessary config
         self.ds.telem_cfg = {"dump_node": "test_node", "dump_dir": "/test/dir"}
-        
+
         # Call the method
         result = self.ds.db_dump()
 
         # Assertions
         self.assertEqual(result["status"], "success")
         self.assertEqual(result["message"], "Database dumped successfully.")
-        
+
         # Verify rsync command structure
         args, _ = mock_popen.call_args
         cmd = args[0]
@@ -146,14 +146,14 @@ class TestDragonTelemetryDragonServer(unittest.TestCase):
 
         # Set necessary config
         self.ds.telem_cfg = {"dump_node": "test_node", "dump_dir": "/test/dir"}
-        
+
         # Call the method
         result = self.ds.db_dump()
 
         # Assertions
         self.assertEqual(result["status"], "error")
         self.assertEqual(result["message"], "rsync error")
-    
+
     def test_query_offline_telemetry(self):
         # Setup DragonServer with offline_telemetry_args
         offline_args = (["node1"], "merged_db")
@@ -170,11 +170,11 @@ class TestDragonTelemetryDragonServer(unittest.TestCase):
         cursor = conn.cursor()
         # Note: table_name column added
         cursor.execute("CREATE TABLE datapoints (table_name text, metric text, timestamp text, value real, tags json)")
-        
+
         # Insert sample data
         # metric="cpu", timestamp="1000", value=1.0, tags={"host": "node1"}, table_name="node1"
         cursor.execute(
-            "INSERT INTO datapoints VALUES (?, ?, ?, ?, ?)", 
+            "INSERT INTO datapoints VALUES (?, ?, ?, ?, ?)",
             ("node1", "cpu", "1000", 1.0, json.dumps({"host": "node1"}))
         )
         conn.commit()
@@ -186,7 +186,7 @@ class TestDragonTelemetryDragonServer(unittest.TestCase):
             "queries": [
                 {
                     "metric": "cpu",
-                    "filters": [] 
+                    "filters": []
                 }
             ]
         }

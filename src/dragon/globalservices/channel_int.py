@@ -12,6 +12,8 @@ import dragon.channels as dch
 import logging
 
 from dragon.dtypes import DragonError
+from dragon.infrastructure.queue import InfraQueue
+from dragon.utils import B64
 
 LOG = logging.getLogger("GS.channel:")
 
@@ -30,6 +32,7 @@ class ChannelContext:
         self.destroy_request = None
         self.reply_queue = reply_queue  # TODO: really is a InfraQueue, should change var name
         self.attached_connection = None
+        self.adopted_puid = None
         self.is_reading = False
         self.is_refcounted = self.request.options.ref_count
         self.refcnt = 0
@@ -58,6 +61,53 @@ class ChannelContext:
             options=self.request.options.local_opts,
         )
         return self.lschannelcreate_msg
+
+    @classmethod
+    def adopt_external_return(cls, server, msg):
+        """Adopt an external GS-return channel that was created by LS."""
+        if msg.node_index not in server.node_idx_to_huid:
+            raise ValueError(f"unknown node index {msg.node_index}")
+
+        expected_muid = dfacts.infrastructure_pool_muid_from_index(msg.node_index)
+        if msg.gs_return_muid != expected_muid:
+            raise ValueError(
+                f"GS-return MUID {msg.gs_return_muid} does not match node {msg.node_index} infrastructure pool"
+            )
+
+        channel_sdesc = B64.str_to_bytes(msg.gs_return_cd)
+        if dch.Channel.serialized_uid(channel_sdesc) != msg.gs_return_cuid:
+            raise ValueError("GS-return channel descriptor CUID does not match prepared metadata")
+        channel_muid, _ = dch.Channel.serialized_pool_uid_fname(channel_sdesc)
+        if channel_muid != msg.gs_return_muid:
+            raise ValueError("GS-return channel descriptor MUID does not match prepared metadata")
+
+        existing = server.channel_table.get(msg.gs_return_cuid)
+        if existing is not None:
+            if existing.adopted_puid == msg.p_uid:
+                return existing
+            raise ValueError(f"GS-return CUID {msg.gs_return_cuid} is already registered")
+
+        channel_name = f"external.{msg.p_uid}.gs_return"
+        if channel_name in server.channel_names:
+            raise ValueError(f"GS-return channel name {channel_name} is already registered")
+
+        request = dmsg.GSChannelCreate(
+            tag=msg.tag,
+            p_uid=msg.p_uid,
+            r_c_uid=msg.gs_return_cuid,
+            m_uid=msg.gs_return_muid,
+            user_name=channel_name,
+        )
+        context = cls(server, request, None, msg.gs_return_cuid, msg.node_index)
+        context.descriptor.sdesc = msg.gs_return_cd
+        context.descriptor.state = channel_desc.ChannelDescriptor.State.ACTIVE
+        context.attached_connection = InfraQueue.attach(msg.gs_return_qd)
+        context.adopted_puid = msg.p_uid
+        context.is_refcounted = False
+
+        server.channel_table[msg.gs_return_cuid] = context
+        server.channel_names[channel_name] = msg.gs_return_cuid
+        return context
 
     def mk_ls_channel_destroy(self, the_tag):
         return dmsg.LSChannelDestroy(
@@ -306,6 +356,7 @@ class ChannelContext:
         lscdr = dmsg.LSChannelDestroyResponse
 
         if lscdr.Errors.FAIL == msg.err:
+            self.descriptor.state = channel_desc.ChannelDescriptor.State.ACTIVE
             rm = gscdr(
                 tag=self.server.tag_inc(), ref=self.destroy_request.tag, err=gscdr.Errors.UNKNOWN, err_info=msg.err_info
             )
@@ -314,6 +365,12 @@ class ChannelContext:
             self.descriptor.state = channel_desc.ChannelDescriptor.State.DEAD
             rm = gscdr(tag=self.server.tag_inc(), ref=self.destroy_request.tag, err=gscdr.Errors.SUCCESS)
             destroy_succeeded = True
+            if self.adopted_puid is not None:
+                if self.attached_connection is not None:
+                    self.attached_connection.close()
+                    self.attached_connection = None
+                self.server.channel_table.pop(self.descriptor.c_uid, None)
+                self.server.channel_names.pop(self.descriptor.name, None)
         else:
             raise NotImplementedError("no case")
 

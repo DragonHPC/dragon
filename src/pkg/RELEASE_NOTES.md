@@ -1,3 +1,29 @@
+# Dragon 0.15.0 Release Summary
+
+Version 0.15.0 introduces a new Channels Mesh functionality, enables processes not started by Dragon to join the Dragon runtime, brings performance and stability improvements, adds multi-node support on MacOS installations, and fixes some bugs.
+
+## Changed
+- Improved node hardware detection.
+- Overhauled tag matching and flow queue lookup in the HSTA transport.
+- Identified and promoted select APIs to the top-level Dragon namespace.
+
+## Added
+- Began planning for elasticity, starting with the channels mesh.
+- Enabled external processes to attach to the Dragon runtime.
+- Added multi-node support for macOS.
+- Added tests for basic Dragon imports.
+- Added a LangGraph and Dragon agent tutorial.
+- Added MPI support to macOS wheels via PMIx 
+
+## Fixed
+- Updated the documentation after removing the `--dragon` flag from `p2p_lat.py`.
+- Improved detection of shared memory failures.
+- Fixed `get_ep_addrs_available` for the UCX backend.
+- Fixed Batch issues identified during the PEARC tutorial.
+- Improved proxy checks.
+- Updated the runtime to handle `GSPingLS` arriving before `TAPingLS`.
+- Completed release activities for version 0.15.0.
+
 # Dragon 0.14.2 Release Summary
 
 Version 0.14.2 brings performance and stability improvements, solidifies support for ARM architectures, adds multi-node support to our devcontainers, and as always fixes some bugs

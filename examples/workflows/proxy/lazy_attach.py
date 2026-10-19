@@ -6,8 +6,8 @@ import sys
 import time
 import argparse
 
-from dragon.native.process import ProcessTemplate, Popen, Process
-from dragon.native.process_group import ProcessGroup
+from dragon import ProcessTemplate, ProcessGroup
+from dragon.native.process import Popen, Process
 import dragon.workflows.runtime as runtime
 from dragon.infrastructure.facts import PMIBackend
 
@@ -101,7 +101,7 @@ def remote_work(proxy, remote_working_dir):
 def main(args):
     mp.set_start_method("dragon")
     runtime_sdesc = runtime.lookup(args.system, args.runtime_name, 30, publish_dir=args.remote_working_dir)
-    proxy = runtime.attach(runtime_sdesc, remote_cwd=args.remote_working_dir)
+    proxy = runtime.attach(sdesc_str=runtime_sdesc, remote_cwd=args.remote_working_dir)
 
     print("\n")
 
@@ -115,7 +115,7 @@ def main(args):
 def main_proxy_on_off(args):
     mp.set_start_method("dragon")
     runtime_sdesc = runtime.lookup(args.system, args.runtime_name, 30, publish_dir=args.remote_working_dir)
-    proxy = runtime.attach(runtime_sdesc, remote_cwd=args.remote_working_dir)
+    proxy = runtime.attach(sdesc_str=runtime_sdesc, remote_cwd=args.remote_working_dir)
 
     print("\n")
 

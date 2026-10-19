@@ -12,9 +12,9 @@ In this example we compute the factorial of the largest MPI rank. We multiply th
     import dragon
     import multiprocessing as mp
 
+    from dragon import Policy
     from dragon.workflows.parsl_mpi_app import mpi_app, DragonMPIExecutor
     from dragon.infrastructure.connection import Connection
-    from dragon.infrastructure.policy import Policy
     import parsl
     from parsl.config import Config
     import math

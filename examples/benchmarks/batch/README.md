@@ -28,7 +28,7 @@ all available fields. Pass a PTD file to `Batch.import_func()` to get a
 callable that submits typed tasks with pre-declared data dependencies:
 
 ```python
-from dragon.workflows.batch import Batch
+from dragon import Batch
 
 # Increase or decrease the internal results DDict size in bytes as needed.
 batch = Batch(results_ddict_mem=2 * 1024**3)

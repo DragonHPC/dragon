@@ -18,7 +18,9 @@ CC = gcc
 #CFLAGS = -O0 -g -fPIC -Wall
 CFLAGS = -O3 -ffast-math -fomit-frame-pointer -fPIC -Wall
 CXX = g++
-CPPFLAGS = -MMD -I ../include -I ./gpu -I $(DEFAULT_PMIX_INCLUDE) -DDRAGON_DEBUG -D_GNU_SOURCE $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
+CPPFLAGS = -MMD -I ../include -I ./gpu -I $(DEFAULT_PMIX_INCLUDE) -DDRAGON_DEBUG -D_GNU_SOURCE \
+           -D_ISOC2X_SOURCE=0 -U__GLIBC_USE_C2X_STRTOL -D__GLIBC_USE_C2X_STRTOL=0 \
+           $(CONFIG_INCLUDE) $(CONFIG_DEFINES) -I$ ${VIRTUAL_ENV}/include
 CXXFLAGS = $(CFLAGS) $(CPPFLAGS) -std=c++14
 CAPNP = $(VIRTUAL_ENV)/bin/capnp
 CAPNP-CXX = $(VIRTUAL_ENV)/bin/capnpc-c++
@@ -87,6 +89,6 @@ $(filter-out libpmod.so,$(filter-out libdragon.so,$(LIBRARIES))): lib%.so: ../dr
 
 .PHONY: clean
 clean:
-	$(RM) $(LIBRARIES) *.o *.d libpmod.so *.capnp.c++ *.capnp.h
+	$(RM) $(LIBRARIES) *.o *.d gpu/*.o gpu/*.d libpmod.so *.capnp.c++ *.capnp.h
 
 -include $(libdragon_OBJECTS:.o=.d)

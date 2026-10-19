@@ -4,11 +4,14 @@ Run an MPI application with either a Cray PMI or PMIx backend
 
 import os
 import argparse
-from dragon.native.process import ProcessTemplate
-from dragon.native.process_group import ProcessGroup
+from dragon import (
+    System,
+    Policy,
+    ProcessTemplate,
+    ProcessGroup
+)
 from dragon.infrastructure.facts import PMIBackend
-from dragon.native.machine import System, Node
-from dragon.infrastructure.policy import Policy
+from dragon.native.machine import  Node
 
 
 def iterative_execution(exe, pmi, ppn):

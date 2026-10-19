@@ -74,7 +74,7 @@ First let's define our MPI program:
     }
 
 And now the Dragon python code is the same except the data generation function
-launches its own :py:class:`~dragon.native.process_group.ProcessGroup`, requesting Dragon set up an MPI-friendly
+launches its own :py:class:`~dragon.ProcessGroup`, requesting Dragon set up an MPI-friendly
 environment for a system with Cray PMI via the `pmi=PMIBackend.CRAY` kwarg. If the system is instead setup to use
 PMIX for intializing an MPI application, set `pmi=PMIBackend.PMIX`
 (see :py:class:`~dragon.infrastructure.facts.PMIBackend` and :ref:`pmi_backend_explainer`).
@@ -85,9 +85,9 @@ PMIX for intializing an MPI application, set `pmi=PMIBackend.PMIX`
 
     import os
 
+    from dragon import ProcessTemplate, ProcessGroup
     from dragon.infrastructure.facts import PMIBackend
-    from dragon.native.process_group import ProcessGroup
-    from dragon.native.process import ProcessTemplate, Process, Popen
+    from dragon.native.process import Process, Popen
     from dragon.native.queue import Queue
     from dragon.infrastructure.connection import Connection
 
@@ -191,12 +191,12 @@ PMIX for intializing an MPI application, set `pmi=PMIBackend.PMIX`
 Running `mpi4py` Functions
 ==========================
 
-:py:class:`~dragon.native.process_group.ProcessGroup` can also be used to run `mpi4py`, which is most easily done
+:py:class:`~dragon.ProcessGroup` can also be used to run `mpi4py`, which is most easily done
 following this recipe. First, we recommend that you access your `mpi4py` application as a target function rather
 than starting `python` explictly as an executable. Next, you will need to delay MPI initialization and do it
 explictly via the `mpi4py` API as opposed to the default automatic initialization done on import of `mpi4py`. The
 primary motivation for this is to make it easy to pass Dragon objects to the MPI ranks, such as a
-:py:class:`~dragon.native.queue.Queue` or :py:class:`~dragon.data.DDict`. Here is an example `mpi4py` application with
+:py:class:`~dragon.native.queue.Queue` or :py:class:`~dragon.DDict`. Here is an example `mpi4py` application with
 these suggested changes that also can access a Dragon :py:class:`~dragon.native.queue.Queue`:
 
 .. code-block:: python
@@ -224,7 +224,7 @@ these suggested changes that also can access a Dragon :py:class:`~dragon.native.
 
 
 Let's say this code is in the local file `my_mpi4py.py` and can be imported with `import my_mpi4py`. The associated
-Dragon application that uses :py:class:`~dragon.native.process_group.ProcessGroup` to orchestrate a single execution
+Dragon application that uses :py:class:`~dragon.ProcessGroup` to orchestrate a single execution
 of `my_mpi4py.py` looks like this:
 
 .. code-block:: python
@@ -234,9 +234,8 @@ of `my_mpi4py.py` looks like this:
     import os
     import my_mpi4py
 
+    from dragon import ProcessGroup, ProcessTemplate
     from dragon.infrastructure.facts import PMIBackend
-    from dragon.native.process_group import ProcessGroup
-    from dragon.native.process import ProcessTemplate
     from dragon.native.queue import Queue
 
     if __name__ == '__main__':
@@ -271,8 +270,8 @@ operated behind the scenes, taking that job specification and making it ingestib
 MPI library.
 
 With Dragon, all the specification that would normally go to the job launcher is instead
-programatically defined via the :py:class:`~dragon.native.process_group.ProcessGroup` and
-:py:class:`~dragon.infrastructure.policy.Policy` APIs. The MPI library still expects a separate
+programatically defined via the :py:class:`~dragon.ProcessGroup` and
+:py:class:`~dragon.Policy` APIs. The MPI library still expects a separate
 PMI library to translate that info though. Dragon provides that translation via one of
 its PMI backends.
 

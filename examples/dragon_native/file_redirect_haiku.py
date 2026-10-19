@@ -13,8 +13,7 @@ import os
 import dragon
 import multiprocessing as mp
 
-from dragon.native.process import ProcessTemplate
-from dragon.native.process_group import ProcessGroup
+from dragon import ProcessTemplate, ProcessGroup
 
 HAIKUS = [
     "An old silent pond\nA frog jumps into the pond\nSplash! Silence again",

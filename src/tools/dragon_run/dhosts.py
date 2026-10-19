@@ -2,6 +2,7 @@ import os
 import sys
 import argparse
 import subprocess
+import shlex
 from tempfile import NamedTemporaryFile
 
 from .src import get_host_list
@@ -46,9 +47,14 @@ dhosts --wlm slurm
 
 dhosts --list
     Print the list of hosts that dhosts has determined should be used in the current environment.
+
+dhosts --print-only
+    Print the export command needed to set DRAGON_RUN_NODEFILE in the current shell without launching a subshell.
 """
 
-LIST_HELP="List known hosts in the current dragon run environment"
+LIST_HELP = "List known hosts in the current dragon run environment"
+PRINT_ONLY_HELP = "Print the shell export needed to set DRAGON_RUN_NODEFILE without launching a subshell"
+
 
 def get_parser():
     parser = argparse.ArgumentParser(
@@ -58,7 +64,8 @@ def get_parser():
     )
     add_common_args(parser, add_mode_group=False, add_ssh_args=False)
 
-    parser.add_argument('--list', action="store_true", default=False, help=LIST_HELP)
+    parser.add_argument("--list", action="store_true", default=False, help=LIST_HELP)
+    parser.add_argument("--print-only", action="store_true", default=False, help=PRINT_ONLY_HELP)
     return parser
 
 
@@ -86,6 +93,15 @@ def main():
 
         if args["list"]:
             print("\n".join(host_list))
+            return 0
+
+        if args["print_only"]:
+            # This file must outlive the dhosts process so the caller can export it into the current shell.
+            with NamedTemporaryFile(mode="w+t", suffix=".txt", delete=False) as tmpfile:
+                tmpfile.write("\n".join(host_list))
+                tmpfile.flush()
+
+            print(f"export {ENV_DRAGON_RUN_NODE_FILE}={shlex.quote(tmpfile.name)}")
             return 0
 
         # Determine the user's default shell
@@ -117,7 +133,7 @@ def main():
                     stderr=sys.stderr,
                 ).returncode
             except Exception as exc:
-                print("Error running subprocess: %s", exc, file=sys.stderr, flush=True)
+                print(f"Error running subprocess: {exc}", file=sys.stderr, flush=True)
                 return 1
 
     except (DragonRunMissingAllocation, DragonRunNoSupportedWLM, DragonRunSingleNodeUnsupported) as exc:

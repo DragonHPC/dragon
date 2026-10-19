@@ -5,10 +5,12 @@ import unittest
 import multiprocessing as mp
 import time
 from dragon.managed_memory import MemoryPool, MemoryAlloc, DragonPoolError, DragonPoolAllocationNotAvailable
+from dragon.utils import shm_space
 import os
 
 SMALL_TIMEOUT_VAL = 0.2
 BIGGER_TIMEOUT_VAL = 1.2
+GB3 = 1024*1024*1024*3
 
 
 def worker_attach(q=None, pool_ser=None, mem_ser=None):
@@ -240,7 +242,7 @@ class MemPoolTest(unittest.TestCase):
         self.assertLessEqual(delta, 1, "blocking allocation timeout took too long.")
 
     def test_big_allocation(self):
-        mem_bytes = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        mem_bytes, _ = shm_space()
         big_size = int(mem_bytes * 0.55)
         big_pool = MemoryPool(big_size, "big_pool_test", 2)
         mem = big_pool.alloc(big_size)
@@ -251,8 +253,9 @@ class MemPoolTest(unittest.TestCase):
         big_pool.destroy()
 
     def test_too_many_allocations(self):
-        # 4GB pool.
-        pool = MemoryPool(4294967296, "max_allocations_pool_test", 2, min_block_size=4096, max_allocations=10)
+        # 3GB pool.
+
+        pool = MemoryPool(GB3, "max_allocations_pool_test", 2, min_block_size=4096, max_allocations=10)
 
         allocs = []
         try:
@@ -272,8 +275,8 @@ class MemPoolTest(unittest.TestCase):
         pool.destroy()
 
     def test_too_many_allocations_blocking(self):
-        # 4GB pool.
-        pool = MemoryPool(4294967296, "max_allocations_pool_test", 2, min_block_size=4096, max_allocations=10)
+        # 3GB pool.
+        pool = MemoryPool(GB3, "max_allocations_pool_test", 2, min_block_size=4096, max_allocations=10)
 
         allocs = []
         try:
@@ -293,7 +296,7 @@ class MemPoolTest(unittest.TestCase):
         pool.destroy()
 
     def test_performance(self):
-        mem_bytes = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+        mem_bytes, _ = shm_space()
         big_size = int(mem_bytes * 0.55)
         big_pool = MemoryPool(big_size, "big_pool_test", 2)
         mem = big_pool.alloc(big_size)

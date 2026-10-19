@@ -60,6 +60,11 @@ dragon-cleanup
 Use ``dragon-cleanup`` after a failed or interrupted run when you need to remove
 stale runtime services before starting again.
 
+By default this also removes the orchestrator files left behind by a distributed
+dictionary whose ``destroy()`` never ran. Pass ``--keep-ddict-files`` to leave
+them in place when you intend to inspect them, or when another run is still
+using the same working directory.
+
 .. code-block:: console
 
     dragon-cleanup --help

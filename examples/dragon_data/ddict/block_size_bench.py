@@ -1,9 +1,7 @@
 import sys
 import os
 import dragon
-from dragon.data.ddict import DDict
-from dragon.native.machine import System
-from dragon.infrastructure.policy import Policy
+from dragon import DDict, System, Policy
 import multiprocessing as mp
 import numpy as np
 import functools

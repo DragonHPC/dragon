@@ -26,6 +26,7 @@ import pathlib
 import numpy as np
 import time
 import dragon
+from dragon import ProcessGroup, ProcessTemplate, Policy, DDict, System
 import dragon.infrastructure.messages as dmsg
 import dragon.channels as dch
 from dragon.fli import FLInterface, DragonFLIError, DragonFLIEOT
@@ -33,13 +34,9 @@ import dragon.fli as fli
 import dragon.managed_memory as dmem
 from dragon.managed_memory import MemoryPool, MemoryAlloc
 from dragon.native.process import Popen
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import ProcessTemplate
 from dragon.globalservices import api_setup
-from dragon.infrastructure.policy import Policy
 from dragon.utils import b64encode, b64decode, hash as dhash, host_id, XPickler
 from dragon.data.ddict import (
-    DDict,
     DDictFullError,
     DDictError,
     DDictCheckpointSyncError,
@@ -49,16 +46,17 @@ from dragon.data.ddict import (
     PosixCheckpointPersister,
     DAOSCheckpointPersister,
     NULLCheckpointPersister,
-    SentinelQueue
+    SentinelQueue,
 )
 from dragon.rc import DragonError
-from dragon.native.machine import System, Node
+from dragon.native.machine import Node
 import multiprocessing as mp
 from multiprocessing import Barrier, Pool, Queue, Event, set_start_method
 
 NUM_BUCKETS = 4
 POOL_MUID = 897
 DAOS_POOL_NAME = "testpool"
+
 
 def batch_put(d, key, val):
     d.start_batch_put(persist=False)
@@ -169,6 +167,7 @@ def client_func_1_nonpersist(d, ev):
 def client_put(d):
     d["my_key"] = "my_value"
     d.detach()
+
 
 def client_func_2_nonpersist(d, ev):
     ev.set()
@@ -859,6 +858,7 @@ def sort_keys(dd, out_queue):
 def sort_keys_comparator(x, y):
     return x < y
 
+
 def flood(dd, out_queue):
     try:
         for i in range(1000):
@@ -872,6 +872,7 @@ def flood(dd, out_queue):
             "There was an exception in flood: %s\n Traceback: %s" % (ex, tb),
             flush=True,
         )
+
 
 def test_sync_proc_func(d, bar, keys):
 
@@ -889,9 +890,11 @@ def test_sync_proc_func(d, bar, keys):
 
     d.detach()
 
+
 def putter_proc(q):
     q.putter()
     q.close()
+
 
 class TestDDict(unittest.TestCase):
     def setUp(self):
@@ -1224,7 +1227,7 @@ class TestDDict(unittest.TestCase):
         d = DDict(1, 1, 3000000, trace=True)
         d["abc"] = "def"
         keys = list(d.keys())
-        values = set(y for x,y in d.items())
+        values = set(y for x, y in d.items())
         for key in keys:
             self.assertTrue(d[key] in values)
         d.destroy()
@@ -1243,7 +1246,7 @@ class TestDDict(unittest.TestCase):
         d = DDict(1, 1, 3000000, trace=True)
         d["abc"] = "def"
         d.freeze()
-        values = set(y for x,y in d.items())
+        values = set(y for x, y in d.items())
         for key in d.keys():
             self.assertTrue(d[key] in values)
         d.unfreeze()
@@ -1682,8 +1685,8 @@ class TestDDict(unittest.TestCase):
         # non-persistent key
         proc1 = mp.Process(target=client_put, args=(d,))
         proc1.start()
-        val = d['my_key']
-        self.assertEqual(val, 'my_value')
+        val = d["my_key"]
+        self.assertEqual(val, "my_value")
         proc1.join()
         self.assertEqual(0, proc1.exitcode)
         d.destroy()
@@ -2045,7 +2048,7 @@ class TestDDict(unittest.TestCase):
         remote_fli = fli.FLInterface.attach(b64decode(remote_fli_ser))
 
         with remote_fli.recvh(destination_pool=self.mpool) as recvh:
-            (x, _) = recvh.recv_mem()  # recv_bytes returns a tuple, first the bytes then the message attribute
+            x, _ = recvh.recv_mem()  # recv_bytes returns a tuple, first the bytes then the message attribute
             remote_host = x.get_memview().tobytes().decode("utf-8")
             if num_nodes == 1:
                 self.assertEqual(remote_host, host)
@@ -2056,7 +2059,7 @@ class TestDDict(unittest.TestCase):
             self.assertEqual(x.pool.muid, POOL_MUID)
 
             with self.assertRaises(DragonFLIEOT):
-                (x, _) = recvh.recv_bytes()  # We should get back an EOT here
+                x, _ = recvh.recv_bytes()  # We should get back an EOT here
 
         with resp_fli.sendh(use_main_as_stream_channel=True) as sendh:
             sendh.send_bytes("Done!".encode("utf-8"))
@@ -2115,13 +2118,32 @@ class TestDDict(unittest.TestCase):
 
     def test_restart_posix_persister(self):
         name = f"ddict_test_restart_{getpass.getuser()}"
-        d = DDict(2, 1, 3000000, trace=True, name=name, wait_for_keys=True, working_set_size=2, persister_class=PosixCheckpointPersister)
+        d = DDict(
+            2,
+            1,
+            3000000,
+            trace=True,
+            name=name,
+            wait_for_keys=True,
+            working_set_size=2,
+            persister_class=PosixCheckpointPersister,
+        )
         manager_nodes = d.manager_nodes
         for i in range(len(manager_nodes)):
             manager_nodes[i] = b64encode(cloudpickle.dumps(manager_nodes[i]))
         d.destroy(allow_restart=True)
 
-        d2 = DDict(2, 1, 3000000, trace=True, name=name, restart=True, wait_for_keys=True, working_set_size=2, persister_class=PosixCheckpointPersister)
+        d2 = DDict(
+            2,
+            1,
+            3000000,
+            trace=True,
+            name=name,
+            restart=True,
+            wait_for_keys=True,
+            working_set_size=2,
+            persister_class=PosixCheckpointPersister,
+        )
         manager_nodes_d2 = d2.manager_nodes
         for i in range(len(manager_nodes)):
             manager_nodes_d2[i] = b64encode(cloudpickle.dumps(manager_nodes_d2[i]))
@@ -2131,13 +2153,34 @@ class TestDDict(unittest.TestCase):
     @unittest.skipIf(not DAOS_EXISTS, "Skipped. DAOS is not available on the system.")
     def test_restart_daos_persister(self):
         name = f"ddict_test_restart_{getpass.getuser()}"
-        d = DDict(2, 1, 3000000, trace=True, name=name, wait_for_keys=True, working_set_size=2, persister_class=DAOSCheckpointPersister, persist_path="testpool")
+        d = DDict(
+            2,
+            1,
+            3000000,
+            trace=True,
+            name=name,
+            wait_for_keys=True,
+            working_set_size=2,
+            persister_class=DAOSCheckpointPersister,
+            persist_path="testpool",
+        )
         manager_nodes = d.manager_nodes
         for i in range(len(manager_nodes)):
             manager_nodes[i] = b64encode(cloudpickle.dumps(manager_nodes[i]))
         d.destroy(allow_restart=True)
 
-        d2 = DDict(2, 1, 3000000, trace=True, name=name, restart=True, wait_for_keys=True, working_set_size=2, persister_class=DAOSCheckpointPersister, persist_path="testpool")
+        d2 = DDict(
+            2,
+            1,
+            3000000,
+            trace=True,
+            name=name,
+            restart=True,
+            wait_for_keys=True,
+            working_set_size=2,
+            persister_class=DAOSCheckpointPersister,
+            persist_path="testpool",
+        )
         manager_nodes_d2 = d2.manager_nodes
         for i in range(len(manager_nodes)):
             manager_nodes_d2[i] = b64encode(cloudpickle.dumps(manager_nodes_d2[i]))
@@ -2557,7 +2600,6 @@ class TestDDict(unittest.TestCase):
     def test_custom_pickler(self):
         ddict = DDict(2, 1, 3000000)
 
-        INT_NUM_BYTES = ctypes.sizeof(ctypes.c_int)
         key = 2048
         arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
         value = np.array(arr)
@@ -2569,11 +2611,39 @@ class TestDDict(unittest.TestCase):
 
         ddict.destroy()
 
+    def test_with_stmt(self):
+        key = 2048
+        arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
+        value = np.array(arr)
+        with DDict(2, 1, 3000000) as dd:
+            dd[key] = value
+            get_val = dd[key]
+            self.assertTrue(np.array_equal(value, get_val))
+
+        # This reaches inside dd which is a no-no, but
+        # it verifies cleanup was done.
+        self.assertTrue(dd._destroyed)
+
+    def test_with_stmt_attach(self):
+        ddict = DDict(2, 1, 3000000)
+
+        key = 2048
+        arr = [[0.12, 0.31, 3.4], [4.579, 5.98, 6.54]]
+        value = np.array(arr)
+        with DDict.attach(ddict.serialize()) as dd:
+            dd[key] = value
+            get_val = dd[key]
+            self.assertTrue(np.array_equal(value, get_val))
+
+        # This reaches inside dd which is a no-no, but
+        # it verifies cleanup was done.
+        self.assertTrue(dd._detached)
+
     def test_custom_pickler_bytes(self):
         ddict = DDict(2, 1, 3000000)
 
-        value = bytes.fromhex('deadbeef')
-        key = 'my_key'
+        value = bytes.fromhex("deadbeef")
+        key = "my_key"
         pickler = XPickler()
         with ddict.pickler(pickler, pickler) as type_dd:
             type_dd[key] = value
@@ -3003,7 +3073,7 @@ class TestDDictPersist(unittest.TestCase):
 
     def test_persist_2_checkpoint_freq_1_cnt_1_restore_from_1(self):
         """
-        Persist more than one checkpoints and restore from the second checkpoint. Also make sure the
+        Persist more than one checkpoint and restore from the second checkpoint. Also make sure the
         older persist file is removed when the number of persistedcheckpoints exceeds persist count.
         """
         # This test persists chkpt 0 and 1 to disk. Persist count is 1 so the oldest persist chkpt, which
@@ -3930,7 +4000,7 @@ class TestDDictPersist(unittest.TestCase):
 
         for i in range(5):
             d["hello"] = "world"
-            if i%2 == 0:
+            if i % 2 == 0:
                 d.persist()
             d.checkpoint()
 
@@ -4196,7 +4266,7 @@ class TestDDictPersist(unittest.TestCase):
 
     def test_persist_invalid_op_write_when_read_only(self):
         """
-        Any writes, deletes, clears op is not valid in read-only mode.
+        Any writes, deletes, clear ops are not valid in read-only mode.
         """
         # In read-only mode, calling put, batch put, pop, clear is invalid
         d = DDict(
@@ -4342,7 +4412,7 @@ class TestDDictPersist(unittest.TestCase):
             persister_class=PosixCheckpointPersister,
         )
 
-        keys = [''.join(random.choices(string.ascii_letters, k=10)) for _ in range(40)]
+        keys = ["".join(random.choices(string.ascii_letters, k=10)) for _ in range(40)]
 
         pg = ProcessGroup(restart=False)
         bar = Barrier(parties=4)
@@ -4351,8 +4421,8 @@ class TestDDictPersist(unittest.TestCase):
                 nproc=1,
                 template=ProcessTemplate(
                     target=test_sync_proc_func,
-                    args=(d, bar, keys[10*i:10*i+10]),
-                )
+                    args=(d, bar, keys[10 * i : 10 * i + 10]),
+                ),
             )
         pg.init()
         pg.start()

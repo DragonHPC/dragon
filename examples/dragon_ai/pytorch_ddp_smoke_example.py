@@ -17,7 +17,8 @@ pip install torch torchvision torchaudio --index-url https://download.pytorch.or
 import os
 import torch
 import torch.distributed as dist
-from dragon.native.process_group import ProcessGroup, RankInfo
+from dragon import ProcessGroup
+from dragon.native.process_group import RankInfo
 
 
 def train(local_rank, world_size):

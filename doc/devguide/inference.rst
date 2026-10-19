@@ -97,17 +97,17 @@ Dragon Primitives Used
    * - :py:class:`~dragon.native.barrier.Barrier`
      - ``dragon.native.barrier``
      - Startup synchronization for CPU workers and model workers.
-   * - :py:class:`~dragon.native.process_group.ProcessGroup`
-     - ``dragon.native.process_group``
+   * - :py:class:`~dragon.ProcessGroup`
+     - ``dragon.process_group``
      - Groups CPU head workers and each inference worker's processes.
-   * - :py:class:`~dragon.native.process.ProcessTemplate`
-     - ``dragon.native.process``
+   * - :py:class:`~dragon.ProcessTemplate`
+     - ``dragon``
      - Process target, arguments, working directory, and placement policy.
-   * - :py:class:`~dragon.infrastructure.policy.Policy`
-     - ``dragon.infrastructure.policy``
+   * - :py:class:`~dragon.Policy`
+     - ``dragon``
      - Host placement for CPU heads and GPU affinity for LLM processes.
-   * - :py:class:`~dragon.native.machine.System`
-     - ``dragon.native.machine``
+   * - :py:class:`~dragon.System`
+     - ``dragon``
      - Discovers nodes and GPUs in the current Dragon allocation.
    * - :py:class:`~dragon.telemetry.telemetry.Telemetry`
      - ``dragon.telemetry.telemetry``
@@ -492,6 +492,6 @@ Changing vLLM versions
     Reinstall the desired vLLM and re-test ``patch_vllm/`` and
     ``LLMInferenceEngine.generate()``. The plugin is bundled with ``dragonhpc``
     and patches vLLM at runtime, so no plugin reinstall or source-editing step
-    is needed. The plugin supports ``vllm>=0.11.0,<0.18.0`` and the code has
+    is needed. The plugin supports ``vllm>=0.11.0,<0.20.0`` and the code has
     explicit version branches for structured output APIs, engine startup,
     worker startup, multiprocessing-context selection, and engine arguments.

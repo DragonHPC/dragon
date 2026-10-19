@@ -4,6 +4,7 @@
 import time
 
 import os
+import secrets
 import sys
 
 import logging
@@ -27,7 +28,7 @@ import dragon.launcher.util as dlutil
 import dragon.utils as du
 from dragon.infrastructure.queue import InfraQueue
 
-from dragon.managed_memory import DragonPoolError
+from dragon.managed_memory import DragonPoolError, DragonPoolCreateFail
 
 # TODO: consider ways to bypass serialization when it isn't really needed
 
@@ -152,6 +153,7 @@ def send_log_msgs_to_py_logger(logging_queue, level: int, logging_shutdown: thre
 
 def main():
     arg_map = launchargs.get_args()
+    runtime_port = int(arg_map.get("port", os.environ.get("DRAGON_TRANSPORT_PORT", dfacts.DEFAULT_TRANSPORT_PORT)))
 
     try:
         runtime_ip_addr = dutil.get_external_ip_addr().split(":")[0]
@@ -161,7 +163,7 @@ def main():
     if runtime_ip_addr is not None:
         os.environ["DRAGON_FE_EXTERNAL_IP_ADDR"] = runtime_ip_addr
         os.environ["DRAGON_HEAD_NODE_IP_ADDR"] = runtime_ip_addr
-        os.environ["DRAGON_RT_UID"] = str(dutil.rt_uid_from_ip_addrs(runtime_ip_addr, runtime_ip_addr))
+        os.environ["DRAGON_RT_UID"] = str(dutil.rt_uid_from_ip_addrs(runtime_ip_addr, runtime_ip_addr, runtime_port))
 
     if dfacts.OVERLAY_TRANSPORT_VAR not in os.environ:
         os.environ[dfacts.OVERLAY_TRANSPORT_VAR] = str(dfacts.TransportAgentOptions.TCP)
@@ -177,6 +179,12 @@ def main():
     ls_stdout = dlutil.SRQueue()
     ls_args = {"ls_stdin": ls_stdin, "ls_stdout": ls_stdout}
 
+    if arg_map.get("attachable", False):
+        attach_auth_token = os.environ.get(dfacts.DRAGON_ATTACH_TOKEN_ENV) or secrets.token_hex(32)
+        ls_args["attach_auth_token"] = attach_auth_token
+    else:
+        attach_auth_token = None
+
     ls_thread = threading.Thread(name="local services", target=ls_start, args=(ls_args,), daemon=True)
 
     shm_status = dutil.survey_dev_shm()
@@ -184,7 +192,17 @@ def main():
     logging_shutdown = threading.Event()
     level_name = arg_map["log_device_level_map"].get("DRAGON_LOG_DEVICE_STDERR", logging.INFO)
     level = getattr(logging, level_name.upper(), logging.INFO)
-    logging_queue = dlog.setup_dragon_logging(node_index=0)
+    try:
+        logging_queue = dlog.setup_dragon_logging(node_index=0)
+    except DragonPoolCreateFail:
+        print("\nPossible Configuration Issue:\n"
+              "Pool creation failed. There is not enough shared memory reserved\n"
+              "for Dragon. If you are running in a container, you must increase the\n"
+              "amount of shared memory reserved for your container by specifying\n"
+              "--shm-size=6g on your Docker run command with an appropriate size for\n"
+              "your intended application. At a minimum, 6GB should be enough but you\n"
+              "may want to reserve more depending on your managed memory pool needs.\n", file=sys.stderr)
+        raise
     send_log_msgs_to_py_logger_thread_args = (logging_queue, level, logging_shutdown)
     send_log_msgs_to_py_logger_thread = threading.Thread(
         name="Logging Monitor",
@@ -202,8 +220,8 @@ def main():
         be_ping = dmsg.parse(ls_stdout.recv())
         assert isinstance(be_ping, dmsg.LSPingBE)
 
-        ls_in_wh = InfraQueue.attach(be_ping.ls_cd)
-        la_in_rh = InfraQueue.attach(be_ping.be_cd)
+        ls_in_wh = InfraQueue.attach(be_ping.ls_qd)
+        la_in_rh = InfraQueue.attach(be_ping.be_qd)
         gs_in_wh = InfraQueue.attach(be_ping.gs_qd)
 
         ls_in_wh.put(dmsg.BEPingLS(tag=dlutil.next_tag()))
@@ -220,12 +238,18 @@ def main():
         return LAUNCHER_FAIL_EXIT
 
     try:  # gs startup
-        gs_thread = threading.Thread(name="global services", target=dgs.single_thread, args=(ls_in_wh,), daemon=True)
+        gs_thread = threading.Thread(
+            name="global services",
+            target=dgs.single_thread,
+            args=(ls_in_wh,),
+            daemon=True,
+        )
         gs_thread.start()
 
         # Set a long timeout for DST
         gs_up = dlutil.q_get_with_timeout(la_in_rh, timeout=120)
         assert isinstance(gs_up, dmsg.GSIsUp)
+
         gs_in_wh.put(start_msg)
     except (AssertionError, TimeoutError) as err:
         log.exception("gs startup")
@@ -242,6 +266,7 @@ def main():
 
     try:
         gs_in_wh.put(dmsg.GSTeardown(tag=dlutil.next_tag()))
+
         gs_halt = shutdown_monitor(la_in_rh)
         time.sleep(TIMEOUT_YIELD)
         ls_in_wh.put(dmsg.LSTeardown(tag=dlutil.next_tag()))

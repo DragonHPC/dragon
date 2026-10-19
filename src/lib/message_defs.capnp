@@ -422,6 +422,61 @@ struct CPLoggingMessageDef {
     level @8: UInt8;
 }
 
+struct GwEnvEntryDef {
+    key @0: Text;
+    value @1: Text;
+}
+
+struct LSExternalRegisterDef {
+    authToken @0: Text;
+    pid @1: UInt64;
+    procRespSdesc @2: Text;
+    runtimeIncarnation @3: Text;
+    attemptId @4: Text;
+}
+
+struct GSProcessDetachDef {
+    pUid @0: UInt64;
+    rCuid @1: UInt64;
+}
+
+struct LSExternalResourcesReadyDef {
+    runtimeIncarnation @0: Text;
+    attemptId @1: Text;
+    nodeIndex @2: UInt64;
+    pUid @3: UInt64;
+    lsReturnQd @4: Text;
+    gsReturnQd @5: Text;
+    numGwChannelsPerNode @6: UInt64;
+    gwEnv @7: List(GwEnvEntryDef);
+    defaultPd @8: Text;
+    infPd @9: Text;
+}
+
+struct GSExternalRegisterCompleteDef {
+    pUid @0: UInt64;
+}
+
+struct GSProcessDetachAckDef {
+    pUid @0: UInt64;
+    detachRef @1: UInt64;
+}
+
+struct LSExternalRegisterCancelDef {
+    runtimeIncarnation @0: Text;
+    attemptId @1: Text;
+    pUid @2: UInt64;
+}
+
+struct AttachableRuntimeDescrDef {
+    nodeIndex @0: UInt64;
+    gsQd @1: Text;
+    lsQd @2: Text;
+    defaultPd @3: Text;
+    infPd @4: Text;
+    rtUid @5: Text;
+}
+
 struct NoMessageSpecificData {
     none @0: Void;
 }
@@ -523,5 +578,12 @@ struct MessageDef {
         ddCreateManagerResponse @84: DDCreateManagerResponseDef;
         ddSync @85: DDSyncDef;
         cpLoggingMessage @86: CPLoggingMessageDef;
+        lsExternalRegister @87: LSExternalRegisterDef;
+        gsProcessDetach @88: GSProcessDetachDef;
+        lsExternalResourcesReady @89: LSExternalResourcesReadyDef;
+        gsExternalRegisterComplete @90: GSExternalRegisterCompleteDef;
+        gsProcessDetachAck @91: GSProcessDetachAckDef;
+        lsExternalRegisterCancel @92: LSExternalRegisterCancelDef;
+        attachableRuntimeDescr @93: AttachableRuntimeDescrDef;
     }
 }

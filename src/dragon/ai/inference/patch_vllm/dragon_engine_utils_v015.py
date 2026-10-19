@@ -1,6 +1,6 @@
-"""Dragon-compatible vLLM engine startup helper for vLLM 0.15.x.
+"""Dragon-compatible vLLM engine startup helper for vLLM 0.15.x through 0.19.x.
 
-This module provides the vLLM 0.15.x variant of Dragon's replacement for
+This module provides the vLLM 0.15+ variant of Dragon's replacement for
 ``vllm.v1.engine.utils.wait_for_engine_startup``.  The signature includes the
 ``coordinated_dp`` flag introduced by newer vLLM releases, but the purpose is
 the same as the 0.12 helper: monitor core-engine handshakes and process

@@ -20,7 +20,7 @@ class Policy:
     allocation to specific physical resources like nodes, CPUs, or GPUs. The use and evaluation of
     a Policy must be consistent across the multiple ways of starting a process
     (:py:class:`~dragon.native.process.Process`, :py:class:`multiprocessing.Process`,
-    :py:class:`~dragon.native.process_group.ProcessGroup`, etc).
+    :py:class:`~dragon.ProcessGroup`, etc).
 
     Policy Hierarchy
     ----------------
@@ -29,9 +29,9 @@ class Policy:
     lower priority) to create a single combined policy for any given object:
 
     1. An explicit policy passed to the :py:class:`~dragon.native.process.Process`,
-       :py:class:`~dragon.native.process_group.ProcessGroup`, or :ref:`Global Service API<DragonGSClient>`
-    2. If creating a :py:class:`~dragon.native.process_group.ProcessGroup`, the process group's policy will be merged
-       with the policy (if any) of each :py:class:`~dragon.native.process.ProcessTemplate`
+       :py:class:`~dragon.ProcessGroup`, or :ref:`Global Service API<DragonGSClient>`
+    2. If creating a :py:class:`~dragon.ProcessGroup`, the process group's policy will be merged
+       with the policy (if any) of each :py:class:`~dragon.ProcessTemplate`
     3. Use of the Python based Policy context manager.
     4. The Global Policy
 
@@ -111,7 +111,7 @@ class Policy:
     ----------------------------
 
     The Policy context manager that can be used to establish a thread- local stack of Policy objects.
-    Any :py:class:`~dragon.native.process.Process` or :py:class:`~dragon.native.process_group.ProcessGroup` object
+    Any :py:class:`~dragon.native.process.Process` or :py:class:`~dragon.ProcessGroup` object
     that is created within this context will inherit the Policy defined by the nested stack of Policy objects.
 
         .. highlight:: python
@@ -239,7 +239,23 @@ class Policy:
                    gpu_affinity = GPU_AFFINITY_2                  # from teplate_policy_2
                    wait_mode=Policy.WaitMode.IDLE,                # from global_policy. Not currently used.
                    refcounted=True,                               # from global_policy. Not currently used.
-            )"""
+            )
+
+    Importing Policy
+    ================
+
+    Policy can be imported from the top-level :ref:`DragonAPI` or :mod:`dragon.infrastructure.policy` modules.
+
+        .. code-block:: python
+
+          from dragon import Policy
+
+        or
+
+        .. code-block:: python
+
+          from dragon.infrastructure.policy import Policy
+    """
 
     class Placement(enum.IntEnum):
         """

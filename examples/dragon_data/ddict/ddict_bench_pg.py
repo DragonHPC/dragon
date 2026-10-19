@@ -8,11 +8,9 @@ import random
 import traceback
 import sys
 
+from dragon import ProcessGroup, ProcessTemplate, DDict
 from dragon.infrastructure.parameters import this_process
 from dragon.native.queue import Queue
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import ProcessTemplate
-from dragon.data.ddict import DDict
 
 
 @enum.unique

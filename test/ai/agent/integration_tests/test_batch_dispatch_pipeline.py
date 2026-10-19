@@ -19,7 +19,7 @@ import time
 import uuid
 from unittest import TestCase, main
 
-from dragon.data.ddict import DDict
+from dragon import DDict
 from dragon.native.queue import Queue
 from dragon.native.event import Event
 

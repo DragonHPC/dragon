@@ -14,10 +14,11 @@ import logging
 
 from ..channels import Channel, ChannelEmpty, ChannelFull
 from ..managed_memory import MemoryPool
-from ..utils import b64encode, b64decode
+from ..utils import B64, b64encode, b64decode
 from ..globalservices.channel import create, destroy, release_refcnt, get_refcnt, query
 from ..infrastructure.parameters import POLICY_USER, Policy
 from ..infrastructure.channel_desc import ChannelOptions
+from ..infrastructure import runtime_env as druntime_env
 import dragon.fli as fli
 
 LOG = logging.getLogger(__name__)
@@ -172,6 +173,9 @@ class Queue:
         :raises NotImplementedError: If a joinable queue is used with an external channel
         """
         self._closed = True
+        self._use_local_infrastructure, self._local_infrastructure_env = druntime_env.local_infrastructure_for_pool(
+            pool
+        )
 
         # NOTE: when maxsize=0 it is reset to 100 (default)
         # because in the mp documentation, maxsize equal to zero means
@@ -207,72 +211,136 @@ class Queue:
 
         # Now detect what needs to be managed internally and if there are conflicts in
         # the combination of provided arguments.
+        with self._infrastructure_context():
+            if buffered:
+                # This is a queue that will use one channel and buffer data that is put to it.
 
-        if buffered:
-            # This is a queue that will use one channel and buffer data that is put to it.
+                if len(self._strm_channels) > 0:
+                    raise ValueError("You cannot specify a buffered queue and also provide a list of stream channels.")
 
-            if len(self._strm_channels) > 0:
-                raise ValueError("You cannot specify a buffered queue and also provide a list of stream channels.")
+                if num_streams != 0:
+                    raise ValueError(
+                        "You cannot specify a buffered queue also specify a non-zero number of stream channels."
+                    )
 
-            if num_streams != 0:
-                raise ValueError(
-                    "You cannot specify a buffered queue also specify a non-zero number of stream channels."
-                )
+                if mgr_channel is not None:
+                    raise ValueError(
+                        "You cannot specify a buffered queue and also a manager channel. A manager channel is not needed when the Queue is buffered."
+                    )
 
-            if mgr_channel is not None:
-                raise ValueError(
-                    "You cannot specify a buffered queue and also a manager channel. A manager channel is not needed when the Queue is buffered."
-                )
-
-            if main_channel is None:
-                self._main_channel = _mk_channel(
-                    pool=self._pool, block_size=block_size, capacity=maxsize, policy=policy
-                )
-                self._main_channel_internally_managed = True
-        else:
-            # This is not a buffered Queue. So there will be stream channels either provided on the
-            # constructor or when putting and getting values, depending on the configuration.
-            if len(self._strm_channels) > 0 or num_streams > 0:
-                if num_streams == 0:
-                    num_streams = len(self._strm_channels)
-
-                # Then we must have a manager and a main channel if stream channels are managed by the FLI.
                 if main_channel is None:
                     self._main_channel = _mk_channel(
-                        pool=self._pool, block_size=None, capacity=num_streams, policy=policy
+                        pool=self._pool, block_size=block_size, capacity=maxsize, policy=policy
                     )
                     self._main_channel_internally_managed = True
+            else:
+                # This is not a buffered Queue. So there will be stream channels either provided on the
+                # constructor or when putting and getting values, depending on the configuration.
+                if len(self._strm_channels) > 0 or num_streams > 0:
+                    if num_streams == 0:
+                        num_streams = len(self._strm_channels)
 
-                if mgr_channel is None:
-                    self._mgr_channel = _mk_channel(
-                        pool=self._pool, block_size=None, capacity=num_streams, policy=policy
-                    )
-                    self._mgr_channel_internally_managed = True
+                    # Then we must have a manager and a main channel if stream channels are managed by the FLI.
+                    if main_channel is None:
+                        self._main_channel = _mk_channel(
+                            pool=self._pool, block_size=None, capacity=num_streams, policy=policy
+                        )
+                        self._main_channel_internally_managed = True
 
-                while len(self._strm_channels) < num_streams:
-                    self._strm_channels.append(
-                        _mk_channel(pool=self._pool, block_size=self._block_size, capacity=self._maxsize, policy=policy)
-                    )
-                    self._num_managed_strm_channels += 1
+                    if mgr_channel is None:
+                        self._mgr_channel = _mk_channel(
+                            pool=self._pool, block_size=None, capacity=num_streams, policy=policy
+                        )
+                        self._mgr_channel_internally_managed = True
 
-        if joinable:
-            if sem_channel is None:
-                self._sem_channel = _mk_sem_channel(pool=self._pool, policy=policy)
-                self._sem_channel_internally_managed = True
+                    while len(self._strm_channels) < num_streams:
+                        self._strm_channels.append(
+                            _mk_channel(
+                                pool=self._pool,
+                                block_size=self._block_size,
+                                capacity=self._maxsize,
+                                policy=policy,
+                            )
+                        )
+                        self._num_managed_strm_channels += 1
 
-        self._fli = fli.FLInterface(
-            main_ch=self._main_channel,
-            manager_ch=self._mgr_channel,
-            sem_ch=self._sem_channel,
-            pool=self._pool,
-            stream_channels=self._strm_channels,
-            use_buffered_protocol=self._buffered,
-        )
+            if joinable:
+                if sem_channel is None:
+                    self._sem_channel = _mk_sem_channel(pool=self._pool, policy=policy)
+                    self._sem_channel_internally_managed = True
+
+            self._fli = fli.FLInterface(
+                main_ch=self._main_channel,
+                manager_ch=self._mgr_channel,
+                sem_ch=self._sem_channel,
+                pool=self._pool,
+                stream_channels=self._strm_channels,
+                use_buffered_protocol=self._buffered,
+            )
+            # This process created the adapter; _close releases Queue-owned
+            # resources but must not use the attach-only detach operation.
+            self._fli_attached = False
 
         self._serialized_fli = b64encode(self._fli.serialize())
 
         LOG.debug("Created queue %s", repr(self))
         self._closed = False
+
+    def _infrastructure_context(self):
+        return druntime_env.using_infrastructure(
+            local=getattr(self, "_use_local_infrastructure", False),
+            local_env=getattr(self, "_local_infrastructure_env", None),
+        )
+
+    @staticmethod
+    def _make_state(
+        *,
+        maxsize,
+        pool,
+        block_size,
+        joinable,
+        buffered,
+        policy,
+        num_streams,
+        main_channel,
+        mgr_channel,
+        sem_channel,
+        main_channel_internally_managed,
+        mgr_channel_internally_managed,
+        sem_channel_internally_managed,
+        num_managed_strm_channels,
+        strm_channels,
+        serialized_fli,
+        node_index,
+        pickler,
+        use_local_infrastructure,
+        local_infrastructure_env,
+    ):
+        # Keep pickle and Queue.attach() on the same state schema. The local
+        # infrastructure metadata must travel with proxy queues so their
+        # lifecycle operations reach the GS that owns their local channels.
+        return {
+            "maxsize": maxsize,
+            "pool": pool,
+            "block_size": block_size,
+            "joinable": joinable,
+            "buffered": buffered,
+            "policy": policy,
+            "num_streams": num_streams,
+            "main_channel": main_channel,
+            "mgr_channel": mgr_channel,
+            "sem_channel": sem_channel,
+            "main_channel_internally_managed": main_channel_internally_managed,
+            "mgr_channel_internally_managed": mgr_channel_internally_managed,
+            "sem_channel_internally_managed": sem_channel_internally_managed,
+            "num_managed_strm_channels": num_managed_strm_channels,
+            "strm_channels": strm_channels,
+            "serialized_fli": serialized_fli,
+            "node_index": node_index,
+            "pickler": pickler,
+            "use_local_infrastructure": use_local_infrastructure,
+            "local_infrastructure_env": local_infrastructure_env,
+        }
 
     def __getstate__(self):
 
@@ -281,73 +349,97 @@ class Queue:
 
         pickler = cp.dumps(self._pickler)
 
-        return (
-            self._maxsize,
-            self._pool,
-            self._block_size,
-            self._joinable,
-            self._buffered,
-            self._policy,
-            self._num_streams,
-            self._main_channel,
-            self._mgr_channel,
-            self._sem_channel,
-            self._main_channel_internally_managed,
-            self._mgr_channel_internally_managed,
-            self._sem_channel_internally_managed,
-            self._num_managed_strm_channels,
-            self._strm_channels,
-            self._fli,
-            self._node_index,
-            pickler,
+        # Preserve the owning runtime's GS route when this Queue is rebuilt in
+        # a proxy process; the active GS there may belong to another runtime.
+        return self._make_state(
+            maxsize=self._maxsize,
+            pool=self._pool,
+            block_size=self._block_size,
+            joinable=self._joinable,
+            buffered=self._buffered,
+            policy=self._policy,
+            num_streams=self._num_streams,
+            main_channel=self._main_channel,
+            mgr_channel=self._mgr_channel,
+            sem_channel=self._sem_channel,
+            main_channel_internally_managed=self._main_channel_internally_managed,
+            mgr_channel_internally_managed=self._mgr_channel_internally_managed,
+            sem_channel_internally_managed=self._sem_channel_internally_managed,
+            num_managed_strm_channels=self._num_managed_strm_channels,
+            strm_channels=self._strm_channels,
+            serialized_fli=self._serialized_fli,
+            node_index=self._node_index,
+            pickler=pickler,
+            use_local_infrastructure=self._use_local_infrastructure,
+            local_infrastructure_env=self._local_infrastructure_env,
         )
 
     def __setstate__(self, state):
         self._closed = True
-        (
-            self._maxsize,
-            self._pool,
-            self._block_size,
-            self._joinable,
-            self._buffered,
-            self._policy,
-            self._num_streams,
-            self._main_channel,
-            self._mgr_channel,
-            self._sem_channel,
-            self._main_channel_internally_managed,
-            self._mgr_channel_internally_managed,
-            self._sem_channel_internally_managed,
-            self._num_managed_strm_channels,
-            self._strm_channels,
-            self._fli,
-            self._node_index,
-            pickler,
-        ) = state
+        # Runtime compatibility negotiation belongs at the attachment boundary.
+        # Here, require the fields needed to rebuild the Queue without
+        # maintaining a separate positional or versioned pickle format.
+        if not isinstance(state, dict):
+            raise ValueError("Invalid Queue state; expected a mapping")
 
-        self._pickler = cp.loads(pickler)
-        self._pickler_has_loads = hasattr(self._pickler, "loads")
+        try:
+            self._maxsize = state["maxsize"]
+            self._pool = state["pool"]
+            self._block_size = state["block_size"]
+            self._joinable = state["joinable"]
+            self._buffered = state["buffered"]
+            self._policy = state["policy"]
+            self._num_streams = state["num_streams"]
+            self._main_channel = state["main_channel"]
+            self._mgr_channel = state["mgr_channel"]
+            self._sem_channel = state["sem_channel"]
+            self._main_channel_internally_managed = state["main_channel_internally_managed"]
+            self._mgr_channel_internally_managed = state["mgr_channel_internally_managed"]
+            self._sem_channel_internally_managed = state["sem_channel_internally_managed"]
+            self._num_managed_strm_channels = state["num_managed_strm_channels"]
+            self._strm_channels = state["strm_channels"]
+            serialized_fli = state["serialized_fli"]
+            self._node_index = state["node_index"]
+            pickler = state["pickler"]
+            self._use_local_infrastructure = state["use_local_infrastructure"]
+            self._local_infrastructure_env = state["local_infrastructure_env"]
+        except KeyError as ex:
+            raise ValueError(f"Invalid Queue state; missing field: {ex.args[0]}") from ex
 
-        self._serialized_fli = b64encode(self._fli.serialize())
+        with self._infrastructure_context():
+            self._pickler = cp.loads(pickler)
+            self._pickler_has_loads = hasattr(self._pickler, "loads")
 
-        if self._pool is not None and not self._pool.is_local:
-            self._pool = MemoryPool.attach_default()
-            self._pool_internally_attached = True
-        else:
-            self._pool_internally_attached = False
+            if self._pool is not None and not self._pool.is_local:
+                self._pool = MemoryPool.attach_default()
+                self._pool_internally_attached = True
+            else:
+                self._pool_internally_attached = False
 
-        if self._main_channel_internally_managed:
-            get_refcnt(self._main_channel.cuid)
+            if isinstance(serialized_fli, (B64, str, bytes, bytearray)):
+                self._fli = fli.FLInterface.attach(serialized_fli, self._pool)
+            else:
+                # Older queue states carried an already attached FLI object.
+                self._fli = serialized_fli
+            # Reconstructed queues own a process-local FLI attachment. Leaving
+            # it in the adapter map can make a later reused CUID resolve stale
+            # channel/send-handle state, so _close must detach it exactly once.
+            self._fli_attached = True
 
-        if self._mgr_channel_internally_managed:
-            get_refcnt(self._mgr_channel.cuid)
+            self._serialized_fli = b64encode(self._fli.serialize())
 
-        if self._sem_channel_internally_managed:
-            get_refcnt(self._sem_channel.cuid)
+            if self._main_channel_internally_managed:
+                get_refcnt(self._main_channel.cuid)
 
-        for i in range(self._num_managed_strm_channels):
-            # the last part of the list is the internally managed streams.
-            get_refcnt(self._strm_channels[-1 - i].cuid)
+            if self._mgr_channel_internally_managed:
+                get_refcnt(self._mgr_channel.cuid)
+
+            if self._sem_channel_internally_managed:
+                get_refcnt(self._sem_channel.cuid)
+
+            for i in range(self._num_managed_strm_channels):
+                # the last part of the list is the internally managed streams.
+                get_refcnt(self._strm_channels[-1 - i].cuid)
 
         self._closed = False
 
@@ -607,7 +699,8 @@ class Queue:
         :return: The integer node index.
         """
         if self._node_index is None:
-            cdesc = query(self._main_channel.cuid)  # reaching inside Queue. Only for test purposes
+            with self._infrastructure_context():
+                cdesc = query(self._main_channel.cuid)  # reaching inside Queue. Only for test purposes
             self._node_index = cdesc.node
 
         return self._node_index
@@ -625,30 +718,31 @@ class Queue:
     def destroy(self) -> None:
         """Destroy the queue immediately."""
         self._close()
-        try:
-            if self._main_channel_internally_managed:
-                destroy(self._main_channel.cuid)
-        except:
-            pass
-
-        try:
-            if self._mgr_channel_internally_managed:
-                destroy(self._mgr_channel.cuid)
-        except:
-            pass
-
-        try:
-            if self._sem_channel_internally_managed:
-                destroy(self._sem_channel.cuid)
-        except:
-            pass
-
-        for i in range(self._num_managed_strm_channels):
-            # the last part of the list is the internally managed streams.
+        with self._infrastructure_context():
             try:
-                destroy(self._strm_channels[-1 - i])
+                if self._main_channel_internally_managed:
+                    destroy(self._main_channel.cuid)
             except:
                 pass
+
+            try:
+                if self._mgr_channel_internally_managed:
+                    destroy(self._mgr_channel.cuid)
+            except:
+                pass
+
+            try:
+                if self._sem_channel_internally_managed:
+                    destroy(self._sem_channel.cuid)
+            except:
+                pass
+
+            for i in range(self._num_managed_strm_channels):
+                # the last part of the list is the internally managed streams.
+                try:
+                    destroy(self._strm_channels[-1 - i])
+                except:
+                    pass
 
     # private method
     def _close(self):
@@ -656,36 +750,46 @@ class Queue:
             if not self._closed:
                 self._closed = True
 
-                try:
-                    if self._main_channel_internally_managed:
-                        release_refcnt(self._main_channel.cuid)
-                except:
-                    pass
+                with self._infrastructure_context():
+                    # Detach only process-local attachments. The creator's FLI
+                    # adapter follows the lifetime of its Queue-owned channels.
+                    if getattr(self, "_fli_attached", False):
+                        try:
+                            self._fli.detach()
+                        except Exception as ex:
+                            LOG.debug("Could not detach from queue FLI adapter: %s", ex)
+                        self._fli_attached = False
 
-                try:
-                    if self._mgr_channel_internally_managed:
-                        release_refcnt(self._mgr_channel.cuid)
-                except:
-                    pass
-
-                try:
-                    if self._sem_channel_internally_managed:
-                        release_refcnt(self._sem_channel.cuid)
-                except:
-                    pass
-
-                for i in range(self._num_managed_strm_channels):
-                    # the last part of the list is the internally managed streams.
                     try:
-                        release_refcnt(self._strm_channels[-1 - i])
+                        if self._main_channel_internally_managed:
+                            release_refcnt(self._main_channel.cuid)
                     except:
                         pass
 
-                if self._pool_internally_attached:
                     try:
-                        self._pool.detach()
-                    except Exception as e:
-                        LOG.debug(f"We couldn't detach from queue's buffer pool. {e=}")
+                        if self._mgr_channel_internally_managed:
+                            release_refcnt(self._mgr_channel.cuid)
+                    except:
+                        pass
+
+                    try:
+                        if self._sem_channel_internally_managed:
+                            release_refcnt(self._sem_channel.cuid)
+                    except:
+                        pass
+
+                    for i in range(self._num_managed_strm_channels):
+                        # the last part of the list is the internally managed streams.
+                        try:
+                            release_refcnt(self._strm_channels[-1 - i])
+                        except:
+                            pass
+
+                    if self._pool_internally_attached:
+                        try:
+                            self._pool.detach()
+                        except Exception as e:
+                            LOG.debug(f"We couldn't detach from queue's buffer pool. {e=}")
         except:
             # An exception here would indicate _closed was not defined. If this is so then we didn't get very far.
             self._closed = True
@@ -746,30 +850,33 @@ class Queue:
         _sem_channel_internally_managed = False
         _num_managed_strm_channels = 0
         _strm_channels = []
-        _fli = fli.FLInterface.attach(b64decode(serialized_bytes), mpool)
+        _serialized_fli = serialized_bytes
         _node_index = None  # Don't set it here. That way we won't talk to GS unless asked to.
         _pickler_has_loads = hasattr(pickler, "loads")
         _pickler = pickler = cp.dumps(pickler)
+        _use_local_infrastructure, _local_infrastructure_env = druntime_env.local_infrastructure_for_pool(mpool)
 
-        new_state = (
-            _maxsize,
-            _pool,
-            _block_size,
-            _joinable,
-            _buffered,
-            _policy,
-            _num_streams,
-            _main_channel,
-            _mgr_channel,
-            _sem_channel,
-            _main_channel_internally_managed,
-            _mgr_channel_internally_managed,
-            _sem_channel_internally_managed,
-            _num_managed_strm_channels,
-            _strm_channels,
-            _fli,
-            _node_index,
-            _pickler,
+        new_state = cls._make_state(
+            maxsize=_maxsize,
+            pool=_pool,
+            block_size=_block_size,
+            joinable=_joinable,
+            buffered=_buffered,
+            policy=_policy,
+            num_streams=_num_streams,
+            main_channel=_main_channel,
+            mgr_channel=_mgr_channel,
+            sem_channel=_sem_channel,
+            main_channel_internally_managed=_main_channel_internally_managed,
+            mgr_channel_internally_managed=_mgr_channel_internally_managed,
+            sem_channel_internally_managed=_sem_channel_internally_managed,
+            num_managed_strm_channels=_num_managed_strm_channels,
+            strm_channels=_strm_channels,
+            serialized_fli=_serialized_fli,
+            node_index=_node_index,
+            pickler=_pickler,
+            use_local_infrastructure=_use_local_infrastructure,
+            local_infrastructure_env=_local_infrastructure_env,
         )
 
         new_queue._pickler_has_loads = _pickler_has_loads

@@ -7,14 +7,17 @@ import time
 from dragon.native.process import Process
 import dragon.workflows.runtime as runtime
 
+
 def signal_exit(exit_path):
     file = open(exit_path, "w")
     file.close()
+
 
 def shutdown_remote_runtime(exit_path):
     exit_proc = Process(target=signal_exit, args=(exit_path,))
     exit_proc.start()
     exit_proc.join()
+
 
 def howdy(q):
     time.sleep(20)
@@ -23,14 +26,14 @@ def howdy(q):
     )
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     # paths to find remote runtime sdesc and signal exit
-    #system = "pippin"
+    # system = "pippin"
     system = "portage"
-    #runtime_name = "proxy_runtime"
+    # runtime_name = "proxy_runtime"
     runtime_name = "my-runtime"
-    #publish_dir = "/lus/scratch/wahlc/dragon/dev/"
+    # publish_dir = "/lus/scratch/wahlc/dragon/dev/"
     publish_dir = "/lus/lustre1/wahlc/dragon/dev/proxy-dev/examples/workflows/proxy"
     exit_path = "/lus/lustre1/wahlc/dragon/dev/proxy-dev/examples/workflows/proxy/client_exit"
 
@@ -38,7 +41,7 @@ if __name__ == '__main__':
 
     mp.set_start_method("dragon")
     runtime_sdesc = runtime.lookup(system, runtime_name, 30, publish_dir=publish_dir)
-    proxy = runtime.attach(runtime_sdesc, remote_cwd=remote_working_dir)
+    proxy = runtime.attach(sdesc_str=runtime_sdesc, remote_cwd=remote_working_dir)
 
     print("\n")
 
@@ -47,11 +50,10 @@ if __name__ == '__main__':
     q = mp.Queue()
     procs = []
 
-
     print("Launching remote runtime processes...", flush=True)
     for _ in range(2):
         # using native process so we can set cwd
-        #p = Process(target=howdy, args=(q,), cwd=remote_working_dir, env=proc_env)
+        # p = Process(target=howdy, args=(q,), cwd=remote_working_dir, env=proc_env)
         p = Process(target=howdy, args=(q,))
         p.start()
         procs.append(p)
@@ -68,7 +70,6 @@ if __name__ == '__main__':
     for p in procs:
         p.join()
     proxy.disable()
-
 
     # when running in proxy mode, explicitly delete processes and queue can be helpful
     for p in procs:

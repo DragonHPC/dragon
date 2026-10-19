@@ -3,8 +3,8 @@
 Controlling GPU Affinity
 ++++++++++++++++++++++++
 
-This tutorial will draw from the :py:class:`~dragon.infrastructure.policy.Policy` documentation to walk through how
-to use :py:class:`~dragon.native.process_group.ProcessGroup` to set what GPUs to use for a given function or process as
+This tutorial will draw from the :py:class:`~dragon.Policy` documentation to walk through how
+to use :py:class:`~dragon.ProcessGroup` to set what GPUs to use for a given function or process as
 well as how to do it with :py:class:`~dragon.native.Pool`.
 
 
@@ -12,16 +12,16 @@ well as how to do it with :py:class:`~dragon.native.Pool`.
 Policies via the System API
 ===========================
 
-The simplest way to create a list of :py:class:`Policies <dragon.infrastructure.policy.Policy>` for each GPU on every
-node Dragon is running on is with the :py:meth:`~dragon.native.machine.System.gpu_policies` method. In the
-example below, we'll apply each :py:class:`~dragon.infrastructure.policy.Policy` to 4 processes in a
+The simplest way to create a list of :py:class:`Policies <dragon.Policy>` for each GPU on every
+node Dragon is running on is with the :py:meth:`~dragon.System.gpu_policies` method. In the
+example below, we'll apply each :py:class:`~dragon.Policy` to 4 processes in a
 :py:class:`~dragon.native.pool.Pool`.
 
 .. code-block:: python
     :linenos:
     :caption: **Create a list of Policies specifying GPU affinity**
 
-    from dragon.native.machine import System
+    from dragon import System
     from dragon.native.pool import Pool
 
 
@@ -45,8 +45,8 @@ Manually Derived Policies
 
 To leverage full control over generating policies and applying them to processes, the first place to start is to ask
 Dragon about the infrastructure it is running on and what GPUs are available. The
-most direct way to access this information is through :py:class:`~dragon.native.machine.System` and
-:py:class:`~dragon.native.machine.Node`. The example below shows how to use :py:class:`~dragon.native.machine.System`
+most direct way to access this information is through :py:class:`~dragon.System` and
+:py:class:`~dragon.native.machine.Node`. The example below shows how to use :py:class:`~dragon.System`
 and :py:class:`~dragon.native.machine.Node` to manually inspect each node that
 Dragon is running on and create a list of hostnames and GPU IDs. You can of course add any other logic you like
 to focus on just a subset of the nodes or filter by other criteria about a node.
@@ -55,7 +55,8 @@ to focus on just a subset of the nodes or filter by other criteria about a node.
     :linenos:
     :caption: **Scan all nodes for GPUs and create a list of tuples containing hostname and GPU ID**
 
-    from dragon.native.machine import System, Node
+    from dragon import System
+    from dragon.native.machine import Node
 
 
     def find_gpus():
@@ -70,14 +71,14 @@ to focus on just a subset of the nodes or filter by other criteria about a node.
         return all_gpus
 
 
-Next we'll use that list of tuples to create a list of :py:class:`Policies <dragon.infrastructure.policy.Policy>`
-where each :py:class:`~dragon.infrastructure.policy.Policy` specifies a host and a GPU on that host.
+Next we'll use that list of tuples to create a list of :py:class:`Policies <dragon.Policy>`
+where each :py:class:`~dragon.Policy` specifies a host and a GPU on that host.
 
 .. code-block:: python
     :linenos:
     :caption: **Given a list of (hostname, gpu_id), create a list of Policies specifying GPU affinity**
 
-    from dragon.infrastructure.policy import Policy
+    from dragon import Policy
 
 
     # pass in the output from find_gpus() above
@@ -101,9 +102,9 @@ where each :py:class:`~dragon.infrastructure.policy.Policy` specifies a host and
 Test It Out with Native Pool
 ----------------------------
 
-Now that we can build a list of :py:class:`Policies <dragon.infrastructure.policy.Policy>` for our processes, let's
+Now that we can build a list of :py:class:`Policies <dragon.Policy>` for our processes, let's
 try it out using :py:class:`~dragon.native.pool.Pool`. In the example below, each worker will first say what host and
-GPU it will use to verify its :py:class:`dragon.infrastructure.policy.Policy` is working as intended.
+GPU it will use to verify its :py:class:`dragon.Policy` is working as intended.
 Then we'll use PyTorch to do some computation on the specified GPU.
 
 .. code-block:: python
@@ -114,7 +115,7 @@ Then we'll use PyTorch to do some computation on the specified GPU.
     import torch
     import numpy as np
 
-    from dragon.native.machine import current
+    from dragon import current
     from dragon.native import Pool
 
 
@@ -204,7 +205,7 @@ Running this example on a 4 nodes, each equipped with 4 NVIDIA A100 GPUs, gives 
 Test It Out with ProcessGroup
 -----------------------------
 
-Next we'll adapt some of the code above to run with :py:class:`~dragon.native.process_group.ProcessGroup`, where we'll
+Next we'll adapt some of the code above to run with :py:class:`~dragon.ProcessGroup`, where we'll
 have a little more control over what the processes do. We'll still run a Python function in this example, but you could
 instead run serial executables or even MPI processes this way (see :ref:`orchestrate_procs` and :ref:`orchestrate_mpi`).
 
@@ -216,8 +217,7 @@ instead run serial executables or even MPI processes this way (see :ref:`orchest
     import torch
     import numpy as np
 
-    from dragon.native.machine import current
-    from dragon.native.process_group import ProcessGroup, ProcessTemplate
+    from dragon import current, ProcessGroup, ProcessTemplate
 
 
     # reuse find_gpus() and make_policies() from above
@@ -290,4 +290,3 @@ Running this example on a 4 nodes, each equipped with 4 NVIDIA A100 GPUs, gives 
     ID 11 has GPU=3 on host=pinoak0034
     ID 10 has GPU=2 on host=pinoak0034
     ID 26 has GPU=2 on host=pinoak0034
-

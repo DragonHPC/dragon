@@ -1926,6 +1926,18 @@ class ProcessGroup:
         pg.join()  #  If your worker functions won't exit on their own, use pg.stop() to transmit
                    #  interrupt/termination signals
         pg.close()
+
+    ProcessGroup can be imported from the top-level :ref:`DragonAPI` or :mod:`dragon.native.process_group` modules.
+
+        .. code-block:: python
+
+          from dragon import ProcessGroup
+
+        or
+
+        .. code-block:: python
+
+          from dragon.native.process_group import ProcessGroup
     """
 
     _EXCEPTION_Q_PATIENCE = 0.1

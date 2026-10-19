@@ -72,10 +72,26 @@ TESTS_PYTHON := test_channels.py \
                 test_localservices.py \
                 $(wildcard transport/tcp/test_*.py) \
                 transport/test_lsif.py \
+                transport/test_oob.py \
                 test_transport.py \
+                test_proxy.py \
                 test_integration_shep_gs.py \
                 test_dragon_cleanup.py \
-                test_launcher.py
+				test_ext_attach.py
+
+# test_launcher.py is not in TESTS_PYTHON: its classes each claim the Dragon
+# host ID, which is write-once per process, so they get the test_launcher
+# target below instead.
+LAUNCHER_TEST_CLASSES := LaunchSelectionTest \
+                         LaunchOptionsTest \
+                         FileNetworkConfigTest \
+                         SlurmNetworkConfigTest \
+                         PbsPalsNetworkConfigTest \
+                         SSHNetworkConfigTest \
+                         SigIntTest \
+                         BackendBringUpTeardownTest \
+                         FrontendBringUpTeardownTest \
+                         FrontendRestartTest
 
 ifneq ($(wildcard workflows/Makefile),)
 TEST_WORKFLOWS = test_workflows
@@ -107,7 +123,7 @@ TESTS_CCFUTURES := test_as_completed.py \
 all: test
 
 .PHONY: test
-test: $(TESTS_PYTHON) $(TESTS_DRAGON) $(TESTS_CCFUTURES) $(TESTS_AI) $(TEST_WORKFLOWS)
+test: $(TESTS_PYTHON) test_launcher $(TESTS_DRAGON) $(TESTS_CCFUTURES) $(TESTS_AI) $(TEST_WORKFLOWS)
 
 ifneq ($(wildcard workflows/Makefile),)
 .PHONY: $(TEST_WORKFLOWS)
@@ -128,9 +144,23 @@ $(TESTS_PYTHON):
 # 	@echo "*************** END OF LOG **********************"
 # 	rm -f out.txt
 
+# Dragon's host ID is write-once per process: dragon_set_host_id() fails once it
+# has been set, and dragon_host_id() latches it on first read. The frontend
+# classes claim FRONTEND_HOSTID while the backend class latches the node's real
+# ID, so running them in one interpreter leaves whichever runs second unable to
+# claim it. Give every launcher class its own process.
+.PHONY: test_launcher
+test_launcher:
+	rm -f *.log
+	@for cls in $(LAUNCHER_TEST_CLASSES); do \
+	    echo "===== launcher: $$cls ====="; \
+	    $(PYTHON) test_launcher.py -v -f $$cls || exit 1; \
+	done
+
 .PHONY: $(TESTS_DRAGON)
 $(TESTS_DRAGON):
 	$(PYTHON) -m dragon -s $@ -v -f
+
 
 .PHONY: tests_multi_node
 tests_multi_node:

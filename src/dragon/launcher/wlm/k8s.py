@@ -18,11 +18,9 @@ from typing import Union, Tuple, Optional
 
 
 class KubernetesNetworkConfig(BaseWLM):
-
     name = WLM.K8S.value
-    
-    def __init__(self, network_prefix=None, port=None, hostlist=None):
 
+    def __init__(self, network_prefix=None, port=None, hostlist=None):
         try:
             from kubernetes import client, config
         except ImportError:
@@ -70,7 +68,6 @@ class KubernetesNetworkConfig(BaseWLM):
             DEFAULT_OVERLAY_NETWORK_PORT + DEFAULT_PORT_RANGE,
         ),
     ):
-
         # Query Kubernetes API for the network topology
         with open(f"/config/backend_pod_{os.getenv('FRONTEND_JOB_LABEL')}.yml", "r") as f:
             be_job_config = yaml.safe_load(f)
@@ -110,7 +107,6 @@ class KubernetesNetworkConfig(BaseWLM):
         network_prefix: str,
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
-        transport_test_env: bool,
     ) -> list[str]:
         raise RuntimeError("KubernetesNetworkConfig does not implement _get_dragon_launch_be_args")
 
@@ -139,7 +135,6 @@ class KubernetesNetworkConfig(BaseWLM):
         network_prefix: str,
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
-        transport_test_env: bool,
         log_level: int = logging.NOTSET,
     ) -> subprocess.Popen:
         raise RuntimeError("KubernetesNetworkConfig does not implement launch_backend")

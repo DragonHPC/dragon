@@ -47,8 +47,6 @@ def vllm_inference(
 
     # Lazy load vllm packages to ensure dragon start method maintains.
     from vllm import LLM, SamplingParams
-    from vllm.engine.arg_utils import EngineArgs
-    import dataclasses
     import torch
     import gc
 
@@ -72,7 +70,7 @@ def vllm_inference(
     )
 
     # Load model
-    engine_args = EngineArgs(
+    llm = LLM(
         model=model_name,
         tensor_parallel_size=tp_size,
         enforce_eager=True,
@@ -85,7 +83,6 @@ def vllm_inference(
         max_model_len=1024,
         enable_chunked_prefill=True,
     )
-    llm = LLM(**dataclasses.asdict(engine_args))
     inf_barrier.wait()
 
     while True:

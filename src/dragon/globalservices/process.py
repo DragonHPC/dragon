@@ -21,6 +21,7 @@ from ..infrastructure.parameters import this_process
 from ..infrastructure import process_desc as pdesc
 from ..infrastructure import facts as dfacts
 from ..infrastructure import connection as dconn
+from ..infrastructure import runtime_env as druntime_env
 from ..utils import B64, strtobool
 from ..infrastructure.policy import Policy
 import os
@@ -264,11 +265,9 @@ def get_create_message(
     :return: GSProcessCreate message object
     """
 
-    # Like the OS, we should inherit the environment when creating a process.
-    # Using dict below makes a copy.
-    the_env = dict(os.environ)
-    if env is not None:
-        the_env.update(env)  # layer on the user supplied environment.
+    # In proxy mode, remote processes should start from the remote runtime
+    # environment rather than inheriting the local client's proxy-control vars.
+    the_env = druntime_env.launch_process_env(env)
 
     thread_policy = Policy.thread_policy()
     if thread_policy:
@@ -353,11 +352,9 @@ def get_create_message_with_argdata(
     else:
         options.make_inf_channels = True
 
-    # Like the OS, we should inherit the environment when creating a process.
-    # Using dict below makes a copy.
-    the_env = dict(os.environ)
-    if env is not None:
-        the_env.update(env)  # layer on the user supplied environment.
+    # In proxy mode, remote processes should start from the remote runtime
+    # environment rather than inheriting the local client's proxy-control vars.
+    the_env = druntime_env.launch_process_env(env)
 
     thread_policy = Policy.thread_policy()
     if thread_policy:

@@ -14,7 +14,7 @@ from ctypes import c_int64
 
 class Store(DDict, ZStore):
     """
-    This class implements a Zarr store using the Dragon distributed dictionary (:py:class:`~dragon.data.DDict`). This
+    This class implements a Zarr store using the Dragon distributed dictionary (:py:class:`~dragon.DDict`). This
     allows users to load a dataset fully into the memory of a set of nodes and keep it very close to Zarr clients. It
     can also be used as an initially empty store without data loaded from a file-based store.
 

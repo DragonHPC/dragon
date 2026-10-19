@@ -134,6 +134,16 @@ telemetry. By default, the Dragon runtime disables all telemetry. Passing one of
 1, 2, 3, 4, or 5 to this option, the Dragon runtime will enable the specified
 telemetry verbosity."""
 
+ATTACHABLE_HELP = """When set, the Dragon runtime publishes an attach auth token
+and each Local Services writes a node-local attach-info file to
+<tmpdir>/dragon_<uid>/attach_info.txt, where <tmpdir> is a usable system temp
+directory (usually /tmp; set DRAGON_ATTACH_DIR to choose the directory), so that
+co-located processes (not started by Dragon) can attach to the runtime via
+dragon.attach(). The auth token is printed
+separately and must be supplied to dragon.attach() either as an argument or via
+the DRAGON_ATTACH_TOKEN environment variable. Local Services removes the file on
+shutdown."""
+
 
 def strtobool(value: str) -> bool:
     value = value.lower()
@@ -249,6 +259,8 @@ def get_parser():
     parser.add_argument("--no-label", action="store_true", default=True)
     parser.add_argument("--basic-label", action="store_true")
     parser.add_argument("--verbose-label", action="store_true")
+
+    parser.add_argument("-a", "--attachable", action="store_true", default=False, help=ATTACHABLE_HELP)
 
     parser.add_argument(
         "--ssh-config-path", type=str, metavar="SSH_CONFIG_PATH", help="Path to SSH config file for SSH authentication"

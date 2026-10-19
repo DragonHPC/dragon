@@ -18,6 +18,7 @@
 
 #ifdef __APPLE__
 #include <sys/sysctl.h>
+#include <uuid/uuid.h>
 #include <mach/thread_policy.h>
 #include <mach/mach.h>
 #include <mach/task_info.h>
@@ -334,20 +335,36 @@ _hex_to_dec(char *hex, uint64_t *dec)
 dragonError_t
 _get_hostid_from_bootid(uint64_t *host_id)
 {
-    int fd;
-    size_t n, bsize = 512;
+    size_t bsize = 512;
     char boot_id[bsize];
+
+#ifdef __APPLE__
+    /* macOS has no /proc/sys/kernel/random/boot_id. gethostuuid returns the
+       IOPlatformUUID, which is unique to the machine. */
+    uuid_t host_uuid;
+    struct timespec wait = {5, 0};
+
+    if (gethostuuid(host_uuid, &wait) != 0)
+        err_return(DRAGON_FAILURE, "Unable to get the host UUID for host ID generation");
+
+    uuid_unparse_lower(host_uuid, boot_id);
+#else
+    int fd;
+    ssize_t n;
     char *filename = "/proc/sys/kernel/random/boot_id";
 
     // Read hex boot id
     if ((fd = open(filename, O_RDONLY|O_CLOEXEC|O_NOCTTY)) == -1)
         err_return(DRAGON_FAILURE, "Unable to open /proc/sys/kernel/random/boot_id for host ID generation");
 
-    if ((n = read(fd, boot_id, bsize)) == -1)
+    if ((n = read(fd, boot_id, bsize - 1)) == -1) {
+        close(fd);
         err_return(DRAGON_FAILURE, "Unable to read /proc/sys/kernel/random/boot_id for host ID generation");
+    }
 
     boot_id[n] = '\0';
     close(fd);
+#endif
 
     // Clean out any non-hex charactars and convert to dec
     if (_sanitize_id(boot_id) != DRAGON_SUCCESS)
@@ -467,84 +484,139 @@ dragonULInt dg_hostid;
 dragonUInt dg_pid;
 atomic_uint dg_ctr;
 int dg_hostid_called = 0;
+static struct timespec dg_hostid_time;
 
-dragonULInt
-dragon_host_id()
+typedef struct dgHostIdState_st {
+    dragonULInt hostid;
+    uint32_t ctr_seed;
+    dragonUInt pid;
+} dgHostIdState;
+
+/* Derive the cached identity state from an id and a clock reading. Kept free of
+   any clock read of its own so dragon_set_host_id() can recompute the state a
+   second time from the original reading and get an identical answer. */
+static void
+_compute_host_id_state(dragonULInt id, const struct timespec *ts, dgHostIdState *state)
 {
+    state->hostid = id;
+    state->ctr_seed = (uint32_t)(1.0e-9 * (ONE_BILLION * ts->tv_sec + ts->tv_nsec));
+    state->pid = (dragonUInt)getpid();
+}
+
+static void
+_cache_host_id(dragonULInt id)
+{
+    struct timespec now;
+    dgHostIdState state;
+
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    _compute_host_id_state(id, &now, &state);
+
+    dg_hostid_time = now;
+    dg_ctr = state.ctr_seed;
+    dg_hostid = state.hostid;
+    dg_pid = state.pid;
+
+    dg_hostid_called = 1;
+}
+
+dragonError_t
+dragon_host_id(dragonULInt *host_id)
+{
+    if (host_id == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The host_id argument cannot be NULL");
+
     if (dg_hostid_called == 0) {
 
         uint64_t lg_hostid;
         char container_id[HOST_ID_MAX_LEN];
+
         if (get_container_id(container_id)) {
             if (_get_hostid_from_k8s_podid(container_id, &lg_hostid) != DRAGON_SUCCESS)
-                err_return(DRAGON_FAILURE, "Unable to generate host ID from Kubernetes pod UUID.");
+                append_err_return(DRAGON_FAILURE, "Unable to generate host ID from Kubernetes pod UUID.");
         }
         else {
             if (_get_hostid_from_bootid(&lg_hostid) != DRAGON_SUCCESS)
-                err_return(DRAGON_FAILURE, "Unable to generate host ID from boot ID");
+                append_err_return(DRAGON_FAILURE, "Unable to generate host ID from boot ID");
         }
-        pid_t pid = getpid();
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
 
-        dg_ctr = (uint32_t)(1.0e-9 * (ONE_BILLION * now.tv_sec + now.tv_nsec));
-        dg_hostid = (dragonULInt)lg_hostid;
-        dg_pid = (dragonUInt)pid;
-
-        dg_hostid_called = 1;
+        _cache_host_id((dragonULInt)lg_hostid);
     }
 
-    return dg_hostid;
+    *host_id = dg_hostid;
+
+    no_err_return(DRAGON_SUCCESS);
 }
 
-dragonULInt
-dragon_host_id_from_k8s_uuid(char *pod_uid)
+dragonError_t
+dragon_host_id_from_k8s_uuid(char *pod_uid, dragonULInt *host_id)
 {
+    if (pod_uid == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The pod_uid argument cannot be NULL");
+
+    if (host_id == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The host_id argument cannot be NULL");
+
     uint64_t lg_hostid;
     if (_get_hostid_from_k8s_podid(pod_uid, &lg_hostid) != DRAGON_SUCCESS)
-        err_return(DRAGON_FAILURE, "Unable to generate host ID from Kubernetes pod UUID.");
+        append_err_return(DRAGON_FAILURE, "Unable to generate host ID from Kubernetes pod UUID.");
 
-    return (dragonULInt)lg_hostid;
+    *host_id = (dragonULInt)lg_hostid;
+
+    no_err_return(DRAGON_SUCCESS);
 }
 
 dragonError_t
 dragon_set_host_id(dragonULInt id)
 {
     if (dg_hostid_called == 1) {
-        err_return(DRAGON_INVALID_ARGUMENT, "Cannot set host ID after it has been previously set");
+        dgHostIdState state;
+
+        /* Recompute using the clock reading from the original call rather than a
+           fresh one. Re-running _cache_host_id() would re-seed dg_ctr, which
+           dragon_generate_uuid() increments, and a clock-derived seed can land
+           below values already handed out -- producing duplicate UUIDs. */
+        _compute_host_id_state(id, &dg_hostid_time, &state);
+
+        if (state.hostid == dg_hostid) {
+            no_err_return(DRAGON_SUCCESS);
+        }
+
+        err_return(DRAGON_INVALID_ARGUMENT, "Cannot set host ID to a different value after it has been previously set");
     }
     else {
-        pid_t pid = getpid();
-        struct timespec now;
-        clock_gettime(CLOCK_MONOTONIC, &now);
-
-        dg_ctr = (uint32_t)(1.0e-9 * (ONE_BILLION * now.tv_sec + now.tv_nsec));
-        dg_hostid = id;
-        dg_pid = (dragonUInt)pid;
-
-        dg_hostid_called = 1;
+        _cache_host_id(id);
     }
     no_err_return(DRAGON_SUCCESS);
 }
+/* Channels mesh identifies each Dragon runtime by a runtime UID (rt_uid),
+ * established at launch and exported as DRAGON_RT_UID. This cached value
+ * identifies the runtime that owns this process and its local resources; proxy
+ * switches may change the environment value without changing this identity. */
+static dragonULInt dg_rt_uid = 0UL;
 
-/* get the front end's external IP address, along with the IP address
- * for the head node, which are used to identify this Dragon runtime */
 dragonULInt
 dragon_get_local_rt_uid()
 {
-    static dragonULInt rt_uid = 0UL;
-
-    if (rt_uid == 0UL) {
+    if (dg_rt_uid == 0UL) {
         char *rt_uid_str = getenv("DRAGON_RT_UID");
 
         /* Return 0 to indicate failure */
         if (rt_uid_str == NULL)
             return 0UL;
 
-        rt_uid = (dragonULInt) strtoul(rt_uid_str, NULL, 10);
+        dg_rt_uid = (dragonULInt) strtoul(rt_uid_str, NULL, 10);
     }
 
-    return rt_uid;
+    return dg_rt_uid;
+}
+
+/* Explicitly override the cached local rt_uid. Environment/proxy switches do
+ * not call this because the native value identifies the process's local owner. */
+void
+dragon_set_local_rt_uid(dragonULInt rt_uid)
+{
+    dg_rt_uid = rt_uid;
 }
 
 dragonULInt
@@ -656,10 +728,14 @@ char* dragon_uuid_to_hex_str(dragonUUID uuid)
     return ret_str;
 }
 
-void
+dragonError_t
 dragon_generate_uuid(dragonUUID uuid)
 {
-    dragonULInt hid = dragon_host_id();
+    dragonULInt hid;
+    dragonError_t err = dragon_host_id(&hid);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the host ID while generating a UUID.");
+
     uint32_t ctr = atomic_fetch_add(&dg_ctr, 1UL);
     uint32_t pid = (uint32_t)dg_pid;
 
@@ -671,6 +747,8 @@ dragon_generate_uuid(dragonUUID uuid)
 
     dragonUInt * ctr_ptr = (dragonUInt *)&uuid[DRAGON_UUID_OFFSET_CTR];
     *ctr_ptr = ctr;
+
+    no_err_return(DRAGON_SUCCESS);
 }
 
 void
@@ -1182,4 +1260,97 @@ dragon_get_hugepage_mount(char **mount_dir_out)
     }
 
     no_err_return(DRAGON_NOT_FOUND);
+}
+
+
+#if defined(__linux__)
+#include <sys/statvfs.h>
+#elif defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/mach_host.h>
+#include <stdint.h>
+#include <sys/sysctl.h>
+#include <unistd.h>
+#else
+#error "check_shared_memory() is only implemented for Linux and macOS"
+#endif
+
+#if defined(__linux__)
+// On hugetlbfs the block counts are in huge pages and f_frsize is the huge page size.
+static dragonError_t
+query_fs_space(const char* path, unsigned long* total_space, unsigned long* free_space)
+{
+    struct statvfs fs_stat;
+
+    if (statvfs(path, &fs_stat) != 0) {
+        char err_msg[300];
+        snprintf(err_msg, sizeof(err_msg), "Error: Failed to query filesystem stats for %s", path);
+        err_return(DRAGON_FAILURE, err_msg);
+    }
+
+    *total_space = (unsigned long)fs_stat.f_blocks * (unsigned long)fs_stat.f_frsize;
+    *free_space = (unsigned long)fs_stat.f_bavail * (unsigned long)fs_stat.f_frsize;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+#endif
+
+// Fills in the total and available bytes backing the filesystem that pool data files are created on.
+dragonError_t query_shm_space(unsigned long* total_space, unsigned long* free_space) {
+#if defined(__linux__)
+    dragonError_t err;
+    char* mount_dir = NULL;
+    unsigned long hugepage_total = 0;
+    unsigned long hugepage_free = 0;
+
+    /* /dev/shm is the floor because the pool allocator always falls back to it when a
+       hugepage-backed mapping cannot be created. */
+    err = query_fs_space("/dev/shm", total_space, free_space);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Error: Failed to query shared memory space");
+
+    /* hugetlbfs reports zero blocks unless the mount was given a size= quota, so it can
+       only raise the answer, never lower it. */
+    if (dragon_get_hugepage_mount(&mount_dir) == DRAGON_SUCCESS && mount_dir != NULL) {
+        if (query_fs_space(mount_dir, &hugepage_total, &hugepage_free) == DRAGON_SUCCESS &&
+            hugepage_free > *free_space) {
+            *total_space = hugepage_total;
+            *free_space = hugepage_free;
+        }
+    }
+
+#else
+    // macOS has no /dev/shm: shm_open() objects are backed by physical memory,
+    // so report against system RAM instead.
+    uint64_t mem_size = 0;
+    size_t mem_size_len = sizeof(mem_size);
+    int mib[2] = {CTL_HW, HW_MEMSIZE};
+
+    if (sysctl(mib, 2, &mem_size, &mem_size_len, NULL, 0) != 0)
+        err_return(DRAGON_FAILURE, "Error: Failed to query hw.memsize");
+
+    vm_statistics64_data_t vm_stat;
+    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
+
+    if (host_statistics64(mach_host_self(), HOST_VM_INFO64, (host_info64_t)&vm_stat, &count) !=
+        KERN_SUCCESS)
+        err_return(DRAGON_FAILURE, "Error: Failed to query mach VM statistics");
+
+    long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size <= 0)
+        err_return(DRAGON_FAILURE, "Error: Failed to query page size");
+
+    // Inactive and purgeable pages are reclaimable, so count them as available
+    uint64_t available_pages = (uint64_t)vm_stat.free_count + (uint64_t)vm_stat.inactive_count +
+                               (uint64_t)vm_stat.purgeable_count;
+
+    *total_space = (unsigned long)mem_size;
+    *free_space = (unsigned long)available_pages * (unsigned long)page_size;
+
+#endif
+
+    if (*free_space > *total_space)
+        *free_space = *total_space;
+
+    no_err_return(DRAGON_SUCCESS);
 }

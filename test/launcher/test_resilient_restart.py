@@ -26,7 +26,7 @@ from .frontend_testing_mocks import send_abnormal_term
 
 def get_args_map(network_config, **kwargs):
     parser = get_parser()
-    arg_list = ["--wlm", "slurm", "--network-config", f"{network_config}", "--network-prefix", "^(eth|hsn|en)"]
+    arg_list = ["--wlm", "slurm", "--network-config", f"{network_config}", "--network-prefix", "^(eth|hsn|bridge|en)"]
     for val in kwargs.values():
         arg_list = arg_list + val
 

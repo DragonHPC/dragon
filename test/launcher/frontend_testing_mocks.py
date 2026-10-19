@@ -1,5 +1,6 @@
 import os
 import logging
+import time
 from typing import Optional
 
 from dragon.launcher.frontend import LauncherFrontEnd
@@ -17,16 +18,37 @@ from dragon.channels import Channel, ChannelError
 from dragon.fli import DragonFLIError
 from dragon.managed_memory import MemoryPool, DragonPoolError, DragonMemoryError
 from dragon.native.queue import Queue as DQueue
-from dragon.utils import set_host_id, B64
+from dragon.utils import set_host_id, host_id, B64
 from dragon.dlogging.util import setup_FE_logging
 
 from .launcher_testing_utils import _GarbageMsg
+
+MOCK_CALL_TIMEOUT = 30.0
+
+
+def ensure_frontend_host_id():
+    """Claim the frontend host ID for this process.
+
+    dragon_set_host_id() is write-once per process, so this only succeeds for the
+    first frontend test in a process. Never read the host ID before setting it:
+    dragon_host_id() latches the same flag and would make the set impossible.
+    """
+    try:
+        set_host_id(dfacts.FRONTEND_HOSTID)
+    except RuntimeError as e:
+        current = host_id()
+        if current != dfacts.FRONTEND_HOSTID:
+            raise RuntimeError(
+                f"host ID is already set to {current} rather than "
+                f"FRONTEND_HOSTID ({dfacts.FRONTEND_HOSTID}); the frontend tests need a "
+                "process where no other component has claimed the host ID first"
+            ) from e
 
 
 def run_frontend(args_map):
 
     # Before doing anything set my host ID
-    set_host_id(dfacts.FRONTEND_HOSTID)
+    ensure_frontend_host_id()
     setup_FE_logging(log_device_level_map=args_map["log_device_level_map"], basename="dragon", basedir=os.getcwd())
     log = logging.getLogger("run_frontend")
     for key, value in args_map.items():
@@ -229,11 +251,28 @@ def handle_gsprocesscreate_error(primary_be_in_q, fe_in_q):
     fe_in_q.put(response)
 
 
+def wait_for_mock_call(mock_obj, what, timeout=MOCK_CALL_TIMEOUT):
+    """Wait for the frontend thread to invoke a patched entry point.
+
+    The frontend runs in a worker thread whose exceptions are captured by
+    catch_thread_exceptions, so if it dies early nothing here would ever be
+    called. Time out rather than spinning forever on a thread that is gone.
+    """
+    deadline = time.monotonic() + timeout
+    while len(mock_obj.call_args_list) == 0:
+        if time.monotonic() > deadline:
+            raise TimeoutError(
+                f"frontend never called {what} within {timeout}s -- the frontend "
+                "thread most likely raised before reaching it; check the captured "
+                "thread exceptions"
+            )
+        time.sleep(0.01)
+
+
 def stand_up_backend(mock_overlay, mock_launch, network_config, net_conf=None):
 
     log = logging.getLogger("mock_backend_standup")
-    while len(mock_overlay.call_args_list) == 0:
-        pass
+    wait_for_mock_call(mock_overlay, "start_overlay_network")
     overlay_args = mock_overlay.call_args_list.pop().kwargs
     overlay = {}
 
@@ -255,8 +294,7 @@ def stand_up_backend(mock_overlay, mock_launch, network_config, net_conf=None):
     # Let frontend know the overlay is "up"
     overlay["overlay_out_q"].put(dmsg.OverlayPingLA(next_tag()))
 
-    while len(mock_launch.call_args_list) == 0:
-        pass
+    wait_for_mock_call(mock_launch, "_launch_backend")
     launch_be_args = mock_launch.call_args_list.pop().kwargs
     log.info(f"got be args: {launch_be_args}")
 

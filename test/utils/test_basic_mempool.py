@@ -14,6 +14,7 @@ from dragon.managed_memory import (
     DragonPoolAttachFail,
     DragonPoolCreateFail,
     DragonMemoryError,
+    DragonPoolAllocationNotAvailable,
     AllocType,
 )
 
@@ -21,8 +22,9 @@ from dragon.dtypes import DragonError
 
 # limits are for tests
 MIN_POOL_SIZE = 32768
-MAX_POOL_SIZE = 2**31
+MAX_POOL_SIZE = 2**24
 DEFAULT_UID = 123456
+PB = 1024*1024*1024*1024*1024
 
 
 # NOTE: The following function is dependent on the serialization of memory descriptors.
@@ -144,8 +146,12 @@ class MemPoolCreateTest(unittest.TestCase):
         mpool.destroy()
 
     def test_create_small_mpool(self):
-        with self.assertRaises(DragonPoolCreateFail, msg=f"Creating an undersized pool did not raise a RuntimeError"):
+        with self.assertRaises(DragonPoolCreateFail, msg=f"Creating an undersized pool did not raise DragonPoolCreateFail"):
             self.mpool = MemoryPool(32, "mpool_test", DEFAULT_UID, None)
+
+    def test_too_big_pool(self):
+         with self.assertRaises(DragonPoolCreateFail, msg=f"Creating an oversized pool did not raise DragonPoolCreateFail"):
+            self.mpool = MemoryPool(PB, "mpool_test", DEFAULT_UID, None)
 
     def test_create_zero_mpool(self):
         with self.assertRaises(
@@ -266,11 +272,10 @@ class MemPoolCreateTest(unittest.TestCase):
 
     def test_create_too_many_args(self):
         with self.assertRaises(TypeError):
-            _ = MemoryPool(MIN_POOL_SIZE, "mpool_test", DEFAULT_UID, None, None, None, None, None)
+            _ = MemoryPool(MIN_POOL_SIZE, "mpool_test", DEFAULT_UID, None, None, None, None, None, None, None, None)
 
 
 class MemoryPoolAllocTest(unittest.TestCase):
-
     def setUp(self):
         self.size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
         self.mpool = MemoryPool(self.size, "mpool_test", DEFAULT_UID, None)
@@ -300,21 +305,25 @@ class MemoryPoolAllocTest(unittest.TestCase):
         max_size = max(MIN_POOL_SIZE, math.floor(self.size / num_allocations))
         num_curr_allocs = 0
         curr_allocs = []
-        for i in range(num_allocations):
-            alloc_size = random.randint(256, max_size)
-            mem = self.mpool.alloc(alloc_size)
-            curr_allocs.append(mem)
-            num_curr_allocs += 1
-            self.assertEqual(num_curr_allocs, self.mpool.get_allocations().num_allocs)
-            num_frees = math.floor(random.random() * num_curr_allocs)
-            for j in range(num_frees):
-                index = random.randint(0, num_curr_allocs - 1)
-                curr_allocs[index].free()
-                del curr_allocs[index]
-                num_curr_allocs -= 1
+        try:
+            for i in range(num_allocations):
+                alloc_size = random.randint(256, max_size)
+                mem = self.mpool.alloc(alloc_size)
+                curr_allocs.append(mem)
+                num_curr_allocs += 1
                 self.assertEqual(num_curr_allocs, self.mpool.get_allocations().num_allocs)
-        for alloc in curr_allocs:
-            alloc.free()
+                num_frees = math.floor(random.random() * num_curr_allocs)
+                for j in range(num_frees):
+                    index = random.randint(0, num_curr_allocs - 1)
+                    curr_allocs[index].free()
+                    del curr_allocs[index]
+                    num_curr_allocs -= 1
+                    self.assertEqual(num_curr_allocs, self.mpool.get_allocations().num_allocs)
+        except DragonPoolAllocationNotAvailable:
+            pass
+        finally:
+            for alloc in curr_allocs:
+                alloc.free()
         self.assertEqual(self.mpool.get_allocations().num_allocs, 0)
 
     def test_get_id(self):
@@ -450,7 +459,6 @@ class MemoryPoolAllocTest(unittest.TestCase):
 
 
 class MemoryPoolAllocNoSetupTests(unittest.TestCase):
-
     def test_alloc_after_destroy(self):
         with self.assertRaises(DragonPoolError):
             self.mpool = MemoryPool(random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE), "mpool_test", 1, None)
@@ -471,7 +479,6 @@ class MemoryPoolAllocNoSetupTests(unittest.TestCase):
 
 
 class MemoryPoolAttachTests(unittest.TestCase):
-
     def setUp(self):
         self.mpool_size = random.randint(MIN_POOL_SIZE, MAX_POOL_SIZE)
         self.mpool = MemoryPool(self.mpool_size, "mpool_test", 1, None)

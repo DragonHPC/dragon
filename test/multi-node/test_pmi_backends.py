@@ -9,11 +9,10 @@ import unittest
 import os
 import sys
 import json
-from dragon.native.process import ProcessTemplate, Popen, Process
-from dragon.native.process_group import ProcessGroup
+from dragon import ProcessTemplate, ProcessGroup, System, Policy
+from dragon.native.process import Popen, Process
 from dragon.infrastructure.facts import PMIBackend, CONFIG_FILE_PATH
-from dragon.native.machine import System, Node
-from dragon.infrastructure.policy import Policy
+from dragon.native.machine import Node
 
 from dragon.dtypes import DragonError
 import multiprocessing as mp

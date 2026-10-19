@@ -100,11 +100,20 @@ class BackendConnector:
                     self.msg_q.put(msg)
                 except Empty:
                     pass
+
+            if not self.shutdown_event.is_set():
+                # Stream ended before teardown was requested, so the remote process died.
+                # Report it here; otherwise this thread exits quietly and the sending
+                # thread later reports the downstream "Socket is closed" instead.
+                self.abnormalExit(
+                    RemoteProcessError(-1, f"connection to {self.hostname} ended unexpectedly")
+                )
         except RemoteProcessError as rpe:
-            logger.error("RemoteProcessError %s ExitCode=%d", rpe.args, rpe.exit_code)
-            raise
+            logger.error("host=%s RemoteProcessError exit_code=%s: %s", self.hostname, rpe.exit_code, rpe)
+            self.abnormalExit(rpe)
         except Exception as ex:
             logger.error("host=%s host_recv_thread Unhandled Exception: %s", self.hostname, ex)
+            self.abnormalExit(ex)
         finally:
             logger.debug("--host=%s host_recv_thread", self.hostname)
 

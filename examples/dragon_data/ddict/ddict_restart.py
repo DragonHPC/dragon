@@ -5,8 +5,7 @@ import traceback
 import math
 import numpy as np
 
-from dragon.data.ddict import DDict
-from dragon.native.machine import System
+from dragon import DDict, System
 
 
 def main():

@@ -75,9 +75,9 @@ class StreamTransportTestCase(unittest.IsolatedAsyncioTestCase):
         do_handshake.assert_awaited_once_with(reader, writer)
         add_connection.assert_called_once_with(addr, reader, writer)
 
-    @patch.object(transport.StreamTransport, "_do_recv", new_callable=MagicMock)
+    @patch.object(transport.StreamTransport, "_recv_connection", new_callable=MagicMock)
     @patch("asyncio.create_task")
-    def test_add_connection(self, create_task, _do_recv):
+    def test_add_connection(self, create_task, _recv_connection):
         task = MagicMock(spec=asyncio.Task)
         create_task.return_value = task
 
@@ -88,11 +88,31 @@ class StreamTransportTestCase(unittest.IsolatedAsyncioTestCase):
 
         # Verify writer added to _writers list for addr
         self.assertIn(writer, self.transport._writers[addr])
+        # Verify reader paired with writer so the connection can be torn down
+        self.assertIs(self.transport._readers[writer], reader)
         # Verify recv task started
-        _do_recv.assert_called_once_with(addr, reader)
+        _recv_connection.assert_called_once_with(addr, reader, writer)
         create_task.assert_called_once()
         # Verify recv task added to set of recv tasks for addr
         self.assertIn(task, self.transport._recv_tasks[addr])
+
+    async def test_remove_connection(self):
+        addr = transport.Address.from_netloc("127.0.0.1:8888")
+        reader = MagicMock(spec=asyncio.StreamReader)
+        writer = MagicMock(spec=asyncio.StreamWriter)
+        writer.is_closing.return_value = True
+
+        with patch("asyncio.create_task"), patch.object(
+            transport.StreamTransport, "_recv_connection", new_callable=MagicMock
+        ):
+            self.transport.add_connection(addr, reader, writer)
+
+        await self.transport.remove_connection(addr, writer)
+
+        self.assertNotIn(writer, self.transport._writers[addr])
+        self.assertNotIn(writer, self.transport._readers)
+        # Removing twice must not raise
+        await self.transport.remove_connection(addr, writer)
 
     @patch.object(transport, "writer_addrs", None)
     @patch.object(transport, "close_writer")

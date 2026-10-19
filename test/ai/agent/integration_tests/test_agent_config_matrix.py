@@ -22,7 +22,7 @@ import uuid
 from unittest import TestCase, main
 from unittest.mock import MagicMock
 
-from dragon.data.ddict import DDict
+from dragon import DDict
 from dragon.native.queue import Queue
 
 from dragon.ai.agent.config import (

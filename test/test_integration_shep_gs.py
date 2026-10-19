@@ -5,6 +5,7 @@
 These tests are a 'first light' connecting global services and the shepherd and
 the global services API.
 """
+
 import shim_dragon_paths
 
 import inspect
@@ -47,7 +48,6 @@ import support.util as tsu
 # `slow_echo.sh time msg` sleeps for time seconds then prints msg.
 # this should be the path from where the test driver (this script) is run.
 import pathlib
-
 
 # make sure we use a safe pool uid for creating a pool
 # that will never overlap with infra/default/user pool uids
@@ -140,9 +140,7 @@ class GSLS(unittest.TestCase):
         test_name = self.__class__.__name__ + "_" + inspect.stack()[1][0].f_code.co_name
 
         # Make a list of channels to pass thru the environment to GS for testing purposes.
-        test_chan_list = [
-            (self.gs_return_cuid, self.proc_gs_return_q.serialize())
-        ]
+        test_chan_list = [(self.gs_return_cuid, self.proc_gs_return_q.serialize())]
 
         val = pickle.dumps(test_chan_list)
         env_update = {dfacts.GS_TEST_CH_EV: dutils.B64.bytes_to_str(val), dfacts.GS_LOG_BASE: "gs_" + test_name}
@@ -163,11 +161,10 @@ class GSLS(unittest.TestCase):
 
         self.inf_pool = dmm.MemoryPool.attach(env2b(ping_be_msg.inf_pd))
 
-        # ls_cd, be_cd, gs_qd are InfraQueue descriptors
-        self.ls_input_wh = InfraQueue.attach(ping_be_msg.ls_cd)
-        self.bela_input_rh = InfraQueue.attach(ping_be_msg.be_cd)
+        # ls_qd, be_qd, gs_qd are InfraQueue descriptors
+        self.ls_input_wh = InfraQueue.attach(ping_be_msg.ls_qd)
+        self.bela_input_rh = InfraQueue.attach(ping_be_msg.be_qd)
         self.gs_input_wh = InfraQueue.attach(ping_be_msg.gs_qd)
-
 
         dapi.test_connection_override(
             test_gs_input=self.gs_input_wh,
@@ -658,6 +655,7 @@ def start_multi_ls(shep_stdin_queue, shep_stdout_queue, env_update, name_additio
     finally:
         shep_stdin_queue.close()
         shep_stdout_queue.close()
+
 
 if __name__ == "__main__":
     multiprocessing.set_start_method("spawn")

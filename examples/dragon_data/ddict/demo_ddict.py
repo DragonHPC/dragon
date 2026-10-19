@@ -1,5 +1,5 @@
 import dragon
-from dragon.data.ddict import DDict
+from dragon import DDict
 import multiprocessing as mp
 
 

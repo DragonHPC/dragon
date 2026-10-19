@@ -2,6 +2,7 @@ __pycache__
 *.log
 *.o
 *.ddict
+infrastructure/gpu_stubs/_build
 dump_file
 native/c_ddict
 native/cpp_ddict

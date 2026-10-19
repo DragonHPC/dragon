@@ -210,6 +210,9 @@ typedef struct dragonMemoryPoolAttr_st {
      * The array of names is of length 1 + n_segments. This value is ignored if
      * set by the user. */
 
+    bool gpu_memory;
+    /*!< Whether memory is hosted on a GPU device (true) or shared memory (false)) */
+
 } dragonMemoryPoolAttr_t;
 
 /**
@@ -461,6 +464,12 @@ dragon_memory_descr_clone(dragonMemoryDescr_t * newmem_descr, const dragonMemory
                           ptrdiff_t offset, size_t * custom_length);
 
 dragonError_t
+dragon_memory_descr_move(dragonMemoryDescr_t * newmem_descr, dragonMemoryDescr_t * oldmem_descr);
+
+dragonError_t
+dragon_memory_descr_destroy(dragonMemoryDescr_t * mem_descr);
+
+dragonError_t
 dragon_memory_modify_size(dragonMemoryDescr_t * mem_descr, const size_t new_size, const timespec_t* timeout);
 
 dragonError_t
@@ -500,6 +509,11 @@ dragon_memory_manifest_info(dragonMemoryDescr_t * mem_descr, dragonULInt* type, 
 
 void
 dragon_memory_set_debug_flag(int the_flag);
+
+/* This is to help prevent python code from trying to make names that are too long
+   instead of just hoping and wishing the code doesn't error */
+dragonError_t
+dragon_memory_get_max_pool_name_len(int *);
 
 #ifdef __cplusplus
 }

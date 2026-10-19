@@ -5,7 +5,8 @@ import pathlib
 import subprocess
 
 import dragon
-from dragon.data.ddict.ddict import DDict, PosixCheckpointPersister, DAOSCheckpointPersister
+from dragon import DDict
+from dragon.data.ddict.ddict import PosixCheckpointPersister, DAOSCheckpointPersister
 from multiprocessing import set_start_method
 
 daos_total_time = []
@@ -185,4 +186,3 @@ if __name__ == "__main__":
         test_posix_dump.destroy()
         res = f"POSIX persister: {posix_total_time[0]}"
         print(res, flush=True)
-

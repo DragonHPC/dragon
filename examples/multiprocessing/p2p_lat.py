@@ -3,8 +3,7 @@
 import time
 import argparse
 
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import System, current
+from dragon import System, Policy, current
 from dragon.native.process import Process as DragonProcess
 from dragon.native.queue import Queue as DragonQueue
 
@@ -47,13 +46,21 @@ def worker(id, send_queue, recv_queue, result_queue, msg_size, total_iterations,
 
 
 def run_p2p_lat(iterations=100, max_msg_sz=1024, payload_mode="object"):
+    system = System()
     sender_host = current().hostname
-    # Use a different host so every measured round trip crosses the network.
-    receiver_policy = next((policy for policy in System().hostname_policies() if policy.host_name != sender_host), None)
-    if receiver_policy is None:
-        raise RuntimeError("The latency benchmark requires at least two Dragon nodes.")
 
     sender_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=sender_host)
+
+    if system.nnodes < 2:
+        receiver_policy = sender_policy
+        print("Warning: Less than two Dragon nodes available. Using the same host for sender and receiver.", flush=True)
+
+    else:
+        # Use a different host so every measured round trip crosses the network.
+        receiver_policy = next((policy for policy in system.hostname_policies() if policy.host_name != sender_host), None)
+        if receiver_policy is None:
+            raise RuntimeError("The multi-node latency benchmark requires at least two Dragon nodes.")
+
     # Place every Queue on its consumer's host: worker 1 consumes forward_queue
     # on the receiver, worker 0 consumes reverse_queue on the sender, and this
     # parent process consumes result_queue on the sender.

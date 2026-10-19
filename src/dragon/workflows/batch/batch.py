@@ -1,5 +1,6 @@
 """Graph-based distributed scheduling for functions, executables, and parallel applications"""
 
+import atexit
 import copy
 import heapq
 import json
@@ -8,7 +9,6 @@ import math
 import os
 import queue
 import random
-import subprocess
 import sys
 import threading
 import time
@@ -18,7 +18,7 @@ from contextlib import contextmanager
 import warnings
 import yaml
 import cloudpickle
-
+import weakref
 from collections import namedtuple
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -47,6 +47,7 @@ from .facts import (
     default_results_ddict_managers_per_pool,
     manager_work_queue_max_batch_size,
     manager_work_queue_maxsize,
+    manager_work_queue_poll_timeout,
     return_queue_maxsize,
 )
 from functools import singledispatchmethod
@@ -57,6 +58,18 @@ from typing import Any, Iterable, Optional, TYPE_CHECKING
 from uuid import uuid1
 
 _FUNCTION_TASK_OUTPUT_ITEM_COUNT = 2
+_ACTIVE_BATCHES = weakref.WeakSet()
+
+
+def _cleanup_active_batches() -> None:
+    for batch in list(_ACTIVE_BATCHES):
+        try:
+            batch.terminate(timeout=1.0)
+        except Exception:
+            pass
+
+
+atexit.register(_cleanup_active_batches)
 
 
 def _next_pow_of_2(x: int) -> int:
@@ -391,44 +404,6 @@ def _unwrap_prefixed_python_process_payload(
     return wrapped_target, wrapped_args, wrapped_kwargs
 
 
-def _forward_subprocess_stream(pipe, writer: _PrefixedLineWriter) -> None:
-    try:
-        for line in pipe:
-            writer.write(line)
-    finally:
-        writer.flush()
-        pipe.close()
-
-
-def _run_binary_with_prefixed_logs(target: str, args: tuple, cwd: str, env: Optional[dict]) -> None:
-    prefix = _build_job_log_prefix()
-    stdout_writer = _PrefixedLineWriter(sys.stdout, prefix)
-    stderr_writer = _PrefixedLineWriter(sys.stderr, prefix)
-    argv = [str(target)]
-    if args is not None:
-        argv.extend(str(arg) for arg in args)
-
-    proc = subprocess.Popen(
-        argv,
-        cwd=cwd,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        bufsize=1,
-    )
-    stdout_thread = threading.Thread(target=_forward_subprocess_stream, args=(proc.stdout, stdout_writer), daemon=True)
-    stderr_thread = threading.Thread(target=_forward_subprocess_stream, args=(proc.stderr, stderr_writer), daemon=True)
-    stdout_thread.start()
-    stderr_thread.start()
-    return_code = proc.wait()
-    stdout_thread.join()
-    stderr_thread.join()
-
-    if return_code != 0:
-        raise SystemExit(return_code)
-
-
 def _compress_hostnames(hostnames: list) -> str:
     """Return a compressed hostlist string (e.g. 'node[001-003]') for *hostnames*.
 
@@ -474,6 +449,7 @@ TaskComplete = namedtuple("TaskComplete", ["tuid", "compiled_tuid", "raised"])
 CompletedTaskInfo = namedtuple("CompletedTaskInfo", ["manager_idx", "result_ddict_idx", "raised"])
 CompletionNotification = TaskComplete
 CompletedTuids = namedtuple("CompletedTuids", ["tuids"])
+ClientRegistrationComplete = namedtuple("ClientRegistrationComplete", ["client_id", "manager_idx"])
 StartedTaskInfo = namedtuple("StartedTaskInfo", ["control_q", "reserved_cores"])
 RegisterClient = namedtuple("RegisterClient", ["ret_q", "client_id"])
 UnregisterClient = namedtuple("UnregisterClient", ["client_id", "reply_q", "clean_detach"], defaults=[None, False])
@@ -1035,6 +1011,9 @@ class Task:
         task will complete with ``TaskCancelledError``. Returns ``False`` when
         the task cannot be cancelled or already completed.
         """
+        if self._result_cached or self._result_cleared:
+            return False
+
         cancelled = self._batch._cancel_task(self, timeout=timeout)
         if cancelled and self.core.is_cancelled == TaskCancellationReason.NONE:
             self.core.is_cancelled = TaskCancellationReason.USER_REQUESTED
@@ -1508,7 +1487,6 @@ class JobCore(TaskCore):
             while True:
                 if _cancel_requested(control_q):
                     cancelled = True
-                    grp._stop_no_decorator()
                     break
 
                 try:
@@ -1546,10 +1524,7 @@ class JobCore(TaskCore):
             raise
         finally:
             try:
-                if cancelled:
-                    grp._close_no_decorator()
-                else:
-                    grp.close()
+                grp.close()
             except DragonUserCodeError:
                 if not (cancelled or _cancel_requested(control_q)):
                     raise
@@ -1736,18 +1711,22 @@ def _task_heft_priority_key(task_core: TaskCore) -> tuple[int, int | float, str]
     return (-task_core.weight, task_core.heft_topo_order, task_tuid)
 
 
-def _bootstrap_manager(work_q: Queue) -> None:
+def _bootstrap_manager(work_q: Queue, ready_q: Queue) -> None:
     """
     Receive manager object from origin and start the manager's work loop.
 
     :param work_q: Queue on which the manager is received.
     :type work_q: multiprocessing.Queue
 
+    :param ready_q: Queue used to acknowledge completed manager bootstrap.
+    :type ready_q: multiprocessing.Queue
+
     :return: Returns None.
     :rtype: None
     """
     bootstrap_timeout = 30
     manager = work_q.get(bootstrap_timeout)
+    ready_q.put(True)
     manager._run()
 
 
@@ -1843,6 +1822,7 @@ class Manager:
         results_ddict: DDict,
         pool_node_huids: Optional[list[int]] = None,
         physical_cores_per_node: int = 1,
+        workers_per_node: Optional[int] = None,
         disable_telem: bool = False,
         is_scheduler: bool = False,
         all_node_hostnames: Optional[list[str]] = None,
@@ -1869,8 +1849,10 @@ class Manager:
             but normal Batch bringup always provides explicit pool nodes.
         :type pool_node_huids: Optional[list[int]]
         :param physical_cores_per_node: Number of physical CPU cores per node (hyperthreads // 2).
-            Used to determine how many workers to launch on each pool node.
+            Used for capacity and placement decisions.
         :type physical_cores_per_node: int
+        :param workers_per_node: Number of worker processes to launch on each pool node.
+        :type workers_per_node: Optional[int]
         :param disable_telem: Disables telemetry for the managers.
         :type disable_telem: bool
         :param is_scheduler: If True this is the top-level scheduler,
@@ -1888,7 +1870,7 @@ class Manager:
         """
         self.num_workers = num_workers
         self.idx = idx
-        self.pool = None
+        self.pool: Optional[Pool] = None
         self.work = None
         self.work_q = work_q
         self.ret_q = {}
@@ -1925,6 +1907,7 @@ class Manager:
         self.dispatch = None
         self.pool_node_huids = pool_node_huids if pool_node_huids is not None else []
         self.physical_cores_per_node = physical_cores_per_node
+        self.workers_per_node = workers_per_node if workers_per_node is not None else physical_cores_per_node
 
         # telemetry stuff
         self.dragon_telem = None
@@ -2016,6 +1999,27 @@ class Manager:
             if self._force_destroy_deadline is None or deadline < self._force_destroy_deadline:
                 self._force_destroy_deadline = deadline
 
+    def _shutdown_pool(self) -> None:
+        if self.pool is None:
+            return
+
+        force_shutdown = self._force_destroy_deadline is not None and time.monotonic() >= self._force_destroy_deadline
+        try:
+            if force_shutdown:
+                self.pool.kill()
+                self.pool.join(patience=1.0)
+            else:
+                self.pool.close()
+                self.pool.join()
+        except Exception as e:
+            self._handle_manager_exception(e, "failed to join worker pool")
+            if force_shutdown:
+                try:
+                    self.pool.kill()
+                    self.pool.join(patience=1.0)
+                except Exception as kill_error:
+                    self._handle_manager_exception(kill_error, "failed to kill worker pool")
+
     def _should_exit_runtime(self) -> bool:
         if not self.destroy_called:
             return False
@@ -2069,6 +2073,9 @@ class Manager:
         """
         self.__dict__.update(state)
 
+        if not hasattr(self, "workers_per_node"):
+            self.workers_per_node = self.physical_cores_per_node
+
         # Pool hostnames: used by subnode managers to send hostname-based alloc requests.
         self._pool_hostnames: list[str] = (
             [Node(h).hostname for h in self.pool_node_huids] if self.pool_node_huids else []
@@ -2096,13 +2103,12 @@ class Manager:
                     )
                 )
         elif self.pool_node_huids:
-            # Pin each worker to one of the designated pool nodes, distributing
-            # physical_cores_per_node workers across each node.
+            # Pin each worker to one of the designated pool nodes.
             for h_uid in self.pool_node_huids:
                 node = Node(h_uid)
                 hostname = node.hostname
                 num_gpus = node.num_gpus
-                for _ in range(self.physical_cores_per_node):
+                for _ in range(self.workers_per_node):
                     if num_gpus > 0:
                         device_idx = random.randint(0, num_gpus - 1)
                     else:
@@ -2127,7 +2133,8 @@ class Manager:
                     device_idx = []
                 policy_list.append(Policy(gpu_affinity=[device_idx]))
 
-        self.pool = Pool(policy=policy_list, processes_per_policy=1)
+        self._pool_policy_list: list[Policy] = policy_list
+        self.pool = None
         self._async_queue = LocalQueue()
 
         self.dbg_start_time = time.time()
@@ -2137,10 +2144,17 @@ class Manager:
             pool_hosts = _compress_hostnames([Node(h).hostname for h in self.pool_node_huids])
         else:
             pool_hosts = current().hostname
-        self.log.debug(f"manager {self.idx} starting pool: {self.num_workers} worker(s) on {pool_hosts}")
+        self._pool_hosts = pool_hosts
 
         if not self.disable_telem:
             self.dragon_telem = dt()
+
+    def _ensure_pool(self) -> None:
+        if self.pool is not None:
+            return
+
+        self.pool = Pool(policy=self._pool_policy_list, processes_per_policy=1)
+        self.log.debug(f"manager {self.idx} starting pool: {self.num_workers} worker(s) on {self._pool_hosts}")
 
     ###############################################
     # Scheduler (manager 0) node allocation helpers
@@ -3253,6 +3267,8 @@ class Manager:
             self.log.debug(f"registering client {client_id}")
             self.active_clients.add(client_id)
             self.ret_q[client_id] = ret_q
+            if not self.is_scheduler:
+                ret_q.put(ClientRegistrationComplete(client_id, self.idx))
 
     def _handle_unregister_client(self, unregister_client: UnregisterClient) -> None:
         """
@@ -3489,6 +3505,10 @@ class Manager:
         if len(self._pool_launch_args_list) == 0:
             return
 
+        self._ensure_pool()
+        pool = self.pool
+        if pool is None:
+            raise RuntimeError("manager worker pool was not initialized")
         num_tasks = len(self._pool_launch_args_list)
         # chunk_size=1 ensures each task is dispatched to a worker individually, so completed
         # tasks are reported back (via _add_to_async_queue) as soon as possible. A larger
@@ -3499,7 +3519,7 @@ class Manager:
         chunk_size = 1
 
         self.log.debug(f"starting {num_tasks} tasks")
-        self.pool.map_async(
+        pool.map_async(
             _do_task,
             self._pool_launch_args_list,
             chunk_size,
@@ -3703,6 +3723,9 @@ class Manager:
             # (2) hit our batch size limit
             try:
                 current_batch_size = 0
+                item = self.work_q.get(timeout=manager_work_queue_poll_timeout)
+                self._handle_request(item)
+                current_batch_size = 1
                 while current_batch_size <= manager_work_queue_max_batch_size:
                     item = self.work_q.get_nowait()
                     self._handle_request(item)
@@ -3800,12 +3823,9 @@ class Manager:
             except Exception as e:
                 self._handle_manager_exception(e, f"failed to shut down telemetry")
 
-        try:
+        if self.pool is not None:
             self.log.debug(f"manager shutting down pool")
-            self.pool.close()
-            self.pool.join()
-        except Exception as e:
-            self._handle_manager_exception(e, f"failed to join worker pool")
+            self._shutdown_pool()
 
         for q in self.cached_queues:
             try:
@@ -4930,9 +4950,9 @@ class BatchTopology:
     Returned by :py:meth:`Batch.topology`.
 
     The scheduler runs separately on the client host. Each requested
-    node contributes one worker pool and one colocated subnode manager. All
-    physical cores on every pool node are available as workers; no core is
-    reserved for the manager process.
+    node contributes one worker pool and one colocated subnode manager. By
+    default, each pool uses all physical cores on its node; ``workers_per_node``
+    can reduce that count without changing placement capacity.
 
     Hostnames in the string representation are compressed into Slurm-style
     bracket notation (e.g. ``node[001-004]``) when the ``python-hostlist``
@@ -4957,7 +4977,7 @@ class BatchTopology:
         self.pool_hostnames = pool_hostnames
         """List of hostname-lists, one inner list per worker pool."""
         self.workers_per_pool = workers_per_pool
-        """Per-pool worker counts (physical cores x nodes in that pool)."""
+        """Per-pool configured worker counts."""
         self.total_managers = 1 + len(manager_hostnames)
         """Total number of managers, including the dedicated scheduler."""
 
@@ -5027,7 +5047,59 @@ class BatchOptionsProxy:
 # TODO: need to be able to pickle and unpickle Batch objects and send them
 # to managers and workers to enable recursive function calls
 class Batch:
-    """Graph-based distributed scheduling for functions, executables, and parallel applications"""
+    """Graph-based distributed scheduling for functions, executables, and parallel applications.
+
+    Use ``with Batch() as batch`` to scope a client's work. On normal block
+    exit, the context manager calls :py:meth:`join`; if code in the block raises
+    an exception, it calls :py:meth:`terminate` and then re-raises the original
+    exception. In the default unmanaged mode, the last client to join also
+    shuts down the shared runtime.
+
+    Batch can be imported from the top-level :ref:`DragonAPI` or :mod:`dragon.workflows.batch.batch` modules.
+
+        .. code-block:: python
+
+          from dragon import Batch
+
+        or
+
+        .. code-block:: python
+
+          from dragon.workflows.batch.batch import Batch
+    """
+
+    def _register_atexit(self) -> None:
+        _ACTIVE_BATCHES.add(self)
+
+    def _unregister_atexit(self) -> None:
+        _ACTIVE_BATCHES.discard(self)
+
+    def __enter__(self) -> "Batch":
+        """Return this open Batch for use in a ``with`` statement.
+
+        :raises RuntimeError: If this Batch has been closed, destroyed, or
+            terminated.
+        """
+        if self.destroyed or self.terminated or self.closed:
+            raise RuntimeError("cannot enter a closed Batch")
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback_value) -> bool:
+        """Complete context-manager cleanup and preserve block exceptions.
+
+        Normal exit calls :py:meth:`join`. If the block raises an exception, or
+        joining fails, this method calls :py:meth:`terminate`. Returning
+        ``False`` allows the original block exception to propagate.
+        """
+        if exc_type is None:
+            try:
+                self.join()
+            except Exception:
+                self.terminate(timeout=5.0)
+                raise
+        else:
+            self.terminate(timeout=5.0)
+        return False
 
     def __init__(
         self,
@@ -5041,6 +5113,8 @@ class Batch:
         stdout: Optional[str | Path] = None,
         stderr: Optional[str | Path] = None,
         task_logs: bool = False,
+        *,
+        workers_per_node: Optional[int] = None,
     ) -> None:
         """
         Create a Batch instance for orchestrating functions, executables, and parallel applications
@@ -5098,6 +5172,10 @@ class Batch:
             interface matures. The log-discovery helpers raise ``RuntimeError`` while task
             logging is disabled.
         :type task_logs: bool
+        :param workers_per_node: Number of task workers in each subnode worker pool. Defaults to
+            the number of physical cores on each node and may not exceed that number. This is a
+            keyword-only option so existing positional constructor arguments retain their meaning.
+        :type workers_per_node: Optional[int]
 
         .. highlight:: python
         .. code-block:: python
@@ -5176,8 +5254,12 @@ class Batch:
             pool_nodes = 1
         pool_nodes = 1
 
-        # Each pool node contributes cpus_per_node workers; no core reservation.
-        workers_per_node_in_pool = cpus_per_node
+        if workers_per_node is None:
+            workers_per_node_in_pool = cpus_per_node
+        else:
+            workers_per_node_in_pool = int(workers_per_node)
+            if workers_per_node_in_pool < 1 or workers_per_node_in_pool > cpus_per_node:
+                raise ValueError(f"workers_per_node must be between 1 and {cpus_per_node}")
 
         # The scheduler is a dedicated extra manager process that runs on the
         # first Batch node. Each requested node gets its own one-node worker
@@ -5195,6 +5277,7 @@ class Batch:
         self._subnode_manager_node_objs = subnode_manager_node_objs
         self._pool_node_huids_list = pool_node_huids_list
         self._cpus_per_node = cpus_per_node
+        self._physical_cores_per_node = cpus_per_node
         self._workers_per_node_in_pool = workers_per_node_in_pool
 
         # Resolve the number of results-DDict manager shards per worker pool. Default
@@ -5225,6 +5308,8 @@ class Batch:
         # Scheduler workers: number of workers in manager 0's pool. Defaults to
         # total node count (one worker per node for concurrent multi-node jobs).
         self._scheduler_workers: int = scheduler_workers if scheduler_workers is not None else num_nodes
+        if self._scheduler_workers < 1:
+            raise ValueError("scheduler_workers must be at least 1")
 
         # Work submission queue; bound to manager 0's queue in _setup_managers().
         self.work_q = None
@@ -5244,6 +5329,7 @@ class Batch:
         self.closed = False
         self.destroyed = False
         self.terminated = False
+        self._register_atexit()
 
         self.disable_telem = disable_telem
 
@@ -5277,7 +5363,7 @@ class Batch:
 
     def __del__(self) -> None:
         """
-        Best-effort detach this client handle during garbage collection.
+        Best-effort bounded cleanup during garbage collection.
 
         :return: Returns None.
         :rtype: None
@@ -5288,28 +5374,10 @@ class Batch:
         if getattr(self, "closed", True):
             return
 
-        if not self.closed:
-            try:
-                self._stop_client_request_worker(timeout=1.0)
-            except Exception:
-                pass
-
-            try:
-                self._detach_group_client()
-            except Exception:
-                pass
-
-            try:
-                self._unregister(timeout=1.0, clean_detach=False)
-            except Exception:
-                pass
-
-        ret_q = getattr(self, "ret_q", None)
-        if ret_q is not None:
-            try:
-                ret_q.close()
-            except Exception:
-                pass
+        try:
+            self.terminate(timeout=1.0)
+        except Exception:
+            pass
 
     def __setstate__(self, state) -> None:
         """
@@ -5328,10 +5396,13 @@ class Batch:
         # a lot of the state is generic and can just be set using the origin __dict__
         self.__dict__.update(state)
         self.results_ddict = None
+        if not hasattr(self, "_physical_cores_per_node"):
+            self._physical_cores_per_node = self._cpus_per_node
 
         self.destroyed = False
         self._deserialized_handle = True
         self.grp = None
+        self._register_atexit()
 
         # Local-only sync/log state is stripped during __getstate__. Restore safe
         # defaults up front so the runtime-loss finalizer (which flushes the log
@@ -5463,6 +5534,7 @@ class Batch:
         # First pass: allocate work queues for logical subnode managers 0..n-1
         subnode_managers = []
         subnode_manager_qs: list[Queue] = []
+        ready_q = Queue()
 
         self.grp = ProcessGroup(restart=False)
 
@@ -5490,7 +5562,8 @@ class Batch:
                 self.ret_q,
                 self.results_ddict,
                 pool_node_huids=pool_node_huids,
-                physical_cores_per_node=self._workers_per_node_in_pool,
+                physical_cores_per_node=self._physical_cores_per_node,
+                workers_per_node=self._workers_per_node_in_pool,
                 disable_telem=self.disable_telem,
                 is_scheduler=False,
                 managed_lifecycle=self.managed_lifecycle,
@@ -5505,7 +5578,7 @@ class Batch:
                 nproc=1,
                 template=ProcessTemplate(
                     target=_bootstrap_manager,
-                    args=(manager_q,),
+                    args=(manager_q, ready_q),
                     policy=manager_node_policy,
                 ),
             )
@@ -5522,7 +5595,8 @@ class Batch:
             self.ret_q,
             self.results_ddict,
             pool_node_huids=[self._scheduler_node_huid],
-            physical_cores_per_node=self._workers_per_node_in_pool,
+            physical_cores_per_node=self._physical_cores_per_node,
+            workers_per_node=self._scheduler_workers,
             disable_telem=self.disable_telem,
             is_scheduler=True,
             managed_lifecycle=self.managed_lifecycle,
@@ -5541,7 +5615,7 @@ class Batch:
             nproc=1,
             template=ProcessTemplate(
                 target=_bootstrap_manager,
-                args=(scheduler_q,),
+                args=(scheduler_q, ready_q),
                 policy=scheduler_policy,
             ),
         )
@@ -5566,6 +5640,10 @@ class Batch:
         # Bootstrap the scheduler by sending it to its scheduler queue.
         scheduler_q.put(scheduler_manager)
         self.log.debug(f"scheduler: {self._scheduler_workers} worker(s) on {scheduler_hostname} (process)")
+
+        for _ in range(self.num_managers):
+            ready_q.get(timeout=30)
+        ready_q.destroy()
 
     def _set_unique_attrs(self) -> None:
         """
@@ -5925,7 +6003,7 @@ class Batch:
         self.client_compiler = ClientCompiler(
             num_managers=self.num_managers,
             manager_qs=self.manager_qs,
-            physical_cores_per_node=self._workers_per_node_in_pool,
+            physical_cores_per_node=self._physical_cores_per_node,
             results_ddict_managers_per_pool=self._results_ddict_managers_per_pool,
             log=self.log,
         )
@@ -5990,7 +6068,22 @@ class Batch:
         except TimeoutError:
             raise RuntimeError("timed out waiting for batch runtime shutdown")
 
+    def _request_manager_shutdown(self, force_timeout: Optional[float] = None) -> None:
+        self._ensure_manager_queues_attached()
+        destroy_called = DestroyCalled(force_timeout)
+        for manager_q in getattr(self, "manager_qs", []):
+            manager_q.put(destroy_called)
+
     def _close_local_client_queues(self, close_manager_qs: bool) -> None:
+        if close_manager_qs:
+            self._unregister_atexit()
+            results_ddict = getattr(self, "results_ddict", None)
+            if results_ddict is not None:
+                self._serialized_results_ddict = results_ddict.serialize()
+                results_ddict.detach()
+                if results_ddict._detached:
+                    self.results_ddict = None
+
         ret_q = getattr(self, "ret_q", None)
         if ret_q is not None:
             try:
@@ -6012,6 +6105,7 @@ class Batch:
             self.work_q = None
 
     def _finalize_runtime_shutdown(self) -> None:
+        self._unregister_atexit()
         grp = getattr(self, "grp", None)
         if grp is None:
             try:
@@ -6027,8 +6121,12 @@ class Batch:
                 pass
 
         results_ddict = getattr(self, "results_ddict", None)
-        if results_ddict is not None:
+        serialized_results_ddict = getattr(self, "_serialized_results_ddict", None)
+        if results_ddict is not None or serialized_results_ddict is not None:
             try:
+                if results_ddict is None:
+                    assert serialized_results_ddict is not None
+                    results_ddict = DDict.attach(serialized_results_ddict, timeout=default_progress_timeout)
                 results_ddict.destroy()
             except Exception:
                 pass
@@ -6056,6 +6154,7 @@ class Batch:
         self.work_q = None
         self.ret_q = None
         self.results_ddict = None
+        self._serialized_results_ddict = None
         self._serialized_grp = None
         self._serialized_grp_mgr_puid = None
         self._serialized_manager_qs = []
@@ -6064,6 +6163,7 @@ class Batch:
         self.destroyed = True
 
     def _finalize_local_runtime_loss(self) -> None:
+        self._unregister_atexit()
         grp = getattr(self, "grp", None)
         if grp is not None:
             try:
@@ -6074,13 +6174,8 @@ class Batch:
 
         results_ddict = getattr(self, "results_ddict", None)
         if results_ddict is not None:
-            # The client-shared Batch instance (and its results DDict) is already gone, so we
-            # must only release this client's local handle. ``destroy()`` would
-            # send a blocking DDDestroy to an orchestrator that no longer
-            # exists; ``detach()`` releases local resources without that
-            # round-trip (and is a no-op for a non-creator handle).
             try:
-                results_ddict.detach()
+                results_ddict._release_local_resources()
             except Exception:
                 pass
 
@@ -6106,6 +6201,7 @@ class Batch:
         self.work_q = None
         self.ret_q = None
         self.results_ddict = None
+        self._serialized_results_ddict = None
         self._serialized_grp = None
         self._serialized_grp_mgr_puid = None
         self._serialized_manager_qs = []
@@ -6442,7 +6538,7 @@ class Batch:
         self._task_ctr += 1
         return f"{self.client_id}-{task_seq}"
 
-    def _register(self) -> None:
+    def _register(self, timeout: float = 30.0) -> None:
         """
         Registers a new client with the managers, i.e., adds the client id to the list of
         active clients and associates the client id with a return queue.
@@ -6452,10 +6548,13 @@ class Batch:
         """
         # get client_id from the primary manager
         self.log.debug(f"registering a new client")
+        deadline = time.monotonic() + timeout
         register_client = RegisterClient(self.ret_q, None)
         primary_manager = 0
         try:
-            self.manager_qs[primary_manager].put(register_client)
+            self.manager_qs[primary_manager].put(register_client, timeout=max(0.0, deadline - time.monotonic()))
+        except queue.Full as exc:
+            raise TimeoutError("client registration timed out sending to scheduler") from exc
         except Exception as exc:
             if self._is_runtime_destroyed_exception(exc):
                 raise RuntimeError("cannot attach to batch runtime after it has been destroyed") from exc
@@ -6463,7 +6562,10 @@ class Batch:
         # Registration happens before the client request worker exists, so
         # manager-side bootstrap failures still have to come back directly on
         # the return queue rather than through the normal worker-exception path.
-        item = self.ret_q.get()
+        try:
+            item = self.ret_q.get(timeout=max(0.0, deadline - time.monotonic()))
+        except queue.Empty as exc:
+            raise TimeoutError("client registration timed out waiting for scheduler client ID") from exc
         if isinstance(item, ManagerException):
             raise RuntimeError(item.err_message) from item.exception
         if not isinstance(item, int):
@@ -6474,13 +6576,36 @@ class Batch:
 
         # use the client_id to register with the remaining managers
         register_client = RegisterClient(self.ret_q, self.client_id)
-        for manager_q in self.manager_qs[1:]:
+        for manager_idx, manager_q in enumerate(self.manager_qs[1:]):
             try:
-                manager_q.put(register_client)
+                manager_q.put(register_client, timeout=max(0.0, deadline - time.monotonic()))
+            except queue.Full as exc:
+                raise TimeoutError(f"client registration timed out sending to manager {manager_idx}") from exc
             except Exception as exc:
                 if self._is_runtime_destroyed_exception(exc):
                     raise RuntimeError("cannot attach to batch runtime after it has been destroyed") from exc
                 raise
+
+        expected_manager_idxs = set(range(len(self.manager_qs) - 1))
+        registered_manager_idxs = set()
+        while registered_manager_idxs != expected_manager_idxs:
+            remaining = deadline - time.monotonic()
+            missing_manager_idxs = sorted(expected_manager_idxs - registered_manager_idxs)
+            if remaining <= 0:
+                raise TimeoutError(f"client registration timed out waiting for managers {missing_manager_idxs}")
+            try:
+                item = self.ret_q.get(timeout=remaining)
+            except queue.Empty as exc:
+                raise TimeoutError(
+                    f"client registration timed out waiting for managers {missing_manager_idxs}"
+                ) from exc
+            if isinstance(item, ManagerException):
+                raise RuntimeError(item.err_message) from item.exception
+            if not isinstance(item, ClientRegistrationComplete) or item.client_id != self.client_id:
+                raise RuntimeError(f"expected manager registration acknowledgement, got {item!r}")
+            if item.manager_idx not in expected_manager_idxs:
+                raise RuntimeError(f"unexpected manager registration acknowledgement from {item.manager_idx}")
+            registered_manager_idxs.add(item.manager_idx)
 
     def _unregister(self, timeout: float = default_timeout, clean_detach: bool = False) -> bool:
         """
@@ -6675,36 +6800,57 @@ class Batch:
         if not self.closed:
             self._detach_client(timeout=timeout)
 
-        destroy_called = DestroyCalled(force_timeout)
-        manager_qs = getattr(self, "manager_qs", [])
-        for manager_q in manager_qs:
-            manager_q.put(destroy_called)
+        self._request_manager_shutdown(force_timeout)
 
         self._wait_for_runtime_shutdown(timeout=timeout)
         self._finalize_runtime_shutdown()
 
-    def terminate(self) -> None:
+    def terminate(self, *, timeout: float = 5.0) -> None:
         """
-        Force the termination of a Batch instance.
+        Force a Batch instance to shut down, waiting at most ``timeout`` seconds
+        for its managers before closing the outer ProcessGroup as a fallback.
 
+        Managers receive an immediate forced-shutdown request so their nested
+        worker pools are stopped before the outer ProcessGroup is closed when
+        possible. ``timeout`` bounds the wait for that coordinated shutdown.
+
+        :param timeout: Maximum time in seconds to wait for coordinated manager
+            shutdown before using the outer ProcessGroup as a fallback.
+        :type timeout: float
         :return: Returns None.
         :rtype: None
         """
         # sanity checks
-        if self.terminated:
+        if self.destroyed or self.terminated:
             return
 
+        timeout = max(0.0, float(timeout))
         try:
-            self._stop_client_request_worker()
+            self._stop_client_request_worker(timeout=timeout)
         except Exception:
             pass
 
-        grp = getattr(self, "grp", None)
-        if grp is not None:
-            grp.stop()
-            grp.close()
-
-        self.terminated = True
+        try:
+            # Termination is the emergency path: managers must force-stop their
+            # nested worker pools immediately, while ``timeout`` only bounds
+            # how long this client waits for that shutdown before using the
+            # outer ProcessGroup as a fallback.
+            self._request_manager_shutdown(force_timeout=0.0)
+            try:
+                self._wait_for_runtime_shutdown(timeout=timeout)
+            except Exception:
+                grp = getattr(self, "grp", None)
+                if grp is not None:
+                    try:
+                        grp.close(patience=max(0.1, timeout))
+                    except Exception:
+                        pass
+        finally:
+            try:
+                self._finalize_runtime_shutdown()
+            except Exception:
+                pass
+            self.terminated = True
 
     def clear_results(self) -> None:
         """

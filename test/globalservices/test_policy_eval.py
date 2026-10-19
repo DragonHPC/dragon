@@ -12,7 +12,8 @@ from .process_api import GSProcessBaseClass
 import support.util as tsu
 import dragon.infrastructure.messages as dmsg
 
-from dragon.globalservices.policy_eval import Policy, PolicyEvaluator
+from dragon import Policy
+from dragon.globalservices.policy_eval import PolicyEvaluator
 from dragon.infrastructure.node_desc import NodeDescriptor
 from dragon.infrastructure.process_desc import ProcessDescriptor
 from dragon.globalservices.process import create as process_create

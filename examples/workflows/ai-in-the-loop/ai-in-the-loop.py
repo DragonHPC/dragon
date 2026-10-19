@@ -7,11 +7,10 @@ import torch
 from itertools import count
 from model import Net, make_features, infer, train
 
-from dragon.native.process import Process, ProcessTemplate, Popen
-from dragon.native.process_group import ProcessGroup
+from dragon import ProcessTemplate, ProcessGroup, System
+from dragon.native.process import Process, Popen
 from dragon.infrastructure.connection import Connection
 from dragon.infrastructure.facts import PMIBackend
-from dragon.native.machine import System
 
 
 def parse_results(stdout_conn: Connection) -> tuple:

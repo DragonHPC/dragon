@@ -3,6 +3,7 @@ import copy
 import os
 import sys
 import logging
+import secrets
 import threading
 import signal
 import subprocess
@@ -13,7 +14,7 @@ from typing import Optional, List
 
 from ..utils import B64, host_id
 from ..channels import Channel, ChannelError, ChannelEmpty, register_gateways_from_env, discard_gateways
-from ..managed_memory import MemoryPool, DragonPoolError, DragonMemoryError
+from ..managed_memory import MemoryPool, DragonPoolError, DragonMemoryError, DragonPoolCreateFail
 from ..transport.overlay import start_overlay_network
 from ..transport.util import get_fabric_backend
 
@@ -40,6 +41,11 @@ from .wlm.k8s import KubernetesNetworkConfig
 
 LAUNCHER_FAIL_EXIT = 1
 LAUNCHER_SUCCESS_EXIT = 0
+
+# Grace period used when draining already-queued messages during teardown. poll()
+# can report a message that another thread consumes first, so the drain loop needs
+# a short timeout rather than the full sigint timeout.
+OVERLAY_DRAIN_TIMEOUT = 0.1
 
 
 class LauncherImmediateExit(Exception):
@@ -121,10 +127,6 @@ class LauncherFrontEnd:
         log = logging.getLogger(dls.LA_FE).getChild("LauncherFrontEnd init")
         log.info("start in pid %s, pgid %s", os.getpid(), os.getpgid(0))
 
-        # Discover whether the transport service test mode is being requested
-        # or not.
-        self.transport_test_env = os.environ.get(dfacts.TRANSPORT_TEST_ENV) is not None
-
         try:
             pals_lib = ctypes.cdll.LoadLibrary("libpals.so")
             self.pals_lib_present = pals_lib is not None
@@ -136,6 +138,11 @@ class LauncherFrontEnd:
         self._shutdown = threading.Event()
         self._abnormal_termination = threading.Event()
 
+        # First error observed anywhere in the runtime. Later failures are usually
+        # fallout from this one, so this is what gets reported to the user.
+        self._first_error = None
+        self._first_error_lock = threading.Lock()
+
         self.args_map = args_map
         self.nnodes = args_map.get("node_count", 0)
         self.n_idle = args_map.get("idle_count", 0)
@@ -146,12 +153,16 @@ class LauncherFrontEnd:
         self.port = args_map.get("port", dfacts.DEFAULT_TRANSPORT_PORT)
         self._config_from_file = args_map.get("network_config", None)
         self.transport, self.overlay_transport = self._determine_transport_backend(args_map)
+        os.environ["DRAGON_TRANSPORT_PORT"] = str(self.port)
 
         # The oob network should use the same transport agent as the overlay network,
         # but it's started by an arbitrary user process without that knowledge. So,
         # we add the overlay network transport string to the environment, which gets
         # propagated to all user processes.
         os.environ[dfacts.OVERLAY_TRANSPORT_VAR] = str(self.overlay_transport)
+        # Proxy gateway selection also needs the user-channel TA: it may differ
+        # from the overlay TA, and only the Python TCP user TA lacks mesh headers.
+        os.environ[dfacts.env_name("TRANSPORT_AGENT")] = str(self.transport)
 
         # If using SSH, confirm we have enough info do that:
         self._wlm = args_map.get("wlm", None)
@@ -184,6 +195,14 @@ class LauncherFrontEnd:
         if self.resilient:
             if self.nnodes == 0 and self.n_idle == 0:
                 raise RuntimeError("resilient flag requires setting of '--nodes' or '--idle'")
+
+        # When attachable, generate (or honor a pre-set) auth token that is
+        # distributed to Local Services so co-located processes can attach.
+        self.attachable = args_map.get("attachable", False)
+        if self.attachable:
+            self.attach_auth_token = os.environ.get(dfacts.DRAGON_ATTACH_TOKEN_ENV) or secrets.token_hex(32)
+        else:
+            self.attach_auth_token = None
 
         # Variety of other state trackers:
         self._sigint_count = 0
@@ -220,6 +239,59 @@ class LauncherFrontEnd:
 
     def __enter__(self):
         return self
+
+    def _record_error(self, err_info: str, host_id=None) -> None:
+        """Record the first error seen so it can be reported instead of its fallout."""
+        if not err_info:
+            return
+        log = logging.getLogger(dls.LA_FE).getChild("_record_error")
+        with self._first_error_lock:
+            if self._first_error is not None:
+                log.debug("ignoring subsequent error (already have a root cause): %s", err_info)
+                return
+            if host_id is not None:
+                node_name = self._host_name_from_id(host_id)
+                self._first_error = f"{err_info}" if node_name is None else f"[{node_name}] {err_info}"
+            else:
+                self._first_error = err_info
+        log.error("first error recorded: %s", self._first_error)
+
+    def _host_name_from_id(self, host_id):
+        """Best-effort lookup of a hostname for error reporting."""
+        try:
+            host_ids = host_id if isinstance(host_id, (list, tuple, set)) else [host_id]
+            names = [
+                node.host_name for node in self.net_conf.values() if str(node.host_id) in {str(h) for h in host_ids}
+            ]
+            return ", ".join(n for n in names if n) or None
+        except Exception:
+            return None
+
+    def _recv_startup_msgs(self, expected_type, count: int = 1, *, what: str = None) -> list:
+        """Receive `count` startup messages of `expected_type` from the backend.
+
+        Raises the recorded root-cause error if the runtime aborted rather than
+        an assertion about whichever message failed to show up.
+        """
+        what = what or expected_type.__name__
+        msgs = []
+        for _ in range(count):
+            msg = dlutil.get_with_blocking(self.la_fe_stdin)
+            if not isinstance(msg, expected_type):
+                self._raise_startup_failure(msg, what)
+            msgs.append(msg)
+        return msgs
+
+    def _raise_startup_failure(self, msg, what: str):
+        log = logging.getLogger(dls.LA_FE).getChild("_raise_startup_failure")
+        with self._first_error_lock:
+            first_error = self._first_error
+        log.error("startup failed waiting for %s, received %s", what, type(msg).__name__)
+        if first_error:
+            raise RuntimeError(f"Runtime startup failed while waiting for {what}. First error was: {first_error}")
+        if self._abnormal_termination.is_set() or isinstance(msg, dmsg.ExceptionlessAbort):
+            raise RuntimeError(f"Runtime startup aborted while waiting for {what}")
+        raise RuntimeError(f"Expected {what} during startup but received {type(msg).__name__}")
 
     def __exit__(self, exc_type, exc_value, exc_tb):
         log = logging.getLogger(dls.LA_FE).getChild("_cleanup")
@@ -405,6 +477,10 @@ class LauncherFrontEnd:
         # And raise error
         if self._abnormal_termination.is_set():
             log.debug("Raising Abnormal RuntimeError")
+            with self._first_error_lock:
+                first_error = self._first_error
+            if first_error:
+                raise RuntimeError(f"Abnormal exit detected. First error was: {first_error}")
             raise RuntimeError("Abnormal exit detected")
 
     def _wait_on_overlay_init(self):
@@ -460,9 +536,11 @@ class LauncherFrontEnd:
                 if abnormal:
                     log.info("abnormal closing of recv overlay thread")
                     self._shutdown.set()
-                    self.conn_in_bd.put(halt_overlay_msg)
-                self.recv_overlaynet_thread.join()
-        log.info("recv_overlaynet_thread joined")
+                    try:
+                        self.conn_in_bd.put(halt_overlay_msg)
+                    except Exception:
+                        log.debug("could not send halt to recv overlay thread", exc_info=True)
+                dlutil.join_thread(self.recv_overlaynet_thread, log=log, abnormal=abnormal)
 
         # Test a rapid sigint trigger
         try:
@@ -477,17 +555,21 @@ class LauncherFrontEnd:
             if self.send_overlaynet_thread.is_alive():
                 if abnormal:
                     self._shutdown.set()
-                    self.send_msg_to_overlaynet("A", halt_overlay_msg)
-                self.send_overlaynet_thread.join()
-        log.info("send_overlaynet_thread joined")
+                    try:
+                        self.send_msg_to_overlaynet("A", halt_overlay_msg)
+                    except Exception:
+                        log.debug("could not send halt to send overlay thread", exc_info=True)
+                dlutil.join_thread(self.send_overlaynet_thread, log=log, abnormal=abnormal)
 
         if self.recv_logs_from_overlaynet_thread is not None:
             if self.recv_logs_from_overlaynet_thread.is_alive():
                 # Send it a message to make sure it can get out
                 self._shutdown.set()
-                self.logging_queue.put(halt_logging_msg)
-            self.recv_logs_from_overlaynet_thread.join()
-        log.info("recv_logs_from_overlaynet_thread joined")
+                try:
+                    self.logging_queue.put(halt_logging_msg)
+                except Exception:
+                    log.debug("could not send halt to logging thread", exc_info=True)
+            dlutil.join_thread(self.recv_logs_from_overlaynet_thread, log=log, abnormal=abnormal)
 
     def _close_comm_overlaynet(self, abnormal=False):
         log = logging.getLogger(dls.LA_FE).getChild("_close_comm_overlaynet")
@@ -499,7 +581,11 @@ class LauncherFrontEnd:
                 # allows the stream transport to exit below if it should
                 # be stuck in a send because the channel was full. Otherwise
                 # if the channel is full, the transport will not cleanly exit.
-                msg = dlutil.q_get_with_timeout(self.conn_in, timeout=self._sigint_timeout)
+                try:
+                    msg = dlutil.q_get_with_timeout(self.conn_in, timeout=OVERLAY_DRAIN_TIMEOUT)
+                except TimeoutError:
+                    log.debug("nothing left to drain from conn_in during cleanup")
+                    break
                 if type(msg) in LauncherFrontEnd._DTBL:
                     log.debug("routing message of type %s during cleanup", type(msg))
                     self._DTBL[type(msg)][0](self, msg=msg)
@@ -756,7 +842,6 @@ class LauncherFrontEnd:
             network_prefix=network_prefix,
             overlay_transport=self.overlay_transport,
             overlay_port=self.overlay_port,
-            transport_test_env=self.transport_test_env,
         )
 
         return wlm_proc
@@ -951,14 +1036,20 @@ Performance may be suboptimal."""
         :param fe_ip_addr: IP address of frontend node
         :type fe_ip_addr: str
         """
+        log = logging.getLogger(dls.LA_FE).getChild("_define_overlay_network")
 
         # Add as many as needed to meet the requested node count.
         # We also find the minimum number of network interface cards
         # per node.
         min_nics_per_node = 99999
-        host_ids = [fe_host_id]
+        host_ids = [str(fe_host_id)]
         ip_addrs = [fe_ip_addr]
         hostnames = []
+
+        # Host IDs are the routing keys for the overlay network and for matching
+        # BEIsUp messages back to nodes, so duplicates silently collapse distinct
+        # nodes onto a single route.
+        hosts_by_id = {str(fe_host_id): ["frontend"]}
 
         for index, node in net_conf.items():
             if index != "f" and node.state is NodeDescriptor.State.ACTIVE:
@@ -966,6 +1057,17 @@ Performance may be suboptimal."""
                 host_ids.append(str(net_conf[index].host_id))
                 ip_addrs.append(net_conf[index].ip_addrs[0])
                 hostnames.append(net_conf[index].host_name)
+                hosts_by_id.setdefault(str(net_conf[index].host_id), []).append(net_conf[index].host_name)
+
+        if len(hosts_by_id) != len(host_ids):
+            collisions = "; ".join(
+                f"host_id={hid} shared by {', '.join(names)}" for hid, names in hosts_by_id.items() if len(names) > 1
+            )
+            log.fatal("duplicate host IDs in network configuration: %s", collisions)
+            raise RuntimeError(
+                f"Expected {len(host_ids)} unique host IDs but found {len(hosts_by_id)}. "
+                f"Duplicate host IDs: {collisions}"
+            )
 
         return host_ids, ip_addrs, hostnames, min_nics_per_node
 
@@ -1108,7 +1210,7 @@ Performance may be suboptimal."""
 
             if fe_ext_ip_addr is not None:
                 os.environ["DRAGON_FE_EXTERNAL_IP_ADDR"] = fe_ext_ip_addr
-                os.environ["DRAGON_RT_UID"] = str(rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr))
+                os.environ["DRAGON_RT_UID"] = str(rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr, self.port))
 
         # Create my memory pool
         try:
@@ -1122,11 +1224,25 @@ Performance may be suboptimal."""
                 fe_host_id = str(host_id())
                 fe_port = int(os.getenv("FRONTEND_PORT"))
 
-            self.fe_mpool = MemoryPool(
-                int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ),
-                f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(fe_host_id)[-3:]}{str(dfacts.DEFAULT_POOL_SUFFIX)[-3:]}",
-                dfacts.FE_OVERLAY_TRANSPORT_AGENT_MUID,
-            )
+            try:
+                self.fe_mpool = MemoryPool.create_with_retry(
+                    int(dfacts.DEFAULT_SINGLE_DEF_SEG_SZ),
+                    dfacts.runtime_pool_name(dfacts.DEFAULT_POOL_SUFFIX, host_id=fe_host_id),
+                    dfacts.FE_OVERLAY_TRANSPORT_AGENT_MUID,
+                )
+            except DragonPoolCreateFail:
+                print(
+                    "\nPossible Configuration Issue:\n"
+                    "Pool creation failed. There is not enough shared memory reserved\n"
+                    "for Dragon. If you are running in a container, you must increase the\n"
+                    "amount of shared memory reserved for your container by specifying\n"
+                    "--shm-size=6g on your Docker run command with an appropriate size for \n"
+                    "your intended application. At a minimum that might be 6GB for both\n"
+                    "backend and frontend nodes, but you may want to reserve more depending\n"
+                    "on your managed memory pool needs.\n",
+                    file=sys.stderr,
+                )
+                raise
             pool_ser_bytes = self.fe_mpool.serialize()
             puid, mpool_fname = MemoryPool.serialized_uid_fname(pool_ser_bytes)
             log.debug("fe_mpool has uid %s and file %s", puid, mpool_fname)
@@ -1319,7 +1435,9 @@ Performance may be suboptimal."""
                 os.environ["DRAGON_FE_EXTERNAL_IP_ADDR"] = fe_ext_ip_addr
                 if self._wlm is not WLM.K8S:
                     # DRAGON_RT_UID is not working as is for k8s; more changes need to be made
-                    os.environ["DRAGON_RT_UID"] = str(rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr))
+                    os.environ["DRAGON_RT_UID"] = str(
+                        rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr, self.port)
+                    )
 
         # If we have any mods we need to make to the net_conf, do it now
         self.net_conf = self._define_node_pools(self.net_conf)
@@ -1344,6 +1462,7 @@ Performance may be suboptimal."""
                 log_sdesc=self.logging_queue.serialize(),
                 host_ids=host_ids,
                 ip_addrs=ip_addrs,
+                overlay_port=self.overlay_port,
                 frontend=True,
                 env=os.environ,
             )
@@ -1356,7 +1475,7 @@ Performance may be suboptimal."""
 
         # Start a thread for monitoring messages into the logging channel
         # so we can see what comes out of the overlay network
-        self.recv_logs_from_overlaynet_thread = threading.Thread(
+        self.recv_logs_from_overlaynet_thread = dlutil.ServiceThread(
             name="Logging Monitor", target=self.recv_log_msgs_from_overlaynet, daemon=False
         )
         self.recv_logs_from_overlaynet_thread.start()
@@ -1368,7 +1487,7 @@ Performance may be suboptimal."""
 
         # Send/recv data with my OverlayNet FE server
         send_overlaynet_args = (self.la_fe_stdout,)
-        self.send_overlaynet_thread = threading.Thread(
+        self.send_overlaynet_thread = dlutil.ServiceThread(
             name="OverlayNet Sender", target=self._send_msgs_to_overlaynet, args=send_overlaynet_args, daemon=False
         )
         self.send_overlaynet_thread.start()
@@ -1377,7 +1496,7 @@ Performance may be suboptimal."""
             signal.raise_signal(signal.SIGINT)
 
         recv_overlaynet_args = (self.la_fe_stdin,)
-        self.recv_overlaynet_thread = threading.Thread(
+        self.recv_overlaynet_thread = dlutil.ServiceThread(
             name="OverlayNet Receiver", target=self.recv_msgs_from_overlaynet, args=recv_overlaynet_args, daemon=False
         )
         self.recv_overlaynet_thread.start()
@@ -1418,10 +1537,8 @@ Performance may be suboptimal."""
                 signal.raise_signal(signal.SIGINT)
 
         # Receive BEIsUp msg - Try getting a backend channel descriptor
-        be_ups = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
+        be_ups = self._recv_startup_msgs(dmsg.BEIsUp, self.nnodes, what="BEIsUp")
         assert len(be_ups) == self.nnodes
-        for be_up in be_ups:
-            assert isinstance(be_up, dmsg.BEIsUp), "la_fe received invalid backend up message"
 
         # Construct the number of backend connections based on
         # the hierarchical bcast info and send FENodeIdxBE to those
@@ -1430,9 +1547,7 @@ Performance may be suboptimal."""
         self.conn_outs = self.construct_bcast_tree(self.net_conf, be_ups, encoded_inbound_str)
         del be_ups
 
-        chs_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
-        for ch_up in chs_up:
-            assert isinstance(ch_up, dmsg.LSChannelsUp), "la_fe received invalid channel up"
+        chs_up = self._recv_startup_msgs(dmsg.LSChannelsUp, self.nnodes, what="LSChannelsUp")
         log.info("received %s SHChannelsUP msgs", self.nnodes)
 
         # Replace dynamically discovered IP addresses with those specified in network config.
@@ -1482,6 +1597,7 @@ Performance may be suboptimal."""
             port=self.port,
             transport=str(self.transport),
             fe_ext_ip_addr=fe_ext_ip_addr,
+            attach_auth_token=self.attach_auth_token,
         )
         log.debug("la_fe la_channels.nodes_desc: %s", la_ch_info.nodes_desc)
         log.debug("la_fe la_channels.gs_qd: %s", la_ch_info.gs_qd)
@@ -1489,87 +1605,62 @@ Performance may be suboptimal."""
         self.la_fe_stdout.send("A", la_ch_info.serialize())
         log.info("sent LACHannelsInfo to overlaynet fe")
 
-        self.tas_up = [dlutil.get_with_blocking(self.la_fe_stdin) for _ in range(self.nnodes)]
-        for ta_up in self.tas_up:
-            assert isinstance(ta_up, dmsg.TAUp), "la_fe received invalid channel up"
+        self.tas_up = self._recv_startup_msgs(dmsg.TAUp, self.nnodes, what="TAUp")
         log.info("received %s TAUp messages", self.nnodes)
 
         if self._sigint_trigger == 6:
             signal.raise_signal(signal.SIGINT)
 
-        if not self.transport_test_env:
-            log.info("Now waiting on getting GSIsUp....")
-            gs_up = dlutil.get_with_blocking(self.la_fe_stdin)
-            assert isinstance(gs_up, dmsg.GSIsUp), "la_fe expected GSIsUp msg"
-            log.info("la_fe received GSIsUp. Prepping launch of user application")
+        log.info("Now waiting on getting GSIsUp....")
+        (gs_up,) = self._recv_startup_msgs(dmsg.GSIsUp, what="GSIsUp")
+        log.info("la_fe received GSIsUp. Prepping launch of user application")
 
         # Infrastructure is up
         self._STATE = FrontendState.STOOD_UP
 
         return self.net_conf
 
-    def run_telem(self, level: int = 0):
-        """Start telem app execution via GSProcessCreate or LSProcessCreate"""
+    def _start_head_process(self, args_map, *, logger_name, process_name, restart=False, resilient=False):
         self._STATE = FrontendState.APP_EXECUTION
-        log = logging.getLogger(dls.LA_FE).getChild("run_telem`")
-
-        make_inf_channels = True
-
-        # Send message to start user application
-        if self.transport_test_env:
-            # start a process on each shepherd with an LSProcessCreate broadcast to all shepherds
-            # build a dictionary mapping each node_index to the test channels created on that node.
-            raise NotImplementedError
-        else:
-            # Send GS user proc start msg
-            log.info("Prepping launch of telemetry application")
-            telem_map = copy.deepcopy(self.args_map)
-            telem_map["prog"] = sys.executable
-            telem_map["args"] = [
-                "-c",
-                f"from dragon.telemetry.telemetry_head import start_telemetry; start_telemetry()",
-            ]
-            start_msg = dlutil.mk_head_proc_start_msg(
-                logbase=dls.LA_FE, make_inf_channels=make_inf_channels, args_map=telem_map
-            )
-            self.la_fe_stdout.send("P", start_msg.serialize())
-            if self._sigint_trigger == 7:
-                signal.raise_signal(signal.SIGINT)
-            log.info("transmitted GSProcessCreate")
+        log = logging.getLogger(dls.LA_FE).getChild(logger_name)
+        log.info("Prepping launch of %s", process_name)
+        start_msg = dlutil.mk_head_proc_start_msg(
+            logbase=dls.LA_FE,
+            make_inf_channels=True,
+            args_map=args_map,
+            restart=restart,
+            resilient=resilient,
+        )
+        self.la_fe_stdout.send("P", start_msg.serialize())
+        if self._sigint_trigger == 7:
+            signal.raise_signal(signal.SIGINT)
+        log.info("transmitted GSProcessCreate")
 
         return self.net_conf
+
+    def run_telem(self, level: int = 0):
+        """Start telem app execution via GSProcessCreate or LSProcessCreate"""
+        telem_map = copy.deepcopy(self.args_map)
+        telem_map["prog"] = sys.executable
+        telem_map["args"] = [
+            "-c",
+            "from dragon.telemetry.telemetry_head import start_telemetry; start_telemetry()",
+        ]
+        return self._start_head_process(
+            telem_map,
+            logger_name="run_telem`",
+            process_name="telemetry application",
+        )
 
     def run_app(self, restart=False):
         """Start user app execution via GSProcessCreate or LSProcessCreate"""
-        self._STATE = FrontendState.APP_EXECUTION
-        log = logging.getLogger(dls.LA_FE).getChild("run_app")
-
-        make_inf_channels = True
-
-        # Send message to start user application
-        if self.transport_test_env:
-            # start a process on each shepherd with an LSProcessCreate broadcast to all shepherds
-            # build a dictionary mapping each node_index to the test channels created on that node.
-            node_idx_to_channels_map = dict((msg.idx, msg.test_channels) for msg in self.tas_up)
-            start_msg = dlutil.mk_shproc_start_msg(logbase=dls.LA_FE, stdin_str=str(node_idx_to_channels_map))
-            self.la_fe_stdout.send("A", start_msg.serialize())
-            log.info("broadcast the program to start to all shepherds with message=%s", start_msg)
-        else:
-            # Send GS user proc start msg
-            log.info("Prepping launch of user application")
-            start_msg = dlutil.mk_head_proc_start_msg(
-                logbase=dls.LA_FE,
-                make_inf_channels=make_inf_channels,
-                args_map=self.args_map,
-                restart=restart,
-                resilient=self.resilient,
-            )
-            self.la_fe_stdout.send("P", start_msg.serialize())
-            if self._sigint_trigger == 7:
-                signal.raise_signal(signal.SIGINT)
-            log.info("transmitted GSProcessCreate")
-
-        return self.net_conf
+        return self._start_head_process(
+            self.args_map,
+            logger_name="run_app",
+            process_name="user application",
+            restart=restart,
+            resilient=self.resilient,
+        )
 
     def run_msg_server(self):
         """Process messages from backend after user app starts"""
@@ -1642,14 +1733,6 @@ Performance may be suboptimal."""
             gs_teardown = dmsg.GSTeardown(tag=dlutil.next_tag())
             self.la_fe_stdout.send("P", gs_teardown.serialize())
             self.msg_log.info("m4.1 la_fe transmitted teardown msg to BE")
-        # No global services so it's being overlooked
-        elif self.transport_test_env:
-            if self._proc_create_resps == self.nnodes and self._proc_exits == self.nnodes:
-                # m7.1 Send LSHaltTA to All BEs
-                self._STATE = FrontendState.TEARDOWN
-                sh_halt_ta = dmsg.LSHaltTA(tag=dlutil.next_tag())
-                self.la_fe_stdout.send("A", sh_halt_ta.serialize())
-                self.msg_log.info("m7.1 transmitted LSHaltTA msg to BE")
         else:
             self.msg_log.debug(
                 "gs_head_exit: %s | gs_proc_create_resp: %s",
@@ -1899,6 +1982,10 @@ Performance may be suboptimal."""
                     # I need to get this to the main thread without throwing an exception
                     log.debug("Got AbnormalTermination")
                     self._abnormal_termination.set()
+
+                    # The backend's err_info is the root cause; everything the
+                    # frontend trips over afterwards is fallout from it.
+                    self._record_error(getattr(be_msg, "err_info", ""), host_id=be_msg.host_id)
 
                     # Update the network configuration to reflect the down state of whatever node
                     # we got this error from

@@ -90,6 +90,12 @@ cdef class MemoryAlloc:
         if self._is_serial == 1:
             dragon_memory_serial_free(&self._mem_ser)
 
+    def __dealloc__(self):
+        # Releases the process local descriptor only. The allocation is unaffected and an
+        # _idx of zero means it was already released by free or detach.
+        if self._mem_descr._idx != 0:
+            dragon_memory_descr_destroy(&self._mem_descr)
+
     def __hash__(self):
         """
         Get a hash value for the underlying memory
@@ -291,6 +297,8 @@ cdef class MemoryAlloc:
         if derr != DRAGON_SUCCESS:
             raise DragonMemoryError(derr, "could not detach from memory")
 
+        # The descriptor is gone now, so mark it released for __dealloc__.
+        self._mem_descr._idx = 0
         self._is_attach = 0
 
     def free(self):
@@ -488,7 +496,8 @@ cdef class MemoryPool:
             dragon_memory_pool_serial_free(&self._pool_ser)
 
 
-    def __init__(self, size, str fname, uid, pre_alloc_blocks=None, min_block_size=None, max_allocations=None, gpu_memory=False, numa_node=-1):
+    def __init__(self, size, str fname, uid, pre_alloc_blocks=None, min_block_size=None, max_allocations=None,
+                 gpu_memory=False, gpu_device_id=None, numa_node=-1):
         """
         Create a new memory pool and return a MemoryPool object.
 
@@ -560,6 +569,9 @@ cdef class MemoryPool:
         if gpu_memory:
             self._mattr.mem_type = DRAGON_MEMORY_TYPE_GPU
 
+        if gpu_device_id is not None:
+            self._mattr.gpu_device_id = <int> gpu_device_id
+
         if numa_node >= 0:
             if not isinstance(numa_node, int):
                 raise RuntimeError('MemoryAttr Error: numa_node must be an int')
@@ -573,6 +585,35 @@ cdef class MemoryPool:
             free(self._mattr.pre_allocs)
         if derr != DRAGON_SUCCESS:
             raise DragonPoolCreateFail(derr, "Could not create pool")
+
+    @classmethod
+    def create_with_retry(cls, size, str base_name, uid, *, attempts=10, **kwargs):
+        """
+        Create a pool, appending a counter to base_name and retrying if that name is taken.
+
+        Pool names carry little entropy, so a run can collide with a segment left behind by
+        an earlier run that was killed before it could unlink its pools. Platforms without a
+        /dev/shm to enumerate cannot clean those up by name, so creating under a different
+        name is the only recovery.
+
+        :param size: Minimum size (in bytes) of the pool.
+        :param base_name: Name of the pool, to which the attempt counter is appended.
+        :param uid: Unique pool identifier to use.
+        :param attempts: How many names to try before giving up.
+        :param kwargs: Remaining keyword arguments are passed through to the constructor.
+        :return: MemoryPool object
+        :raises: DragonPoolCreateFail if every name was taken.
+        """
+        if attempts < 1:
+            raise ValueError(f"attempts must be at least 1, got {attempts}")
+
+        for i in range(attempts):
+            try:
+                return cls(size, f"{base_name}{i}", uid, **kwargs)
+            except DragonPoolCreateFail as ex:
+                last_ex = ex
+
+        raise last_ex
 
     @classmethod
     def serialized_uid_fname(cls, pool_ser):
@@ -863,7 +904,7 @@ cdef class MemoryPool:
 
     def process_local_register_with_gpu(self):
         """
-        Register a pool to use GPU memory.
+        Register a host pool address range with a GPU
 
         :param gpu_id: The GPU identifier to use for allocations from this pool.
 
@@ -878,7 +919,7 @@ cdef class MemoryPool:
 
     def process_local_unregister_with_gpu(self):
         """
-        Deregister a pool from using GPU memory.
+        Deregister a host pool address from a GPU.
 
         :raises: DragonMemoryError if there was an error.
         """
@@ -1296,6 +1337,32 @@ cdef class MemoryPool:
             raise DragonPoolError(derr, "Error getting pool's rt_uid")
 
         return rtuid
+
+    @property
+    def gpu_device_id(self):
+        cdef:
+            dragonError_t derr
+            dragonMemoryPoolAttr_t attrs
+
+        with nogil:
+            derr = dragon_memory_get_attr(&self._pool_hdl, &attrs)
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Could not retrieve the pool's attributes.")
+
+        return attrs.gpu_device_id
+
+
+    @staticmethod
+    def max_pool_name_len():
+        cdef:
+            dragonError_t derr
+            int _max_pool_name_len
+
+        derr = dragon_memory_get_max_pool_name_len(&_max_pool_name_len);
+        if derr != DRAGON_SUCCESS:
+            raise DragonPoolError(derr, "Unable to get max pool name length attr")
+
+        return _max_pool_name_len
 
     # Debug use only by developers.
     @classmethod

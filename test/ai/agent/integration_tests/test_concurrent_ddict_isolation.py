@@ -17,7 +17,7 @@ import json
 import uuid
 from unittest import TestCase, main
 
-from dragon.data.ddict import DDict
+from dragon import DDict
 from dragon.native.event import Event
 
 from dragon.ai.agent.config import (

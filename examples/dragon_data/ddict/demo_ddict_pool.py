@@ -3,7 +3,7 @@ import argparse
 
 import dragon
 import multiprocessing as mp
-from dragon.data.ddict import DDict
+from dragon import DDict
 
 
 def client_function(distdict, client_id):

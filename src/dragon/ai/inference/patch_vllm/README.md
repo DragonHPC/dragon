@@ -15,7 +15,7 @@ set of vLLM internals that need Dragon-aware behavior:
 ## Install
 
 The plugin is bundled with `dragonhpc` and its entry points are declared by the
-package. The `ai` extra installs a supported vLLM (`vllm>=0.11.0,<0.18.0`)
+package. The `ai` extra installs a supported vLLM (`vllm>=0.11.0,<0.20.0`)
 alongside it, so installing the extra is all that is required.
 
 ```shell
@@ -30,7 +30,7 @@ Dragon. Nothing needs to be re-run after changing or reinstalling vLLM.
 
 ## Compatibility
 
-The plugin supports `vllm>=0.11.0,<0.18.0`. At runtime, it selects the Dragon
+The plugin supports `vllm>=0.11.0,<0.20.0`. At runtime, it selects the Dragon
 patch implementation that matches the installed vLLM version.
 
 ## Entry Points

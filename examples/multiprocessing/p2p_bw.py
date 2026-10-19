@@ -3,8 +3,7 @@
 import time
 import argparse
 
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import System, current
+from dragon import Policy, System, current
 from dragon.native.process import Process as DragonProcess
 from dragon.native.queue import Queue as DragonQueue
 

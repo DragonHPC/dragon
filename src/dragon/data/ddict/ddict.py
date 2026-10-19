@@ -43,7 +43,6 @@ from pathlib import Path
 from posixpath import basename
 import subprocess
 
-
 try:
     import pydaos
 
@@ -251,7 +250,6 @@ class SentinelQueue:
         except ChannelDestroyed as ex:
             self._shutdown_event = None
         self._getter = True
-
 
     def get(self):
         if self._closed:
@@ -1454,6 +1452,17 @@ class DDict:
             if __name__ == "__main__":
                 main()
 
+    DDict can be imported from the top-level :ref:`DragonAPI` or :mod:`dragon.data` modules.
+
+        .. code-block:: python
+
+          from dragon import DDict
+
+        or
+
+        .. code-block:: python
+
+          from dragon.native.machine import current
     """
 
     def __init__(
@@ -1809,7 +1818,9 @@ class DDict:
         self._tag = 0
         self._chkpt_id = chkpt_id
         self._destroyed = False
+        self._destroy_state = {"destroyed": False}
         self._detached = False
+        self._attached = True
         self._timeout = timeout
         self._trace = trace
         self._chosen_manager = None
@@ -1820,6 +1831,7 @@ class DDict:
         self._num_batch_puts = {}
         self._batch_put_stream_channels = {}
         self._opened_send_handles = {}
+        self._max_batch_put_manager = None
 
         # Broadcast put with batch
         self._bput_strm = None
@@ -1897,7 +1909,10 @@ class DDict:
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        return
+        if self._creator:
+            self.destroy()
+        elif self._attached:
+            self.detach()
 
     def setup_logging(self):
         # This block turns on a client log for each client
@@ -1909,8 +1924,7 @@ class DDict:
 
     def __del__(self):
         try:
-            self.detach()
-            self._free_process_local_channels()
+            self._release_local_resources()
         except Exception as ex:
             try:
                 tb = traceback.format_exc()
@@ -1921,6 +1935,24 @@ class DDict:
                 )
             except:
                 pass
+
+    def _release_local_resources(self):
+        for manager in getattr(self, "_managers", {}).values():
+            try:
+                manager.detach()
+            except Exception:
+                pass
+
+        orc_connector = getattr(self, "_orc_connector", None)
+        if orc_connector is not None:
+            try:
+                orc_connector.detach()
+            except Exception:
+                pass
+
+        self._free_process_local_channels()
+        self._detached = True
+        self._attached = False
 
     def _create(self, pickled_args):
         msg = dmsg.DDCreate(self._tag_inc(), respFLI=self._serialized_buffered_return_connector, args=pickled_args)
@@ -2206,7 +2238,8 @@ class DDict:
                     free_mem = resp_msg.freeMem or manager_not_local
                     log.debug(f"{free_mem=}")
                     if pickler is not None:
-                        value = pickler.load(file=PickleReadAdapter(
+                        value = pickler.load(
+                            file=PickleReadAdapter(
                                 recvh=recvh, hint=VALUE_HINT, free_mem=free_mem, timeout=self._timeout
                             )
                         )
@@ -2314,7 +2347,24 @@ class DDict:
     def _batch_put(self, key: object, value: object, persist: bool):
         # hash the key and get the target manager ID
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
-        self._check_manager_connection(manager_id)
+
+        # Send handles are only ever opened in ascending manager id order. Opening one
+        # below the highest already open would let two clients acquire the same pair of
+        # managers in opposite orders and close a circular wait, so flush the batch instead.
+        if (
+            manager_id not in self._opened_send_handles
+            and self._max_batch_put_manager is not None
+            and manager_id < self._max_batch_put_manager
+        ):
+
+            reopen_manager_ids = sorted(set(self._opened_send_handles).union({manager_id}))
+            self.end_batch_put()
+            self.start_batch_put(persist)
+            for reopen_manager_id in reopen_manager_ids:
+                self._check_manager_connection(reopen_manager_id)
+        else:
+            self._check_manager_connection(manager_id)
+
         try:
             # If there is not send handle for the manager yet, we create another stream channel
             # and open the send handle. Otherwise use the existing send handle.
@@ -2327,6 +2377,7 @@ class DDict:
                 with self._timekeeper.record("open send handle"):
                     sendh = self._managers[manager_id].sendh(stream_channel=strm, timeout=self._timeout)
                 self._opened_send_handles[manager_id] = sendh
+                self._max_batch_put_manager = manager_id
                 # Send DDBatchPutMsg first to notify the manager that the following puts are batch puts.
                 msg = dmsg.DDBatchPut(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, persist=persist)
                 self._batch_put_msg_tags.add(msg.tag)
@@ -2363,9 +2414,21 @@ class DDict:
         if self._destroyed:
             return
 
+        if self._destroy_state["destroyed"]:
+            self._destroyed = True
+            self._attached = False
+            try:
+                self._orc_connector.detach()
+            except:
+                pass
+            self._cleanup()
+            self._free_process_local_channels()
+            return
+
         self._traceit("Destroying the ddict.")
 
         self._destroyed = True
+        self._destroy_state["destroyed"] = True
         try:
             msg = dmsg.DDDestroy(
                 self._tag_inc(),
@@ -2405,6 +2468,7 @@ class DDict:
             self._free_process_local_channels()
         except:
             pass
+        self._attached = False
 
     def serialize(self) -> str:
         """
@@ -2464,12 +2528,18 @@ class DDict:
         """
 
         try:
-            if self._destroyed or self._detached or not self._creator:
+            # The creator should call destroy after it is completely done
+            # with this DDict, not detach.
+            if self._destroyed or self._detached or self._creator:
                 return
 
             self._traceit("Detaching from ddict.")
 
             self._detached = True
+            self._attached = False
+
+            if self._destroy_state["destroyed"]:
+                return
 
             for manager_id in self._managers:
                 try:
@@ -2480,9 +2550,13 @@ class DDict:
                     if resp_msg.err != DragonError.SUCCESS:
                         log.debug("Error on response to deregister client %s", self._client_id)
 
-                    self._managers[manager_id].detach()
                 except:
                     pass
+                finally:
+                    try:
+                        self._managers[manager_id].detach()
+                    except:
+                        pass
 
         except Exception as ex:
             try:
@@ -2495,6 +2569,13 @@ class DDict:
                 )
             except:
                 pass
+        finally:
+            if getattr(self, "_detached", False):
+                try:
+                    self._orc_connector.detach()
+                except:
+                    pass
+                self._free_process_local_channels()
 
     @classmethod
     def synchronize_ddicts(cls, serialized_ddicts: list[str]) -> None:
@@ -2681,6 +2762,11 @@ class DDict:
         can discover "local_keys" of a manager by calling getting a
         manager-directed handle to the DDict and iterating over its keys.
 
+        The returned handle is a separately attached client with its own reply
+        channels. Use it as a context manager or call detach() when finished.
+        Copies created by manager() and pickler() share local destruction state
+        so cleanup does not contact managers after a linked handle destroys them.
+
         :param id: The manager id of the chosen manager.
 
         :returns: A version of the same DDict which will direct all gets
@@ -2695,6 +2781,7 @@ class DDict:
         mgr_dd = copy.copy(self)
         mgr_dd._chosen_manager = id
         mgr_dd._creator = False
+        mgr_dd._destroy_state = self._destroy_state
         mgr_dd._key_pickler = self._key_pickler
         mgr_dd._value_pickler = self._value_pickler
 
@@ -2705,6 +2792,9 @@ class DDict:
 
         Create a copy of the DDict which will utilize a specific key and value
         pickler.
+
+        The copy is a separately attached client. Exiting its context detaches
+        that client without detaching or destroying the originating handle.
 
         :param key_pickler: A pickler to de/serialize keys. Defaults to None.
 
@@ -2718,6 +2808,7 @@ class DDict:
         pickler_dd._value_pickler = value_pickler
         pickler_dd._chosen_manager = self._chosen_manager
         pickler_dd._creator = False
+        pickler_dd._destroy_state = self._destroy_state
 
         return pickler_dd
 
@@ -2905,7 +2996,7 @@ class DDict:
         except KeyError:
             return default
 
-    def fetch_add(self, key: object, val:int=1) -> object:
+    def fetch_add(self, key: object, val: int = 1) -> object:
         """
 
         Fetch the value that is associated with the given key. As a side-effect
@@ -2939,7 +3030,9 @@ class DDict:
         """
         pickler = XPickler()
         manager_id, pickled_key = self._choose_manager_pickle_key(key)
-        msg = dmsg.DDGet(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, key=pickled_key, fetchAdd=True, fetchAddVal=val)
+        msg = dmsg.DDGet(
+            self._tag_inc(), self._client_id, chkptID=self._chkpt_id, key=pickled_key, fetchAdd=True, fetchAddVal=val
+        )
         self._check_manager_connection(manager_id)
         self._send([(msg, None)], self._managers[manager_id], buffered=True)
         manager_not_local = manager_id not in self._local_managers
@@ -2968,7 +3061,6 @@ class DDict:
         """
         msg = dmsg.DDPut(self._tag_inc(), self._client_id, chkptID=self._chkpt_id, persist=False, waitFor=True)
         self._put(msg, key, value, timeout)
-
 
     def pput(self, key: object, value: object) -> None:
         """
@@ -3619,6 +3711,7 @@ class DDict:
             for i in self._opened_send_handles:
                 self._opened_send_handles[i].close()
             self._opened_send_handles.clear()
+            self._max_batch_put_manager = None
 
             expected_num_responses = len(self._num_batch_puts)
             resp_msgs = self._recv_responses(self._batch_put_msg_tags, expected_num_responses)
@@ -3999,7 +4092,9 @@ class DDict:
         ret_list.sort()
         return ret_list
 
-    def filter(self, mgr_code: FunctionType, mgr_code_args: tuple, comparator: FunctionType, branching_factor: int = 5) -> FilterContextManager:
+    def filter(
+        self, mgr_code: FunctionType, mgr_code_args: tuple, comparator: FunctionType, branching_factor: int = 5
+    ) -> FilterContextManager:
         """
 
         Calling this instantiates a tree of process groups where mgr_code is

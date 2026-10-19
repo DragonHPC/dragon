@@ -56,7 +56,6 @@ class NetworkConfigState(Enum):
 
 
 class BaseWLM(ABC):
-
     name = "BaseWLM"
 
     def __init__(self, wlm, network_prefix, port):
@@ -162,7 +161,6 @@ class BaseWLM(ABC):
 
         poll_result = self.config_helper.poll()
         while True:
-
             lines = []
             node_descriptor_count = len(self.node_descriptors.keys())
             if last_node_descriptor_count != node_descriptor_count:
@@ -191,6 +189,13 @@ class BaseWLM(ABC):
                     err_line = stderr_stream.recv()
                     if len(err_line.strip()) == 0:
                         break
+
+                    # This is a line printed to stderr by pycapnp. Very annoying and
+                    # completely irrelevant. In a newer version of pycapnp this will
+                    # be fixed and could be removed. We need pycapnp to use version
+                    # 1.1 or later of capnp.
+                    if "kj/filesystem-disk-unix.c++" in err_line:
+                        continue
 
                     try:
                         _, msg = err_line.split(": ", maxsplit=1)
@@ -288,7 +293,6 @@ class BaseWLM(ABC):
         return self.NNODES
 
     def get_network_config(self, args_map: dict, sigint_trigger=None) -> dict[str, NodeDescriptor]:
-
         try:
             self.orig_handler = signal.signal(signal.SIGINT, self._sigint_handler)
 
@@ -351,7 +355,6 @@ class BaseWLM(ABC):
         network_prefix: str,
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
-        transport_test_env: bool,
     ) -> list[str]:
         """Return the launch arguments for the backend process."""
         try:
@@ -364,8 +367,6 @@ class BaseWLM(ABC):
                 overlay_transport=overlay_transport,
                 overlay_port=overlay_port,
             ).split()
-            if transport_test_env:
-                be_args.append("--transport-test")
             return be_args
         except Exception:
             raise RuntimeError("Unable to construct backend launcher arg list")
@@ -415,7 +416,6 @@ class BaseWLM(ABC):
         network_prefix: str,
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
-        transport_test_env: bool,
         log_level: int = logging.NOTSET,
     ) -> subprocess.Popen:
         try:
@@ -426,7 +426,6 @@ class BaseWLM(ABC):
                 network_prefix=network_prefix,
                 overlay_transport=overlay_transport,
                 overlay_port=overlay_port,
-                transport_test_env=transport_test_env,
             )
 
             wlm_launch_args = self._get_launch_be_args(

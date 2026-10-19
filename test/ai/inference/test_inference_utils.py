@@ -10,7 +10,8 @@ from unittest import TestCase, main
 from unittest.mock import patch
 import copy
 
-from dragon.native.machine import System, Node
+from dragon import System
+from dragon.native.machine import Node
 from dragon.native.queue import Queue
 
 from dragon.ai.inference.inference_utils import Inference

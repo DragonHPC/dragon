@@ -11,6 +11,21 @@
 # The following bounce test involves running "hello world" from 512 nodes. Dragon is stressed to see how it behaves under high load conditions.
 # The following bounce timings are completed with 512 nodes.
 
+# dragon 0.15.0
+# Cold start
+# Hello world
+#
+# real    2m29.821s
+# user    2m11.066s
+# sys     0m46.343s
+# Warm start
+# Hello world
+#
+# real    0m22.122s
+# user    0m36.398s
+# sys     0m10.357s
+
+
 # time ./test_bounce.sh -- 0.11 numbers on hotlum
 # Cold start
 # Hello world

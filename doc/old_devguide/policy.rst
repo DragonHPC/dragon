@@ -82,7 +82,7 @@ Any user supplied policy passed to the object's constructor, or GS Create API, w
 Dragon `global_policy` object. The resulting merged Policy is what will be used by the object being created.
 
 ```
-  from dragon.infrastructure.policy import Policy
+  from dragon import Policy
   from dragon.native import Process
 
   policy = Policy(Placement=Policy.Placement.LOCAL)
@@ -112,7 +112,7 @@ local stack of Policy objects. Any Process or ProcessGroup object that is create
 inherit the Policy defined by the nested stack of Policy objects.
 
 ```
-  from dragon.infrastructure.policy import Policy
+  from dragon import Policy
 
   with Policy(placement=Policy.Placement.HOST_NAME, host_name=socket.gethostname()):
     proc = mp.Process(
@@ -125,7 +125,7 @@ In the above case, the Policy context manager is used to help place a Python Mul
 otherwise does not accept a policy parameter) within the Dragon allocation on a specific host.
 
 ```
-  from dragon.infrastructure.policy import Policy
+  from dragon import Policy
   from dragon.native import Process
 
   with Policy(placement=Policy.Placement.HOST_NAME, host_name=socket.gethostname()):
@@ -155,7 +155,7 @@ will be merged together (from inner-most to outer-most) before being merged with
 object being created.
 
 ```
-  from dragon.infrastructure.policy import Policy
+  from dragon import Policy
   from dragon.native import Process
 
   with Policy(placement=Policy.Placement.ANYWHERE, distribution=Policy.Distribution.BLOCK):
@@ -186,8 +186,8 @@ dragon Default policy will first be merged with the process group policy. The re
 merged with each process template's policy.
 
 ```
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import MSG_PIPE, MSG_DEVNULL, Process, ProcessTemplate
+from dragon import ProcessGroup, ProcessTemplate
+from dragon.native.process import MSG_PIPE, MSG_DEVNULL, Process
 
 group_policy = Policy(distribution=Policy.Distribution.BLOCK)
 grp = ProcessGroup(restart=False, pmi_enabled=True, polic=group_policy)

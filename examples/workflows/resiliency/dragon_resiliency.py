@@ -5,8 +5,8 @@ from os import environ
 import signal
 from time import sleep, monotonic
 
-from dragon.native.process_group import ProcessGroup, DragonProcessGroupException
-from dragon.native.process import ProcessTemplate
+from dragon import ProcessTemplate, ProcessGroup
+from dragon.native.process_group import DragonProcessGroupException
 from dragon.native.queue import Queue
 
 from dragon.globalservices.process import runtime_reboot

@@ -1,6 +1,3 @@
-#ifndef __APPLE__
-#include <numa.h>
-#endif //__APPLE__
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
@@ -16,30 +13,24 @@
 #include "_utils.h"
 #include "hostid.h"
 #include "_heap_manager.h"
+#include "dnuma.h"
 #include <dragon/channels.h>
 #include <dragon/utils.h>
 
-dragonGPUBackend_t gpu_backend_type = DRAGON_GPU_BACKEND_CUDA;
-void *dragon_gpu_handle = NULL;
-/* Define numa API functions to allow dlopen of said libraries */
-static int _numa_pointers_set = 0;
 static size_t _max_pool_name_len =
     DRAGON_MEMORY_MAX_FILE_NAME_LENGTH-
     strlen(DRAGON_MEMORY_DEFAULT_FILE_PREFIX)-
-    strlen(DRAGON_MEMORY_DEFAULT_MANIFEST_SUFFIX) - 1; // -1 for null-terminator
-
-
-int (*numa_available_p)(void);
-struct bitmask* (*numa_allocate_nodemask_p)(void);
-struct bitmask* (*numa_bitmask_setall_p)(struct bitmask*);
-struct bitmask* (*numa_bitmask_setbit_p)(struct bitmask *, unsigned int);
-void (*numa_interleave_memory_p)(void*, size_t, struct bitmask*);
-void (*numa_free_nodemask_p)(struct bitmask*);
-
+    strlen(DRAGON_MEMORY_DEFAULT_MANIFEST_SUFFIX) - 2; // leading slash and NUL
 
 /* dragon globals */
 DRAGON_GLOBAL_MAP(pools);
 DRAGON_GLOBAL_MAP(mallocs);
+
+/* Used for a guard around checking for SHM Free Space before Managed Memory Pool Creation. */
+static char check_shm_free_space_var[] = "DRAGON_CHECK_SHM_FREE_SPACE";
+static char check_shm_free_space_default[] = "true";
+static char* check_shm_free_space_env_value = NULL;
+static bool check_shm_free_space_value;
 
 #define MAX(x, y) (((x) > (y)) ? (x) : (y))
 #define MIN(x, y) (((x) < (y)) ? (x) : (y))
@@ -98,28 +89,19 @@ DRAGON_GLOBAL_MAP(mallocs);
     }\
 })
 
-
-/* Open numactl function pointers */
-int _set_numa_function_pointers() {
-
-    if (!_numa_pointers_set) {
-        void *lib_numa_handle = dlopen("libnuma.so.1", RTLD_LAZY | RTLD_GLOBAL);
-
-        if (lib_numa_handle != NULL) {
-            numa_available_p = dlsym(lib_numa_handle, "numa_available");
-            numa_allocate_nodemask_p = dlsym(lib_numa_handle, "numa_allocate_nodemask");
-            numa_bitmask_setall_p = dlsym(lib_numa_handle, "numa_bitmask_setall");
-            numa_bitmask_setbit_p = dlsym(lib_numa_handle, "numa_bitmask_setbit");
-            numa_interleave_memory_p =dlsym(lib_numa_handle, "numa_interleave_memory");
-            numa_free_nodemask_p = dlsym(lib_numa_handle, "numa_free_nodemask");
-
-            _numa_pointers_set = 1;
-        }
+static bool _check_shm_free_space() {
+    if (check_shm_free_space_env_value == NULL) {
+        check_shm_free_space_env_value = getenv(check_shm_free_space_var);
+        if (check_shm_free_space_env_value == NULL)
+            check_shm_free_space_env_value = check_shm_free_space_default;
+        if (!strcmp(check_shm_free_space_env_value, "true"))
+            check_shm_free_space_value = true;
+        else
+            check_shm_free_space_value = false;
     }
 
-    return _numa_pointers_set;
+    return check_shm_free_space_value;
 }
-
 
 /* This converts from a data pointer to an internal heap manager pointer. */
 static void*
@@ -485,14 +467,22 @@ _open_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPoolAt
     else if (attr->mem_type == DRAGON_MEMORY_TYPE_GPU) {
 
         dragonError_t derr;
-
-        derr = dragon_gpu_setup(gpu_backend_type, (int) attr->gpu_device_id, &dragon_gpu_handle);
+        void *dragon_gpu_handle = NULL;
+        derr = dragon_gpu_get_handle(&dragon_gpu_handle);
         if (derr != DRAGON_SUCCESS)
-            err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
+            err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for accessing device memory");
+
+        derr = dragon_gpu_setup(&dragon_gpu_handle);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory attach");
+
+        derr = dragon_gpu_set_device(dragon_gpu_handle, (int) attr->gpu_device_id);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to set GPU device for device memory attach");
 
         derr = dragon_gpu_attach(dragon_gpu_handle, pool->data_ipc_handle, &pool->local_dptr);
         if (derr != DRAGON_SUCCESS)
-            err_return(DRAGON_MEMORY_ERRNO, "failed to allocate device memory for data");
+            err_return(DRAGON_MEMORY_ERRNO, "failed to attach to device memory");
     }
     else {
         err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE, "invalid memory type");
@@ -553,19 +543,20 @@ _create_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPool
             err_return(DRAGON_MEMORY_ERRNO, "failed to mmap() data file");
         }
 
-        if (_numa_pointers_set) {
-            if (numa_available_p() != -1) {
-                struct bitmask *mask = numa_allocate_nodemask_p();
-                if(attr->numa_node >= 0){
-                    // set bitmask for specific NUMA node
-                    numa_bitmask_setbit_p(mask, attr->numa_node);
+        if (dragon_numa_available()== DRAGON_SUCCESS) {
+            struct bitmask *mask;
+            if (dragon_numa_allocate_nodemask(&mask) == DRAGON_SUCCESS) {
+
+                if(attr->numa_node >= 0) {
+                // set bitmask for specific NUMA node
+                    dragon_numa_bitmask_setbit(mask, attr->numa_node);
                 }
-                else
-                {
-                    numa_bitmask_setall_p(mask);
+                else {
+                    dragon_numa_bitmask_setall(mask);
                 }
-                numa_interleave_memory_p(pool->local_dptr, attr->total_data_size, mask);
-                numa_free_nodemask_p(mask);
+
+                dragon_numa_interleave_memory(pool->local_dptr, attr->total_data_size, mask);
+                dragon_numa_free_nodemask(mask);
             }
         }
 
@@ -580,10 +571,18 @@ _create_map_data(dragonMemoryPool_t * pool, const char * dfile, dragonMemoryPool
             err_return(DRAGON_INVALID_ARGUMENT, "data file name must be NULL for device memory allocation");
 
         dragonError_t derr;
+        void *dragon_gpu_handle = NULL;
+        derr = dragon_gpu_get_handle(&dragon_gpu_handle);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for allocating device memory");
 
-        derr = dragon_gpu_setup(gpu_backend_type, (int) attr->gpu_device_id, &dragon_gpu_handle);
+        derr = dragon_gpu_setup(&dragon_gpu_handle);
         if (derr != DRAGON_SUCCESS)
             err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
+
+        derr = dragon_gpu_set_device(dragon_gpu_handle, (int) attr->gpu_device_id);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to set GPU device for device memory allocation");
 
         derr = dragon_gpu_mem_alloc(dragon_gpu_handle, &pool->local_dptr, attr->total_data_size);
         if (derr != DRAGON_SUCCESS)
@@ -628,6 +627,11 @@ _free_gpu_data(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
 
     //The process that created the pool is the one that needs to free it. So if LS (or some other orchestrating process) is going to own these objects then it will be the only one that can call dragon_memory_pool_destroy. But, both dragon_memory_pool_destroy and dragon_memory_pool_detach call unmap data so we need to break that out or we need to make sure that here there is a way to determine who the owner is.
     dragonError_t derr;
+    void *dragon_gpu_handle = NULL;
+    derr = dragon_gpu_get_handle(&dragon_gpu_handle);
+    if (derr != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for freeing device memory");
+
     derr = dragon_gpu_mem_free(dragon_gpu_handle, pool->local_dptr);
     if (derr != DRAGON_SUCCESS)
         err_return(DRAGON_MEMORY_ERRNO, "failed to free GPU memory pool");
@@ -660,13 +664,14 @@ _unmap_data(dragonMemoryPool_t * pool, dragonMemoryPoolAttr_t * attr)
         //if (derr != DRAGON_SUCCESS)
         //    err_return(DRAGON_MEMORY_ERRNO, "failed to detach device memory");
 
+        void *dragon_gpu_handle = NULL;
+        derr = dragon_gpu_get_handle(&dragon_gpu_handle);
+        if (derr != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for unmapping device memory");
+
         derr = dragon_gpu_free_ipc_handle(dragon_gpu_handle, &pool->data_ipc_handle);
         if (derr != DRAGON_SUCCESS)
             err_return(DRAGON_MEMORY_ERRNO, "failed to free GPU IPC handle");
-
-        derr = dragon_gpu_cleanup(&dragon_gpu_handle);
-        if (derr != DRAGON_SUCCESS)
-            err_return(DRAGON_MEMORY_ERRNO, "failed to free device memory");
     }
     else {
         err_return(DRAGON_MEMORY_ILLEGAL_MEMTYPE, "invalid memory type");
@@ -1187,9 +1192,12 @@ _initialize_manifest_header(dragonMemoryPool_t * pool, dragonM_UID_t m_uid, drag
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "cannot map header region");
 
+    err = dragon_host_id(pool->header.hostid);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "cannot get the host ID for the pool header");
+
     /* assign all of the values into the header */
     *(pool->header.m_uid)                   = m_uid;
-    *(pool->header.hostid)                  = dragon_host_id();
     *(pool->header.allocatable_data_size)   = (dragonULInt)attr->allocatable_data_size;
     *(pool->header.total_data_size)         = (dragonULInt)attr->total_data_size;
     *(pool->header.data_min_block_size)     = (dragonULInt)attr->data_min_block_size;
@@ -1533,6 +1541,8 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
                           const dragonM_UID_t m_uid, const dragonMemoryPoolAttr_t * attr)
 {
     dragonError_t err;
+    unsigned long total_space;
+    unsigned long free_space;
 
     if (pool_descr == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid pool descriptor");
@@ -1553,7 +1563,7 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
     }
 
     /* if the attrs are NULL populate a default one */
-    dragonMemoryPoolAttr_t  def_attr;
+    dragonMemoryPoolAttr_t def_attr;
     err = dragon_memory_attr_init(&def_attr);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "could not initialize pool attr");
@@ -1567,18 +1577,44 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
             append_err_return(err, "could not copy pool attr");
     }
 
-    if (bytes < def_attr.data_min_block_size)
-        err_return(DRAGON_INVALID_ARGUMENT, "The requested size must be at least as big as the minimum block size.");
+    if (_check_shm_free_space() && def_attr.mem_type == DRAGON_MEMORY_TYPE_SHM) {
+        err = query_shm_space(&total_space, &free_space);
+        if (err != DRAGON_SUCCESS) {
+            char* err_str = dragon_getrawerrstr();
+            dragon_memory_attr_destroy(&def_attr);
+            dragon_setrawerrstr(err_str);
+            free(err_str);
+            append_err_return(err, "Unable to check the shared memory free space");
+        }
 
-    if (def_attr.n_segments != 0)
+        if (free_space < bytes) {
+            char err_msg[300];
+            snprintf(err_msg, 300, "The shared memory space is exhausted. The managed memory pool cannot be created.\n"
+                "%lu bytes were requested for pool and there are only %lu bytes available.\n"
+                "The total space reserved for all pools is %lu.", bytes, free_space, total_space);
+            dragon_memory_attr_destroy(&def_attr);
+            err_return(DRAGON_OUT_OF_SPACE, err_msg);
+        }
+    }
+
+    if (bytes < def_attr.data_min_block_size) {
+        dragon_memory_attr_destroy(&def_attr);
+        err_return(DRAGON_INVALID_ARGUMENT, "The requested size must be at least as big as the minimum block size.");
+    }
+
+    if (def_attr.n_segments != 0) {
+        dragon_memory_attr_destroy(&def_attr);
         err_return(DRAGON_INVALID_ARGUMENT, "Only n_segments==0 is supported in dragonMemoryPoolAttr_t for now.");
+    }
 
     /* @KDL - The following line is temporary. When/if we start to support multiple segments, we will
        not need this line */
     def_attr.max_size = bytes; /* This is the maximum amount the pool can grow to. Not suppied by user for now */
 
-    if (def_attr.max_size < bytes)
+    if (def_attr.max_size < bytes) {
+        dragon_memory_attr_destroy(&def_attr);
         err_return(DRAGON_INVALID_ARGUMENT, "Maximum pool size must be greater than or equal to initial size.");
+    }
 
     if (def_attr.segment_size != 0)
         def_attr.n_segments = (def_attr.max_size - bytes) / def_attr.segment_size;
@@ -1611,6 +1647,8 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
     if (max_block_power == min_block_power) {
         char err_msg[200];
         snprintf(err_msg, 199, "The max and min block power are both %u which is not valid.", max_block_power);
+        free(pool);
+        dragon_memory_attr_destroy(&def_attr);
         err_return(DRAGON_INVALID_ARGUMENT, err_msg);
     }
 
@@ -1626,6 +1664,8 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
     if (pool->num_blocks < 5) {
         char err_msg[200];
         snprintf(err_msg, 199, "Number of blocks is %lu which is invalid. The max block power is %u and min block power is %u which is not valid.", pool->num_blocks, max_block_power, min_block_power);
+        free(pool);
+        dragon_memory_attr_destroy(&def_attr);
         err_return(DRAGON_INVALID_ARGUMENT, err_msg);
     }
 
@@ -1684,6 +1724,8 @@ dragon_memory_pool_create(dragonMemoryPoolDescr_t * pool_descr, const size_t byt
     if (max_allocations < 5) {
         char err_msg[200];
         snprintf(err_msg, 199, "The max allocations was %lu which is too small.", max_allocations);
+        free(pool);
+        dragon_memory_attr_destroy(&def_attr);
         err_return(DRAGON_INVALID_ARGUMENT, err_msg);
     }
 
@@ -1894,16 +1936,18 @@ dragon_memory_pool_serialize(dragonMemoryPoolSerial_t * pool_ser, const dragonMe
 
     /* Get current host ID */
     /* Store at front for easier attach logic */
-    if (local_pool)
-        *ptr = dragon_host_id();
-    else
+    if (local_pool) {
+        dragonError_t err = dragon_host_id(ptr);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "cannot get the host ID while serializing the pool");
+    } else
         *ptr = pool->remote.hostid;
     ptr++;
 
     /* Copy the runtime unique ID */
     dragonULInt rt_uid;
     if (pool->runtime_is_local)
-        *ptr = rt_uid = dragon_get_local_rt_uid();
+        *ptr = rt_uid = pool_descr->_rt_idx;
     else
         *ptr = rt_uid = pool->remote.rt_uid;
     ptr++;
@@ -1980,8 +2024,11 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
     dragonM_UID_t m_uid = *ptr;
     ptr++;
 
-    /* Check if the local dragon_host_id and runtime ip addrs match the pool's values */
-    dragonULInt local_host_id = dragon_host_id();
+    /* Check if the local host id and runtime ip addrs match the pool's values */
+    dragonULInt local_host_id;
+    if (dragon_host_id(&local_host_id) != DRAGON_SUCCESS)
+        append_err_return(DRAGON_FAILURE, "cannot get the host ID while attaching to the pool");
+
     dragonULInt host_id = *ptr;
     ptr++;
 
@@ -2037,12 +2084,14 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
 
     if (actual_len > pool_ser->len) {
         char err_str[200];
+        free(pool);
         snprintf(err_str, 199, "The serialized descriptor prematurely ended. The expected size was %lu and the given size was %lu", actual_len, pool_ser->len);
         err_return(DRAGON_INVALID_ARGUMENT, err_str);
     }
 
     if (actual_len < pool_ser->len) {
         char err_str[200];
+        free(pool);
         snprintf(err_str, 199, "The serialized descriptor was longer than anticipated. The expected size was %lu and the given size was %lu", actual_len, pool_ser->len);
         err_return(DRAGON_INVALID_ARGUMENT, err_str);
     }
@@ -2067,8 +2116,7 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
         _release_manifest_lock(pool);
         if (err != DRAGON_SUCCESS) {
             dragon_memory_attr_destroy(&mattr);
-            if (pool != NULL)
-                free(pool);
+            free(pool);
 
             append_err_return(err, "failed to get attributes from header");
         }
@@ -2077,8 +2125,7 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
         err = _open_map_data(pool, mattr.names[0], &mattr);
         if (err != DRAGON_SUCCESS) {
             dragon_memory_attr_destroy(&mattr);
-            if (pool != NULL)
-                free(pool);
+            free(pool);
 
             append_err_return(err, "failed to open data SHM");
         }
@@ -2091,15 +2138,15 @@ dragon_memory_pool_attach(dragonMemoryPoolDescr_t * pool_descr, const dragonMemo
         err = _attach_heap_managers(pool);
         if (err != DRAGON_SUCCESS) {
             free(pool);
-
             append_err_return(err, "failed to attach heap managers");
         }
 
         /* Attach the manifest bcast */
         err = dragon_bcast_attach_at(pool->header.manifest_bcast_space, &pool->manifest_bcast);
-        if (err != DRAGON_SUCCESS)
+        if (err != DRAGON_SUCCESS) {
+            free(pool);
             append_err_return(err, "Could not attach to manifest bcast");
-
+        }
 
         /* This is copied into the pool structure for quicker access - it is a constant after
            pool is created - and for safety since if the pool is destroyed the pointer in
@@ -2181,6 +2228,11 @@ dragon_memory_pool_attach_from_env(dragonMemoryPoolDescr_t * pool_descr, const c
  * The default pool on a node can be used when no other managed memory pools
  * are available or have been provided. This function attaches to the
  * default pool on its current node.
+ *
+ * The default pool is a node-local resource. Under channels-mesh proxy mode the
+ * node-local descriptors are never swapped to the remote runtime (only the GS
+ * control plane is; see runtime_env.set_inf_env), so DRAGON_DEFAULT_PD always
+ * names the local runtime's default pool here.
  *
  * @param pool is a pointer to a pool descriptor to be initialized by this call.
  *
@@ -2331,14 +2383,23 @@ dragon_memory_pool_process_local_register_with_gpu(dragonMemoryPoolDescr_t * poo
         err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "Cannot register a non-local pool with a GPU");
 
     // get a GPU handle and setup a cuda context if it hasn't been done yet
-    err = dragon_gpu_setup(gpu_backend_type, *(pool->header.gpu_device_id), &dragon_gpu_handle);
+    void *dragon_gpu_handle = NULL;
+    err = dragon_gpu_get_handle(&dragon_gpu_handle);
+    if (err != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for registering host memory with device");
+
+    err = dragon_gpu_setup(&dragon_gpu_handle);
     if (err != DRAGON_SUCCESS)
         err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
 
+    err = dragon_gpu_set_device(dragon_gpu_handle, *(pool->header.gpu_device_id));
+    if (err != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to set GPU device for registering host memory with device");
+
     err = dragon_gpu_host_register(dragon_gpu_handle, pool->local_dptr, *(pool->header.total_data_size));
-    if (err != DRAGON_SUCCESS) {
+    if (err != DRAGON_SUCCESS)
         err_return(DRAGON_MEMORY_ERRNO, "failed to register host memory with GPU");
-    }
+
     no_err_return(DRAGON_SUCCESS);
 }
 
@@ -2362,9 +2423,19 @@ dragon_memory_pool_process_local_unregister_with_gpu(dragonMemoryPoolDescr_t * p
     if (pool->local_dptr == NULL) // Not Local
         err_return(DRAGON_MEMORY_OPERATION_ATTEMPT_ON_NONLOCAL_POOL, "Cannot register a non-local pool with a GPU");
 
-    err = dragon_gpu_setup(gpu_backend_type, *(pool->header.gpu_device_id), &dragon_gpu_handle);
+    void *dragon_gpu_handle = NULL;
+    err = dragon_gpu_get_handle(&dragon_gpu_handle);
+    if (err != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for unregistering host memory with device");
+
+    //err = dragon_gpu_setup(gpu_backend_type, *(pool->header.gpu_device_id), &dragon_gpu_handle);
+    err = dragon_gpu_setup(&dragon_gpu_handle);
     if (err != DRAGON_SUCCESS)
         err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for device memory allocation");
+
+    err = dragon_gpu_set_device(dragon_gpu_handle, *(pool->header.gpu_device_id));
+    if (err != DRAGON_SUCCESS)
+        err_return(DRAGON_MEMORY_ERRNO, "failed to set GPU device for unregistering host memory with device");
 
     err = dragon_gpu_host_unregister(dragon_gpu_handle, pool->local_dptr);
     if (err != DRAGON_SUCCESS) {
@@ -2448,7 +2519,7 @@ dragon_memory_pool_get_rt_uid(dragonMemoryPoolDescr_t *pool_descr, dragonRT_UID_
         append_err_return(err, "invalid pool descriptor");
 
     if (pool->runtime_is_local) {
-        *rt_uid = dragon_get_local_rt_uid();
+        *rt_uid = pool_descr->_rt_idx;
     } else {
         *rt_uid = pool->remote.rt_uid;
     }
@@ -3026,13 +3097,14 @@ dragon_memory_detach(dragonMemoryDescr_t * mem_descr)
 
     if (*pool->header.mem_type == DRAGON_MEMORY_TYPE_GPU)
     {
+        void *dragon_gpu_handle = NULL;
+        err = dragon_gpu_get_handle(&dragon_gpu_handle);
+        if (err != DRAGON_SUCCESS)
+            err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle for detaching from device");
+
         err = dragon_gpu_detach( dragon_gpu_handle, pool->local_dptr);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "failed to detach from GPU memory");
-
-        err = dragon_gpu_cleanup(&dragon_gpu_handle);
-        if (err != DRAGON_SUCCESS)
-            err_return(DRAGON_MEMORY_ERRNO, "failed to free device memory");
     }
 
     /* Retrieve memory from descriptor, then free local memory struct. */
@@ -3432,11 +3504,11 @@ dragon_memory_free(dragonMemoryDescr_t * mem_descr)
         _obtain_manifest_lock(pool);
         err = dragon_blocks_free(&(pool->heap.mfstmgr), mem->mfst_record.id);
         if (err != DRAGON_SUCCESS)
-            err_str = dragon_getlasterrstr();
+            err_str = dragon_getrawerrstr();
         _release_manifest_lock(pool);
 
         if (err != DRAGON_SUCCESS) {
-            err_noreturn(err_str);
+            dragon_setrawerrstr(err_str);
             free(err_str);
             append_err_return(err, "cannot remove from manifest");
         }
@@ -4119,6 +4191,84 @@ dragon_memory_descr_clone(dragonMemoryDescr_t * newmem_descr, const dragonMemory
 }
 
 /**
+ * @brief Move a memory descriptor to new storage.
+ *
+ * The descriptor and its process local resources are transferred to newmem_descr
+ * without cloning, so no new heap allocation or process local map entry is made.
+ * This is the cheap alternative to a clone followed by a destroy of the original
+ * when the original is not needed afterwards. The old descriptor is invalidated
+ * here to catch any use of it after the move.
+ *
+ * @param newmem_descr is the memory descriptor to move into.
+ *
+ * @param oldmem_descr is the memory descriptor to move from. It is invalid after this call.
+ *
+ * @returns DRAGON_SUCCESS or another dragonError_t return code.
+*/
+
+dragonError_t
+dragon_memory_descr_move(dragonMemoryDescr_t * newmem_descr, dragonMemoryDescr_t * oldmem_descr)
+{
+    if (newmem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The destination memory descriptor cannot be NULL.");
+
+    if (oldmem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The source memory descriptor cannot be NULL.");
+
+    dragonMemory_t * mem;
+    dragonError_t err = _mem_from_descr(oldmem_descr, &mem);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid memory descriptor");
+
+    *newmem_descr = *oldmem_descr;
+    oldmem_descr->_idx = 0UL;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Release the process local resources of a memory descriptor.
+ *
+ * Every memory descriptor that is initialized by allocating, attaching, or cloning
+ * holds process local resources (a heap allocated structure and an entry in the
+ * process local memory map). This releases those resources without affecting the
+ * underlying memory allocation, the pool, or any other descriptor that refers to
+ * the same allocation. Use this when a descriptor is no longer needed but the
+ * allocation it refers to must remain valid, for instance after cloning it or
+ * after transferring ownership of the allocation to another process. When the
+ * allocation itself is no longer needed, call dragon_memory_free instead which
+ * also releases these resources.
+ *
+ * @param mem_descr is the memory descriptor to release. It is invalid after this call.
+ *
+ * @returns DRAGON_SUCCESS or another dragonError_t return code.
+*/
+
+dragonError_t
+dragon_memory_descr_destroy(dragonMemoryDescr_t * mem_descr)
+{
+    if (mem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "The memory descriptor cannot be NULL.");
+
+    if (mem_descr == DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP)
+        err_return(DRAGON_INVALID_ARGUMENT, "Attempting to destroy a memory descriptor with constant value DRAGON_CHANNEL_SEND_TRANSFER_OWNERSHIP.");
+
+    dragonMemory_t * mem;
+    dragonError_t err = _mem_from_descr(mem_descr, &mem);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "invalid memory descriptor");
+
+    err = dragon_umap_delitem(dg_mallocs, mem_descr->_idx);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "failed to delete item in dg_mallocs umap");
+
+    free(mem);
+    mem_descr->_idx = 0UL;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
  * @brief Change the size of a given memory descriptor
  *
  * Without making a clone, change the size of a given memory descriptor.
@@ -4343,16 +4493,31 @@ dragon_memory_copy_size(dragonMemoryDescr_t* from_mem, dragonMemoryDescr_t* to_m
         if(attr_from.mem_type == DRAGON_MEMORY_TYPE_GPU && attr_to.mem_type == DRAGON_MEMORY_TYPE_GPU)
         {
             // D2D
+            void *dragon_gpu_handle = NULL;
+            err = dragon_gpu_get_handle(&dragon_gpu_handle);
+            if (err != DRAGON_SUCCESS)
+                err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle completing memcpy");
+
             err = dragon_gpu_copy(dragon_gpu_handle, to_ptr, from_ptr, size, DRAGON_GPU_D2D);
         }
         else if(attr_from.mem_type == DRAGON_MEMORY_TYPE_GPU && attr_to.mem_type != DRAGON_MEMORY_TYPE_GPU)
         {
             // D2H
+            void *dragon_gpu_handle = NULL;
+            err = dragon_gpu_get_handle(&dragon_gpu_handle);
+            if (err != DRAGON_SUCCESS)
+                err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle completing memcpy");
+
             err = dragon_gpu_copy(dragon_gpu_handle, to_ptr, from_ptr, size, DRAGON_GPU_D2H);
         }
         else if(attr_from.mem_type != DRAGON_MEMORY_TYPE_GPU && attr_to.mem_type == DRAGON_MEMORY_TYPE_GPU)
         {
             // H2D
+            void *dragon_gpu_handle = NULL;
+            err = dragon_gpu_get_handle(&dragon_gpu_handle);
+            if (err != DRAGON_SUCCESS)
+                err_return(DRAGON_MEMORY_ERRNO, "failed to get GPU handle completing memcpy");
+
             err = dragon_gpu_copy(dragon_gpu_handle, to_ptr, from_ptr, size, DRAGON_GPU_H2D);
         }
         else
@@ -4470,3 +4635,21 @@ dragon_memory_clear(dragonMemoryDescr_t* mem_descr, size_t start, size_t stop)
 }
 
 /** @} */ // end of managed_memory_alloc_functionality.
+
+
+/**
+ * @brief Expose the max pool name length to the python interface
+ *
+*/
+dragonError_t
+dragon_memory_get_max_pool_name_len(int* pool_len)
+{
+
+    if (_max_pool_name_len < 1)
+        err_return(DRAGON_MEMORY_FILENAME_ERROR, "max pool len is undefined");
+
+    *pool_len = (int) _max_pool_name_len;
+
+    no_err_return(DRAGON_SUCCESS);
+
+}

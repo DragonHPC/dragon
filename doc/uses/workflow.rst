@@ -13,11 +13,11 @@ Building Blocks
 
 Dragon workflows typically involve some combination of:
 
-* :py:class:`~dragon.workflows.batch.Batch` — automatic DAG-based task scheduling across
+* :py:class:`~dragon.Batch` — automatic DAG-based task scheduling across
   Python functions, executables, and MPI jobs (see also :ref:`batch`).
-* :py:class:`~dragon.data.ddict.DDict` — shared in-memory key-value store for passing data
+* :py:class:`~dragon.DDict` — shared in-memory key-value store for passing data
   between stages without touching the filesystem.
-* :py:class:`~dragon.native.process_group.ProcessGroup` — fine-grained process placement
+* :py:class:`~dragon.ProcessGroup` — fine-grained process placement
   and lifecycle management.
 * :ref:`Dragon Channels <NativeAPI>` — low-latency communication between workflow stages.
 
@@ -34,9 +34,7 @@ parallel wherever possible.
 
     import dragon
     from multiprocessing import set_start_method
-    from dragon.workflows.batch import Batch
-    from dragon.data.ddict import DDict
-    from dragon.native.machine import System
+    from dragon import Batch, DDict, System
     import numpy as np
 
 

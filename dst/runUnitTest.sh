@@ -14,6 +14,7 @@ cat /etc/os-release
 # Setup a release environment
 source ~/.bashrc
 source _env/bin/activate
+ARCH=$(uname -m)
 
 python3 --version
 which python3
@@ -31,20 +32,41 @@ PYTHON_MINOR_VERSION=`python -c 'import sys; print(sys.version_info[1])'`
 mkdir -p release
 tar -C release -xvzf /workspace/RPMS/centos7/py${PYTHON_MAJOR_VERSION}.${PYTHON_MINOR_VERSION}/dragon-*-py${PYTHON_VERSION}-${GITHASH}.*.rpm
 
-INSTALL_TARGET=$(ls src/dist/dragonhpc-*.whl)[test,batch]
-uv pip install ${INSTALL_TARGET}
+INITIAL_INSTALL_TARGET=$(ls src/dist/dragonhpc-*.whl)
+uv pip install ${INITIAL_INSTALL_TARGET}
+echo "Checking basic dragon version..."
+dragon --version
+
+echo "Checking basic import of dragon channels..."
+python -c "import dragon.channels; print(f'Dragon channels file: {dragon.channels.__file__}')"
+
+echo "Installing testing dependencies and proceeding..."
+FINAL_INSTALL_TARGET=$(ls src/dist/dragonhpc-*.whl)[test,batch]
+uv pip install ${FINAL_INSTALL_TARGET}
+
 version=$(python -c 'from importlib.metadata import version; print(version("dragonhpc"))')
 
 ROOTDIR="$(realpath release/dragon-${version})"
 
 # Install the config files into our site-packages:
-dragon-config add --ofi-include=$PWD/ofi/include/ \
-                  --ofi-build-lib=/usr/lib64/ \
-                  --ofi-runtime-lib=/usr/lib64/
-dragon-config add --ucx-include=$PWD/ucx/include \
-                  --ucx-build-lib=$PWD/ucx/lib \
-                  --ucx-runtime-lib=$PWD/ucx/lib
-dragon-config add --cuda-include=$PWD/cuda/include
+CURRENT_DIR=$(pwd -P)
+python3 -m dragon.cli dragon-config add --ofi-include=$CURRENT_DIR/ofi/include/  \
+                                        --ofi-build-lib=/usr/lib64/ \
+                                        --ofi-runtime-lib=/usr/lib64/ \
+                                        --ucx-include=/usr/include \
+                                        --ucx-build-lib=/usr/lib64 \
+                                        --ucx-runtime-lib=/usr/lib64 \
+                                        --pmix-include=/usr/include:/usr/include/pmix
+
+if [[ ${ARCH} == "x86_64" ]]
+then
+  python3 -m dragon.cli dragon-config add --hip-include=/opt/rocm/include \
+                                          --ze-include=/usr/include/level_zero \
+                                          --cuda-include=/usr/local/cuda-13.3/targets/x86_64-linux/include
+else
+  python3 -m dragon.cli dragon-config add --cuda-include=/usr/local/cuda-13.3/targets/sbsa-linux/include
+fi
+
 
 # Re-run unit tests to verify wheel
 make -C test test
@@ -88,7 +110,7 @@ popd
 # Run multiprocessing benchmarks
 #rm -f /dev/shm/*
 #pushd $ROOTDIR/examples/multiprocessing/
-#dragon p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+#dragon p2p_lat.py --iterations 100 --lg_max_message_size 12
 #dragon p2p_bw.py --iterations 10 --lg_max_message_size 12 --dragon
 #dragon aa_bench.py --iterations 100 --num_workers $NCPU --lg_message_size 21 --dragon
 ## TODO: Comment this test out for now, since it seems to be hanging

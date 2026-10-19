@@ -280,6 +280,51 @@ class DragonConfigTest(unittest.TestCase):
             self.assertEqual(backend_name, "ofi")
             self.assertEqual(":".join([d.name for d in dirs]), backend_lib)
 
+    def test_runtime_libname_options(self):
+        """Make sure the GPU runtime libname options are stored verbatim"""
+
+        libnames = {
+            "cuda_runtime_libname": "libcudart.so.12",
+            "hip_runtime_libname": "/opt/rocm/lib/libamdhip64.so.6",
+            "ze_runtime_libname": "libze_intel_gpu.so.1",
+        }
+        args_list = ["add"] + [f"--{key.replace('_', '-')}={val}" for key, val in libnames.items()]
+
+        with tempfile.NamedTemporaryFile() as config_file, tempfile.NamedTemporaryFile() as makefile:
+            config_args = self.parser.parse_args(args_list)
+            base_dir = os.path.dirname(config_file.name)
+
+            dconf._handle_subparsers(config_args, base_dir, config_file.name, makefile.name)
+
+            stored = dconf._load_config_from_file(config_file.name)
+            self.assertEqual({key: stored.get(key) for key in libnames}, libnames)
+            with open(makefile.name) as f:
+                self.assertEqual(f.read(), "")
+
+            for key, val in libnames.items():
+                x = subprocess.run(
+                    ["dragon-config", f"--config-file={config_file.name}", "-g", key], capture_output=True
+                )
+                self.assertEqual(val, x.stdout.decode().strip())
+
+    def test_runtime_libname_with_runtime_lib(self):
+        """Make sure a libname and runtime lib path for the same backend are both kept"""
+
+        with (
+            tempfile.TemporaryDirectory() as lib_dir,
+            tempfile.NamedTemporaryFile() as config_file,
+            tempfile.NamedTemporaryFile() as makefile,
+        ):
+            args_list = ["add", f"--cuda-runtime-lib={lib_dir}", "--cuda-runtime-libname=libcudart.so.12"]
+            config_args = self.parser.parse_args(args_list)
+            base_dir = os.path.dirname(config_file.name)
+
+            dconf._handle_subparsers(config_args, base_dir, config_file.name, makefile.name)
+
+            stored = dconf._load_config_from_file(config_file.name)
+            self.assertEqual(stored.get("cuda_runtime_lib"), lib_dir)
+            self.assertEqual(stored.get("cuda_runtime_libname"), "libcudart.so.12")
+
     def test_location_placement(self):
         """Make sure the config file goes to the expected placed"""
 

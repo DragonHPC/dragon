@@ -4,24 +4,26 @@
 Resiliency with DDict Checkpointing
 +++++++++++++++++++++++++++++++++++
 
-The Dragon distribute dictionary, referred to as the :py:class:`~dragon.data.DDict`, provides APIs for users to add resiliency to their applications. The :py:class:`DDict.checkpoint() <dragon.data.ddict.DDict.checkpoint>` is the foundation that enables this capability. This feature allows users to create consistent snapshots of the DDict's state at specific points in time. This is particularly useful for applications that require fault tolerance, iterative computations, or long-running processes where intermediate results need to be saved and potentially restored later.
+The Dragon distributed dictionary, referred to as the :py:class:`~dragon.DDict`, provides APIs for users to add resiliency to their applications. The :py:class:`DDict.checkpoint() <dragon.DDict.checkpoint>` is the foundation that enables this capability. This feature allows users to create consistent snapshots of the DDict's state at specific points in time. This is particularly useful for applications that require fault tolerance, iterative computations, or long-running processes where intermediate results need to be saved and potentially restored later.
 
 Some features of this tutorial are still experimental and under development. These features may not be ready for production use and could change in future releases. Please refer to the Dragon documentation and release notes for the most up-to-date information on the status of these features.
 
 Checkpointing and Rolling Back
 ==============================
 
-Checkpointing allows applications to save their state at specific points in time. :py:class:`DDict.rollback() <dragon.data.ddict.DDict.rollback>` allows users to roll back to a previous checkpoint if needed, enabling recovery from errors or failures. The example below demonstrates how to use the DDict to create checkpoints and roll back to previous states if corruption of the current state is detected.
+Checkpointing allows applications to save their state at specific points in time. :py:class:`DDict.rollback() <dragon.DDict.rollback>` allows users to roll back to a previous checkpoint if needed, enabling recovery from errors or failures. The example below demonstrates how to use the DDict to create checkpoints and roll back to previous states if corruption of the current state is detected.
 
 .. code-block:: python
     :linenos:
     :caption: **Use DDict with checkpointing to compute average of samples with potential rollback if value is out of allowed range**
 
     import random
-    from dragon.native.machine import System
-    from dragon.data.ddict import DDict
-    from dragon.native.process_group import ProcessGroup
-    from dragon.native.process import ProcessTemplate
+    from dragon import (
+        System,
+        DDict,
+        ProcessGroup,
+        ProcessTemplate
+    )
     from dragon.native.barrier import Barrier
     import dragon.infrastructure.parameters as di_param
 
@@ -98,8 +100,8 @@ Checkpointing combined with persistence, allows users to save the state of their
     import argparse
 
     from dragon.ai.collective_group import CollectiveGroup, RankInfo
-    from dragon.data.ddict import DDict, PosixCheckpointPersister, DAOSCheckpointPersister
-    from dragon.native.machine import System
+    from dragon.data.ddict import PosixCheckpointPersister, DAOSCheckpointPersister
+    from dragon import System, DDict
 
     import torch
     import torch.nn as nn
@@ -298,7 +300,7 @@ Recovering from Failures with In-Memory Checkpoints
 When a worker process fails, Dragon can automatically restart it within the same job allocation.
 If the DDict is configured with ``working_set_size >= 2``, the surviving managers still hold the
 last N checkpoints in shared memory. A restarted worker can call
-:py:meth:`~dragon.data.ddict.DDict.sync_to_newest_checkpoint` to advance its client view to the
+:py:meth:`~dragon.DDict.sync_to_newest_checkpoint` to advance its client view to the
 most recent checkpoint present across all surviving managers, and resume from there — no disk I/O
 required.
 

@@ -15,3 +15,4 @@ Runtime Design
    telemetry.rst
    single_node_deployment.rst
    multi_node_deployment.rst
+   attach.rst

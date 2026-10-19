@@ -168,7 +168,7 @@ wget https://raw.githubusercontent.com/DragonHPC/dragon/refs/heads/main/examples
 
 If testing on a single compute node/instance, you can just do:
 ```
-dragon p2p_lat.py --dragon
+dragon p2p_lat.py
 using Dragon
 Msglen [B]   Lat [usec]
 2  28.75431440770626
@@ -182,7 +182,7 @@ If you're trying to test the same across two nodes connected via a high speed ne
 try to get an allocation via the workload manager first and then run the test, eg:
 ```
 salloc --nodes=2 --exclusive
-dragon p2p_lat.py --dragon
+dragon p2p_lat.py
 using Dragon
 Msglen [B]   Lat [usec]
 2  73.80113238468765

@@ -37,7 +37,7 @@ class DAGOrchestrator:
     ``listen()`` loops).
 
     ``DAGOrchestrator`` owns the lifecycle of the :class:`~dragon.data.ddict.DDict`.
-    The caller creates a :class:`~dragon.workflows.batch.Batch` instance and
+    The caller creates a :class:`~dragon.Batch` instance and
     passes it to :meth:`run`; the orchestrator uses it to build and execute
     the DAG.  The caller is responsible for calling ``batch.join()`` when it
     is done with that client handle; if the Batch runtime was created with
@@ -245,7 +245,7 @@ class DAGOrchestrator:
         user_input:
             The end-user's request string.
         batch:
-            Caller-owned :class:`~dragon.workflows.batch.Batch` instance used
+            Caller-owned :class:`~dragon.Batch` instance used
             to build and execute the DAG.  The caller is responsible for
             ``batch.join()`` after this method returns. If the runtime uses
             ``managed_lifecycle=True``, some client must later call

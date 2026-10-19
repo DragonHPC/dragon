@@ -592,8 +592,12 @@ static dragonError_t _get_local_managers(dragonDDict_t * ddict) {
     DDManagerNodesMsg * managerNodesMsg = nullptr;
     DDManagerNodesResponseMsg * managerNodesResponseMsg = nullptr;
     DragonResponseMsg * resp_msg = nullptr;
-    dragonULInt local_host_id = dragon_host_id();
+    dragonULInt local_host_id;
     std::vector<uint64_t> huids;
+
+    err = dragon_host_id(&local_host_id);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the local host ID.");
 
     managerNodesMsg = new DDManagerNodesMsg(_tag_inc(ddict), ddict->bufferedRespFLIStr.c_str());
 

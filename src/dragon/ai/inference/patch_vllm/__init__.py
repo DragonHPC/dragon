@@ -59,7 +59,7 @@ def patch_engine_utils():
 
     import vllm.v1.engine.utils as utils_module
 
-    if VLLM_VERSION >= version.parse("0.15.0"):
+    if VLLM_VERSION >= version.parse("0.15.0"):  # 0.15.x through 0.19.x
         from .dragon_engine_utils_v015 import dragon_wait_for_engine_startup
     else:  # 0.12.x
         from .dragon_engine_utils import dragon_wait_for_engine_startup
@@ -237,7 +237,10 @@ def patch_multiproc_executor():
 
     from vllm.v1.executor.multiproc_executor import WorkerProc
 
-    if VLLM_VERSION >= version.parse("0.15.0"):
+    if VLLM_VERSION >= version.parse("0.18.0"):  # 0.18.x and 0.19.x
+        from .dragon_executor_v019 import dragon_worker_main
+        from .dragon_executor_v019 import dragon_wait_for_ready
+    elif VLLM_VERSION >= version.parse("0.15.0"):  # 0.15.x through 0.17.x
         from .dragon_executor_v015 import dragon_worker_main
         from .dragon_executor_v015 import dragon_wait_for_ready
     else:  # 0.12.x

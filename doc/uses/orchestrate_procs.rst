@@ -12,8 +12,8 @@ user applications, specify their placement on hardware, and how to manage their 
 ProcessGroup
 ============
 
-Anytime you have some number of processes you want to execute, :py:class:`~dragon.native.process_group.ProcessGroup` is
-where you want to begin. In fact, :py:class:`~dragon.native.process_group.ProcessGroup` is so powerful that Dragon uses
+Anytime you have some number of processes you want to execute, :py:class:`~dragon.ProcessGroup` is
+where you want to begin. In fact, :py:class:`~dragon.ProcessGroup` is so powerful that Dragon uses
 it as the backbone for its implementation of :py:meth:`~dragon.mpbridge.context.DragonContext.Pool`.
 
 
@@ -21,25 +21,24 @@ Hello World!
 ------------
 
 We'll begin by just executing the classic "Hello world!" example. In the snippet, we begin
-by creating a :py:class:`~dragon.native.process_group.ProcessGroup` object that contains all the API for managing the
+by creating a :py:class:`~dragon.ProcessGroup` object that contains all the API for managing the
 processes we'll assign to it. We'll assign processes to the group by defining a
-:py:class:`~dragon.native.process.ProcessTemplate`.
+:py:class:`~dragon.ProcessTemplate`.
 
-A :py:class:`~dragon.native.process_group.ProcessGroup` can contain
-as many templates as we'd like, and we can also tell :py:class:`~dragon.native.process_group.ProcessGroup` how many
+A :py:class:`~dragon.ProcessGroup` can contain
+as many templates as we'd like, and we can also tell :py:class:`~dragon.ProcessGroup` how many
 instances of a given template we want to execute. In this example, we'll launch 4 instances of
 our `"Hello World!"` template. After all that setup is complete, we'll initialize the infrastructure for the the
-:py:class:`~dragon.native.process_group.ProcessGroup` object and start execution of the 4 `"Hello World!"` instances.
-We then tell our :py:class:`~dragon.native.process_group.ProcessGroup` object to join on the completion of those 4
-instances and then close all the :py:class:`~dragon.native.process_group.ProcessGroup` infrastructure
+:py:class:`~dragon.ProcessGroup` object and start execution of the 4 `"Hello World!"` instances.
+We then tell our :py:class:`~dragon.ProcessGroup` object to join on the completion of those 4
+instances and then close all the :py:class:`~dragon.ProcessGroup` infrastructure
 
 .. code-block:: python
     :linenos:
     :caption: **Execute a group of "Hello world!" processes with ProcessGroup**
 
     import socket
-    from dragon.native.process_group import ProcessGroup
-    from dragon.native.process import ProcessTemplate
+    from dragon import ProcessGroup, ProcessTemplate
 
 
     def hello_world():
@@ -68,8 +67,8 @@ Defining Multiple Templates
 ---------------------------
 
 Say you'd like to run different applications but have them be part of the
-same :py:class:`~dragon.native.process_group.ProcessGroup`. That is easily done by providing multiple templates
-to your :py:class:`~dragon.native.process_group.ProcessGroup` object. In the following example, we'll create a data
+same :py:class:`~dragon.ProcessGroup`. That is easily done by providing multiple templates
+to your :py:class:`~dragon.ProcessGroup` object. In the following example, we'll create a data
 generator app and a consumer of that data that will be connected to each other via a
 :py:class:`~dragon.native.queue.Queue`. The :py:class:`~dragon.native.queue.Queue` will passed as input to each of
 the processes.
@@ -82,8 +81,7 @@ the processes.
 
     import random
 
-    from dragon.native.process_group import ProcessGroup
-    from dragon.native.process import ProcessTemplate
+    from dragon import ProcessGroup, ProcessTemplate
     from dragon.native.queue import Queue
 
 
@@ -158,8 +156,8 @@ modifying the driver function in :ref:`above example <consumer_generator_example
    :linenos:
    :caption: **Sending generator stdout to `/dev/null`**
 
-    from dragon.native.process_group import ProcessGroup
-    from dragon.native.process import ProcessTemplate, Popen
+    from dragon import ProcessGroup, ProcessTemplate
+    from dragon.native.process import Popen
     from dragon.native.queue import Queue
 
     def run_group():
@@ -215,9 +213,7 @@ is trained on a compute node we know has a GPU present.
     :linenos:
     :caption: **Generating training input data on the CPU and passing to a GPU process for PyTorch training**
 
-    from dragon.infrastructure.policy import Policy
-    from dragon.native.process_group import ProcessGroup
-    from dragon.native.process import ProcessTemplate
+    from dragon import ProcessGroup, ProcessTemplate, Policy
     from dragon.native.queue import Queue
 
     import torch

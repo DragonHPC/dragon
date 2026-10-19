@@ -1,9 +1,12 @@
 import os
 import unittest
 
-from dragon.data.ddict import DDict
-from dragon.native.machine import System, Node
-from dragon.infrastructure.policy import Policy
+from dragon import (
+    DDict,
+    System,
+    Policy
+)
+from dragon.native.machine import Node
 from dragon.telemetry.analysis import AnalysisClient
 
 

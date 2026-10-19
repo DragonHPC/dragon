@@ -33,7 +33,7 @@ clusters. You define:
 
 At runtime the framework:
 
-- Creates a shared :py:class:`~dragon.data.ddict.DDict` (Distributed Dictionary)
+- Creates a shared :py:class:`~dragon.DDict` (Distributed Dictionary)
   called the **Scoreboard** that stores all task state, results, and
   observability data.
 - Builds a Dragon Batch DAG where each node is a lightweight *dispatcher
@@ -600,7 +600,7 @@ directly into the Batch graph:
     :linenos:
     :caption: **Function node for deterministic post-processing**
 
-    from dragon.data.ddict import DDict
+    from dragon import DDict
     from dragon.ai.agent.config.pipeline import TaskResult, TaskStatus
     from dragon.ai.agent.ddict import DDictAccessor
     from dragon.ai.agent.config import DISPATCH_ID_KEY, RESULT_KEY
@@ -667,12 +667,12 @@ orchestrator.
     :linenos:
     :caption: **Launching agent processes with node placement**
 
+    from dragon import System, Policy
     from dragon.native.process import Process
     from dragon.native.queue import Queue
     from dragon.native.event import Event
-    from dragon.infrastructure.policy import Policy
     from dragon.infrastructure.facts import HOST_NAME
-    from dragon.native.machine import System, Node
+    from dragon.native.machine import Node
 
     from dragon.ai.agent.core.sub_agent import create_sub_agent
 
@@ -780,9 +780,9 @@ Running a Pipeline
     :linenos:
     :caption: **Full orchestrator setup and run**
 
+    from dragon import Batch
     from dragon.ai.agent.config.agent_config import OrchestratorConfig
     from dragon.ai.agent.orchestrator.orchestrator import DAGOrchestrator
-    from dragon.workflows.batch import Batch
 
     orch_config = OrchestratorConfig(
         agents=[planner_config, runner_config, analyzer_config, reporter_config],
@@ -1160,10 +1160,10 @@ Here is a minimal end-to-end script:
     :caption: **Single-agent pipeline**
 
     import dragon
+    from dragon import Batch
     from dragon.native.process import Process
     from dragon.native.queue import Queue
     from dragon.native.event import Event
-    from dragon.workflows.batch import Batch
 
     from dragon.ai.inference import (
       Inference, InferenceConfig, ModelConfig, HardwareConfig,

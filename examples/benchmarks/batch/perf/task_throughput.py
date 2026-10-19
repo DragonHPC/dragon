@@ -1,7 +1,7 @@
 import argparse
 import time
 
-from dragon.workflows.batch import Batch
+from dragon import Batch
 
 width_num_tasks = 10
 width_throughput = 20

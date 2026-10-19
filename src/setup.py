@@ -68,18 +68,20 @@ DragonExtension = partial(
 
 
 extensions = [
-    DragonExtension("dragon.utils", ["dragon/pydragon_utils.pyx"]),
-    DragonExtension("dragon.rc", ["dragon/pydragon_rc.pyx"]),
-    DragonExtension("dragon.dtypes", ["dragon/pydragon_dtypes.pyx"]),
-    DragonExtension("dragon.pheap", ["dragon/pydragon_heap.pyx"]),
-    DragonExtension("dragon.locks", ["dragon/pydragon_lock.pyx"]),
+    DragonExtension("dragon.accelerators", ["dragon/pydragon_accelerators.pyx"]),
     DragonExtension("dragon.channels", ["dragon/pydragon_channels.pyx"]),
-    DragonExtension("dragon.managed_memory", ["dragon/pydragon_managed_memory.pyx"]),
     DragonExtension("dragon.dlogging.logger", ["dragon/dlogging/pydragon_logging.pyx"]),
-    DragonExtension("dragon.pmod", ["dragon/pydragon_pmod.pyx"]),
-    DragonExtension("dragon.perf", ["dragon/pydragon_perf.pyx"]),
-    DragonExtension("dragon.fli", ["dragon/pydragon_fli.pyx"]),
     DragonExtension("dragon.dpmix", ["dragon/pydragon_dpmix.pyx"]),
+    DragonExtension("dragon.dtypes", ["dragon/pydragon_dtypes.pyx"]),
+    DragonExtension("dragon.fli", ["dragon/pydragon_fli.pyx"]),
+    DragonExtension("dragon.locks", ["dragon/pydragon_lock.pyx"]),
+    DragonExtension("dragon.managed_memory", ["dragon/pydragon_managed_memory.pyx"]),
+    DragonExtension("dragon.numa", ["dragon/pydragon_numa.pyx"]),
+    DragonExtension("dragon.perf", ["dragon/pydragon_perf.pyx"]),
+    DragonExtension("dragon.pheap", ["dragon/pydragon_heap.pyx"]),
+    DragonExtension("dragon.pmod", ["dragon/pydragon_pmod.pyx"]),
+    DragonExtension("dragon.rc", ["dragon/pydragon_rc.pyx"]),
+    DragonExtension("dragon.utils", ["dragon/pydragon_utils.pyx"]),
 ]
 
 

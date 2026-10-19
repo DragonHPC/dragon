@@ -51,10 +51,10 @@ Three Dragon pieces sit underneath the graph:
        inside one (the LangGraph integration). The planner + analyzer are two
        threads in one host process; the supervisor is a thread in a second host
        process on another node.
-   * - :py:class:`~dragon.workflows.batch.Batch`
+   * - :py:class:`~dragon.Batch`
      - A separate Dragon scheduler that runs the experiment tasks across the
        allocation.
-   * - :py:class:`~dragon.data.ddict.DDict`
+   * - :py:class:`~dragon.DDict`
      - A shared distributed dictionary — the "blackboard" every party reads and
        writes.
 

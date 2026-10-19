@@ -20,13 +20,11 @@ from unittest.mock import Mock, patch, MagicMock
 
 # Dragon imports
 import dragon
+from dragon import Policy, ProcessGroup, ProcessTemplate, current
 from dragon.managed_memory import MemoryPool, MemoryAlloc
-from dragon.infrastructure.policy import Policy
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import ProcessTemplate, Process
+from dragon.native.process import Process
 from dragon.native.queue import Queue
 from dragon.native.event import Event
-from dragon.native.machine import current
 
 # Import the data mover classes
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../src"))
@@ -645,6 +643,73 @@ class TestCuPyOptimizedDataMover(unittest.TestCase):
 
         # Verify data content
         np.testing.assert_array_almost_equal(numpy_array, cupy_data.get())
+
+
+class TestDataMoverConfiguration(unittest.TestCase):
+    def test_device_pool_arguments(self):
+        for mover_class in (NumPyDataMover, CuPyDataMover):
+            for positional in (False, True):
+                for device_id in (0, 3):
+                    with self.subTest(mover=mover_class.__name__, positional=positional, device_id=device_id):
+                        device_pool = Mock(gpu_device_id=device_id)
+                        stop_event = Mock()
+                        input_queue = Mock()
+                        output_queue = Mock()
+                        with patch("dragon.workflows.data_mover.MemoryPool") as pool, patch.object(
+                            mover_class, "construct_input_output_queues"
+                        ):
+                            if positional:
+                                mover = mover_class(4096, None, -1, stop_event, device_pool, input_queue, output_queue)
+                            else:
+                                mover = mover_class(
+                                    4096,
+                                    stop_event=stop_event,
+                                    device_pool=device_pool,
+                                    input_queue=input_queue,
+                                    output_queue=output_queue,
+                                )
+                            self.assertEqual(pool.call_args.kwargs["gpu_device_id"], device_id)
+                            self.assertIs(mover.device_pool, device_pool)
+                            self.assertIs(mover.stop_event, stop_event)
+                            self.assertIs(mover.input_queue, input_queue)
+                            self.assertIs(mover.output_queue, output_queue)
+
+    def test_no_device_pool(self):
+        for mover_class in (NumPyDataMover, CuPyDataMover):
+            with self.subTest(mover=mover_class.__name__):
+                with patch("dragon.workflows.data_mover.MemoryPool") as pool, patch.object(
+                    mover_class, "construct_input_output_queues"
+                ):
+                    mover = mover_class(4096, stop_event=Mock(), device_pool=None)
+                    self.assertEqual(pool.call_args.kwargs["gpu_device_id"], 0)
+                    self.assertIsNone(mover.device_pool)
+
+    def test_manager_optional_device_pool(self):
+        for pool_size in (None, 1024 * 1024):
+            with self.subTest(pool_size=pool_size):
+                data_mover = Mock()
+                data_mover.__name__ = "MockDataMover"
+                data_mover.return_value.get_input_output_queues.return_value = (Mock(), Mock())
+                with patch("dragon.workflows.data_mover.Event"), patch("dragon.workflows.data_mover.Queue"), patch(
+                    "dragon.workflows.data_mover.Process"
+                ), patch("dragon.workflows.data_mover.ProcessGroup"), patch(
+                    "dragon.workflows.data_mover.current", return_value=Mock(hostname="test_node")
+                ), patch(
+                    "dragon.workflows.data_mover.MemoryPool"
+                ) as pool:
+                    pool.max_pool_name_len.return_value = 100
+                    manager = DataMovers(data_mover=data_mover, device_pool_size=pool_size, device_id=3)
+                    manager._manager()
+                    if pool_size is None:
+                        pool.assert_not_called()
+                        pool.max_pool_name_len.assert_not_called()
+                        self.assertIsNone(manager._device_pool)
+                        self.assertIsNone(data_mover.call_args.kwargs["device_pool"])
+                    else:
+                        self.assertEqual(pool.call_args.args[0], pool_size)
+                        self.assertTrue(pool.call_args.kwargs["gpu_memory"])
+                        self.assertEqual(pool.call_args.kwargs["gpu_device_id"], 3)
+                        pool.return_value.destroy.assert_called_once_with()
 
 
 class TestDataMovers(unittest.TestCase):

@@ -22,9 +22,13 @@ from typing import Annotated, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from dragon import (
+    Policy,
+    System
+)
+
 from dragon.ai.langgraph import DragonExecutor
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import Node, System
+from dragon.native.machine import Node
 from dragon.native.process import current as current_process
 
 

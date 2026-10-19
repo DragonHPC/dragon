@@ -6,7 +6,8 @@ import time
 import os
 import json
 
-from dragon.native.machine import System, Node
+from dragon import System
+from dragon.native.machine import Node
 
 BURN_ITERS = 1
 
@@ -145,7 +146,7 @@ if __name__ == "__main__":
     out_json["node_hostnames"] = node_hostnames
 
     print("UNITTEST_DATA_START",out_json,"UNITTEST_DATA_END", flush=True)
-        
+
     run_p2p_lat(
         iterations=1000,
         max_msg_sz=2**4,

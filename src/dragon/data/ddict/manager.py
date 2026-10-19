@@ -1614,7 +1614,6 @@ class Manager:
         self._managers = []
         self._manager_hostnames = []
         self._serialized_manager_nodes = []
-        self._manager_flis = {}
         self._serialized_main_orc = serialized_main_orc
         self._serialized_return_orc = serialized_return_orc
 
@@ -1807,8 +1806,9 @@ class Manager:
                     # to be deposited directly into the pool. When the manager receives from a client
                     # channel, it can specify the destination, but a client sending will not automatically
                     # deposit into the pool unless the stream channel it is sending to is allocated from
-                    # that pool. Stream channels don't need to be very deep. A depth of 10 should be enough.
-                    self._main_fli_streams.append(Channel.make_process_local(capacity=10, pool=self._pool))
+                    # that pool. Stream channels don't need to be very deep. A depth of 100 should be enough
+                    # to include things like batch_put. Default capacity on a channel is also 100.
+                    self._main_fli_streams.append(Channel.make_process_local(capacity=100, pool=self._pool))
             else:
                 self._fli_mgr_channel = None
 
@@ -1960,9 +1960,11 @@ class Manager:
             del self._buffered_client_connections_map
             for i in self._client_connections_map:
                 self._client_connections_map[i].detach()
-            for i in range(len(self._managers)):
-                if i != self._manager_id:
-                    self._manager_flis[i].detach()
+            if self._manager_fli_left_child is not None:
+                self._manager_fli_left_child.detach()
+            if self._manager_fli_right_child is not None:
+                self._manager_fli_right_child.detach()
+
             del self._client_connections_map
 
             # pickle manager if allow restart is set
@@ -2077,21 +2079,21 @@ class Manager:
         return msg_list
 
     def _send_msg(self, msg, connection, buffered=False, turbo_mode=False):
+        strm = None
         try:
-            if connection.is_buffered or buffered:
-                strm = None
-            else:
+            if not (connection.is_buffered or buffered):
                 strm = self._get_strm_channel()
             with connection.sendh(
                 timeout=self._timeout, stream_channel=strm, use_main_buffered=(strm is None), turbo_mode=turbo_mode
             ) as sendh:
                 sendh.send_bytes(msg.serialize(), timeout=self._timeout)
-            if strm is not None:
-                self._release_strm_channel(strm)
         except Exception as ex:
             tb = traceback.format_exc()
             log.debug("There was an exception in the manager _send_msg: %s\n Traceback: %s", ex, tb)
             raise RuntimeError(f"There was an exception in the manager _send_msg: {ex} \n Traceback: {tb}")
+        finally:
+             if strm is not None:
+                self._release_strm_channel(strm)
 
     def _send_dmsg_and_value(
         self,
@@ -2219,14 +2221,11 @@ class Manager:
             connection.detach()
 
     def _send_dmsg_to_children(self, msg) -> None:
-        left_child = 2 * self._manager_id + 1
-        right_child = 2 * self._manager_id + 2
+        if self._manager_fli_left_child is not None:
+            self._send_msg(msg, self._manager_fli_left_child, buffered=True)
 
-        if left_child < len(self._managers):
-            self._send_msg(msg, self._manager_flis[left_child], buffered=True)
-
-        if right_child < len(self._managers):
-            self._send_msg(msg, self._manager_flis[right_child], buffered=True)
+        if self._manager_fli_right_child is not None:
+            self._send_msg(msg, self._manager_fli_right_child, buffered=True)
 
     def _register_with_orchestrator(self, serialized_return_orc: str, err_str="", err_code=DragonError.SUCCESS):
         if err_code == DragonError.SUCCESS:
@@ -2273,15 +2272,25 @@ class Manager:
             self._serialized_manager_nodes = resp_msg.managerNodes
             for serialized_node in self._serialized_manager_nodes:
                 self._manager_hostnames.append(cloudpickle.loads(b64decode(serialized_node)).hostname)
-            for i in range(len(self._managers)):
-                if i != self._manager_id:
-                    self._manager_flis[i] = fli.FLInterface.attach(b64decode(self._managers[i]))
 
-                self._next_client_id = self._manager_id * MAX_NUM_CLIENTS_PER_MANAGER + 1
-                self._serving = True
-                self._bytes_for_dict = self._pool.free_space
-                self._registered = True
-                self._serialized_manager_nodes = resp_msg.managerNodes
+            left_child_idx = 2 * self._manager_id + 1
+            right_child_idx = 2 * self._manager_id + 2
+
+            if right_child_idx < len(self._managers):
+                self._manager_fli_right_child = fli.FLInterface.attach(b64decode(self._managers[right_child_idx]))
+            else:
+                self._manager_fli_right_child = None
+
+            if left_child_idx < len(self._managers):
+                self._manager_fli_left_child = fli.FLInterface.attach(b64decode(self._managers[left_child_idx]))
+            else:
+                self._manager_fli_left_child = None
+
+            self._next_client_id = self._manager_id * MAX_NUM_CLIENTS_PER_MANAGER + 1
+            self._serving = True
+            self._bytes_for_dict = self._pool.free_space
+            self._registered = True
+            self._serialized_manager_nodes = resp_msg.managerNodes
         except Exception as ex:
             tb = traceback.format_exc()
             if err == DragonError.SUCCESS:
@@ -2553,20 +2562,17 @@ class Manager:
             tb = traceback.format_exc()
             log.debug("There was an exception while destroying manager %s: %s\n Traceback: %s", self._puid, ex, tb)
 
+    def _start_request_thread(self, target, msg, recvh):
+        self._threads = [t for t in self._threads if t.is_alive()]
+        t = threading.Thread(target=target, args=(msg, recvh), daemon=True)
+        t.start()
+        self._threads.append(t)
+
     @dutil.route(dmsg.DDBatchPut, _DTBL)
     def batch_put(self, msg: dmsg.DDBatchPut, recvh):
 
         recvh.no_close_on_exit()  # do not close the receive handle immediately while exiting context manager
-        t = threading.Thread(
-            target=self._batch_put,
-            args=(
-                msg,
-                recvh,
-            ),
-            daemon=True,
-        )
-        t.start()
-        self._threads.append(t)
+        self._start_request_thread(self._batch_put, msg, recvh)
 
     def _batch_put(self, msg: dmsg.DDBatchPut, recvh):
 
@@ -2585,6 +2591,8 @@ class Manager:
             )
             self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
             return
+
+        resp_msg = None
 
         try:
             while (
@@ -2797,13 +2805,38 @@ class Manager:
             )
 
         finally:
+            # Nothing in this clause may raise: an exception here would replace the
+            # pending one and kill the thread before the client is ever answered.
             try:
                 recvh.close()
             except Exception as ex:
                 log.debug("Caught an exception while closing the receive handle: %s" % ex)
 
-            del self._num_batch_puts[msg.clientID]
-            self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
+            self._num_batch_puts.pop(msg.clientID, None)
+
+            if resp_msg is None:
+                resp_msg = dmsg.DDBatchPutResponse(
+                    self._tag_inc(),
+                    ref=msg.tag,
+                    err=DragonError.FAILURE,
+                    errInfo=(
+                        f"Manager {self._manager_id} with PUID {self._puid} failed the batch put "
+                        f"for {msg.clientID=} without producing a response."
+                    ),
+                    numPuts=0,
+                    managerID=self._manager_id,
+                )
+
+            try:
+                self._send_msg(resp_msg, self._buffered_client_connections_map[msg.clientID])
+            except Exception as ex:
+                log.debug(
+                    "Manager %s with PUID %s could not send the batch put response to %s: %s",
+                    self._manager_id,
+                    self._puid,
+                    msg.clientID,
+                    ex,
+                )
 
     def _bput_batch(self, msg: dmsg.DDBPut, recvh):
 
@@ -3248,29 +3281,37 @@ class Manager:
                         left_msg = dmsg.DDBPut(msg.tag, msg.clientID, msg.chkptID, msg.respFLI, left, msg.batch)
                         connection = fli.FLInterface.attach(b64decode(self._managers[left[0]]))
                         strm = self._get_strm_channel()
-                        with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
-                            sendh.send_bytes(left_msg.serialize(), timeout=self._timeout)
-                            sendh.send_mem(
-                                client_key_mem, transfer_ownership=False, arg=KEY_HINT, timeout=self._timeout
-                            )
-                            for val in val_list:
-                                sendh.send_mem(val, transfer_ownership=False, arg=VALUE_HINT, timeout=self._timeout)
-                        connection.detach()
-                        self._release_strm_channel(strm)
+                        try:
+                            with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
+                                sendh.send_bytes(left_msg.serialize(), timeout=self._timeout)
+                                sendh.send_mem(
+                                    client_key_mem, transfer_ownership=False, arg=KEY_HINT, timeout=self._timeout
+                                )
+                                for val in val_list:
+                                    sendh.send_mem(val, transfer_ownership=False, arg=VALUE_HINT, timeout=self._timeout)
+                            connection.detach()
+                        except:
+                            raise
+                        finally:
+                            self._release_strm_channel(strm)
 
                     if len(right) != 0:
                         right_msg = dmsg.DDBPut(msg.tag, msg.clientID, msg.chkptID, msg.respFLI, right, msg.batch)
                         connection = fli.FLInterface.attach(b64decode(self._managers[right[0]]))
                         strm = self._get_strm_channel()
-                        with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
-                            sendh.send_bytes(right_msg.serialize(), timeout=self._timeout)
-                            sendh.send_mem(
-                                client_key_mem, transfer_ownership=False, arg=KEY_HINT, timeout=self._timeout
-                            )
-                            for val in val_list:
-                                sendh.send_mem(val, transfer_ownership=False, arg=VALUE_HINT, timeout=self._timeout)
-                        connection.detach()
-                        self._release_strm_channel(strm)
+                        try:
+                            with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
+                                sendh.send_bytes(right_msg.serialize(), timeout=self._timeout)
+                                sendh.send_mem(
+                                    client_key_mem, transfer_ownership=False, arg=KEY_HINT, timeout=self._timeout
+                                )
+                                for val in val_list:
+                                    sendh.send_mem(val, transfer_ownership=False, arg=VALUE_HINT, timeout=self._timeout)
+                            connection.detach()
+                        except:
+                            raise
+                        finally:
+                            self._release_strm_channel(strm)
 
                 bput_op = BPutOp(self, msg.clientID, msg.chkptID, msg.tag, False, client_key_mem, val_list, msg.respFLI)
 
@@ -3366,9 +3407,7 @@ class Manager:
     def bput(self, msg: dmsg.DDBPut, recvh):
         recvh.no_close_on_exit()  # do not close the receive handle immediately while exiting context manager
         if msg.batch:
-            t = threading.Thread(target=self._bput_batch, args=(msg, recvh), daemon=True)
-            t.start()
-            self._threads.append(t)
+            self._start_request_thread(self._bput_batch, msg, recvh)
         else:
             self._bput(msg, recvh)
 
@@ -3946,13 +3985,17 @@ class Manager:
             allocs = self._working_set.build_allocs()
             connection = fli.FLInterface.attach(b64decode(msg.emptyManagerFLI))
             strm = self._get_strm_channel()
-            with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
-                sendh.send_bytes(mgr_set_state_req.serialize(), timeout=self._timeout)
-                for id, mem in allocs.items():
-                    sendh.send_bytes(cloudpickle.dumps(id), timeout=self._timeout)
-                    sendh.send_mem(mem, transfer_ownership=False, timeout=self._timeout)
-            connection.detach()
-            self._release_strm_channel(strm)
+            try:
+                with connection.sendh(stream_channel=strm, timeout=self._timeout) as sendh:
+                    sendh.send_bytes(mgr_set_state_req.serialize(), timeout=self._timeout)
+                    for id, mem in allocs.items():
+                        sendh.send_bytes(cloudpickle.dumps(id), timeout=self._timeout)
+                        sendh.send_mem(mem, transfer_ownership=False, timeout=self._timeout)
+                connection.detach()
+            except:
+                raise
+            finally:
+                self._release_strm_channel(strm)
 
             log.debug("about to receive response DDManagerSetStateResponse from empty manager")
             resp_msg = self._recv_msg(set([mgr_set_state_req.tag]))

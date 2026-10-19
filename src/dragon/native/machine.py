@@ -24,7 +24,7 @@ def cpu_count() -> int:
     :return: integer representing the number of cpus
     """
 
-    return query_total_cpus()
+    return System.cpu_count()
 
 
 class Node:
@@ -181,6 +181,18 @@ class Node:
 def current() -> Node:
     """Return a node object for this process.
 
+    current() can be imported from the top-level :ref:`DragonAPI` or :mod:`dragon.native.machine` modules.
+
+        .. code-block:: python
+
+          from dragon import current
+
+        or
+
+        .. code-block:: python
+
+          from dragon.native.machine import current
+
     :return: Node object
     :rtype: Node
     """
@@ -189,6 +201,23 @@ def current() -> Node:
 
 
 class System:
+    """
+    System abstraction representing the collection of nodes in the Dragon runtime.
+    Provides access to node information, primary node, and policies for CPU and GPU placement.
+
+    System can be imported from the top-level :ref:`DragonAPI` or :mod:`dragon.native.machine` modules.
+
+        .. code-block:: python
+
+          from dragon import System
+
+        or
+
+        .. code-block:: python
+
+          from dragon.native.machine import System
+    """
+
     def __init__(self):
         """A stub of a system abstraction"""
         self._nodes = get_list()
@@ -248,3 +277,12 @@ class System:
                 policies.append(temp_policy)
 
         return policies
+
+    @staticmethod
+    def cpu_count() -> int:
+        """Return the number of CPUs in this system.
+
+        :return: integer representing the number of cpus
+        :rtype: int
+        """
+        return query_total_cpus()

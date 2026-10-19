@@ -51,7 +51,7 @@ state, and message brokers or polling loops for coordination. This works on
 commodity infrastructure but leaves HPC clusters severely underutilized.
 
 **Data sharing without external services.**
-All shared state lives in a :py:class:`~dragon.data.ddict.DDict` — a distributed
+All shared state lives in a :py:class:`~dragon.DDict` — a distributed
 key-value store backed by Dragon managed memory. On-node reads are direct memory
 loads; cross-node reads use RDMA. There is no Redis, no PostgreSQL, no etcd to
 deploy or monitor. The DDict scales horizontally with ``managers_per_node`` and
@@ -241,16 +241,16 @@ primitives are used is key to understanding the architecture.
      - ``dragon.native.queue``
      - Agent input queues, LLM inference request/response, HITL request/response,
        inter-process reply queues. The primary IPC mechanism.
-   * - :py:class:`~dragon.data.ddict.DDict`
-     - ``dragon.data.ddict``
+   * - :py:class:`~dragon.DDict`
+     - ``dragon.ddict``
      - Scoreboard — all task state (status, results, global state, tool history,
        trace spans, HITL queue handle). Created per pipeline run.
    * - :py:class:`~dragon.native.event.Event`
      - ``dragon.native.event``
      - Completion signaling — one Event per dispatch. Dispatcher blocks on
        ``wait()``, agent calls ``set()`` when done. Zero-polling notification.
-   * - :py:class:`~dragon.workflows.batch.Batch`
-     - ``dragon.workflows.batch``
+   * - :py:class:`~dragon.Batch`
+     - ``dragon.batch``
      - DAG execution — each pipeline node is registered as a
        ``batch.function()``. Dragon Batch resolves execution order and fans
        results to downstream consumers.
@@ -350,7 +350,7 @@ The Orchestrator
 
 The ``DAGOrchestrator`` (``orchestrator/orchestrator.py``) is the request-side
 entry point. It owns the full lifecycle of the shared
-:py:class:`~dragon.data.ddict.DDict` and assumes all agents are already running
+:py:class:`~dragon.DDict` and assumes all agents are already running
 persistently.
 
 Construction and Initialization
@@ -369,7 +369,7 @@ On ``__init__``, the orchestrator:
    checks.)
 3. Calls ``_init_infrastructure()``, which:
 
-   a. Creates the shared :py:class:`~dragon.data.ddict.DDict` with configurable
+   a. Creates the shared :py:class:`~dragon.DDict` with configurable
       kwargs (``managers_per_node``, ``n_nodes``, ``total_mem``, etc.) and
       immediately serializes it (``ddict.serialize()`` → bytes descriptor).
    b. If any agent declares an ``approval_filter``, creates a HITL
@@ -824,7 +824,7 @@ discover new events (see :ref:`agent-design-observability`).
 The Scoreboard DDict
 ---------------------------
 
-All task state lives in a :py:class:`~dragon.data.ddict.DDict` called the
+All task state lives in a :py:class:`~dragon.DDict` called the
 **Scoreboard**. The orchestrator creates it with ``DDict(**ddict_kwargs)``
 (defaults: ``managers_per_node=1, n_nodes=1``) and immediately serializes it.
 The serialized descriptor (bytes) is embedded in every ``DispatchHeader`` so any
@@ -1032,7 +1032,7 @@ Observability and Tracing
 -------------------------------
 
 The tracing system writes span data to the Scoreboard
-:py:class:`~dragon.data.ddict.DDict` and streams it to external viewers via TCP.
+:py:class:`~dragon.DDict` and streams it to external viewers via TCP.
 When ``OrchestratorConfig.tracing=True``, every LLM call, tool execution, HITL
 decision, and memory operation emits structured span events.
 
@@ -1368,19 +1368,19 @@ Agent Process Placement
 ________________________
 
 Agent processes are launched externally (not by the framework) using
-``dragon.native.process.Process`` or ``dragon.native.process_group.ProcessGroup``
+``dragon.native.process.Process`` or ``dragon.ProcessGroup``
 with ``create_sub_agent`` as the target function. The caller controls placement
-via ``dragon.infrastructure.policy.Policy``:
+via ``dragon.Policy``:
 
 .. code-block:: python
     :caption: **Agent process startup with node placement**
 
+    from dragon import System, Policy
     from dragon.native.process import Process
     from dragon.native.queue import Queue
     from dragon.native.event import Event
-    from dragon.infrastructure.policy import Policy
     from dragon.infrastructure.facts import HOST_NAME
-    from dragon.globalservices.node import System, Node
+    from dragon.native.machine import Node
 
     # Discover cluster topology
     nodes = System().nodes
@@ -1651,7 +1651,7 @@ described in :ref:`agent-request-flow`, with full code blocks for reference.
     :caption: **DDict creation in the orchestrator**
 
     # Created with user-configurable kwargs (managers_per_node, n_nodes, etc.)
-    self._ddict = DDict(**ddict_kwargs)         # dragon.data.ddict.DDict
+    self._ddict = DDict(**ddict_kwargs)         # dragon.DDict
     self._serialized_ddict = self._ddict.serialize()  # bytes — embedded in every DispatchHeader
 
 If HITL is enabled:
@@ -1688,7 +1688,7 @@ If HITL is enabled:
     :caption: **Dragon Batch DAG construction**
 
     # For each PipelineNode, register a function with Dragon Batch
-    task_handle = batch.function(fn, *dep_keys)  # dragon.workflows.batch.Batch.function()
+    task_handle = batch.function(fn, *dep_keys)  # dragon.function()
 
 **4. Dispatch** (``make_dispatcher_fn()`` closure, runs inside Dragon Batch):
 
@@ -1696,7 +1696,7 @@ If HITL is enabled:
     :caption: **Dispatcher closure — Dragon primitive operations**
 
     # 4a. Attach to DDict from serialized handle
-    ddict = DDict.attach(serialized_ddict)       # dragon.data.ddict.DDict.attach()
+    ddict = DDict.attach(serialized_ddict)       # dragon.DDict.attach()
     accessor = DDictAccessor(ddict, ...)
 
     # 4b. Create a completion Event
@@ -1720,7 +1720,7 @@ If HITL is enabled:
 
     # 4f. Cleanup
     completion_event.destroy()                   # dragon.native.event.Event.destroy()
-    ddict.detach()                               # dragon.data.ddict.DDict.detach()
+    ddict.detach()                               # dragon.DDict.detach()
 
 **5. Agent message processing** (``SubAgent._handle_message()``):
 
@@ -1728,7 +1728,7 @@ If HITL is enabled:
     :caption: **Agent-side Dragon primitive operations**
 
     # 5a. Attach to DDict from the header
-    ddict = DDict.attach(header.serialized_ddict)  # dragon.data.ddict.DDict.attach()
+    ddict = DDict.attach(header.serialized_ddict)  # dragon.DDict.attach()
     accessor = DDictAccessor(ddict, ...)
 
     # 5b. Read upstream results from DDict
@@ -1764,4 +1764,4 @@ If HITL is enabled:
     :caption: **Cleanup — destroy all Dragon primitives**
 
     self._hitl_queue.destroy()                   # dragon.native.queue.Queue.destroy()
-    self._ddict.destroy()                        # dragon.data.ddict.DDict.destroy()
+    self._ddict.destroy()                        # dragon.DDict.destroy()

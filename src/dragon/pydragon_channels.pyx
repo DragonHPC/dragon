@@ -850,9 +850,10 @@ cdef class Channel:
                 self._default_pool = mem_pool
             else:
                 # if no pool is provided the channel was not a local channel,
-                # then we have to use the local default pool.
-                pool = MemoryPool.attach(B64.from_str(dparms.this_process.default_pd).decode())
-                self._default_pool = pool
+                # then we have to use the local default pool. attach_default() is
+                # proxy-aware in the C layer, so it resolves the local runtime's
+                # default pool even while proxy mode is active.
+                self._default_pool = MemoryPool.attach_default()
         else:
             if not mem_pool.is_local:
                 raise ChannelError("You cannot supply a pool that is not local.")
@@ -1068,9 +1069,9 @@ cdef class Channel:
             raise ValueError('make_process_local timeout must be a float or int')
 
         if pool is None:
-            pool = MemoryPool.attach_default()
-
-        muid = pool.muid
+            muid = 0
+        else:
+            muid = pool.muid
 
         if block_size is None:
             blockSize = 0 # default will be used
@@ -1100,7 +1101,8 @@ cdef class Channel:
         derr = dragon_channel_serial_free(&ser)
 
         # This inits the rest of the object given the channel descriptor above.
-        return Channel.attach(py_obj)
+        empty_channel = Channel.__new__(Channel)
+        return empty_channel._attach(py_obj, None)
 
 
     def destroy_process_local(self, timeout=None):

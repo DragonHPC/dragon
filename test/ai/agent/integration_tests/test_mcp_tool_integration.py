@@ -17,7 +17,7 @@ import uuid
 from typing import List, Optional, Tuple
 from unittest import TestCase, main
 
-from dragon.data.ddict import DDict
+from dragon import DDict
 
 from dragon.ai.agent.config import (
     LLM_EVENT_KEY,

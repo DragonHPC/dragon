@@ -13,7 +13,10 @@ public:
 
     static constexpr const char *libname{"libcudart.so"};
 
-    dragonGPU_cuda(int deviceID);
+    dragonGPU_cuda();
+
+    dragonError_t
+    set_device(int device_id) override;
 
     dragonError_t
     mem_alloc(void **addr, size_t size) override;
@@ -50,6 +53,19 @@ public:
 
     std::string
     get_errstr(const char *event, int cuda_rc) override;
+
+    int
+    get_device_count() override;
+
+    dragonError_t
+    get_device_list(int **int_device_list, double **double_device_list, int *num_devices) override;
+
+    dragonError_t
+    uuid_hex_to_str(char *uuid_hex, char **uuid_str) override;
+
+    dragonError_t
+    get_uuid(int device_id, char **uuid_str) override;
+
 };
 
 #endif // HAVE_DRAGON_GPU_CUDA_HPP

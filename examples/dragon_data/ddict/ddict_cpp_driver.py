@@ -1,14 +1,17 @@
 import os
 import dragon
+from dragon import DDict, System
 from dragon.native.process import Popen
-from dragon.data.ddict.ddict import DDict
-from dragon.native.machine import System
+from dragon.infrastructure.facts import DRAGON_LIB_DIR
 import multiprocessing as mp
 import pathlib
 import argparse
 
 test_dir = pathlib.Path(__file__).resolve().parent
 os.system(f"cd {test_dir}; make --silent")
+
+ENV = dict(os.environ)
+ENV["LD_LIBRARY_PATH"] = str(DRAGON_LIB_DIR) + ":" + str(ENV.get("LD_LIBRARY_PATH", ""))
 
 if __name__ == "__main__":
     mp.set_start_method("dragon")
@@ -40,6 +43,7 @@ if __name__ == "__main__":
     aggregate_proc = Popen(
         executable=str(test_dir / exe),
         args=[ser_ddict, num_workers, num_digits, trace],
+        env=ENV,
     )
     procs.append(aggregate_proc)
 
@@ -49,6 +53,7 @@ if __name__ == "__main__":
         proc = Popen(
             executable=str(test_dir / exe),
             args=[ser_ddict, i, num_workers, num_digits, trace],
+            env=ENV,
         )
         procs.append(proc)
 

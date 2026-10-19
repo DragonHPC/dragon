@@ -1,8 +1,8 @@
 import unittest
 import os
 from unittest.mock import patch
+from dragon import Policy
 from dragon.ai.collective_group import CollectiveGroup, RankInfo
-from dragon.infrastructure.policy import Policy
 from dragon.native.process import Popen
 
 

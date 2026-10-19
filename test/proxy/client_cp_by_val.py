@@ -5,18 +5,19 @@ import os
 import dragon.workflows.runtime as runtime
 import cloudpickle
 import my_local_module  # module only on local system
+
 # this may have performance impacts and recursive imports may not work properly, see cloudpickle docs.
 cloudpickle.register_pickle_by_value(my_local_module)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
 
     # paths to find remote runtime sdesc and signal exit
-    #system = "pippin"
+    # system = "pippin"
     system = "portage"
-    #runtime_name = "proxy_runtime"
+    # runtime_name = "proxy_runtime"
     runtime_name = "my-runtime"
-    #publish_dir = "/lus/scratch/wahlc/dragon/dev/"
+    # publish_dir = "/lus/scratch/wahlc/dragon/dev/"
     publish_dir = "/lus/lustre1/wahlc/dragon/dev/proxy-dev/examples/workflows/proxy"
     exit_path = "/lus/lustre1/wahlc/dragon/dev/proxy-dev/examples/workflows/proxy/client_exit"
 
@@ -24,7 +25,7 @@ if __name__ == '__main__':
 
     mp.set_start_method("dragon")
     runtime_sdesc = runtime.lookup(system, runtime_name, 30, publish_dir=publish_dir)
-    proxy = runtime.attach(runtime_sdesc, remote_cwd=remote_working_dir)
+    proxy = runtime.attach(sdesc_str=runtime_sdesc, remote_cwd=remote_working_dir)
 
     print("\n")
 

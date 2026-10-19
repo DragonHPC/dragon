@@ -43,7 +43,7 @@ def bringup_channels(gs_stdout, env_updates, channel_overrides, logname=""):
     # the already-attached queues as test overrides.
     gs_input_q = InfraQueue.attach(dparm.this_process.gs_qd)
     shep_input_q = InfraQueue.attach(dparm.this_process.local_ls_qd)
-    bela_input_q = InfraQueue.attach(dparm.this_process.local_be_cd)
+    bela_input_q = InfraQueue.attach(dparm.this_process.local_be_qd)
 
     # reconstitute overrides here.
     test_connections = {}
@@ -101,7 +101,7 @@ class GSProcessBaseClass(unittest.TestCase):
         self.gs_input_chan, self.gs_input_rh, self.gs_input_wh, self.some_parms.gs_qd = handles
 
         handles = mk_dqueue_handles(dfacts.BASE_BE_CUID)
-        self.bela_input_chan, self.bela_input_rh, self.bela_input_wh, self.some_parms.local_be_cd = handles
+        self.bela_input_chan, self.bela_input_rh, self.bela_input_wh, self.some_parms.local_be_qd = handles
 
         handles = mk_dqueue_handles(dfacts.BASE_LS_CUID)
         self.shep_input_chan, self.shep_input_rh, self.shep_input_wh, self.some_parms.local_ls_qd = handles

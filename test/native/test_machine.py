@@ -24,7 +24,7 @@ class TestMachineSingle(unittest.TestCase):
 
     def test_node_class(self):
 
-        mynode = dragon.native.machine.current()
+        mynode = dragon.current()
         self.assertTrue(mynode.h_uid == host_id())
 
 

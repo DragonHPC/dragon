@@ -5,7 +5,7 @@ Native
 
 The following reference provides information about the Dragon Native API. Much of the API is inspired by Python
 multiprocessing but includes extended functionality, such as support for explicit placement of resources through
-the :py:class:`dragon.infrastructure.policy.Policy` class.
+the :py:class:`dragon.Policy` class.
 
 Use the Native API when you need more control than Dragon's multiprocessing
 layer provides. It is the right entry point for explicit process placement,
@@ -21,6 +21,11 @@ Python Reference
 
 Infrastructure Information
 --------------------------
+
+The high-level :class:`dragon.System` and :func:`dragon.current` imports are
+available directly from the top-level ``dragon`` package. The ``machine``
+module reference below also documents lower-level machine types such as
+``Node``.
 
 .. currentmodule:: dragon.native
 

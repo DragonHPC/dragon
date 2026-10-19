@@ -7,20 +7,23 @@ import numpy as np
 import queue
 import os
 
+from dragon import (
+    ProcessGroup,
+    ProcessTemplate,
+    Policy,
+    System,
+    current,
+    DDict
+)
 from dragon.workflows.data_mover import (
     DataMovers,
     CuPyOptimizedDataMover,
     NumPyOptimizedDataMover,
 )
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import ProcessTemplate
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import System, Node
+from dragon.native.machine import Node
 from dragon.managed_memory import (
     MemoryAlloc,
 )
-from dragon.native.machine import current
-from dragon.data.ddict import DDict
 
 num_decimal_places = 8
 

@@ -231,8 +231,8 @@ class LaunchParameters:
     :type INF_PD: str
     :param LOCAL_LS_QD: Serialized descriptor of the queue to send to the local services on the same node, defaults to ''.
     :type LOCAL_LS_QD: str
-    :param LOCAL_BE_CD: Base64 encoded serialized descriptor of the channel to send to the launcher backend on the same node, defaults to ''.
-    :type LOCAL_BE_CD:  str
+    :param LOCAL_BE_QD: Base64 encoded serialized descriptor of the channel to send to the launcher backend on the same node, defaults to ''.
+    :type LOCAL_BE_QD:  str
     :param GS_QD: Serialized descriptor of the queue to send to global services, defaults to ''.
     :type GS_QD: str
     :param GS_RET_QD: Base64 encoded serialized descriptor of the channel to receive from global services, defaults to ''.
@@ -296,7 +296,7 @@ class LaunchParameters:
             TypedParm(name=dfacts.DEFAULT_PD, cast=typecast(str), check=check_base64, default=""),
             TypedParm(name=dfacts.INF_PD, cast=typecast(str), check=check_base64, default=""),
             TypedParm(name=dfacts.LOCAL_LS_QD, cast=typecast(str), check=check_base64, default=""),
-            TypedParm(name=dfacts.LOCAL_BE_CD, cast=typecast(str), check=check_base64, default=""),
+            TypedParm(name=dfacts.LOCAL_BE_QD, cast=typecast(str), check=check_base64, default=""),
             TypedParm(name=dfacts.GS_RET_QD, cast=typecast(str), check=check_base64, default=""),
             TypedParm(name=dfacts.LS_RET_QD, cast=typecast(str), check=check_base64, default=""),
             TypedParm(name=dfacts.GS_QD, cast=typecast(str), check=check_base64, default=""),
@@ -425,7 +425,7 @@ class LaunchParameters:
         cls.PARMS = PARMS
 
         cls.NODE_LOCAL_PARAMS = (
-            frozenset([dfacts.DEFAULT_PD, dfacts.INF_PD, dfacts.LOCAL_LS_QD, dfacts.LOCAL_BE_CD, dfacts.BE_CUID])
+            frozenset([dfacts.DEFAULT_PD, dfacts.INF_PD, dfacts.LOCAL_LS_QD, dfacts.LOCAL_BE_QD, dfacts.BE_CUID])
             | cls.gw_env_vars
         )
 
@@ -486,6 +486,71 @@ class LaunchParameters:
                 evd[attr_name] = pt.default
 
         return LaunchParameters(**evd)
+
+    @classmethod
+    def from_attach_info(cls, attach_descr, register_response) -> "LaunchParameters":
+        """Build a LaunchParameters from the attachable runtime descriptor and a registration response.
+
+        Used by ``connect_as_external()`` after LS provisioning and direct Global Services
+        registration completion. ``register_response`` is the
+        :class:`~dragon.infrastructure.messages.LSExternalResourcesReady` provisioning message.
+
+        ``node_index`` is sourced from ``attach_descr.node_index`` (the per-node attach-info
+        value, authoritative for the node the external process is running on).  Gateway
+        descriptors (``gw_env``, ``num_gw_channels_per_node``) are sourced from
+        ``register_response`` when present; on single-node deployments where
+        ``num_gw_channels_per_node == 0`` the gateway block is skipped entirely.
+
+        :param attach_descr: :class:`~dragon.infrastructure.messages.AttachableRuntimeDescr`
+            read from the attach-info file.
+        :param register_response: LS provisioning response supplying ``p_uid``, GS/LS return
+            queue descriptors, pool descriptors, ``num_gw_channels_per_node``, and ``gw_env``.
+        :return: :class:`LaunchParameters` suitable for :func:`connect_as_external`.
+        """
+        default_pd = register_response.default_pd if register_response.default_pd else attach_descr.default_pd
+        inf_pd = register_response.inf_pd if register_response.inf_pd else attach_descr.inf_pd
+        gs_ret_qd = getattr(register_response, "gs_return_qd", None) or getattr(register_response, "gs_qd", None)
+        ls_ret_qd = getattr(register_response, "ls_return_qd", None) or getattr(register_response, "ls_ret_qd", None)
+
+        count = getattr(register_response, "num_gw_channels_per_node", 0)
+        gw_env = getattr(register_response, "gw_env", None)
+
+        # When gateways are present rebuild class-level PARMS so that gw1..gwN
+        # TypedParm entries exist before we construct the evd dict.  This mutates
+        # class-global state, which is acceptable here because the external proc
+        # replaces dp.this_process immediately after (connect_as_external).
+        if count > 0 and gw_env:
+            os.environ[dfacts.PREFIX + dfacts.NUM_GW_CHANNELS_PER_NODE_VAR] = str(count)
+            cls.init_class_vars()
+
+        evd = {}
+        for pt in cls.PARMS:
+            evd[cls._attr_name_from_pt(pt.name)] = pt.default
+
+        evd.update(
+            {
+                "mode": dfacts.CRAYHPE_MULTI_MODE if count else dfacts.SINGLE_MODE,
+                "index": attach_descr.node_index,
+                "my_puid": register_response.p_uid,
+                "gs_ret_qd": gs_ret_qd,
+                "ls_ret_qd": ls_ret_qd,
+                "default_pd": default_pd,
+                "inf_pd": inf_pd,
+                "gs_qd": attach_descr.gs_qd,
+                "local_ls_qd": attach_descr.ls_qd,
+                "num_gw_channels_per_node": count,
+            }
+        )
+
+        # Populate per-gateway descriptors into evd so env() emits DRAGON_GW* correctly.
+        # On single-node deployments count==0 so this block is fully skipped.
+        if count > 0 and gw_env:
+            for i in range(count):
+                env_key = f"{dfacts.GW_ENV_PREFIX}{i + 1}"
+                if env_key in gw_env:
+                    evd[f"gw{i + 1}"] = gw_env[env_key]
+
+        return cls(**evd)
 
     def env(self):
         """Returns dictionary of environment variables for this object.

@@ -3,10 +3,10 @@ import unittest
 import pathlib
 import platform
 import dragon
+from dragon import DDict, System, Policy
 from dragon.native.process import Popen
-from dragon.data.ddict.ddict import DDict, PosixCheckpointPersister
-from dragon.native.machine import System, Node
-from dragon.infrastructure.policy import Policy
+from dragon.data.ddict.ddict import PosixCheckpointPersister
+from dragon.native.machine import Node
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
 import multiprocessing as mp
 

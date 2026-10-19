@@ -77,6 +77,7 @@ dragonError_t dragon_log_message(
 dragonError_t dragon_logging_detach();
 
 dragonError_t recv_fli_msg(dragonFLIRecvHandleDescr_t* recvh, DragonMsg** msg, const timespec_t* timeout);
+dragonError_t dragon_deserialize_msg(const void* buf, size_t len, DragonMsg** msg);
 dragonError_t dragon_ls_send_receive(DragonMsg* req_msg, DragonResponseMsg** resp_msg, enum MessageType expected_msg_type, dragonFLIDescr_t* return_fli, const timespec_t* timeout);
 dragonError_t dragon_get_return_ls_fli(dragonFLIDescr_t* return_fli);
 dragonError_t dragon_fli_send_recv_capnp(DragonMsg* msg_out, DragonResponseMsg** resp_msg, enum MessageType expected_msg_type, dragonFLIDescr_t* fli_out,

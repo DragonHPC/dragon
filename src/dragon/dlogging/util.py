@@ -10,7 +10,7 @@ import argparse
 import dragon.infrastructure.facts as dfacts
 import dragon.infrastructure.messages as dmsg
 from dragon.utils import B64
-from dragon.managed_memory import MemoryPool, DragonPoolCreateFail
+from dragon.managed_memory import MemoryPool
 
 # This is random and exists to conform to the messaging infrastructure.
 # It is discarded once logs are written out
@@ -531,16 +531,9 @@ def _get_logging_mpool(node_index: int):
     lps = int(dfacts.DEFAULT_SINGLE_INF_SEG_SZ)
     lpn = f"D{_user[-3:]}{str(os.getpid())[-3:]}{str(dfacts.LOGGING_POOL_SUFFIX)[-3:]}"
     lp_muid = dfacts.logging_pool_muid_from_index(node_index)
-    # In some tests, the previous logging pool has not quite been released (by the OS)
-    # before the next test starts. This just tries a different name if that happens
-    # in our tests. When running dragon the logging pool should always end with "_0"
-    # outside our tests.
-    for i in range(10):
-        try:
-            logging_mpool = MemoryPool(lps, lpn + "_" + str(i), lp_muid, None)
-            return logging_mpool
-        except DragonPoolCreateFail:
-            raise
+    # Normally this lands on "_0"; a later name is used only if an earlier pool has not
+    # been released yet.
+    return MemoryPool.create_with_retry(lps, lpn + "_", lp_muid)
 
 def setup_dragon_logging(node_index: int):
     """Create a :class:`dragon.native.Queue` instance

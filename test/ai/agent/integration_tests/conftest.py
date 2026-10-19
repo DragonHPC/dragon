@@ -11,7 +11,7 @@ import uuid
 from typing import Any, Optional
 from unittest import TestCase
 
-from dragon.data.ddict import DDict
+from dragon import DDict
 
 from dragon.ai.agent.config import (
     AgentConfig,

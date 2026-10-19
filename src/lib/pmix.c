@@ -9,16 +9,27 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/wait.h>
-#include <pty.h>
 #include <unistd.h>
 #include <pthread.h>
 #include <dlfcn.h>
+
+#ifdef __APPLE__
+#include <util.h>   // For macOS / BSD
+#define LIBPMIX "libpmix.dylib"
+#else
+#include <pty.h>    // For Linux (glibc)
+#define LIBPMIX "libpmix.so"
+#endif
 
 #include <src/include/pmix_globals.h>
 #include "umap.h"
 #include "ulist.h"
 #include "_ddict.h"
 #include "_pmix.h"
+
+#ifndef HOST_NAME_MAX
+#define HOST_NAME_MAX _POSIX_HOST_NAME_MAX
+#endif
 
 // Several static values to manage internal state
 static pmix_list_t pubdata;  // Data provided in lookup functions by the server
@@ -251,7 +262,7 @@ _dragon_pmix_set_fn_ptrs()
 
 
     // Otherwise, get the pointers loaded
-    lib_pmix_handle = dlopen("libpmix.so", RTLD_LAZY | RTLD_GLOBAL);
+    lib_pmix_handle = dlopen(LIBPMIX, RTLD_LAZY | RTLD_GLOBAL);
     if (lib_pmix_handle == NULL) {
         append_err_return(DRAGON_FAILURE, "Unable to open libpmix.so for PMIx code execution");
     }

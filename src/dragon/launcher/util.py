@@ -13,7 +13,7 @@ from ..infrastructure.messages import AbnormalTerminationError
 from ..infrastructure import messages as dmsg
 from ..infrastructure import facts as dfacts
 from ..infrastructure import process_desc as pdesc
-from ..utils import b64decode
+from ..utils import b64decode, ExceptionalThread
 
 from .wlm import WLM, wlm_cls_dict
 from .wlm.base import BaseWLM
@@ -25,6 +25,80 @@ logger = logging.getLogger(__name__)
 TIMEOUT_PATIENCE = 10  # seconds
 LA_TAG = 0
 LOGBASE = "launcher"
+
+THREAD_JOIN_TIMEOUT = 10.0
+"""Seconds to wait for a service thread to exit on its own before escalating."""
+
+THREAD_KILL_TIMEOUT = 5.0
+"""Seconds to wait after asking a service thread to raise out of its work."""
+
+
+class ThreadInterrupt(BaseException):
+    """Raised inside a service thread to unwind it during an abnormal exit.
+
+    Derives from BaseException, like KeyboardInterrupt, so the broad
+    ``except Exception`` handlers in the service loops do not swallow it and
+    keep looping.
+    """
+
+
+class ServiceThread(ExceptionalThread):
+    """Launcher service thread that can be interrupted by `join_thread`."""
+
+    def run(self):
+        try:
+            super().run()
+        except ThreadInterrupt:
+            # Expected during an abnormal exit; no traceback to report.
+            logger.debug("%s interrupted during abnormal exit", self.name)
+
+
+def join_thread(thread, log=None, timeout: float = THREAD_JOIN_TIMEOUT, abnormal: bool = False) -> bool:
+    """Join a launcher service thread, escalating to an exception if it won't exit.
+
+    On an abnormal exit a thread may be parked on a queue or channel that is
+    never going to produce anything. `ExceptionalThread.kill_by_exception`
+    raises inside it so it can unwind, but that only takes effect once the
+    thread runs Python bytecode again; a thread stuck in native code cannot be
+    forced and is left behind.
+
+    :return: True if the thread is no longer running.
+    """
+    if thread is None:
+        return True
+    if log is None:
+        log = logger
+
+    name = thread.name
+
+    thread.join(timeout=timeout)
+    if not thread.is_alive():
+        log.info("%s joined", name)
+        return True
+
+    if not abnormal:
+        log.warning("%s did not exit within %ss", name, timeout)
+        return False
+
+    kill_by_exception = getattr(thread, "kill_by_exception", None)
+    if kill_by_exception is None:
+        log.warning("%s did not exit and cannot be interrupted", name)
+        return False
+
+    log.warning("%s did not exit within %ss, raising an exception in it", name, timeout)
+    try:
+        kill_by_exception(ThreadInterrupt)
+    except Exception:
+        log.exception("failed to raise an exception in %s", name)
+        return False
+
+    thread.join(timeout=THREAD_KILL_TIMEOUT)
+    if thread.is_alive():
+        log.warning("%s is wedged in native code and is being abandoned", name)
+        return False
+
+    log.info("%s exited after being interrupted", name)
+    return True
 
 
 class SRQueue(queue.SimpleQueue):

@@ -372,6 +372,8 @@ typedef struct dragonMessageAttr_st {
 typedef struct dragonMessage_st {
     dragonMessageAttr_t _attr;
     dragonMemoryDescr_t* _mem_descr;
+    bool _mem_descr_provided; /*!< Caller supplied descriptor to refer to message result. */
+    bool _mem_descr_inited; /*!< Indicates supplied memory descriptor is valid. */
 } dragonMessage_t;
 
 /**
@@ -422,6 +424,9 @@ typedef struct dragonNodeMap_st {
 typedef struct dragonGatewayMessageHeader_st {
     dragonGatewayMessageKind_t* msg_kind; /*!< A send, get, or event message */
     dragonULInt* target_hostid; /*!< Hostid identifying the target of this request. */
+    dragonRT_UID_t* target_rt_uid; /*!< Runtime UID identifying the target runtime of this request. */
+    dragonULInt* target_rt_bootstrap_ip_addr; /*!< Bootstrap ingress IPv4 address for the target runtime. */
+    dragonULInt* target_rt_bootstrap_port; /*!< Bootstrap ingress port for the target runtime. */
     dragonULInt* has_deadline; /*!< If there is a timeout, then this points to true. */
     dragonULInt* deadline_sec; /*!< Seconds of the timeout */
     dragonULInt* deadline_nsec; /*!< Nanoseconds part of timeout */
@@ -467,6 +472,9 @@ typedef struct dragonGatewayMessage_st {
     dragonChannelSerial_t target_ch_ser;            /*!< Serialize descriptor of the target Channel */
     dragonGatewayMessageKind_t msg_kind;            /*!< The kind of message (send, get, event) */
     dragonULInt target_hostid;                      /*!< The hostid the target Channel is on */
+    dragonRT_UID_t target_rt_uid;                   /*!< The runtime UID the target Channel belongs to */
+    dragonUInt target_rt_bootstrap_ip_addr;         /*!< Bootstrap ingress IPv4 address for the target runtime */
+    dragonULInt target_rt_bootstrap_port;           /*!< Bootstrap ingress port for the target runtime */
     timespec_t deadline;                            /*!< When the operation must be completed by */
     dragonChannelSendReturnWhen_t send_return_mode; /*!< When a send operation should return to the caller */
     dragonMessage_t send_payload_message;           /*!< The message being sent for send operations */
@@ -586,6 +594,14 @@ dragon_channel_message_init(dragonMessage_t* msg, dragonMemoryDescr_t* mem_descr
                             const dragonMessageAttr_t* attr);
 
 dragonError_t
+dragon_channel_message_init_inplace(dragonMessage_t* msg, dragonMemoryDescr_t* mem_descr,
+                                    const dragonMessageAttr_t* attr, bool is_inited);
+
+dragonError_t
+dragon_channel_message_init_move(dragonMessage_t* msg, dragonMemoryDescr_t* mem_descr,
+                                 const dragonMessageAttr_t* attr);
+
+dragonError_t
 dragon_channel_message_destroy(dragonMessage_t* msg, const bool free_mem_descr);
 
 dragonError_t
@@ -683,6 +699,7 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t* pool_descr,
 dragonError_t
 dragon_channel_gatewaymessage_get_create(dragonMemoryPoolDescr_t* pool_descr,
                                          dragonMemoryDescr_t* dest_mem_descr,
+                                         const bool dest_mem_descr_inited,
                                          const dragonChannelDescr_t* target_ch, const timespec_t* deadline,
                                          dragonGatewayMessage_t* gmsg);
 

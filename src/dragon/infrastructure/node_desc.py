@@ -23,6 +23,7 @@ from ..utils import host_id as get_host_id
 from .util import port_check
 from ..transport.util import get_fabric_ep_addrs
 from .gpu_desc import AcceleratorDescriptor, find_accelerators
+from ..numa import DragonNUMA
 from typing import Union, Tuple
 
 
@@ -58,6 +59,7 @@ class NodeDescriptor:
         fabric_ep_addr_lens: Optional[list[int]] = None,
         port: int = None,
         num_cpus: int = 0,
+        num_numas: int = 0,
         physical_mem: int = 0,
         is_primary: bool = False,
         host_id: int = None,
@@ -65,6 +67,7 @@ class NodeDescriptor:
         overlay_cd: str = "",
         host_name: str = "",
         cpu_devices: Optional[list[int]] = None,
+        numa_cpus: Optional[dict[int, list[int]]] = None,
         accelerators: Optional[AcceleratorDescriptor] = None,
         g_idx: int = None,
     ):
@@ -72,6 +75,8 @@ class NodeDescriptor:
         self.name = name
         self.state = state
         self.num_cpus = num_cpus
+        self.num_numas = num_numas
+        self.numa_cpus = {int(nid): cpus for nid, cpus in numa_cpus.items()} if numa_cpus is not None else {}
         self.physical_mem = physical_mem
         self.is_primary = is_primary
 
@@ -181,6 +186,13 @@ class NodeDescriptor:
         if not os.getenv("DRAGON_HSTA_NO_NET_CONFIG", True):
             get_fabric_ep_addrs(num_nics, os.environ.get("DRAGON_HSTA_GET_FABRIC", "True").lower() == "true")
 
+        try:
+            num_numas = DragonNUMA.get_numa_node_count()
+            numa_cpus = {nid: DragonNUMA.get_numa_node_to_cpus(nid) for nid in range(num_numas)}
+        except RuntimeError:
+            num_numas = 0
+            numa_cpus = {}
+
         return cls(
             state=state,
             name=name,
@@ -190,8 +202,10 @@ class NodeDescriptor:
             ls_cd=ls_cd,
             is_primary=is_primary,
             num_cpus=num_cpus,
+            num_numas=num_numas,
             physical_mem=physical_mem,
             cpu_devices=cpu_devices,
+            numa_cpus=numa_cpus,
             accelerators=accelerators,
         )
 
@@ -349,11 +363,14 @@ class NodeDescriptor:
             "host_name": self.host_name,
             "is_primary": self.is_primary,
             "ip_addrs": self.ip_addrs,
+            "port": getattr(self, "port", None),
             "fabric_ep_addrs_available": self.fabric_ep_addrs_available,
             "fabric_ep_addrs": self.fabric_ep_addrs,
             "fabric_ep_addr_lens": self.fabric_ep_addr_lens,
             "host_id": self.host_id,
             "num_cpus": self.num_cpus,
+            "num_numas": self.num_numas,
+            "numa_cpus": self.numa_cpus,
             "physical_mem": self.physical_mem,
             "ls_cd": self.ls_cd,
             "overlay_cd": self.overlay_cd,
@@ -371,6 +388,10 @@ class NodeDescriptor:
 
     @classmethod
     def from_sdict(cls, sdict):
+        sdict = dict(sdict)
+        # __init__ appends port to each IP address, so exclude it here and
+        # restore the separate port attribute after construction.
+        port = sdict.pop("port", None)
         sdict["state"] = NodeDescriptor.State(sdict["state"])
         try:
             if sdict["accelerators"] is not None:
@@ -378,4 +399,8 @@ class NodeDescriptor:
         except KeyError:
             sdict["accelerators"] = None
 
-        return NodeDescriptor(**sdict)
+        node_desc = NodeDescriptor(**sdict)
+        if port is not None:
+            node_desc.port = port
+
+        return node_desc

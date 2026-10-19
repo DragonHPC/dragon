@@ -75,9 +75,8 @@ from langgraph.graph import END, START, StateGraph
 from dragon.ai.langgraph import DragonExecutor
 
 # -- Dragon primitives: distributed data plane + node placement ---------------
-from dragon.data.ddict import DDict
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import Node, System
+from dragon import DDict, Policy, System
+from dragon.native.machine import Node
 from dragon.native.process import Process
 from dragon.native.queue import Queue
 

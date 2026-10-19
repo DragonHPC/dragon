@@ -2,14 +2,14 @@ import os
 import math
 
 import dragon
+from dragon import Policy, System
 from dragon.globalservices import node as gs_node
 from dragon.globalservices import group
 from dragon.globalservices import process
 
 from dragon.infrastructure import process_desc
 from dragon.infrastructure.facts import PMIBackend
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import System, Node
+from dragon.native.machine import Node
 
 
 def main() -> None:

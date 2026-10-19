@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.15.0] - 2026-10-08
+
+### Changed
+
+    [AICI-2028] - Enhance node hardware detection
+    [AICI-2045] - Candidates for promotion to dragon top-level namespace
+    [AICI-2046] - Overhaul tag matching and flow queue lookup for HSTA
+    [AICI-2269] - Promotion of select APIs
+
+### Added
+
+    [AICI-2009] - Plan out elasticity (starting with channels mesh)
+    [AICI-2111] - MacOS Multi-node
+    [AICI-2131] - LangGraph-Dragon Agent Tutorial
+    [AICI-2196] - Outer space process added to runtime
+    [AICI-2233] - Add unittests for basic import of dragon
+    [AICI-2259] - Runtime attach for external processes
+    [AICI-2261] - Multi-node support for macOS
+    [AICI-2210] - Add single-node MPI support and tests for macOS
+    
+### Fixed
+
+    [AICI-2195] - Check Proxy
+    [AICI-2224] - Fix Batch issues found during PEARC tutorial
+    [AICI-2237] - Detect Shared Memory Failure
+    [AICI-2240] - Doc change - fix p2p_lat.py removing --dragon flag
+    [AICI-2285] - Ensure runtime handles case of GSPingLS received before TAPingLS
+    [AICI-2286] - Fix get_ep_addrs_available for UCX backend
+    [AICI-2296] - Release 0.15.0 Release Activities
+
 ## [0.14.2] - 2026-08-24
 
 ### Changed

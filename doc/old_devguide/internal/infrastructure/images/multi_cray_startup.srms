@@ -33,7 +33,7 @@ LA OF "& CTRL channel"+
 LA OF "via CLI";
 ;
 OF LA "m2 CTRL channel"+
-OF LA "TAPingSH";
+OF LA "TAPingLS";
 rtext@ LA "a9 launch backend";
 LA BE "WLM launch";
 ltext@ BE "a10 OS-spawn";
@@ -44,7 +44,7 @@ BE OB "& CTRL channel via CLI"
 ;
 ;
 OB BE "m4 CTRL channel"+
-OB BE "TAPingSH"
+OB BE "TAPingLS"
 ;
 ;
 ltext@ BE "a11 connect to";
@@ -94,7 +94,7 @@ ltext@ TA "start locally";
 ltext@ TA "a18 handshake with counterparts";
 ltext@ TA "a19 notify LS up";
 TA LS "LS Channel"+
-TA LS "m12 TAPingSH";
+TA LS "m12 TAPingLS";
 ltext@ LS "recv TA ping";
 ltext@ LS "a20 notify LA TA up";
 ltext@ LS "via BE";

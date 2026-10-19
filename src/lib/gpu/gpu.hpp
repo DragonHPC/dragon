@@ -16,12 +16,13 @@
 class dragonGPU {
 protected:
 
-    dragonGPUBackend_t backend_type;
     //TODO: Fix. Use device idx to specify which device handle to get. likely dragon_gpu_setup
     int device_idx;
+    int num_devices;
 
 public:
 
+    virtual dragonError_t set_device(int device_idx) = 0;
     virtual dragonError_t mem_alloc(void **addr, size_t size) = 0;
     virtual dragonError_t mem_free(void *addr) = 0;
     virtual dragonError_t get_ipc_handle(void *addr, void** ipc_handle) = 0;
@@ -34,10 +35,16 @@ public:
     virtual std::string get_errstr(const char *event, int rc) = 0;
     virtual dragonError_t host_register(void *addr, size_t size) = 0;
     virtual dragonError_t host_unregister(void *addr) = 0;
+    virtual int get_device_count() = 0;
+    virtual dragonError_t get_device_list(int** int_device_list, double** double_device_list, int* num_devices) = 0;
+    virtual dragonError_t uuid_hex_to_str(char *uuid_hex, char **uuid_str) = 0;
+    virtual dragonError_t get_uuid(int device_idx, char **uuid) = 0;
+
 };
 
 struct dragonGPUHandle_t {
     std::shared_ptr<dragonGPU> dgpu;
+    dragonGPUBackend_t backend_type;
     dragonLock lock;
 };
 

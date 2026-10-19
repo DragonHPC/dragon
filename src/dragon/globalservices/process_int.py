@@ -22,6 +22,42 @@ from ..utils import B64
 LOG = logging.getLogger("GS.process:")
 
 
+class ExternalProcessRequest:
+    """Synthetic request object for externally-attached processes.
+
+    Provides the same attribute interface as ``GSProcessCreate`` so that
+    ``ProcessContext.__init__`` and infrastructure helpers can be shared
+    without modification.  Fields that are only consumed by
+    ``_mk_sh_proc_create`` / ``send_start`` are included for completeness
+    (and so that ``handle_process_exit`` crash-path logic works correctly),
+    but ``construct_external`` never calls those helpers.
+    """
+
+    def __init__(self, user_name=""):
+        self.user_name = user_name
+        self.policy = Policy.global_policy()
+        # p_uid here is the *parent* puid stored as p_p_uid in the descriptor
+        self.p_uid = dfacts.LAUNCHER_PUID
+        self.env = {}
+        self.restart = False
+        # make_inf_channels=True so handle_process_exit cleans up gs_ret cuid
+        # mode=None resolves to ArgMode.NONE (no argdata); argdata=None
+        self.options = process_desc.ProcessOptions(make_inf_channels=True, mode=None, argdata=None)
+        self.resilient = False
+        self.head_proc = False
+        self.exe = ""
+        self.args = []
+        self.rundir = ""
+        self._pmi_info = None
+        self.layout = None
+        self.stdin = None
+        self.stdout = None
+        self.stderr = None
+        self.pipesize = None
+        # tag is unused for external processes but guards against accidental access
+        self.tag = 0
+
+
 class ProcessContext:
     """Everything to do with a single process in global services
 
@@ -30,7 +66,7 @@ class ProcessContext:
     manage its lifecycle.
     """
 
-    def __init__(self, *, server, request, reply_queue, p_uid, node, h_uid):
+    def __init__(self, *, server, request, reply_queue, p_uid, node, h_uid, is_external=False):
         self.server = server
         self.request = request
         self.reply_queue = reply_queue
@@ -38,6 +74,7 @@ class ProcessContext:
         self.exit_msg = None
         self.destroy_request = None
         self.gs_ret_channel_context = None
+        self.is_external = is_external
         self.gs_ret_queue = None
         self._descriptor = process_desc.ProcessDescriptor(
             p_uid=p_uid, name=request.user_name, node=node, policy=request.policy, p_p_uid=request.p_uid, h_uid=h_uid
@@ -304,6 +341,39 @@ class ProcessContext:
             )
             print(f"Got exception {traceback.format_exc()}")
             reply_queue.put(rm)
+
+    @classmethod
+    def construct_external(cls, server, p_uid, user_name, node, h_uid):
+        """Build a ``ProcessContext`` for an externally-registered process.
+
+        Creates the context with a synthetic :class:`ExternalProcessRequest`
+        and ``is_external=True``.  Unlike :meth:`construct`, this classmethod
+        does **not** call ``_mk_sh_proc_create`` or ``send_start`` — the
+        gs_ret channel is adopted in
+        ``GlobalContext.handle_external_register_prepared`` via
+        ``ChannelContext.adopt_external_return``.
+
+        Registration in ``process_table`` / ``process_names`` is the
+        responsibility of the caller (``handle_external_register_prepared``).
+
+        :param server: the GlobalContext instance
+        :param p_uid: the pre-allocated PUID for this external process
+        :param user_name: resolved process name (auto_name or user-supplied)
+        :param node: LS node index (0 for co-located attach)
+        :param h_uid: h_uid for the target node
+        :return: the newly constructed :class:`ProcessContext`
+        """
+        request = ExternalProcessRequest(user_name=user_name)
+        context = cls(
+            server=server,
+            request=request,
+            reply_queue=dutil.AbsorbingChannel(),
+            p_uid=p_uid,
+            node=node,
+            h_uid=h_uid,
+            is_external=True,
+        )
+        return context
 
     def send_start(self, send_msg):
         outbound_tag = self.server.tag_inc()

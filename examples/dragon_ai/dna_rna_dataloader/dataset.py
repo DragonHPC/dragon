@@ -16,7 +16,7 @@ from torch.utils.data import DataLoader
 from dragon.ai.torch.dictdataset import DragonDataset
 import torch
 import torch.multiprocessing as torch_mp
-from dragon.data.ddict import DDict
+from dragon import DDict
 import time
 
 

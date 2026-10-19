@@ -361,6 +361,9 @@ class StreamTransport(Transport, TaskMixin):
 
     IDLE_SEND_TIMEOUT = 60.0
 
+    CONNECT_RETRY_INTERVAL = 0.1
+    """Backoff between connection attempts to a peer that is refusing them."""
+
     def __init__(self, addr: Address):
         """
         :param addr: Server address to accept peer connections.
@@ -377,6 +380,9 @@ class StreamTransport(Transport, TaskMixin):
         self._server = None
         self._connection_locks = WeakValueDictionary()
         self._writers = defaultdict(list)
+        # Reader paired with each writer, so a broken connection can be torn
+        # down as a unit rather than leaving half of it registered.
+        self._readers = {}
         self._recv_tasks = defaultdict(WeakSet)
         self._mailboxes = defaultdict(asyncio.Queue)
         self._send_tasks = WeakValueDictionary()
@@ -410,6 +416,14 @@ class StreamTransport(Transport, TaskMixin):
         await super().stop()
 
     async def close(self) -> None:
+        # Stop accepting new connections before tearing anything down.
+        server, self._server = self._server, None
+        if server is not None:
+            server.close()
+            try:
+                await server.wait_closed()
+            except (asyncio.CancelledError, NotImplementedError):
+                pass
         # Cancel and clean up recv tasks
         recv_tasks = list(chain.from_iterable(self._recv_tasks.values()))
         if recv_tasks:
@@ -430,6 +444,8 @@ class StreamTransport(Transport, TaskMixin):
         if closing_writers:
             await asyncio.gather(*closing_writers, return_exceptions=True)
         self._writers.clear()
+        self._readers.clear()
+        self._mailboxes.clear()
 
     def is_serving(self):
         return self._server is not None and self._server.is_serving()
@@ -501,11 +517,27 @@ class StreamTransport(Transport, TaskMixin):
 
     def add_connection(self, addr: Address, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         self._writers[addr].append(writer)
-        task = asyncio.create_task(self._do_recv(addr, reader), name=f"{type(self).__name__}-Receiver-{addr}")
+        self._readers[writer] = reader
+        task = asyncio.create_task(
+            self._recv_connection(addr, reader, writer), name=f"{type(self).__name__}-Receiver-{addr}"
+        )
         self._recv_tasks[addr].add(task)
         self._task_refs.add(task)
         task.add_done_callback(self._task_refs.discard)
         LOGGER.debug(f"Added connection to {addr}")
+
+    async def remove_connection(self, addr: Address, writer: asyncio.StreamWriter) -> None:
+        """Deregister and close a connection.
+
+        Safe to call more than once for the same writer.
+        """
+        self._readers.pop(writer, None)
+        try:
+            self._writers[addr].remove(writer)
+        except (KeyError, ValueError):
+            pass
+        await close_writer(writer)
+        LOGGER.debug(f"Removed connection to {addr}")
 
     async def connect(self, addr: Address) -> asyncio.StreamWriter:
         """Returns an open `asyncio.StreamWriter` connected to the specified
@@ -543,8 +575,11 @@ class StreamTransport(Transport, TaskMixin):
                 # connections were accepted while waiting.
                 try:
                     await self._open_connection(addr)
-                except ConnectionRefusedError:
-                    LOGGER.exception(f"Failed to open connection to {addr}")
+                except ConnectionRefusedError as e:
+                    # Back off; retrying immediately spins the event loop and
+                    # floods the log while a peer is down or restarting.
+                    LOGGER.debug(f"Failed to open connection to {addr}, retrying: {e!r}")
+                    await asyncio.sleep(self.CONNECT_RETRY_INTERVAL)
                     continue
             # TODO I now think sorting the open_writers is pointless, remove?
             # Sort open writers to increase the chance that both peers choose
@@ -553,12 +588,22 @@ class StreamTransport(Transport, TaskMixin):
             writer = open_writers.pop()
             self._writers[addr].append(writer)
         # Close remaining open writers.
-        await asyncio.gather(*[close_writer(w) for w in open_writers], return_exceptions=True)
+        if open_writers:
+            await asyncio.gather(
+                *[self.remove_connection(addr, w) for w in open_writers], return_exceptions=True
+            )
         return writer
 
     @run_forever
     async def _do_recv(self, addr: Address, reader: asyncio.StreamReader):
         while not reader.at_eof():
+            # A reset connection leaves the reader holding an exception rather
+            # than EOF, and every subsequent read re-raises that same exception
+            # object. Retrying would spin forever and grow its traceback without
+            # bound, so treat it as the end of this connection.
+            if reader.exception() is not None:
+                LOGGER.debug(f"Connection to {addr} is no longer readable: {reader.exception()!r}")
+                return
             try:
                 msg = await read_message(reader)
             except asyncio.IncompleteReadError:
@@ -566,6 +611,9 @@ class StreamTransport(Transport, TaskMixin):
                 # read; however, since the stream will have gotten EOF there
                 # isn't much to do with an incomplete message.
                 continue
+            except OSError as e:
+                LOGGER.debug(f"Connection to {addr} lost while reading: {e!r}")
+                return
             LOGGER.debug(f"Received from {addr}: {msg}")
             try:
                 self._handle_recv(msg, addr)
@@ -574,6 +622,14 @@ class StreamTransport(Transport, TaskMixin):
                     resp = ErrorResponse(msg.seqno, DRAGON_FAILURE, "Uncaught exception handling message")
                     self.write_response(resp, addr)
                 raise
+
+    async def _recv_connection(self, addr: Address, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        """Run the receive-loop for a connection and close it when the loop ends."""
+        try:
+            await self._do_recv(addr, reader)
+        finally:
+            # Shielded so an outright cancellation still releases the socket.
+            await asyncio.shield(self.remove_connection(addr, writer))
 
     def _handle_send(self, msg: TransportMessage, addr: Address, /) -> None:
         # Short-circuit delivery when sending to myself
@@ -630,16 +686,20 @@ class StreamTransport(Transport, TaskMixin):
                 msg.deadline = msg.deadline
             try:
                 await write_message(writer, msg)
-            except ConnectionError:
-                LOGGER.exception(f"Connection error while writing to {addr}: {msg}")
+            except (ConnectionError, OSError) as e:
+                LOGGER.debug(f"Connection error while writing to {addr}, reconnecting: {e!r}")
                 unget_nowait(self._mailboxes[addr], msg)
-                # Close existing writer, then get a new one and retry
-                await close_writer(writer)
+                # Deregister and close the dead writer, then get a new one
+                await self.remove_connection(addr, writer)
                 writer = await self.connect(addr)
-            except:
-                LOGGER.exception(f"Uncaught error while writing to {addr}: {msg}")
-                unget_nowait(self._mailboxes[addr], msg)
-                raise
+            except Exception:
+                # The message itself is unsendable, so requeueing it would spin
+                # this task forever. Drop it and fail the waiting request.
+                LOGGER.exception(f"Failed to write message to {addr}, dropping: {msg}")
+                self._mailboxes[addr].task_done()
+                if isinstance(msg, Request):
+                    resp = ErrorResponse(msg.seqno, DRAGON_FAILURE, "Failed to write message to peer")
+                    self._handle_recv(resp, self.addr)
             else:
                 self._mailboxes[addr].task_done()
                 if isinstance(msg, SendRequest) and msg.return_mode == SendReturnMode.WHEN_BUFFERED:

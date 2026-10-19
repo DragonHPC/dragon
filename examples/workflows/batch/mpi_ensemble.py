@@ -1,5 +1,4 @@
-from dragon.workflows.batch import Batch
-from dragon.native.process import ProcessTemplate
+from dragon import Batch, ProcessTemplate
 from dragon.native.queue import Queue
 from dragon.native.machine import cpu_count
 

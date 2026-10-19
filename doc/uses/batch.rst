@@ -3,7 +3,7 @@
 Batch Processing
 ++++++++++++++++
 
-Dragon's :py:class:`~dragon.workflows.batch.Batch` API lets you submit Python functions,
+Dragon's :py:class:`~dragon.Batch` API lets you submit Python functions,
 executables, and parallel jobs for distributed execution with automatic scheduling and placement
 of tasks. You declare what each task reads and writes, and Dragon infers a directed acyclic graph (DAG)
 to maximize parallel throughput — no manual dependency management needed.
@@ -11,7 +11,7 @@ to maximize parallel throughput — no manual dependency management needed.
 When to Use Batch
 =================
 
-Use :py:class:`~dragon.workflows.batch.Batch` when you have tasks that should be scheduled
+Use :py:class:`~dragon.Batch` when you have tasks that should be scheduled
 automatically from declared read and write dependencies (on the parallel filesystem or Dragon
 Distributed Dictionary), or from argument passing dependencies. It is especially useful when
 you need to:
@@ -33,7 +33,7 @@ The following example uses Batch to compute squares of numbers in parallel:
 
     import dragon
     from multiprocessing import set_start_method
-    from dragon.workflows.batch import Batch
+    from dragon import Batch
 
 
     def square(x):
@@ -43,22 +43,68 @@ The following example uses Batch to compute squares of numbers in parallel:
     if __name__ == "__main__":
         set_start_method("dragon")
 
-        batch = Batch()
+        with Batch() as batch:
+            # Submit 20 tasks — Batch dispatches them in parallel automatically
+            handles = [batch.function(square, i) for i in range(20)]
 
-        # Submit 20 tasks — Batch dispatches them in parallel automatically
-        handles = [batch.function(square, i) for i in range(20)]
-
-        # .get() blocks until the task completes and returns its result
-        results = [h.get() for h in handles]
-        print(results)
-
-        batch.join()
+            # .get() blocks until the task completes and returns its result
+            results = [h.get() for h in handles]
+            print(results)
 
 Run with:
 
 .. code-block:: console
 
     dragon batch_squares.py
+
+Context-manager Cleanup
+=======================
+
+Use ``Batch`` as a context manager when a block owns a Batch client for one
+workflow phase:
+
+.. code-block:: python
+
+    with Batch() as batch:
+        tasks = [batch.function(square, i) for i in range(20)]
+        results = [task.get() for task in tasks]
+
+On normal exit, the context manager calls :py:meth:`~dragon.Batch.join`.
+This waits for work submitted by the current client and detaches that client
+from the shared Batch runtime. In the default unmanaged mode, the runtime is
+also shut down automatically when this is the last attached client. Fetch any
+task results you still need before leaving the block, because shutting down an
+unmanaged runtime destroys its internal results DDict.
+
+If code inside the block raises an exception, the context manager calls
+:py:meth:`~dragon.Batch.terminate` and then re-raises the
+original exception. This is the appropriate cleanup path when work may still
+be running and should not be allowed to continue.
+
+For a runtime shared by multiple clients, use managed lifecycle mode explicitly:
+
+.. code-block:: python
+
+    batch = Batch(managed_lifecycle=True)
+    with batch:
+        task = batch.function(square, 7)
+        print(task.get())
+
+    # The context detached this client, but the shared runtime remains alive.
+    batch.destroy()
+
+``Batch.close()`` is deprecated and remains a no-op for compatibility. Use a
+context manager for scoped work, or call ``join()`` when a client is done and
+``destroy()`` when a managed runtime should be shut down.
+
+Worker Resource Configuration
+=============================
+
+By default, each Batch worker pool uses the physical cores available on its
+node. Pass the keyword-only ``workers_per_node`` option to limit the number of
+task worker processes in each pool, for example ``Batch(workers_per_node=4)``.
+This controls task workers and does not change the dedicated scheduler worker
+count configured by ``scheduler_workers``.
 
 Tasks with Data Dependencies
 =============================
@@ -71,8 +117,8 @@ a task that reads a file waits until the task that writes it completes:
     :caption: **Chained tasks via file dependencies**
 
     import dragon
+    from dragon import Batch
     from multiprocessing import set_start_method
-    from dragon.workflows.batch import Batch
     from pathlib import Path
     import numpy as np
 
@@ -116,17 +162,17 @@ Submitting Executables and MPI Jobs
 =====================================
 
 Batch is not limited to Python functions. Use
-:py:meth:`~dragon.workflows.batch.Batch.process` for executables and
-:py:meth:`~dragon.workflows.batch.Batch.job` for MPI/parallel jobs:
+:py:meth:`~dragon.Batch.process` for executables and
+:py:meth:`~dragon.Batch.job` for MPI/parallel jobs:
 
 .. code-block:: python
     :linenos:
     :caption: **Mixed Python + executable tasks in one Batch**
 
     import dragon
+    from dragon import Batch, ProcessTemplate
     from multiprocessing import set_start_method
-    from dragon.workflows.batch import Batch
-    from dragon.native.process import ProcessTemplate, Popen
+    from dragon.native.process import Popen
     from pathlib import Path
 
 
@@ -171,16 +217,18 @@ multi-rank ``job`` returns a list of exit codes, one per launched process.
 Lifecycle Methods
 =================
 
-* :py:meth:`~dragon.workflows.batch.Batch.join` — wait for all tasks submitted by the
+* :py:meth:`~dragon.Batch.join` — wait for all tasks submitted by the
     current client to complete, then detach the client from the Batch instance
     shared by clients.
-* :py:meth:`~dragon.workflows.batch.Batch.destroy` — in ``managed_lifecycle=True`` mode,
+* :py:meth:`~dragon.Batch.destroy` — in ``managed_lifecycle=True`` mode,
         shut down the Batch instance shared by clients after they detach, or after ``force_timeout``
     expires if one was supplied.
-* :py:meth:`~dragon.workflows.batch.Batch.fence` — wait for all currently submitted
+* :py:meth:`~dragon.Batch.terminate` — force shutdown when work should not be
+    allowed to continue; the context manager uses this path when the block raises an exception.
+* :py:meth:`~dragon.Batch.fence` — wait for all currently submitted
   tasks to finish before returning (useful as a barrier between phases).
-* :py:meth:`~dragon.workflows.batch.Batch.clear_results` — free the memory used to hold
-  task results (implicitly calls :py:meth:`~dragon.workflows.batch.Batch.fence`).
+* :py:meth:`~dragon.Batch.clear_results` — free the memory used to hold
+  task results (implicitly calls :py:meth:`~dragon.Batch.fence`).
 
 Related Cookbook Examples
 =========================

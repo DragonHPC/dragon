@@ -8,6 +8,7 @@ from typing import Union
 
 from ...channels import register_gateways_from_env, GatewayMessage
 from ...infrastructure import messages as dmsg
+from ...infrastructure.runtime_env import runtime_route_env_key
 from ...infrastructure.facts import GW_ENV_PREFIX, DEFAULT_TRANSPORT_PORT, FRONTEND_HOSTID
 from ...infrastructure.facts import DEFAULT_OVERLAY_NETWORK_PORT, DRAGON_OVERLAY_DEFAULT_NUM_GW_CHANNELS_PER_NODE
 from ...launcher.util import next_tag
@@ -51,7 +52,7 @@ def open_connection(
 ) -> tuple[InfraQueue | None, InfraQueue | None]:
     if ch_in_sdesc is None and ch_out_sdesc is None:
         raise ValueError("Requires at least one serialized channel descriptor")
-    ch_in = ch_out = conn = None
+    q_conn_in = q_conn_out = None
     if ch_in_sdesc is not None:
         q_conn_in = InfraQueue.attach(ch_in_sdesc)
     if ch_out_sdesc is not None:
@@ -59,9 +60,13 @@ def open_connection(
     return q_conn_in, q_conn_out
 
 
-def close_connections(conn_in: InfraQueue, conn_out: InfraQueue) -> None:
-    conn_in.close()
-    conn_out.close()
+def close_connections(conn_in: InfraQueue | None, conn_out: InfraQueue | None) -> None:
+    for name, conn in (("conn_in", conn_in), ("conn_out", conn_out)):
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                LOGGER.exception("Failed to close %s", name)
 
 
 async def tcp_transport_agent(
@@ -196,6 +201,7 @@ async def tcp_transport_agent(
             )
         raise
 
+    transport = None
     try:
         # Create transport
         if user_initiated:
@@ -248,7 +254,7 @@ async def tcp_transport_agent(
                 n_gw = DRAGON_OVERLAY_DEFAULT_NUM_GW_CHANNELS_PER_NODE
             elif out_of_band_connect:
                 rt_uid = os.environ["DRAGON_REMOTE_RT_UID"]
-                encoded_channel_sdesc = os.environ[f"DRAGON_RT_UID__{rt_uid}"]
+                encoded_channel_sdesc = os.environ[runtime_route_env_key(rt_uid)]
                 channel_sdesc = B64.from_str(encoded_channel_sdesc).decode()
                 agent.new_client(channel_sdesc)
                 LOGGER.debug(f"Created client for OOB gateway channel")
@@ -265,8 +271,14 @@ async def tcp_transport_agent(
                 await asyncio.to_thread(control_q_out.put, up_msg)
                 LOGGER.info(f"Sent {type(up_msg)} reply")
 
+            iter = 0
             while agent.is_running():
-                LOGGER.debug("Agent is running, polling control")
+                if iter >= 100000:
+                    iter = 0
+                if iter == 0:
+                    LOGGER.debug("Agent is running, polling control")
+                iter += 1
+
                 # XXX Should we sleep in between polls to avoid having a
                 # XXX thread constantly blocking waiting for control input?
                 # await asyncio.sleep(5.0)
@@ -298,7 +310,14 @@ async def tcp_transport_agent(
 
     except Exception as e:
         LOGGER.exception(f"Unable to run TCP agent: {e}")
-        await asyncio.to_thread(close_connections, (control_q_in, control_q_out))
+        # Release listening and peer sockets so a subsequent run can rebind and
+        # is not left connecting to a half-dead agent.
+        try:
+            if transport is not None and transport.is_running():
+                await transport.stop()
+        except Exception:
+            LOGGER.exception("Failed to stop transport during error handling")
+        await asyncio.to_thread(close_connections, control_q_in, control_q_out)
         raise e
 
     # Hand back our connection to local services so we can signal our exit

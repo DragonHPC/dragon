@@ -35,11 +35,6 @@ def next_tag():
 
 _ARG_PAYLOAD = None
 
-_GS_INPUT_QUEUE = None
-_GS_RETURN_CHANNEL = None
-_LOCAL_LS_INPUT_QUEUE = None
-_LOCAL_LS_RETURN_CHANNEL = None
-
 _GS_INPUT = None
 _GS_RETURN = None
 _LS_INPUT = None
@@ -69,37 +64,30 @@ def load_launch_parameter_queue(name):
 
 
 def _connect_gs_input():
-    global _GS_INPUT_QUEUE
     from dragon.infrastructure.queue import InfraQueue
 
     queue_descriptor = load_launch_parameter_queue(dfacts.GS_QD)
-    _GS_INPUT_QUEUE = InfraQueue.attach(queue_descriptor)
-    return _GS_INPUT_QUEUE
+    return InfraQueue.attach(queue_descriptor)
 
 
 def _connect_gs_return():
-    global _GS_RETURN_QUEUE
     global _GS_RETURN_CUID
     from dragon.infrastructure.queue import InfraQueue
 
     queue_descriptor = load_launch_parameter_queue(dfacts.GS_RET_QD)
-    _GS_RETURN_QUEUE = InfraQueue.attach(queue_descriptor)
-    _GS_RETURN_CUID = _GS_RETURN_QUEUE.cuid
-    return _GS_RETURN_QUEUE
+    queue = InfraQueue.attach(queue_descriptor)
+    _GS_RETURN_CUID = queue.cuid
+    return queue
 
 
 def _connect_ls_input():
-    global _LOCAL_LS_INPUT_QUEUE
-
     from dragon.infrastructure.queue import InfraQueue
 
     queue_descriptor = load_launch_parameter_queue(dfacts.LOCAL_LS_QD)
-    _LOCAL_LS_INPUT_QUEUE = InfraQueue.attach(queue_descriptor)
-    return _LOCAL_LS_INPUT_QUEUE
+    return InfraQueue.attach(queue_descriptor)
 
 
 def _connect_ls_return():
-    global _LOCAL_LS_RETURN_QUEUE
     global _LS_RETURN_CUID
     from dragon.infrastructure.queue import InfraQueue
 
@@ -111,9 +99,9 @@ def _connect_ls_return():
         queue_descriptor = load_launch_parameter_queue(dfacts.LS_RET_QD)
     except AssertionError:
         return None
-    _LOCAL_LS_RETURN_QUEUE = InfraQueue.attach(queue_descriptor)
-    _LS_RETURN_CUID = _LOCAL_LS_RETURN_QUEUE.cuid
-    return _LOCAL_LS_RETURN_QUEUE
+    queue = InfraQueue.attach(queue_descriptor)
+    _LS_RETURN_CUID = queue.cuid
+    return queue
 
 
 def _close_connections():
@@ -125,18 +113,28 @@ def _close_connections():
 
 
 def _detach_infrastructure():
+    global _GS_INPUT
+    global _GS_RETURN
+    global _LS_INPUT
+    global _LS_RETURN
+    global _GS_RETURN_CUID
+    global _LS_RETURN_CUID
+
     with _GS_API_LOCK:
-        if _GS_INPUT_QUEUE is not None:
-            del _GS_INPUT_QUEUE
+        queues = (_GS_INPUT, _GS_RETURN, _LS_INPUT, _LS_RETURN)
+        for queue in queues:
+            if queue is not None:
+                try:
+                    queue.close()
+                except Exception:
+                    pass
 
-        if _GS_RETURN_QUEUE is not None:
-            del _GS_RETURN_QUEUE
-
-        if _LOCAL_LS_INPUT_QUEUE is not None:
-            del _LOCAL_LS_INPUT_QUEUE
-
-        if _LOCAL_LS_RETURN_QUEUE is not None:
-            del _LOCAL_LS_RETURN_QUEUE
+        _GS_INPUT = None
+        _GS_RETURN = None
+        _LS_INPUT = None
+        _LS_RETURN = None
+        _GS_RETURN_CUID = None
+        _LS_RETURN_CUID = None
 
 
 # global because of threading.
@@ -150,6 +148,9 @@ _WAKEUPS = dict()
 _RESULTS = dict()
 
 _INFRASTRUCTURE_CONNECTED = False
+
+# Holds the MemoryPool attached by connect_as_external() so it isn't GC'd.
+_EXTERNAL_DEFAULT_POOL = None
 
 
 def gs_request(req_msg, *, expecting_response=True):
@@ -368,3 +369,77 @@ def connect_to_infrastructure(force=False):
         # you are doing something about _bootstrap, why not everything?
         # sys.excepthook = ddbg.dragon_exception_hook
         # LOG.info('exception entry hooked')
+
+
+def connect_as_external(params):
+    """Connect an externally-started process to the Dragon infrastructure.
+
+    This function is for processes that were not spawned by Dragon but have
+    registered with Global Services via attach().  It installs the launch
+    parameters, attaches the default memory pool, and connects the four
+    infrastructure channels.  Unlike connect_to_infrastructure() it does NOT
+    perform the GSPingProc handshake because external processes skip that step.
+
+    :param params: LaunchParameters built by LaunchParameters.from_attach_info().
+    """
+    global _GS_INPUT
+    global _GS_RETURN
+    global _LS_INPUT
+    global _LS_RETURN
+    global _INFRASTRUCTURE_CONNECTED
+    global _EXTERNAL_DEFAULT_POOL
+
+    # Install the parameters as the process-level singleton and expose them as
+    # DRAGON_* environment variables so that the channels/connection layers can
+    # pick them up via dp.this_process / os.environ.
+    dp.this_process = params
+    for ev_name, ev_val in params.env().items():
+        os.environ[ev_name] = ev_val
+    dp.reload_this_process()
+
+    # Attach the default memory pool and hold a module-level reference so it
+    # is not garbage-collected for the lifetime of this connection.  The
+    # Channel.attach() path already re-attaches per-channel using
+    # dparms.this_process.default_pd; holding a reference here ensures the
+    # underlying pool descriptor stays valid.
+    from dragon.managed_memory import MemoryPool
+
+    _EXTERNAL_DEFAULT_POOL = MemoryPool.attach(du.B64.str_to_bytes(params.default_pd))
+
+    LOG.info(f"connect_as_external: connecting from {os.getpid()}")
+
+    with _GS_API_LOCK:
+        _GS_INPUT = _connect_gs_input()
+        _GS_RETURN = _connect_gs_return()
+        _LS_INPUT = _connect_ls_input()
+        _LS_RETURN = _connect_ls_return()
+        _INFRASTRUCTURE_CONNECTED = True
+
+    LOG.info("connect_as_external: infrastructure connected")
+
+
+def disconnect_infrastructure():
+    """Disconnect an external process from Dragon infrastructure.
+
+    Detaches the four infrastructure InfraQueues (which are attached-only handles
+    to the shared GS/LS queues, so dropping them does not tear down the shared
+    channels) and detaches the default memory pool.
+    """
+    global _INFRASTRUCTURE_CONNECTED
+    global _EXTERNAL_DEFAULT_POOL
+
+    try:
+        _detach_infrastructure()
+    except Exception:
+        pass
+
+    if _EXTERNAL_DEFAULT_POOL is not None:
+        try:
+            _EXTERNAL_DEFAULT_POOL.detach()
+        except Exception:
+            pass
+        _EXTERNAL_DEFAULT_POOL = None
+
+    _INFRASTRUCTURE_CONNECTED = False
+
+    LOG.info("disconnect_infrastructure: infrastructure disconnected")

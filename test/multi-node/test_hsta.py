@@ -6,8 +6,8 @@ import time
 import re
 import ast
 
-DRAGON_HSTA_TEST_EXAMPLE = ["dragon", "../../examples/multiprocessing/p2p_lat.py", "--dragon"]
-# DRAGON_HSTA_TEST_EXAMPLE = ["dragon", "-l", "DEBUG", "../../examples/multiprocessing/p2p_lat.py", "--dragon"]
+DRAGON_HSTA_TEST_EXAMPLE = ["dragon", "../../examples/multiprocessing/p2p_lat.py"]
+# DRAGON_HSTA_TEST_EXAMPLE = ["dragon", "-l", "DEBUG", "../../examples/multiprocessing/p2p_lat.py"]
 DRAGON_HSTA_REBOOT_TEST_EXAMPLE = ["dragon", "--resilient", "--nodes=2", "p2p_lat_test.py"]
 
 class BaseTestHSTA(unittest.TestCase):
@@ -51,7 +51,7 @@ class BaseTestHSTA(unittest.TestCase):
     def tearDown(self):
         # cleanup_process = subprocess.Popen(['dragon-cleanup'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         # cleanup_process.wait()
-        time.sleep(1) 
+        time.sleep(1)
         for f in glob.glob("core*"):
             try:
                 print("Found core file, removing it", flush=True)
@@ -93,7 +93,6 @@ class TestHSTA(BaseTestHSTA):
         # Print output
         stdout_output = stdout.decode()
         # This can come from a failure during start up or from the exceptionless abort in the backend
-        self.assertTrue("using Dragon" in stdout_output)
         self.assertTrue(return_code == 0)
         self.assertTrue(diff_time < time_limit)
 
@@ -127,7 +126,7 @@ class TestHSTA(BaseTestHSTA):
         self.abnormal_termination(9, 60)
 
 class TestHSTAReboot(unittest.TestCase):
-    
+
     def test_hsta_runtime_reboot(self):
 
         os.environ["_DRAGON_HSTA_TESTING_MODE"] = str(9)
@@ -140,16 +139,16 @@ class TestHSTAReboot(unittest.TestCase):
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
         )
-        
+
         try:
             start_time = time.time()
             stdout, stderr = process.communicate(timeout=time_limit)
             result = []
-            
+
             # Result before restart and after restart is between delimiters in stdout
             result = re.findall(r"UNITTEST_DATA_START(.*?)UNITTEST_DATA_END", stdout.decode('utf-8'), re.DOTALL)
             result = [ast.literal_eval(i) for i in result]
-            
+
         except subprocess.TimeoutExpired:
             self.assertTrue(False, msg="Communication timed out. This likely means that it was hung.")
         diff_time = time.time() - start_time
@@ -163,7 +162,7 @@ class TestHSTAReboot(unittest.TestCase):
 
 
     def tearDown(self):
-        time.sleep(1) 
+        time.sleep(1)
         for f in glob.glob("core*"):
             try:
                 print("Found core file, removing it", flush=True)

@@ -38,7 +38,7 @@ raised, and the program will not execute:
 .. code-block:: bash
     :caption: Dragon exception when no WLM allocation exists:
 
-    $ dragon p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon p2p_lat.py --iterations 100 --lg_max_message_size 12
 
     RuntimeError: Executing in a Slurm environment, but with no job allocation.
     Resubmit as part of an 'salloc' or 'sbatch' execution
@@ -54,7 +54,7 @@ they may do the following:
 .. code-block:: bash
 
     $ salloc --nodes=4
-    $ dragon --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12
 
 .. _using_drun_or_ssh_wlm:
 
@@ -359,6 +359,18 @@ The HSTA transport agent is currently not available in the opensource version of
 Dragon. For inquiries about Dragon's high speed RDMA-based transport, please
 contact HPE by emailing dragonhpc@hpe.com.
 
+Communication Between Dragon Runtimes
+--------------------------------------
+
+When two Dragon runtimes share a cluster, their applications can exchange data
+through channels. With HSTA, direct high-speed paths can be established and
+reused when network reachability allows, helping sustained communication
+performance. Initial communication may include setup latency; if a direct path
+is unavailable, performance depends on the network path and transport. Proxy
+clients use the same communication path.
+
+For proxy setup and lifecycle, see :ref:`proxy`.
+
 .. _tcp_transport_agent:
 
 TCP-based Transport Agent
@@ -385,10 +397,10 @@ it can be changed with the `--port` argument to :ref:`dragon`. If not specific,
 .. code-block:: bash
 
     # Port 7575 used
-    $ dragon --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12
 
     # Port 7000 used
-    $ dragon --port 7000 --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon --port 7000 --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12
 
 The TCP transport agent also favors known Cray high-speed interconnect networks by default. This is accomplished via
 regex specification of the network's named prefix matchin `ipogif` (Aries) or `hsn` (Slingshot): `r'^(hsn|ipogif)\d+$'`.
@@ -396,7 +408,7 @@ To change, for example, to match only `hsn` networks, the `--network-prefix` arg
 
 .. code-block:: bash
 
-    $ dragon --network-prefix hsn --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon --network-prefix hsn --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12
 
 
 *Known Issue*: If a `--network-prefix` argument is given that doesn't actually exist, the Dragon runtime will enter

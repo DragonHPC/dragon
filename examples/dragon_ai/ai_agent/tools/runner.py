@@ -5,11 +5,15 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from dragon.data.ddict import DDict
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import Node, System
-from dragon.native.process import ProcessTemplate
-from dragon.native.process_group import ProcessGroup
+from dragon import (
+    DDict,
+    Policy,
+    System,
+    ProcessTemplate,
+    ProcessGroup
+)
+
+from dragon.native.machine import Node
 
 from .worker import monte_carlo_worker
 

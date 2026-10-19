@@ -16,9 +16,10 @@ import multiprocessing as mp
 from multiprocessing import TimeoutError
 
 import numpy as np
-from dragon.native.machine import cpu_count, System, Node
+
+from dragon import System, Policy
+from dragon.native.machine import cpu_count, Node
 from dragon.native.pool import Pool
-from dragon.infrastructure.policy import Policy
 
 TIMEOUT1, TIMEOUT2, TIMEOUT3 = 0.82, 0.35, 1.4
 TIMEOUT_DELTA_TOL = 1.0

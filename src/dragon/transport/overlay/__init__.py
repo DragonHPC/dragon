@@ -15,6 +15,7 @@ def start_overlay_network(
     log_sdesc: B64,
     host_ids: list[str],
     ip_addrs: list[str],
+    overlay_port: int = DEFAULT_OVERLAY_NETWORK_PORT,
     frontend: bool = False,
     env: dict = None,
 ):
@@ -32,6 +33,8 @@ def start_overlay_network(
     :type host_ids: list[str]
     :param ip_addrs: List of IP address for all nodes that will be communicated with
     :type ip_addrs: list[str]
+    :param overlay_port: Port to be used by the overlay transport agent
+    :type overlay_port: int, optional
     :param frontend: Is parent process the launcher frontned defaults to False
     :type frontend: bool, optional
     :param env: environment variables. Should container gateway channels, defaults to None
@@ -64,7 +67,7 @@ def start_overlay_network(
             "--ch-out-sdesc",
             ch_out_sdesc,
             "--port",
-            str(DEFAULT_OVERLAY_NETWORK_PORT),
+            str(overlay_port),
             "--log-sdesc",
             str(log_sdesc),
         ]

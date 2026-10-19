@@ -39,12 +39,12 @@ a **data plane**:
 * **Execution plane (shared — integration provides the host, user provides the
   compute).** Where the node function actually runs: a persistent Dragon
   **AgentHost process**, its thread pool, agent co-location and resource sharing,
-  :py:class:`~dragon.infrastructure.policy.Policy` placement, and any
+  :py:class:`~dragon.Policy` placement, and any
   :py:class:`~dragon.native.process.Process` / ``ProcessGroup`` / ``Batch`` the
   agent itself launches — and *supervises and aborts mid-flight*. This is *where
   the science actually runs, and how it scales out and is steered*.
 * **Data plane (owned by the user).** Bulk scientific data (tensors, arrays,
-  datasets) belongs in a user-managed :py:class:`~dragon.data.ddict.DDict`. Agent
+  datasets) belongs in a user-managed :py:class:`~dragon.DDict`. Agent
   functions store artifacts there and return only a lightweight handle/key
   through LangGraph state. This integration never creates or manages a DDict, and
   never moves bulk bytes through its transport. This is *where large data lives
@@ -85,7 +85,7 @@ spanning every node you were allocated. Backing each node with a Dragon
 
 * **Spans the allocation.** ``launch_host(..., policy=...)`` pins each agent host
   to a specific node, NUMA zone, or GPU set (through a
-  :py:class:`~dragon.infrastructure.policy.Policy`). Because you decide where each
+  :py:class:`~dragon.Policy`). Because you decide where each
   host lands, an agent can run on the same node where its data already lives.
 * **Runs agents in real parallel, and lets them drive HPC jobs.** Each node
   function runs inside a host process out on the allocation, rather than on the
@@ -96,7 +96,7 @@ spanning every node you were allocated. Backing each node with a Dragon
   it early if the partial results look wrong. In other words, a single decision
   node in the graph can steer a full-scale simulation.
 * **Keeps bulk data node-local.** When an agent produces a large result, it writes
-  that result to the node-local :py:class:`~dragon.data.ddict.DDict` manager, which
+  that result to the node-local :py:class:`~dragon.DDict` manager, which
   lives in shared memory on the same node, so the write needs no serialization and
   no network copy. The agent then returns only a small **handle** (a key) through
   LangGraph state. The orchestrator passes handles between nodes and never moves
@@ -931,8 +931,8 @@ which primitives are used and where is key to understanding the architecture.
    * - :py:class:`~dragon.native.process.Process`
      - ``dragon.native.process``
      - AgentHost process lifecycle. One Process per ``launch_host()`` call.
-   * - :py:class:`~dragon.infrastructure.policy.Policy`
-     - ``dragon.infrastructure.policy``
+   * - :py:class:`~dragon.Policy`
+     - ``dragon``
      - Optional placement control — pin a host to a specific cluster node,
        NUMA zone, or GPU set. Passed via ``launch_host(policy=...)``.
 
@@ -1208,7 +1208,7 @@ lowest friction, at the cost of HTTP transport instead of Dragon Channels.)
 
 .. code-block:: python
 
-    from dragon.data.ddict import DDict
+    from dragon import DDict
     from dragon.ai.langgraph import get_llm
 
     sim_data = DDict(managers_per_node=1, total_mem=10_000_000_000)

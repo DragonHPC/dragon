@@ -121,6 +121,8 @@ TESTS_DRAGON_HSTA := test_hsta.py
 
 TESTS_DRAGON_DATA_MOVERS := test_data_mover.py
 
+TEST_PROXY_REMOTE_QUEUE_RUNNER := run_proxy_remote_queue_slurm.sh
+
 BATCH_UTILS_DIR := batch_utils
 BATCH_MY_DUMB_PROC := my_dumb_proc
 BATCH_MPI_JOB := mpi_job
@@ -168,8 +170,32 @@ test_data_movers: $(TESTS_DRAGON_DATA_MOVERS)
 .PHONY: test_hsta
 test_hsta: $(TESTS_DRAGON_HSTA)
 
+.PHONY: test_proxy_remote_queue
+# The proxy targets share one Slurm runner. The first form uses a single-node
+# client to isolate proxy routing; the *_two_multinode form splits four or more
+# allocated nodes into independent server and client runtimes and exercises the
+# full channels-mesh path. The relay matrix overrides the client driver and
+# success marker without duplicating launcher lifecycle code.
+test_proxy_remote_queue:
+	bash $(TEST_PROXY_REMOTE_QUEUE_RUNNER) --client-single-node
+
+.PHONY: test_proxy_remote_queue_two_multinode
+test_proxy_remote_queue_two_multinode:
+	bash $(TEST_PROXY_REMOTE_QUEUE_RUNNER)
+
+.PHONY: test_proxy_relay_matrix
+test_proxy_relay_matrix:
+	CLIENT_SCRIPT=test/multi-node/proxy_relay_matrix_client.py CLIENT_SUCCESS_MARKER=PROXY_RELAY_MATRIX_OK bash $(TEST_PROXY_REMOTE_QUEUE_RUNNER) --client-single-node
+
+.PHONY: test_proxy_relay_matrix_two_multinode
+test_proxy_relay_matrix_two_multinode:
+	CLIENT_SCRIPT=test/multi-node/proxy_relay_matrix_client.py CLIENT_SUCCESS_MARKER=PROXY_RELAY_MATRIX_OK bash $(TEST_PROXY_REMOTE_QUEUE_RUNNER)
+
 .PHONY: $(TESTS_DRAGON_MULTI_NODE)
-$(TESTS_DRAGON_MULTI_NODE):
+$(TESTS_DRAGON_MULTI_NODE): c_ddict cpp_ddict
+	@case "$@" in \
+		test_batch.py) trap 'status=$$?; $(MAKE) -s clean_batch; exit $$status' EXIT ;; \
+	esac; \
 	$(MULTI_NODE_TEST_PREFIX) $(PYTHON) -m dragon $(WLM_OPTS) $(DEF_NODES) $@ -v -f
 
 .PHONY: $(TESTS_DRAGON_RUNTIME_REBOOT)
@@ -217,10 +243,15 @@ endif
 clean: $(CLEAN_COMPONENTS)
 	$(RM) *.log
 	$(RM) -f *.o c_ddict cpp_ddict $(MPI_HELLO_OMPI) $(MPI_HELLO_CRAY) $(MPI_HELLO_MPICH)
+	$(MAKE) -s clean_batch
+	$(RM) -f /dev/shm/*
+
+.PHONY: clean_batch
+clean_batch:
 	$(RM) -f $(BATCH_MY_DUMB_PROC) $(BATCH_MPI_JOB) $(BATCH_MPI_ENV_REPORT)
 	$(RM) -f process_w_deps_data_* job_w_deps_data_*
-	$(RM) -rf batch_unittest_fib_seq
-	$(RM) -f /dev/shm/*
+	$(RM) -rf batch_unittest_fib_seq runinfo
+	$(RM) -f core.*
 
 .PHONY: print_test_list
 print_test_list:

@@ -33,6 +33,7 @@ from warnings import warn
 from .parameters import this_process
 from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM, gethostname, inet_aton
 import struct
+import hashlib
 from .facts import FIRST_PUID
 
 from ..utils import b64encode, b64decode
@@ -350,14 +351,17 @@ class PriorityMultiMap:
 class AbsorbingChannel:
     """Object that absorbs all sends, remembering the last one; useful in GS"""
 
-    def __init__(self):
+    def __init__(self, callback=None):
         self.msg = None
+        self.callback = callback
 
     def send(self, msg):
-        self.msg = msg
+        self.put(msg)
 
     def put(self, msg):
         self.msg = msg
+        if self.callback is not None:
+            self.callback(msg)
 
 
 def survey_dev_shm():
@@ -610,11 +614,18 @@ def get_external_ip_addr():
         raise
 
 
-def rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr):
+def rt_uid_from_ip_addrs(fe_ext_ip_addr, head_node_ip_addr, port=None):
     fe_ext_packed_ip = inet_aton(fe_ext_ip_addr)
     head_node_packed_ip = inet_aton(head_node_ip_addr)
 
     fe_ext_int = struct.unpack("!L", fe_ext_packed_ip)[0]
     head_node_int = struct.unpack("!L", head_node_packed_ip)[0]
 
-    return (fe_ext_int << 32) | head_node_int
+    if port is None:
+        return (fe_ext_int << 32) | head_node_int
+
+    # FE external IP and head-node IP are not sufficient to distinguish two
+    # concurrently running runtimes launched from the same frontend path. Fold
+    # in the runtime bootstrap port so gateway/bootstrap env keys remain unique.
+    rt_uid_key = f"{fe_ext_ip_addr}:{head_node_ip_addr}:{int(port)}".encode("ascii")
+    return int.from_bytes(hashlib.blake2b(rt_uid_key, digest_size=8).digest(), "big")

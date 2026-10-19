@@ -9,16 +9,20 @@ import torch
 import pandas as pd
 
 import dragon
+from dragon import (
+    DDict,
+    System,
+    Policy,
+    ProcessTemplate,
+    ProcessGroup
+)
+
 import multiprocessing as mp
 from dragon.telemetry import Telemetry, SlowGPUDetector
 from dragon.native.pool import Pool
 from dragon.native.process import Process
 from dragon.native.event import Event
-from dragon.native.machine import System, Node
-from dragon.infrastructure.policy import Policy
-from dragon.data.ddict import DDict
-from dragon.native.process import ProcessTemplate
-from dragon.native.process_group import ProcessGroup
+from dragon.native.machine import Node
 
 
 def gpu_thrasher(stop_event, gpu_vendor) -> float:

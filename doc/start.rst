@@ -216,19 +216,19 @@ Data
 The Python `dict <https://docs.python.org/3/tutorial/datastructures.html#dictionaries>`_ is one of the most fundamental
 and useful abstractions in the language, in our opinion. What if we had a `dict` that scaled to hundreds or thousands of
 nodes and could be accessed by thousands of processes at the same time? Dragon has this feature. With the Dragon
-distributed `dict`, :py:class:`~dragon.data.DDict`, you can easily
+distributed `dict`, :py:class:`~dragon.DDict`, you can easily
 manage data exchange at-scale between processes with great performance. Like everything communication related in Dragon,
 it uses our :py:class:`Channels <dragon.channels.Channel>` layer for
 high-performance communication. It behaves with the same semantics as the normal `dict` and how they are accessed from
-multiple threads at the same time. The only difference with the :py:class:`~dragon.data.DDict` is it works across multiple processes.
+multiple threads at the same time. The only difference with the :py:class:`~dragon.DDict` is it works across multiple processes.
 
-Using the :py:class:`~dragon.data.DDict` looks like the following:
+Using the :py:class:`~dragon.DDict` looks like the following:
 
 .. code-block:: python
 
     import dragon
     from multiprocessing import Pool, set_start_method, current_process
-    from dragon.data.ddict import DDict
+    from dragon import DDict
 
     def setup(dist_dict):
         me = current_process()
@@ -251,14 +251,14 @@ Using the :py:class:`~dragon.data.DDict` looks like the following:
         for k in dist_dict.keys():
             print(f"{k} = {dist_dict[k]}", flush=True)
 
-You can start to think of the :py:class:`~dragon.data.DDict` like a co-located object store that scales with your
+You can start to think of the :py:class:`~dragon.DDict` like a co-located object store that scales with your
 application. For
 example, you might read in a large quantity of data from a filesystem and store them into the
-:py:class:`~dragon.data.DDict` with keys
+:py:class:`~dragon.DDict` with keys
 mimicing file paths. If you don't have a great parallel filesystem, this lets you read the data once, cache it in the
 memory of your nodes, and leverage your network's performance (and shared memory) for subsequent accesses. You can use
 it instead of storing intermediate results to a filesystem. If your workload consists of stages of Python processes in
-a pipeline, :py:class:`~dragon.data.DDict` is a very convenient way to manage data exchange without any system-specific
+a pipeline, :py:class:`~dragon.DDict` is a very convenient way to manage data exchange without any system-specific
 code, such as file paths.
 
 
@@ -280,7 +280,7 @@ Workflows and Task Orchestration
 ---------------------------------
 
 For applications that need higher-level task coordination, :py:mod:`dragon.workflows` provides graph-based execution
-of functions and parallel applications. The :py:class:`~dragon.workflows.batch.Batch` API is useful for parameter
+of functions and parallel applications. The :py:class:`~dragon.Batch` API is useful for parameter
 sweeps and scientific workflows, and :py:class:`~dragon.workflows.runtime.Proxy` enables execution across multiple
 systems.
 

@@ -34,6 +34,7 @@ import asyncio
 import dragon
 import multiprocessing as mp
 
+from dragon import Batch
 from dragon.ai.agent.core import create_sub_agent
 from dragon.ai.agent.config import (
     AgentConfig,
@@ -46,7 +47,6 @@ from dragon.ai.agent.orchestrator import DAGOrchestrator
 from dragon.native.event import Event
 from dragon.native.process import Process
 from dragon.native.queue import Queue
-from dragon.workflows.batch import Batch
 
 from dragon.ai.inference import (
     BatchingConfig,

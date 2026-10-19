@@ -3,7 +3,8 @@ from multiprocessing import set_start_method, Pool, cpu_count, Event, Barrier
 
 import zarr
 
-from dragon.native.machine import System, Node, current
+from dragon import System, current
+from dragon.native.machine import Node
 from dragon.data.zarr import Store
 
 import time

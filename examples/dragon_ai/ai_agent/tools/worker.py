@@ -26,7 +26,7 @@ def monte_carlo_worker(
     import time as _time
 
     import numpy as _np
-    from dragon.data.ddict import DDict as _DDict
+    from dragon import DDict as _DDict
 
     hostname = _socket.gethostname()
     prefix = f"experiment:sample:{n_samples}"

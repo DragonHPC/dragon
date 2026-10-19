@@ -149,7 +149,7 @@ initial process. Instead we just pass filenames to the workers.
 
 We could also write the processed data back to the shared filesystem, but if we intend to do more work with the processed
 data, we're introducing a potential bottleneck into our workflow with the filesystem. One approach with Dragon to keep
-data closer to new and existing processes is to use the in-memory distributed dictionary, :py:class:`~dragon.data.DDict`.
+data closer to new and existing processes is to use the in-memory distributed dictionary, :py:class:`~dragon.DDict`.
 
 .. code-block:: python
     :linenos:
@@ -160,8 +160,8 @@ data closer to new and existing processes is to use the in-memory distributed di
     from multiprocessing import set_start_method, Pool, cpu_count, current_process
     from pathlib import Path
 
-    from dragon.data.ddict import DDict
-    from dragon.native.machine import System, Node
+    from dragon import DDict, System
+    from dragon.native.machine import Node
 
 
     def initialize_worker(the_ddict):

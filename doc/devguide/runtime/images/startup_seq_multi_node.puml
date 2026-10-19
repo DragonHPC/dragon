@@ -95,7 +95,7 @@ create GS
 LS->GS: stdin\nLAChannelsInfo
 activate GS
 rnote over GS: $action() attach to channels\n$action() ping all LS
-LS<-GS: [[../infrastructure/messages_api.html#gspingsh LS ch\nGSPingSH]]
+LS<-GS: [[../infrastructure/messages_api.html#GSPingLS LS ch\nGSPingLS]]
 LS->GS: [[../infrastructure/messages_api.html#shpinggs {every LS pings back to GS} GS ch\nSHPingGS #N]]
 rnote over GS: $action() notify runtime up
 BE<-GS: [[../infrastructure/messages_api.html#gsisup {only primary sends this} prime BE ch\nGSIsUp]]

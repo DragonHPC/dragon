@@ -16,4 +16,5 @@ client_completion_queue_maxsize = 512
 
 manager_work_queue_maxsize = 256
 manager_work_queue_max_batch_size = 256
+manager_work_queue_poll_timeout = 0.05
 return_queue_maxsize = 256

@@ -1,10 +1,14 @@
 from time import perf_counter
 
+from dragon import (
+    System,
+    Policy,
+    ProcessTemplate,
+    Batch
+)
+
 from dragon.infrastructure.facts import PMIBackend
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import Node, System
-from dragon.native.process import ProcessTemplate
-from dragon.workflows.batch import Batch
+from dragon.native.machine import Node
 
 
 def run_job(batch: Batch, num_ranks: int):

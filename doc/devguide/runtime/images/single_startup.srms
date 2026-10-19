@@ -43,7 +43,7 @@ ltext@ SH "a10 pend on message";
 ltext@ SH "from global services";
 ;
 GS SH "SH Channel"+
-GS SH "m6 GSPingSH";
+GS SH "m6 GSPingLS";
 ltext@ GS "a11 pend on ping from SH";
 ltext@ SH "respond to gs ping";
 ;

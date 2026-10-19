@@ -1,24 +1,26 @@
 """This file contains multi-node tests for the process group classes."""
 
-import os
+import os, sys
 import unittest
 import time
 import random
 import signal
 import socket
-
+from contextlib import ExitStack
 import dragon
 
 
-from dragon.native.process_group import ProcessGroup, State
-from dragon.native.process import ProcessTemplate, Process
+from dragon import ProcessGroup, ProcessTemplate, System, Policy
+from dragon.native.process_group import State
+from dragon.native.process import Process
 from dragon.native.queue import Queue
-from dragon.native.machine import cpu_count, System, Node
+from dragon.native.machine import Node
 
 from dragon.globalservices.process import query as process_query, kill, signal as dragon_signal
 from dragon.globalservices.node import get_list as node_get_list
 from dragon.infrastructure.process_desc import ProcessOptions
-from dragon.infrastructure.policy import Policy
+from dragon.accelerators import Accelerator
+from dragon.managed_memory import MemoryPool
 
 
 def placement_info(q, vendor):
@@ -31,14 +33,7 @@ def placement_info(q, vendor):
             if split_line[0] == "Cpus_allowed_list":
                 cpus_allowed_list = split_line[1].strip("\n").strip("\t")
                 break
-    visible_devices = None
-    if vendor == "Nvidia":
-        visible_devices = os.getenv("CUDA_VISIBLE_DEVICES")
-    elif vendor == "AMD":
-        visible_devices = os.getenv("ROCR_VISIBLE_DEVICES")
-    elif vendor == "Intel":
-        visible_devices = os.getenv("ZE_AFFINITY_MASK")
-
+    visible_devices = Accelerator().get_device_list()
     q.put(
         (
             hostname,
@@ -48,13 +43,59 @@ def placement_info(q, vendor):
     )
 
 
+def gpu_uuid_info(q):
+    hostname = socket.gethostname()
+    try:
+        accelerator = Accelerator()
+        devices = accelerator.get_device_list()
+        roots = sorted({int(device) for device in devices})
+        uuids = [accelerator.get_device_uuid(device_id) for device_id in range(accelerator.get_device_count())]
+        if len(roots) != len(uuids):
+            raise RuntimeError("GPU device list does not match the physical GPU count")
+        q.put((hostname, dict(zip(roots, uuids)), None))
+    except Exception as ex:
+        q.put((hostname, {}, f"{type(ex).__name__}: {ex}"))
+
+
+def gpu_memory_copy_info(q):
+    hostname = socket.gethostname()
+    try:
+        with ExitStack() as resources:
+            pid = os.getpid()
+            host_pool = MemoryPool(1024 * 1024, f"gpu_copy_host_{pid}", pid)
+            resources.callback(host_pool.destroy)
+            device_pool = MemoryPool(1024 * 1024, f"gpu_copy_device_{pid}", pid + 1, gpu_memory=True)
+            resources.callback(device_pool.destroy)
+            payload = bytes(range(256)) * 4
+            source = host_pool.alloc(len(payload))
+            resources.callback(source.free)
+            source.get_memview()[:] = payload
+            copied_data = []
+
+            for iteration in range(2):
+                if iteration == 1:
+                    temporary_pool = MemoryPool(1024 * 1024, f"gpu_copy_temporary_{pid}", pid + 2, gpu_memory=True)
+                    temporary_pool.destroy()
+                with ExitStack() as allocations:
+                    device = source.copy(device_pool)
+                    allocations.callback(device.free)
+                    destination = device.copy(host_pool)
+                    allocations.callback(destination.free)
+                    copied_data.append(bytes(destination.get_memview()))
+
+            device_count = Accelerator().get_device_count()
+        q.put((hostname, copied_data, device_count, None))
+    except Exception as ex:
+        q.put((hostname, [], 0, f"{type(ex).__name__}: {ex}"))
+
+
 class TestProcessGroupMultiNode(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         """Set parameters"""
 
         # a few standard values
-        cls.nproc = cpu_count() * 2
+        cls.nproc = System.cpu_count() * 2
         cls.cmd = "sleep"
         cls.args = ("1000",)
         cls.cwd = os.getcwd()
@@ -296,7 +337,7 @@ class TestProcessGroupMultiNode(unittest.TestCase):
     def test_block_distribution(self):
         my_alloc = System()
         num_procs = (
-            cpu_count() // (2 * my_alloc.nnodes) - 1
+            System.cpu_count() // (2 * my_alloc.nnodes) - 1
         )  # We subtract one because the Manager is already on the head node
         q = Queue(maxsize=num_procs * 100)
         gpu_vendor = None
@@ -381,14 +422,11 @@ class TestProcessGroupMultiNode(unittest.TestCase):
                 if node.gpu_vendor == "Intel":
                     devices_to_use[0] = int(devices_to_use[0])
                     del devices_to_use[1]
-                correct_env_var = ""
-                for i in devices_to_use:
-                    correct_env_var += str(i) + ","
-                correct_env_var = correct_env_var.strip(",")
+                correct_env_var = devices_to_use
             else:
                 correct_env_var = None
-                # check that if we define GPUs to use with none available that the env string is set to None
                 devices_to_use = ["5", "6"]
+
             correct_env_vars[node.hostname] = correct_env_var
 
             if num_use_devices == 0:
@@ -400,8 +438,12 @@ class TestProcessGroupMultiNode(unittest.TestCase):
             qs[node.hostname] = q
             args = (q, node.gpu_vendor)
             cwd = os.getcwd()
-            local_policy = Policy(placement=Policy.Placement.HOST_NAME, host_name=node.hostname, gpu_affinity=devices_to_use)
-            grp.add_process(nproc=1, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd, policy=local_policy))
+            local_policy = Policy(
+                placement=Policy.Placement.HOST_NAME, host_name=node.hostname, gpu_affinity=devices_to_use
+            )
+            grp.add_process(
+                nproc=1, template=ProcessTemplate(target=placement_info, args=args, cwd=cwd, policy=local_policy)
+            )
 
         # init and start my process group
         grp.init()
@@ -409,12 +451,106 @@ class TestProcessGroupMultiNode(unittest.TestCase):
 
         for hostname, q in qs.items():
             _, _, visible_devices = q.get()
-            self.assertEqual(visible_devices, correct_env_vars[hostname], msg=f"Got visible devices {visible_devices} which is not equal to {correct_env_vars[hostname]} for node {hostname}")
+            selected_devices = correct_env_vars[hostname]
+            expected_devices = list(range(len(selected_devices))) if selected_devices is not None else []
+            self.assertEqual(
+                visible_devices,
+                expected_devices,
+                msg=f"Got visible devices {visible_devices} which is not equal to {expected_devices} for node {hostname}",
+            )
 
         # wait for workers to finish and shutdown process group
         grp.join()
         grp.stop()
         grp.close()
+
+    def test_gpu_affinity_uuid(self):
+        nodes = [Node(node_id) for node_id in System().nodes]
+        gpu_nodes = [node for node in nodes if node.num_gpus > 1]
+        if not gpu_nodes:
+            self.skipTest("No nodes with multiple GPUs available in this allocation")
+
+        baseline_uuids = {}
+        for phase in ("baseline", "affinity"):
+            if phase == "affinity":
+                gpu_nodes = [node for node in gpu_nodes if len(baseline_uuids[node.hostname]) > 1]
+                if not gpu_nodes:
+                    self.skipTest("At least two distinct physical GPUs are needed to check UUID affinity")
+
+            q = Queue()
+            grp = ProcessGroup(restart=False)
+            for node in gpu_nodes:
+                policy = Policy(
+                    placement=Policy.Placement.HOST_NAME,
+                    host_name=node.hostname,
+                    gpu_affinity=[node.gpus[-1]] if phase == "affinity" else [],
+                )
+                grp.add_process(
+                    nproc=1,
+                    template=ProcessTemplate(target=gpu_uuid_info, args=(q,), cwd=self.cwd, policy=policy),
+                )
+
+            grp.init()
+            try:
+                grp.start()
+                expected_nodes = {node.hostname: node for node in gpu_nodes}
+                for _ in gpu_nodes:
+                    hostname, uuids, error = q.get(timeout=60)
+                    self.assertIn(hostname, expected_nodes)
+                    node = expected_nodes.pop(hostname)
+                    self.assertIsNone(error, f"GPU UUID query failed on {hostname}: {error}")
+                    if phase == "baseline":
+                        self.assertTrue(uuids, f"No GPU UUIDs reported on {hostname}")
+                        self.assertEqual(len(set(uuids.values())), len(uuids), f"Duplicate GPU UUIDs on {hostname}")
+                        baseline_uuids[hostname] = uuids
+                    else:
+                        selected_root = int(node.gpus[-1])
+                        expected_uuid = baseline_uuids[hostname][selected_root]
+                        self.assertEqual(
+                            list(uuids.values()), [expected_uuid], f"GPU policy selected the wrong GPU on {hostname}"
+                        )
+                grp.join()
+            finally:
+                grp.stop()
+                grp.close()
+                q.destroy()
+
+    def test_gpu_memory_copy(self):
+        nodes = [Node(node_id) for node_id in System().nodes]
+        gpu_nodes = [node for node in nodes if node.num_gpus > 0]
+        if not gpu_nodes:
+            self.skipTest("No GPUs available in this allocation")
+
+        q = Queue()
+        grp = ProcessGroup(restart=False)
+        for node in gpu_nodes:
+            policy = Policy(
+                placement=Policy.Placement.HOST_NAME,
+                host_name=node.hostname,
+                gpu_affinity=[node.gpus[-1]],
+            )
+            grp.add_process(
+                nproc=1,
+                template=ProcessTemplate(target=gpu_memory_copy_info, args=(q,), cwd=self.cwd, policy=policy),
+            )
+
+        grp.init()
+        try:
+            grp.start()
+            expected_hostnames = {node.hostname for node in gpu_nodes}
+            payload = bytes(range(256)) * 4
+            for _ in gpu_nodes:
+                hostname, copied_data, device_count, error = q.get(timeout=60)
+                self.assertIn(hostname, expected_hostnames)
+                expected_hostnames.remove(hostname)
+                self.assertIsNone(error, f"GPU copy failed on {hostname}: {error}")
+                self.assertEqual(copied_data, [payload, payload], f"GPU copy corrupted data on {hostname}")
+                self.assertEqual(device_count, 1, f"GPU affinity was not applied on {hostname}")
+            grp.join()
+        finally:
+            grp.stop()
+            grp.close()
+            q.destroy()
 
     def test_cpu_affinity(self):
         my_alloc = System()

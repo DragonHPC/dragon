@@ -6,9 +6,9 @@ import socket
 import sys
 import importlib.util
 from pathlib import Path
+from tempfile import gettempdir
 
 from .. import dtypes
-
 
 PREFIX = "DRAGON_"
 
@@ -36,6 +36,7 @@ OOM_WARNING_BYTES_VAR = "MEMORY_WARNING_BYTES"
 OOM_CRITICAL_PCT_VAR = "MEMORY_CRITICAL_PCT"
 OOM_CRITICAL_BYTES_VAR = "MEMORY_CRITICAL_BYTES"
 OOM_DEFAULT_POOL_WARN_PCT_VAR = "DEF_POOL_WARN_PCT"
+CHECK_SHM_FREE_SPACE = "CHECK_SHM_FREE_SPACE"
 QUIET_VAR = "WARNINGS_OFF"
 
 OOM_DEFAULT_WARN_PCT = 10
@@ -56,7 +57,7 @@ env_vars = frozenset(
         DEFAULT_PD_VAR,
         INF_PD_VAR,
         "LOCAL_LS_QD",
-        "LOCAL_BE_CD",
+        "LOCAL_BE_QD",
         "GS_RET_QD",
         "LS_RET_QD",
         "GS_QD",
@@ -90,6 +91,7 @@ env_vars = frozenset(
         OOM_DEFAULT_POOL_WARN_PCT_VAR,
         QUIET_VAR,
         OVERLAY_TRANSPORT_VAR,
+        CHECK_SHM_FREE_SPACE,
     }
 )
 
@@ -140,6 +142,58 @@ GS_PUID = 1
 
 #: The first PUID for user applications launched by local services
 FIRST_PUID = 2**32
+
+#: Starting value of the PUID namespace reserved for externally attached processes. External PUIDs are handed out by LocalServices from this initial puid and with the block size below. This may not be enough space for all nodes in extremely large deployments. In such cases, adjustments to the FIRST_PUID and the BASE_EXTERNAL_PUID may need to be made.
+BASE_EXTERNAL_PUID = 1 << 48
+
+#: Number of external process identities assigned to each node for one runtime.
+EXTERNAL_PUID_BLOCK_SIZE = 512
+
+
+def validate_external_puid_block_size(block_size: int) -> int:
+    """Validate an external PUID block size against the public integer range."""
+    if isinstance(block_size, bool) or not isinstance(block_size, int):
+        raise TypeError("external PUID block size must be an integer")
+    if block_size <= 0:
+        raise ValueError("external PUID block size must be positive")
+
+    last_puid = BASE_EXTERNAL_PUID + MAX_NODES * block_size - 1
+    if last_puid >= 1 << 63:
+        raise OverflowError("external PUID range exceeds the signed 64-bit limit")
+
+    return block_size
+
+
+validate_external_puid_block_size(EXTERNAL_PUID_BLOCK_SIZE)
+RANGE_EXTERNAL_PUID = MAX_NODES * EXTERNAL_PUID_BLOCK_SIZE
+
+
+def external_puid_bounds(node_index: int) -> tuple[int, int]:
+    """Return the half-open external PUID interval assigned to a node."""
+    if isinstance(node_index, bool) or not isinstance(node_index, int):
+        raise TypeError("node index must be an integer")
+    if not 0 <= node_index < MAX_NODES:
+        raise ValueError(f"node index must be in [0, {MAX_NODES})")
+
+    first_puid = BASE_EXTERNAL_PUID + node_index * EXTERNAL_PUID_BLOCK_SIZE
+    return first_puid, first_puid + EXTERNAL_PUID_BLOCK_SIZE
+
+
+def is_external_puid(puid: int) -> bool:
+    """Return whether *puid* belongs to the external-only PUID namespace."""
+    return (
+        isinstance(puid, int)
+        and not isinstance(puid, bool)
+        and BASE_EXTERNAL_PUID <= puid < BASE_EXTERNAL_PUID + RANGE_EXTERNAL_PUID
+    )
+
+
+def external_puid_node_index(puid: int) -> int:
+    """Return the node owning an external PUID, rejecting non-members."""
+    if not is_external_puid(puid):
+        raise ValueError(f"PUID {puid!r} is outside the external PUID namespace")
+    return (puid - BASE_EXTERNAL_PUID) // EXTERNAL_PUID_BLOCK_SIZE
+
 
 #: Base index used by the transport services for the unique process ID (puid)
 FIRST_TRANSPORT_PUID = 2**8
@@ -215,6 +269,61 @@ RANGE_LS_CUID = 2**LS_CUID_POW
 #: Starting value of the User created channel ID (cuid)
 FIRST_CUID = 2**63
 
+#: Filename written under attach_runtime_dir() at startup
+ATTACH_INFO_FILENAME = "attach_info.txt"
+
+#: Name of the per-user attach-info directory created under tempfile.gettempdir();
+#: the C side (src/lib/ext_attach.cpp) duplicates this and uses dragon_gettempdir()
+ATTACH_RUNTIME_DIR_NAME_TEMPLATE = "dragon_{uid}"
+
+#: Environment variable that overrides the attach-info directory (writer, readers, and cleanup)
+ATTACH_DIR_ENV = "DRAGON_ATTACH_DIR"
+
+
+def default_attach_runtime_dir() -> str:
+    """Return this user's attach-info directory under :py:func:`tempfile.gettempdir`."""
+    return os.path.join(gettempdir(), ATTACH_RUNTIME_DIR_NAME_TEMPLATE.format(uid=os.getuid()))
+
+
+def attach_runtime_dir() -> str:
+    """Return ``DRAGON_ATTACH_DIR`` if set, otherwise :py:func:`default_attach_runtime_dir`."""
+    return os.environ.get(ATTACH_DIR_ENV) or default_attach_runtime_dir()
+
+#: Well-known key in the Local Services key-value store holding the attach-info
+#: JSON. Local Services populates this at startup (single-node mode) so that
+#: managed processes can retrieve attach metadata via
+#: :py:func:`dragon.utils.get_local_kv` instead of reading a file.
+ATTACH_INFO_KVS_KEY = "dragon_attach_info"
+
+#: Well-known key in the Local Services key-value store holding the serialized
+#: ctrl_event for the runtime head process.  Written by every LS node when GS
+#: broadcasts a :py:class:`~dragon.infrastructure.messages.LSStoreCtrlEvent`
+#: message so that any attached process can retrieve and set it via
+#: :py:func:`dragon.utils.get_local_kv`.
+CTRL_EVENT_KVS_KEY = "dragon_ctrl_event"
+
+#: Environment variable holding the attach auth token. Used both to hand the
+#: token to the multi-node Global Services subprocess and as the fallback token
+#: source for :py:func:`dragon.attach` when no token argument is supplied.
+DRAGON_ATTACH_TOKEN_ENV = "DRAGON_ATTACH_TOKEN"
+
+#: Starting value of the temporary reply channel CUIDs used during co-located
+#: process attach.  The range 2**53 .. 2**53 + 2**20 - 1 is free; defined
+#: infrastructure ranges start at 2**54.
+BASE_ATTACH_TEMP_CUID = 2**53
+
+#: Number of distinct temporary attach CUIDs available (one per concurrent PID)
+RANGE_ATTACH_TEMP_CUID = 2**20
+
+
+def attach_temp_cuid_from_pid(pid: int) -> int:
+    """Return a deterministic temporary CUID for the given OS process ID.
+
+    The result lies in ``[BASE_ATTACH_TEMP_CUID, BASE_ATTACH_TEMP_CUID + RANGE_ATTACH_TEMP_CUID)``.
+    """
+    return BASE_ATTACH_TEMP_CUID + (pid % RANGE_ATTACH_TEMP_CUID)
+
+
 #: First MUID managed by Local Services.
 FIRST_LS_MANAGED_MUID = 2**59
 #: Number of MUIDs possible allowable for each Local Services
@@ -249,6 +358,7 @@ FRONTEND_HOSTID = 1
 #: Timeout for launch of the runtime. Local for node-local comms. Remote for transport agent enabled.
 LOCAL_LAUNCH_TIMEOUT = 60
 REMOTE_LAUNCH_TIMEOUT = 420
+TA_PING_TIMEOUT = 10
 
 # Names
 DEFAULT_PROCESS_NAME_BASE = "dragon_process_"
@@ -263,6 +373,36 @@ GS_ERROR_EXIT = -1
 INFRASTRUCTURE_POOL_SUFFIX = "inf"
 DEFAULT_POOL_SUFFIX = "def"
 LOGGING_POOL_SUFFIX = "log"
+
+# Pool names are embedded in local shared-memory manifest filenames. The C
+# 32-byte filename buffer leaves 28 bytes for the base name, including the
+# retry digit, after accounting for the slash, prefix, suffix, and NUL.
+MAX_POOL_NAME_LENGTH = 28
+MACOS_SHM_NAME_MAX = 31
+POOL_DEFAULT_RETRY_SUFFIX = "9"
+DRAGON_POOL_MANIFEST_SUFFIX = "M"
+
+
+def runtime_pool_name(suffix: str, extra: str = "", *, host_id=None) -> str:
+    name = f"{DEFAULT_POOL_NAME_BASE}{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}"
+    if host_id is not None:
+        name += str(host_id)[-3:]
+    name += f"{str(suffix)[-3:]}{extra}"
+    attempt_name = f"{name}{POOL_DEFAULT_RETRY_SUFFIX}"
+
+    if sys.platform == "darwin":
+        # Dragon passes "/D<pool-name>M" to shm_open(); reserve one more byte
+        # for create_with_retry()'s largest default attempt suffix (9).
+        shm_name = f"/{DEFAULT_POOL_NAME_BASE}{attempt_name}{DRAGON_POOL_MANIFEST_SUFFIX}"
+        if len(shm_name.encode("utf-8")) > MACOS_SHM_NAME_MAX:
+            raise ValueError(
+                f"pool name {name!r} with retry suffix exceeds the macOS shm name limit "
+                f"of {MACOS_SHM_NAME_MAX} bytes"
+            )
+    elif len(attempt_name.encode("utf-8")) > MAX_POOL_NAME_LENGTH:
+        raise ValueError(f"pool name {name!r} with retry suffix exceeds {MAX_POOL_NAME_LENGTH} bytes")
+
+    return name
 
 
 # Pre-defined process PUIDs:
@@ -621,10 +761,6 @@ STDIN_DESC = "dragon_stdin_desc"
 # in circumstances where we're flooded in ops in a sequence that lead to a hang
 GW_DEFAULT_CAPACITY = 2048
 
-# This defines an enivironment variable name for an isolated transport test
-# environment where global services is not started.
-TRANSPORT_TEST_ENV = "DRAGON_TRANSPORT_TEST"
-
 # This provides env. var. to perform a simple bring-up and teardown of all
 # multi-node services in order to measure bounce time of our services.
 BOUNCE_TEST_ENV = "DRAGON_BOUNCE_RUNTIME_TEST"
@@ -761,7 +897,7 @@ class PMIBackend(str, enum.Enum):
 # Prefer to use high-speed network interfaces. Be cautious about matching any
 # interface (e.g., r'^.*$') as it may expose the transport agent on an
 # unintended network (e.g., the internet).
-DEFAULT_TRANSPORT_NETIF = r"^(hsn|ipogif|ib|eth|en)\w+$"
+DEFAULT_TRANSPORT_NETIF = r"^(hsn|ipogif|ib|eth|bridge|en)\w+$"
 DEFAULT_TRANSPORT_PORT = 7575
 DEFAULT_OVERLAY_NETWORK_PORT = 6565
 DEFAULT_FRONTEND_PORT = 6566

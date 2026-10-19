@@ -13,6 +13,7 @@ LINKER_HELP = (
     """For execution during linking, print the linker option for build applications built against Dragon C/C++ API"""
 )
 COMPILER_HELP = """For execution during compilation, print the compiler option for building applications built against Dragon C/C++ API"""
+BASE_DIRECTORY_HELP = """Display the base directory of Dragon's install location"""
 
 DRAGON_CONFIG_ADD_HELP = """Define a number of paths (key=value) to configure
 include and library paths for Dragon, or to make the TCP runtime the always-on
@@ -24,6 +25,28 @@ UCX backend:
 dragon-config add --ucx-include=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/include
 dragon-config add --ucx-build-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib
 dragon-config add --ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib
+
+GPU runtime library paths. By default, libcudart.so, libamdhip64.so, and libze_intel_gpu.so.1 are used for CUDA, HIP,
+and ZE backends respectively:
+dragon-config add --cuda-runtime-lib=/opt/cuda/lib64
+dragon-config add --hip-runtime-lib=/opt/rocm/lib
+dragon-config add --ze-runtime-lib=/opt/intel/oneapi/level-zero/latest/lib
+
+GPU runtime library names to override the default library noted above. Examples
+of possible overrides:
+dragon-config add --cuda-runtime-libname=libcudart.so.12
+dragon-config add --cuda-runtime-libname=/usr/lib64/libcudart.so.12
+dragon-config add --hip-runtime-libname=libamdhip64.so.6
+dragon-config add --ze-runtime-libname=libze_intel_gpu.so.1
+
+The library is located by trying, in order:
+  1. The given name or full path as-is provided by `--xxx-runtime-libname` if set.
+  2. If `--xxx-runtime-libname` is a full path, its bare library name via the ld cache or library path environment
+     variable (eg: LD_LIBRARY_PATH).
+  3. The bare library name joined with the corresponding --xxx-runtime-lib path, if the latter is set.
+  4. The default library name joined with the --xxx-runtime-lib path, if set.
+  5. The default library via the ld cache or library path environment variable.
+
 
 Set TCP transport as always-on default backend:
 dragon-config add --tcp-runtime
@@ -107,8 +130,13 @@ ADD_KEYS = {
     "mpi_include",
     "cuda_include",
     "cuda_runtime_lib",
+    "cuda_runtime_libname",
     "hip_include",
+    "hip_runtime_lib",
+    "hip_runtime_libname",
     "ze_include",
+    "ze_runtime_lib",
+    "ze_runtime_libname",
     "tcp_runtime",
     "netconfig_mpiexec_override",
     "backend_mpiexec_override",
@@ -209,7 +237,13 @@ def _concat_search_files(base_dir, routing_option):
     elif routing_option == ROUTING_ENUM.cray_mpich:
         search_files = [Path("lib/libmpich.so"), Path("lib64/libmpich.so"), Path("include/mpi.h")]
     elif routing_option == ROUTING_ENUM.open_mpi:
-        search_files = [Path("lib/libmpi.so"), Path("lib64/libmpi.so"), Path("include/mpi.h")]
+        search_files = [
+            Path("lib/libmpi.so"),
+            Path("lib64/libmpi.so"),
+            Path("lib/libmpi.dylib"),
+            Path("lib64/libmpi.dylib"),
+            Path("include/mpi.h"),
+        ]
 
     full_search_paths = []
     if len(search_files) != 0:
@@ -283,7 +317,7 @@ def _cuda_include_route(make_file, config_filename, path, base_dir):
     # sanity check
     _check_add_filepaths_exist(path, ROUTING_ENUM.cuda_include)
 
-    make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/cuda.cpp\n")
+    make_file.write("CONFIG_SOURCES := $(CONFIG_SOURCES) gpu/cuda.cpp\n")
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_CUDA_INCLUDE\n")
     make_file.write(f"CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n")
 
@@ -295,7 +329,7 @@ def _hip_include_route(make_file, config_filename, path, base_dir):
     # sanity check
     _check_add_filepaths_exist(path, ROUTING_ENUM.hip_include)
 
-    make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/hip.cpp\n")
+    make_file.write("CONFIG_SOURCES := $(CONFIG_SOURCES) gpu/hip.cpp\n")
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_HIP_INCLUDE\n")
     make_file.write(f"CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n")
 
@@ -307,7 +341,7 @@ def _ze_include_route(make_file, config_filename, path, base_dir):
     # sanity check
     _check_add_filepaths_exist(path, ROUTING_ENUM.ze_include)
 
-    make_file.write(f"CONFIG_SOURCES := $(CONFIG_SOURCES) {base_dir}/lib/gpu/ze.cpp\n")
+    make_file.write("CONFIG_SOURCES := $(CONFIG_SOURCES) gpu/ze.cpp\n")
     make_file.write("CONFIG_DEFINES := $(CONFIG_DEFINES) -DHAVE_ZE_INCLUDE\n")
     make_file.write(f"CONFIG_INCLUDE := $(CONFIG_INCLUDE) -I{path}\n")
 
@@ -349,6 +383,31 @@ def _ucx_runtime_lib(make_file, config_filename, path, base_dir):
 @config_router(ROUTING_ENUM.cuda_runtime_lib, _ATBL)
 def _cuda_runtime_lib(make_file, config_filename, path, base_dir):
     _update_json_config(config_filename, ROUTING_ENUM.cuda_runtime_lib.name, str(path))
+
+
+@config_router(ROUTING_ENUM.hip_runtime_lib, _ATBL)
+def _hip_runtime_lib(make_file, config_filename, path, base_dir):
+    _update_json_config(config_filename, ROUTING_ENUM.hip_runtime_lib.name, str(path))
+
+
+@config_router(ROUTING_ENUM.ze_runtime_lib, _ATBL)
+def _ze_runtime_lib(make_file, config_filename, path, base_dir):
+    _update_json_config(config_filename, ROUTING_ENUM.ze_runtime_lib.name, str(path))
+
+
+@config_router(ROUTING_ENUM.cuda_runtime_libname, _ATBL)
+def _cuda_runtime_libname(make_file, config_filename, libname, base_dir):
+    _update_json_config(config_filename, ROUTING_ENUM.cuda_runtime_libname.name, str(libname))
+
+
+@config_router(ROUTING_ENUM.hip_runtime_libname, _ATBL)
+def _hip_runtime_libname(make_file, config_filename, libname, base_dir):
+    _update_json_config(config_filename, ROUTING_ENUM.hip_runtime_libname.name, str(libname))
+
+
+@config_router(ROUTING_ENUM.ze_runtime_libname, _ATBL)
+def _ze_runtime_libname(make_file, config_filename, libname, base_dir):
+    _update_json_config(config_filename, ROUTING_ENUM.ze_runtime_libname.name, str(libname))
 
 
 @config_router(ROUTING_ENUM.tcp_runtime, _ATBL)
@@ -493,14 +552,15 @@ def hugepages_cleanup(careful_restart_cleanup=0, dry_run=False):
         print("no hugepage files to clean up", flush=True)
 
 
-def print_compile_and_link_lines():
+def print_info_lines():
     """Print the compiler and link line options with brief description preamble"""
 
+    print(f'Dragon base directory: "{print_base_directory(print_line=False)}"\n')
     print(f'Compile line options: "{print_compiler_options(print_line=False)}"\n')
     print(f'Link line options: "{print_linker_options(print_line=False)}"\n')
 
 
-def print_compiler_options(print_line=True):
+def print_base_directory(print_line=True):
     """Print only the compiler include line options"""
 
     try:
@@ -510,7 +570,16 @@ def print_compiler_options(print_line=True):
             "Dragon environment is not installed or built. We're unable to provide header or library options as a result."
         )
 
-    compiler_options = f"-I {os.path.abspath(os.path.join(DRAGON_BASE_DIR, 'include'))}"
+    if print_line:
+        print(DRAGON_BASE_DIR)
+    else:
+        return DRAGON_BASE_DIR
+
+
+def print_compiler_options(print_line=True):
+    """Print only the compiler include line options"""
+
+    compiler_options = f"-I{os.path.abspath(os.path.join(print_base_directory(print_line=False), 'include'))}"
 
     if print_line:
         print(f"{compiler_options}")
@@ -521,14 +590,7 @@ def print_compiler_options(print_line=True):
 def print_linker_options(print_line=True):
     """Print only the linker link line options"""
 
-    try:
-        from ..infrastructure.facts import DRAGON_BASE_DIR
-    except ImportError:
-        raise RuntimeError(
-            "Dragon environment is not installed or built. We're unable to provide linking options as a result."
-        )
-
-    link_line_options = f"-L {os.path.abspath(os.path.join(DRAGON_BASE_DIR, 'lib'))} -ldragon"
+    link_line_options = f"-L{os.path.abspath(os.path.join(print_base_directory(print_line=False), 'lib'))} -ldragon"
     if print_line:
         print(f"{link_line_options}")
     else:
@@ -617,6 +679,42 @@ def _configure_parser():
         type=list_str,
         help="Path to CUDA libraries (eg: libcudart.so) to be used during app execution",
     )
+    add_subparser.add_argument(
+        "--hip-runtime-lib",
+        type=list_str,
+        help="Path to HIP libraries (eg: libamdhip64.so) to be used during app execution",
+    )
+    add_subparser.add_argument(
+        "--ze-runtime-lib",
+        type=list_str,
+        help="Path to Level Zero libraries (eg: libze_intel_gpu.so.1) to be used during app execution",
+    )
+
+    # Runtime libname options
+    add_subparser.add_argument(
+        "--cuda-runtime-libname",
+        type=str,
+        help="Name or full path of the CUDA runtime library (eg: libcudart.so.12) to load during app execution.\n"
+        "Tried as-is first; a full path is then retried by library name via the LD cache or library path\n"
+        "environment variable. The library name is then joined with --cuda-runtime-lib if set, before\n"
+        "falling back to the default library",
+    )
+    add_subparser.add_argument(
+        "--hip-runtime-libname",
+        type=str,
+        help="Name or full path of the HIP runtime library (eg: libamdhip64.so.6) to load during app execution.\n"
+        "Tried as-is first; a full path is then retried by library name via the LD cache or library path\n"
+        "environment variable. The library name is then joined with --hip-runtime-lib if set, before\n"
+        "falling back to the default library",
+    )
+    add_subparser.add_argument(
+        "--ze-runtime-libname",
+        type=str,
+        help="Name or full path of the Level Zero runtime library (eg: libze_intel_gpu.so.1) to load during app execution.\n"
+        "Tried as-is first; a full path is then retried by library name via the LD cache or library path\n"
+        "environment variable. The library name is then joined with --ze-runtime-lib if set, before\n"
+        "falling back to the default library",
+    )
 
     # Backend mpiexec override options
     add_subparser.add_argument("--netconfig-mpiexec-override", type=str, help=DRAGON_NETWORK_MPIEXEC_HELP)
@@ -635,6 +733,7 @@ def _configure_parser():
 
     # Options for building dragon runtime
     compile_group = parser.add_mutually_exclusive_group()
+    compile_group.add_argument("-b", "--base-directory", action="store_true", help=BASE_DIRECTORY_HELP)
     compile_group.add_argument("-l", "--linker-options", action="store_true", help=LINKER_HELP)
     compile_group.add_argument("-o", "--compiler-options", action="store_true", help=COMPILER_HELP)
     compile_group.add_argument("-e", "--explicit-compiler-options", action="store_true", help=EXPLICIT_COMPILE_HELP)
@@ -785,13 +884,16 @@ def main():
 
     # If link line options were requested, print them and exit
     if args.explicit_compiler_options:
-        print_compile_and_link_lines()
+        print_info_lines()
         parser.exit()
     elif args.linker_options:
         print_linker_options()
         parser.exit()
     elif args.compiler_options:
         print_compiler_options()
+        parser.exit()
+    elif args.base_directory:
+        print_base_directory()
         parser.exit()
 
     # Get filenames

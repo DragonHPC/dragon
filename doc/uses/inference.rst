@@ -112,7 +112,7 @@ For a source checkout, install the package from ``src/`` with the same extra:
 
 vLLM support is supplied by the Dragon vLLM compatibility plugin, which is
 bundled inside ``dragonhpc`` and registered automatically by the ``ai`` extra.
-The ``ai`` extra also installs a supported vLLM (``vllm>=0.11.0,<0.18.0``), so
+The ``ai`` extra also installs a supported vLLM (``vllm>=0.11.0,<0.20.0``), so
 installing the extra is all that is required:
 
 .. code-block:: console
@@ -657,7 +657,7 @@ Model download or authentication failures
 Port collisions or distributed initialization failures
   The service sets ``MASTER_PORT`` and uses the Dragon vLLM plugin to patch
   open-port selection. The plugin and a supported vLLM
-  (``vllm>=0.11.0,<0.18.0``) are both installed by ``dragonhpc[ai]``, so confirm
+  (``vllm>=0.11.0,<0.20.0``) are both installed by ``dragonhpc[ai]``, so confirm
   the ``ai`` extra is installed in the environment used to launch Dragon.
 
 Calls through ``DragonQueueLLMProxy.chat()`` appear to wait

@@ -5,7 +5,8 @@ import pathlib
 import subprocess
 
 import dragon
-from dragon.data.ddict.ddict import DDict, PosixCheckpointPersister, DAOSCheckpointPersister
+from dragon import DDict
+from dragon.data.ddict.ddict import PosixCheckpointPersister, DAOSCheckpointPersister
 from multiprocessing import set_start_method
 
 class TestTimer:

@@ -1,9 +1,9 @@
-"""Dragon-compatible vLLM worker process helpers for vLLM 0.15.x.
+"""Dragon-compatible vLLM worker process helpers for vLLM 0.15.x through 0.17.x.
 
 The functions in this module are version-specific replacements for selected
-``WorkerProc`` methods in vLLM 0.15.x.  They preserve vLLM's worker protocol but
-adapt shutdown, parent-death monitoring, and response-handle attachment for
-Dragon-managed processes and channels.
+``WorkerProc`` methods in vLLM 0.15.x-0.17.x.  They preserve vLLM's worker
+protocol but adapt shutdown, parent-death monitoring, and response-handle
+attachment for Dragon-managed processes and channels.
 """
 
 import logging

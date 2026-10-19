@@ -8,6 +8,7 @@ import os
 import dragon
 import multiprocessing as mp
 
+from dragon import Policy, System
 from dragon.fli import FLInterface
 from dragon.managed_memory import MemoryPool
 from dragon.channels import Channel
@@ -15,10 +16,9 @@ from dragon.utils import B64
 
 from dragon.infrastructure import facts as dfacts
 from dragon.infrastructure import parameters
-from dragon.infrastructure.policy import Policy
 
 from dragon.native.process import Process
-from dragon.native.machine import System, Node
+from dragon.native.machine import Node
 
 
 class Next:

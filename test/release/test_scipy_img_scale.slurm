@@ -59,6 +59,13 @@ dragon -N 512 ../../examples/multiprocessing/numpy-mpi4py-examples/scipy_scale_w
                                                                                        --size 32 \
                                                                                        --mem 1073741824 \
                                                                                        --work_time 1
+
+## dragon 0.15.0 release from 512 nodes, 2 imgs/worker:
+## Number of images: 1048576
+## Number of workers: 65536
+## Time for iteration 0 is 166.43354356102645 seconds
+## Time for iteration 1 is 175.23339609894902 seconds
+##
 ## dragon 0.11 release from 512 nodes, 2 imgs/worker
 ## Number of images: 1048576
 ## Number of workers: 65536

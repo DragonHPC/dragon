@@ -206,7 +206,11 @@ _bcast_init_obj(void* obj_ptr, size_t alloc_sz, size_t max_payload_sz, size_t ma
     *(header->payload_sz) = 0UL;
     *(header->sync_type) = attr->sync_type;
     *(header->sync_num) = attr->sync_num;
-    dragon_generate_uuid(*header->id);
+
+    dragonError_t err = dragon_generate_uuid(*header->id);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not generate the BCast object's UUID.");
+
     *(header->lock_type) = attr->lock_type;
     header->spin_list = ((void*)header->lock) + *(header->lock_sz);
     for (int k=0; k<*(header->spin_list_sz); k++)
@@ -1266,7 +1270,12 @@ dragon_bcast_attach(dragonBCastSerial_t* bd_ser, dragonBCastDescr_t* bd)
     dragonULInt hostid = (dragonULInt)*sptr;
     sptr++;
 
-    if (hostid != dragon_host_id())
+    dragonULInt local_hostid;
+    dragonError_t hostid_err = dragon_host_id(&local_hostid);
+    if (hostid_err != DRAGON_SUCCESS)
+        append_err_return(hostid_err, "Could not get the host ID while attaching to the BCast object.");
+
+    if (hostid != local_hostid)
         err_return(DRAGON_INVALID_ARGUMENT, "The BCast serialized descriptor can only be attached locally, not on a different host node.");
 
     dragonULInt id = *sptr;
@@ -1549,7 +1558,9 @@ dragon_bcast_serialize(const dragonBCastDescr_t * bd, dragonBCastSerial_t * bd_s
 
     /* hostid is used to be sure we have the same host/node
        since BCast objects are only valid on the same node. */
-    *sptr = dragon_host_id();
+    err = dragon_host_id(sptr);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "Could not get the host ID while serializing the BCast object.");
     sptr++;
 
     /* The _idx is used to check if this process

@@ -6,11 +6,14 @@ import os
 from contextlib import redirect_stdout
 from io import StringIO
 
+from dragon import (
+    ProcessTemplate,
+    Policy
+)
 from dragon.native.queue import Queue
-from dragon.native.process import Process, ProcessError, current, ProcessTemplate
+from dragon.native.process import Process, ProcessError, current
 from dragon.infrastructure.parameters import this_process
 from dragon.infrastructure.process_desc import ProcessOptions
-from dragon.infrastructure.policy import Policy
 from dragon.native.array import Array
 from dragon.native.value import Value
 

@@ -78,7 +78,6 @@ class DRunWLM(BaseWLM):
         network_prefix: str,
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
-        transport_test_env: bool,
         log_level: int = logging.NOTSET,
     ):
         be_args = self._get_dragon_launch_be_args(
@@ -88,7 +87,6 @@ class DRunWLM(BaseWLM):
             network_prefix=network_prefix,
             overlay_transport=overlay_transport,
             overlay_port=overlay_port,
-            transport_test_env=transport_test_env,
         )
 
         wlm_proc = DragonRunPopen(

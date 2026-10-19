@@ -5,9 +5,16 @@
 #include "priority_heap.h"
 #include "ulist.h"
 #include "umap.h"
+#include <arpa/inet.h>
 #include <dragon/bcast.h>
 #include <dragon/channels.h>
 #include <dragon/utils.h>
+#include <errno.h>
+#include <inttypes.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <stdint.h>
 #include <stdatomic.h>
 
@@ -32,6 +39,109 @@ extern "C" {
 #define DRAGON_CHANNEL_NUM_POLL_BCASTS 5
 #define DRAGON_CHANNEL_DEFAULT_MAX_EVENT_BCASTS 8
 #define DRAGON_CHANNEL_DEFAULT_MAX_GW_ENV_NAME_LENGTH 200
+
+/* Cross-language contract: these key formats (DRAGON_RT_UID__<rt> and the
+   _BOOTSTRAP_ADDR suffix) must stay identical to the Python helpers in
+   src/dragon/infrastructure/runtime_env.py (runtime_route_env_key /
+   runtime_bootstrap_env_key), which write these same variables.
+
+   Portable cross-runtime route metadata lives in the environment: for a target
+   runtime's rt_uid, DRAGON_RT_UID__<rt> holds a serialized OOB gateway channel
+   (only used during single-node/OOB bootstrap) and DRAGON_RT_UID__<rt>_BOOTSTRAP_ADDR
+   holds "ip:port" for that runtime's transport ingress. The helpers below build
+   those key names and parse the bootstrap address. */
+
+/* Build the DRAGON_RT_UID__<rt_uid> env-var name into env_key. */
+static inline bool
+dragon_channel_runtime_route_env_key(dragonRT_UID_t rt_uid, char *env_key, size_t env_key_len)
+{
+    int nchars = snprintf(env_key, env_key_len, "DRAGON_RT_UID__%" PRIu64, rt_uid);
+    return nchars > 0 && (size_t) nchars < env_key_len;
+}
+
+/* Build the DRAGON_RT_UID__<rt_uid>_BOOTSTRAP_ADDR env-var name into env_key. */
+static inline bool
+dragon_channel_runtime_bootstrap_env_key(dragonRT_UID_t rt_uid, char *env_key, size_t env_key_len)
+{
+    int nchars = snprintf(env_key, env_key_len, "DRAGON_RT_UID__%" PRIu64 "_BOOTSTRAP_ADDR", rt_uid);
+    return nchars > 0 && (size_t) nchars < env_key_len;
+}
+
+/* Return the serialized OOB gateway descriptor published for rt_uid, or NULL if
+   none. env_key receives the resolved variable name for error reporting. */
+static inline char *
+dragon_channel_runtime_gateway_env_value(dragonRT_UID_t rt_uid, char *env_key, size_t env_key_len)
+{
+    if (!dragon_channel_runtime_route_env_key(rt_uid, env_key, env_key_len)) {
+        return NULL;
+    }
+
+    return getenv(env_key);
+}
+
+/* Parse the target runtime's bootstrap ingress "ip:port" into a host-order IPv4
+   address and port. Returns false (and zeros the outputs) when no bootstrap
+   address is published for rt_uid or it is malformed. The gateway message layer
+   copies these into the message header so the transport agent can reach the
+   target runtime's ingress without attaching any runtime-local descriptor. */
+static inline bool
+dragon_channel_runtime_bootstrap_addr(dragonRT_UID_t rt_uid, dragonUInt *ip_addr, dragonULInt *port)
+{
+    char env_key[96];
+
+    if (ip_addr == NULL || port == NULL) {
+        return false;
+    }
+
+    *ip_addr = 0U;
+    *port = 0UL;
+
+    if (!dragon_channel_runtime_bootstrap_env_key(rt_uid, env_key, sizeof(env_key))) {
+        return false;
+    }
+
+    char *bootstrap_addr = getenv(env_key);
+    if (bootstrap_addr == NULL) {
+        return false;
+    }
+
+    char *sep = strrchr(bootstrap_addr, ':');
+    if (sep == NULL) {
+        return false;
+    }
+
+    char *port_str = sep + 1;
+    char *endptr;
+    if (*port_str < '0' || *port_str > '9') {
+        return false;
+    }
+    errno = 0;
+    unsigned long long parsed_port = strtoull(port_str, &endptr, 10);
+    if (errno != 0 || endptr == port_str || *endptr != '\0' || parsed_port == 0 || parsed_port > 65535) {
+        return false;
+    }
+
+    char host_buf[64];
+    size_t host_len = (size_t) (sep - bootstrap_addr);
+    if (host_len == 0UL || host_len >= sizeof(host_buf)) {
+        *port = 0UL;
+        return false;
+    }
+
+    memcpy(host_buf, bootstrap_addr, host_len);
+    host_buf[host_len] = '\0';
+
+    struct in_addr addr;
+    if (inet_aton(host_buf, &addr) == 0) {
+        *port = 0UL;
+        return false;
+    }
+
+    *ip_addr = (dragonUInt) ntohl(addr.s_addr);
+    *port = (dragonULInt) parsed_port;
+
+    return true;
+}
 
 /* These FLAGS are used in the internal flags structure to
    keep track of some shared state in the channel. */
@@ -111,6 +221,7 @@ typedef struct dragonChannel_st {
     dragonEventRec_t* event_records;
     dragonChannelSerial_t ch_ser;
     dragonC_UID_t c_uid;
+    dragonRT_UID_t owner_rt_uid;
 } dragonChannel_t;
 
 #ifdef __cplusplus

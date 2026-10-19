@@ -10,6 +10,7 @@ import sqlite3
 import copy
 import glob
 
+from dragon import DDict
 from dragon.utils import set_local_kv, B64
 from dragon.telemetry.analysis import (
     AnalysisClient,
@@ -20,7 +21,6 @@ from dragon.telemetry.analysis_server import (
     AnalysisServer,
 )
 from dragon.telemetry.telemetry_head import _register_with_local_services
-from dragon.data import DDict
 from telemetry.telemetry_data import (
     BASE_CLIENT_QUERY,
     BASE_DRAGON_SERVER_RESPONSE,

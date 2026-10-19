@@ -112,7 +112,7 @@ class Orchestrator:
     def __setstate__(self):
         # read managers' serialized pool descriptors from file
         ser_metadata = self._persister.load_metadata(log, self._persist_path, self._name)
-        (self._serialized_manager_pool, self._manager_nodes, self._loaded_persister) = cloudpickle.loads(
+        self._serialized_manager_pool, self._manager_nodes, self._loaded_persister = cloudpickle.loads(
             b64decode(ser_metadata)
         )
 

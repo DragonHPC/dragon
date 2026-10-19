@@ -40,11 +40,7 @@ Telemetry Architecture
 =======================
 
 Telemetry has a few settings that can be customized using a YAML file. To do this, provide the path to the file by setting the ``DRAGON_TELEMETRY_CONFIG``
-<<<<<<< HEAD
 environment variable. Keys that can be set in the YAML are included in the relevant sections. A sample YAML is available in ``/examples/dragon_telemetry/telemetry.yaml``.
-=======
-environment variable. Keys that can be set in the YAML are included in the relevant sections. A sample YAML is available in ``/examples/dragon_telemetry/telemetry.yaml.
->>>>>>> develop
 
 Local Database
 -----------------

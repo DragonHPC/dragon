@@ -10,9 +10,9 @@ import os
 
 import dragon
 import multiprocessing as mp
-from dragon.native.machine import System, Node
+from dragon import System, Policy
+from dragon.native.machine import Node
 from dragon.native.process import Process
-from dragon.infrastructure.policy import Policy
 import dragon.native.queue as native
 
 max_msg_size = 1024  # limit to 1KB

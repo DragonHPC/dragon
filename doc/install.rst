@@ -29,7 +29,19 @@ isolated from the rest of your system.
     pip install dragonhpc
 
 After the installation completes, you have everything needed to run Dragon
-multiprocessing programs on a single node. For best performance with multi-node support,
+multiprocessing programs on a single node.
+For single and multi-node GPU detection, ensure that the appropriate GPU drivers and libraries are installed on all nodes.
+By default, Dragon will attempt to detect GPUs using the installed drivers and libraries.
+To manually specify the GPU libraries used by Dragon, you can use the ``dragon-config`` command as follows:
+
+.. code-block:: console
+
+    dragon-config add --cuda-runtime-libname=/usr/lib64/libcudart.so.12
+    dragon-config add --hip-runtime-libname=/usr/lib64/libamdhip64.so.6
+    dragon-config add --ze-runtime-libname=/usr/lib64/libze_intel_gpu.so.1
+
+
+For best performance with multi-node support,
 you should configure the high speed transport to use UCX or OFI as follows (modifying
 the path(s) as appropriate for your system):
 
@@ -42,7 +54,7 @@ the path(s) as appropriate for your system):
     dragon-config add --ofi-runtime-lib=/opt/cray/libfabric/1.22.0/lib64
 
 
-For more info on configuring the transport agent, see :ref:`transport-agent-configuration`.
+For more info on configuring the transport agent, see :ref:`configuring-dragon`.
 
 Extra requirements
 ===================
@@ -109,67 +121,7 @@ This script will:
 After installation, reload your shell or run ``source ~/.bashrc`` (or equivalent) to
 enable completions.
 
-.. _transport-agent-configuration:
 
-Optional Multi-Node Transport Configuration
-===========================================
-
-If you are running on a single node, you can skip this section. Transport-agent
-configuration matters when Dragon needs to communicate across compute nodes.
-
-On multi-node systems it is necessary to configure Dragon to handle off-node
-communication, which Dragon does automatically through a transport agent. If
-running Dragon single-node, no transport agent configuration is required.
-
-Dragon includes two separate transport agents for communication across compute
-nodes. The "TCP transport agent" provides TCP communication between nodes over
-the interconnection network. The TCP transport is the lower performing of the two
-agents, but still useful for many applications.
-
-Dragon also includes a "High Speed Transport Agent (HSTA)", which supports UCX for Infiniband networks and OpenFabrics
-Interface (OFI) for HPE Slingshot. However, Dragon can only use these networks if its environment is properly configured.
-
-To configure the transport agent run `dragon-config` with the appropriate arguments. While Dragon will fall
-back to the TCP agent, if `dragon-config` is not run, an annoying message about configuring the transport agent will be
-displayed.
-
-To configure HSTA, use `dragon-config` to provide an "ofi-runtime-lib" or "ucx-runtime-lib". The input should be a
-library path that contains a `libfabric.so` for OFI or a `libucp.so` for UCX. These libraries are dynamically opened
-by HSTA at runtime.
-
-Some example high-speed transport agent configuration commands are:
-
-.. code-block:: console
-
-    # For UCX communication, provide a library path that contains a libucp.so:
-    dragon-config add --ucx-runtime-lib=/opt/nvidia/hpc_sdk/Linux_x86_64/23.11/comm_libs/12.3/hpcx/hpcx-2.16/ucx/prof/lib
-
-    # For OFI communication, provide a library path that contains a libfabric.so:
-    dragon-config add --ofi-runtime-lib=/opt/cray/libfabric/1.22.0/lib64
-
-As mentioned, if `dragon-config` is not run to tell Dragon where the appropriate libraries exist, Dragon will
-fall back to using the TCP transport agent. You'll know this because a message similar to the following will print:
-
-.. code-block:: console
-
-    By default Dragon looks for a configuration file to determine which transport
-    agent implementation to use. However, no such configuration file was found.
-    Please refer to `dragon-config --help`, DragonHPC documentation, and README.md
-    to determine the best way to configure the transport agent for your
-    compute environment. In the meantime, Dragon will use the TCP transport agent
-    for network communication. To eliminate this message and continue to use
-    the TCP transport agent, run:
-
-        dragon-config add --tcp-runtime=True
-
-If you get tired of seeing this message and plan to only use TCP communication over ethernet, follow the
-directions above and run the `dragon-config` command to silence it with:
-
-.. code-block:: console
-
-    dragon-config add --tcp-runtime=True
-
-For help without referring to this README.md, you can always use `dragon-config --help`.
 
 Running
 =======
@@ -188,6 +140,9 @@ For in-depth directions on running Dragon multi-node, refer to :ref:`multinode`.
 
 Troubleshooting
 ===============
+
+Here are some troubleshooting tips. It might also be useful to consult :ref:`configuring-dragon`
+for additional help in setting up Dragon for maximum performance.
 
 **"ModuleNotFoundError: No module named 'dragon'"**
     Ensure you have run ``pip install dragonhpc`` and that you are using the correct Python
@@ -209,6 +164,13 @@ Troubleshooting
 
         dragon-cleanup
 
+    This also discards the orchestrator files left behind by a distributed dictionary that
+    was not destroyed. Add ``--keep-ddict-files`` to preserve them:
+
+    .. code-block:: console
+
+        dragon-cleanup --keep-ddict-files
+
 What's Next?
 ============
 
@@ -218,3 +180,4 @@ After completing installation:
 2. **Learn core concepts** — Review Pool, Queue, DDict, and more in :ref:`getting-started`.
 3. **Run on multiple nodes** — For HPC deployments, see :ref:`uses/multinode:Running Dragon on Multiple Nodes`.
 4. **Explore your use case** — Visit :ref:`uses` to find tutorials matching your application type.
+5. **Fine tune Dragon** - Consult :ref:`configuring-dragon` for further information about fine-tuning the performance of Dragon.

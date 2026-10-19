@@ -12,6 +12,24 @@ Setup
 2. Ensure that the Dragon infrastructure is installed and configured on both the local and remote systems.
 3. Ensure that the remote python environment has access to the same code and dependencies as the local system. It can be in a different path than where the server was started but must be accessible.
 
+Currently, the HSTA TCP backend does not authenticate the runtime and host identities
+advertised by a peer. Restrict its bootstrap and transport ports to trusted
+participants using allocation network controls or SSH tunnels; do not expose
+them to untrusted networks.
+
+Proxy Communication
+===================
+
+Channels-mesh support enables efficient communication between
+Dragon runtimes on the same cluster. With HSTA, direct high-speed paths can be
+used when network reachability permits, which can improve sustained
+performance. The first communication may include setup latency; if direct
+communication is unavailable, performance depends on the network path.
+
+Create remote-owned channels and processes while the proxy is enabled, and join
+remote processes before leaving the proxy context. Process-management calls for
+objects created in the remote runtime should remain inside a proxy context.
+
 Hello World Example
 ===================
 
@@ -114,7 +132,7 @@ The proxy client code will need to be modified to specify the remote system and 
 
         mp.set_start_method("dragon")
         runtime_sdesc = runtime.lookup(system, runtime_name, 30, publish_dir=publish_dir)
-        proxy = runtime.attach(runtime_sdesc, remote_cwd=remote_working_dir)
+        proxy = runtime.attach(sdesc_str=runtime_sdesc, remote_cwd=remote_working_dir)
 
         print("\n")
 
@@ -217,7 +235,7 @@ In this example, the `my_local_module.py` contains code that is only available o
 
         mp.set_start_method("dragon")
         runtime_sdesc = runtime.lookup(system, runtime_name, 30, publish_dir=publish_dir)
-        proxy = runtime.attach(runtime_sdesc, remote_cwd=publish_dir)
+        proxy = runtime.attach(sdesc_str=runtime_sdesc, remote_cwd=publish_dir)
 
         print("\n")
 

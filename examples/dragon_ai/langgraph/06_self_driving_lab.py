@@ -134,7 +134,8 @@ from langgraph.graph import END, START, StateGraph
 from dragon.ai.langgraph import DragonExecutor
 
 # -- Dragon Batch (schedules the experiment tasks across the allocation) -------
-from dragon.workflows.batch import Batch, TaskNotReadyError
+from dragon import Batch
+from dragon.workflows.batch import TaskNotReadyError
 
 # -- Dragon Inference (on-cluster vLLM behind a queue) ------------------------
 from dragon.ai.inference.config import (
@@ -148,10 +149,12 @@ from dragon.ai.inference.llm_proxy import DragonQueueLLMProxy
 from dragon.native.queue import Queue
 
 # -- Dragon placement ---------------------------------------------------------
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import Node, System
+from dragon import (
+    Policy,
+    System
+)
+from dragon.native.machine import Node
 from dragon.native.process import current as current_process
-
 
 # =============================================================================
 # Lab configuration
@@ -194,7 +197,7 @@ _DDICT_CACHE: dict[bytes, Any] = {}
 def _get_ddict(serialized: bytes) -> Any:
     d = _DDICT_CACHE.get(serialized)
     if d is None:
-        from dragon.data.ddict import DDict
+        from dragon import DDict
         d = DDict.attach(serialized)
         _DDICT_CACHE[serialized] = d
     return d
@@ -499,7 +502,7 @@ def _maybe_build_llm() -> tuple[Any | None, Any | None]:
 # =============================================================================
 
 def main() -> None:
-    from dragon.data.ddict import DDict
+    from dragon import DDict
 
     print(f"[orchestrator] {_where()}")
 

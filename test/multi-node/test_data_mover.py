@@ -3,12 +3,11 @@ import cupy as cp
 import os
 import unittest
 
+from dragon import ProcessGroup, ProcessTemplate, Policy, System
 from dragon.workflows.data_mover import DataMovers, CuPyDataMover, NumPyDataMover
 from dragon.managed_memory import MemoryAlloc
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import ProcessTemplate, Process
-from dragon.infrastructure.policy import Policy
-from dragon.native.machine import System, Node
+from dragon.native.process import Process
+from dragon.native.machine import Node
 
 
 def data_mover_simple_lifecycle(manager_policy=None, policies=None):

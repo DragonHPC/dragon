@@ -6,8 +6,7 @@ import gc
 import cloudpickle
 from uuid import uuid4
 
-from dragon.data.ddict import DDict
-from dragon.workflows.batch import Batch
+from dragon import DDict, Batch
 from pathlib import Path
 from typing import Optional
 
@@ -94,6 +93,15 @@ def signal_start_and_sleep(marker_path: str, value, delay: float):
     with open(marker_path, "w", encoding="utf-8") as marker_file:
         marker_file.write("started\n")
     time.sleep(delay)
+    return value
+
+
+def signal_start_sleep_and_mark_complete(start_marker_path: str, complete_marker_path: str, value, delay: float):
+    with open(start_marker_path, "w", encoding="utf-8") as marker_file:
+        marker_file.write("started\n")
+    time.sleep(delay)
+    with open(complete_marker_path, "w", encoding="utf-8") as marker_file:
+        marker_file.write("complete\n")
     return value
 
 

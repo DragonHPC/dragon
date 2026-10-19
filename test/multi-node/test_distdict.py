@@ -6,18 +6,21 @@ import socket
 import cloudpickle
 import gc
 
+from dragon import (
+    DDict,
+    System,
+    Policy
+)
 import dragon.infrastructure.messages as dmsg
 import dragon.channels as dch
 from dragon.utils import b64encode, b64decode, host_id
-from dragon.data.ddict import DDict
 from dragon.globalservices.node import get_list
 import multiprocessing as mp
 from dragon.rc import DragonError
 from dragon.data.ddict import DDictFullError
 from dragon.native.queue import Queue
-from dragon.native.machine import System, Node
+from dragon.native.machine import  Node
 from dragon.native.process import Process
-from dragon.infrastructure.policy import Policy
 import dragon.managed_memory as dmem
 
 
@@ -432,12 +435,15 @@ class TestDDict(unittest.TestCase):
             manager_d = d.manager(managerID)
             key = "local_manager" + str(managerID)
             manager_d[key] = "val"
+            # manager() copies must detach before d.destroy(), else detach hangs on remote managers
+            manager_d.detach()
             expected_keys.append(key)
 
         # write non-local keys
         for managerID in non_local_managers:
             manager_d = d.manager(managerID)
             manager_d["non_local_manager" + str(managerID)] = "val"
+            manager_d.detach()
 
         self.assertEqual(set(d.local_keys()), set(expected_keys))
 
@@ -454,6 +460,7 @@ class TestDDict(unittest.TestCase):
         for managerID in non_local_managers:
             manager_d = d.manager(managerID)
             manager_d["non_local_manager" + str(managerID)] = "val"
+            manager_d.detach()
 
         local_keys = d.local_keys()
         self.assertEqual(0, len(set(local_keys)))
@@ -477,12 +484,14 @@ class TestDDict(unittest.TestCase):
             key = "local_manager" + str(managerID)
             val = "local_val_" + str(managerID)
             manager_d[key] = val
+            manager_d.detach()
             expected_values.append(val)
 
         # write non-local keys
         for managerID in non_local_managers:
             manager_d = d.manager(managerID)
             manager_d["non_local_manager" + str(managerID)] = "non_local_val_" + str(managerID)
+            manager_d.detach()
 
         local_values = d.local_values()
         self.assertEqual(len(expected_values), len(local_values))
@@ -505,6 +514,7 @@ class TestDDict(unittest.TestCase):
         for managerID in non_local_managers:
             manager_d = d.manager(managerID)
             manager_d["non_local_manager" + str(managerID)] = "non_local_val"
+            manager_d.detach()
 
         local_values = d.local_values()
         self.assertEqual(0, len(local_values))
@@ -528,12 +538,14 @@ class TestDDict(unittest.TestCase):
             key = "local_manager" + str(managerID)
             val = "local_val_" + str(managerID)
             manager_d[key] = val
+            manager_d.detach()
             expected_local_d[key] = val
 
         # write non-local keys
         for managerID in non_local_managers:
             manager_d = d.manager(managerID)
             manager_d["non_local_manager" + str(managerID)] = "non_local_val_" + str(managerID)
+            manager_d.detach()
 
         local_items = d.local_items()
         self.assertEqual(len(expected_local_d), len(local_items))
@@ -558,109 +570,7 @@ class TestDDict(unittest.TestCase):
         for managerID in non_local_managers:
             manager_d = d.manager(managerID)
             manager_d["non_local_manager" + str(managerID)] = "non_local_val"
-
-        local_items = d.local_items()
-        self.assertEqual(0, len(local_items))
-
-        d.destroy()
-
-    @unittest.skipIf(bool(os.getenv("DRAGON_PROXY_ENABLED", False)), "Ill-defined behavior in proxy mode")
-    def test_local_values(self):
-        d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size, trace=True)
-
-        all_managers = set([i for i in range(self._managers_per_node * self._num_nodes)])
-
-        local_managers = set(d.local_managers)
-        expected_values = []
-
-        non_local_managers = all_managers - local_managers
-
-        # write local keys
-        for managerID in local_managers:
-            manager_d = d.manager(managerID)
-            key = "local_manager" + str(managerID)
-            val = "local_val_" + str(managerID)
-            manager_d[key] = val
-            expected_values.append(val)
-
-        # write non-local keys
-        for managerID in non_local_managers:
-            manager_d = d.manager(managerID)
-            manager_d["non_local_manager" + str(managerID)] = "non_local_val_" + str(managerID)
-
-        local_values = d.local_values()
-        self.assertEqual(len(expected_values), len(local_values))
-        for v in local_values:
-            self.assertIn(v, expected_values)
-            expected_values.remove(v)
-
-        self.assertEqual(0, len(expected_values))
-
-        d.destroy()
-
-    def test_no_local_values(self):
-        d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size, trace=True)
-
-        all_managers = set([i for i in range(self._managers_per_node * self._num_nodes)])
-        local_managers = set(d.local_managers)
-        non_local_managers = all_managers - local_managers
-
-        # write non-local key value
-        for managerID in non_local_managers:
-            manager_d = d.manager(managerID)
-            manager_d["non_local_manager" + str(managerID)] = "non_local_val"
-
-        local_values = d.local_values()
-        self.assertEqual(0, len(local_values))
-
-        d.destroy()
-
-    def test_local_items(self):
-        d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size, trace=True)
-
-        all_managers = set([i for i in range(self._managers_per_node * self._num_nodes)])
-
-        local_managers = set(d.local_managers)
-        expected_local_d = {}
-
-        non_local_managers = all_managers - local_managers
-
-        # write local keys
-        for managerID in local_managers:
-            manager_d = d.manager(managerID)
-            key = "local_manager" + str(managerID)
-            val = "local_val_" + str(managerID)
-            manager_d[key] = val
-            expected_local_d[key] = val
-
-        # write non-local keys
-        for managerID in non_local_managers:
-            manager_d = d.manager(managerID)
-            manager_d["non_local_manager" + str(managerID)] = "non_local_val_" + str(managerID)
-
-        local_items = d.local_items()
-        self.assertEqual(len(expected_local_d), len(local_items))
-        for item in local_items:
-            k, v = item
-            self.assertIn(k, expected_local_d)
-            self.assertEqual(expected_local_d[k], v)
-            expected_local_d.pop(k)
-
-        self.assertEqual(0, len(expected_local_d))
-
-        d.destroy()
-
-    def test_no_local_items(self):
-        d = DDict(self._managers_per_node, self._num_nodes, self._total_mem_size, trace=True)
-
-        all_managers = set([i for i in range(self._managers_per_node * self._num_nodes)])
-        local_managers = set(d.local_managers)
-        non_local_managers = all_managers - local_managers
-
-        # write non-local key value
-        for managerID in non_local_managers:
-            manager_d = d.manager(managerID)
-            manager_d["non_local_manager" + str(managerID)] = "non_local_val"
+            manager_d.detach()
 
         local_items = d.local_items()
         self.assertEqual(0, len(local_items))

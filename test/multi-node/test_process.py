@@ -12,10 +12,10 @@ import os
 
 import dragon
 import multiprocessing as mp
+from dragon import current, System, Policy
 from dragon.globalservices.process import query, multi_join, this_process
-from dragon.native.machine import cpu_count, current, System, Node
+from dragon.native.machine import cpu_count, Node
 from dragon.native.process import Process
-from dragon.infrastructure.policy import Policy
 
 
 def inception(nnew: int, q: mp.Queue, ev1: mp.Event, ev2: mp.Event, sem: mp.Semaphore) -> None:

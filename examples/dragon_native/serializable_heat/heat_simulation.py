@@ -29,7 +29,7 @@ import time
 import numpy as np
 
 import dragon
-from dragon.data.ddict.ddict import DDict
+from dragon import DDict
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
 from dragon.native.barrier import Barrier
 from dragon.native.process import Popen

@@ -4,8 +4,10 @@ LLM Inference Engine module for Dragon Inference Pipeline.
 This module handles the actual LLM inference using vLLM,
 separated from preprocessing, batching, and guardrails logic.
 """
+
 import os
-os.environ['DRAGON_PATCH_MP'] = ''
+
+os.environ["DRAGON_PATCH_MP"] = ""
 import time
 import logging
 from dataclasses import dataclass
@@ -19,6 +21,7 @@ log = logging.getLogger(__name__)
 # ====================================================================== #
 #  Streaming Support                                                     #
 # ====================================================================== #
+
 
 @dataclass
 class StreamChunk:
@@ -47,6 +50,7 @@ class StreamChunk:
     :param metrics: Performance metrics. Only populated on the final chunk.
     :type metrics: dict | None
     """
+
     request_index: int
     delta_text: str
     accumulated_text: str
@@ -62,6 +66,7 @@ class StreamDoneSentinel:
     Put this on the response queue after the final ``StreamChunk`` to
     signal that no more chunks will be sent for this request.
     """
+
     __slots__ = ()
 
     def __repr__(self) -> str:
@@ -71,9 +76,7 @@ class StreamDoneSentinel:
 STREAM_DONE_SENTINEL = StreamDoneSentinel()
 
 
-def find_free_port(
-    device_index: int = 0, base_port=20000, port_range_size=10000
-) -> str:
+def find_free_port(device_index: int = 0, base_port=20000, port_range_size=10000) -> str:
     """Return an available TCP port using the worker's device index as seed.
 
     The device index seeds a deterministic random starting point within the
@@ -110,6 +113,7 @@ def find_free_port(
             sock.close()
     raise IOError("no free ports")
 
+
 def chat_template_formatter(system_prompt, user_prompt, chat_history, model_name):
     """Format the prompt using the model's chat template via its tokenizer.
 
@@ -140,9 +144,7 @@ def chat_template_formatter(system_prompt, user_prompt, chat_history, model_name
         messages.extend(chat_history)
     messages.append({"role": "user", "content": user_prompt})
 
-    formatted_prompt = tokenizer.apply_chat_template(
-        messages, tokenize=False, add_generation_prompt=True
-    )
+    formatted_prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     return formatted_prompt
 
 
@@ -262,7 +264,7 @@ class LLMInferenceEngine:
         # Choose engine based on use_async_streaming config:
         # - AsyncLLM (V1 engine): For streaming workloads
         # - Sync LLM: For batch-only workloads (no streaming)
-        use_async = getattr(self.model_config, 'use_async_streaming', False)
+        use_async = getattr(self.model_config, "use_async_streaming", False)
 
         if use_async:
             # Initialize AsyncLLM for streaming-capable workloads
@@ -278,21 +280,17 @@ class LLMInferenceEngine:
                 )
             except ImportError as e:
                 raise RuntimeError(
-                    f"use_async_streaming=True requires vLLM V1 engine (AsyncLLM). "
-                    f"Import failed: {e}"
+                    f"use_async_streaming=True requires vLLM V1 engine (AsyncLLM). " f"Import failed: {e}"
                 )
         else:
             # Initialize sync LLM for batch-only workloads
             from vllm import LLM
-            from vllm.engine.arg_utils import EngineArgs
-            import dataclasses
 
-            engine_args = EngineArgs(**engine_kwargs)
-            self.llm = LLM(**dataclasses.asdict(engine_args))
-            log.info(
-                f"LLM Engine initialized on {self.hostname} "
-                f"with devices {self.devices}"
-            )
+            # LLM() builds EngineArgs itself; an asdict() round-trip flattens
+            # nested vLLM config dataclasses and re-injects their unset
+            # sentinels, which vLLM 0.19 rejects during validation.
+            self.llm = LLM(**engine_kwargs)
+            log.info(f"LLM Engine initialized on {self.hostname} " f"with devices {self.devices}")
 
         # ----- Derive stop token IDs from model config -----
         # Read eos_token_id directly from generation_config.json / config.json.
@@ -314,8 +312,7 @@ class LLMInferenceEngine:
                     break
 
         if not stop_token_ids:
-            log.warning("No eos_token_id found in model config files. "
-                        "Generation may not terminate properly.")
+            log.warning("No eos_token_id found in model config files. " "Generation may not terminate properly.")
 
         # Configure sampling parameters after engine init.
         self.sampling_params = SamplingParams(
@@ -440,8 +437,7 @@ class LLMInferenceEngine:
         """
         if self.async_engine is None:
             raise RuntimeError(
-                "generate_single requires AsyncLLM engine. "
-                "Set 'use_async_streaming: true' in config.yaml."
+                "generate_single requires AsyncLLM engine. " "Set 'use_async_streaming: true' in config.yaml."
             )
 
         # Collect all chunks and return final result
@@ -517,6 +513,7 @@ class LLMInferenceEngine:
         if vllm_version >= version.parse("0.12.0"):
             try:
                 from vllm.sampling_params import RequestOutputKind
+
                 params.output_kind = RequestOutputKind.DELTA
                 use_delta_mode = True
             except (ImportError, AttributeError):
@@ -525,9 +522,11 @@ class LLMInferenceEngine:
         if json_schema is not None:
             if vllm_version >= version.parse("0.12.0"):
                 from vllm.sampling_params import StructuredOutputsParams
+
                 params.structured_outputs = StructuredOutputsParams(json=json_schema)
             else:
                 from vllm.sampling_params import GuidedDecodingParams
+
                 params.guided_decoding = GuidedDecodingParams(json=json_schema)
 
         request_id = str(uuid.uuid4())
@@ -554,10 +553,10 @@ class LLMInferenceEngine:
                         else:
                             # Full text mode: need to compute delta
                             current_text = completion.text
-                            delta = current_text[len(accumulated_text):]
+                            delta = current_text[len(accumulated_text) :]
                             accumulated_text = current_text
 
-                        if hasattr(completion, 'token_ids') and completion.token_ids:
+                        if hasattr(completion, "token_ids") and completion.token_ids:
                             if use_delta_mode:
                                 # DELTA mode: token_ids holds only the new
                                 # tokens for this chunk, so accumulate them.
@@ -586,8 +585,14 @@ class LLMInferenceEngine:
                                 "inference_time": round(inference_time, 2),
                                 "time_to_first_token": round(ttft, 4) if ttft else 0,
                                 "requests_per_second": round(1 / inference_time, 2) if inference_time > 0 else 0,
-                                "total_tokens_per_second": round((prompt_tokens + total_tokens) / inference_time, 2) if inference_time > 0 else 0,
-                                "output_tokens_per_second": round(total_tokens / inference_time, 2) if inference_time > 0 else 0,
+                                "total_tokens_per_second": (
+                                    round((prompt_tokens + total_tokens) / inference_time, 2)
+                                    if inference_time > 0
+                                    else 0
+                                ),
+                                "output_tokens_per_second": (
+                                    round(total_tokens / inference_time, 2) if inference_time > 0 else 0
+                                ),
                                 "total_prompt_tokens": prompt_tokens,
                                 "total_output_tokens": total_tokens,
                                 "total_tokens": prompt_tokens + total_tokens,
@@ -662,9 +667,7 @@ class LLMInferenceEngine:
         total_output_tokens = 0
 
         for output in outputs:
-            total_prompt_tokens += (
-                len(output.prompt_token_ids) if output.prompt_token_ids else 0
-            )
+            total_prompt_tokens += len(output.prompt_token_ids) if output.prompt_token_ids else 0
             total_output_tokens += sum(len(o.token_ids) for o in output.outputs if o)
 
         total_tokens = total_prompt_tokens + total_output_tokens
@@ -729,10 +732,7 @@ class LLMInferenceEngine:
         gc.collect()
 
         with suppress(Exception):
-            if (
-                torch.distributed.is_available()
-                and torch.distributed.is_initialized()
-            ):
+            if torch.distributed.is_available() and torch.distributed.is_initialized():
                 torch.distributed.destroy_process_group()
 
         if torch.cuda.is_available():

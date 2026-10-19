@@ -61,7 +61,7 @@ obtained via `salloc`_ or `sbatch`_ (Slurm) or `qsub` (PBS+Pals) is required, eg
 .. code-block:: bash
 
     $ salloc --nodes=2
-    $ dragon p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon p2p_lat.py --iterations 100 --lg_max_message_size 12
 
 In the event that Dragon is run outside of an active WLM allocation an exception is
 raised, and the program will not execute:
@@ -69,7 +69,7 @@ raised, and the program will not execute:
 .. code-block:: bash
     :caption: Dragon exception when no WLM allocation exists:
 
-    $ dragon p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon p2p_lat.py --iterations 100 --lg_max_message_size 12
 
     RuntimeError: Executing in a Slurm environment, but with no job allocation.
     Resubmit as part of an 'salloc' or 'sbatch' execution
@@ -84,7 +84,7 @@ they may do the following:
 .. code-block:: bash
 
     $ salloc --nodes=4
-    $ dragon --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12
 
 .. _using_ssh_launch:
 
@@ -312,10 +312,10 @@ it can be changed with the `--port` argument to `dragon`. If not specific,
 .. code-block:: bash
 
     # Port 7575 used
-    $ dragon --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12
 
     # Port 7000 used
-    $ dragon --port 7000 --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon --port 7000 --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12
 
 The TCP transport agent also favors known Cray high-speed interconnect networks by default. This is accomplished via
 regex specification of the network's named prefix matchin `ipogif` (Aries) or `hsn` (Slingshot): `r'^(hsn|ipogif)\d+$'`.
@@ -323,7 +323,7 @@ To change, for example, to match only `hsn` networks, the `--network-prefix` arg
 
 .. code-block:: bash
 
-    $ dragon --network-prefix hsn --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon --network-prefix hsn --nodes 2 p2p_lat.py --iterations 100 --lg_max_message_size 12
 
 
 **KNOWN ISSUE**: If a `--network-prefix` argument is given that doesn't actually exist, the Dragon runtime will enter
@@ -338,7 +338,7 @@ those in `Python's logging module`_. As some examples:
 .. code-block:: bash
 
     # No runtime logging:
-    $ dragon p2p_lat.py --iterations 100 --lg_max_message_size 12 --dragon
+    $ dragon p2p_lat.py --iterations 100 --lg_max_message_size 12
 
     # log messages of ERROR and CRITICAL level will be output to both stderr and dragon log
     # file in pwd. No logging will be output to runtime actor-specific files

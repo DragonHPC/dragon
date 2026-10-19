@@ -1,6 +1,7 @@
 #include "_channels.h"
 #include "err.h"
 #include "_utils.h"
+#include <arpa/inet.h>
 #include <stdlib.h>
 #include <stdatomic.h>
 #include <time.h>
@@ -103,36 +104,40 @@ _map_gateway_message_header(dragonGatewayMessage_t * gmsg)
 
     gmsg->_header.msg_kind = (dragonGatewayMessageKind_t *)&gulptr[0];
     gmsg->_header.target_hostid = &gulptr[1];
-    gmsg->_header.has_deadline = &gulptr[2];
-    gmsg->_header.deadline_sec = &gulptr[3];
-    gmsg->_header.deadline_nsec = &gulptr[4];
-    gmsg->_header.client_cmplt = (atomic_int_fast64_t *)&gulptr[5];
-    gmsg->_header.transport_cmplt_timestamp = &gulptr[6];
-    gmsg->_header.client_pid = &gulptr[7];
-    gmsg->_header.client_puid = &gulptr[8];
-    gmsg->_header.debug = &gulptr[9];
-    gmsg->_header.cmplt_bcast_offset = &gulptr[10];
-    gmsg->_header.target_ch_ser_offset = &gulptr[11];
-    gmsg->_header.target_ch_ser_nbytes = &gulptr[12];
-    gmsg->_header.send_payload_cleanup_required = &gulptr[13];
-    gmsg->_header.send_payload_buffered = &gulptr[14];
-    gmsg->_header.send_payload_offset = &gulptr[15];
-    gmsg->_header.send_payload_nbytes = &gulptr[16];
-    gmsg->_header.send_clientid = &gulptr[17];
-    gmsg->_header.send_hints = &gulptr[18];
-    gmsg->_header.send_return_mode = &gulptr[19];
-    gmsg->_header.has_dest_mem_descr = &gulptr[20];
-    gmsg->_header.dest_mem_descr_ser_offset = &gulptr[21];
-    gmsg->_header.dest_mem_descr_ser_nbytes = &gulptr[22];
-    gmsg->_header.op_rc = &gulptr[23];
-    gmsg->_header.event_mask = &gulptr[24];
-    gmsg->_header.sendhid = (dragonUUID *)&gulptr[25];
+    gmsg->_header.target_rt_uid = (dragonRT_UID_t *)&gulptr[2];
+    gmsg->_header.target_rt_bootstrap_ip_addr = &gulptr[3];
+    gmsg->_header.target_rt_bootstrap_port = &gulptr[4];
+    gmsg->_header.has_deadline = &gulptr[5];
+    gmsg->_header.deadline_sec = &gulptr[6];
+    gmsg->_header.deadline_nsec = &gulptr[7];
+    gmsg->_header.client_cmplt = (atomic_int_fast64_t *)&gulptr[8];
+    gmsg->_header.transport_cmplt_timestamp = &gulptr[9];
+    gmsg->_header.client_pid = &gulptr[10];
+    gmsg->_header.client_puid = &gulptr[11];
+    gmsg->_header.debug = &gulptr[12];
+    gmsg->_header.cmplt_bcast_offset = &gulptr[13];
+    gmsg->_header.target_ch_ser_offset = &gulptr[14];
+    gmsg->_header.target_ch_ser_nbytes = &gulptr[15];
+    gmsg->_header.send_payload_cleanup_required = &gulptr[16];
+    gmsg->_header.send_payload_buffered = &gulptr[17];
+    gmsg->_header.send_payload_offset = &gulptr[18];
+    gmsg->_header.send_payload_nbytes = &gulptr[19];
+    gmsg->_header.send_clientid = &gulptr[20];
+    gmsg->_header.send_hints = &gulptr[21];
+    gmsg->_header.send_return_mode = &gulptr[22];
+    gmsg->_header.has_dest_mem_descr = &gulptr[23];
+    gmsg->_header.dest_mem_descr_ser_offset = &gulptr[24];
+    gmsg->_header.dest_mem_descr_ser_nbytes = &gulptr[25];
+    gmsg->_header.op_rc = &gulptr[26];
+    gmsg->_header.event_mask = &gulptr[27];
+    gmsg->_header.sendhid = (dragonUUID *)&gulptr[28];
 
     no_err_return(DRAGON_SUCCESS);
 }
 
 static dragonError_t
-_assign_gateway_message_header_send(dragonGatewayMessage_t * gmsg, dragonULInt target_hostid,
+_assign_gateway_message_header_send(dragonGatewayMessage_t * gmsg, dragonULInt target_hostid, dragonRT_UID_t target_rt_uid,
+                                    dragonUInt target_rt_bootstrap_ip_addr, dragonULInt target_rt_bootstrap_port,
                                     const struct timespec* deadline, size_t ch_ser_nbytes, dragonULInt payload_cleanup_required,
                                     size_t payload_nbytes, size_t payload_ser_nbytes, size_t dest_mem_ser_nbytes,
                                     dragonChannelSendReturnWhen_t return_mode, const dragonUUID sendhid,
@@ -140,6 +145,9 @@ _assign_gateway_message_header_send(dragonGatewayMessage_t * gmsg, dragonULInt t
 {
     *(gmsg->_header.msg_kind) = DRAGON_GATEWAY_MESSAGE_SEND;
     *(gmsg->_header.target_hostid) = target_hostid;
+    *(gmsg->_header.target_rt_uid) = target_rt_uid;
+    *(gmsg->_header.target_rt_bootstrap_ip_addr) = (dragonULInt) target_rt_bootstrap_ip_addr;
+    *(gmsg->_header.target_rt_bootstrap_port) = target_rt_bootstrap_port;
 
     if (deadline != NULL) {
         *(gmsg->_header.has_deadline) = 1UL;
@@ -206,13 +214,17 @@ _assign_gateway_message_header_send(dragonGatewayMessage_t * gmsg, dragonULInt t
 }
 
 static dragonError_t
-_assign_gateway_message_header_get(dragonGatewayMessage_t * gmsg, dragonULInt target_hostid,
+_assign_gateway_message_header_get(dragonGatewayMessage_t * gmsg, dragonULInt target_hostid, dragonRT_UID_t target_rt_uid,
+                                    dragonUInt target_rt_bootstrap_ip_addr, dragonULInt target_rt_bootstrap_port,
                                     const struct timespec* deadline, size_t ch_ser_nbytes)
 {
     dragonError_t err;
 
     *(gmsg->_header.msg_kind) = DRAGON_GATEWAY_MESSAGE_GET;
     *(gmsg->_header.target_hostid) = target_hostid;
+    *(gmsg->_header.target_rt_uid) = target_rt_uid;
+    *(gmsg->_header.target_rt_bootstrap_ip_addr) = (dragonULInt) target_rt_bootstrap_ip_addr;
+    *(gmsg->_header.target_rt_bootstrap_port) = target_rt_bootstrap_port;
 
     if (deadline != NULL) {
         *(gmsg->_header.has_deadline) = 1UL;
@@ -245,13 +257,17 @@ _assign_gateway_message_header_get(dragonGatewayMessage_t * gmsg, dragonULInt ta
 }
 
 static dragonError_t
-_assign_gateway_message_header_event(dragonGatewayMessage_t * gmsg, dragonULInt target_hostid,
+_assign_gateway_message_header_event(dragonGatewayMessage_t * gmsg, dragonULInt target_hostid, dragonRT_UID_t target_rt_uid,
+                                    dragonUInt target_rt_bootstrap_ip_addr, dragonULInt target_rt_bootstrap_port,
                                     const struct timespec* deadline, size_t ch_ser_nbytes)
 {
     dragonError_t err;
 
     *(gmsg->_header.msg_kind) = DRAGON_GATEWAY_MESSAGE_EVENT;
     *(gmsg->_header.target_hostid) = target_hostid;
+    *(gmsg->_header.target_rt_uid) = target_rt_uid;
+    *(gmsg->_header.target_rt_bootstrap_ip_addr) = (dragonULInt) target_rt_bootstrap_ip_addr;
+    *(gmsg->_header.target_rt_bootstrap_port) = target_rt_bootstrap_port;
 
     if (deadline != NULL) {
         *(gmsg->_header.has_deadline) = 1UL;
@@ -286,7 +302,7 @@ _assign_gateway_message_header_event(dragonGatewayMessage_t * gmsg, dragonULInt 
 static dragonError_t
 _encode_gateway_message_objects(dragonGatewayMessage_t * gmsg, dragonChannelSerial_t * ch_ser,
                                 dragonMemoryDescr_t * payload_mem_descr, dragonMemoryDescr_t * dest_mem_descr,
-                                short events)
+                                const bool dest_mem_descr_inited, short events)
 {
     void * gptr = gmsg->_obj_ptr;
 
@@ -375,7 +391,7 @@ _encode_gateway_message_objects(dragonGatewayMessage_t * gmsg, dragonChannelSeri
         *(gmsg->_header.send_payload_nbytes) = 0;
     }
 
-    if (dest_mem_descr != NULL) {
+    if (dest_mem_descr != NULL && dest_mem_descr_inited) {
 
         obj_ptr = gptr + *(gmsg->_header.dest_mem_descr_ser_offset);
 
@@ -410,6 +426,9 @@ _gateway_message_from_header(dragonGatewayMessage_t * gmsg)
 
     gmsg->msg_kind = *(gmsg->_header.msg_kind);
     gmsg->target_hostid = *(gmsg->_header.target_hostid);
+    gmsg->target_rt_uid = *(gmsg->_header.target_rt_uid);
+    gmsg->target_rt_bootstrap_ip_addr = (dragonUInt) *(gmsg->_header.target_rt_bootstrap_ip_addr);
+    gmsg->target_rt_bootstrap_port = *(gmsg->_header.target_rt_bootstrap_port);
 
     gmsg->target_ch_ser.len = *(gmsg->_header.target_ch_ser_nbytes);
     gmsg->target_ch_ser.data = gptr + *(gmsg->_header.target_ch_ser_offset);
@@ -476,7 +495,7 @@ _gateway_message_from_header(dragonGatewayMessage_t * gmsg)
 
         }
 
-        err = dragon_channel_message_init(&gmsg->send_payload_message, &payload_mem_descr, &mattr);
+        err = dragon_channel_message_init_move(&gmsg->send_payload_message, &payload_mem_descr, &mattr);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Failed to construct message structure for payload.");
 
@@ -609,6 +628,56 @@ dragon_channel_message_attr_destroy(dragonMessageAttr_t * attr)
 }
 
 /**
+ * @brief Initialize a new message for transfer through Channels with an inplace memory descriptor
+ *
+ * Create a new Message that includes an existing Managed Memory descriptor.
+ * The caller supplied descriptor is not copied and is not freed when the message
+ * is destroyed, so its storage must outlive the message. This is intended for
+ * receiving messages only. Use dragon_channel_message_init when sending.
+ *
+ * @param msg is a pointer to the dragonMessage structure to update.
+ *
+ * @param mem_descr is a pointer to a Managed Memory descriptor to use or NULL.
+ *
+ * @param mattr is a pointer to Message attributes for the new Message or NULL to use default values.
+ *
+ * @param is_inited indicates the provided memory descriptor has a valid memory reference in it.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_message_init_inplace(dragonMessage_t * msg, dragonMemoryDescr_t * mem_descr, const dragonMessageAttr_t * mattr, bool is_inited)
+{
+    if (msg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "invalid message");
+
+    dragonError_t err = dragon_channel_message_attr_init(&msg->_attr);
+    if (err != DRAGON_SUCCESS)
+        append_err_return(err, "could not initialize message attributes.");
+    if (mattr != NULL) {
+        err = _validate_and_copy_msg_attr(mattr, &msg->_attr);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "message attributes are invalid.");
+    }
+
+    /* if they gave NULL for the descriptor, we're building up an empty message container */
+    if (mem_descr == NULL) {
+        /* Any descriptor supplied later, by receiving a message for instance, is owned
+           by the message and released when the message is destroyed. */
+        msg->_mem_descr = NULL;
+        msg->_mem_descr_provided = false;
+        msg->_mem_descr_inited = false;
+        no_err_return(DRAGON_SUCCESS);
+    }
+
+    msg->_mem_descr = mem_descr;
+    msg->_mem_descr_provided = true;
+    msg->_mem_descr_inited = is_inited;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
  * @brief Initialize a new message for transfer through Channels.
  *
  * Create a new Message that either wraps up an existing Managed Memory descriptor or is left empty so it can be
@@ -625,42 +694,91 @@ dragon_channel_message_attr_destroy(dragonMessageAttr_t * attr)
 dragonError_t
 dragon_channel_message_init(dragonMessage_t * msg, dragonMemoryDescr_t * mem_descr, const dragonMessageAttr_t * mattr)
 {
+    dragonMemoryDescr_t* msg_mem_descr = NULL;
+    dragonError_t err;
+    bool is_inited = false;
+
     if (msg == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "invalid message");
+
+    if (mem_descr != NULL) {
+        /* attempt to resolve the memory descriptor to a pointer locally */
+        void * ptr;
+        err = dragon_memory_get_pointer(mem_descr, &ptr);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "invalid memory descriptor");
+
+        msg_mem_descr = malloc(sizeof(dragonMemoryDescr_t));
+        if (msg_mem_descr == NULL)
+            err_return(DRAGON_INTERNAL_MALLOC_FAIL, "failed to allocate memory for new memory descriptor");
+
+        err = dragon_memory_descr_clone(msg_mem_descr, mem_descr, 0UL, NULL);
+        if (err != DRAGON_SUCCESS) {
+            free(msg_mem_descr);
+            append_err_return(err, "failed to clone memory descriptor for message");
+        }
+
+        is_inited = true;
+    }
+
+    err = dragon_channel_message_init_inplace(msg, msg_mem_descr, mattr, is_inited);
+    if (err != DRAGON_SUCCESS) {
+        if (msg_mem_descr != NULL)
+            free(msg_mem_descr);
+        append_err_return(err, "failed to init message");
+    }
+
+    /* the message owns the cloned descriptor and frees it when destroyed */
+    msg->_mem_descr_provided = false;
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+/**
+ * @brief Initialize a message by taking ownership of a memory descriptor.
+ *
+ * This is the same as dragon_channel_message_init except the given descriptor is
+ * moved into the message instead of being cloned, which avoids the clone and the
+ * matching dragon_memory_descr_destroy. The caller must own mem_descr and must not
+ * use it after this call. It is invalidated here to catch any such use.
+ *
+ * @param msg is a pointer to the dragonMessage structure to update.
+ *
+ * @param mem_descr is a pointer to the Managed Memory descriptor to move. It cannot be NULL.
+ *
+ * @param mattr is a pointer to Message attributes for the new Message or NULL to use default values.
+ *
+ * @return DRAGON_SUCCESS or a return code to indicate what problem occurred.
+ */
+dragonError_t
+dragon_channel_message_init_move(dragonMessage_t * msg, dragonMemoryDescr_t * mem_descr, const dragonMessageAttr_t * mattr)
+{
+    if (msg == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "invalid message");
+
+    if (mem_descr == NULL)
+        err_return(DRAGON_INVALID_ARGUMENT, "invalid memory descriptor");
 
     dragonError_t err = dragon_channel_message_attr_init(&msg->_attr);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "could not initialize message attributes.");
+
     if (mattr != NULL) {
         err = _validate_and_copy_msg_attr(mattr, &msg->_attr);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "message attributes are invalid.");
     }
 
-    /* if they gave NULL for the descriptor, we're building up an empty message container */
-    if (mem_descr == NULL) {
-
-        // nothing special to do for now
-        msg->_mem_descr = NULL;
-        no_err_return(DRAGON_SUCCESS);
-
-    }
-
-    /* attempt to resolve the memory descriptor to a pointer locally */
-    void * ptr;
-    err = dragon_memory_get_pointer(mem_descr, &ptr);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "invalid memory descriptor");
-
     msg->_mem_descr = malloc(sizeof(dragonMemoryDescr_t));
     if (msg->_mem_descr == NULL)
         err_return(DRAGON_INTERNAL_MALLOC_FAIL, "failed to allocate memory for new memory descriptor");
 
-    err = dragon_memory_descr_clone(msg->_mem_descr, mem_descr, 0UL, NULL);
-    if (err != DRAGON_SUCCESS) {
-        free(msg->_mem_descr);
-        append_err_return(err, "failed to clone memory descriptor for message");
-    }
+    *(msg->_mem_descr) = *mem_descr;
+    mem_descr->_idx = 0UL;
+
+    /* the message owns the moved descriptor and frees it when destroyed */
+    msg->_mem_descr_provided = false;
+    msg->_mem_descr_inited = false;
 
     no_err_return(DRAGON_SUCCESS);
 }
@@ -690,10 +808,21 @@ dragon_channel_message_destroy(dragonMessage_t * msg, const _Bool free_mem_descr
         dragonError_t err = dragon_memory_free(msg->_mem_descr);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "cannot release message buffer memory back to pool");
+
+    } else if (msg->_mem_descr != NULL && msg->_mem_descr->_idx != 0UL && !msg->_mem_descr_provided) {
+
+        /* The message owns its memory descriptor, so its process local resources are
+           released here. The allocation is left alone since it was not freed. An
+           _idx of zero means it was already released, which happens when the send
+           transferred ownership of the allocation. */
+        dragonError_t err = dragon_memory_descr_destroy(msg->_mem_descr);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "cannot release the message's memory descriptor");
     }
 
     if (msg->_mem_descr != NULL) {
-        free(msg->_mem_descr);
+        if (!msg->_mem_descr_provided)
+            free(msg->_mem_descr);
         msg->_mem_descr = NULL;
     }
 
@@ -916,15 +1045,30 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
         // return_mode = DRAGON_CHANNEL_SEND_RETURN_WHEN_DEPOSITED;
     }
 
+    /* Channels mesh routing metadata for the gateway message header. Beyond the
+       target host id, the transport agent needs to know which runtime owns the
+       target channel (target_rt_uid, taken from the channel's _rt_idx) and how
+       to reach that runtime's transport ingress (bootstrap ip/port, resolved
+       from DRAGON_RT_UID__<rt>_BOOTSTRAP_ADDR). With no target channel the
+       message is a transport-agent update, so these default to the local
+       runtime. */
     dragonULInt target_hostid;
+    dragonRT_UID_t target_rt_uid;
+    dragonUInt target_rt_bootstrap_ip_addr;
+    dragonULInt target_rt_bootstrap_port;
     if (target_ch != NULL) {
         err = dragon_channel_get_hostid(target_ch, &target_hostid);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Failed to obtain hostid for target channel.");
+        target_rt_uid = target_ch->_rt_idx;
+        dragon_channel_runtime_bootstrap_addr(target_rt_uid, &target_rt_bootstrap_ip_addr, &target_rt_bootstrap_port);
     }
     else {
         // target_hostid isn't used when updating the transport agent
         target_hostid = 0;
+        target_rt_uid = dragon_get_local_rt_uid();
+        target_rt_bootstrap_ip_addr = 0U;
+        target_rt_bootstrap_port = 0UL;
     }
 
     if (dest_mem_descr != NULL) {
@@ -1021,7 +1165,7 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
         goto gwmsg_alloc_fail;
     }
 
-    err = _assign_gateway_message_header_send(gmsg, target_hostid, deadline, target_ch_ser.len, cleanup_payload_required,
+    err = _assign_gateway_message_header_send(gmsg, target_hostid, target_rt_uid, target_rt_bootstrap_ip_addr, target_rt_bootstrap_port, deadline, target_ch_ser.len, cleanup_payload_required,
                                               msg_nbytes, msg_ser_nbytes, dest_mem_ser_nbytes, return_mode,
                                               send_attr->sendhid, mattr.clientid, mattr.hints, send_attr->debug);
 
@@ -1030,7 +1174,7 @@ dragon_channel_gatewaymessage_send_create(dragonMemoryPoolDescr_t * pool_descr, 
         goto gwmsg_alloc_fail;
     }
 
-    err = _encode_gateway_message_objects(gmsg, &target_ch_ser, &msg_mem, dest_mem_descr, DRAGON_CHANNEL_POLLNOTHING);
+    err = _encode_gateway_message_objects(gmsg, &target_ch_ser, &msg_mem, dest_mem_descr, dest_mem_descr != NULL, DRAGON_CHANNEL_POLLNOTHING);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("Failed to instatiate objects for gateway message.");
         goto gwmsg_alloc_fail;
@@ -1069,6 +1213,9 @@ gwmsg_serial_fail:
  * decide where to place the message.  The final destination of the message is given by the call to
  * dragon_channel_gatewaymessage_client_get_cmplt().
  *
+ * @param dest_mem_descr_inited is set to true when the provided memory descriptor contains a valid
+ * memory reference to get used as the landing pad for a remote get operation.
+ *
  * @param target_ch is a pointer to a descriptor for the remote target Channel.
  *
  * @param deadline is a pointer to a struct indicating when the actual send operation must finish by as processed by
@@ -1081,6 +1228,7 @@ gwmsg_serial_fail:
  */
 dragonError_t
 dragon_channel_gatewaymessage_get_create(dragonMemoryPoolDescr_t * pool_descr, dragonMemoryDescr_t * dest_mem_descr,
+                                         const bool dest_mem_descr_inited,
                                          const dragonChannelDescr_t * target_ch,
                                          const timespec_t * deadline,
                                          dragonGatewayMessage_t * gmsg)
@@ -1097,12 +1245,17 @@ dragon_channel_gatewaymessage_get_create(dragonMemoryPoolDescr_t * pool_descr, d
         err_return(DRAGON_INVALID_ARGUMENT, "invalid gateway message");
 
     dragonULInt target_hostid;
+    dragonRT_UID_t target_rt_uid;
+    dragonUInt target_rt_bootstrap_ip_addr;
+    dragonULInt target_rt_bootstrap_port;
     err = dragon_channel_get_hostid(target_ch, &target_hostid);
     if (err != DRAGON_SUCCESS) {
         err_noreturn("failed to obtain hostid for target channel");
     }
+    target_rt_uid = target_ch->_rt_idx;
+    dragon_channel_runtime_bootstrap_addr(target_rt_uid, &target_rt_bootstrap_ip_addr, &target_rt_bootstrap_port);
 
-    if (dest_mem_descr != NULL) {
+    if (dest_mem_descr != NULL && dest_mem_descr_inited) {
         dragonMemoryPoolDescr_t pool_descr;
         err = dragon_memory_get_pool(dest_mem_descr, &pool_descr);
         if (err != DRAGON_SUCCESS)
@@ -1152,13 +1305,13 @@ dragon_channel_gatewaymessage_get_create(dragonMemoryPoolDescr_t * pool_descr, d
         goto gwmsg_alloc_fail;
     }
 
-    err = _assign_gateway_message_header_get(gmsg, target_hostid, deadline, target_ch_ser.len);
+    err = _assign_gateway_message_header_get(gmsg, target_hostid, target_rt_uid, target_rt_bootstrap_ip_addr, target_rt_bootstrap_port, deadline, target_ch_ser.len);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("could not assign values into gateway message header");
         goto gwmsg_alloc_fail;
     }
 
-    err = _encode_gateway_message_objects(gmsg, &target_ch_ser, NULL, dest_mem_descr, DRAGON_CHANNEL_POLLNOTHING);
+    err = _encode_gateway_message_objects(gmsg, &target_ch_ser, NULL, dest_mem_descr, dest_mem_descr_inited, DRAGON_CHANNEL_POLLNOTHING);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("failed to instatiate objects for gateway message");
         goto gwmsg_alloc_fail;
@@ -1224,10 +1377,15 @@ dragon_channel_gatewaymessage_event_create(dragonMemoryPoolDescr_t * pool_descr,
         err_return(DRAGON_INVALID_ARGUMENT, "invalid gateway message");
 
     dragonULInt target_hostid;
+    dragonRT_UID_t target_rt_uid;
+    dragonUInt target_rt_bootstrap_ip_addr;
+    dragonULInt target_rt_bootstrap_port;
     err = dragon_channel_get_hostid(target_ch, &target_hostid);
     if (err != DRAGON_SUCCESS) {
         err_noreturn("failed to obtain hostid for target channel");
     }
+    target_rt_uid = target_ch->_rt_idx;
+    dragon_channel_runtime_bootstrap_addr(target_rt_uid, &target_rt_bootstrap_ip_addr, &target_rt_bootstrap_port);
 
     dragonChannelSerial_t target_ch_ser;
     err = dragon_channel_serialize(target_ch, &target_ch_ser);
@@ -1269,13 +1427,13 @@ dragon_channel_gatewaymessage_event_create(dragonMemoryPoolDescr_t * pool_descr,
         goto gwmsg_alloc_fail;
     }
 
-    err = _assign_gateway_message_header_event(gmsg, target_hostid, deadline, target_ch_ser.len);
+    err = _assign_gateway_message_header_event(gmsg, target_hostid, target_rt_uid, target_rt_bootstrap_ip_addr, target_rt_bootstrap_port, deadline, target_ch_ser.len);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("could not assign values into gateway message header");
         goto gwmsg_alloc_fail;
     }
 
-    err = _encode_gateway_message_objects(gmsg, &target_ch_ser, NULL, NULL, events);
+    err = _encode_gateway_message_objects(gmsg, &target_ch_ser, NULL, NULL, false, events);
     if (err != DRAGON_SUCCESS) {
         append_err_noreturn("failed to instatiate objects for gateway message");
         goto gwmsg_alloc_fail;
@@ -1895,6 +2053,10 @@ dragon_channel_gatewaymessage_transport_start_get_cmplt(dragonGatewayMessage_t *
                     err_return(DRAGON_INVALID_ARGUMENT, "The client requested a destination pool for the message and the transport agent did not comply.");
             }
 
+            err = dragon_memory_descr_destroy(&dest_mem);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not release the destination memory descriptor used for verification");
+
             /****************************************************************************************/
             /* End of Extra Checks that could be factored out once we have a working, verified
                transport service. Clip between the lines when satisfied we do the right thing. */
@@ -1907,6 +2069,11 @@ dragon_channel_gatewaymessage_transport_start_get_cmplt(dragonGatewayMessage_t *
         err = dragon_memory_serialize(&msg_mem_ser, &msg_mem);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Unable to serialize message memory for transport get complete operation.");
+
+        /* The message still owns its descriptor. This one was cloned above. */
+        err = dragon_memory_descr_destroy(&msg_mem);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Unable to release the message memory descriptor in transport get complete operation.");
 
         err = dragon_channel_message_getattr(msg_recv, &msg_attrs);
         if (err != DRAGON_SUCCESS)
@@ -2084,7 +2251,8 @@ dragonError_t
 dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dragonMessage_t * msg_recv, const dragonWaitMode_t wait_mode)
 {
     dragonError_t err;
-    dragonMemoryDescr_t msg_mem;
+    dragonMemoryDescr_t* msg_mem;
+    dragonMemoryDescr_t msg_mem_val;
     dragonMemorySerial_t msg_mem_ser;
     dragonError_t get_rc;
     dragonMessageAttr_t msg_attrs;
@@ -2095,6 +2263,12 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
 
     if (msg_recv == NULL)
         err_return(DRAGON_INVALID_ARGUMENT, "Cannot specify NULL msg_recv when completing remote get operation.");
+
+    /* When provided, the message is attached directly to the caller supplied descriptor. */
+    if (msg_recv->_mem_descr_provided)
+        msg_mem = msg_recv->_mem_descr;
+    else
+        msg_mem = &msg_mem_val;
 
     if ((*(gmsg->_header.client_cmplt)) != 0UL)
         err_return(DRAGON_INVALID_OPERATION, "Gateway client get complete already called. Operation ignored.");
@@ -2116,7 +2290,7 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
         msg_mem_ser.data = gmsg->_obj_ptr + *(gmsg->_header.dest_mem_descr_ser_offset);
         msg_mem_ser.len = *(gmsg->_header.dest_mem_descr_ser_nbytes);
 
-        err = dragon_memory_attach(&msg_mem, &msg_mem_ser);
+        err = dragon_memory_attach(msg_mem, &msg_mem_ser);
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not attach serialized message memory in client get complete gateway operation.");
 
@@ -2124,15 +2298,20 @@ dragon_channel_gatewaymessage_client_get_cmplt(dragonGatewayMessage_t * gmsg, dr
         if (err != DRAGON_SUCCESS)
             append_err_return(err, "Could not initialize message attributes in get completion of gateway receive.");
 
-        size_t sz;
-        dragon_memory_get_size(&msg_mem, &sz);
-
         msg_attrs.hints = *(gmsg->_header.send_hints);
         msg_attrs.clientid = *(gmsg->_header.send_clientid);
 
-        err = dragon_channel_message_init(msg_recv, &msg_mem, &msg_attrs);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not initialize message in get completion of gateway receive.");
+        if (msg_recv->_mem_descr_provided) {
+            msg_recv->_mem_descr_inited = true;
+
+            err = dragon_channel_message_setattr(msg_recv, &msg_attrs);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not set message attributes in get completion of gateway receive.");
+        } else {
+            err = dragon_channel_message_init_move(msg_recv, msg_mem, &msg_attrs);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not initialize message in get completion of gateway receive.");
+        }
     } else {
         /* Since DRAGON_SUCCESS was not achieved, we'll init the message to empty */
         dragon_channel_message_init(msg_recv, NULL, NULL);

@@ -42,7 +42,7 @@ central user guide for the full configuration walkthrough.
 ## Installation
 
 Install Dragon with the `ai` optional dependency set. The `ai` extra installs a
-supported vLLM (`vllm>=0.11.0,<0.18.0`) and bundles the Dragon vLLM
+supported vLLM (`vllm>=0.11.0,<0.20.0`) and bundles the Dragon vLLM
 compatibility plugin, which is registered automatically through vLLM's
 `vllm.general_plugins` entry point group.
 

@@ -5,6 +5,7 @@ import time
 import getpass
 import queue
 import numpy as np
+from unittest.mock import MagicMock, patch
 
 import dragon
 from dragon.native.queue import Queue
@@ -205,6 +206,19 @@ class TestQueue(unittest.TestCase):
         proc.join()
         self.assertEqual(0, proc.exitcode)
         q.destroy()
+
+    def test_close_detaches_attached_fli(self):
+        attached_fli = MagicMock()
+        attached_fli.serialize.return_value = b"serialized-fli"
+        fli_type = MagicMock()
+        fli_type.attach.return_value = attached_fli
+
+        with patch("dragon.native.queue.fli.FLInterface", fli_type):
+            q = Queue.attach(b"serialized-fli")
+            q.close()
+            q.close()
+
+        attached_fli.detach.assert_called_once_with()
 
     def test_create_with_pool(self):
         pool_name = f"queue_test_{getpass.getuser()}"

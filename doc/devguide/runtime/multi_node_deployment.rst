@@ -262,7 +262,7 @@ Start Transport Agent (A16-A18)
     Over TA ch, `LAChannelsInfo` is provided, so the transport agent can take IP and host ID info
     to manage communication to other nodes on the backend.
 
-    The transport agent communicates a `TAPingSH` to Local Services over the Local Services
+    The transport agent communicates a `TAPingLS` to Local Services over the Local Services
     channel provided for its node index in the `LAChannelsInfo` message. This is sent upstream
     as an `TAUp` message. The frontend waits for such a message from every backend.
 
@@ -278,7 +278,7 @@ CLI Inputs to Start Transport Agent (M17)
 Start Global Services (A18-A22)
     After sending `TAUp`, Local Services on the primary node starts Global Services. Over `stdin`
     Local Services provides `LAChannelsInfo`. With this information, Global Services is
-    immediately able to ping all Local Services' instances on the backend via `GSPingSH` (note:
+    immediately able to ping all Local Services' instances on the backend via `GSPingLS` (note:
     the Transport Agent is necessary to route those correctly).
 
     After receiving a response from every Local Services (`SHPingGS`), it sends a `GSIsUp`

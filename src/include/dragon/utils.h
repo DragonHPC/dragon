@@ -22,6 +22,9 @@ extern "C" {
 dragonULInt
 dragon_get_local_rt_uid();
 
+void
+dragon_set_local_rt_uid(dragonULInt rt_uid);
+
 dragonError_t
 dragon_set_procname(char * name);
 
@@ -31,7 +34,7 @@ dragon_zero_uuid(dragonUUID uuid);
 char*
 dragon_uuid_to_hex_str(dragonUUID uuid);
 
-void
+dragonError_t
 dragon_generate_uuid(dragonUUID uuid);
 
 void
@@ -78,6 +81,9 @@ dragon_base64_encode(uint8_t *data, size_t input_length);
 uint8_t*
 dragon_base64_decode(const char *data, size_t *output_length);
 
+dragonError_t
+dragon_gettempdir(char** tmpdir);
+
 dragonULInt
 dragon_hash_ulint(dragonULInt x);
 
@@ -123,6 +129,9 @@ dragon_check_dir_rw_permissions(char *dir);
 
 dragonError_t
 dragon_get_hugepage_mount(char **mount_dir);
+
+dragonError_t
+query_shm_space(unsigned long* total_space, unsigned long* free_space);
 
 #ifdef __cplusplus
 }

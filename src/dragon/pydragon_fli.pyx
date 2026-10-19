@@ -10,7 +10,9 @@ from dragon.managed_memory cimport *
 import dragon.dtypes as dtypes
 import dragon.infrastructure.parameters as dparms
 import dragon.infrastructure.facts as dfacts
+import dragon.infrastructure.runtime_env as druntime_env
 import dragon.globalservices.channel as dgchan
+from dragon.utils import B64
 from dragon.localservices.options import ChannelOptions
 from dragon.rc import DragonError
 import sys
@@ -21,6 +23,46 @@ BUF_READ = PyBUF_READ
 BUF_WRITE = PyBUF_WRITE
 DEFAULT_CLOSE_TIMEOUT = 5
 STREAM_CHANNEL_IS_MAIN = 1010
+# Coerce the several accepted serialized-FLI representations (B64 object, base64
+# string, bytearray) to the raw bytes the C attach expects.
+def _normalize_serialized_fli(serialized_bytes):
+    if isinstance(serialized_bytes, B64):
+        return serialized_bytes.decode()
+
+    if isinstance(serialized_bytes, str):
+        return B64.str_to_bytes(serialized_bytes)
+
+    if isinstance(serialized_bytes, bytearray):
+        return bytes(serialized_bytes)
+
+    return serialized_bytes
+
+
+def _normalize_adapter_pool(pool):
+    # A non-local pool cannot back a local adapter, so fall back to the node-local
+    # default pool. dragon_memory_pool_attach_default() is proxy-aware in the C
+    # layer, so under proxy mode it resolves the preserved local runtime pool.
+    if pool is None:
+        return None
+
+    if getattr(pool, "is_local", False):
+        return pool
+
+    return MemoryPool.attach_default()
+
+
+def _resolve_attach_adapter_pool(pool):
+    # Attach paths need a local pool. Reuse a caller-supplied local pool; otherwise
+    # let the proxy-aware C default-pool attach pick the right node-local pool. A
+    # NULL pool is only left as-is outside proxy mode, where the C attach can steal
+    # a pool from a local channel or attach the default itself.
+    if pool is not None and getattr(pool, "is_local", False):
+        return pool
+
+    if pool is None and not druntime_env.proxy_enabled():
+        return None
+
+    return MemoryPool.attach_default()
 
 cdef enum:
     C_TRUE = 1
@@ -605,6 +647,7 @@ cdef class FLIRecvH:
         """
         cdef:
             uint64_t arg
+            dragonError_t derr
             size_t max_bytes
             size_t num_bytes
             timespec_t timer
@@ -830,15 +873,16 @@ cdef class FLInterface:
         list stream_channel_list
         MemoryPool pool
 
+    def __cinit__(self):
+        self._is_serialized = False
+
 
     def __getstate__(self):
         return (self.serialize(), self.pool)
 
     def __setstate__(self, state):
         serial_fli, pool = state
-        if pool is None or not pool.is_local:
-            pool = None
-        self._attach(serial_fli, pool)
+        self._attach(_normalize_serialized_fli(serial_fli), _resolve_attach_adapter_pool(pool))
 
 
     def _attach(self, ser_bytes, MemoryPool pool=None):
@@ -846,6 +890,8 @@ cdef class FLInterface:
             dragonError_t derr
             dragonFLISerial_t _serial
             dragonMemoryPoolDescr_t * mpool = NULL
+
+        pool = _normalize_adapter_pool(pool)
 
         if len(ser_bytes) == 0:
             raise DragonFLIError(DragonError.INVALID_ARGUMENT, "The serialized bytes were empty.")
@@ -918,14 +964,14 @@ cdef class FLInterface:
         if sem_ch is not None:
             c_sem_ch = &sem_ch._channel
 
-        if pool is not None:
-            c_pool = &pool._pool_hdl
-
         if num_stream_channels > 0:
             strm_chs = <dragonChannelDescr_t **>malloc(sizeof(dragonChannelDescr_t*) * num_stream_channels)
             for i in range(num_stream_channels):
                 ch = stream_channels[i]
                 strm_chs[i] = &ch._channel
+
+        if self.pool is not None:
+            c_pool = &self.pool._pool_hdl
 
         with nogil:
             derr = dragon_fli_task_create(&self._adapter, c_main_ch, c_mgr_ch, c_sem_ch, c_pool,
@@ -1012,7 +1058,10 @@ cdef class FLInterface:
         """
         # If mem_pool is None, the default node-local memorypool will be used
         empty_fli = cls.__new__(cls)
-        return empty_fli._attach(serialized_bytes, mem_pool)
+        return empty_fli._attach(
+            _normalize_serialized_fli(serialized_bytes),
+            _resolve_attach_adapter_pool(mem_pool),
+        )
 
     def detach(self):
         """

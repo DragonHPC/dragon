@@ -12,7 +12,7 @@ the first collective call happens: how many ranks are participating, which rank
 the current worker owns, and how all ranks will find the same rendezvous
 address. Dragon helps with that setup, but two different layers are involved.
 
-:py:class:`~dragon.native.process_group.ProcessGroup` is Dragon's general native
+:py:class:`~dragon.ProcessGroup` is Dragon's general native
 process orchestration API. It gives you explicit control over placement and
 lifecycle, and it is the right fit when you are launching mixed workloads or
 building a lower-level orchestration layer yourself.
@@ -32,7 +32,7 @@ when you need more manual control over how those workers are created or placed.
     :linenos:
     :caption: **Setting up NCCL backend for PyTorch Distributed Training with CollectiveGroup**
 
-    from dragon.native.machine import System
+    from dragon import System
     from dragon.ai.collective_group import CollectiveGroup, RankInfo
 
     import torch
@@ -96,7 +96,7 @@ rank-file management is required.
     :caption: **Distributed DataLoader with DistributedSampler inside a CollectiveGroup worker**
 
     from dragon.ai.collective_group import CollectiveGroup, RankInfo
-    from dragon.native.machine import System
+    from dragon import System
 
     import torch
     import torch.distributed as dist
@@ -173,5 +173,5 @@ Key points:
   the indices so that ranks never load the same sample within an epoch.
 * **``sampler.set_epoch(epoch)``** — call this at the start of every epoch to ensure that the
   random shuffle seeds differ between epochs while remaining consistent across ranks.
-* **GPU affinity** — Dragon's :py:class:`~dragon.infrastructure.policy.Policy` already pins
+* **GPU affinity** — Dragon's :py:class:`~dragon.Policy` already pins
   each worker to its own GPU, so ``torch.device("cuda")`` always refers to the correct device.

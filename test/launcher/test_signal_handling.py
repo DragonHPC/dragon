@@ -20,10 +20,11 @@ import dragon.utils as du
 
 from dragon.managed_memory import MemoryPool, DragonPoolError, DragonMemoryError
 from dragon.channels import Channel, ChannelError
-from dragon.utils import set_host_id, B64
+from dragon.utils import B64
 from dragon.dlogging.util import setup_FE_logging
 
 from .frontend_testing_mocks import (
+    ensure_frontend_host_id,
     open_overlay_comms,
     open_backend_comms,
     send_beisup,
@@ -324,7 +325,7 @@ class SigIntTest(unittest.TestCase):
             pass
 
         # Before doing anything set my host ID
-        set_host_id(dfacts.FRONTEND_HOSTID)
+        ensure_frontend_host_id()
         setup_FE_logging(
             log_device_level_map=self.args_map["log_device_level_map"], basename="dragon", basedir=os.getcwd()
         )

@@ -43,3 +43,15 @@ network communication behind the scenes.
    :name: channels-hsta
 
    **Dragon Channels off-node communication via the HSTA transport agent**
+
+Communication Between Dragon Runtimes
+--------------------------------------
+
+Channels-mesh support allows dense channel communication between Dragon runtimes on
+the same cluster. When HSTA can reach the other runtime directly, it can reuse
+high-speed network paths for subsequent messages. The first communication may
+take longer while a path is established; if network reachability requires a
+longer path, performance depends on the cluster topology and transport.
+
+Proxy clients use the same channel communication path. For proxy setup and
+lifecycle, see :ref:`proxy`.

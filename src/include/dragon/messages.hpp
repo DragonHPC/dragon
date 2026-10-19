@@ -1312,8 +1312,187 @@ class CPLoggingMessage: public DragonMsg {
     uint8_t mLevel;
 };
 
+class LSExternalRegisterMsg: public DragonMsg {
+    public:
+    static const MessageType TC = LS_EXTERNAL_REGISTER;
+
+    LSExternalRegisterMsg(uint64_t tag, const char* authToken, uint64_t pid, const char* procRespSdesc,
+                          const char* runtimeUid, const char* attemptId);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    const char* authToken();
+    const uint64_t pid();
+    const char* procRespSdesc();
+    const char* runtimeUid();
+    const char* attemptId();
+
+    protected:
+    virtual void builder(MessageDef::Builder& msg);
+
+    private:
+    std::string mAuthToken;
+    uint64_t mPid;
+    std::string mProcRespSdesc;
+    std::string mRuntimeUid;
+    std::string mAttemptId;
+};
+
+class LSExternalResourcesReadyMsg: public DragonResponseMsg {
+    public:
+    static const MessageType TC = LS_EXTERNAL_RESOURCES_READY;
+
+    LSExternalResourcesReadyMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo,
+                                const char* runtimeUid, const char* attemptId,
+                                uint64_t nodeIndex, uint64_t pUid, const char* lsReturnQd,
+                                const char* gsReturnQd, uint64_t numGwChannelsPerNode,
+                                const std::vector<std::pair<std::string, std::string>>& gwEnv,
+                                const char* defaultPd, const char* infPd);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    const char* runtimeUid();
+    const char* attemptId();
+    const uint64_t nodeIndex();
+    const uint64_t pUid();
+    const char* lsReturnQd();
+    const char* gsReturnQd();
+    const uint64_t numGwChannelsPerNode();
+    const std::vector<std::pair<std::string, std::string>>& gwEnv();
+    const char* defaultPd();
+    const char* infPd();
+
+    protected:
+    virtual void builder(MessageDef::Builder& msg);
+
+    private:
+    std::string mRuntimeUid;
+    std::string mAttemptId;
+    uint64_t mNodeIndex;
+    uint64_t mPUid;
+    std::string mLsReturnQd;
+    std::string mGsReturnQd;
+    uint64_t mNumGwChannelsPerNode;
+    std::vector<std::pair<std::string, std::string>> mGwEnv;
+    std::string mDefaultPd;
+    std::string mInfPd;
+};
+
+class GSExternalRegisterCompleteMsg: public DragonResponseMsg {
+    public:
+    static const MessageType TC = GS_EXTERNAL_REGISTER_COMPLETE;
+
+    GSExternalRegisterCompleteMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo,
+                                  uint64_t pUid);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    const uint64_t pUid();
+
+    protected:
+    virtual void builder(MessageDef::Builder& msg);
+
+    private:
+    uint64_t mPUid;
+};
+
+class GSProcessDetachAckMsg: public DragonMsg {
+    public:
+    static const MessageType TC = GS_PROCESS_DETACH_ACK;
+
+    GSProcessDetachAckMsg(uint64_t tag, uint64_t pUid, uint64_t detachRef);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    const uint64_t pUid();
+    const uint64_t detachRef();
+
+    protected:
+    virtual void builder(MessageDef::Builder& msg);
+
+    private:
+    uint64_t mPUid;
+    uint64_t mDetachRef;
+};
+
+class LSExternalRegisterCancelMsg: public DragonMsg {
+    public:
+    static const MessageType TC = LS_EXTERNAL_REGISTER_CANCEL;
+
+    LSExternalRegisterCancelMsg(uint64_t tag, const char* runtimeUid,
+                                const char* attemptId, uint64_t pUid);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    const char* runtimeUid();
+    const char* attemptId();
+    const uint64_t pUid();
+
+    protected:
+    virtual void builder(MessageDef::Builder& msg);
+
+    private:
+    std::string mRuntimeUid;
+    std::string mAttemptId;
+    uint64_t mPUid;
+};
+
+class AttachableRuntimeDescrMsg: public DragonMsg {
+    public:
+    static const MessageType TC = ATTACHABLE_RUNTIME_DESCR;
+
+    AttachableRuntimeDescrMsg(uint64_t tag, uint64_t nodeIndex, const char* gsQd, const char* lsQd,
+                              const char* defaultPd, const char* infPd, const char* rtUid);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    const uint64_t nodeIndex();
+    const char* gsQd();
+    const char* lsQd();
+    const char* defaultPd();
+    const char* infPd();
+    const char* rtUid();
+
+    protected:
+    virtual void builder(MessageDef::Builder& msg);
+
+    private:
+    uint64_t mNodeIndex;
+    std::string mGsQd;
+    std::string mLsQd;
+    std::string mDefaultPd;
+    std::string mInfPd;
+    std::string mRtUid;
+};
+
+class GSProcessDetachMsg: public DragonMsg {
+    public:
+    static const MessageType TC = GS_PROCESS_DETACH;
+
+    GSProcessDetachMsg(uint64_t tag, uint64_t pUid, uint64_t rCuid);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    const uint64_t pUid();
+    const uint64_t rCuid();
+
+    protected:
+    virtual void builder(MessageDef::Builder& msg);
+
+    private:
+    uint64_t mPUid;
+    uint64_t mRCuid;
+};
+
+class GSProcessDetachResponseMsg: public DragonResponseMsg {
+    public:
+    static const MessageType TC = GS_PROCESS_DETACH_RESPONSE;
+
+    GSProcessDetachResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo);
+    static dragonError_t deserialize(MessageDef::Reader& reader, DragonMsg** msg);
+    /* No custom builder() override -- verified DragonResponseMsg::builder() (see messages.cpp) does a raw
+       ResponseDef::Builder::setErr(uint64_t) pass-through with no DragonError-style validating coercion, so
+       storing our custom Errors enum values (0-3) in the dragonError_t err field is safe in C++. This differs
+       from the Python side (messages.py) where DragonResponseMsg.builder() constructs a validating DragonError()
+       object and therefore requires an override; no such issue exists here. */
+};
+
 static unordered_map<MessageType, deserializeFun> deserializeFunctions
 {
+    {LS_EXTERNAL_REGISTER, &LSExternalRegisterMsg::deserialize},
+    {LS_EXTERNAL_RESOURCES_READY, &LSExternalResourcesReadyMsg::deserialize},
+    {GS_EXTERNAL_REGISTER_COMPLETE, &GSExternalRegisterCompleteMsg::deserialize},
+    {GS_PROCESS_DETACH_ACK, &GSProcessDetachAckMsg::deserialize},
+    {LS_EXTERNAL_REGISTER_CANCEL, &LSExternalRegisterCancelMsg::deserialize},
+    {ATTACHABLE_RUNTIME_DESCR, &AttachableRuntimeDescrMsg::deserialize},
+    {GS_PROCESS_DETACH, &GSProcessDetachMsg::deserialize},
+    {GS_PROCESS_DETACH_RESPONSE, &GSProcessDetachResponseMsg::deserialize},
     {LS_CREATE_PROCESS_LOCAL_CHANNEL, &LSCreateProcessLocalChannelMsg::deserialize},
     {LS_CREATE_PROCESS_LOCAL_CHANNEL_RESPONSE, &LSCreateProcessLocalChannelResponseMsg::deserialize},
     {LS_DESTROY_PROCESS_LOCAL_CHANNEL, &LSDestroyProcessLocalChannelMsg::deserialize},

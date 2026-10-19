@@ -14,7 +14,8 @@ HEADERS = dragon/bcast.h \
           dragon/utils.h \
           dragon/ddict.h \
           dragon/dictionary.hpp \
-          dragon/fli.h
+          dragon/fli.h \
+          dragon/ext_attach.h
 
 DISTFILES = $(addprefix $(INSTALL_DIR)/include/,$(HEADERS))
 

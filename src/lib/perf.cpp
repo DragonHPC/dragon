@@ -241,7 +241,7 @@ dragonChPerfBytecodeOp::new_msg(size_t bytes, bool alloc_mem, dragonMessage_t *m
             append_err_return(err, "failed to allocate managed memory for communication buffer");
         }
 
-        err = dragon_channel_message_init(msg, &md, nullptr);
+        err = dragon_channel_message_init_move(msg, &md, nullptr);
         if (err != DRAGON_SUCCESS) {
             append_err_return(err, "failed to initialize message");
         }

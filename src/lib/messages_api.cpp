@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <string.h>
 #include <unordered_map>
 #include <functional>
 #include <unistd.h>
@@ -90,6 +91,37 @@ recv_fli_msg(dragonFLIRecvHandleDescr_t* recvh, DragonMsg** msg, const timespec_
     no_err_return(DRAGON_SUCCESS);
 }
 
+dragonError_t
+dragon_deserialize_msg(const void* buf, size_t len, DragonMsg** msg)
+{
+    if (buf == nullptr || msg == nullptr)
+        err_return(DRAGON_INVALID_ARGUMENT, "The buf and msg arguments cannot be NULL.");
+
+    if (len == 0 || len % sizeof(capnp::word) != 0)
+        err_return(DRAGON_INVALID_MESSAGE, "The buffer length is not a whole number of capnp words.");
+
+    try {
+        // Copy so the reader gets word-aligned memory regardless of where buf came from.
+        kj::Array<capnp::word> words = kj::heapArray<capnp::word>(len / sizeof(capnp::word));
+        memcpy(words.begin(), buf, len);
+
+        capnp::FlatArrayMessageReader message(words);
+        MessageDef::Reader reader = message.getRoot<MessageDef>();
+        MessageType tc = (MessageType)reader.getTc();
+
+        if (deserializeFunctions.count(tc) == 0)
+            append_err_return(DRAGON_INVALID_MESSAGE, dragon_msg_tc_name(tc));
+
+        dragonError_t err = (deserializeFunctions.at(tc))(reader, msg);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not deserialize message.");
+    } catch (...) {
+        err_return(DRAGON_INVALID_MESSAGE, "The buffer does not contain a valid capnp message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
 const char* dragon_msg_tc_name(uint64_t tc)
 {
     auto tc_enum = static_cast<MessageType>(tc);
@@ -132,7 +164,6 @@ dragonError_t init_ls_return_lock() {
 
     no_err_return(DRAGON_SUCCESS);
 }
-
 
 static dragonError_t
 dragon_get_ls_return_cd(char** ls_return_cd)
@@ -505,7 +536,7 @@ dragon_create_process_local_channel(dragonChannelDescr_t* ch, uint64_t muid, uin
         // attach to default
         err = dragon_memory_pool_attach_default(&pool);
         if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not attach to default pool.");
+            append_err_return(err, "Could not attach to the default pool.");
 
         dragon_memory_pool_muid(&pool, &muid);
         if (err != DRAGON_SUCCESS)

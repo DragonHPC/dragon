@@ -329,7 +329,8 @@ class DragonRunBE:
             logger.error("unhandled exception reading msg from stdin. %s", exc)
             raise exc
 
-    def be_recv_msg_from_stdin_proc(self, timeout=0):
+    # A zero timeout makes selector.select() a non-blocking poll, spinning a core per drbe.
+    def be_recv_msg_from_stdin_proc(self, timeout=facts.QUEUE_GET_TIMEOUT):
         logger.debug("++be_recv_msg_from_stdin_proc")
         try:
             selector = selectors.DefaultSelector()

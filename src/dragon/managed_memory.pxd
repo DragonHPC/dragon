@@ -22,6 +22,8 @@ cdef class MemoryAlloc:
     cdef inline cinit(dragonMemoryDescr_t mem_descr):
         """
         Initializes the object and sets the C struct values.
+        The object takes ownership of the given descriptor, so the caller must not
+        use or release it after this call.
         The error handling has to happen in the caller.
 
         :return: MemoryAlloc object or error description
@@ -30,9 +32,7 @@ cdef class MemoryAlloc:
             dragonError_t derr
 
         memobj = MemoryAlloc()
-        derr = dragon_memory_descr_clone(&memobj._mem_descr, &mem_descr, 0, NULL)
-        if derr != DRAGON_SUCCESS:
-            return (derr, "Could not clone memory descriptor")
+        memobj._mem_descr = mem_descr
 
         derr = dragon_memory_get_size(&memobj._mem_descr, &memobj._mem_size)
         if derr != DRAGON_SUCCESS:

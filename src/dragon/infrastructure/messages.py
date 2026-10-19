@@ -128,6 +128,11 @@ Format of Messages List
         Other related messages
 """
 
+# Setting the PWD env var guards against capnp writing a warning
+# message to stderr that is annoying and not useful.
+import os
+os.environ["PWD"] = os.getcwd()
+
 import sys
 import enum
 import json
@@ -140,7 +145,7 @@ import logging
 
 import ctypes
 from contextlib import contextmanager, redirect_stderr, redirect_stdout
-from os import devnull
+
 
 from ..infrastructure import channel_desc
 from ..infrastructure import pool_desc
@@ -443,7 +448,21 @@ class MessageTypes(enum.Enum):
     PG_CLOSE = enum.auto()  #:
     PMIX_FENCE_MSG = enum.auto()  #:
     CP_LOGGING_MESSAGE = enum.auto()  #:
+    GS_PROCESS_DETACH = enum.auto()  #:
+    GS_PROCESS_DETACH_RESPONSE = enum.auto()  #:
+    LS_PROCESS_DETACH = enum.auto()  #:
+    LS_PROCESS_DETACH_RESPONSE = enum.auto()  #:
+    LS_EXTERNAL_REGISTER = enum.auto()  #:
     TA_UPDATE_NODES_RESPONSE = enum.auto()  #:
+    GS_REGISTER_CTRL_EVENT = enum.auto()  #:
+    LS_STORE_CTRL_EVENT = enum.auto()  #:
+    LS_EXTERNAL_RESOURCES_READY = enum.auto()  #:
+    GS_EXTERNAL_REGISTER_PREPARED = enum.auto()  #:
+    GS_EXTERNAL_REGISTER_COMPLETE = enum.auto()  #:
+    GS_PROCESS_DETACH_ACK = enum.auto()  #:
+    LS_EXTERNAL_REGISTER_CANCEL = enum.auto()  #:
+    GS_EXTERNAL_REGISTER_CANCEL = enum.auto()  #:
+    ATTACHABLE_RUNTIME_DESCR = enum.auto()  #:
 
 
 @enum.unique
@@ -3704,6 +3723,112 @@ class GSProcessCreateResponse(InfraMsg):
         return rv
 
 
+class GSProcessDetach(CapNProtoMsg):
+    """
+    Refer to :ref:`Common Fields<cfs>` for a description of
+    the message structure.
+
+    Sent by an externally-registered process to GS when it wishes to
+    gracefully detach from the Dragon runtime and relinquish its PUID.
+    The process sends this on its GS-return channel, which was set up
+    during ``dragon.attach()``.
+
+    *response*
+        :class:`GSProcessDetachResponse`
+
+    *see also*
+        :class:`GSProcessDetachAck`
+    """
+
+    _tc = MessageTypes.GS_PROCESS_DETACH
+
+    def __init__(self, tag, p_uid, r_c_uid, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+        self.r_c_uid = int(r_c_uid)
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["p_uid"] = self.p_uid
+        rv["r_c_uid"] = self.r_c_uid
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.pUid = self.p_uid
+        client_msg.rCuid = int(self.r_c_uid)
+        return cap_msg
+
+    @classmethod
+    def from_sdict(cls, sdict):
+        # Accept both capnp camelCase (pUid, rCuid) and Python snake_case (p_uid, r_c_uid)
+        return cls(
+            tag=sdict["tag"],
+            p_uid=sdict.get("p_uid", sdict.get("pUid")),
+            r_c_uid=sdict.get("r_c_uid", sdict.get("rCuid")),
+        )
+
+
+class GSProcessDetachResponse(CapNProtoResponseMsg):
+    """
+    Refer to :ref:`Common Fields<cfs>` for a description of
+    the message structure.
+
+    Response from GS to a ``GSProcessDetach`` request.  GS sends this
+    response **before** forwarding ``LSProcessDetach`` to Local Services
+    (the "detach ordering guarantee"), which means the external process
+    may safely close its GS-return channel immediately on receipt without
+    waiting for LS cleanup.
+
+    *request*
+        :class:`GSProcessDetach`
+
+    *see also*
+        :class:`LSProcessDetach`, :class:`LSProcessDetachResponse`
+
+    No capnp union entry is needed for this class: it carries no
+    message-specific fields beyond the base ResponseDef (ref/err/errInfo).
+    This follows the same precedent as ``LSDestroyProcessLocalChannelResponse``.
+    """
+
+    _tc = MessageTypes.GS_PROCESS_DETACH_RESPONSE
+
+    @enum.unique
+    class Errors(enum.Enum):
+        SUCCESS = 0  #: Process was detached successfully
+        FAIL = 1  #: Detach failed for an unspecified reason
+        UNKNOWN = 2  #: No process with the given p_uid is known
+
+    def __init__(self, tag, ref, err, errInfo="", _tc=None):
+        super().__init__(tag, ref, err, errInfo)
+
+    def get_sdict(self):
+        return super().get_sdict()
+
+    def builder(self):
+        # Override to avoid DragonError() coercion which fails for custom Errors enums.
+        cap_msg = CapNProtoMsg.builder(self)
+        resp_msg = cap_msg.init("responseOption").init("value")
+        resp_msg.ref = self._ref
+        resp_msg.err = self._err.value if isinstance(self._err, enum.Enum) else int(self._err)
+        resp_msg.errInfo = self._errInfo
+        return cap_msg
+
+    @classmethod
+    def from_sdict(cls, sdict):
+        # Accept both capnp (errInfo) and legacy snake_case (err_info) paths.
+        err = sdict.get("err", 0)
+        if isinstance(err, int):
+            err = cls.Errors(err)
+        return cls(
+            tag=sdict["tag"],
+            ref=sdict["ref"],
+            err=err,
+            errInfo=sdict.get("errInfo", sdict.get("err_info", "")),
+        )
+
+
 class GSProcessList(InfraMsg):
     """
     Refer to :ref:`Common Fields<cfs>` for a description of
@@ -6461,6 +6586,518 @@ class LSProcessCreateResponse(InfraMsg):
         return rv
 
 
+class LSProcessDetach(InfraMsg):
+    """
+    Refer to :ref:`Common Fields<cfs>` for a description of
+    the message structure.
+
+    Sent by GS to LS to instruct it to destroy the LS-return channel,
+    remove the process from ``external_procs`` / ``puid2pid``, and stop
+    death-watch polling for a co-located external process that is
+    detaching from the Dragon runtime.
+
+    *response*
+        :class:`LSProcessDetachResponse`
+
+    *see also*
+        :class:`GSProcessDetach`
+    """
+
+    _tc = MessageTypes.LS_PROCESS_DETACH
+
+    def __init__(self, tag, p_uid, r_c_uid, t_p_uid, _tc=None):
+        super().__init__(tag)
+        self.p_uid = p_uid
+        self.r_c_uid = int(r_c_uid)
+        self.t_p_uid = t_p_uid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["p_uid"] = self.p_uid
+        rv["r_c_uid"] = self.r_c_uid
+        rv["t_p_uid"] = self.t_p_uid
+        return rv
+
+
+class LSProcessDetachResponse(InfraMsg):
+    """
+    Refer to :ref:`Common Fields<cfs>` for a description of
+    the message structure.
+
+    Sent by LS back to GS in response to a ``LSProcessDetach`` request,
+    confirming that the LS return channel has been destroyed and the
+    process removed from LS tracking tables.
+
+    *request*
+        :class:`LSProcessDetach`
+
+    *see also*
+        :class:`LSProcessDetachResponse`
+    """
+
+    _tc = MessageTypes.LS_PROCESS_DETACH_RESPONSE
+
+    @enum.unique
+    class Errors(enum.Enum):
+        SUCCESS = 0  #:
+        FAIL = 1  #:
+
+    def __init__(self, tag, ref, err, err_info="", _tc=None):
+        super().__init__(tag, ref, err)
+        self.err_info = err_info
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["err_info"] = self.err_info
+        return rv
+
+
+class LSExternalRegister(CapNProtoMsg):
+    """
+    Refer to :ref:`Common Fields<cfs>` for a description of
+    the message structure.
+
+    Sent by an externally-started process to its node-local Local Services to
+    initiate node-local provisioning for external attach.
+
+    ``auth_token`` is the cluster-wide shared secret (set at bringup) that Local
+    Services validates on receipt.  ``pid`` is the OS PID of the external process.
+    ``proc_resp_sdesc`` is the B64-encoded serialized descriptor of a
+    node-local temp reply channel pre-created by the external process; LS will
+    attach it and deliver :class:`LSExternalResourcesReady` there once the
+    resources are provisioned.
+
+    *response*
+        :class:`LSExternalResourcesReady`
+    """
+
+    _tc = MessageTypes.LS_EXTERNAL_REGISTER
+
+    def __init__(
+        self,
+        tag,
+        auth_token,
+        pid,
+        proc_resp_sdesc,
+        runtime_incarnation="",
+        attempt_id="",
+        _tc=None,
+    ):
+        super().__init__(tag)
+        self.auth_token = auth_token
+        self.pid = int(pid)
+        self.proc_resp_sdesc = proc_resp_sdesc
+        self.runtime_incarnation = runtime_incarnation
+        self.attempt_id = attempt_id
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["auth_token"] = self.auth_token
+        rv["pid"] = self.pid
+        rv["proc_resp_sdesc"] = self.proc_resp_sdesc
+        rv["runtime_incarnation"] = self.runtime_incarnation
+        rv["attempt_id"] = self.attempt_id
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.authToken = self.auth_token
+        client_msg.pid = self.pid
+        client_msg.procRespSdesc = self.proc_resp_sdesc
+        client_msg.runtimeIncarnation = self.runtime_incarnation
+        client_msg.attemptId = self.attempt_id
+        return cap_msg
+
+    @classmethod
+    def from_sdict(cls, sdict):
+        # Accept both capnp camelCase (authToken, procRespSdesc) and snake_case variants.
+        return cls(
+            tag=sdict["tag"],
+            auth_token=sdict.get("auth_token", sdict.get("authToken")),
+            pid=sdict["pid"],
+            proc_resp_sdesc=sdict.get("proc_resp_sdesc", sdict.get("procRespSdesc")),
+            runtime_incarnation=sdict.get("runtime_incarnation", sdict.get("runtimeIncarnation", "")),
+            attempt_id=sdict.get("attempt_id", sdict.get("attemptId", "")),
+        )
+
+
+class LSExternalResourcesReady(CapNProtoResponseMsg):
+    """Provisioned external-process resources, sent by LS before GS commit."""
+
+    _tc = MessageTypes.LS_EXTERNAL_RESOURCES_READY
+
+    @enum.unique
+    class Errors(enum.Enum):
+        SUCCESS = 0
+        FAIL = 1
+        AUTH_FAILURE = 2
+        ALREADY = 3
+        PUID_EXHAUSTED = 5
+        CONFLICTING_ATTEMPT = 6
+
+    def __init__(
+        self,
+        tag,
+        ref,
+        err,
+        errInfo="",
+        runtime_incarnation="",
+        attempt_id="",
+        node_index=0,
+        p_uid=0,
+        ls_return_qd="",
+        gs_return_qd="",
+        num_gw_channels_per_node=0,
+        gw_env=None,
+        default_pd="",
+        inf_pd="",
+        _tc=None,
+    ):
+        super().__init__(tag, ref, err, errInfo)
+        self.runtime_incarnation = runtime_incarnation
+        self.attempt_id = attempt_id
+        self.node_index = int(node_index)
+        self.p_uid = int(p_uid)
+        self.ls_return_qd = ls_return_qd
+        self.gs_return_qd = gs_return_qd
+        self.num_gw_channels_per_node = int(num_gw_channels_per_node)
+        self.gw_env = gw_env
+        self.default_pd = default_pd
+        self.inf_pd = inf_pd
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv.update(
+            runtime_incarnation=self.runtime_incarnation,
+            attempt_id=self.attempt_id,
+            node_index=self.node_index,
+            p_uid=self.p_uid,
+            ls_return_qd=self.ls_return_qd,
+            gs_return_qd=self.gs_return_qd,
+            num_gw_channels_per_node=self.num_gw_channels_per_node,
+            gw_env=self.gw_env,
+            default_pd=self.default_pd,
+            inf_pd=self.inf_pd,
+        )
+        return rv
+
+    def builder(self):
+        cap_msg = CapNProtoMsg.builder(self)
+        response = cap_msg.init("responseOption").init("value")
+        response.ref = self.ref
+        response.err = self.err.value if isinstance(self.err, enum.Enum) else int(self.err)
+        response.errInfo = self.errInfo or ""
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.runtimeIncarnation = self.runtime_incarnation
+        client_msg.attemptId = self.attempt_id
+        client_msg.nodeIndex = self.node_index
+        client_msg.pUid = self.p_uid
+        client_msg.lsReturnQd = self.ls_return_qd
+        client_msg.gsReturnQd = self.gs_return_qd
+        client_msg.numGwChannelsPerNode = self.num_gw_channels_per_node
+        entries = client_msg.init("gwEnv", len(self.gw_env or {}))
+        for index, (key, value) in enumerate((self.gw_env or {}).items()):
+            entries[index].key = key
+            entries[index].value = value
+        client_msg.defaultPd = self.default_pd
+        client_msg.infPd = self.inf_pd
+        return cap_msg
+
+    @classmethod
+    def from_sdict(cls, sdict):
+        err = sdict.get("err", 0)
+        if isinstance(err, int):
+            err = cls.Errors(err)
+        raw_gateway_env = sdict.get("gw_env", sdict.get("gwEnv"))
+        gateway_env = (
+            {entry["key"]: entry["value"] for entry in raw_gateway_env}
+            if isinstance(raw_gateway_env, list)
+            else raw_gateway_env
+        )
+        return cls(
+            tag=sdict["tag"],
+            ref=sdict["ref"],
+            err=err,
+            errInfo=sdict.get("errInfo", sdict.get("err_info", "")),
+            runtime_incarnation=sdict.get("runtime_incarnation", sdict.get("runtimeIncarnation", "")),
+            attempt_id=sdict.get("attempt_id", sdict.get("attemptId", "")),
+            node_index=sdict.get("node_index", sdict.get("nodeIndex", 0)),
+            p_uid=sdict.get("p_uid", sdict.get("pUid", 0)),
+            ls_return_qd=sdict.get("ls_return_qd", sdict.get("lsReturnQd", "")),
+            gs_return_qd=sdict.get("gs_return_qd", sdict.get("gsReturnQd", "")),
+            num_gw_channels_per_node=sdict.get("num_gw_channels_per_node", sdict.get("numGwChannelsPerNode", 0)),
+            gw_env=gateway_env,
+            default_pd=sdict.get("default_pd", sdict.get("defaultPd", "")),
+            inf_pd=sdict.get("inf_pd", sdict.get("infPd", "")),
+        )
+
+
+class LSExternalRegisterCancel(CapNProtoMsg):
+    """Releases an external registration attempt after attach cannot complete."""
+
+    _tc = MessageTypes.LS_EXTERNAL_REGISTER_CANCEL
+
+    def __init__(self, tag, runtime_incarnation, attempt_id, p_uid=0, _tc=None):
+        super().__init__(tag)
+        self.runtime_incarnation = runtime_incarnation
+        self.attempt_id = attempt_id
+        self.p_uid = int(p_uid)
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv.update(
+            runtime_incarnation=self.runtime_incarnation,
+            attempt_id=self.attempt_id,
+            p_uid=self.p_uid,
+        )
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.runtimeIncarnation = self.runtime_incarnation
+        client_msg.attemptId = self.attempt_id
+        client_msg.pUid = self.p_uid
+        return cap_msg
+
+    @classmethod
+    def from_sdict(cls, sdict):
+        return cls(
+            tag=sdict["tag"],
+            runtime_incarnation=sdict.get("runtime_incarnation", sdict.get("runtimeIncarnation", "")),
+            attempt_id=sdict.get("attempt_id", sdict.get("attemptId", "")),
+            p_uid=sdict.get("p_uid", sdict.get("pUid", 0)),
+        )
+
+
+class GSExternalRegisterPrepared(InfraMsg):
+    """Trusted LS record for resources prepared for an external process; replaces legacy GSExternalRegister relay."""
+
+    _tc = MessageTypes.GS_EXTERNAL_REGISTER_PREPARED
+
+    def __init__(
+        self,
+        tag,
+        node_index,
+        p_uid,
+        pid,
+        process_start_time,
+        user_name,
+        gs_return_cuid,
+        gs_return_muid,
+        gs_return_cd,
+        gs_return_qd,
+        _tc=None,
+    ):
+        super().__init__(tag)
+        self.node_index = int(node_index)
+        self.p_uid = int(p_uid)
+        self.pid = int(pid)
+        self.process_start_time = process_start_time
+        self.user_name = user_name
+        self.gs_return_cuid = int(gs_return_cuid)
+        self.gs_return_muid = int(gs_return_muid)
+        self.gs_return_cd = gs_return_cd
+        self.gs_return_qd = gs_return_qd
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv.update(
+            node_index=self.node_index,
+            p_uid=self.p_uid,
+            pid=self.pid,
+            process_start_time=self.process_start_time,
+            user_name=self.user_name,
+            gs_return_cuid=self.gs_return_cuid,
+            gs_return_muid=self.gs_return_muid,
+            gs_return_cd=self.gs_return_cd,
+            gs_return_qd=self.gs_return_qd,
+        )
+        return rv
+
+
+class GSExternalRegisterCancel(InfraMsg):
+    """Trusted LS request to release an external registration by PUID."""
+
+    _tc = MessageTypes.GS_EXTERNAL_REGISTER_CANCEL
+
+    def __init__(
+        self,
+        tag,
+        node_index,
+        p_uid,
+        attempt_id,
+        pid,
+        process_start_time,
+        gs_return_cuid,
+        gs_return_muid,
+        gs_return_cd,
+        gs_return_qd,
+        _tc=None,
+    ):
+        super().__init__(tag)
+        self.node_index = int(node_index)
+        self.p_uid = int(p_uid)
+        self.attempt_id = attempt_id
+        self.pid = int(pid)
+        self.process_start_time = process_start_time
+        self.gs_return_cuid = int(gs_return_cuid)
+        self.gs_return_muid = int(gs_return_muid)
+        self.gs_return_cd = gs_return_cd
+        self.gs_return_qd = gs_return_qd
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv.update(
+            node_index=self.node_index,
+            p_uid=self.p_uid,
+            attempt_id=self.attempt_id,
+            pid=self.pid,
+            process_start_time=self.process_start_time,
+            gs_return_cuid=self.gs_return_cuid,
+            gs_return_muid=self.gs_return_muid,
+            gs_return_cd=self.gs_return_cd,
+            gs_return_qd=self.gs_return_qd,
+        )
+        return rv
+
+
+class GSExternalRegisterComplete(CapNProtoResponseMsg):
+    """Final GS commit result delivered directly on the GS-return queue."""
+
+    _tc = MessageTypes.GS_EXTERNAL_REGISTER_COMPLETE
+
+    @enum.unique
+    class Errors(enum.Enum):
+        SUCCESS = 0
+        FAIL = 1
+        INVALID_PREPARED_RESOURCES = 2
+        CONFLICTING_ATTEMPT = 3
+        CANCELLED = 4
+
+    def __init__(self, tag, ref, err, errInfo="", p_uid=0, _tc=None):
+        super().__init__(tag, ref, err, errInfo)
+        self.p_uid = int(p_uid)
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["p_uid"] = self.p_uid
+        return rv
+
+    def builder(self):
+        cap_msg = CapNProtoMsg.builder(self)
+        response = cap_msg.init("responseOption").init("value")
+        response.ref = self.ref
+        response.err = self.err.value if isinstance(self.err, enum.Enum) else int(self.err)
+        response.errInfo = self.errInfo or ""
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.pUid = self.p_uid
+        return cap_msg
+
+    @classmethod
+    def from_sdict(cls, sdict):
+        err = sdict.get("err", 0)
+        if isinstance(err, int):
+            err = cls.Errors(err)
+        return cls(
+            tag=sdict["tag"],
+            ref=sdict["ref"],
+            err=err,
+            errInfo=sdict.get("errInfo", sdict.get("err_info", "")),
+            p_uid=sdict.get("p_uid", sdict.get("pUid", 0)),
+        )
+
+
+class GSProcessDetachAck(CapNProtoMsg):
+    """Acknowledges that an external client consumed its detach response."""
+
+    _tc = MessageTypes.GS_PROCESS_DETACH_ACK
+
+    def __init__(self, tag, p_uid, detach_ref, _tc=None):
+        super().__init__(tag)
+        self.p_uid = int(p_uid)
+        self.detach_ref = int(detach_ref)
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv.update(p_uid=self.p_uid, detach_ref=self.detach_ref)
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.pUid = self.p_uid
+        client_msg.detachRef = self.detach_ref
+        return cap_msg
+
+    @classmethod
+    def from_sdict(cls, sdict):
+        return cls(
+            tag=sdict["tag"],
+            p_uid=sdict.get("p_uid", sdict.get("pUid")),
+            detach_ref=sdict.get("detach_ref", sdict.get("detachRef")),
+        )
+
+
+class AttachableRuntimeDescr(CapNProtoMsg):
+    """Node-local descriptor of an attachable runtime, written by LS to the attach-info file.
+
+    The file holds the Base64 encoding of this message's serialized bytes. It
+    intentionally carries no auth token.
+    """
+
+    _tc = MessageTypes.ATTACHABLE_RUNTIME_DESCR
+
+    def __init__(self, tag, node_index, gs_qd, ls_qd, default_pd, inf_pd, rt_uid, _tc=None):
+        super().__init__(tag)
+        self.node_index = int(node_index)
+        self.gs_qd = gs_qd
+        self.ls_qd = ls_qd
+        self.default_pd = default_pd
+        self.inf_pd = inf_pd
+        self.rt_uid = rt_uid
+
+    @property
+    def capnp_name(self):
+        return "attachableRuntimeDescr"
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv.update(
+            node_index=self.node_index,
+            gs_qd=self.gs_qd,
+            ls_qd=self.ls_qd,
+            default_pd=self.default_pd,
+            inf_pd=self.inf_pd,
+            rt_uid=self.rt_uid,
+        )
+        return rv
+
+    def builder(self):
+        cap_msg = super().builder()
+        client_msg = cap_msg.init(self.capnp_name)
+        client_msg.nodeIndex = self.node_index
+        client_msg.gsQd = self.gs_qd
+        client_msg.lsQd = self.ls_qd
+        client_msg.defaultPd = self.default_pd
+        client_msg.infPd = self.inf_pd
+        client_msg.rtUid = self.rt_uid
+        return cap_msg
+
+    @classmethod
+    def from_sdict(cls, sdict):
+        return cls(
+            tag=sdict["tag"],
+            node_index=sdict.get("node_index", sdict.get("nodeIndex")),
+            gs_qd=sdict.get("gs_qd", sdict.get("gsQd")),
+            ls_qd=sdict.get("ls_qd", sdict.get("lsQd")),
+            default_pd=sdict.get("default_pd", sdict.get("defaultPd")),
+            inf_pd=sdict.get("inf_pd", sdict.get("infPd")),
+            rt_uid=sdict.get("rt_uid", sdict.get("rtUid")),
+        )
+
+
 class LSProcessKill(InfraMsg):
     """
     Refer to :ref:`Common Fields<cfs>` for a description of
@@ -7224,18 +7861,18 @@ class LSPingBE(InfraMsg):
     _tc = MessageTypes.LS_PING_BE
     EMPTY = b64encode(b"")
 
-    def __init__(self, tag, ls_cd=EMPTY, be_cd=EMPTY, gs_qd=EMPTY, default_pd=EMPTY, inf_pd=EMPTY, _tc=None):
+    def __init__(self, tag, ls_qd=EMPTY, be_qd=EMPTY, gs_qd=EMPTY, default_pd=EMPTY, inf_pd=EMPTY, _tc=None):
         super().__init__(tag)
-        self.ls_cd = ls_cd
-        self.be_cd = be_cd
+        self.ls_qd = ls_qd
+        self.be_qd = be_qd
         self.gs_qd = gs_qd
         self.default_pd = default_pd
         self.inf_pd = inf_pd
 
     def get_sdict(self):
         rv = super().get_sdict()
-        rv["ls_cd"] = self.ls_cd
-        rv["be_cd"] = self.be_cd
+        rv["ls_qd"] = self.ls_qd
+        rv["be_qd"] = self.be_qd
         rv["gs_qd"] = self.gs_qd
         rv["default_pd"] = self.default_pd
         rv["inf_pd"] = self.inf_pd
@@ -7721,12 +8358,14 @@ class LAChannelsInfo(InfraMsg):
         _tc=None,
         *,
         fe_ext_ip_addr=None,
+        attach_auth_token=None,
     ):
         super().__init__(tag)
 
         self.gs_qd = gs_qd
         self.transport = dfacts.TransportAgentOptions.from_str(transport)
         self.num_gw_channels = num_gw_channels
+        self.attach_auth_token = attach_auth_token
         try:
             self.fe_ext_ip_addr = fe_ext_ip_addr if fe_ext_ip_addr else get_external_ip_addr()
         except OSError:
@@ -7751,6 +8390,7 @@ class LAChannelsInfo(InfraMsg):
         rv["gs_qd"] = self.gs_qd
         rv["num_gw_channels"] = self.num_gw_channels
         rv["transport"] = str(self.transport)
+        rv["attach_auth_token"] = self.attach_auth_token
         return rv
 
 
@@ -8136,21 +8776,22 @@ class RuntimeDesc(InfraMsg):
     def __init__(
         self,
         tag,
-        gs_cd,
-        gs_ret_cd,
-        ls_cd,
-        ls_ret_cd,
+        gs_qd,
+        gs_ret_qd,
+        local_ls_qd,
+        ls_ret_qd,
         fe_ext_ip_addr,
         head_node_ip_addr,
         oob_port,
         python_path,
         env,
         _tc=None,
+        dragon_version=None,
     ):
         super().__init__(tag)
         self.gs_qd = gs_qd
         self.gs_ret_qd = gs_ret_qd
-        self.ls_cd = ls_cd
+        self.local_ls_qd = local_ls_qd
         self.ls_ret_qd = ls_ret_qd
         # should we add "username" to the sdesc?
         self.fe_ext_ip_addr = fe_ext_ip_addr
@@ -8158,19 +8799,21 @@ class RuntimeDesc(InfraMsg):
         self.oob_port = oob_port
         self.python_path = python_path
         self.env = json.dumps(dict(env))
+        self.dragon_version = dragon_version
         # add something to help deal with differences in dir structure?
 
     def get_sdict(self):
         rv = super().get_sdict()
         rv["gs_qd"] = self.gs_qd
         rv["gs_ret_qd"] = self.gs_ret_qd
-        rv["ls_cd"] = self.ls_cd
+        rv["local_ls_qd"] = self.local_ls_qd
         rv["ls_ret_qd"] = self.ls_ret_qd
         rv["fe_ext_ip_addr"] = self.fe_ext_ip_addr
         rv["head_node_ip_addr"] = self.head_node_ip_addr
         rv["oob_port"] = self.oob_port
         rv["python_path"] = self.python_path
         rv["env"] = json.loads(self.env)
+        rv["dragon_version"] = self.dragon_version
         return rv
 
 
@@ -8238,6 +8881,60 @@ class TAUpdateNodesResponse(InfraMsg):
 
     def get_sdict(self):
         rv = super().get_sdict()
+        return rv
+
+
+class GSRegisterCtrlEvent(InfraMsg):
+    """Sent by the runtime head process to GlobalServices to register the
+    ctrl_event that signals runtime shutdown.  GS broadcasts a corresponding
+    :py:class:`LSStoreCtrlEvent` to every LocalServices node so that any
+    attached process can later retrieve and set the event via the KVS.
+
+    :param ctrl_event_sdesc: Base64-encoded serialized channel descriptor for
+        the ctrl_event's backing Dragon channel.
+    :type ctrl_event_sdesc: str
+    :param ctrl_event_cuid: Channel UID of the ctrl_event's backing channel.
+    :type ctrl_event_cuid: int
+    """
+
+    _tc = MessageTypes.GS_REGISTER_CTRL_EVENT
+
+    def __init__(self, tag, ctrl_event_sdesc, ctrl_event_cuid, _tc=None):
+        super().__init__(tag)
+        self.ctrl_event_sdesc = ctrl_event_sdesc
+        self.ctrl_event_cuid = ctrl_event_cuid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["ctrl_event_sdesc"] = self.ctrl_event_sdesc
+        rv["ctrl_event_cuid"] = self.ctrl_event_cuid
+        return rv
+
+
+class LSStoreCtrlEvent(InfraMsg):
+    """Forwarded by GlobalServices to each LocalServices node.  The receiving
+    LS stores the ctrl_event state under
+    :py:data:`dragon.infrastructure.facts.CTRL_EVENT_KVS_KEY` in its KVS so
+    that any attached process on that node can reconstruct and set the event.
+
+    :param ctrl_event_sdesc: Base64-encoded serialized channel descriptor for
+        the ctrl_event's backing Dragon channel.
+    :type ctrl_event_sdesc: str
+    :param ctrl_event_cuid: Channel UID of the ctrl_event's backing channel.
+    :type ctrl_event_cuid: int
+    """
+
+    _tc = MessageTypes.LS_STORE_CTRL_EVENT
+
+    def __init__(self, tag, ctrl_event_sdesc, ctrl_event_cuid, _tc=None):
+        super().__init__(tag)
+        self.ctrl_event_sdesc = ctrl_event_sdesc
+        self.ctrl_event_cuid = ctrl_event_cuid
+
+    def get_sdict(self):
+        rv = super().get_sdict()
+        rv["ctrl_event_sdesc"] = self.ctrl_event_sdesc
+        rv["ctrl_event_cuid"] = self.ctrl_event_cuid
         return rv
 
 
@@ -8614,6 +9311,7 @@ import sys
 
 
 def parse(serialized, restrict=None):
+
     if serialized is None:
         raise EOFError("The message to parse was None.")
 

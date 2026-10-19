@@ -1,7 +1,10 @@
 #ifndef HAVE_DRAGON_UTILS_INTERNAL_H
 #define HAVE_DRAGON_UTILS_INTERNAL_H
 
+#include <stdbool.h>
 #include <dragon/return_codes.h>
+#include "umap.h"
+#include "ulist.h"
 
 #ifdef __cplusplus
 extern "C" {

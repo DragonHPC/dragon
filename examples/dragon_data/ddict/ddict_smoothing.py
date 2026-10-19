@@ -25,8 +25,8 @@ from typing import Optional
 
 import numpy as np
 
-from dragon.data.ddict import DDict, PosixCheckpointPersister, DAOSCheckpointPersister
-from dragon.native.machine import System
+from dragon import DDict, System
+from dragon.data.ddict import PosixCheckpointPersister, DAOSCheckpointPersister
 
 
 def build_ddict(args, persister_class=None):

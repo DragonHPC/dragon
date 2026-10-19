@@ -28,6 +28,7 @@ from ..infrastructure.parameters import this_process
 from ..infrastructure.facts import ARG_IMMEDIATE_LIMIT, PMIBackend
 from ..infrastructure.process_desc import ProcessOptions
 from ..infrastructure.messages import PIPE as MSG_PIPE, STDOUT as MSG_STDOUT, DEVNULL as MSG_DEVNULL
+from ..infrastructure import runtime_env as druntime_env
 from ..infrastructure.policy import Policy
 from ..utils import b64decode, b64encode
 
@@ -243,7 +244,20 @@ class Popen:
 
 
 class ProcessTemplate:
-    """This class provides a template for a Dragon process."""
+    """This class provides a template for a Dragon process.
+
+    ProcessTemplate can be imported from the top-level :ref:`DragonAPI` or :mod:`dragon.native.process` modules.
+
+        .. code-block:: python
+
+          from dragon import ProcessTemplate
+
+        or
+
+        .. code-block:: python
+
+          from dragon.native.process import ProcessTemplate
+    """
 
     PIPE = MSG_PIPE
     STDOUT = MSG_STDOUT
@@ -325,22 +339,16 @@ class ProcessTemplate:
             self.argdata = None
 
         if cwd is None or cwd == ".":
-            if (
-                bool(os.getenv("DRAGON_PROXY_ENABLED", False))
-                and os.getenv("DRAGON_PROXY_REMOTE_CWD", None) is not None
-            ):
-                cwd = os.getenv("DRAGON_PROXY_REMOTE_CWD")
+            remote_cwd = druntime_env.proxy_remote_cwd()
+            if druntime_env.proxy_enabled() and remote_cwd is not None:
+                cwd = remote_cwd
             else:
                 cwd = os.getcwd()
 
         self.cwd = cwd
 
-        if (
-            env is None
-            and bool(os.getenv("DRAGON_PROXY_ENABLED", False))
-            and os.getenv("DRAGON_PROXY_REMOTE_ENV", None) is not None
-        ):
-            env = json.loads(os.getenv("DRAGON_PROXY_REMOTE_ENV"))
+        if env is None:
+            env = druntime_env.proxy_remote_env() if druntime_env.proxy_enabled() else None
 
         self.env = env
 
@@ -434,7 +442,7 @@ class ProcessTemplate:
             else:
                 new_target = os.path.join(cwd, target)
 
-                if not os.path.isfile(new_target) and not bool(os.getenv("DRAGON_PROXY_ENABLED", False)):
+                if not os.path.isfile(new_target) and not druntime_env.proxy_enabled():
                     raise AttributeError(
                         f"Cannot find executable {target} directly, in PATH or in working directory {cwd}"
                     )
@@ -442,8 +450,8 @@ class ProcessTemplate:
         return new_target
 
     def _get_python_process_parameters(self, target, args, kwargs) -> tuple:
-        if os.getenv("DRAGON_PROXY_ENABLED", False):
-            new_target = os.getenv("DRAGON_PROXY_PYTHON_EXECUTABLE", sys.executable)
+        if druntime_env.proxy_enabled():
+            new_target = druntime_env.proxy_remote_python_executable() or sys.executable
         else:
             new_target = sys.executable
         new_args = [
@@ -733,6 +741,11 @@ class Process(ProcessTemplate):
         """When the process has terminated, return exit code. None otherwise."""
         self._update_descriptor()
         return self._descr.ecode
+
+    @property
+    def exitcode(self) -> int:
+        """Multiprocessing-compatible alias for returncode."""
+        return self.returncode
 
     def children(self) -> list[object]:
         """Find all active children of the current process.

@@ -1,0 +1,1 @@
+python client.py --proxy --system="pea2k" --exit-path="/lus/scratch/wahlc/dragon/dev/cpw-outer-space-proc/examples/dragon_core/outerspace_proc/client_exit" --remote-working-dir="/lus/scratch/wahlc/dragon/dev/cpw-outer-space-proc/examples/dragon_core/outerspace_proc"

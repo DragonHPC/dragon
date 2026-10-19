@@ -40,7 +40,7 @@ def single_connect_to_default_channels(gs_input, ls_input, bela_input):
         ls_input = InfraQueue.attach(dparm.this_process.local_ls_qd)
 
     if bela_input is None:
-        bela_input = InfraQueue.attach(dparm.this_process.local_be_cd)
+        bela_input = InfraQueue.attach(dparm.this_process.local_be_qd)
 
     return gs_input, ls_input, bela_input
 
@@ -124,7 +124,7 @@ def startup_multi(the_ctx, gs_input=None, ls_inputs=None, bela_input=None):
     log.info("pinged all LS (GSPingLS) - m10")
 
     # Attach to the launcher backend on this node.
-    be_in_wh = InfraQueue.attach(dparm.this_process.local_be_cd)
+    be_in_wh = InfraQueue.attach(dparm.this_process.local_be_qd)
 
     log.info("GS attached to its launcher BE channel - a17")
 

@@ -3631,4 +3631,354 @@ uint8_t CPLoggingMessage::level() {
     return mLevel;
 }
 
+/********************************************************************************************************/
+/* local services external register */
+
+LSExternalRegisterMsg::LSExternalRegisterMsg(uint64_t tag, const char* authToken, uint64_t pid,
+                                             const char* procRespSdesc,
+                                             const char* runtimeUid, const char* attemptId):
+    DragonMsg(LSExternalRegisterMsg::TC, tag), mAuthToken(authToken), mPid(pid), mProcRespSdesc(procRespSdesc),
+    mRuntimeUid(runtimeUid), mAttemptId(attemptId) {}
+
+void
+LSExternalRegisterMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    LSExternalRegisterDef::Builder builder = msg.initLsExternalRegister();
+    builder.setAuthToken(mAuthToken);
+    builder.setPid(mPid);
+    builder.setProcRespSdesc(mProcRespSdesc);
+    builder.setRuntimeIncarnation(mRuntimeUid);
+    builder.setAttemptId(mAttemptId);
+}
+
+dragonError_t
+LSExternalRegisterMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+
+        LSExternalRegisterDef::Reader lsERReader = reader.getLsExternalRegister();
+
+        (*msg) = new LSExternalRegisterMsg(
+            reader.getTag(),
+            lsERReader.getAuthToken().cStr(),
+            lsERReader.getPid(),
+            lsERReader.getProcRespSdesc().cStr(),
+            lsERReader.getRuntimeIncarnation().cStr(),
+            lsERReader.getAttemptId().cStr());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the LSExternalRegister message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const char*
+LSExternalRegisterMsg::authToken()
+{
+    return mAuthToken.c_str();
+}
+
+const uint64_t
+LSExternalRegisterMsg::pid()
+{
+    return mPid;
+}
+
+const char*
+LSExternalRegisterMsg::procRespSdesc()
+{
+    return mProcRespSdesc.c_str();
+}
+
+const char*
+LSExternalRegisterMsg::runtimeUid()
+{
+    return mRuntimeUid.c_str();
+}
+
+const char*
+LSExternalRegisterMsg::attemptId()
+{
+    return mAttemptId.c_str();
+}
+
+/********************************************************************************************************/
+/* local services external resources ready */
+
+LSExternalResourcesReadyMsg::LSExternalResourcesReadyMsg(
+    uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo,
+    const char* runtimeUid, const char* attemptId, uint64_t nodeIndex, uint64_t pUid,
+    const char* lsReturnQd, const char* gsReturnQd, uint64_t numGwChannelsPerNode,
+    const std::vector<std::pair<std::string, std::string>>& gwEnv, const char* defaultPd, const char* infPd):
+    DragonResponseMsg(LSExternalResourcesReadyMsg::TC, tag, ref, err, errInfo),
+    mRuntimeUid(runtimeUid), mAttemptId(attemptId), mNodeIndex(nodeIndex),
+    mPUid(pUid), mLsReturnQd(lsReturnQd), mGsReturnQd(gsReturnQd),
+    mNumGwChannelsPerNode(numGwChannelsPerNode), mGwEnv(gwEnv), mDefaultPd(defaultPd), mInfPd(infPd) {}
+
+void
+LSExternalResourcesReadyMsg::builder(MessageDef::Builder& msg)
+{
+    DragonResponseMsg::builder(msg);
+    LSExternalResourcesReadyDef::Builder builder = msg.initLsExternalResourcesReady();
+    builder.setRuntimeIncarnation(mRuntimeUid);
+    builder.setAttemptId(mAttemptId);
+    builder.setNodeIndex(mNodeIndex);
+    builder.setPUid(mPUid);
+    builder.setLsReturnQd(mLsReturnQd);
+    builder.setGsReturnQd(mGsReturnQd);
+    builder.setNumGwChannelsPerNode(mNumGwChannelsPerNode);
+    ::capnp::List<GwEnvEntryDef>::Builder entries = builder.initGwEnv(mGwEnv.size());
+    for (size_t index = 0; index < mGwEnv.size(); ++index) {
+        entries[index].setKey(mGwEnv[index].first);
+        entries[index].setValue(mGwEnv[index].second);
+    }
+    builder.setDefaultPd(mDefaultPd);
+    builder.setInfPd(mInfPd);
+}
+
+dragonError_t
+LSExternalResourcesReadyMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader response = reader.getResponseOption().getValue();
+        LSExternalResourcesReadyDef::Reader resources = reader.getLsExternalResourcesReady();
+        std::vector<std::pair<std::string, std::string>> gwEnv;
+        for (GwEnvEntryDef::Reader entry : resources.getGwEnv())
+            gwEnv.push_back(std::make_pair(std::string(entry.getKey().cStr()), std::string(entry.getValue().cStr())));
+        *msg = new LSExternalResourcesReadyMsg(
+            reader.getTag(), response.getRef(), (dragonError_t)response.getErr(), response.getErrInfo().cStr(),
+            resources.getRuntimeIncarnation().cStr(), resources.getAttemptId().cStr(),
+            resources.getNodeIndex(), resources.getPUid(), resources.getLsReturnQd().cStr(),
+            resources.getGsReturnQd().cStr(), resources.getNumGwChannelsPerNode(), gwEnv,
+            resources.getDefaultPd().cStr(), resources.getInfPd().cStr());
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception deserializing LSExternalResourcesReady.");
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const char* LSExternalResourcesReadyMsg::runtimeUid() { return mRuntimeUid.c_str(); }
+const char* LSExternalResourcesReadyMsg::attemptId() { return mAttemptId.c_str(); }
+const uint64_t LSExternalResourcesReadyMsg::nodeIndex() { return mNodeIndex; }
+const uint64_t LSExternalResourcesReadyMsg::pUid() { return mPUid; }
+const char* LSExternalResourcesReadyMsg::lsReturnQd() { return mLsReturnQd.c_str(); }
+const char* LSExternalResourcesReadyMsg::gsReturnQd() { return mGsReturnQd.c_str(); }
+const uint64_t LSExternalResourcesReadyMsg::numGwChannelsPerNode() { return mNumGwChannelsPerNode; }
+const std::vector<std::pair<std::string, std::string>>& LSExternalResourcesReadyMsg::gwEnv() { return mGwEnv; }
+const char* LSExternalResourcesReadyMsg::defaultPd() { return mDefaultPd.c_str(); }
+const char* LSExternalResourcesReadyMsg::infPd() { return mInfPd.c_str(); }
+
+/********************************************************************************************************/
+/* global services external register completion */
+
+GSExternalRegisterCompleteMsg::GSExternalRegisterCompleteMsg(
+    uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo, uint64_t pUid):
+    DragonResponseMsg(GSExternalRegisterCompleteMsg::TC, tag, ref, err, errInfo), mPUid(pUid) {}
+
+void
+GSExternalRegisterCompleteMsg::builder(MessageDef::Builder& msg)
+{
+    DragonResponseMsg::builder(msg);
+    msg.initGsExternalRegisterComplete().setPUid(mPUid);
+}
+
+dragonError_t
+GSExternalRegisterCompleteMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader response = reader.getResponseOption().getValue();
+        GSExternalRegisterCompleteDef::Reader completion = reader.getGsExternalRegisterComplete();
+        *msg = new GSExternalRegisterCompleteMsg(
+            reader.getTag(), response.getRef(), (dragonError_t)response.getErr(), response.getErrInfo().cStr(),
+            completion.getPUid());
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception deserializing GSExternalRegisterComplete.");
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const uint64_t GSExternalRegisterCompleteMsg::pUid() { return mPUid; }
+
+/********************************************************************************************************/
+/* global services process detach acknowledgement */
+
+GSProcessDetachAckMsg::GSProcessDetachAckMsg(uint64_t tag, uint64_t pUid, uint64_t detachRef):
+    DragonMsg(GSProcessDetachAckMsg::TC, tag), mPUid(pUid), mDetachRef(detachRef) {}
+
+void
+GSProcessDetachAckMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    GSProcessDetachAckDef::Builder builder = msg.initGsProcessDetachAck();
+    builder.setPUid(mPUid);
+    builder.setDetachRef(mDetachRef);
+}
+
+dragonError_t
+GSProcessDetachAckMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        GSProcessDetachAckDef::Reader ack = reader.getGsProcessDetachAck();
+        *msg = new GSProcessDetachAckMsg(reader.getTag(), ack.getPUid(), ack.getDetachRef());
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception deserializing GSProcessDetachAck.");
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const uint64_t GSProcessDetachAckMsg::pUid() { return mPUid; }
+const uint64_t GSProcessDetachAckMsg::detachRef() { return mDetachRef; }
+
+/********************************************************************************************************/
+/* local services external register cancel */
+
+LSExternalRegisterCancelMsg::LSExternalRegisterCancelMsg(uint64_t tag,
+                                                         const char* runtimeUid, const char* attemptId,
+                                                         uint64_t pUid):
+    DragonMsg(LSExternalRegisterCancelMsg::TC, tag),
+    mRuntimeUid(runtimeUid), mAttemptId(attemptId), mPUid(pUid) {}
+
+void
+LSExternalRegisterCancelMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    LSExternalRegisterCancelDef::Builder cancel = msg.initLsExternalRegisterCancel();
+    cancel.setRuntimeIncarnation(mRuntimeUid);
+    cancel.setAttemptId(mAttemptId);
+    cancel.setPUid(mPUid);
+}
+
+dragonError_t
+LSExternalRegisterCancelMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        LSExternalRegisterCancelDef::Reader cancel = reader.getLsExternalRegisterCancel();
+        *msg = new LSExternalRegisterCancelMsg(
+            reader.getTag(), cancel.getRuntimeIncarnation().cStr(),
+            cancel.getAttemptId().cStr(), cancel.getPUid());
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception deserializing LSExternalRegisterCancel.");
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const char* LSExternalRegisterCancelMsg::runtimeUid() { return mRuntimeUid.c_str(); }
+const char* LSExternalRegisterCancelMsg::attemptId() { return mAttemptId.c_str(); }
+const uint64_t LSExternalRegisterCancelMsg::pUid() { return mPUid; }
+
+/* attachable runtime descriptor */
+
+AttachableRuntimeDescrMsg::AttachableRuntimeDescrMsg(uint64_t tag, uint64_t nodeIndex, const char* gsQd,
+                                                     const char* lsQd, const char* defaultPd,
+                                                     const char* infPd, const char* rtUid):
+    DragonMsg(AttachableRuntimeDescrMsg::TC, tag),
+    mNodeIndex(nodeIndex), mGsQd(gsQd), mLsQd(lsQd), mDefaultPd(defaultPd), mInfPd(infPd), mRtUid(rtUid) {}
+
+void
+AttachableRuntimeDescrMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    AttachableRuntimeDescrDef::Builder descr = msg.initAttachableRuntimeDescr();
+    descr.setNodeIndex(mNodeIndex);
+    descr.setGsQd(mGsQd);
+    descr.setLsQd(mLsQd);
+    descr.setDefaultPd(mDefaultPd);
+    descr.setInfPd(mInfPd);
+    descr.setRtUid(mRtUid);
+}
+
+dragonError_t
+AttachableRuntimeDescrMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        AttachableRuntimeDescrDef::Reader descr = reader.getAttachableRuntimeDescr();
+        *msg = new AttachableRuntimeDescrMsg(
+            reader.getTag(), descr.getNodeIndex(), descr.getGsQd().cStr(), descr.getLsQd().cStr(),
+            descr.getDefaultPd().cStr(), descr.getInfPd().cStr(), descr.getRtUid().cStr());
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception deserializing AttachableRuntimeDescr.");
+    }
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const uint64_t AttachableRuntimeDescrMsg::nodeIndex() { return mNodeIndex; }
+const char* AttachableRuntimeDescrMsg::gsQd() { return mGsQd.c_str(); }
+const char* AttachableRuntimeDescrMsg::lsQd() { return mLsQd.c_str(); }
+const char* AttachableRuntimeDescrMsg::defaultPd() { return mDefaultPd.c_str(); }
+const char* AttachableRuntimeDescrMsg::infPd() { return mInfPd.c_str(); }
+const char* AttachableRuntimeDescrMsg::rtUid() { return mRtUid.c_str(); }
+
+/********************************************************************************************************/
+/* global services process detach */
+
+GSProcessDetachMsg::GSProcessDetachMsg(uint64_t tag, uint64_t pUid, uint64_t rCuid):
+    DragonMsg(GSProcessDetachMsg::TC, tag), mPUid(pUid), mRCuid(rCuid) {}
+
+void
+GSProcessDetachMsg::builder(MessageDef::Builder& msg)
+{
+    DragonMsg::builder(msg);
+    GSProcessDetachDef::Builder builder = msg.initGsProcessDetach();
+    builder.setPUid(mPUid);
+    builder.setRCuid(mRCuid);
+}
+
+dragonError_t
+GSProcessDetachMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+
+        GSProcessDetachDef::Reader gsPDReader = reader.getGsProcessDetach();
+
+        (*msg) = new GSProcessDetachMsg(
+            reader.getTag(),
+            gsPDReader.getPUid(),
+            gsPDReader.getRCuid());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the GSProcessDetach message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
+const uint64_t
+GSProcessDetachMsg::pUid()
+{
+    return mPUid;
+}
+
+const uint64_t
+GSProcessDetachMsg::rCuid()
+{
+    return mRCuid;
+}
+
+/********************************************************************************************************/
+/* global services process detach response */
+
+GSProcessDetachResponseMsg::GSProcessDetachResponseMsg(uint64_t tag, uint64_t ref, dragonError_t err, const char* errInfo):
+    DragonResponseMsg(GSProcessDetachResponseMsg::TC, tag, ref, err, errInfo) {}
+
+dragonError_t
+GSProcessDetachResponseMsg::deserialize(MessageDef::Reader& reader, DragonMsg** msg)
+{
+    try {
+        ResponseDef::Reader rReader = reader.getResponseOption().getValue();
+
+        (*msg) = new GSProcessDetachResponseMsg(
+            reader.getTag(),
+            rReader.getRef(),
+            (dragonError_t)rReader.getErr(),
+            rReader.getErrInfo().cStr());
+
+    } catch (...) {
+        err_return(DRAGON_FAILURE, "There was an exception while deserializing the GSProcessDetachResponse message.");
+    }
+
+    no_err_return(DRAGON_SUCCESS);
+}
+
 } // end dragon namespace

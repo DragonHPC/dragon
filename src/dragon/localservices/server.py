@@ -1,4 +1,6 @@
 import os
+import sys
+import errno
 import traceback
 import time
 import logging
@@ -10,11 +12,13 @@ import json
 import collections
 import selectors
 import psutil
+from dataclasses import dataclass
 import tempfile
 import shutil
 
 from .. import channels as dch
 from .. import managed_memory as dmm
+from .. import dtypes as dt
 from .. import fli
 from ..rc import DragonError
 
@@ -27,6 +31,7 @@ from ..infrastructure import parameters as parms
 from ..infrastructure import connection as dconn
 from ..infrastructure import parameters as dp
 from ..infrastructure.queue import InfraQueue
+from ..infrastructure.gpu_desc import apply_gpu_affinity
 
 ## This is defined only if the build used PMIx.
 ## If it didn't passing shouldn't cause issue
@@ -72,6 +77,51 @@ ProcessProps = collections.namedtuple(
 )
 
 
+@dataclass
+class ExternalProcessProps:
+    """Tracks resources for a co-located external process provisioned by LS."""
+
+    p_uid: int
+    os_pid: int
+    local_cuids: set
+    local_muids: set
+    is_external: bool = True
+
+
+@dataclass
+class ExternalRegistration:
+    attempt_id: str
+    p_uid: int
+    os_pid: int
+    process_start_time: str
+    ls_return_qd: str
+    gs_return_cuid: int
+    gs_return_muid: int
+    gs_return_cd: str
+    gs_return_qd: str
+    state: str = "LOCAL_PREPARED"
+
+
+def _with_dragon_dyld_path(env):
+    """Return a copy of `env` with the Dragon lib dir prepended to DYLD_LIBRARY_PATH.
+
+    macOS dyld does not expand the $ORIGIN token used by the rpaths built into the
+    Dragon binaries, so @rpath/libdragon.so only resolves via DYLD_LIBRARY_PATH.
+    """
+    the_env = dict(os.environ if env is None else env)
+    lib_dir = str(dfacts.DRAGON_LIB_DIR)
+    dyld_path = the_env.get("DYLD_LIBRARY_PATH", "")
+    dyldfallback_path = the_env.get("DYLD_FALLBACK_LIBRARY_PATH", "")
+
+    if lib_dir not in dyld_path.split(os.pathsep):
+        the_env["DYLD_LIBRARY_PATH"] = os.pathsep.join(filter(None, [lib_dir, dyld_path]))
+
+    if lib_dir not in dyldfallback_path.split(os.pathsep):
+        the_env["DYLD_FALLBACK_LIBRARY_PATH"] = os.pathsep.join(filter(None, [lib_dir, dyldfallback_path]))
+
+    return the_env
+
+
 class PopenProps(subprocess.Popen):
     def __init__(self, props: ProcessProps, *args, **kwds):
         assert isinstance(props, ProcessProps)
@@ -81,10 +131,10 @@ class PopenProps(subprocess.Popen):
             if props.layout.gpu_core and props.layout.accelerator_env:
                 # gpu_core list must be turned into a string in the form "0,1,2" etc
                 if isinstance(kwds["env"], dict):
-                    kwds["env"][props.layout.accelerator_env] = ",".join(str(core) for core in props.layout.gpu_core)
+                    apply_gpu_affinity(kwds["env"], props.layout.gpu_core, props.layout.accelerator_env)
                 else:
                     # this might be unnecessary because the environment might always be a dict.
-                    os.environ[props.layout.accelevator_env] = ",".join(str(core) for core in props.layout.gpu_core)
+                    apply_gpu_affinity(os.environ, props.layout.gpu_core, props.layout.accelerator_env)
 
         try:
             cores = ""
@@ -102,6 +152,12 @@ class PopenProps(subprocess.Popen):
 
         # args is a tuple where args[0] is really the list of args. Hence the odd looking wrapper_args.
         wrapper_args = (([dfacts.POPEN_WRAPPER, cores] + args[0]),)
+
+        # dragon-popen resolves libdragon.so through @rpath, but the embedded rpaths use the
+        # Linux $ORIGIN token which dyld does not expand. Every process LS starts goes through
+        # this wrapper, so point dyld at the Dragon lib dir here rather than at each call site.
+        if sys.platform == "darwin":
+            kwds["env"] = _with_dragon_dyld_path(kwds.get("env"))
 
         super().__init__(*wrapper_args, **kwds)
         # Assuming this is basically a free call, default the afinity to "everything" just in case
@@ -677,6 +733,38 @@ class AvailableLocalCUIDS:
         self._active.add(cuid)
 
 
+class ExternalPUIDExhausted(RuntimeError):
+    pass
+
+
+class AvailableExternalPUIDS:
+    """Monotonic, non-recycling allocator for this node's external PUID block."""
+
+    def __init__(self, node_index):
+        self._first, self._limit = dfacts.external_puid_bounds(node_index)
+        self._next = self._first
+        self._lock = threading.Lock()
+
+    @property
+    def next(self):
+        with self._lock:
+            if self._next == self._limit:
+                raise ExternalPUIDExhausted("external PUID block is exhausted")
+            puid = self._next
+            self._next += 1
+            return puid
+
+    @property
+    def issued(self):
+        with self._lock:
+            return self._next - self._first
+
+    @property
+    def remaining(self):
+        with self._lock:
+            return self._limit - self._next
+
+
 class AvailableLocalMUIDS:
     """Internal only class that manages Process Local MUIDs"""
 
@@ -752,17 +840,18 @@ class LocalServer:
     OOM_SLOW_SLEEP_TIME = 5  # seconds, the oom_monitor sleeps that long in normal conditions
     OOM_RAPID_SLEEP_TIME = 1  # seconds, when nearing OOM
 
-    def __init__(self, channels=None, pools=None, transport_test_mode=False, hostname="NONE"):
-        self.transport_test_mode = transport_test_mode
+    def __init__(self, channels=None, pools=None, hostname="NONE", attach_auth_token=None):
         self.new_procs = queue.SimpleQueue()  # outbound PopenProps of newly started processes
         self.new_channel_input_monitors = queue.SimpleQueue()
         self.exited_channel_output_monitors = queue.SimpleQueue()
         self.exited_channel_input_monitors = queue.SimpleQueue()
         self.hostname = hostname
+        self.attach_auth_token = attach_auth_token
         self.cuid_to_input_connector = {}
         self.node_index = parms.this_process.index
         self.local_cuids = AvailableLocalCUIDS(self.node_index)
         self.local_muids = AvailableLocalMUIDS(self.node_index)
+        self.external_puids = AvailableExternalPUIDS(self.node_index)
         self.local_channels = dict()
         self.pmi_group_resources = dict()
         self.def_muid = dfacts.default_pool_muid_from_index(self.node_index)
@@ -783,6 +872,12 @@ class LocalServer:
         self.apt = {}  # active process table. key: pid, value PopenProps obj
         self.puid2pid = {}  # key: p_uid, value pid
         self.apt_lock = threading.Lock()
+
+        # Tracks co-located external processes registered via LSExternalRegister.
+        # key: os pid (int), value: ExternalProcessProps; protected by apt_lock.
+        self.external_procs = {}
+        self.external_registrations = {}
+        self.adopted_external_cuids = set()
 
         self.shutdown_sig = threading.Event()
         self.gs_shutdown_sig = threading.Event()
@@ -862,7 +957,8 @@ class LocalServer:
 
     def __str__(self):
         with self.apt_lock:
-            plist = ["\t%s:%s %s" % (p_uid, pid, self.apt[pid]) for p_uid, pid in self.puid2pid.items()]
+            # External (attached) processes are in puid2pid but not apt.
+            plist = ["\t%s:%s %s" % (p_uid, pid, self.apt.get(pid)) for p_uid, pid in self.puid2pid.items()]
 
         procs = "\n".join(plist)
         chans = " ".join(["%s" % k for k in self.channels.keys()])
@@ -893,7 +989,12 @@ class LocalServer:
         with self.apt_lock:
             log.info("%s processes outstanding" % len(self.apt))
             for p_uid, pid in self.puid2pid.items():
-                proc = self.apt[pid]
+                # External (co-located) processes are tracked in external_procs,
+                # not apt; LS did not spawn them so there is no PopenProps to
+                # kill/wait on here.
+                proc = self.apt.get(pid)
+                if proc is None:
+                    continue
                 try:
                     proc.kill()
 
@@ -1004,6 +1105,7 @@ class LocalServer:
             th(name="watch death", target=self.watch_death, daemon=True),
             th(name="input mon", target=self.watch_input, daemon=True),
             th(name="OOM mon", target=self.watch_oom, daemon=True),
+            th(name="watch external death", target=self.watch_external_death, daemon=True),
         ]
 
         self.stashed_threading_excepthook = threading.excepthook
@@ -1033,10 +1135,6 @@ class LocalServer:
                     log.error("thread %s seems to have hung!" % th.name)
         except Exception as ex:
             self._abnormal_termination("ls run joining threads exception: %s" % ex)
-
-        if self.transport_test_mode and self.exit_reason is None:
-            # In the transport test mode, normal set_shutdown was called.
-            log.info("beginning normal shutdown during transport test mode run")
 
         try:
             # Destroy gateway channels
@@ -1218,6 +1316,22 @@ class LocalServer:
 
         return resp_msg
 
+    def _local_resource_holder(self, puid):
+        """Return the record tracking process-local cuids/muids for *puid*.
+
+        For LS-spawned processes this is the PopenProps.props namedtuple; for
+        attached external processes it is the ExternalProcessProps record. Both
+        expose mutable ``local_cuids`` and ``local_muids`` sets. Returns None if
+        *puid* has no live pid mapping.
+        """
+        pid = self.puid2pid.get(puid)
+        if pid is None:
+            return None
+        proc = self.apt.get(pid)
+        if proc is not None:
+            return proc.props
+        return self.external_procs.get(pid)
+
     @dutil.route(dmsg.LSCreateProcessLocalChannel, _DTBL)
     def create_process_local_channel(self, msg: dmsg.LSCreateProcessLocalChannel) -> None:
         log = logging.getLogger("LS.create local channel")
@@ -1236,10 +1350,19 @@ class LocalServer:
 
         try:
             ch = self.make_local_channel()
-            self.apt[self.puid2pid[msg.puid]].props.local_cuids.add(ch.cuid)
+            holder = self._local_resource_holder(msg.puid)
+            if holder is not None:
+                holder.local_cuids.add(ch.cuid)
             self.local_channels[ch.cuid] = ch
-        except dch.ChannelError as cex:
-            error = "%r failed: %s" % (msg, cex)
+        except dt.DragonException as dex:
+            error = "%r failed: %s" % (msg, dex)
+            resp_msg = dmsg.LSCreateProcessLocalChannelResponse(
+                tag=get_new_tag(), ref=msg.tag, err=dex.lib_err, errInfo=error
+            )
+            send_fli_response(resp_msg, msg.respFLI)
+            return
+        except Exception as ex:
+            error = "%r failed: %s" % (msg, ex)
             resp_msg = dmsg.LSCreateProcessLocalChannelResponse(
                 tag=get_new_tag(), ref=msg.tag, err=DragonError.INVALID_OPERATION, errInfo=error
             )
@@ -1272,9 +1395,18 @@ class LocalServer:
             if msg.cuid in self.local_channels:
                 self.local_channels[msg.cuid].destroy()
                 del self.local_channels[msg.cuid]
-                self.apt[self.puid2pid[msg.puid]].props.local_cuids.remove(msg.cuid)
+                holder = self._local_resource_holder(msg.puid)
+                if holder is not None:
+                    holder.local_cuids.discard(msg.cuid)
                 self.local_cuids.reclaim([msg.cuid])
 
+        except dt.DragonException as dex:
+            error = "%r failed: %s" % (msg, dex)
+            resp_msg = dmsg.LSDestroyProcessLocalChannelResponse(
+                tag=get_new_tag(), ref=msg.tag, err=dex.lib_err, errInfo=error
+            )
+            send_fli_response(resp_msg, msg.respFLI)
+            return
         except Exception as ex:
             error = "%r failed: %s" % (msg, ex)
             resp_msg = dmsg.LSDestroyProcessLocalChannelResponse(
@@ -1304,9 +1436,18 @@ class LocalServer:
 
         try:
             pool = self.make_local_pool(msg)
-            self.apt[self.puid2pid[msg.puid]].props.local_muids.add(pool.muid)
-        except Exception as cex:
-            error = "%r failed: %s" % (msg, cex)
+            holder = self._local_resource_holder(msg.puid)
+            if holder is not None:
+                holder.local_muids.add(pool.muid)
+        except dt.DragonException as dex:
+            error = "%r failed: %s" % (msg, dex)
+            resp_msg = dmsg.LSCreateProcessLocalPoolResponse(
+                tag=get_new_tag(), ref=msg.tag, err=dex.lib_err, errInfo=error
+            )
+            send_fli_response(resp_msg, msg.respFLI)
+            return
+        except Exception as ex:
+            error = "%r failed: %s" % (msg, ex)
             resp_msg = dmsg.LSCreateProcessLocalPoolResponse(
                 tag=get_new_tag(), ref=msg.tag, err=DragonError.INVALID_OPERATION, errInfo=error
             )
@@ -1337,7 +1478,16 @@ class LocalServer:
 
         try:
             pool = self.register_local_pool(msg)
-            self.apt[self.puid2pid[msg.puid]].props.local_muids.add(pool.muid)
+            holder = self._local_resource_holder(msg.puid)
+            if holder is not None:
+                holder.local_muids.add(pool.muid)
+        except dt.DragonException as dex:
+            error = "%r failed: %s" % (msg, dex)
+            resp_msg = dmsg.LSRegisterProcessLocalPoolResponse(
+                tag=get_new_tag(), ref=msg.tag, err=dex.lib_err, errInfo=error
+            )
+            send_fli_response(resp_msg, msg.respFLI)
+            return
         except Exception as cex:
             error = "%r failed: %s" % (msg, cex)
             resp_msg = dmsg.LSRegisterProcessLocalPoolResponse(
@@ -1367,10 +1517,19 @@ class LocalServer:
 
         try:
             pool = self.deregister_local_pool(msg)
-            self.apt[self.puid2pid[msg.puid]].props.local_muids.remove(pool.muid)
+            holder = self._local_resource_holder(msg.puid)
+            if holder is not None:
+                holder.local_muids.discard(pool.muid)
             pool.detach()
-        except Exception as cex:
-            error = "%r failed: %s" % (msg, cex)
+        except dt.DragonException as dex:
+            error = "%r failed: %s" % (msg, dex)
+            resp_msg = dmsg.LSDeregisterProcessLocalPoolResponse(
+                tag=get_new_tag(), ref=msg.tag, err=dex.lib_err, errInfo=error
+            )
+            send_fli_response(resp_msg, msg.respFLI)
+            return
+        except Exception as ex:
+            error = "%r failed: %s" % (msg, ex)
             resp_msg = dmsg.LSDeregisterProcessLocalPoolResponse(
                 tag=get_new_tag(), ref=msg.tag, err=DragonError.INVALID_OPERATION, errInfo=error
             )
@@ -1391,11 +1550,16 @@ class LocalServer:
             error = "%s does not exist" % msg.c_uid
 
         if not error:
-            ch = self.channels.pop(msg.c_uid)
+            ch = self.channels[msg.c_uid]
             try:
                 ch.destroy()
             except dch.ChannelError as cex:
                 error = "%r failed: %s" % (msg, cex)
+            else:
+                del self.channels[msg.c_uid]
+                if msg.c_uid in self.adopted_external_cuids:
+                    self.adopted_external_cuids.remove(msg.c_uid)
+                    self.local_cuids.reclaim([msg.c_uid])
 
         if error:
             log.warning(error)
@@ -1461,6 +1625,7 @@ class LocalServer:
                     err_info = "A PMIx backend has been requested for an MPI process group, but this Dragon library was not built with PMIx support"
                     raise AttributeError(err_info)
                 else:
+                    log.debug("Creating PMIx job for guid %s", msg.guid)
                     self.pmi_group_resources[msg.guid].job = DragonPMIxJob(
                         msg.guid,
                         self.pmi_group_resources["server_created"],
@@ -1475,7 +1640,7 @@ class LocalServer:
                         pmix_nidlist,
                         pmix_hostlist,
                     )
-
+                    log.debug("PMIx job created for guid %s", msg.guid)
                     if not self.pmi_group_resources["server_created"]:
                         self.pmi_group_resources["server_created"] = True
         # In case PMI stuff isn't happening
@@ -1674,13 +1839,12 @@ class LocalServer:
                     the_env["_DRAGON_PALS_ENABLED"] = "1"
                     the_env["DL_PLUGIN_RESILIENCY"] = "1"
                     the_env["LD_PRELOAD"] = str(dfacts.DRAGON_LIB_SO)
-                    the_env["LD_LIBRARY_PATH"] = (
-                        str(dfacts.DRAGON_LIB_DIR)
-                        + ":"
-                        + str(self.pmi_group_resources["PMOD_PATH"])
-                        + ":"
-                        + str(the_env.get("LD_LIBRARY_PATH", ""))
-                    )
+
+                    ld_paths = str(dfacts.DRAGON_LIB_DIR) + ":" + str(self.pmi_group_resources["PMOD_PATH"])
+
+                    the_env["LD_LIBRARY_PATH"] = ld_paths + ":" + str(the_env.get("LD_LIBRARY_PATH", ""))
+                    the_env["DYLD_LIBRARY_PATH"] = ld_paths + ":" + str(the_env.get("DYLD_LIBRARY_PATH", ""))
+                    the_env["DYLD_FALLBACK_LIBRARY_PATH"] = the_env["DYLD_LIBRARY_PATH"]
                     the_env["PMI_CONTROL_PORT"] = str(pmi_group_info.control_port)
                     try:
                         del the_env["PMI_CONTROL_FD"]
@@ -1697,6 +1861,12 @@ class LocalServer:
 
                     the_env["LD_LIBRARY_PATH"] = (
                         str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("LD_LIBRARY_PATH", ""))
+                    )
+                    the_env["DYLD_LIBRARY_PATH"] = (
+                        str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("DYLD_LIBRARY_PATH", ""))
+                    )
+                    the_env["DYLD_FALLBACK_LIBRARY_PATH"] = (
+                        str(dfacts.DRAGON_LIB_DIR) + ":" + str(the_env.get("DYLD_FALLBACK_LIBRARY_PATH", ""))
                     )
 
                     # We don't have support for GPUs in our PMIx server yet. For ANL MPICH, we need to manually
@@ -1964,6 +2134,12 @@ class LocalServer:
         log.info("Received LSSetKV message and processed it.")
         send_fli_response(resp_msg, msg.respFLI)
 
+    @dutil.route(dmsg.LSStoreCtrlEvent, _DTBL)
+    def handle_store_ctrl_event(self, msg: dmsg.LSStoreCtrlEvent) -> None:
+        log = logging.getLogger("LS.store_ctrl_event")
+        self.kvs[dfacts.CTRL_EVENT_KVS_KEY] = json.dumps({"sdesc": msg.ctrl_event_sdesc, "cuid": msg.ctrl_event_cuid})
+        log.info("Stored ctrl_event in KVS under CTRL_EVENT_KVS_KEY.")
+
     @dutil.route(dmsg.AbnormalTermination, _DTBL)
     def handle_abnormal_term(self, msg: dmsg.AbnormalTermination) -> None:
         log = logging.getLogger("LS.abnormal termination")
@@ -2065,6 +2241,352 @@ class LocalServer:
 
         self.local_muids.reclaim(proc.props.local_muids)
         proc.props.local_muids.clear()
+
+    def _cleanup_external_resources(self, props: ExternalProcessProps):
+        """Destroy and reclaim the process-local channels and pools owned by an
+        external process.
+
+        Mirrors cleanup_local_channels_pools for ExternalProcessProps.
+        Caller must NOT hold apt_lock (channel/pool destroy may block briefly).
+        """
+        log = logging.getLogger("LS.external cleanup")
+        for cuid in props.local_cuids:
+            try:
+                self.channels[cuid].destroy()
+            except Exception as ex:
+                log.info("Could not destroy external process local channel. Error:%s" % repr(ex))
+            try:
+                del self.channels[cuid]
+            except Exception as ex:
+                log.info("Could not remove external process local channel. Error:%s" % repr(ex))
+        self.local_cuids.reclaim(props.local_cuids)
+        props.local_cuids.clear()
+
+        for muid in props.local_muids:
+            try:
+                self.pools[muid].destroy()
+                log.info("Destroyed external process local pool with muid=%s." % muid)
+            except Exception as ex:
+                log.info("Could not destroy external process local pool. Error:%s" % repr(ex))
+            try:
+                del self.pools[muid]
+            except Exception as ex:
+                log.info("Could not remove external process local pool. Error:%s" % repr(ex))
+        self.local_muids.reclaim(props.local_muids)
+        props.local_muids.clear()
+
+    def _retire_external_registration(self, p_uid):
+        for attempt_id, registration in tuple(self.external_registrations.items()):
+            if registration.p_uid == p_uid:
+                del self.external_registrations[attempt_id]
+
+    @dutil.route(dmsg.LSProcessDetach, _DTBL)
+    def detach_external_process(self, msg: dmsg.LSProcessDetach):
+        """Clean up resources for a co-located external process that is detaching.
+
+        Destroys the LS-ret channel(s) in the external process's local_cuids,
+        removes it from external_procs and puid2pid, and replies
+        LSProcessDetachResponse to GS.
+        """
+        log = logging.getLogger("LS.detach external process")
+        log.info("Received LSProcessDetach for t_p_uid=%s" % msg.t_p_uid)
+
+        success, fail = mk_response_pairs(dmsg.LSProcessDetachResponse, msg.tag)
+
+        try:
+            # Locate the external entry by p_uid
+            props = None
+            with self.apt_lock:
+                for pid, ep in list(self.external_procs.items()):
+                    if ep.p_uid == msg.t_p_uid:
+                        props = ep
+                        del self.external_procs[pid]
+                        self.puid2pid.pop(msg.t_p_uid, None)
+                        self._retire_external_registration(msg.t_p_uid)
+                        break
+
+            if props is None:
+                raise KeyError("No external process found with t_p_uid=%s" % msg.t_p_uid)
+
+            # Destroy the LS-ret channel/pool resources and reclaim their uids
+            self._cleanup_external_resources(props)
+
+            log.info("Detached external p_uid=%s" % msg.t_p_uid)
+            resp_msg = success()
+
+        except Exception as ex:
+            err_info = "detach_external_process failed: %s\n%s" % (ex, traceback.format_exc())
+            log.error(err_info)
+            resp_msg = fail(err_info)
+
+        return resp_msg
+
+    @dutil.route(dmsg.LSExternalRegister, _DTBL)
+    def handle_external_register(self, msg: dmsg.LSExternalRegister):
+        """Provision an external process locally and publish its resources to GS."""
+        log = logging.getLogger("LS.handle external register")
+        log.info("Received LSExternalRegister from pid=%s" % msg.pid)
+        response_queue = None
+        registration = None
+        provisional_ls_return_ch = None
+        provisional_gs_return_cuid = None
+        try:
+            response_queue = InfraQueue.attach(msg.proc_resp_sdesc)
+            runtime_incarnation = os.environ.get("DRAGON_RT_UID", "")
+            if msg.auth_token != self.attach_auth_token:
+                response_queue.put(
+                    dmsg.LSExternalResourcesReady(
+                        tag=get_new_tag(),
+                        ref=msg.tag,
+                        err=dmsg.LSExternalResourcesReady.Errors.AUTH_FAILURE,
+                        runtime_incarnation=runtime_incarnation,
+                        attempt_id=msg.attempt_id,
+                        node_index=self.node_index,
+                    )
+                )
+                return None
+            if not msg.attempt_id:
+                raise ValueError("attempt_id is required")
+            if msg.runtime_incarnation != runtime_incarnation:
+                raise ValueError("runtime incarnation mismatch")
+
+            process_start_time = str(psutil.Process(msg.pid).create_time())
+            registration = self.external_registrations.get(msg.attempt_id)
+            if registration is not None:
+                if registration.os_pid != msg.pid or registration.process_start_time != process_start_time:
+                    raise ValueError("attempt_id conflicts with a different process incarnation")
+            else:
+                p_uid = self.external_puids.next
+                ls_return_ch = self.make_local_channel()
+                provisional_ls_return_ch = ls_return_ch
+                ls_return_qd = InfraQueue(main_channel=ls_return_ch).serialize()
+
+                gs_return_cuid = self.local_cuids.next
+                provisional_gs_return_cuid = gs_return_cuid
+                gs_return_muid = dfacts.infrastructure_pool_muid_from_index(self.node_index)
+                gs_return_ch = dch.Channel(mem_pool=self.pools[gs_return_muid], c_uid=gs_return_cuid)
+                self.channels[gs_return_cuid] = gs_return_ch
+                self.adopted_external_cuids.add(gs_return_cuid)
+                gs_return_cd = B64.bytes_to_str(gs_return_ch.serialize())
+                gs_return_qd = InfraQueue(main_channel=gs_return_ch).serialize()
+
+                registration = ExternalRegistration(
+                    attempt_id=msg.attempt_id,
+                    p_uid=p_uid,
+                    os_pid=msg.pid,
+                    process_start_time=process_start_time,
+                    ls_return_qd=ls_return_qd,
+                    gs_return_cuid=gs_return_cuid,
+                    gs_return_muid=gs_return_muid,
+                    gs_return_cd=gs_return_cd,
+                    gs_return_qd=gs_return_qd,
+                )
+                with self.apt_lock:
+                    self.external_registrations[msg.attempt_id] = registration
+                    self.puid2pid[p_uid] = msg.pid
+                    self.external_procs[msg.pid] = ExternalProcessProps(
+                        p_uid=p_uid,
+                        os_pid=msg.pid,
+                        local_cuids={ls_return_ch.cuid},
+                        local_muids=set(),
+                    )
+
+            num_gw = int(os.environ.get(dfacts.PREFIX + dfacts.NUM_GW_CHANNELS_PER_NODE_VAR, 0))
+            gw_env = {
+                key: os.environ[key]
+                for key in (f"{dfacts.GW_ENV_PREFIX}{index + 1}" for index in range(num_gw))
+                if key in os.environ
+            }
+            if len(gw_env) != num_gw:
+                raise RuntimeError("local gateway environment is incomplete")
+
+            response_queue.put(
+                dmsg.LSExternalResourcesReady(
+                    tag=get_new_tag(),
+                    ref=msg.tag,
+                    err=dmsg.LSExternalResourcesReady.Errors.SUCCESS,
+                    runtime_incarnation=runtime_incarnation,
+                    attempt_id=msg.attempt_id,
+                    node_index=self.node_index,
+                    p_uid=registration.p_uid,
+                    ls_return_qd=registration.ls_return_qd,
+                    gs_return_qd=registration.gs_return_qd,
+                    num_gw_channels_per_node=num_gw,
+                    gw_env=gw_env,
+                    default_pd=parms.this_process.default_pd,
+                    inf_pd=parms.this_process.inf_pd,
+                )
+            )
+
+            if registration.state == "LOCAL_PREPARED":
+                registration.state = "SUBMISSION_POSSIBLE"
+                prepared = dmsg.GSExternalRegisterPrepared(
+                    tag=get_new_tag(),
+                    node_index=self.node_index,
+                    p_uid=registration.p_uid,
+                    pid=registration.os_pid,
+                    process_start_time=registration.process_start_time,
+                    user_name=None,
+                    gs_return_cuid=registration.gs_return_cuid,
+                    gs_return_muid=registration.gs_return_muid,
+                    gs_return_cd=registration.gs_return_cd,
+                    gs_return_qd=registration.gs_return_qd,
+                )
+                self.gs_in.put(prepared)
+            return None
+        except ExternalPUIDExhausted:
+            if response_queue is not None:
+                response_queue.put(
+                    dmsg.LSExternalResourcesReady(
+                        tag=get_new_tag(),
+                        ref=msg.tag,
+                        err=dmsg.LSExternalResourcesReady.Errors.PUID_EXHAUSTED,
+                        runtime_incarnation=os.environ.get("DRAGON_RT_UID", ""),
+                        attempt_id=msg.attempt_id,
+                        node_index=self.node_index,
+                    )
+                )
+            return None
+        except Exception as ex:
+            log.exception("external registration provisioning failed")
+            if registration is None or registration.state == "LOCAL_PREPARED":
+                with self.apt_lock:
+                    self.external_registrations.pop(msg.attempt_id, None)
+                    props = self.external_procs.pop(msg.pid, None)
+                    if props is not None:
+                        self.puid2pid.pop(props.p_uid, None)
+                if props is not None:
+                    self._cleanup_external_resources(props)
+                elif provisional_ls_return_ch is not None:
+                    self.channels.pop(provisional_ls_return_ch.cuid, None)
+                    try:
+                        provisional_ls_return_ch.destroy()
+                    except Exception:
+                        pass
+                    self.local_cuids.reclaim([provisional_ls_return_ch.cuid])
+                if provisional_gs_return_cuid is not None:
+                    channel = self.channels.pop(provisional_gs_return_cuid, None)
+                    if channel is not None:
+                        try:
+                            channel.destroy()
+                        except Exception:
+                            pass
+                    self.adopted_external_cuids.discard(provisional_gs_return_cuid)
+                    self.local_cuids.reclaim([provisional_gs_return_cuid])
+
+            if response_queue is not None and (registration is None or registration.state == "LOCAL_PREPARED"):
+                response_queue.put(
+                    dmsg.LSExternalResourcesReady(
+                        tag=get_new_tag(),
+                        ref=msg.tag,
+                        err=dmsg.LSExternalResourcesReady.Errors.FAIL,
+                        errInfo=str(ex),
+                        runtime_incarnation=os.environ.get("DRAGON_RT_UID", ""),
+                        attempt_id=msg.attempt_id,
+                        node_index=self.node_index,
+                    )
+                )
+            return None
+        finally:
+            del response_queue
+
+    @dutil.route(dmsg.LSExternalRegisterCancel, _DTBL)
+    def handle_external_register_cancel(self, msg: dmsg.LSExternalRegisterCancel):
+        """Forward a validated client release request to GS."""
+        log = logging.getLogger("LS.cancel external register")
+        runtime_incarnation = os.environ.get("DRAGON_RT_UID", "")
+        if msg.runtime_incarnation != runtime_incarnation or not msg.attempt_id:
+            log.warning("ignoring invalid external registration cancellation")
+            return None
+
+        with self.apt_lock:
+            registration = self.external_registrations.get(msg.attempt_id)
+            if registration is None:
+                log.info("external registration attempt %s is no longer active", msg.attempt_id)
+                return None
+            if msg.p_uid not in (0, registration.p_uid):
+                log.warning("external cancellation PUID does not match attempt %s", msg.attempt_id)
+                return None
+            if registration.state == "CANCELLING":
+                return None
+            registration.state = "CANCELLING"
+
+        self.gs_in.put(
+            dmsg.GSExternalRegisterCancel(
+                tag=get_new_tag(),
+                node_index=self.node_index,
+                p_uid=registration.p_uid,
+                attempt_id=registration.attempt_id,
+                pid=registration.os_pid,
+                process_start_time=registration.process_start_time,
+                gs_return_cuid=registration.gs_return_cuid,
+                gs_return_muid=registration.gs_return_muid,
+                gs_return_cd=registration.gs_return_cd,
+                gs_return_qd=registration.gs_return_qd,
+            )
+        )
+        return None
+
+    def watch_external_death(self):
+        """Daemon thread that polls for death of registered external (non-child) processes.
+
+        External processes are not children of LS so os.waitpid cannot be used.
+        Every ~2 s we probe each registered pid with os.kill(pid, 0); an OSError
+        with errno ESRCH means the process is gone.  On detection we:
+          1. Send LSProcessExit to GS (creation_msg_tag=None is safe; GS marks DEAD).
+          2. Destroy and reclaim the process's LS-ret channel(s).
+          3. Remove the entry from external_procs / puid2pid.
+
+        The thread exits when check_shutdown() is True.
+        """
+        log = logging.getLogger("LS.watch external death")
+        log.info("starting")
+
+        POLL_INTERVAL = 2.0  # seconds between liveness sweeps
+        SLICE = 0.25
+
+        while not self.check_shutdown():
+            slept = 0.0
+            while slept < POLL_INTERVAL and not self.check_shutdown():
+                time.sleep(SLICE)
+                slept += SLICE
+            if self.check_shutdown():
+                break
+
+            # Snapshot under lock so we don't hold it during blocking channel ops
+            with self.apt_lock:
+                snapshot = list(self.external_procs.items())
+
+            for pid, props in snapshot:
+                try:
+                    os.kill(pid, 0)  # signal 0: existence check only, no signal sent
+                except OSError as ose:
+                    if ose.errno != errno.ESRCH:
+                        # EPERM etc. — process exists but we can't signal it; skip
+                        continue
+                    # ESRCH: no such process — it has exited
+                    log.info("external process pid=%s p_uid=%s has exited; cleaning up" % (pid, props.p_uid))
+
+                    # Remove from tracking
+                    with self.apt_lock:
+                        self.external_procs.pop(pid, None)
+                        self.puid2pid.pop(props.p_uid, None)
+                        self._retire_external_registration(props.p_uid)
+
+                    # Destroy the LS-ret channel(s)/pool(s) owned by this external proc
+                    self._cleanup_external_resources(props)
+
+                    # Notify GS of the death (matches watch_death construction exactly)
+                    resp = dmsg.LSProcessExit(
+                        tag=get_new_tag(),
+                        exit_code=-1,
+                        p_uid=props.p_uid,
+                        creation_msg_tag=None,
+                    )
+                    self.gs_in.put(resp)
+                    log.info("sent LSProcessExit for external p_uid=%s" % props.p_uid)
+
+        log.info("exit")
 
     def watch_death(self):
         """Thread monitors the demise of child processes of this process.
@@ -2173,10 +2695,10 @@ class LocalServer:
         lparms = dp.this_process.from_env()
         interval = self.OOM_SLOW_SLEEP_TIME
         total_bytes = psutil.virtual_memory().total
-        def_pool = dmm.MemoryPool.attach_default()
-        def_pool_events = 0
-        def_pool_consecutive_events = 0
-        def_pool_event_min_pct = 100
+        # Keyed by muid so each pool Local Services knows about is tracked independently.
+        pool_events = {}
+        pool_consecutive_events = {}
+        pool_event_min_pct = {}
 
         try:
             bytes_val = lparms.memory_warning_bytes
@@ -2203,9 +2725,9 @@ class LocalServer:
             critical_pct = 98
 
         try:
-            warn_def_pool_pct = 100 - lparms.def_pool_warn_pct
+            warn_pool_pct = 100 - lparms.def_pool_warn_pct
         except:
-            warn_def_pool_pct = 90
+            warn_pool_pct = 90
 
         log.info(
             "critical_bytes_env=%s critical_pct_env=%s critical_pct=%s"
@@ -2219,6 +2741,7 @@ class LocalServer:
 
         try:
             while not self.check_shutdown():
+                # Check Memory Utilization First
                 mem_utilization = psutil.virtual_memory().percent
                 mem_bytes = psutil.virtual_memory().available
                 if mem_utilization >= critical_pct:
@@ -2257,41 +2780,91 @@ class LocalServer:
                             )
                         )
 
-                def_pool_pct = def_pool.utilization
+                # Now Check Utilization of every pool Local Services knows about. This
+                # includes the default and infrastructure pools plus any pool created on
+                # behalf of a process, such as the DDict manager pools.
+                for muid, pool in list(self.pools.items()):
+                    try:
+                        pool_pct = pool.utilization
+                    except Exception as ex:
+                        # Another thread can destroy a pool while we are sampling it.
+                        log.debug("Could not read utilization of pool muid=%s: %s" % (muid, ex))
+                        pool_consecutive_events.pop(muid, None)
+                        continue
 
-                if def_pool_pct >= warn_def_pool_pct:
-                    def_pool_event_min_pct = min(def_pool_event_min_pct, def_pool_pct)
-                    def_pool_consecutive_events += 1
+                    if pool_pct >= warn_pool_pct:
+                        pool_event_min_pct[muid] = min(pool_event_min_pct.get(muid, 100), pool_pct)
+                        pool_consecutive_events[muid] = pool_consecutive_events.get(muid, 0) + 1
 
-                    if (def_pool_consecutive_events % 100) == 5:
-                        def_pool_events += 1
-                        # if this is the 5th consecutive event mod 100, then warn the user,
-                        # but don't keep warning if it doesn't change. Every 100 iterations
-                        # means several minutes between notifications.
-                        warning_msg = (
-                            "\nDEFAULT POOL FREE SPACE WARNING: Default pool utilization on node %s with hostname %s is at %s%%.\n"
-                            % (parms.this_process.index, self.hostname, def_pool_pct)
-                        )
-                        log.info(warning_msg)
-                        if not suppress_warnings:
-                            self.be_in.put(
-                                dmsg.LSFwdOutput(
-                                    tag=get_new_tag(),
-                                    idx=parms.this_process.index,
-                                    p_uid=parms.this_process.my_puid,
-                                    data=warning_msg,
-                                    fd_num=dmsg.LSFwdOutput.FDNum.STDERR.value,
-                                    pid=pid,
-                                    hostname=self.hostname,
-                                )
+                        if (pool_consecutive_events[muid] % 100) == 5:
+                            pool_events[muid] = pool_events.get(muid, 0) + 1
+                            # if this is the 5th consecutive event mod 100, then warn the user,
+                            # but don't keep warning if it doesn't change. Every 100 iterations
+                            # means several minutes between notifications.
+                            warning_msg = (
+                                "\nPOOL FREE SPACE WARNING: Utilization of pool muid=%s on node %s with hostname %s is at %s%%.\n"
+                                % (muid, parms.this_process.index, self.hostname, pool_pct)
                             )
-                else:
-                    def_pool_consecutive_events = 0
+                            log.info(warning_msg)
+                            if not suppress_warnings:
+                                self.be_in.put(
+                                    dmsg.LSFwdOutput(
+                                        tag=get_new_tag(),
+                                        idx=parms.this_process.index,
+                                        p_uid=parms.this_process.my_puid,
+                                        data=warning_msg,
+                                        fd_num=dmsg.LSFwdOutput.FDNum.STDERR.value,
+                                        pid=pid,
+                                        hostname=self.hostname,
+                                    )
+                                )
+                    else:
+                        pool_consecutive_events[muid] = 0
 
                 if mem_utilization > 95:
                     interval = self.OOM_RAPID_SLEEP_TIME
                 else:
                     interval = self.OOM_SLOW_SLEEP_TIME
+
+                # Finally check the Shared Memory Utilization which may be different than general memory utilization.
+                free_shm_space, total_shm_space = dutils.shm_space()
+                used_shm_pct = 100 - ((free_shm_space / total_shm_space) * 100)
+
+                if used_shm_pct >= critical_pct:
+                    critical_msg = (
+                        "OOM CRITICAL: SHARED memory on node %s with hostname %s is less than %s%% with %s bytes available. Runtime is coming down.\n"
+                        % (parms.this_process.index, self.hostname, int(100 - used_shm_pct) + 1, free_shm_space)
+                    )
+                    self.be_in.put(
+                        dmsg.LSFwdOutput(
+                            tag=get_new_tag(),
+                            idx=parms.this_process.index,
+                            p_uid=parms.this_process.my_puid,
+                            data=critical_msg,
+                            fd_num=dmsg.LSFwdOutput.FDNum.STDERR.value,
+                            pid=pid,
+                            hostname=self.hostname,
+                        )
+                    )
+                    self._abnormal_termination(critical_msg)
+                elif used_shm_pct >= warn_pct:
+                    warning_msg = (
+                        "\nOOM WARNING: SHARED memory on node %s with hostname %s is less than %s%% with %s bytes still available.\n"
+                        % (parms.this_process.index, self.hostname, int(100 - used_shm_pct) + 1, free_shm_space)
+                    )
+                    log.info(warning_msg)
+                    if not suppress_warnings:
+                        self.be_in.put(
+                            dmsg.LSFwdOutput(
+                                tag=get_new_tag(),
+                                idx=parms.this_process.index,
+                                p_uid=parms.this_process.my_puid,
+                                data=warning_msg,
+                                fd_num=dmsg.LSFwdOutput.FDNum.STDERR.value,
+                                pid=pid,
+                                hostname=self.hostname,
+                            )
+                        )
 
                 # Only poll every 5 seconds normally and every 1 second when running low on mem.
                 # By waiting on the shutdown event with a timeout of interval, we effectively
@@ -2302,12 +2875,12 @@ class LocalServer:
             self._abnormal_termination("LS OOM daemon exception: %s\n%s" % (ex, tb))
 
         try:
-            if def_pool_events > 0:
+            for muid in sorted(pool_events):
                 warning_msg = (
-                    "\nDEFAULT POOL FREE SPACE WARNING: There were %s events recorded where the\n"
-                    + "default pool utilization on node %s with hostname %s exceeded %s%%.\n"
-                    + "You may want to increase the default pool size.\n"
-                ) % (def_pool_events, parms.this_process.index, self.hostname, def_pool_event_min_pct)
+                    "\nPOOL FREE SPACE WARNING: There were %s events recorded where the\n"
+                    + "utilization of pool muid=%s on node %s with hostname %s exceeded %s%%.\n"
+                    + "You may want to increase the pool size.\n"
+                ) % (pool_events[muid], muid, parms.this_process.index, self.hostname, pool_event_min_pct[muid])
                 log.info(warning_msg)
                 if not suppress_warnings:
                     self.be_in.put(

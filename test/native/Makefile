@@ -2,6 +2,12 @@ CC ?= gcc
 CFLAGS ?= -fPIC -Wall -O3 -ffast-math -fomit-frame-pointer
 #CFLAGS ?= -g -O0 -DDRAGON_DEBUG -Wall
 
+# Pull down any testing flags if they're set
+ifneq ("$(wildcard $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk)","")
+    include $(DRAGON_BASE_DIR)/dragon/.dragon-config.mk
+endif
+
+
 ifeq (${DRAGON_INCLUDE_DIR},)
     L_DRAGON_INCLUDE_DIR = $(shell dragon-config -o)
 else
@@ -24,7 +30,7 @@ LIBS = $(L_DRAGON_LIB_DIR)
 DRAGON_CPP_TEST_COMMON_DEPS = $(wildcard ../../src/include/dragon/*.hpp ../../src/include/dragon/*.h ../../src/lib/libdragon.so)
 CPP_TEST_BINS = flimsgfrom flimsgto cpp_ddict cpp_queue cpp_semaphore cpp_barrier
 
-BIN_FILES = flimsgfrom flimsgto c_ddict cpp_ddict cpp_queue cpp_semaphore cpp_barrier cpp_serializables
+BIN_FILES = flimsgfrom flimsgto c_ddict cpp_ddict cpp_queue cpp_semaphore cpp_barrier cpp_serializables $(MPI_BINARY)
 
 %.c.o: %.c
 	$(CC) $(INCLUDE) $(CFLAGS) -c $< -o $@

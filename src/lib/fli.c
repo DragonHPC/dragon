@@ -248,16 +248,20 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
         append_err_return(err, "Could not initialize serialized stream channel message.");
 
     err = dragon_chsend_send_msg(sendh, &msg, dest, timeout);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Error on sending message from internal _send_mem.");
+    if (err != DRAGON_SUCCESS) {
+        append_err_noreturn("Error on sending message from internal _send_mem.");
+        goto send_mem_cleanup;
+    }
 
     if (transfer_ownership && turbo_mode) {
         /* We now restore original mode */
         send_attrs.return_mode = orig_return_mode;
 
         err = dragon_chsend_set_attr(sendh, &send_attrs);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not restore send handle attributes.");
+        if (err != DRAGON_SUCCESS) {
+            append_err_noreturn("Could not restore send handle attributes.");
+            goto send_mem_cleanup;
+        }
     }
 
     if (dest != NULL) {
@@ -277,6 +281,17 @@ static dragonError_t _send_mem(dragonChannelSendh_t* sendh, dragonMemoryDescr_t*
         append_err_return(err, "Could not destroy message attributes.");
 
     no_err_return(DRAGON_SUCCESS);
+
+send_mem_cleanup:
+    /* The zero-byte allocation and the message are released here so that errors,
+       including timeouts, do not accumulate them. */
+    if (dest != NULL)
+        dragon_memory_free(dest);
+
+    dragon_channel_message_destroy(&msg, false);
+    dragon_channel_message_attr_destroy(&msg_attrs);
+
+    return err;
 }
 
 static dragonError_t _send_bytes(dragonChannelSendh_t* chan_sendh, dragonMemoryPoolDescr_t* pool, uint8_t* bytes,
@@ -355,6 +370,7 @@ static dragonError_t _get_buffered_bytes(dragonFLISendHandle_t* sendh, dragonMem
     /* Init these two fields so they are set on the next call. */
     sendh->buffered_allocations = NULL;
     sendh->total_bytes = 0;
+    *arg = 0UL;
 
     if (total_bytes == 0) {
         // There is no data, so return the zero-byte memory allocation.
@@ -396,7 +412,7 @@ static dragonError_t _send_buffered_bytes(dragonFLISendHandle_t* sendh, bool flu
     dragonError_t err;
     dragonMemoryPoolDescr_t* dest_pool = NULL;
     dragonMemoryDescr_t mem_descr;
-    uint64_t buffered_arg;
+    uint64_t buffered_arg = 0UL;
 
 
     if (sendh->has_dest_pool)
@@ -466,6 +482,10 @@ static dragonError_t _free_buffered_mem(dragonFLIRecvHandle_t* recvh) {
             err = dragon_memory_free(&node->mem);
             if (err != DRAGON_SUCCESS)
                 append_err_return(err, "Could not free buffered managed memory.");
+        } else {
+            err = dragon_memory_descr_destroy(&node->mem);
+            if (err != DRAGON_SUCCESS)
+                append_err_return(err, "Could not release the buffered memory descriptor.");
         }
         node = node->next;
         free(prev);
@@ -488,6 +508,7 @@ static dragonError_t _recv_mem(dragonChannelRecvh_t* recvh, dragonMemoryDescr_t*
     timespec_t remaining_time;
     dragonMemoryDescr_t* dest = NULL;
     dragonMemoryDescr_t dest_val;
+    char* err_msg;
 
     if (deadline != NULL) {
         timeout = &remaining_time;
@@ -516,37 +537,53 @@ static dragonError_t _recv_mem(dragonChannelRecvh_t* recvh, dragonMemoryDescr_t*
             append_err_return(err, "Could not get zero-byte allocation.");
     }
 
-    err = dragon_channel_message_init(&msg, dest, NULL);
+    if (dest != NULL)
+        /* The zero-byte allocation tells channels to allocate the message memory in
+           dest_pool, overwriting mem with the descriptor of that allocation. The memory
+           descriptor will again be overwritten when the message is received, but we
+           have the alias pointed to by dest for cleaning it up below. */
+        *mem = *dest;
+
+    err = dragon_channel_message_init_inplace(&msg, mem, NULL, dest != NULL);
+
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not initialize message structure.");
 
     err = dragon_chrecv_get_msg_blocking(recvh, &msg, timeout);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not receive memory from channel.");
+    if (err != DRAGON_SUCCESS) {
+        append_err_noreturn("Could not receive memory from channel.");
+        goto recv_mem_cleanup;
+    }
 
     err = dragon_channel_message_getattr(&msg, &attrs);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not get message attributes from received messsage.");
+    if (err != DRAGON_SUCCESS) {
+        append_err_noreturn("Could not get message attributes from received messsage.");
+        goto recv_mem_cleanup;
+    }
 
     *arg = attrs.hints;
-
-    err = dragon_channel_message_get_mem(&msg, mem);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Could not get memory for stream channel.");
-
-    if (dest != NULL) {
-        err = dragon_memory_free(dest);
-        if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Could not free zero-byte allocation.");
-
-        dest = NULL;
-    }
 
     err = dragon_channel_message_destroy(&msg, false);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not destroy message structure.");
 
     no_err_return(DRAGON_SUCCESS);
+
+recv_mem_cleanup:
+    /* The zero-byte allocation and the message are released here so that errors,
+       including timeouts, do not accumulate them. */
+
+    err_msg = dragon_getlasterrstr();
+
+    if (dest != NULL)
+        dragon_memory_free(dest);
+
+    dragon_channel_message_destroy(&msg, false);
+
+    err_noreturn(err_msg);
+    free(err_msg);
+
+    append_err_return(err, "Error occurred during _recv_mem.");
 }
 
 static dragonError_t _recv_bytes_into(dragonChannelRecvh_t* recvh, uint8_t** data, size_t* num_bytes,
@@ -620,9 +657,10 @@ static dragonError_t _buffer_mem(dragonFLIRecvHandle_t* recvh, dragonMemoryDescr
         node = malloc(sizeof(dragonFLIRecvBufAlloc_t));
         if (node == NULL)
             err_return(DRAGON_INTERNAL_MALLOC_FAIL, "Could not allocate node for buffered data.");
-        err = dragon_memory_descr_clone(&node->mem, mem, 0, NULL);
+        /* The receive handle takes over the caller's descriptor. */
+        err = dragon_memory_descr_move(&node->mem, mem);
         if (err != DRAGON_SUCCESS)
-            append_err_return(err, "Unable to clone mem descriptor while buffering data.");
+            append_err_return(err, "Unable to move mem descriptor while buffering data.");
         node->num_bytes = size;
         node->offset = 0;
         node->arg = arg;
@@ -630,6 +668,11 @@ static dragonError_t _buffer_mem(dragonFLIRecvHandle_t* recvh, dragonMemoryDescr
         recvh->buffered_bytes += size;
         recvh->tail->next = node;
         recvh->tail = node;
+    } else {
+        /* Nothing references the memory once it is dropped here. */
+        err = dragon_memory_descr_destroy(mem);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not release the memory descriptor while buffering data.");
     }
 
     no_err_return(DRAGON_SUCCESS);
@@ -655,9 +698,21 @@ static dragonError_t _unbuffer_mem(dragonFLIRecvHandle_t* recvh, dragonMemoryDes
     if (node == recvh->tail)
         recvh->tail = recvh->buffered_data;
 
-    err = dragon_memory_descr_clone(mem, &node->mem, node->offset, &num_bytes);
-    if (err != DRAGON_SUCCESS)
-        append_err_return(err, "Unable to clone mem descriptor while buffering data.");
+    if (node->offset == 0) {
+        /* The whole node is being handed to the caller, so no clone is needed. */
+        err = dragon_memory_descr_move(mem, &node->mem);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Unable to move mem descriptor while unbuffering data.");
+    } else {
+        err = dragon_memory_descr_clone(mem, &node->mem, node->offset, &num_bytes);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Unable to clone mem descriptor while buffering data.");
+
+        /* The caller owns the clone now, so the buffered descriptor is released. */
+        err = dragon_memory_descr_destroy(&node->mem);
+        if (err != DRAGON_SUCCESS)
+            append_err_return(err, "Could not release the buffered memory descriptor.");
+    }
 
     *arg = node->arg;
     free(node);
@@ -780,6 +835,10 @@ static dragonError_t _recv_bytes_buffered(dragonFLIRecvHandle_t* recvh, size_t r
                 err = dragon_memory_free(&node->mem);
                 if (err != DRAGON_SUCCESS)
                     append_err_return(err, "Could not free buffered managed memory.");
+            } else {
+                err = dragon_memory_descr_destroy(&node->mem);
+                if (err != DRAGON_SUCCESS)
+                    append_err_return(err, "Could not release the buffered memory descriptor.");
             }
             free(node);
             node = prev->next;
@@ -855,7 +914,7 @@ static dragonError_t _send_term_msg(dragonFLIRecvHandle_t* recvh_obj, const time
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not allocate memory for termination message.");
 
-    err = dragon_channel_message_init(&term_msg, &mem_descr, NULL);
+    err = dragon_channel_message_init_move(&term_msg, &mem_descr, NULL);
     if (err != DRAGON_SUCCESS)
         append_err_return(err, "Could not initialize message for termination.");
 

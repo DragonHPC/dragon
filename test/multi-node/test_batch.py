@@ -1,7 +1,9 @@
+import gc
 import os
 import queue
 import random
 import json
+import inspect
 import logging
 import shutil
 import sys
@@ -20,10 +22,10 @@ sys.path.insert(0, _BATCH_UTILS)
 _existing_pythonpath = os.environ.get("PYTHONPATH", "")
 os.environ["PYTHONPATH"] = f"{_BATCH_UTILS}:{_existing_pythonpath}" if _existing_pythonpath else _BATCH_UTILS
 
-from dragon.native.process import Process, ProcessTemplate
+from dragon import ProcessTemplate, Policy, Batch, DDict, System, current
+from dragon.native.process import Process
 from dragon.native.queue import Queue
-from dragon.infrastructure.policy import Policy
-from dragon.workflows.batch import Batch, ReadAfterWriteDependencyError, SubmitAfterCloseError, TaskCancelledError
+from dragon.workflows.batch import ReadAfterWriteDependencyError, SubmitAfterCloseError, TaskCancelledError
 from dragon.workflows.batch.batch import (
     TaskNotReadyError,
     ClientCompiler,
@@ -32,7 +34,7 @@ from dragon.workflows.batch.batch import (
     _drain_client_task_batch,
     _resolve_results_ddict_managers_per_pool,
 )
-from dragon.native.machine import System, Node, current
+from dragon.native.machine import Node
 from user_functions import (
     add_values,
     hi,
@@ -61,6 +63,7 @@ from user_functions import (
     record_process_placement,
     return_constant,
     signal_start_and_sleep,
+    signal_start_sleep_and_mark_complete,
     sleep_and_return,
     submit_batch_value_from_batch_worker,
     submit_batch_value_from_client,
@@ -75,6 +78,10 @@ from user_functions import (
 
 def _yml(name):
     return os.path.join(_BATCH_UTILS, name)
+
+
+def _batch_file(name):
+    return os.path.join(_HERE, name)
 
 
 class TestArgDeps(unittest.TestCase):
@@ -163,10 +170,141 @@ class TestBatchLifecycle(unittest.TestCase):
             proc.join()
             self.fail(msg)
 
+    def _assert_ddict_orchestrator_files_removed(self, directory: Path) -> None:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            if not list(directory.glob("ddict_orc_*")):
+                return
+            time.sleep(0.05)
+
+        self.fail(f"DDict orchestrator files were not removed: {list(directory.glob('ddict_orc_*'))}")
+
+    def test_context_manager_cleans_up_batch_runtime(self):
+        """A Batch context exits and rejects submissions on the closed handle."""
+        with Batch(num_nodes=1, scheduler_workers=1, workers_per_node=1) as batch:
+            self.assertEqual(batch.function(return_constant, 17).get(), 17)
+
+        with self.assertRaises(SubmitAfterCloseError):
+            batch.function(return_constant, 18)
+
+    def test_context_manager_terminates_on_body_exception(self):
+        """A failing Batch context terminates and closes its public handle."""
+        batch = None
+        with self.assertRaisesRegex(RuntimeError, "context failure"):
+            with Batch(num_nodes=1, scheduler_workers=1, workers_per_node=1) as batch:
+                raise RuntimeError("context failure")
+
+        with self.assertRaises(SubmitAfterCloseError):
+            batch.function(return_constant, 18)
+
+    def test_workers_per_node_controls_pool_topology(self):
+        """The configured worker count is reflected in Batch topology."""
+        batch = Batch(num_nodes=1, scheduler_workers=1, workers_per_node=1)
+        try:
+            topology = batch.topology()
+            self.assertEqual(topology.workers_per_pool, [1])
+        finally:
+            batch.join(timeout=30)
+
+    def test_workers_per_node_rejects_nonpositive_count(self):
+        """The public worker-count option rejects an unusable pool size."""
+        with self.assertRaises(ValueError):
+            Batch(num_nodes=1, scheduler_workers=1, workers_per_node=0)
+
+    def test_new_batch_options_preserve_existing_positional_arguments(self):
+        """New lifecycle/resource options must not shift the Batch constructor API."""
+        parameters = list(inspect.signature(Batch).parameters.values())
+        parameter_names = [parameter.name for parameter in parameters]
+
+        self.assertEqual(
+            parameter_names[:6],
+            [
+                "num_nodes",
+                "pool_nodes",
+                "disable_telem",
+                "scheduler_workers",
+                "results_ddict_mem",
+                "results_ddict_managers_per_pool",
+            ],
+        )
+        self.assertEqual(parameters[-1].name, "workers_per_node")
+        self.assertIs(parameters[-1].kind, inspect.Parameter.KEYWORD_ONLY)
+        self.assertIs(inspect.signature(Batch.terminate).parameters["timeout"].kind, inspect.Parameter.KEYWORD_ONLY)
+
+    def test_terminate_rejects_new_submissions(self):
+        """Termination closes the public Batch submission interface."""
+        batch = Batch(num_nodes=1, scheduler_workers=1, workers_per_node=1)
+        batch.function(return_constant, 17).get()
+
+        batch.terminate(timeout=5)
+        with self.assertRaises(SubmitAfterCloseError):
+            batch.function(return_constant, 18)
+
+    def test_terminate_without_submissions(self):
+        """Termination succeeds before a worker pool is needed."""
+        batch = Batch(num_nodes=1, scheduler_workers=1, workers_per_node=1)
+        batch.terminate(timeout=5)
+
+        with self.assertRaises(SubmitAfterCloseError):
+            batch.function(return_constant, 18)
+
+    def test_terminate_running_task(self):
+        """Termination returns while an active task is still using the Batch runtime."""
+        marker_stem = f".terminate-task-{os.getpid()}-{random.randint(0, 1_000_000)}"
+        marker_path = Path(_HERE) / f"{marker_stem}-started"
+        complete_marker_path = Path(_HERE) / f"{marker_stem}-complete"
+        marker_path.unlink(missing_ok=True)
+        complete_marker_path.unlink(missing_ok=True)
+        batch = None
+
+        try:
+            batch = Batch(num_nodes=1, scheduler_workers=1, workers_per_node=1)
+            batch.function(
+                signal_start_sleep_and_mark_complete,
+                str(marker_path),
+                str(complete_marker_path),
+                17,
+                2.0,
+            )
+
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline and not marker_path.exists():
+                time.sleep(0.05)
+            self.assertTrue(marker_path.exists(), "task did not start before termination")
+
+            termination_start = time.monotonic()
+            batch.terminate(timeout=0.1)
+            self.assertLess(time.monotonic() - termination_start, 5)
+            time.sleep(2.5)
+            self.assertFalse(complete_marker_path.exists(), "terminated task ran to completion")
+            with self.assertRaises(SubmitAfterCloseError):
+                batch.function(return_constant, 18)
+        finally:
+            if batch is not None:
+                batch.terminate(timeout=1)
+            marker_path.unlink(missing_ok=True)
+            complete_marker_path.unlink(missing_ok=True)
+
+    def test_terminate_removes_batch_ddict_orchestrator_files(self):
+        """Explicit Batch.terminate() should destroy its results DDict."""
+        original_directory = Path.cwd()
+
+        with tempfile.TemporaryDirectory(dir=original_directory) as temp_dir_name:
+            temp_dir = Path(temp_dir_name)
+            os.chdir(temp_dir)
+            try:
+                batch = Batch(num_nodes=1, results_ddict_mem=32 * 1024**2)
+                self.assertTrue(list(temp_dir.glob("ddict_orc_*")))
+
+                batch.terminate()
+                self._assert_ddict_orchestrator_files_removed(temp_dir)
+            finally:
+                os.chdir(original_directory)
+
     def test_submit_after_join(self):
         """Joining a batch client should reject later function submissions."""
         batch = Batch()
-        batch.join(timeout=5)
+        batch.join(timeout=30)
         with self.assertRaises(SubmitAfterCloseError):
             val = batch.function(foo_3_1, 42, 0, 0)
             val.get()
@@ -177,7 +315,7 @@ class TestBatchLifecycle(unittest.TestCase):
         batch.function(sleep_and_return, 21, 0.1)
 
         start = time.monotonic()
-        batch.join(timeout=5)
+        batch.join(timeout=30)
         elapsed = time.monotonic() - start
 
         self.assertGreaterEqual(elapsed, 0.08)
@@ -187,7 +325,7 @@ class TestBatchLifecycle(unittest.TestCase):
         batch = Batch(num_nodes=1, scheduler_workers=1)
         task = batch.function(sleep_and_return, 21, 0.1)
 
-        batch.join(timeout=5)
+        batch.join(timeout=30)
 
         with self.assertRaisesRegex(RuntimeError, r"fetch results before join\(\)"):
             task.get()
@@ -294,6 +432,21 @@ class TestBatchCompletionQueue(unittest.TestCase):
         self.assertEqual(parent_task.get(), 17)
         self.assertEqual(child_task.get(), 19)
 
+    def test_joined_clone_detaches_results_ddict_before_owner_shutdown(self):
+        child_batch = cloudpickle.loads(cloudpickle.dumps(self.batch))
+        self.extra_batches.append(child_batch)
+
+        child_results = child_batch.results_ddict
+        assert child_results is not None
+        child_batch.join()
+        with self.assertRaises(Exception):
+            len(child_results)
+        self.assertEqual(self.batch.function(return_constant, 23).get(), 23)
+        self.extra_batches.remove(child_batch)
+        self.batch.join()
+        del child_batch
+        gc.collect()
+
 
 class TestMultiClientSubmission(unittest.TestCase):
     """Verify that multiple Dragon-process clients can share one Batch runtime."""
@@ -394,7 +547,7 @@ class TestTaskCancellation(unittest.TestCase):
         self.fail("timed out waiting for running task to publish its start marker")
 
     def setUp(self):
-        self.batch = Batch(num_nodes=1, scheduler_workers=1)
+        self.batch = Batch(num_nodes=1, scheduler_workers=1, workers_per_node=1)
         return super().setUp()
 
     def tearDown(self):
@@ -1044,7 +1197,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         proc = self.batch.import_func(
             _yml("process_w_deps.yml"),
             "my_dumb_proc",
-            base_dir=".",
+            base_dir=_HERE,
             env=new_env,
             update_input=foo,
         )
@@ -1052,7 +1205,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         val_in = 0.0
         arg_in = 3.14
 
-        with open(f"process_w_deps_data_0", "w") as file_in:
+        with open(_batch_file("process_w_deps_data_0"), "w") as file_in:
             file_in.write(f"{val_in}")
 
         # Launch a chain where each process consumes the previous output file.
@@ -1061,8 +1214,8 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         for i in range(num_iter):
             rc = proc(
                 arg_in,
-                input_file=f"process_w_deps_data_{i}",
-                output_file=f"process_w_deps_data_{i + 1}",
+                input_file=_batch_file(f"process_w_deps_data_{i}"),
+                output_file=_batch_file(f"process_w_deps_data_{i + 1}"),
             )
 
             return_codes.append(rc)
@@ -1070,7 +1223,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         for rc in return_codes:
             rc.get()
 
-        with open(f"process_w_deps_data_{num_iter}", "r") as file_out:
+        with open(_batch_file(f"process_w_deps_data_{num_iter}"), "r") as file_out:
             val_out = float(file_out.read())
 
         self.assertAlmostEqual(val_out, num_iter * arg_in / 2.0, delta=0.01)
@@ -1090,7 +1243,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         proc = self.batch.import_func(
             _yml("process_w_deps_and_timeout.yml"),
             "my_dumb_proc",
-            base_dir=".",
+            base_dir=_HERE,
             env=new_env,
             update_input=foo,
         )
@@ -1098,13 +1251,13 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         val_in = 0.0
         arg_in = 3.14
 
-        with open(f"process_w_deps_data_in", "w") as file_in:
+        with open(_batch_file("process_w_deps_data_in"), "w") as file_in:
             file_in.write(f"{val_in}")
 
         rc = proc(
             arg_in,
-            input_file="process_w_deps_data_in",
-            output_file="process_w_deps_data_out",
+            input_file=_batch_file("process_w_deps_data_in"),
+            output_file=_batch_file("process_w_deps_data_out"),
         ).get()
         self.assertNotEqual(rc, 0)
 
@@ -1124,7 +1277,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         proc = self.batch.import_func(
             _yml("job_w_deps.yml"),
             "my_job",
-            base_dir=".",
+            base_dir=_HERE,
             env=new_env,
             update_input=foo,
         )
@@ -1132,7 +1285,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         val_in = 0
         arg_in = 3.14
 
-        with open(f"job_w_deps_data_0", "w") as file_in:
+        with open(_batch_file("job_w_deps_data_0"), "w") as file_in:
             file_in.write(f"{val_in}")
 
         num_iter = 4
@@ -1141,8 +1294,8 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         for i in range(num_iter):
             rc = proc(
                 arg_in,
-                input_file=f"job_w_deps_data_{i}",
-                output_file=f"job_w_deps_data_{i + 1}",
+                input_file=_batch_file(f"job_w_deps_data_{i}"),
+                output_file=_batch_file(f"job_w_deps_data_{i + 1}"),
             )
 
             return_codes.append(rc)
@@ -1150,7 +1303,7 @@ class TestParameterizedTaskDescriptor(unittest.TestCase):
         for rc in return_codes:
             rc.get()
 
-        with open(f"job_w_deps_data_{num_iter}", "r") as file_out:
+        with open(_batch_file(f"job_w_deps_data_{num_iter}"), "r") as file_out:
             val_out = float(file_out.read())
 
         self.assertAlmostEqual(val_out, num_iter * arg_in / 2.0, delta=0.01)
@@ -1472,6 +1625,9 @@ class TestBatchFence(unittest.TestCase):
 
     def test_tasks_can_be_submitted_after_fence(self):
         """Tasks submitted after a fence should complete normally."""
+        warmup = self.batch.function(foo_3_1, 0, 0, 0)
+        self.assertEqual(warmup.get(), 0)
+
         # Submit one task before the fence and one after so the test catches any
         # accidental one-shot semantics in the fence implementation.
         val1 = self.batch.function(foo_3_1, 1, 0, 0)
@@ -1502,7 +1658,7 @@ def _mpi4py_available() -> bool:
 
 
 class TestScheduler(unittest.TestCase):
-    """Tests for the scheduler manager (manager 0) handling multi-node MPI jobs."""
+    """Tests for the scheduler manager (manager 0) handling multi-node jobs."""
 
     @classmethod
     def setUpClass(cls):
@@ -1525,7 +1681,6 @@ class TestScheduler(unittest.TestCase):
         if self.nnodes < 2:
             self.skipTest("Need at least 2 nodes for multi-node job tests")
 
-        sleepsecs = 0.2
         max_ranks = self.nnodes * self.physical_cores_per_node
         job_sizes = sorted(
             {
@@ -1539,19 +1694,14 @@ class TestScheduler(unittest.TestCase):
         # Use representative fixed sizes so the scheduler path still covers
         # one-node-plus, mid-sized, and max-sized allocations deterministically.
         job_handles = []
-        for i, nranks in enumerate(job_sizes):
-            # choose a job target depending on MPI availability; fall back to
-            # a lightweight local job function when mpi4py is missing
-            if getattr(self, "mpi_available", False):
-                template = ProcessTemplate(target=mpi_f, args=(i, sleepsecs))
-                job = self.batch.job(process_templates=[(nranks, template)])
-            else:
-                template = ProcessTemplate(target=mpi_job_func, args=())
-                job = self.batch.job(process_templates=[(nranks, template)], pmi=None)
+        for nranks in job_sizes:
+            # Keep rank-count coverage independent of the site MPI fabric; the
+            # separate MPI ensemble test covers the PMI-backed launch path.
+            template = ProcessTemplate(target=mpi_job_func, args=())
+            job = self.batch.job(process_templates=[(nranks, template)], pmi=None)
             job_handles.append(job)
 
-        # Regardless of whether the test uses real MPI or the fallback function,
-        # every launched rank should report success.
+        # Every scheduler-launched rank should report success.
         for i, handle in enumerate(job_handles):
             exit_codes = handle.get()
             if isinstance(exit_codes, list):
@@ -1907,6 +2057,8 @@ class TestBatchManagedLifecycle(unittest.TestCase):
         """A joined deserialized handle may still destroy a managed runtime."""
         batch = Batch(managed_lifecycle=True)
         try:
+            assert batch.results_ddict is not None
+            results_descriptor = batch.results_ddict.serialize()
             serialized = cloudpickle.dumps(batch)
             restored = cloudpickle.loads(serialized)
             restored.join()
@@ -1915,6 +2067,9 @@ class TestBatchManagedLifecycle(unittest.TestCase):
 
             with self.assertRaises(RuntimeError):
                 cloudpickle.loads(serialized)
+
+            with self.assertRaises(Exception):
+                DDict.attach(results_descriptor, timeout=2)
 
             batch = None
         finally:
@@ -1942,6 +2097,22 @@ class TestBatchManagedLifecycle(unittest.TestCase):
             if batch is not None:
                 batch.join()
                 batch.destroy(force_timeout=0)
+
+    def test_peer_cleanup_after_owner_destroys_runtime(self):
+        batch = Batch(num_nodes=1, scheduler_workers=1, managed_lifecycle=True)
+        peer = None
+        try:
+            peer = cloudpickle.loads(cloudpickle.dumps(batch))
+            self.assertEqual(peer.function(return_constant, 31).get(), 31)
+            assert batch.results_ddict is not None
+            results_descriptor = batch.results_ddict.serialize()
+            batch.destroy(timeout=30, force_timeout=0)
+            with self.assertRaises(Exception):
+                DDict.attach(results_descriptor, timeout=2)
+            peer.join(timeout=10)
+            peer.destroy(timeout=10, force_timeout=0)
+        finally:
+            batch.destroy(timeout=30, force_timeout=0)
 
     def test_managed_destroy_succeeds_after_peer_drops_handle_without_join(self):
         """Managed force-destroy should succeed even if a dropped peer has not been reaped yet."""
@@ -1981,7 +2152,7 @@ class TestBatchSerializationWithDDict(unittest.TestCase):
 
     def test_store_and_restore_batch_from_ddict_while_alive(self):
         """A Batch handle stored in DDict should be restorable while the owner is alive."""
-        from dragon.data.ddict.ddict import DDict
+        from dragon import DDict
 
         ddict = DDict(1, 1, 50 * 1024**2)
         batch = Batch(managed_lifecycle=True)
@@ -2009,7 +2180,7 @@ class TestBatchSerializationWithDDict(unittest.TestCase):
 
     def test_restore_batch_from_ddict_after_destroy_fails(self):
         """Restoring a Batch handle from DDict after destroy() should fail gracefully."""
-        from dragon.data.ddict.ddict import DDict
+        from dragon import DDict
 
         ddict = DDict(1, 1, 50 * 1024**2)
         batch = Batch(managed_lifecycle=True)

@@ -33,6 +33,14 @@ fi
 echo "Cleaning up /tmp of Gunicorn log on" $(hostname)
 find /tmp -maxdepth 1 -user $me -name "*_gunicorn.log" -exec rm -f {} \;
 
+echo "Cleaning up stale attach_info.txt files from attachable runtimes on" $(hostname)
+tmp_root=$(python3 -c "from tempfile import gettempdir; print(gettempdir())" 2>/dev/null || echo /tmp)
+for attach_dir in "${DRAGON_ATTACH_DIR:-}" "$tmp_root"/dragon_*; do
+    [ -d "$attach_dir" ] || continue
+    find "$attach_dir" -maxdepth 1 -type f -name "attach_info.txt" -user "$me" -exec rm -f -- {} \;
+    rmdir "$attach_dir" 2>/dev/null || true
+done
+
 pids=`ps -U $me -ux  | grep 'gunicorn' | awk '$0 !~ /grep/' | awk '$0 !~ /bash/' | awk '$0 !~ /mpiexec/' | awk -F ' ' '{print $2}'`
 echo "Here are the Gunicorn PIDS to kill on" $(hostname): $pids
 echo $pids | xargs -r kill -9

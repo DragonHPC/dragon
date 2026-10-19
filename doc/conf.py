@@ -26,7 +26,7 @@ sys.path.insert(0, os.path.abspath("."))
 # -- Project information -----------------------------------------------------
 
 project = "Dragon"
-DragonVersion = "0.11"
+DragonVersion = "0.15.0"
 copyright = "2026, DragonHPC"
 author = "Michael Burke, Yian Chen, Eric Cozzi, Zach Crisler, Julius Donnert, Veena Ghorakavi, Nick Hill, Maria Kalantzi, Ben Keen, Kent D. Lee, Pete Mendygral, Davin Potts, Nick Radcliffe, and Colin Wahl"
 
@@ -48,7 +48,7 @@ extensions = [
     "sphinx_copybutton",
     "sphinxcontrib.plantuml",
     "sphinx_new_tab_link",
-    'sphinxarg.ext',
+    "sphinxarg.ext",
 ]
 
 tls_verify = False
@@ -165,7 +165,7 @@ autodoc_default_flags = [
 autodoc_default_options = {
     "members": True,
     "member-order": "bysource",
-    "special-members": "__setitem__,__getitem__,__delitem__,__len__,__contains__",
+    "special-members": "__setitem__,__getitem__,__delitem__,__len__,__contains__,__enter__,__exit__",
     "undoc-members": False,
     "exclude-members": "__weakref__,__new__,__doc__,__module__,__dict__",
     "show-inheritance": True,

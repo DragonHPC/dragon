@@ -12,11 +12,10 @@ import queue
 
 import numpy as np
 
-from dragon.data import DDict
+from dragon import DDict, System, Policy
 import dragon.infrastructure.parameters as dp
-from dragon.native.machine import System, Node
+from dragon.native.machine import Node
 from dragon.native import Pool
-from dragon.infrastructure.policy import Policy
 
 
 class TestTimer:
@@ -425,10 +424,21 @@ def get_args(arg_dict=None):
         help="run in regression testing mode and sweep through all tests in a pre-configured way",
     )
     parser.add_argument(
+        "--cluster",
+        action="store_true",
+        help="run in regression testing mode and sweep through all tests in a pre-configured way",
+    )
+    parser.add_argument(
         "--benchit_min_nodes",
         type=int,
         default=0,
         help="minimum number of nodes to start testing at when --benchit is set",
+    )
+    parser.add_argument(
+        "--cluster_min_nodes",
+        type=int,
+        default=0,
+        help="minimum number of nodes to start testing at when --cluster is set",
     )
 
     parser.add_argument(
@@ -561,6 +571,57 @@ def benchit(min_nodes=1):
 
         nnodes *= 2
 
+
+def cluster_bench(min_nodes=1):
+    """This mode automatically benchmarks the DDict in a repeatable way and was tuned for testing up to 512 nodes
+    on smaller nodes like a cluster with moderately sized nodes. You should run this with
+    the number of nodes you have in your cluster. This was run successully on two nodes
+    with 96GB and 48GB of memory, respectively. It requires approximately 32GB memory in the nodes
+    but likely 16GB will perform acceptably.
+
+    dragon gups_ddict.py --cluster [--cluster_min_nodes=[min num nodes to start with, default of 1]]
+    """
+
+    my_system = System()
+    mem_per_node = 4
+
+    nnodes = min_nodes
+    if nnodes < 1:
+        nnodes = 1
+    while nnodes <= my_system.nnodes:
+        nclients = nnodes * (cpu_count() // my_system.nnodes) // 4
+        my_args = {
+            "num_nodes": nnodes,
+            "managers_per_node": 2,
+            "streams_per_manager": 5,
+            "nclients": nclients,
+            "total_mem_size": (nnodes * mem_per_node),
+            "value_size_min": 1024,
+            "value_size_max": 64 * 1024,
+            "iterations": 20,
+            "mem_frac": 0.6,
+            "max_keys": max(8, int(129 * (1 - (float(min(nnodes, 256)) / 256)))),
+            "max_iterations": 4,
+        }
+
+        allnodes = my_system.nodes
+        nodelist = [Node(h_uid) for h_uid in allnodes[0:nnodes]]
+
+        my_args["operation"] = "put"
+        main(my_args, nodelist=nodelist)
+
+        my_args["operation"] = "batchput"
+        main(my_args, nodelist=nodelist)
+
+        my_args["operation"] = "get"
+        main(my_args, nodelist=nodelist)
+
+        my_args["operation"] = "frozenget"
+        main(my_args, nodelist=nodelist)
+
+        nnodes *= 2
+
+
 def profileit(num_nodes=1):
     """This mode runs the benchmark with 24 clients per node and 4 managers per node. It can be configured to
     run with a specific number of nodes less than your allocation.
@@ -620,5 +681,7 @@ if __name__ == "__main__":
         benchit(args.benchit_min_nodes)
     elif args.profileit:
         profileit(args.profileit_num_nodes)
+    elif args.cluster:
+        cluster_bench(args.cluster_min_nodes)
     else:
         main()

@@ -1,9 +1,14 @@
-from dragon.native.process import Process, ProcessTemplate, Popen
-from dragon.native.process_group import ProcessGroup
+from dragon import (
+    ProcessTemplate,
+    ProcessGroup,
+    Policy,
+    System
+)
+
+from dragon.native.process import Process, Popen
 from dragon.infrastructure.connection import Connection
-from dragon.infrastructure.policy import Policy
 from dragon.infrastructure.facts import PMIBackend
-from dragon.native.machine import System, Node
+from dragon.native.machine import Node
 
 import os
 

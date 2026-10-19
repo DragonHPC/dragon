@@ -88,13 +88,15 @@ CY_FILES := dragon/pydragon_rc.pyx \
 
 # These are all compiled via python and Cython. We track them
 # here so that we can clean them up as python will not do that for us.
-CY_SRC = dragon/pydragon_channels.pyx        \
+CY_SRC = dragon/pydragon_accelerators.pyx    \
+         dragon/pydragon_channels.pyx        \
          dragon/pydragon_dpmix.pyx           \
          dragon/pydragon_dtypes.pyx          \
          dragon/pydragon_fli.pyx             \
          dragon/pydragon_heap.pyx            \
          dragon/pydragon_lock.pyx            \
          dragon/pydragon_managed_memory.pyx  \
+         dragon/pydragon_numa.pyx            \
          dragon/pydragon_perf.pyx            \
          dragon/pydragon_pmod.pyx            \
          dragon/pydragon_rc.pyx              \

@@ -13,10 +13,10 @@ import os
 import cloudpickle
 
 import dragon
+from dragon import DDict
 import dragon.infrastructure.messages as dmsg
 import dragon.channels as dch
 from dragon.utils import b64encode, b64decode, host_id
-from dragon.data.ddict import DDict
 from dragon.native.machine import Node
 import multiprocessing as mp
 import traceback

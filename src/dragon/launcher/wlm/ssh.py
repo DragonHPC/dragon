@@ -12,6 +12,7 @@ from ...infrastructure.config import dragon_config
 from ...infrastructure.facts import TransportAgentOptions
 from ...infrastructure.node_desc import NodeDescriptor
 from ...infrastructure.parameters import this_process
+from ...infrastructure.runtime_env import runtime_route_env_key
 from .base import WLM, BaseWLM
 
 SSH_OPTIONS = "ssh-options"
@@ -41,9 +42,7 @@ BASE_ENV_VARNAMES = (
 
 
 class SSHIOStream(BufferedIOBase):
-
     def __init__(self, streams: List[Union[int, TextIOBase]]):
-
         self._inputs = streams
         self.selectors = {}
 
@@ -115,14 +114,13 @@ class SSHSubprocessPopen:
     """A convenience class providing Popen methods and attributes on a list of Popen objects"""
 
     def __init__(self, popen_dict: dict[str, subprocess.Popen]):
-
         self.procs = popen_dict
         self.nprocs = len(self.procs)
         self.args = [proc.args for proc in self.procs.values()]
         self.pid = [proc.pid for proc in self.procs.values()]
 
         self._returncode = None
-        self._ret_codes : Dict[int, int] = {}
+        self._ret_codes: Dict[int, int] = {}
 
         # Set up newlinestreamwrappers for each of the subprocess stdout/stderr
         self._stdouts = [(i, proc.stdout) for i, proc in enumerate(self.procs.values()) if proc.stdout is not None]
@@ -148,7 +146,7 @@ class SSHSubprocessPopen:
         """
 
         # Get a list of processes we don't have a retcode from yet
-        check_procs = [ proc for proc in self.procs.values() if proc.pid not in self._ret_codes ]
+        check_procs = [proc for proc in self.procs.values() if proc.pid not in self._ret_codes]
         for proc in check_procs:
             if proc.poll() is not None:
                 self._ret_codes[proc.pid] = proc.returncode
@@ -162,7 +160,7 @@ class SSHSubprocessPopen:
         """Wait on exit for all Popen objects"""
 
         # Get a list of processes we don't have a retcode from yet
-        check_procs = [ proc for proc in self.procs.values() if proc.pid not in self._ret_codes ]
+        check_procs = [proc for proc in self.procs.values() if proc.pid not in self._ret_codes]
         for proc in check_procs:
             # TODO: We don't want to necessarily wait the full timeout
             #       for each Popen object. Ideally, we'd aggregate this
@@ -229,7 +227,6 @@ class SSHSubprocessPopen:
 
 
 class SSHWLM(BaseWLM):
-
     name = WLM.SSH.value
 
     def __init__(self, network_prefix, port, hostlist):
@@ -285,7 +282,6 @@ class SSHWLM(BaseWLM):
         network_prefix: str,
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
-        transport_test_env: bool,
     ) -> list[str]:
         """Return the launch arguments for the backend process."""
         try:
@@ -298,8 +294,6 @@ class SSHWLM(BaseWLM):
                 overlay_transport=overlay_transport,
                 overlay_port=overlay_port,
             ).split()
-            if transport_test_env:
-                be_args.append("--transport-test")
             return be_args
         except Exception:
             raise RuntimeError("Unable to construct backend launcher arg list")
@@ -347,7 +341,6 @@ class SSHWLM(BaseWLM):
         network_prefix: str,
         overlay_transport: TransportAgentOptions,
         overlay_port: int,
-        transport_test_env: bool,
         log_level: int = logging.NOTSET,
     ):
         try:
@@ -364,13 +357,12 @@ class SSHWLM(BaseWLM):
                     network_prefix=network_prefix,
                     overlay_transport=overlay_transport,
                     overlay_port=overlay_port,
-                    transport_test_env=transport_test_env,
                 )
 
                 launch_args = (
                     [
                         f"DRAGON_RT_UID={rt_uid}",
-                        f"DRAGON_RT_UID__{rt_uid}={frontend_sdesc!r}",
+                        f"{runtime_route_env_key(rt_uid)}={frontend_sdesc!r}",
                         f"DRAGON_HSTA_GET_FABRIC={dragon_hsta_get_fabric!s}",
                     ]
                     + be_args

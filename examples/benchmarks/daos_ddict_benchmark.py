@@ -7,11 +7,10 @@ import random
 import string
 
 import dragon
-from dragon.data.ddict.ddict import DDict, PosixCheckpointPersister, DAOSCheckpointPersister, NULLCheckpointPersister
+from dragon import DDict, ProcessGroup, ProcessTemplate
+from dragon.data.ddict.ddict import PosixCheckpointPersister, DAOSCheckpointPersister, NULLCheckpointPersister
 from dragon.native.queue import Queue
 from dragon.native.barrier import Barrier
-from dragon.native.process_group import ProcessGroup
-from dragon.native.process import ProcessTemplate
 
 try:
     import pydaos

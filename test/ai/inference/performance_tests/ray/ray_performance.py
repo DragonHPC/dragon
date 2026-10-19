@@ -166,8 +166,6 @@ class RayInferenceWorker:
     def load_model(self):
         # Lazy import vllm inside gpu proc
         from vllm import LLM, SamplingParams
-        from vllm.engine.arg_utils import EngineArgs
-        import dataclasses
 
         # Create vllm sampling args.
         self.sampling_params = SamplingParams(
@@ -180,7 +178,7 @@ class RayInferenceWorker:
         )
 
         # Load model
-        engine_args = EngineArgs(
+        self.llm = LLM(
             model=self.model_name,
             tensor_parallel_size=self.tp_size,
             enforce_eager=True,
@@ -191,7 +189,6 @@ class RayInferenceWorker:
             max_num_seqs=self.max_batch_len,
             max_model_len=1024,
         )
-        self.llm = LLM(**dataclasses.asdict(engine_args))
 
     def generate_response(
         self,

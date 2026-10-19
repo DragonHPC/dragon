@@ -1,4 +1,4 @@
-"""Tools for creating a :py:class:`~dragon.native.process_group.ProcessGroup` for NCCL-like applications"""
+"""Tools for creating a :py:class:`~dragon.ProcessGroup` for NCCL-like applications"""
 
 import os
 
@@ -87,7 +87,7 @@ def CollectiveGroup(
     port: int = 29500,
     policies: list = None,
 ) -> ProcessGroup:
-    """Configure and return a :py:class:`~dragon.native.process_group.ProcessGroup` suitable for distributed training
+    """Configure and return a :py:class:`~dragon.ProcessGroup` suitable for distributed training
     jobs. This helper sets up environment variables and process templates necessary for a training job (like PyTorch
     DDP) over multiple nodes using NCCL or similar backends. Users can specify the group in two ways by either
     specifying total processes or by providing a list of policies.

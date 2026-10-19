@@ -34,7 +34,7 @@ Glossary
    Dragon Object
      A *Dragon Object* is an abstraction of one or more :term:`System Resource`
      into a programmable object. High level Dragon objects, such as the
-     :any:`dragon.data.ddict.DDict` are composites of
+     :any:`dragon.DDict` are composites of
      other *Dragon Objects* to provide convenient functionality to the programmer. Every
      *Dragon Object* can be represented by either :term:`Object Name`,
      :term:`Object UID` or :term:`Serialized Descriptor`. The representation can
@@ -127,5 +127,3 @@ Glossary
      across a :term:`Federated System`. Workflows can be conveniently abstracted by
      :term:`directed graphs <Directed Graph>`. Dragon will enable workflow programming by providing a
      directed graph :term:`Dragon Object` in the Dragon Native API.
-
-

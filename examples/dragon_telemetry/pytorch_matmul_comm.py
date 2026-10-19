@@ -23,12 +23,11 @@ import torch.distributed as dist
 import argparse
 import socket
 
-
+from dragon import System, Policy
 from dragon.ai.collective_group import CollectiveGroup, RankInfo
 from dragon.utils import TimeKeeper
 from dragon.infrastructure.util import get_port
-from dragon.native.machine import System, Node
-from dragon.infrastructure.policy import Policy
+from dragon.native.machine import Node
 from dragon.telemetry import Telemetry
 
 

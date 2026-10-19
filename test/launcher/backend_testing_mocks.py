@@ -10,6 +10,8 @@ from dragon.infrastructure import facts as dfacts
 from dragon.infrastructure import messages as dmsg
 from dragon.infrastructure import process_desc
 from dragon.infrastructure.node_desc import NodeDescriptor
+from dragon.accelerators import AccVendor
+from dragon.infrastructure.gpu_desc import AcceleratorDescriptor
 from dragon.infrastructure.connection import Connection, ConnectionOptions
 from dragon.infrastructure.parameters import this_process, POLICY_INFRASTRUCTURE
 from dragon.infrastructure.messages import AbnormalTerminationError
@@ -25,14 +27,13 @@ from .launcher_testing_utils import _GarbageMsg
 
 
 def get_args_map(network_config, frontend_sdesc, host_id, ip_addrs):
-    network_prefix = "^(eth|hsn|en)"
+    network_prefix = "^(eth|hsn|bridge|en)"
 
     args_map = {
         "ip_addrs": ip_addrs,  # it includes the port
         "host_ids": host_id,
         "frontend_sdesc": frontend_sdesc,
         "network_prefix": f"{network_prefix}",
-        "transport_test": False,
         "overlay_transport": "hsta",
         "overlay_port": 6565,
     }
@@ -83,7 +84,6 @@ def mock_start_localservices_wrapper(func):
 
 
 class LauncherBackendHelper:
-
     def __init__(self, network_config_file, node_index, ip_addrs, fe_host_id, be_host_id):
         self.network_config_file = network_config_file
         self.network_config = NetworkConfig.from_file(self.network_config_file).get_network_config()
@@ -95,7 +95,6 @@ class LauncherBackendHelper:
         self.garbage_dict = {"junk": "abdecdf", "52": 20}
 
     def cleanup(self):
-
         try:
             del self.localservices
         except Exception:
@@ -168,7 +167,6 @@ class LauncherBackendHelper:
         abort_lachannelsinfo=False,
         accelerator_present=False,
     ):
-
         self.handle_overlay_start(mock_overlay, mock_start_localservices)
 
         # create our localservices standin class and connect to stdin/stdout queues
@@ -235,7 +233,6 @@ class LauncherBackendHelper:
         self.launcher_fe.recv_SHFwdOutput()
 
     def start_gsteardown_exit(self, shteardown_abort=False):
-
         self.launcher_fe.send_GSTeardown()  # M5
         self.globalservices.recv_GSTeardown()  # M6
 
@@ -267,7 +264,6 @@ class LauncherBackendHelper:
         self.be_overlay_tsta.send_OverlayHalted()  # M23
 
     def start_gsteardown_exit_no_ls_no_gs(self, log, shteardown_abort=False):
-
         self.launcher_fe.send_GSTeardown()  # M5
         log.debug("sent gsteardown")
 
@@ -295,7 +291,6 @@ class LauncherBackendHelper:
         self.be_overlay_tsta.send_OverlayHalted()  # M23
 
     def start_gsteardown_exit_no_gs(self, log, shteardown_abort=False):
-
         self.launcher_fe.send_GSTeardown()  # M5
         log.debug("sent gsteardown")
 
@@ -326,7 +321,6 @@ class LauncherBackendHelper:
         self.be_overlay_tsta.send_OverlayHalted()  # M23
 
     def start_abnormal_termination_exit(self, log, gs_up=True, ls_up=True, shteardown_abort=False):
-
         try:
             self.launcher_fe.recv_AbnormalTermination()
         except AbnormalTerminationError:
@@ -340,13 +334,11 @@ class LauncherBackendHelper:
             self.start_gsteardown_exit(shteardown_abort=shteardown_abort)
 
     def clean_shutdown(self, log, shteardown_abort=False):
-
         self.globalservices.send_GSHeadExit()  # M3
         self.launcher_fe.recv_GSHeadExit()  # M4
         self.start_gsteardown_exit(shteardown_abort=shteardown_abort)
 
     def cleanup_ls(self):
-
         self.ls_stdin_queue.stream.close()
         del self.ls_stdin_queue
 
@@ -486,7 +478,6 @@ class LauncherFrontEnd:
         self.log.debug(f"recv_SHChannelsUp got {self.chs_up} with {self.gs_cd=}")
 
     def send_LAChannelsInfo(self, custom_msg: str = None):
-
         if custom_msg is None:
             nodes_desc = {ch_up.idx: ch_up.node_desc for ch_up in self.chs_up}
             la_ch_info = dmsg.LAChannelsInfo(
@@ -714,8 +705,8 @@ class LocalServices:
         this_process.index = self.node_index
         be_ping = dmsg.LSPingBE(
             tag=next_tag(),
-            ls_cd=this_process.local_ls_qd,
-            be_cd=this_process.local_be_cd,
+            ls_qd=this_process.local_ls_qd,
+            be_qd=this_process.local_be_qd,
             gs_qd=this_process.gs_qd,
             default_pd=this_process.default_pd,
             inf_pd=this_process.inf_pd,
@@ -730,15 +721,16 @@ class LocalServices:
         assert isinstance(self.be_node_idx_ls, dmsg.BENodeIdxLS), "expected BENodeIdxLS"
         self.log.debug(f"recv_BENodeIdxSH got {self.be_node_idx_ls=}")
 
-    @patch("dragon.infrastructure.gpu_desc.find_nvidia")
-    def send_SHChannelsUP(self, mock_find_nvidia, custom_msg=None, accelerator_present=False):
-
+    @patch("dragon.infrastructure.gpu_desc.find_accelerators")
+    def send_SHChannelsUP(self, mock_find_accelerators, custom_msg=None, accelerator_present=False):
         if custom_msg:
             self.la_input.put(custom_msg)
         else:
-            mock_find_nvidia.return_value = None
+            mock_find_accelerators.return_value = None
             if accelerator_present:
-                mock_find_nvidia.return_value = (0, 1, 2, 3)
+                mock_find_accelerators.return_value = AcceleratorDescriptor(
+                    vendor=AccVendor.NVIDIA, device_list=[0, 1, 2, 3], env_str=None
+                )
 
             node_desc = NodeDescriptor.get_localservices_node_conf(
                 host_name=self.be_node_idx_ls.host_name,

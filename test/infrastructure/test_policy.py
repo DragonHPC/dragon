@@ -1,6 +1,6 @@
 import unittest
+from dragon import Policy
 from dataclasses import asdict, dataclass, field
-from dragon.infrastructure.policy import Policy
 import threading
 
 

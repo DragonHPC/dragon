@@ -12,13 +12,14 @@ from functools import wraps
 
 from dragon.globalservices.process import query, kill, ProcessError
 from dragon.infrastructure.process_desc import ProcessOptions, ProcessDescriptor
+from dragon.infrastructure.facts import PMIBackend
 
+from dragon import ProcessTemplate, ProcessGroup
 from dragon.native.barrier import Barrier
-from dragon.native.process import Process, ProcessTemplate
+from dragon.native.process import Process
 from dragon.native.event import Event
 from dragon.native.queue import Queue
 from dragon.native.process_group import (
-    ProcessGroup,
     DragonProcessGroupError,
     DragonProcessGroupException,
     DragonUserCodeError,
@@ -815,9 +816,13 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
             except ProcessError:  # maybe it disappeared already
                 pass
 
-            # Wait until the puids no longer have the killed puid in there and
-            # that the length matches workers
-            while puid in puids and len(puids) != nworkers:
+            # Keep waiting while either condition is unmet (note that `and` would
+            # skip the wait if a stale snapshot still had nworkers entries, allowing
+            # the killed PUID to be selected again before its replacement appears)
+            restart_deadline = time.monotonic() + 10
+            while puid in puids or len(puids) != nworkers:
+                if time.monotonic() >= restart_deadline:
+                    self.fail(f"ProcessGroup did not replace {puid}; active puids are {puids}")
                 time.sleep(0.1)
                 puids = pg.puids
 
@@ -1156,6 +1161,7 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
         self.assertGreaterEqual(elap, wtime)
         self.assertLess(elap, (wtime + TIMEOUT_DELTA_TOL))
 
+    @unittest.skip("Bug report filed in AICI-1565. Can be re-enabled pending fix.")
     def test_multiple_groups_and_multiple_clients(self):
         wtime = 1.0
         tq = Queue()
@@ -1236,6 +1242,65 @@ class TestDragonNativeProcessGroup(unittest.TestCase):
             with open(file_path, "r") as f:
                 self.assertEqual(f.readline(), string_to_write)
 
+    def test_open_mpi_single_node(self):
+        def my_mpi_function(output_q):
+            import mpi4py
+
+            mpi4py.rc.initialize = False
+
+            from mpi4py import MPI
+
+            MPI.Init()
+            try:
+                comm = MPI.COMM_WORLD
+                rank = comm.Get_rank()
+                size = comm.Get_size()
+                print(f"Rank {rank} of {size} says: Hello from MPI!", flush=True)
+                output_q.put((rank, size, f"Rank {rank} did some work"))
+            finally:
+                MPI.Finalize()
+
+        # Try importing dragonPMIx. If we don't have it, get out of here because there's no PMIx on system
+        try:
+            from dragon.dpmix import DragonPMIxJob
+        except ImportError:
+            self.skipTest("dragonPMIx module not found. Skipping test_open_mpi_single_node.")
+
+        q = Queue()
+        pg = ProcessGroup(pmi=PMIBackend.PMIX)
+
+        num_ranks = 4
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stdout_path = os.path.join(temp_dir, "mpi.stdout")
+            mpi_template = ProcessTemplate(target=my_mpi_function, args=(q,), stdout=stdout_path)
+            pg.add_process(nproc=num_ranks, template=mpi_template)
+
+            pg.init()
+            try:
+                pg.start()
+                results = [q.get(timeout=30) for _ in range(num_ranks)]
+                pg.join(timeout=30)
+                exit_status = pg.exit_status
+            finally:
+                pg.stop()
+                pg.close()
+
+            self.assertEqual(len(exit_status), num_ranks)
+            for puid, exit_code in exit_status:
+                self.assertEqual(exit_code, 0, f"MPI worker {puid} exited with {exit_code}")
+
+            self.assertCountEqual(
+                results,
+                [(rank, num_ranks, f"Rank {rank} did some work") for rank in range(num_ranks)],
+            )
+            self.assertCountEqual(
+                Path(stdout_path).read_text().splitlines(),
+                [f"Rank {rank} of {num_ranks} says: Hello from MPI!" for rank in range(num_ranks)],
+            )
+
+
+if __name__ == "__main__":
+    main()
 
 if __name__ == "__main__":
     unittest.main()

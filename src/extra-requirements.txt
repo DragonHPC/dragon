@@ -21,13 +21,14 @@ jupyter>=1.1.1:                 examples, services
 kubernetes>=32.0.0:             dev, services
 langgraph:                      ai, test
 matplotlib:                     examples
-mpi4py:                         examples
+mpi4py:                         examples, test
 msgspec:                        ai, test
 networkx:                       batch
 numcodecs>=0.13.1,<0.16.0:      test
 numpy:                          dev
 nvidia-ml-py:                   telemetry, dev
 opencv-python:                  examples
+openmpi:                        test
 openpyxl:                       ai, test
 packaging:                      ai, test
 pandarallel:                    examples
@@ -58,7 +59,7 @@ torch>=2.6.0:                   ai, examples, docs, test
 torchvision:                    ai, examples, test
 transformers:                   ai, test
 tqdm>=4.64.1:                   examples
-vllm>=0.11.0,<0.18.0:           ai
+vllm>=0.11.0,<0.20.0:           ai
 typeguard:                      workflows
 typing_extensions:              workflows
 zarr<3.0.0:                     test

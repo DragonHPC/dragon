@@ -131,6 +131,33 @@ class SSHHost(RemoteHost):
             logger.debug("--run")
         return True
 
+    def _remote_failure_details(self):
+        """Collect the remote process' exit status and everything it wrote to stderr.
+
+        Only call this once the channel has closed; both reads block otherwise.
+        """
+        err_info = ""
+        try:
+            if self.stderr is not None:
+                # Drain all of it: a traceback's first line is just boilerplate,
+                # the useful part is at the end.
+                err = self.stderr.read()  # type: ignore
+                if isinstance(err, bytes):
+                    err = err.decode(errors="replace")
+                err_info = err.strip()
+        except Exception as ex:
+            logger.debug("ssh_host=%s could not read remote stderr: %s", self.hostname, ex)
+
+        exit_status = None
+        try:
+            channel = self.stdin.channel  # type: ignore
+            if channel.exit_status_ready():
+                exit_status = channel.recv_exit_status()
+        except Exception as ex:
+            logger.debug("ssh_host=%s could not read remote exit status: %s", self.hostname, ex)
+
+        return exit_status, err_info
+
     def send_message(self, msg):
         try:
             logger.debug("ssh_host=%s send_message=%s", self.hostname, msg)
@@ -138,6 +165,21 @@ class SSHHost(RemoteHost):
             self.stdin.write(b"\n")  # type: ignore
             self.stdin.flush()  # type: ignore
         except Exception as ex:
+            # A send fails with a bare "Socket is closed" once the remote process has
+            # died. Report why it died rather than this downstream symptom.
+            if self.stdin is not None and self.stdin.channel.closed:  # type: ignore
+                exit_status, err_info = self._remote_failure_details()
+                logger.error(
+                    'ssh_host=%s send_message failed - remote process gone, exit_status=%s stderr="%s"',
+                    self.hostname,
+                    exit_status,
+                    err_info,
+                )
+                raise RemoteProcessError(
+                    exit_status if exit_status is not None else -1,
+                    err_info
+                    or f"remote process on {self.hostname} exited before {type(msg).__name__} could be sent",
+                ) from ex
             logger.debug("Unhandled exception in send_message: %s", ex)
             raise
         # finally:
@@ -158,16 +200,19 @@ class SSHHost(RemoteHost):
                 # logger.debug("ssh_host=%s recv_message parsed=%s", self.hostname, msg)
 
             if self.stdout.channel.closed:  # type: ignore
-                err_info = self.stderr.readline().strip()  # type: ignore
-                exit_status = self.stdin.channel.recv_exit_status()  # type: ignore
-                logger.debug("ssh_host=%s recv_message - channel closed - exit_status=%d", self.hostname, exit_status)
-                if exit_status != 0:
+                exit_status, err_info = self._remote_failure_details()
+                logger.debug(
+                    "ssh_host=%s recv_message - channel closed - exit_status=%s", self.hostname, exit_status
+                )
+                if exit_status not in (0, None):
+                    # Raise even with empty stderr, otherwise the failure is lost here and
+                    # only resurfaces later as "Socket is closed" on the next send.
                     if err_info:
-                        logger.debug('ssh_host=%s recv_message err_info="%s"', self.hostname, err_info)
-                        raise RemoteProcessError(
-                            self.stdin.channel.recv_exit_status(),  # type: ignore
-                            err_info,
-                        )
+                        logger.error('ssh_host=%s remote stderr:\n%s', self.hostname, err_info)
+                    raise RemoteProcessError(
+                        exit_status,
+                        err_info or f"remote process on {self.hostname} exited with status {exit_status}",
+                    )
         except RemoteProcessError:
             raise
         except Exception as ex:

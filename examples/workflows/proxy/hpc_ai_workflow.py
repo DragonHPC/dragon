@@ -9,10 +9,13 @@ import matplotlib.pyplot as plt
 from itertools import count
 from model import Net, make_features, infer, train
 
-from dragon.native.process import Process, ProcessTemplate, Popen
-from dragon.native.process_group import ProcessGroup
+from dragon import (
+    ProcessTemplate,
+    ProcessGroup,
+    System,
+)
+from dragon.native.process import Process, Popen
 from dragon.infrastructure.connection import Connection
-from dragon.native.machine import System
 import dragon.channels as dch
 import dragon.managed_memory as dm
 import dragon.infrastructure.parameters as dp

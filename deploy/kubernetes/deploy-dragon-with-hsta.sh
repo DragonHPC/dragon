@@ -285,8 +285,8 @@ spec:
           . devtools/setup;
           # ldconfig -p | grep ucp;
           # ldd /dragon-develop/hpc-pe-dragon-dragon-k8s-merge-develop/src/lib/libdfabric_ucx.so;
-          # dragon -l actor_file=DEBUG -t hsta examples/multiprocessing/p2p_lat.py --dragon;
-          # dragon -t hsta examples/multiprocessing/p2p_lat.py --dragon;
+          # dragon -l actor_file=DEBUG -t hsta examples/multiprocessing/p2p_lat.py;
+          # dragon -t hsta examples/multiprocessing/p2p_lat.py;
           dragon -l actor_file=DEBUG -t hsta --telemetry-level=3 src/dragon/jupyter/server.py;
           # dragon -t hsta --telemetry-level=2 examples/dragon_telemetry/scipy_scale_work.py --dragon --iterations 1000 --burns 1 --work_time 1;
           # dragon -t hsta --telemetry-level=3 examples/dragon_telemetry/scipy_scale_work.py --dragon;

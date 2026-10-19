@@ -8,11 +8,11 @@ import os
 import unittest
 import time
 import dragon
+from dragon import System, DDict
 from dragon.native.process import Popen
-from dragon.native.machine import System, Node
+from dragon.native.machine import Node
 from dragon.infrastructure.facts import DRAGON_LIB_DIR
 from dragon.utils import X2DMatrixPickler, XScalarPickler, XPickler, XStringPickler, XByteBufferPickler
-from dragon.data.ddict.ddict import DDict
 import multiprocessing as mp
 import pathlib
 import numpy as np

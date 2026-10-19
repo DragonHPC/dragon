@@ -4,8 +4,8 @@ import os
 import argparse
 from typing import Tuple
 
-from dragon.data.ddict import DDict, PosixCheckpointPersister, DAOSCheckpointPersister
-from dragon.native.machine import System
+from dragon import DDict, System
+from dragon.data.ddict import PosixCheckpointPersister, DAOSCheckpointPersister
 
 import torch
 import torch.nn as nn

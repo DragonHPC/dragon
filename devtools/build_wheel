@@ -29,3 +29,6 @@ if [[ "$(uname -s)" == "Linux" ]]; then
         echo "WARNING: auditwheel not found; wheel will keep linux_* tag and may be rejected by PyPI/TestPyPI."
     fi
 fi
+
+# Put it whereever we ran the command from.
+mv src/dist/*.whl .

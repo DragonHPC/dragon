@@ -12,7 +12,6 @@ from ..infrastructure.facts import (
     DEFAULT_OVERLAY_NETWORK_PORT,
     DEFAULT_TRANSPORT_NETIF,
     PROCNAME_LA_BE,
-    TRANSPORT_TEST_ENV,
     OVERLAY_TRANSPORT_VAR,
     TransportAgentOptions,
 )
@@ -23,8 +22,7 @@ from . import util as dlutil
 LOGBASE = "launcher_multi_be"
 
 
-def main(transport_test_env: bool = False):
-
+def main():
     from argparse import ArgumentParser
     from dragon.utils import set_procname, strtobool
     from dragon import _patch_multiprocessing
@@ -71,7 +69,6 @@ def main(transport_test_env: bool = False):
     parser.add_argument("--backend-hostname", dest="backend_hostname", type=str, help="Force backend hostname")
 
     parser.set_defaults(
-        transport_test=bool(strtobool(os.environ.get(TRANSPORT_TEST_ENV, str(transport_test_env)))),
         network_prefix=DEFAULT_TRANSPORT_NETIF,
         overlay_transport=overlay_transport_default,
         overlay_port=DEFAULT_OVERLAY_NETWORK_PORT,
@@ -80,9 +77,7 @@ def main(transport_test_env: bool = False):
     )
     args = parser.parse_args()
 
-    with LauncherBackEnd(
-        args.transport_test, args.network_prefix, args.overlay_transport, args.overlay_port
-    ) as be_server:
+    with LauncherBackEnd(args.network_prefix, args.overlay_transport, args.overlay_port) as be_server:
         try:
             be_server.run_startup(
                 args.ip_addrs,

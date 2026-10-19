@@ -46,12 +46,12 @@ processes:
     import dragon
     import multiprocessing as mp
 
+    from dragon import ProcessTemplate, ProcessGroup
     from dragon.globalservices import node
     from dragon.globalservices.process import multi_join
     from dragon.infrastructure.connection import Connection
     from dragon.infrastructure.facts import PMIBackend
-    from dragon.native.process import MSG_PIPE, MSG_DEVNULL, Process, ProcessTemplate
-    from dragon.native.process_group import ProcessGroup
+    from dragon.native.process import MSG_PIPE, MSG_DEVNULL, Process
 
     logging.basicConfig(level=logging.INFO)
 

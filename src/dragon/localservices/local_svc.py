@@ -7,6 +7,8 @@ import os
 import queue
 import subprocess
 import sys
+import time
+import traceback
 
 from typing import Optional
 
@@ -30,26 +32,74 @@ from .server import LocalServer, PopenProps, get_new_tag, ProcessProps, OutputCo
 _LS_INPUT_STARTUP_EXPECTATION = "startup expectation on ls input"
 
 
+def _get_startup_msg(ls_input, timeout, la_input, service_name, process=None):
+    try:
+        return ls_input.get(timeout=timeout)
+    except (queue.Empty, TimeoutError):
+        error_details = None
+        if process is not None:
+            _, stderr = process.communicate()
+            if stderr:
+                error_details = stderr.decode()
+        if error_details is None:
+            error_details = f"timed out waiting for LS bringup message after {timeout} seconds"
+
+        error_str = f"Unable to bring up Dragon {service_name}: {error_details}"
+        la_input.put(dmsg.AbnormalTermination(tag=get_new_tag(), err_info=error_str))
+        raise RuntimeError(error_str)
+
+
+def _build_attach_info(node_index, gs_qd):
+    attach_info = {
+        "node_index": node_index,
+        "gs_qd": gs_qd,
+        "ls_qd": dparms.this_process.local_ls_qd,
+        "default_pd": dparms.this_process.default_pd,
+        "inf_pd": dparms.this_process.inf_pd,
+        "rt_uid": os.environ.get("DRAGON_RT_UID", ""),
+    }
+    return attach_info
+
+
 def maybe_start_gs(
-    gs_args: Optional[list], gs_env: Optional[dict], hostname: str, be_in: object, logger_sdesc: B64 = None
+    gs_args: Optional[list],
+    gs_env: Optional[dict],
+    hostname: str,
+    be_in: object,
+    logger_sdesc: B64 = None,
+    *,
+    is_primary=True,
+    la_channels_info=None,
 ):
-    """Starts gs if there are any args to start it with.
+    """Optionally start GS and, for multinode startup, attach to its channel.
 
     Args:
-        gs_args (list): args to start global services
+        gs_args (list): Arguments for starting global services on the primary node.
 
-        gs_env (dict): environment variable to set prior to gs launcher
+        gs_env (dict): Environment to use when launching GS.
 
-        logger_sdesc (B64, optional): logging channel descriptor
+        hostname (str): Hostname recorded for GS output forwarding.
+
+        be_in (object): Backend input queue used to forward GS stdout and stderr.
+
+        logger_sdesc (B64, optional): Logging channel descriptor for GS.
+
+        is_primary (bool): Whether this node is responsible for launching GS.
+
+        la_channels_info (LAChannelsInfo, optional): Multinode channel information.
+            When provided, it is sent to the primary GS and this node attaches to
+            the shared GS channel. Non-primary nodes attach without launching GS.
 
     Raises:
-        RuntimeError: Launch of global services was not successful.
+        RuntimeError: GS launch was not successful.
 
     Returns:
-        gs_proc (PopenProps) of gs launch, or None if gs_args is None
+        Without ``la_channels_info``, the GS process, or ``None`` if it was not
+        launched. With ``la_channels_info``, a tuple containing the GS process
+        (or ``None`` on non-primary nodes) and the attached GS queue.
     """
     log = logging.getLogger(dls.LS).getChild("maybe_start_gs")
-    if gs_args is not None:
+    if is_primary and gs_args is not None:
         if gs_env is None:
             the_env = os.environ
         else:
@@ -114,7 +164,25 @@ def maybe_start_gs(
     else:
         gs_proc = None
 
-    return gs_proc
+    if la_channels_info is None:
+        return gs_proc
+
+    if is_primary:
+        log.info("Starting global services on primary")
+        if gs_proc is None:
+            log.info("did not start gs")
+        else:
+            log.info("gs up")
+
+        gs_stdin = gs_proc.stdin
+        gs_proc.stdin = None
+        gs_stdin_send = dutil.NewlineStreamWrapper(gs_stdin, read_intent=False, b64_encode_decode=True)
+        gs_stdin_send.send(la_channels_info.serialize())
+        log.info("transmitted la_channels_info to gs")
+
+    gs_in_wh = InfraQueue.attach(la_channels_info.gs_qd)
+    log.info("ls attached to gs channel")
+    return gs_proc, gs_in_wh
 
 
 def mk_inf_resources(node_index):
@@ -129,27 +197,16 @@ def mk_inf_resources(node_index):
     try:
         inf_muid = dfacts.infrastructure_pool_muid_from_index(node_index)
         ips = dparms.this_process.inf_seg_sz
-        # These two loops are solely needed when testing and re-creating the pools in rapid succession because the
-        # OS needs a moment to clean up shared memory and sometimes we come back to create again too fast and it has
-        # not yet been cleaned up and reports FILE EXISTS. This should never happen in normal production.
-        for i in range(10):
-            try:
-                ipn = f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(dfacts.INFRASTRUCTURE_POOL_SUFFIX)}{i}"
-                inf_pool = dmm.MemoryPool(ips, ipn, inf_muid)
-                break
-            except:
-                pass
+        ipn = dfacts.runtime_pool_name(dfacts.INFRASTRUCTURE_POOL_SUFFIX)
+        inf_pool = dmm.MemoryPool.create_with_retry(ips, ipn, inf_muid)
         log.info("inf pool: %s size %s" % (ipn, ips))
 
         def_muid = dfacts.default_pool_muid_from_index(node_index)
         dps = dparms.this_process.default_seg_sz
-        for i in range(10):
-            try:
-                dpn = f"D{str(os.getuid())[-3:]}{str(os.getpid())[-3:]}{str(dfacts.DEFAULT_POOL_SUFFIX)}{i}"
-                def_pool = dmm.MemoryPool(dps, dpn, def_muid, pre_alloc_blocks=[8, 8, 8, 8, 8, 8, 8, 8, 0, 0, 0, 0, 8])
-                break
-            except:
-                pass
+        dpn = dfacts.runtime_pool_name(dfacts.DEFAULT_POOL_SUFFIX)
+        def_pool = dmm.MemoryPool.create_with_retry(
+            dps, dpn, def_muid, pre_alloc_blocks=[8, 8, 8, 8, 8, 8, 8, 8, 0, 0, 0, 0, 8]
+        )
         log.info("def pool: %s size %s" % (dpn, dps))
 
         # PJM TODO: how pre-allocated blocks are done here is temporary.  We also need a better way
@@ -168,7 +225,7 @@ def mk_inf_resources(node_index):
         la_input_ch = dch.Channel(inf_pool, la_input_cuid, None)
         dparms.this_process.be_cuid = dfacts.launcher_cuid_from_index(node_index)
         la_input = InfraQueue(pool=inf_pool, main_channel=la_input_ch)
-        dparms.this_process.local_be_cd = la_input.serialize()
+        dparms.this_process.local_be_qd = la_input.serialize()
 
         ta_input_cuid = dfacts.transport_cuid_from_index(node_index)
         ta_input_ch = dch.Channel(inf_pool, ta_input_cuid, None)
@@ -197,6 +254,47 @@ def mk_inf_resources(node_index):
 
     log.info("infrastructure resources constructed")
     return start_pools, start_channels, ls_input, la_input, ta_input_descr, ta_input, gs_input
+
+
+def _write_attach_info_file(attach_descr):
+    """Write this node's Base64-encoded AttachableRuntimeDescr to the attach-info directory.
+
+    The auth token is intentionally omitted from the file; attaching processes
+    supply it via ``dragon.attach(auth_token=...)`` or the ``DRAGON_ATTACH_TOKEN``
+    environment variable.
+    """
+    log = logging.getLogger(dls.LS).getChild("write_attach_info")
+    try:
+        attach_dir = dfacts.attach_runtime_dir()
+        os.makedirs(attach_dir, mode=0o700, exist_ok=True)
+        # Leave the permissions of a user-chosen DRAGON_ATTACH_DIR alone.
+        if attach_dir == dfacts.default_attach_runtime_dir():
+            os.chmod(attach_dir, 0o700)
+        attach_path = os.path.join(attach_dir, dfacts.ATTACH_INFO_FILENAME)
+        fd = os.open(attach_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as fh:
+            fh.write(dutils.b64encode(attach_descr.serialize()))
+        log.info("wrote attach info to %s", attach_path)
+    except Exception as ex:  # pylint: disable=broad-except
+        log.warning("could not write attach info file: %s", ex)
+
+
+def _remove_attach_info_file():
+    """Best-effort removal of this node's attach-info file and directory."""
+    log = logging.getLogger(dls.LS).getChild("remove_attach_info")
+    try:
+        attach_dir = dfacts.attach_runtime_dir()
+        attach_path = os.path.join(attach_dir, dfacts.ATTACH_INFO_FILENAME)
+        try:
+            os.remove(attach_path)
+        except OSError:
+            pass
+        try:
+            os.rmdir(attach_dir)
+        except OSError:
+            pass
+    except Exception as ex:  # pylint: disable=broad-except
+        log.warning("could not remove attach info file: %s", ex)
 
 
 def get_ls_msg_queue(stdin=None, stdout=None):
@@ -231,6 +329,7 @@ def single(
     ls_stdin=None,
     ls_stdout=None,
     ta_input=None,
+    attach_auth_token: str = None,
 ):
     log = logging.getLogger("local_svc single node main")
     log.info("starting on pid=%s" % os.getpid())
@@ -260,8 +359,8 @@ def single(
         os.environ.update(dparms.this_process.env())
         be_ping = dmsg.LSPingBE(
             tag=get_new_tag(),
-            ls_cd=dparms.this_process.local_ls_qd,
-            be_cd=dparms.this_process.local_be_cd,
+            ls_qd=dparms.this_process.local_ls_qd,
+            be_qd=dparms.this_process.local_be_qd,
             gs_qd=dparms.this_process.gs_qd,
             default_pd=dparms.this_process.default_pd,
             inf_pd=dparms.this_process.inf_pd,
@@ -283,7 +382,7 @@ def single(
 
         la_input.put(ch_up_msg)
         log.info("sent LSChannelsUp")
-        gs_proc = maybe_start_gs(gs_args, gs_env, hostname="localhost", be_in=la_input)
+        gs_proc = maybe_start_gs(gs_args, gs_env, hostname="localhost", be_in=la_input, is_primary=True)
         msg = ls_input.get()
         assert isinstance(msg, dmsg.GSPingLS), _LS_INPUT_STARTUP_EXPECTATION
         log.info("got GSPingLS")
@@ -294,7 +393,18 @@ def single(
 
     gs_input.put(dmsg.LSPingGS(tag=get_new_tag(), node_sdesc=ls_node_desc.sdesc))
 
-    server = LocalServer(channels=start_channels, pools=start_pools, hostname="localhost")
+    server = LocalServer(
+        channels=start_channels, pools=start_pools, hostname="localhost", attach_auth_token=attach_auth_token
+    )
+
+    if attach_auth_token is not None:
+        attach_info = _build_attach_info(node_index, dparms.this_process.gs_qd)
+        _write_attach_info_file(dmsg.AttachableRuntimeDescr(tag=get_new_tag(), **attach_info))
+        # this ordering matters. we use this to write the auth token out to the frontend
+        attach_info["auth_token"] = attach_auth_token
+        server.kvs[dfacts.ATTACH_INFO_KVS_KEY] = json.dumps(attach_info)
+
+        log.info("pre-populated LS KVS with attach-info (key=%s)", dfacts.ATTACH_INFO_KVS_KEY)
 
     if gs_proc is not None:
         server.add_proc(gs_proc)
@@ -305,6 +415,8 @@ def single(
     except Exception:
         log.fatal("There was an exception and LS is going to clean up.")
         server.cleanup()
+        if attach_auth_token is not None:
+            _remove_attach_info_file()
         raise
 
     try:
@@ -316,6 +428,8 @@ def single(
         raise RuntimeError("teardown") from tde
     finally:
         server.cleanup()
+        if attach_auth_token is not None:
+            _remove_attach_info_file()
 
     log.info("shutdown complete")
 
@@ -333,7 +447,6 @@ def multinode(
     ls_stdout=None,
     fname=None,
     ta_input=None,
-    transport_test_env: bool = False,
 ):
     """Local services for multi-node dragon"""
 
@@ -345,6 +458,7 @@ def multinode(
 
     start_pools = {}
     start_channels = {}
+    attach_auth_token = None
 
     try:  # attempt to construct infrastructure objects and establish communications
         os.setpgid(0, 0)
@@ -384,8 +498,8 @@ def multinode(
 
         be_ping = dmsg.LSPingBE(
             tag=get_new_tag(),
-            ls_cd=dparms.this_process.local_ls_qd,
-            be_cd=dparms.this_process.local_be_cd,
+            ls_qd=dparms.this_process.local_ls_qd,
+            be_qd=dparms.this_process.local_be_qd,
             gs_qd=gs_qd,
             default_pd=dparms.this_process.default_pd,
             inf_pd=dparms.this_process.inf_pd,
@@ -414,6 +528,8 @@ def multinode(
         log.info("node index %s received all channels info" % node_index)
         log.debug("la_channels.nodes_desc: %s" % la_channels_info.nodes_desc)
         log.debug("la_channels.gs_qd: %s" % la_channels_info.gs_qd)
+        # get auth token if it is in the message
+        attach_auth_token = getattr(la_channels_info, "attach_auth_token", None)
 
         # Work out transport agent launch arguments:
         ta_args = ["%s" % la_channels_info.transport]
@@ -478,96 +594,90 @@ def multinode(
             )
         except Exception as e:
             logging.getLogger(dls.LS).getChild("start_ta").fatal("transport agent launch failed on %s" % node_index)
+            la_input.put(dmsg.AbnormalTermination(tag=get_new_tag(), err_info="transport agent launch failed"))
             raise RuntimeError("transport agent launch failed on node %s" % node_index) from e
 
         # Send LAChannelsInfo to TA
         ta_input.put(la_channels_info)
 
-        # Confirmation TA is up. Use 10 seconds since this only requires node-local work,
-        # ie: no communication is occurring unless something changes in the future.
-        # If TA isn't up in 10 seconds, assume things have gone awry, check stderr
-        # and log any error messages to the user
-        try:
-            ta_ping = ls_input.get(timeout=10)
-        except queue.Empty:
-            _, ta_stderr = ta.communicate()
-            error_str = f"Unable to bring up Dragon transport agent: {ta_stderr.decode()}"
+        # Do a recv for TAPingLS from the transport agent letting us know it's ready for multi-node communication
+        gs_ping_ls = None
+        ta_deadline = time.monotonic() + dfacts.TA_PING_TIMEOUT
+        ta_ping = _get_startup_msg(
+            ls_input,
+            dfacts.TA_PING_TIMEOUT,
+            la_input,
+            "transport agent",
+            ta,
+        )
+        log.info("Received message %s", type(ta_ping))
+
+        # If we are non-primary and got GSPingLS first, cache the GSPingLS and re-enter the recv for TAPingLS
+        if not is_primary and isinstance(ta_ping, dmsg.GSPingLS):
+            log.info("Received GSpingLS prior to TAPingLS, saving for GS handshake")
+            gs_ping_ls = ta_ping
+            remaining = max(ta_deadline - time.monotonic(), 0)
+            ta_ping = _get_startup_msg(
+                ls_input,
+                remaining,
+                la_input,
+                "transport agent",
+                ta,
+            )
+
+        # We should definitely have the TAPingLS now. If not, exit bring-up. Else, continue with the startup process.
+        if not isinstance(ta_ping, dmsg.TAPingLS):
+            error_str = f"ls expected TAPingLS, received {type(ta_ping)}"
+            log.fatal(error_str)
             la_input.put(dmsg.AbnormalTermination(tag=get_new_tag(), err_info=error_str))
             raise RuntimeError(error_str)
-        assert isinstance(ta_ping, dmsg.TAPingLS), "ls did not receive ping from TA)"
         log.info("ls received TAPingLS - m7")
-        ch_list = []
-        if transport_test_env:
-            first_cuid = dfacts.FIRST_CUID + node_index * 2
-            second_cuid = dfacts.FIRST_CUID + node_index * 2 + 1
-            barrier_cuid = dfacts.FIRST_CUID + node_count * 2
-
-            ch1 = dch.Channel(start_pools[def_muid], first_cuid)
-            ch2 = dch.Channel(start_pools[def_muid], second_cuid)
-            ch1_ser = B64(ch1.serialize())
-            ch2_ser = B64(ch2.serialize())
-            ch_list.append(str(ch1_ser))
-            ch_list.append(str(ch2_ser))
-            if node_index == 0:
-                # Create one Barrier channel for use in testing.
-                ch3 = dch.Channel(start_pools[def_muid], barrier_cuid, capacity=node_count)
-                ch3_ser = B64(ch3.serialize())
-                ch_list.append(str(ch3_ser))
-
-        la_input.put(dmsg.TAUp(tag=get_new_tag(), idx=node_index, test_channels=ch_list))
+        la_input.put(dmsg.TAUp(tag=get_new_tag(), idx=node_index))
         log.info("ls send TAUp to la_be - m8.1")
 
-        # Init these here so if in transport test mode, they have a value even though GS will not
-        # be started or used in transport test mode.
-        gs = None
-        gs_in_wh = None
+        # Start the global services if primary and obtain the local comms channel
+        gs, gs_in_wh = maybe_start_gs(
+            gs_args,
+            gs_env,
+            hostname,
+            la_input,
+            logger_sdesc,
+            is_primary=is_primary,
+            la_channels_info=la_channels_info,
+        )
 
-        if not transport_test_env:
-            # Start global services on primary node.
-            if is_primary:
-                log.info("Starting global services on primary")
-                gs = maybe_start_gs(gs_args, gs_env, hostname=hostname, be_in=la_input, logger_sdesc=logger_sdesc)
-                if gs is None:
-                    log.info("did not start gs")
-                else:
-                    log.info("gs up")
-
-                gs_stdin = gs.stdin
-                gs.stdin = None  # transfer ownership; avoids double-close of same fd (Python 3.13)
-                gs_stdin_send = dutil.NewlineStreamWrapper(gs_stdin, read_intent=False, b64_encode_decode=True)
-                gs_stdin_send.send(la_channels_info.serialize())
-                log.info("transmitted la_channels_info to gs")
-
-            gs_ch = la_channels_info.gs_qd
-            log.info("ls attached to gs channel")
-            gs_in_wh = InfraQueue.attach(gs_ch)
-
-            # Do a timeout on this recv. Just a few seconds if primary. Longer if we're getting remote comms from GS
-            # If it fails, check that it didn't fall over on instantiation
+        # Get the GSPingLS if we haven't received it already
+        if gs_ping_ls is None:
             gs_timeout = dfacts.REMOTE_LAUNCH_TIMEOUT
             if is_primary:
                 gs_timeout = dfacts.LOCAL_LAUNCH_TIMEOUT
-            try:
-                gs_ping_ls = ls_input.get(timeout=gs_timeout)
-            except queue.Empty:
-                _, gs_stderr = gs.communicate()
-                error_str = f"Unable to bring up Dragon global services: {gs_stderr.decode()}"
-                la_input.put(dmsg.AbnormalTermination(tag=get_new_tag(), err_info=error_str))
-                raise RuntimeError(error_str)
-            if not isinstance(gs_ping_ls, dmsg.GSPingLS):
-                assert False, f"ls expected GSPingLS, received {type(gs_ping_ls)}"
-            log.info("ls received GSPingLS from gs - m10")
+            gs_ping_ls = _get_startup_msg(
+                ls_input,
+                gs_timeout,
+                la_input,
+                "global services",
+                gs,
+            )
+        if not isinstance(gs_ping_ls, dmsg.GSPingLS):
+            assert False, f"ls expected GSPingLS, received {type(gs_ping_ls)}"
+        log.info("ls received GSPingLS from gs - m10")
 
-            # Send response to GS
-            gs_in_wh.put(dmsg.LSPingGS(tag=get_new_tag(), idx=node_index, node_sdesc=ls_node_desc.sdesc))
-            log.info("ls sent LSPingGS - m11")
+        # Send LSPingGS response to GS
+        gs_in_wh.put(dmsg.LSPingGS(tag=get_new_tag(), idx=node_index, node_sdesc=ls_node_desc.sdesc))
+        log.info("ls sent LSPingGS - m11")
     except (OSError, EOFError, json.JSONDecodeError, AssertionError, RuntimeError) as rte:
-        log.fatal("startup failed")
+        tb = traceback.format_exc()
+        log.fatal(f"startup failed: Exception was {rte}\nwith traceback {tb}")
         LocalServer.clean_pools(start_pools, log)
+        if attach_auth_token is not None:
+            _remove_attach_info_file()
         raise RuntimeError("startup fatal error") from rte
 
     server = LocalServer(
-        channels=start_channels, pools=start_pools, transport_test_mode=transport_test_env, hostname=hostname
+        channels=start_channels,
+        pools=start_pools,
+        hostname=hostname,
+        attach_auth_token=attach_auth_token,
     )
 
     if gs is not None:
@@ -577,6 +687,17 @@ def multinode(
     if ta is not None:
         server.add_proc(ta)
         server.ta_proc = ta
+
+    # If the runtime was launched --attachable, publish this node's own
+    # attach-info file. LS validates the auth token itself, so it is not
+    # forwarded to GS.
+    if attach_auth_token is not None:
+        attach_info = _build_attach_info(node_index, la_channels_info.gs_qd)
+        _write_attach_info_file(dmsg.AttachableRuntimeDescr(tag=get_new_tag(), **attach_info))
+        # this ordering matters. we use this to write the auth token out to the frontend
+        attach_info["auth_token"] = attach_auth_token
+        server.kvs[dfacts.ATTACH_INFO_KVS_KEY] = json.dumps(attach_info)
+        log.info("pre-populated LS KVS with attach-info (key=%s)", dfacts.ATTACH_INFO_KVS_KEY)
 
     try:
         server.run(
@@ -590,6 +711,8 @@ def multinode(
     except Exception:
         log.fatal("There was an exception in LS and clean up is called.")
         server.cleanup()
+        if attach_auth_token is not None:
+            _remove_attach_info_file()
         raise
 
     try:
@@ -606,5 +729,7 @@ def multinode(
         raise RuntimeError("teardown") from tde
     finally:
         server.cleanup()
+        if attach_auth_token is not None:
+            _remove_attach_info_file()
 
     log.info("shutdown complete")
