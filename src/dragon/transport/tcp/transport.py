@@ -235,6 +235,19 @@ class Transport:
         resp, addr = await fut
         return resp, addr
 
+    def cancel_response(self, seqno) -> None:
+        """Stop waiting for the `Response` to a `Request`.
+
+        Removes the `asyncio.Future` tracked for *seqno*, if any, and cancels
+        it unless it has already completed. Intended for requests that never
+        receive a response, e.g., channel cleanup notifications.
+
+        :param seqno: Sequence number of the `Request`
+        """
+        fut = self._responses.pop(seqno, None)
+        if fut is not None and not fut.done():
+            fut.cancel()
+
 
 class StreamTransport(Transport, TaskMixin):
     """Asynchronous message transport using `asyncio-streams`.

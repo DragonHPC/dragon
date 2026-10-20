@@ -26,13 +26,7 @@ from .task import TaskMixin, run_forever
 from .transport import Address, Transport
 from .util import create_msg
 
-
 LOGGER = logging.getLogger("dragon.transport.tcp.client")
-
-
-# Used to ignore channel cleanup events.
-async def noop_coroutine():
-    pass
 
 
 class Client(TaskMixin):
@@ -146,20 +140,43 @@ class Client(TaskMixin):
             raise ValueError(f"Unknown target host ID: {msg.target_hostid}")
         # Create Request from gateway message
         req = create_request(msg)
-        if req is None:
-            # This would have been a channel cleanup request which is
-            # ignored in the Python TCP transport.
-            msg.destroy()
-            return asyncio.create_task(noop_coroutine())
-
         # Send request
         fut = self.transport.write_request(req, to_addr)
         # Handle responses asynchronously. Ordering of responses is
         # intentionally not guaranteed since the remote server is expected to
         # process requests in the order they are received.
-        return asyncio.create_task(self.wait_for_response(fut, msg, req))
+        task = asyncio.create_task(self.wait_for_response(fut, msg, req))
+        if msg.is_event_kind and msg.event_mask == EventType.CHANNEL_CLEANUP:
+            # A task cancelled before its first execution never enters the
+            # coroutine's finally block. Register cleanup before returning it.
+            def finish_cleanup(task):
+                self.transport.cancel_response(req.seqno)
+                try:
+                    msg.event_complete(0)
+                finally:
+                    msg.destroy()
+
+            task.add_done_callback(finish_cleanup)
+        return task
 
     async def wait_for_response(self, fut: asyncio.Future, msg: GatewayMessage, req: Request) -> None:
+        if msg.is_event_kind and msg.event_mask == EventType.CHANNEL_CLEANUP:
+            # The server sends no response to cleanup requests. The request
+            # owns its serialized channel descriptor, so release the gateway
+            # after request I/O without waiting for a response or native caller.
+            await req._io_event.wait()
+            if fut.done() and not fut.cancelled():
+                # The server only responds to a cleanup request when it
+                # fails to handle it, i.e., with an ErrorResponse.
+                resp, addr = fut.result()
+                try:
+                    await self.handle_response(resp, addr, msg)
+                except BaseException:
+                    LOGGER.exception(f"Error handling response to gateway message: {msg}")
+                finally:
+                    resp._io_event.set()
+            return
+
         try:
             # SendResponses to SendRequests with return modes IMMEDIATELY or
             # WHEN_BUFFERED may be received before the request has been sent
@@ -179,21 +196,16 @@ class Client(TaskMixin):
                 # Inidicate local transport address (i.e., myself)
                 addr = self.transport.addr
             # Handle response and complete the gateway message
-            if msg.is_event_kind and msg.event_mask == EventType.CHANNEL_CLEANUP:
-                # We don't get responses to these channel cleanup events
-                pass
-            else:
-                # For all other's, wait for the response to the request.
-                try:
-                    await self.handle_response(resp, addr, msg)
-                except BaseException:
-                    LOGGER.exception(f"Error handling response to gateway message: {msg}")
-                finally:
-                    # Set the I/O event on the response. Critical for properly
-                    # handling RecvResponse messages when the transport does NOT use
-                    # write_message() and read_message() to handle message I/O,
-                    # e.g., Transport.
-                    resp._io_event.set()
+            try:
+                await self.handle_response(resp, addr, msg)
+            except BaseException:
+                LOGGER.exception(f"Error handling response to gateway message: {msg}")
+            finally:
+                # Set the I/O event on the response. Critical for properly
+                # handling RecvResponse messages when the transport does NOT use
+                # write_message() and read_message() to handle message I/O,
+                # e.g., Transport.
+                resp._io_event.set()
         finally:
             # If this is a sendmsg then the destroy call will only complete
             # if the payload has also been sent (which the msg keeps track of).
