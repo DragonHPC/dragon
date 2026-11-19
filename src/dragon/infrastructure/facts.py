@@ -897,7 +897,7 @@ class PMIBackend(str, enum.Enum):
 # Prefer to use high-speed network interfaces. Be cautious about matching any
 # interface (e.g., r'^.*$') as it may expose the transport agent on an
 # unintended network (e.g., the internet).
-DEFAULT_TRANSPORT_NETIF = r"^(hsn|ipogif|ib|eth|bridge|en)\w+$"
+DEFAULT_TRANSPORT_NETIF = r"^(hsn|ipogif|ib|eth|bridge|en|ai)\w+$"
 DEFAULT_TRANSPORT_PORT = 7575
 DEFAULT_OVERLAY_NETWORK_PORT = 6565
 DEFAULT_FRONTEND_PORT = 6566
